@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from flask import Response, jsonify, request
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
+from pwd301.models.course import Course, Enrollment, Lesson
 from pwd301.services.authorization_service import (
     get_authenticated_actor,
     instructor_required,
@@ -19,6 +20,15 @@ from pwd301.services.course_service import (
     get_course_detail,
     trash_course,
     update_course,
+)
+from pwd301.services.exceptions import LessonValidationError
+from pwd301.services.lesson_service import (
+    change_lesson_status,
+    create_lesson,
+    get_lesson_detail,
+    reorder_lessons,
+    trash_lesson,
+    update_lesson,
 )
 
 
@@ -206,3 +216,108 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
     course = trash_course(actor, course_id, reason=reason)
     return jsonify(_serialize_course(course)), 200
+
+
+def _serialize_lesson(les: Lesson) -> dict[str, Any]:
+    return {
+        "lesson_id": str(les.public_id),
+        "course_id": str(les.course.public_id) if les.course else None,
+        "title": les.title,
+        "summary": les.summary,
+        "markdown_content": les.markdown_content,
+        "position": les.position,
+        "estimated_duration_minutes": les.estimated_duration_minutes,
+        "minimum_completion_seconds": les.minimum_completion_seconds,
+        "viewed_fraction_required": float(les.viewed_fraction_required),
+        "status": les.status,
+        "published_at": les.published_at.isoformat() if les.published_at else None,
+        "created_at": les.created_at.isoformat(),
+        "updated_at": les.updated_at.isoformat(),
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/lessons", methods=["POST"])
+@instructor_required
+def create_lesson_route(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new lesson in a managed course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    lesson = create_lesson(actor, course_id, payload)
+    return jsonify(_serialize_lesson(lesson)), 201
+
+
+@instructor_bp.route("/lessons/<lesson_id>", methods=["GET"])
+@instructor_required
+def get_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """View lesson detail for authoring."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    lesson = get_lesson_detail(actor, lesson_id)
+    return jsonify(_serialize_lesson(lesson)), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>", methods=["PATCH", "PUT"])
+@instructor_required
+def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Update editable lesson fields."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    lesson = update_lesson(actor, lesson_id, payload)
+    return jsonify(_serialize_lesson(lesson)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/lessons/reorder", methods=["POST"])
+@instructor_required
+def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
+    """Reorder lessons within a course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_ids = payload.get("ordered_lesson_ids")
+    if not isinstance(raw_ids, list):
+        raise LessonValidationError("ordered_lesson_ids must be a list of lesson IDs.")
+
+    ordered_ids: list[int | uuid.UUID | str] = [
+        item for item in raw_ids if isinstance(item, (int, uuid.UUID, str))
+    ]
+    reordered = reorder_lessons(actor, course_id, ordered_ids)
+    return jsonify({"lessons": [_serialize_lesson(les) for les in reordered]}), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>/status", methods=["POST"])
+@instructor_required
+def change_lesson_status_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Change status of a lesson (PUBLISHED, HIDDEN, DRAFT)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    new_status = payload.get("status")
+    if not new_status or not isinstance(new_status, str):
+        raise LessonValidationError("status is required and must be a string.")
+
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        reason = str(reason)
+
+    lesson = change_lesson_status(actor, lesson_id, new_status, reason=reason)
+    return jsonify(_serialize_lesson(lesson)), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>/trash", methods=["POST", "DELETE"])
+@instructor_required
+def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a lesson to TRASH."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    lesson = trash_lesson(actor, lesson_id, reason=reason)
+    return jsonify(_serialize_lesson(lesson)), 200

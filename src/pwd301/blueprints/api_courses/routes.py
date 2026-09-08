@@ -7,7 +7,7 @@ from typing import Any
 from flask import Response, jsonify, request
 
 from pwd301.blueprints.api_courses import api_course_bp
-from pwd301.models.course import Course
+from pwd301.models.course import Course, Lesson
 from pwd301.services.authorization_service import (
     get_authenticated_actor,
     instructor_required,
@@ -19,6 +19,7 @@ from pwd301.services.course_service import (
     list_courses,
     update_course,
 )
+from pwd301.services.lesson_service import get_course_lessons
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
@@ -140,3 +141,24 @@ def archive_course_api(course_id: str) -> tuple[Response, int] | Response:
         reason=reason,
     )
     return jsonify(_serialize_course(course)), 200
+
+
+def _serialize_lesson_summary(les: Lesson) -> dict[str, Any]:
+    return {
+        "lesson_id": str(les.public_id),
+        "title": les.title,
+        "summary": les.summary,
+        "position": les.position,
+        "estimated_duration_minutes": les.estimated_duration_minutes,
+        "minimum_completion_seconds": les.minimum_completion_seconds,
+        "viewed_fraction_required": float(les.viewed_fraction_required),
+        "status": les.status,
+    }
+
+
+@api_course_bp.route("/<course_id>/lessons", methods=["GET"])
+def get_course_lessons_api(course_id: str) -> tuple[Response, int] | Response:
+    """List lessons belonging to a course scoped by caller permissions."""
+    actor = get_authenticated_actor()
+    lessons = get_course_lessons(actor, course_id)
+    return jsonify({"lessons": [_serialize_lesson_summary(les) for les in lessons]}), 200

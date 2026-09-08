@@ -34,6 +34,7 @@ import pwd301.models  # noqa: F401
 from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
+from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
 from pwd301.blueprints.instructor import instructor_bp
@@ -48,6 +49,11 @@ from pwd301.services.exceptions import (
     CourseStateViolationError,
     CourseValidationError,
     ForbiddenError,
+    LessonNotFoundError,
+    LessonPositionConflictError,
+    LessonProgressError,
+    LessonStateViolationError,
+    LessonValidationError,
     ResourceNotFoundError,
 )
 
@@ -222,6 +228,56 @@ def _register_error_handlers(app: Flask) -> None:
     @app.errorhandler(CourseValidationError)
     def domain_course_validation_error(
         error: CourseValidationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(LessonNotFoundError)
+    def domain_lesson_not_found_error(
+        error: LessonNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(LessonPositionConflictError)
+    def domain_lesson_position_conflict_error(
+        error: LessonPositionConflictError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CONFLICT",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(LessonStateViolationError)
+    def domain_lesson_state_violation_error(
+        error: LessonStateViolationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="STATE_VIOLATION",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(LessonValidationError)
+    def domain_lesson_validation_error(
+        error: LessonValidationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(LessonProgressError)
+    def domain_lesson_progress_error(
+        error: LessonProgressError,
     ) -> Response | tuple[Response, int]:
         return _format_error_response(
             code="VALIDATION_ERROR",
@@ -408,10 +464,12 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(instructor_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_course_bp)
+    app.register_blueprint(api_lesson_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
     csrf.exempt(api_course_bp)
+    csrf.exempt(api_lesson_bp)
 
     # Register CLI commands
     register_cli_commands(app)

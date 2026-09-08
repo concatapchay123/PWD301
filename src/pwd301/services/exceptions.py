@@ -121,3 +121,27 @@ class CourseDependencyError(CourseError):
 
 class CourseValidationError(CourseError):
     """Raised when course metadata fails domain validation rules."""
+
+
+class LessonError(ServiceError):
+    """Base exception for all lesson domain errors."""
+
+
+class LessonNotFoundError(ResourceNotFoundError, LessonError):
+    """Raised when a requested lesson cannot be found."""
+
+
+class LessonStateViolationError(LessonError):
+    """Raised when an illegal lesson state transition is attempted."""
+
+
+class LessonPositionConflictError(LessonError):
+    """Raised when there is a collision or inconsistency in lesson sequence positioning."""
+
+
+class LessonValidationError(LessonError):
+    """Raised when lesson data fails domain validation rules."""
+
+
+class LessonProgressError(LessonError):
+    """Raised when lesson progress tracking encounters an error or tampering."""

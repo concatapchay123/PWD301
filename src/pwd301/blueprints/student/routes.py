@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-from flask import Response, jsonify
+from typing import Any
+
+from flask import Response, jsonify, request
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
-from pwd301.models.course import Enrollment
+from pwd301.models.course import Enrollment, Lesson, LessonProgress
 from pwd301.services.authorization_service import (
     _resolve_course,
     get_authenticated_actor,
     student_required,
 )
-from pwd301.services.exceptions import ResourceNotFoundError
+from pwd301.services.exceptions import LessonValidationError, ResourceNotFoundError
+from pwd301.services.lesson_service import (
+    get_lesson_detail,
+    get_lesson_progress,
+    record_lesson_progress,
+)
 
 
 @student_bp.route("/dashboard", methods=["GET"])
@@ -81,5 +88,87 @@ def course_progress(course_id: str) -> tuple[Response, int] | Response:
         "progress_percent": float(enrollment.current_progress_percent),
         "status": enrollment.status,
         "enrolled_at": enrollment.enrolled_at.isoformat(),
+    }
+    return jsonify(data), 200
+
+
+def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str, Any]:
+    return {
+        "lesson_id": str(les.public_id),
+        "course_id": str(les.course.public_id) if les.course else None,
+        "title": les.title,
+        "summary": les.summary,
+        "markdown_content": les.markdown_content,
+        "position": les.position,
+        "estimated_duration_minutes": les.estimated_duration_minutes,
+        "minimum_completion_seconds": les.minimum_completion_seconds,
+        "viewed_fraction_required": float(les.viewed_fraction_required),
+        "progress": {
+            "seconds_spent": p.seconds_spent if p else 0,
+            "max_view_fraction": float(p.max_view_fraction) if p else 0.0,
+            "is_completed": p.completed_at is not None if p else False,
+            "completed_at": p.completed_at.isoformat() if p and p.completed_at else None,
+        },
+    }
+
+
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>", methods=["GET"])
+@student_required
+def get_student_lesson_route(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
+    """Access lesson content for learning, protected by active enrollment check."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    sess = db.session
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    lesson = get_lesson_detail(actor, lesson_id)
+    if lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson does not belong to this course.")
+
+    progress = get_lesson_progress(actor, lesson_id)
+    return jsonify(_serialize_student_lesson(lesson, progress)), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/progress", methods=["POST"])
+@student_required
+def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Heartbeat endpoint to record lesson engagement progress."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    if not isinstance(payload, dict):
+        raise LessonValidationError("Invalid JSON payload.")
+
+    seconds_increment = payload.get("seconds_increment")
+    view_fraction = payload.get("view_fraction")
+
+    if seconds_increment is None or view_fraction is None:
+        raise LessonValidationError("Both seconds_increment and view_fraction are required.")
+
+    try:
+        sec_int = int(seconds_increment)
+        vf_float = float(view_fraction)
+    except (ValueError, TypeError):
+        raise LessonValidationError(
+            "seconds_increment must be an integer and view_fraction must be a float."
+        ) from None
+
+    progress = record_lesson_progress(
+        actor=actor,
+        lesson_id=lesson_id,
+        seconds_increment=sec_int,
+        view_fraction=vf_float,
+    )
+
+    data = {
+        "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
+        "seconds_spent": progress.seconds_spent,
+        "max_view_fraction": float(progress.max_view_fraction),
+        "is_completed": progress.completed_at is not None,
+        "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
     }
     return jsonify(data), 200
