@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Khám phá Khóa học — PWD301 LMS{% endblock %}
+{% block meta_description %}Danh mục chương trình đào tạo trực tuyến chính thức tại PWD301 Online Course Management Platform.{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+  <!-- Page Header -->
+  <header class="page-header mb-4">
+    <div class="page-header-content">
+      <div class="text-caption text-primary fw-semibold mb-1 text-uppercase tracking-wider">Cổng đào tạo trực tuyến</div>
+      <h1 class="page-title fs-2 fw-bold text-slate-900 mb-1">Khám phá Khóa học</h1>
+      <p class="page-header-subtitle text-muted mb-0">Danh mục các chương trình đào tạo chính thức tại PWD301</p>
+    </div>
+    <div class="page-header-actions d-flex align-items-center gap-2 mt-3 mt-md-0">
+      {% if current_user is defined and current_user.is_authenticated %}
+        <a href="#dashboard" class="btn btn-primary btn-sm px-3">Bảng điều khiển</a>
+      {% else %}
+        <a href="#login" class="btn btn-primary btn-sm px-3">Đăng nhập để học</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <!-- Filter & Search Controls -->
+  <div class="row g-3 mb-4 align-items-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="catalog-search-wrap d-flex align-items-center bg-white border border-slate-200 rounded-2 px-3 py-1.5 shadow-xs">
+        <span class="text-slate-400 me-2 d-flex align-items-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </span>
+        <input type="text" id="public-search" class="catalog-search-input border-0 w-100 bg-transparent text-slate-800" placeholder="Tìm kiếm theo mã môn học hoặc tên khóa học..." aria-label="Tìm kiếm khóa học" style="outline: none; font-size: 14px;">
+      </div>
+    </div>
+    <div class="col-md-4 col-lg-4">
+      <select id="public-category-filter" class="form-select border-slate-200" style="font-size: 14px;" aria-label="Lọc theo phân loại">
+        <option value="all">Tất cả phân loại môn học</option>
+        <option value="Phát triển Web">Phát triển Web</option>
+        <option value="Frontend">Frontend</option>
+        <option value="Dữ liệu">Dữ liệu & Cơ sở dữ liệu</option>
+        <option value="Bảo mật">An toàn thông tin & Bảo mật</option>
+        <option value="Hệ thống">Kiến trúc & Hệ thống</option>
+        <option value="AI / ML">Trí tuệ nhân tạo (AI / ML)</option>
+      </select>
+    </div>
+    <div class="col-md-2 col-lg-3 text-md-end d-none d-md-block">
+      <span class="text-caption text-muted" id="courses-count-label">
+        Hiển thị: <strong class="text-slate-900" id="courses-count">{{ courses|length }}</strong> khóa học
+      </span>
+    </div>
+  </div>
+
+  <!-- Course Grid or Empty State -->
+  {% if courses and courses|length > 0 %}
+    <div class="row g-4" id="public-course-grid">
+      {% for course in courses %}
+        <div class="col-md-6 col-lg-4 fpt-udemy-card-col mb-4 course-card-item" data-category="{{ course.category or '' }}" data-query="{{ (course.title ~ ' ' ~ course.course_code)|lower }}">
+          <div class="fpt-udemy-card h-100 bg-white border border-slate-200 rounded-3 overflow-hidden shadow-xs d-flex flex-column">
+            <!-- Card Top Banner -->
+            <a href="#course-{{ course.course_code }}" class="fpt-udemy-banner position-relative d-block text-decoration-none overflow-hidden" style="height: 140px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);">
+              <!-- Geometric SVG overlay -->
+              <svg class="w-100 h-100 position-absolute opacity-25" viewBox="0 0 320 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="320" height="160" fill="#00a86b"/>
+                <g opacity="0.22">
+                  <rect x="0" y="0" width="53" height="40" fill="#01472e"/>
+                  <rect x="106" y="0" width="54" height="40" fill="#01472e"/>
+                  <rect x="213" y="0" width="54" height="40" fill="#01472e"/>
+                  <rect x="53" y="40" width="53" height="40" fill="#01472e"/>
+                  <rect x="160" y="40" width="53" height="40" fill="#01472e"/>
+                  <rect x="267" y="40" width="53" height="40" fill="#01472e"/>
+                </g>
+              </svg>
+              <!-- Course Code Pill -->
+              <div class="position-absolute bottom-0 start-0 m-3 px-2.5 py-1 bg-white text-primary fw-bold rounded-pill text-caption shadow-xs">
+                {{ course.course_code }}
+              </div>
+            </a>
+
+            <!-- Card Body -->
+            <div class="p-3.5 d-flex flex-column flex-grow-1">
+              <a href="#course-{{ course.course_code }}" class="text-decoration-none text-slate-900 mb-1">
+                <h5 class="fw-bold mb-1 line-clamp-2" style="font-size: 15.5px;" title="{{ course.title }}">{{ course.title }}</h5>
+              </a>
+              
+              <div class="text-caption text-muted mb-2">
+                <span class="fw-medium text-slate-700">{{ course.course_code }}</span>
+                {% if course.category %}
+                  &bull; <span class="badge bg-light text-secondary">{{ course.category }}</span>
+                {% endif %}
+              </div>
+
+              {% if course.description %}
+                <p class="text-muted text-caption line-clamp-2 mb-3" style="font-size: 12.5px;">
+                  {{ course.description }}
+                </p>
+              {% endif %}
+
+              <div class="mt-auto pt-3 border-top border-slate-100 d-flex align-items-center justify-content-between">
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Đang mở</span>
+                <a href="#course-{{ course.course_code }}" class="btn btn-outline-primary btn-sm px-3">Chi tiết môn học</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <!-- Empty State (No published courses yet) -->
+    <div class="empty-state py-5 my-5 text-center bg-white border border-slate-200 rounded-3 shadow-xs">
+      <div class="empty-state-icon mb-3 text-muted d-inline-flex p-3 rounded-circle bg-light">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+      </div>
+      <h3 class="empty-state-title fs-5 fw-bold text-slate-900 mb-2">Chưa có khóa học nào được công khai</h3>
+      <p class="empty-state-desc text-muted mb-4 mx-auto" style="max-width: 480px; font-size: 14px; line-height: 1.6;">
+        Hiện tại chưa có khóa học nào sẵn sàng ở chế độ công khai trong cơ sở dữ liệu. Giảng viên và Quản trị viên sẽ sớm cập nhật và xuất bản các chương trình đào tạo mới.
+      </p>
+      {% if current_user is defined and current_user.is_authenticated %}
+        <a href="#dashboard" class="btn btn-primary btn-sm px-3.5 py-1.5">Đến Bảng điều khiển của tôi</a>
+      {% else %}
+        <a href="#login" class="btn btn-primary btn-sm px-3.5 py-1.5">Đăng nhập tài khoản</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    'use strict';
+    const searchInput = document.getElementById('public-search');
+    const categoryFilter = document.getElementById('public-category-filter');
+    const cards = document.querySelectorAll('.course-card-item');
+    const countEl = document.getElementById('courses-count');
+
+    function filterCourses() {
+      const q = (searchInput ? searchInput.value : '').toLowerCase().trim();
+      const cat = categoryFilter ? categoryFilter.value : 'all';
+      let visibleCount = 0;
+
+      cards.forEach(function (card) {
+        const queryData = (card.getAttribute('data-query') || '').toLowerCase();
+        const categoryData = card.getAttribute('data-category') || '';
+
+        const matchesQuery = !q || queryData.includes(q);
+        const matchesCategory = (cat === 'all') || (categoryData === cat);
+
+        if (matchesQuery && matchesCategory) {
+          card.style.display = '';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (countEl) {
+        countEl.textContent = visibleCount;
+      }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterCourses);
+    if (categoryFilter) categoryFilter.addEventListener('change', filterCourses);
+  })();
+</script>
+{% endblock %}

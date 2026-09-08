@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
+from flask_login import UserMixin
 from sqlalchemy.orm import relationship
 
 from pwd301.extensions import Base, db
@@ -30,7 +31,7 @@ from pwd301.models.types import (
 )
 
 
-class User(Base):
+class User(Base, UserMixin):
     """User account model mapping to canonical 'users' table."""
 
     __tablename__ = "users"
@@ -120,6 +121,15 @@ class User(Base):
         back_populates="student",
         foreign_keys="Enrollment.student_user_id",
     )
+
+    @property
+    def is_active(self) -> bool:
+        """Return True if user account is active and not suspended."""
+        return self.status == "ACTIVE" and self.suspended_at is None
+
+    def get_id(self) -> str:
+        """Return user primary key as string for Flask-Login session management."""
+        return str(self.id)
 
 
 class Role(Base):

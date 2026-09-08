@@ -194,6 +194,16 @@ def create_app(config_name: str | None = None) -> Flask:
     csrf.init_app(app)
     login_manager.init_app(app)
 
+    @login_manager.user_loader
+    def load_user(user_id: str) -> Any:
+        try:
+            uid = int(user_id)
+        except (ValueError, TypeError):
+            return None
+        from pwd301.models.identity import User
+
+        return db.session.get(User, uid)
+
     # Logging setup
     _configure_logging(app)
 

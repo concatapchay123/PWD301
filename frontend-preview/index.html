@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PWD301 — Online Course Management Platform</title>
+  <meta name="description" content="Hệ thống Quản lý Khóa học Trực tuyến PWD301 — Frontend Prototype Demo">
+
+  <!-- Core Stylesheets -->
+  <link rel="icon" href="data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3e%3crect width='32' height='32' rx='6' fill='%231e3a8a'/%3e%3ctext x='16' y='22' font-family='sans-serif' font-size='18' font-weight='bold' fill='white' text-anchor='middle'%3eP3%3c/text%3e%3c/svg%3e">
+  <link rel="stylesheet" href="assets/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+</head>
+<body>
+  <div id="app-shell">
+    <!-- 1. Top Demo Perspective Notification Bar -->
+    <aside class="demo-banner" aria-label="Demo Perspective Notice">
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-warning">●</span>
+        <span class="fw-medium">CHẾ ĐỘ XEM DEMO:</span>
+        <span id="demo-perspective-badge" class="badge-perspective">SINH VIÊN</span>
+      </div>
+      <div class="d-flex align-items-center gap-2.5">
+        <span class="d-none d-md-inline text-slate-400 me-1">Đổi nhanh góc nhìn:</span>
+        <button type="button" class="btn btn-ghost btn-sm text-white px-2.5 py-1" onclick="PWD.app.switchPerspective('public')">Khách</button>
+        <span class="text-slate-600">·</span>
+        <button type="button" class="btn btn-ghost btn-sm text-white px-2.5 py-1" onclick="PWD.app.switchPerspective('student')">Sinh viên</button>
+        <span class="text-slate-600">·</span>
+        <button type="button" class="btn btn-ghost btn-sm text-white px-2.5 py-1" onclick="PWD.app.switchPerspective('instructor')">Giảng viên</button>
+        <span class="text-slate-600">·</span>
+        <button type="button" class="btn btn-ghost btn-sm text-white px-2.5 py-1" onclick="PWD.app.switchPerspective('admin')">Quản trị</button>
+        <span class="text-slate-600">·</span>
+        <button type="button" class="btn btn-ghost btn-sm text-warning px-2.5 py-1" onclick="PWD.store.resetDemoData(); location.reload();" title="Xóa dữ liệu cục bộ và đưa về trạng thái hạt giống ban đầu">
+          Đặt lại demo
+        </button>
+      </div>
+    </aside>
+
+    <!-- 2. Application Topbar -->
+    <header class="app-topbar">
+      <div class="d-flex align-items-center gap-3">
+        <!-- Mobile Navigation Drawer Toggle -->
+        <button class="btn btn-ghost btn-sm d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobile-offcanvas" aria-label="Mở menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+
+        <a href="#/student/dashboard" class="topbar-brand">
+          <div class="topbar-brand-mark">P3</div>
+          <span>PWD301 LMS</span>
+        </a>
+      </div>
+
+      <div class="d-flex align-items-center gap-3">
+        <!-- Perspective Switcher Dropdown -->
+        <div class="d-none d-sm-flex align-items-center gap-2">
+          <label for="perspective-select" class="text-caption text-muted mb-0">Chế độ xem demo:</label>
+          <select id="perspective-select" class="form-select form-select-sm" style="width: 190px;">
+            <option value="student">Sinh viên (Minh Anh)</option>
+            <option value="instructor">Giảng viên (Hoàng Nam)</option>
+            <option value="admin">Quản trị viên (Thu Hà)</option>
+            <option value="public">Khách vãng lai (Public)</option>
+          </select>
+        </div>
+
+        <!-- Theme Toggle Button (Light/Dark) -->
+        <button id="theme-toggle-btn" class="topbar-icon-btn" type="button" onclick="PWD.app.toggleTheme()" aria-label="Chuyển chế độ Sáng / Tối" title="Chuyển chế độ Sáng / Tối">
+          <span id="theme-icon"></span>
+        </button>
+
+        <!-- Notification Bell Dropdown Container -->
+        <div class="position-relative" id="topbar-notif-wrapper">
+          <button id="topbar-notif-btn" class="topbar-icon-btn position-relative" type="button" onclick="PWD.app.toggleNotifications(event)" aria-label="Thông báo" title="Thông báo hệ thống">
+            <span id="notif-bell-icon"></span>
+            <span id="notif-badge" class="topbar-notif-badge d-none">0</span>
+          </button>
+          
+          <!-- Dropdown Popover Box -->
+          <div id="notif-dropdown" class="notif-dropdown d-none" aria-label="Hộp thông báo">
+            <div class="notif-dropdown-header">
+              <div class="d-flex align-items-center gap-2">
+                <span class="fw-bold" style="font-size: 14.5px;">Thông báo</span>
+                <span id="notif-header-badge" class="badge badge-info" style="font-size: 11.5px; padding: 3px 9px;">0 mới</span>
+              </div>
+              <button type="button" class="btn-link-action" onclick="PWD.app.markAllNotificationsRead(event)">Đánh dấu đã đọc</button>
+            </div>
+            <div class="notif-dropdown-body" id="notif-list-container">
+              <!-- Rendered dynamically -->
+            </div>
+            <div class="notif-dropdown-footer">
+              <a href="#/student/notifications" onclick="PWD.app.closeNotifications()" class="notif-footer-link">Xem tất cả thông báo →</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- User Identity Info -->
+        <div class="d-flex align-items-center gap-3 border-start border-slate-200 ps-3 ms-1">
+          <div class="text-end d-none d-md-block">
+            <div id="topbar-user-name" class="fw-semibold text-slate-800" style="font-size: 13.5px;">Nguyễn Minh Anh</div>
+            <div class="text-caption text-muted">Tài khoản demo</div>
+          </div>
+          <div id="topbar-user-avatar" class="topbar-brand-mark" style="width: 38px; height: 38px; font-size: 14px;">MA</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 3. Application Body: Sidebar + Main Workspace -->
+    <div class="app-body-container">
+      <!-- Desktop Sidebar -->
+      <nav class="app-sidebar" aria-label="Điều hướng ứng dụng">
+        <div id="sidebar-nav-container" class="overflow-auto flex-grow-1">
+          <!-- Populated dynamically based on perspective by app.js -->
+        </div>
+        <div class="sidebar-footer">
+          <div class="text-caption text-muted text-center">
+            PWD301 Prototype • v1.0.0
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main Content Outlet -->
+      <main class="app-main-workspace" id="main-content">
+        <div id="router-outlet">
+          <!-- Views dynamically rendered here by router.js -->
+        </div>
+      </main>
+    </div>
+
+    <!-- 4. Mobile Offcanvas Navigation Drawer -->
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobile-offcanvas" aria-labelledby="mobile-nav-label" style="max-width: 280px;">
+      <div class="offcanvas-header border-bottom border-slate-200">
+        <div class="d-flex align-items-center gap-2">
+          <div class="topbar-brand-mark">P3</div>
+          <h5 class="offcanvas-title sub-title m-0" id="mobile-nav-label">PWD301 LMS</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
+      </div>
+      <div class="offcanvas-body p-0" id="offcanvas-nav-container">
+        <!-- Replicates sidebar links for mobile accessibility -->
+      </div>
+    </div>
+
+    <!-- 5. Floating AI Chatbot Launcher (FAB) & Interactive Chat Window -->
+    <div id="floating-ai-container">
+      <!-- Chat Window Popup -->
+      <div id="ai-chat-window" class="ai-chat-window d-none" aria-label="Cửa sổ Trợ lý AI">
+        <div class="ai-chat-header">
+          <div class="d-flex align-items-center gap-2">
+            <div class="ai-avatar-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+              <span class="ai-online-dot"></span>
+            </div>
+            <div>
+              <div class="ai-header-title">Trợ lý AI Học tập</div>
+              <div class="ai-header-status">Bám sát giáo trình PWD301</div>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <a href="#/student/ai-assistant" class="ai-ctrl-btn" title="Phóng to toàn màn hình" onclick="PWD.app.closeAIChat()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+            </a>
+            <button type="button" class="ai-ctrl-btn" title="Đóng cửa sổ chat" onclick="PWD.app.toggleAIChat()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="ai-chat-body" id="ai-floating-messages">
+          <div class="ai-chat-msg ai-msg-bot">
+            <div class="ai-msg-avatar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+            </div>
+            <div class="ai-msg-content">
+              Xin chào! 👋 Tôi là <strong>Trợ lý AI Học tập PWD301</strong>. Tôi có thể giải đáp thắc mắc về bài giảng, chuẩn bị kiểm tra giữa kỳ, hoặc phân tích code Flask. Bạn cần hỗ trợ gì hôm nay?
+            </div>
+          </div>
+
+          <div class="ai-quick-prompts">
+            <div class="ai-prompts-label">Gợi ý câu hỏi nhanh:</div>
+            <div class="d-flex flex-wrap gap-1">
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('CSRF Token hoạt động thế nào trong Flask-WTF?')">💡 CSRF Token trong Flask?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Khác biệt cốt lõi giữa HTTP GET và POST?')">💡 GET vs POST?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Cấu trúc chuẩn của một Flask Blueprint?')">💡 Flask Blueprint?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Các điểm mấu chốt để đạt điểm tối đa bài kiểm tra giữa kỳ?')">💡 Mẹo thi giữa kỳ?</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-chat-footer">
+          <form id="ai-floating-form" onsubmit="event.preventDefault(); PWD.app.sendFloatingAIMessage();" class="d-flex gap-2">
+            <input type="text" id="ai-floating-input" class="form-control ai-input-field" placeholder="Hỏi Trợ lý AI về môn học..." autocomplete="off">
+            <button type="submit" class="btn btn-primary ai-send-btn" title="Gửi câu hỏi" aria-label="Gửi">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Floating Action Button (Circular Launcher) -->
+      <button id="ai-fab-launcher" class="ai-fab-launcher" type="button" onclick="PWD.app.toggleAIChat()" aria-label="Mở Trợ lý AI" title="Trợ lý học tập AI">
+        <div class="ai-fab-icon-wrap" id="ai-fab-icon">
+          <!-- Default: Sparkles icon -->
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+        </div>
+        <span class="ai-fab-pulse"></span>
+        <span class="ai-fab-tooltip">Hỏi Trợ lý AI</span>
+      </button>
+    </div>
+
+    <!-- 6. Toast Feedback Notifications Container -->
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="assets/vendor/bootstrap.bundle.min.js"></script>
+  <script src="assets/js/components.js?v=1.1.0"></script>
+  <script src="assets/js/store.js?v=1.1.0"></script>
+  <script src="assets/js/router.js?v=1.1.0"></script>
+  <script src="assets/js/views/public.js?v=1.1.0"></script>
+  <script src="assets/js/views/student.js?v=1.1.0"></script>
+  <script src="assets/js/views/instructor.js?v=1.1.0"></script>
+  <script src="assets/js/views/admin.js?v=1.1.0"></script>
+  <script src="assets/js/app.js?v=1.1.0"></script>
+</body>
+</html>

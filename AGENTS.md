@@ -18,6 +18,8 @@ The System Specification contains system-level database summaries. The **only ca
 `docs/database/PWD301_DATABASE_ARCHITECTURE/`.
 Do not create or maintain a second SQL/schema copy elsewhere.
 
+The prototype in `frontend-preview/` is the **canonical frontend reference** for all UI designs, layouts, styling (`app.css`), icons, user flows and defensive UX patterns (> 70% of frontend already resolved). When implementing Flask Jinja templates (`src/pwd301/templates/`), static scripts, or connected endpoints, agents must refer to `frontend-preview/` while separating views into role-based blueprints (`auth`, `student`, `instructor`, `admin`) and enforcing server-authoritative Flask session authentication and CSRF protection.
+
 ## 2. Mandatory reading before changing code
 
 Always:
@@ -29,7 +31,8 @@ Always:
 5. Read `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`.
 6. Read domain-specific System Specification files related to the task.
 7. For database work, read the canonical Database Architecture and relevant DDL before editing models/migrations.
-8. Inspect repository-wide existing code for reuse before adding abstractions, dependencies or duplicate logic.
+8. For UI, frontend templates, and connected routes, inspect `frontend-preview/` (`views/`, `components.js`, `app.css`) as the canonical UI reference.
+9. Inspect repository-wide existing code for reuse before adding abstractions, dependencies or duplicate logic.
 
 ## 3. Scope discipline
 
