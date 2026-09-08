@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from flask_login import UserMixin
+from flask_login import AnonymousUserMixin, UserMixin
 from sqlalchemy.orm import relationship
 
 from pwd301.extensions import Base, db
@@ -130,6 +130,84 @@ class User(Base, UserMixin):
     def get_id(self) -> str:
         """Return user primary key as string for Flask-Login session management."""
         return str(self.id)
+
+    @property
+    def role_codes(self) -> set[str]:
+        """Return the set of role code strings assigned to this user."""
+        return {r.code for r in self.roles}
+
+    @property
+    def is_admin(self) -> bool:
+        """Return True if user has the ADMIN role."""
+        return "ADMIN" in self.role_codes
+
+    @property
+    def is_instructor(self) -> bool:
+        """Return True if user has INSTRUCTOR or ADMIN role (cumulative capability)."""
+        return bool(self.role_codes & {"INSTRUCTOR", "ADMIN"})
+
+    @property
+    def is_student(self) -> bool:
+        """Return True if user has STUDENT, INSTRUCTOR, or ADMIN role."""
+        return bool(self.role_codes & {"STUDENT", "INSTRUCTOR", "ADMIN"})
+
+    def has_role(self, role_code: str) -> bool:
+        """Check if user has a specific role, respecting cumulative hierarchy.
+
+        Per AUTH-002:
+        - ADMIN inherits INSTRUCTOR and STUDENT capabilities.
+        - INSTRUCTOR inherits STUDENT capability.
+        """
+        norm_code = role_code.strip().upper()
+        codes = self.role_codes
+        if norm_code == "STUDENT":
+            return bool(codes & {"STUDENT", "INSTRUCTOR", "ADMIN"})
+        if norm_code == "INSTRUCTOR":
+            return bool(codes & {"INSTRUCTOR", "ADMIN"})
+        if norm_code == "ADMIN":
+            return "ADMIN" in codes
+        return norm_code in codes
+
+    def has_any_role(self, *role_codes: str) -> bool:
+        """Check if user has at least one of the specified roles."""
+        return any(self.has_role(code) for code in role_codes)
+
+    def has_all_roles(self, *role_codes: str) -> bool:
+        """Check if user has all of the specified roles."""
+        return all(self.has_role(code) for code in role_codes)
+
+
+class AnonymousUser(AnonymousUserMixin):
+    """Anonymous user representation for unauthenticated guests.
+
+    Implements safe authorization check methods that consistently return False,
+    preventing AttributeError in templates or decorators.
+    """
+
+    @property
+    def role_codes(self) -> set[str]:
+        return set()
+
+    @property
+    def is_admin(self) -> bool:
+        return False
+
+    @property
+    def is_instructor(self) -> bool:
+        return False
+
+    @property
+    def is_student(self) -> bool:
+        return False
+
+    def has_role(self, role_code: str) -> bool:
+        return False
+
+    def has_any_role(self, *role_codes: str) -> bool:
+        return False
+
+    def has_all_roles(self, *role_codes: str) -> bool:
+        return False
 
 
 class Role(Base):

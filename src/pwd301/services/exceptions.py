@@ -81,3 +81,19 @@ class JwtTokenRevokedError(AuthenticationError):
 
 class AuthVersionMismatchError(AuthenticationError):
     """Raised when a token or session auth_version does not match current user auth_version."""
+
+
+class AuthorizationError(ServiceError):
+    """Base exception for all authorization and access control errors."""
+
+
+class ForbiddenError(AuthorizationError):
+    """Raised when an authenticated user lacks required roles or resource ownership."""
+
+
+class InvalidRoleAssignmentError(AuthorizationError):
+    """Raised when attempting an invalid role combination or transition (violates AUTH-002)."""
+
+
+class ResourceNotFoundError(ServiceError):
+    """Raised when a requested resource (course, lesson, question, etc.) cannot be found."""

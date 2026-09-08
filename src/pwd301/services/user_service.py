@@ -10,6 +10,7 @@ Provides business logic for:
 from __future__ import annotations
 
 import datetime
+import json
 import uuid
 from typing import Any
 
@@ -18,12 +19,14 @@ from sqlalchemy.orm import Session, scoped_session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from pwd301.extensions import db
-from pwd301.models.identity import Role, User
+from pwd301.models.identity import Role, User, UserRole
+from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
 from pwd301.services.exceptions import (
     AccountNotActiveError,
     InvalidEmailError,
     InvalidPasswordError,
+    InvalidRoleAssignmentError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
@@ -439,6 +442,234 @@ def mark_email_verified(
     user.updated_at = utc_now()
     try:
         sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return user
+
+
+# Allowed role sets per AUTH-002: STUDENT; STUDENT+INSTRUCTOR; STUDENT+INSTRUCTOR+ADMIN
+VALID_ROLE_COMBINATIONS: tuple[frozenset[str], ...] = (
+    frozenset({"STUDENT"}),
+    frozenset({"STUDENT", "INSTRUCTOR"}),
+    frozenset({"STUDENT", "INSTRUCTOR", "ADMIN"}),
+)
+
+
+def validate_role_combination(roles: set[str] | list[str] | frozenset[str]) -> bool:
+    """Validate whether a set of roles matches one of the canonical cumulative combinations."""
+    return frozenset(roles) in VALID_ROLE_COMBINATIONS
+
+
+def assign_role_to_user(
+    user_id: int,
+    role_code: str,
+    assigned_by_user_id: int | None = None,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> User:
+    """Assign a role to a user, ensuring cumulative hierarchy per AUTH-002.
+
+    Invariants enforced:
+    - Allowed role sets are strictly STUDENT, STUDENT+INSTRUCTOR, STUDENT+INSTRUCTOR+ADMIN.
+    - Assigning INSTRUCTOR automatically ensures STUDENT is assigned.
+    - Assigning ADMIN automatically ensures INSTRUCTOR and STUDENT are assigned.
+    - Role assignment is recorded in append-only AuditEvent.
+    - Increments user.auth_version by 1 and revokes tokens/sessions if needed.
+
+    Args:
+        user_id: Primary key of user receiving role.
+        role_code: Role code to assign ('STUDENT', 'INSTRUCTOR', 'ADMIN').
+        assigned_by_user_id: Optional ID of the user (e.g. Admin) assigning the role.
+        reason: Optional justification for the assignment.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        The updated User instance.
+
+    Raises:
+        UserNotFoundError: If target user does not exist.
+        InvalidRoleAssignmentError: If role_code is not one of the allowed canonical roles.
+    """
+    sess = session if session is not None else db.session
+    user = sess.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError(f"User with ID {user_id} not found.")
+
+    norm_code = role_code.strip().upper()
+    if norm_code not in ("STUDENT", "INSTRUCTOR", "ADMIN"):
+        raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
+
+    # Determine required cumulative closure
+    if norm_code == "STUDENT":
+        target_roles = {"STUDENT"}
+    elif norm_code == "INSTRUCTOR":
+        target_roles = {"STUDENT", "INSTRUCTOR"}
+    else:  # ADMIN
+        target_roles = {"STUDENT", "INSTRUCTOR", "ADMIN"}
+
+    # Include existing roles
+    new_role_codes = user.role_codes | target_roles
+    if not validate_role_combination(new_role_codes):
+        raise InvalidRoleAssignmentError(
+            f"Resulting role set {new_role_codes} is not an allowed cumulative combination."
+        )
+
+    before_roles = sorted(user.role_codes)
+    now = utc_now()
+
+    for code in sorted(new_role_codes):
+        if code not in user.role_codes:
+            role_obj = sess.query(Role).filter(Role.code == code).first()
+            if role_obj is None:
+                role_obj = Role(code=code, name=code.capitalize())
+                sess.add(role_obj)
+                sess.flush()
+            user.roles.append(role_obj)
+
+    sess.flush()
+    if assigned_by_user_id is not None or reason is not None:
+        for code in target_roles:
+            role_obj = sess.query(Role).filter(Role.code == code).first()
+            if role_obj is not None:
+                link = (
+                    sess.query(UserRole)
+                    .filter(UserRole.user_id == user.id, UserRole.role_id == role_obj.id)
+                    .first()
+                )
+                if link is not None:
+                    link.assigned_by_user_id = assigned_by_user_id
+                    link.assignment_reason = reason
+
+    after_roles = sorted(new_role_codes)
+    user.auth_version += 1
+    user.updated_at = now
+
+    # Audit event
+    actor_roles = "SYSTEM"
+    performed_as_admin = False
+    if assigned_by_user_id is not None:
+        assigner = sess.get(User, assigned_by_user_id)
+        if assigner is not None:
+            actor_roles = ",".join(sorted(assigner.role_codes))
+            performed_as_admin = assigner.is_admin
+
+    audit_entry = AuditEvent(
+        actor_user_id=assigned_by_user_id,
+        actor_roles_snapshot=actor_roles,
+        action="USER_ROLE_ASSIGNED",
+        target_type="USER",
+        target_id=user.id,
+        reason=reason,
+        before_json=json.dumps({"roles": before_roles}),
+        after_json=json.dumps({"roles": after_roles}),
+        performed_as_admin=performed_as_admin,
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return user
+
+
+def remove_role_from_user(
+    user_id: int,
+    role_code: str,
+    removed_by_user_id: int | None = None,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> User:
+    """Remove a role from a user, maintaining cumulative closure per AUTH-002.
+
+    Invariants enforced:
+    - The baseline STUDENT role cannot be removed from active accounts.
+    - Removing INSTRUCTOR also removes ADMIN to maintain valid closure.
+    - Role revocation is recorded in append-only AuditEvent.
+    - Increments user.auth_version by 1 and revokes tokens/sessions.
+
+    Args:
+        user_id: Primary key of target user.
+        role_code: Role code to remove.
+        removed_by_user_id: Optional ID of the administrator removing the role.
+        reason: Optional justification.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        The updated User instance.
+
+    Raises:
+        UserNotFoundError: If user does not exist.
+        InvalidRoleAssignmentError: If attempting to remove STUDENT or invalid role code.
+    """
+    sess = session if session is not None else db.session
+    user = sess.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError(f"User with ID {user_id} not found.")
+
+    norm_code = role_code.strip().upper()
+    if norm_code == "STUDENT":
+        raise InvalidRoleAssignmentError("Cannot remove baseline STUDENT role from user.")
+    if norm_code not in ("INSTRUCTOR", "ADMIN"):
+        raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
+
+    current_codes = set(user.role_codes)
+    if norm_code not in current_codes:
+        return user  # Role already absent, idempotent
+
+    # Enforce cumulative downgrade
+    roles_to_remove = {"INSTRUCTOR", "ADMIN"} if norm_code == "INSTRUCTOR" else {"ADMIN"}
+
+    new_role_codes = current_codes - roles_to_remove
+    if not validate_role_combination(new_role_codes):
+        raise InvalidRoleAssignmentError(
+            f"Resulting role set {new_role_codes} is not an allowed cumulative combination."
+        )
+
+    before_roles = sorted(current_codes)
+    now = utc_now()
+
+    # Remove UserRole records via relationship
+    for code in roles_to_remove:
+        matching = [r for r in user.roles if r.code == code]
+        for r in matching:
+            user.roles.remove(r)
+
+    after_roles = sorted(new_role_codes)
+    user.auth_version += 1
+    user.updated_at = now
+
+    actor_roles = "SYSTEM"
+    performed_as_admin = False
+    if removed_by_user_id is not None:
+        remover = sess.get(User, removed_by_user_id)
+        if remover is not None:
+            actor_roles = ",".join(sorted(remover.role_codes))
+            performed_as_admin = remover.is_admin
+
+    audit_entry = AuditEvent(
+        actor_user_id=removed_by_user_id,
+        actor_roles_snapshot=actor_roles,
+        action="USER_ROLE_REVOKED",
+        target_type="USER",
+        target_id=user.id,
+        reason=reason,
+        before_json=json.dumps({"roles": before_roles}),
+        after_json=json.dumps({"roles": after_roles}),
+        performed_as_admin=performed_as_admin,
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    try:
+        sess.commit()
+        sess.expire_all()
+        sess.refresh(user)
     except Exception:
         sess.rollback()
         raise

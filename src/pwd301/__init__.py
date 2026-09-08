@@ -14,17 +14,34 @@ import uuid
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, Response, g, jsonify, make_response, redirect, request, session, url_for
+from flask import (
+    Flask,
+    Response,
+    g,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 from werkzeug.exceptions import HTTPException
 
 import pwd301.models  # noqa: F401
+from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
+from pwd301.blueprints.instructor import instructor_bp
+from pwd301.blueprints.student import student_bp
 from pwd301.cli import register_cli_commands
 from pwd301.config import config_by_name
 from pwd301.extensions import csrf, db, login_manager, migrate
+from pwd301.models.identity import AnonymousUser
+from pwd301.services.exceptions import ForbiddenError, ResourceNotFoundError
 
 __version__ = "0.0.0"
 
@@ -90,6 +107,21 @@ def _format_error_response(
             status_code,
         )
 
+    if status_code == 403:
+        try:
+            rendered = render_template(
+                "errors/403.html",
+                status_code=403,
+                code=code,
+                message=message,
+                correlation_id=correlation_id,
+            )
+            response = make_response(rendered, 403)
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+        except Exception:
+            pass
+
     html_content = (
         f"<!DOCTYPE html>\n"
         f'<html lang="en">\n'
@@ -117,11 +149,35 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=400,
         )
 
+    @app.errorhandler(403)
+    def forbidden_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="FORBIDDEN",
+            message=getattr(error, "description", "Access denied: insufficient permissions."),
+            status_code=403,
+        )
+
+    @app.errorhandler(ForbiddenError)
+    def domain_forbidden_error(error: ForbiddenError) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="FORBIDDEN",
+            message=str(error),
+            status_code=403,
+        )
+
     @app.errorhandler(404)
     def not_found_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
         return _format_error_response(
             code="RESOURCE_NOT_FOUND",
             message=getattr(error, "description", "The requested resource was not found."),
+            status_code=404,
+        )
+
+    @app.errorhandler(ResourceNotFoundError)
+    def domain_not_found_error(error: ResourceNotFoundError) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
             status_code=404,
         )
 
@@ -195,6 +251,52 @@ def create_app(config_name: str | None = None) -> Flask:
     migrate.init_app(app, db)
     csrf.init_app(app)
     login_manager.init_app(app)
+    login_manager.anonymous_user = AnonymousUser
+
+    # Template context processor for auth & role helpers
+    @app.context_processor
+    def inject_auth_helpers() -> dict[str, Any]:
+        actor = None
+        if hasattr(g, "current_user") and g.current_user is not None:
+            actor = g.current_user
+        elif current_user and current_user.is_authenticated:
+            actor = current_user
+
+        def has_role(role_code: str) -> bool:
+            if actor is None:
+                return False
+            return actor.has_role(role_code)
+
+        def has_any_role(*role_codes: str) -> bool:
+            if actor is None:
+                return False
+            return actor.has_any_role(*role_codes)
+
+        def is_admin() -> bool:
+            return actor.is_admin if actor else False
+
+        def is_instructor() -> bool:
+            return actor.is_instructor if actor else False
+
+        def is_student() -> bool:
+            return actor.is_student if actor else False
+
+        def check_can_manage_course(course: Any) -> bool:
+            from pwd301.services.authorization_service import can_manage_course
+
+            return can_manage_course(actor, course)
+
+        roles_list = sorted(actor.role_codes) if actor else []
+
+        return {
+            "has_role": has_role,
+            "has_any_role": has_any_role,
+            "is_admin": is_admin,
+            "is_instructor": is_instructor,
+            "is_student": is_student,
+            "can_manage_course": check_can_manage_course,
+            "user_roles": roles_list,
+        }
 
     @login_manager.user_loader
     def load_user(user_id: str) -> Any:
@@ -254,6 +356,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
+    app.register_blueprint(student_bp)
+    app.register_blueprint(instructor_bp)
+    app.register_blueprint(admin_bp)
 
     # Exempt REST API blueprint from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)

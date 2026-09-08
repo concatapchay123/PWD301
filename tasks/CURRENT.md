@@ -1,75 +1,74 @@
 # CURRENT TASK
 
-## TASK-004 — Authentication & Identity Workflows (Web Session + JWT REST)
+## TASK-005 — Authorization & Role-Based Access Control (RBAC & Resource Ownership)
 
 **Status:** DONE
 
 ### 1. Goal
-Xây dựng hệ thống xác thực kép (Dual Authentication) cho PWD301:
-1. **Web UI / AJAX:** Sử dụng Flask-Login với Session Cookies (HttpOnly) và CSRF protection. Tuyệt đối không dùng/lưu JWT vào localStorage cho client Web.
-2. **REST API:** Sử dụng JWT Bearer token theo chuẩn RFC 7519 cho các API clients ngoài Web UI.
-3. **Session Revocation:** Quản lý vòng đời phiên đăng nhập thông qua `AuthSession` và `JwtTokenGrant`, hỗ trợ thu hồi toàn cục khi người dùng đổi mật khẩu hoặc bị khóa tài khoản thông qua trường `auth_version` của `User`.
+Xây dựng hệ thống phân quyền (Authorization) toàn diện cho dự án PWD301 kết hợp giữa Role-Based Access Control (RBAC) để kiểm soát các nhóm tính năng, và Resource/Object-level Authorization để kiểm soát quyền sở hữu dữ liệu (Ownership) nhằm ngăn chặn tuyệt đối các lỗ hổng IDOR (Insecure Direct Object Reference).
 
 ### 2. Source-of-truth documents
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/01_AUTHENTICATION_ARCHITECTURE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/02_USER_ACCOUNT_LIFECYCLE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
-- Canonical DDL: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/001_identity.sql` (`users`, `auth_sessions`, `jwt_token_grants`).
-- Frontend preview reference: `frontend-preview/views/login.html`, `frontend-preview/views/register.html`.
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/01_RBAC_MODEL.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/02_PERMISSION_MATRIX.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/03_RESOURCE_AUTHORIZATION_RULES.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/04_ADMIN_PERMISSION_RULES.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/05_IDOR_PREVENTION.md`
+- `AGENTS.md` (Role blueprints, session vs JWT auth, invariants, verification rules)
 
 ### 3. In scope
-1. **Session Authentication Service (`session_auth_service.py`):**
-   - Băm session key bằng SHA-256 (`Binary32`) lưu vào bảng `auth_sessions`.
-   - Sinh session, kiểm tra session hợp lệ (`is_revoked`, `expires_at`, `auth_version`).
-   - Thu hồi phiên đơn lẻ (`revoke_auth_session`) và toàn bộ phiên người dùng (`revoke_all_user_sessions`).
-2. **JWT Authentication Service (`jwt_auth_service.py`):**
-   - Sinh cặp Access Token (ngắn hạn: 15 phút) và Refresh Token (dài hạn: 7 ngày) ký bằng `JWT_SECRET_KEY` (HS256).
-   - Lưu trữ và đối chiếu metadata trong `jwt_token_grants` theo `session_family_id`.
-   - Cơ chế xoay vòng Refresh Token (Refresh Token Rotation) và phát hiện tấn công tái sử dụng (Replay Attack) dẫn tới hủy toàn bộ token family.
-   - Decorator `@jwt_required` bảo vệ REST API endpoints.
-3. **User Service Updates (`user_service.py`):**
-   - Khi đổi mật khẩu (`change_password`, `set_password`), tự động tăng `auth_version` và gọi thu hồi toàn bộ session + JWT.
-   - Bổ sung hàm `suspend_user` khóa tài khoản và thu hồi toàn bộ phiên đăng nhập.
-4. **Web UI Blueprint & Templates (`src/pwd301/blueprints/auth/`):**
-   - Routes: `GET /auth/login`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/register`, `POST /auth/register`.
-   - Tích hợp Flask-Login (`login_user`, `logout_user`, `@login_required`).
-   - Templates: `login.html`, `register.html` dựa trên `frontend-preview/`.
-5. **REST API Blueprint (`src/pwd301/blueprints/api_auth/`):**
-   - Endpoints: `POST /api/v1/auth/token`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/revoke`, `GET /api/v1/auth/me`.
-   - Miễn trừ CSRF cho blueprint REST API theo đúng chuẩn Bearer Token.
-6. **Application Factory Integration (`src/pwd301/__init__.py`):**
-   - Cấu hình `login_manager.user_loader` xác thực cả user status, `auth_version` và `AuthSession` trong CSDL.
-   - Cấu hình `login_manager.unauthorized_handler` phân biệt Web (redirect) và AJAX/JSON (401).
-7. **Comprehensive Unit & Integration Test Suites:**
-   - Unit tests: `tests/unit/test_session_auth_service.py`, `tests/unit/test_jwt_auth_service.py`.
-   - API tests: `tests/api/test_auth_web.py`, `tests/api/test_auth_jwt.py`.
+1. **RBAC Model & Role Hierarchy (`User` model & `user_service.py`):**
+   - Hỗ trợ mô hình tích lũy quyền (Cumulative Capability): `{"STUDENT"}`, `{"STUDENT", "INSTRUCTOR"}`, `{"STUDENT", "INSTRUCTOR", "ADMIN"}`.
+   - Thêm phương thức kiểm tra role: `has_role`, `has_any_role`, `has_all_roles`, `is_admin`, `is_instructor`, `is_student`.
+   - `AnonymousUser` an toàn trả về `False` cho mọi kiểm tra role.
+   - Gán/hủy role với kiểm soát đóng bao tích lũy (`assign_role_to_user`, `remove_role_from_user`), ghi nhật ký append-only vào `AuditEvent`, tăng `auth_version` làm mới token/session.
+2. **Authorization Service (`src/pwd301/services/authorization_service.py`):**
+   - Bộ giải quyết ngữ cảnh actor (`get_authenticated_actor`): Hỗ trợ đồng bộ cả Web Session (Flask-Login `current_user`) và REST API JWT Bearer token (`request.headers` Authoritative resolution & `g.current_user`).
+   - Route decorators: `@require_roles(*role_codes)`, `@admin_required`, `@instructor_required`, `@student_required`. Xử lý phân biệt request Web (chuyển hướng login hoặc abort 403) và REST API/JSON (trả về JSON 401 hoặc 403).
+   - Resource-level authorization & IDOR prevention helpers: `can_view_course`, `can_manage_course`, `can_access_student_data`, `can_manage_lesson`, `can_manage_question`, `can_manage_assessment`, `can_access_attempt`, `can_submit_attempt`, `can_grade_attempt`.
+   - Assertion wrappers: `require_course_manager`, `require_student_data_access`, `require_attempt_access`, `require_attempt_submission_owner`.
+3. **Exceptions & HTTP 403 Error Handling:**
+   - Định nghĩa `ForbiddenError`, `ResourceNotFoundError`, `InvalidRoleAssignmentError`, `AuthorizationError`.
+   - Template giao diện chuẩn `src/pwd301/templates/errors/403.html` tương thích thiết kế `frontend-preview/`.
+   - Đăng ký error handlers tập trung tại application factory (`src/pwd301/__init__.py`).
+4. **Role-Based Blueprints:**
+   - Blueprint `student` (`/student`): Dashboard và xem tiến độ học tập khóa học theo đúng quyền sở hữu của học viên.
+   - Blueprint `instructor` (`/instructor`): Dashboard quản lý khóa học, trang quản lý chi tiết khóa học sở hữu (`/courses/<id>/manage`), và xem chi tiết học viên trong khóa học (`/courses/<id>/students/<student_id>`).
+   - Blueprint `admin` (`/admin`): Dashboard tổng quan hệ thống và endpoint phân quyền tài khoản người dùng (`/users/<user_id>/roles`).
+5. **Jinja Context Processors:**
+   - Expose các hàm kiểm tra quyền vào Jinja templates: `has_role`, `has_any_role`, `is_admin`, `is_instructor`, `is_student`, `can_manage_course`, `user_roles`.
+6. **Testing & Security Verification:**
+   - Unit tests: `tests/unit/test_authorization_service.py` (10 tests, 22 assertions bao phủ đầy đủ logic).
+   - Security negative & IDOR integration tests: `tests/security/test_rbac_and_idor.py` (12 tests).
 
 ### 4. Out of scope
-- **Role-Based Access Control (RBAC)** — Scheduled for TASK-005.
-- **External Caching / In-memory Redis store** — Quản lý token/session dựa hoàn toàn trên database theo System Specification.
-- **Email Delivery (SMTP/SendGrid)** — Scheduled for TASK-021.
+- Course content editing UI / rich text editor (Scheduled for TASK-007).
+- Real-time Assessment taking engine & autosave WebSockets (Scheduled for TASK-012/013).
+- Automated AI grading / RAG ingestion (Scheduled for TASK-017/018).
 
 ### 5. Security & Invariants
-- **Bất biến 1:** Web UI chỉ dùng Session Cookies (`HttpOnly`, `SameSite=Lax`), CSRF protection enabled. Tuyệt đối không lưu JWT vào localStorage.
-- **Bất biến 2:** Khóa bí mật JWT (`JWT_SECRET_KEY`) tách biệt hoàn toàn với Flask `SECRET_KEY`.
-- **Bất biến 3:** Mọi thay đổi thông tin xác thực (đổi mật khẩu) hoặc khóa tài khoản (`SUSPENDED`) tăng `auth_version` và thu hồi tức thì toàn bộ phiên đăng nhập (Web & JWT).
-- **Bất biến 4:** Refresh token rotation phát hiện replay attack và thu hồi ngay lập tức toàn bộ họ token (`session_family_id`).
+- **Bất biến 1:** Fail-closed authorization — Mọi kiểm tra quyền mặc định từ chối (`return False` hoặc ném `ForbiddenError`) nếu thông tin actor không xác định hoặc không hợp lệ.
+- **Bất biến 2:** IDOR Prevention — Không bao giờ tin cậy ID do client gửi lên; luôn nạp thực thể từ CSDL và kiểm tra quyền sở hữu tương ứng.
+- **Bất biến 3:** Giảng viên chỉ được quản lý khóa học và xem dữ liệu học viên của các khóa học mà mình đang trực tiếp phụ trách (`owner_instructor_id == actor.id`).
+- **Bất biến 4:** Nộp bài kiểm tra (`can_submit_attempt`) là bất biến "Own only": Chỉ chính sinh viên sở hữu bài làm (`attempt.student_user_id == actor.id`) mới có quyền nộp bài; Giảng viên và Quản trị viên bị cấm tuyệt đối nộp bài thay sinh viên.
+- **Bất biến 5:** Quản trị viên (Admin) có quyền quản trị toàn hệ thống theo `04_ADMIN_PERMISSION_RULES.md`, các thao tác nhạy cảm yêu cầu lý do/nhật ký kiểm toán (`AuditEvent`).
+- **Bất biến 6:** Bearer token trong header `Authorization` có tính chất server-authoritative cho REST API, không bị rò rỉ hoặc nhầm lẫn với session cookies của Web UI.
 
-### 6. Acceptance Criteria & Kiểm thử (Checklist)
-- [x] Tạo session đăng nhập Web lưu bản băm SHA-256 vào `AuthSession`, kiểm tra cookie HttpOnly.
-- [x] Đăng xuất Web xóa session cookie và đánh dấu `is_revoked = True` trong CSDL.
-- [x] Đăng nhập REST API sinh cặp Access Token (15m) và Refresh Token (7d).
-- [x] Xoay vòng Refresh Token thành công, nếu dùng lại token cũ sẽ thu hồi toàn bộ token family.
-- [x] Khi đổi mật khẩu hoặc đình chỉ tài khoản, `auth_version` tăng lên và toàn bộ session/JWT cũ bị từ chối xác thực.
-- [x] Route `/api/v1/auth/me` yêu cầu Bearer token hợp lệ, trả về thông tin user.
-- [x] Bộ test suite đạt 112/112 tests pass, 0 lỗi linter/format/types.
+### 6. Acceptance Criteria (Checklist)
+- [x] Decorator `@require_roles` từ chối người dùng chưa xác thực (401 cho API, chuyển hướng Login cho Web UI).
+- [x] Decorator `@require_roles` từ chối người dùng không đủ quyền (403 Forbidden dạng JSON cho API, hiển thị `403.html` cho Web UI).
+- [x] Giảng viên A truy cập vào trang quản lý khóa học của Giảng viên B bị chặn với HTTP 403 (IDOR test).
+- [x] Giảng viên A truy vấn dữ liệu học viên của một khóa học mà mình không quản lý bị chặn với HTTP 403 (IDOR test).
+- [x] Học viên chỉ có thể xem tiến độ các khóa học mà mình thực sự đăng ký.
+- [x] Bất biến "Own only" trong việc nộp bài thi được bảo vệ tuyệt đối.
+- [x] REST API xác thực qua Bearer JWT tuân thủ đồng nhất 100% các quy tắc RBAC & IDOR như Web UI.
+- [x] Toàn bộ test suite (134 tests) vượt qua kiểm thử thành công, 0 lỗi linter/formatting/typing.
 
 ### 7. Verification commands
-1. `pytest tests/ -v` (112 passed in 25.03s).
-2. `mypy src/` (Success: no issues found in 30 source files).
-3. `ruff check src tests scripts` (All checks passed).
-4. `ruff format --check src tests scripts` (42 files already formatted).
-5. `./scripts/verify.ps1` (Toàn bộ pipeline: repository contract, lint, format, types, 112 tests pass).
+1. `pytest tests/unit/test_authorization_service.py tests/security/test_rbac_and_idor.py -v` (22 passed).
+2. `mypy src/` (Success: no issues found in 37 source files).
+3. `ruff check src tests` (All checks passed).
+4. `ruff format --check src tests` (51 files already formatted).
+5. `./scripts/verify.ps1` (Toàn bộ pipeline: repository contract, lint, format, types, 134 tests pass).
 
 ---
 
@@ -77,59 +76,56 @@ Xây dựng hệ thống xác thực kép (Dual Authentication) cho PWD301:
 
 ### A. Scope and sources consulted
 - Operating contract: `AGENTS.md`
-- Authentication architecture: `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/01_AUTHENTICATION_ARCHITECTURE.md`
-- User lifecycle specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/02_USER_ACCOUNT_LIFECYCLE.md`
-- Non-negotiable invariants: `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
-- Database Architecture DDL: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/001_identity.sql`
-- Frontend Preview: `frontend-preview/views/login.html`, `frontend-preview/views/register.html`, `frontend-preview/css/app.css`
+- RBAC cumulative model: `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/01_RBAC_MODEL.md`
+- Permission matrix: `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/02_PERMISSION_MATRIX.md`
+- Resource authorization rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/03_RESOURCE_AUTHORIZATION_RULES.md`
+- Admin permission rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/04_ADMIN_PERMISSION_RULES.md`
+- IDOR prevention specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/authorization/05_IDOR_PREVENTION.md`
+- Frontend reference: `frontend-preview/` (`views/`, `app.css`)
 
 ### B. Reuse decisions
-- Reused `flask_login` (`login_user`, `logout_user`, `login_required`, `current_user`) for web session management.
-- Reused `PyJWT` (RFC 7519) with `algorithms=["HS256"]` for token creation, verification, and decoding.
-- Reused `hashlib.sha256` for database session key hashing to match `BINARY(32)` column specification.
-- Reused `src/pwd301/models/identity.py` (`User`, `AuthSession`, `JwtTokenGrant`) and `src/pwd301/services/user_service.py` for user credentials validation.
-- Reused `frontend-preview/` visual structure for Jinja templates (`login.html`, `register.html`, navbar in `base.html`).
+- Tái sử dụng quan hệ `User.roles` (`secondary="user_roles"`) và các model có sẵn trong `src/pwd301/models/`.
+- Tái sử dụng `AuditEvent` từ `src/pwd301/models/notification_audit.py` để ghi log kiểm toán phân quyền.
+- Tái sử dụng `verify_access_token` từ `src/pwd301/services/jwt_auth_service.py` để xử lý xác thực Bearer token cho REST API trong `get_authenticated_actor`.
+- Tái sử dụng cấu trúc giao diện chuẩn của `frontend-preview/` để xây dựng `403.html`.
 
 ### C. Per-file changes
-- `src/pwd301/services/exceptions.py` (MODIFY): Added authentication domain exceptions (`AuthenticationError`, `InvalidCredentialsError`, `SessionExpiredError`, `SessionRevokedError`, `JwtTokenInvalidError`, `JwtTokenExpiredError`, `JwtTokenRevokedError`, `AuthVersionMismatchError`).
-- `src/pwd301/services/session_auth_service.py` (NEW): Implemented session creation, validation, hash calculation, and granular/global revocation.
-- `src/pwd301/services/jwt_auth_service.py` (NEW): Implemented token generation, claims verification, token family rotation, replay attack revocation, and `@jwt_required` decorator.
-- `src/pwd301/services/user_service.py` (MODIFY): Connected password change and user suspension to `revoke_all_user_sessions()` and `revoke_all_user_tokens()`.
-- `src/pwd301/services/__init__.py` (MODIFY): Exported all auth services and exceptions.
-- `src/pwd301/blueprints/auth/` (NEW): Web authentication blueprint (`routes.py`) implementing login, logout, and register.
-- `src/pwd301/blueprints/api_auth/` (NEW): REST API authentication blueprint (`routes.py`) implementing `/token`, `/refresh`, `/revoke`, `/me`.
-- `src/pwd301/templates/auth/login.html` (NEW): Login template with CSRF and error alerts.
-- `src/pwd301/templates/auth/register.html` (NEW): Register template.
-- `src/pwd301/templates/base.html` (MODIFY): Updated navbar with dynamic auth status and logout form.
-- `src/pwd301/__init__.py` (MODIFY): Configured Flask-Login `user_loader` with database `AuthSession` validation, `unauthorized_handler`, blueprint registration, and CSRF exemptions for API.
-- `requirements.txt` (MODIFY): Added `PyJWT>=2.8,<3`.
-- `tests/unit/test_session_auth_service.py` (NEW): 12 unit tests for session lifecycle.
-- `tests/unit/test_jwt_auth_service.py` (NEW): 11 unit tests for JWT lifecycle and rotation.
-- `tests/api/test_auth_web.py` (NEW): 9 integration tests for Web UI authentication.
-- `tests/api/test_auth_jwt.py` (NEW): 9 integration tests for REST API authentication.
+- `src/pwd301/services/exceptions.py` (MODIFY): Bổ sung các ngoại lệ phân quyền `AuthorizationError`, `ForbiddenError`, `InvalidRoleAssignmentError`, `ResourceNotFoundError`.
+- `src/pwd301/models/identity.py` (MODIFY): Bổ sung `has_role`, `has_any_role`, `has_all_roles`, `is_admin`, `is_instructor`, `is_student`, `role_codes` cho `User`. Bổ sung lớp `AnonymousUser` kế thừa `AnonymousUserMixin`.
+- `src/pwd301/models/__init__.py` (MODIFY): Xuất khẩu `AnonymousUser`.
+- `src/pwd301/services/user_service.py` (MODIFY): Bổ sung `VALID_ROLE_COMBINATIONS`, `validate_role_combination`, `assign_role_to_user`, và `remove_role_from_user` đảm bảo bao đóng tích lũy, tăng `auth_version`, và ghi log `AuditEvent`.
+- `src/pwd301/services/authorization_service.py` (NEW): Cung cấp bộ giải quyết actor đồng bộ (`get_authenticated_actor`), decorators (`@require_roles`, `@admin_required`, `@instructor_required`, `@student_required`), các hàm vị từ kiểm tra quyền tài nguyên (`can_view_course`, `can_manage_course`, `can_access_student_data`, `can_submit_attempt`, ...), và các hàm `require_*`.
+- `src/pwd301/services/__init__.py` (MODIFY): Xuất khẩu các hàm và exception của `authorization_service`.
+- `src/pwd301/templates/errors/403.html` (NEW): Trang thông báo lỗi 403 Forbidden tương thích `frontend-preview/`.
+- `src/pwd301/__init__.py` (MODIFY): Cấu hình `login_manager.anonymous_user = AnonymousUser`, đăng ký error handlers cho 403, `ForbiddenError`, `ResourceNotFoundError`, cấu hình context processor phân quyền cho Jinja, và đăng ký các blueprint `student_bp`, `instructor_bp`, `admin_bp`.
+- `src/pwd301/blueprints/student/` (NEW): Khởi tạo blueprint student và các route `/dashboard`, `/courses/<id>/progress`.
+- `src/pwd301/blueprints/instructor/` (NEW): Khởi tạo blueprint instructor và các route `/dashboard`, `/courses/<id>/manage`, `/courses/<id>/students/<id>`.
+- `src/pwd301/blueprints/admin/` (NEW): Khởi tạo blueprint admin và các route `/dashboard`, `/users/<id>/roles`.
+- `tests/unit/test_authorization_service.py` (NEW): 10 test functions kiểm thử logic RBAC, gán role tích lũy, predicates tài nguyên, và invariants nộp bài thi.
+- `tests/security/test_rbac_and_idor.py` (NEW): 12 security integration tests kiểm thử 401 unauth, 403 role violation, IDOR phòng ngừa xâm nhập chéo giữa giảng viên, phân lập tiến độ học viên, và kiểm soát Bearer JWT.
 
 ### D. Deletion and simplification list
 | Candidate | Classification | Reason | Action |
 |---|---|---|---|
-| JWT storage in localStorage | REMOVE NOW | Invariant violation (XSS vulnerability) | Web UI strictly relies on Flask-Login HttpOnly session cookies |
-| Sharing `SECRET_KEY` for JWT | REMOVE NOW | Key isolation violation | Dedicated `JWT_SECRET_KEY` enforced in config and tests |
-| Token family tracking in external cache | SIMPLIFY NOW | Database-backed design mandated by specification | Tracked in `JwtTokenGrant` with `session_family_id` |
+| Complex dynamic permission registry tables | SIMPLIFY NOW | Theo RBAC model 01_RBAC_MODEL.md, hệ thống PWD301 sử dụng 3 vai trò tích lũy cố định: STUDENT, INSTRUCTOR, ADMIN | Sử dụng cumulative capability model trực tiếp trên bảng `roles` và `user_roles` |
+| Client-supplied user ID in attempt submission | REMOVE NOW | Nguy cơ IDOR nghiêm trọng | Luôn đối chiếu `attempt.student_user_id == actor.id` bất kể role |
+| Session fallback when invalid Bearer token is provided | REMOVE NOW | Nguy cơ rò rỉ ngữ cảnh bảo mật giữa REST API và Web cookies | Nếu request gửi header Authorization Bearer, việc xác thực token là authoritative, fail-closed khi token lỗi |
 
 ### E. Ponytails / deferred debt
-- None. Dual authentication is fully implemented, verified, and adheres to all architectural invariants.
+- None. Toàn bộ kiến trúc phân quyền RBAC và Object-level authorization đã được cài đặt chặt chẽ, đầy đủ test bao phủ các ca âm tính bảo mật.
 
 ### F. Verification actually run and results
 1. `mypy src/`:
    ```
-   Success: no issues found in 30 source files
+   Success: no issues found in 37 source files
    ```
-2. `ruff check src tests scripts`:
+2. `ruff check src tests`:
    ```
    All checks passed!
    ```
-3. `ruff format --check src tests scripts`:
+3. `ruff format --check src tests`:
    ```
-   42 files already formatted
+   51 files already formatted
    ```
 4. `./scripts/verify.ps1`:
    ```
@@ -145,19 +141,24 @@ Xây dựng hệ thống xác thực kép (Dual Authentication) cho PWD301:
    == Python compile ==
    == Lint / format / types ==
    All checks passed!
-   42 files already formatted
-   Success: no issues found in 30 source files
+   51 files already formatted
+   Success: no issues found in 37 source files
    == Tests ==
-   ============================ 112 passed in 25.03s =============================
+   ============================ 134 passed in 28.71s =============================
    PWD301 verification PASS
    ```
 
 ### G. Remaining risks / next step
-- Next scheduled task: **TASK-005 — Authorization & Role-Based Access Control (RBAC & Resource Ownership)**.
+- Hệ thống authorization đã sẵn sàng bảo vệ toàn bộ các tính năng nghiệp vụ tiếp theo.
+- Kế hoạch tiếp theo theo roadmap: **TASK-006 — Course Management & Lifecycle Foundation**.
 
 ---
 
 ## Historical Tasks
+
+### TASK-004 — Authentication & Identity Workflows (Web Session + JWT REST)
+**Status:** DONE  
+*Xây dựng hệ thống xác thực kép (Dual Authentication): Web UI session cookies với HttpOnly/CSRF protection và REST API JWT Bearer token theo RFC 7519, cùng cơ chế thu hồi phiên và Refresh Token Rotation.*
 
 ### TASK-003 — User / Account / Email Verification Foundation
 **Status:** DONE  

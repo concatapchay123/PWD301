@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}403 Không có quyền truy cập — PWD301 LMS{% endblock %}
+{% block meta_description %}403 Forbidden — Bạn không có quyền truy cập vào tài nguyên này.{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center py-5" style="min-height: 70vh;">
+  <div class="card shadow-sm border border-slate-200 text-center p-4 p-md-5" style="width: 100%; max-width: 520px;">
+    <div class="mb-4">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger mb-3" style="width: 72px; height: 72px;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <div class="badge bg-danger-subtle text-danger px-2.5 py-1 mb-2 fw-semibold text-uppercase" style="letter-spacing: 0.05em; font-size: 11px;">
+        Mã lỗi: 403 Forbidden
+      </div>
+      <h3 class="fw-bold text-slate-900 mb-2">Truy cập bị từ chối</h3>
+      <p class="text-slate-600 text-body mb-0">
+        {{ message or 'Tài khoản của bạn không có đủ vai trò hoặc quyền sở hữu hợp lệ để truy cập tài nguyên này.' }}
+      </p>
+    </div>
+
+    <div class="p-3 bg-slate-50 border border-slate-200 rounded text-start mb-4">
+      <div class="d-flex justify-content-between text-caption text-muted mb-1">
+        <span>Mã phân tích hệ thống (Correlation ID):</span>
+      </div>
+      <code class="text-break text-slate-800 fw-mono" style="font-size: 12px;">{{ correlation_id }}</code>
+    </div>
+
+    <div class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
+      <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm px-3 py-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Quay lại
+      </a>
+      <a href="{{ url_for('core.index') }}" class="btn btn-primary btn-sm px-4 py-2 fw-semibold">
+        Về trang danh mục khóa học
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

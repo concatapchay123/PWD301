@@ -72,6 +72,7 @@ from pwd301.models.file_import import (
     QuestionRevisionResource,
 )
 from pwd301.models.identity import (
+    AnonymousUser,
     AuthSession,
     InstructorApplication,
     JwtTokenGrant,
@@ -108,6 +109,7 @@ from pwd301.models.types import register_sqlite_functions
 __all__ = [
     # Identity & Auth
     "User",
+    "AnonymousUser",
     "Role",
     "UserRole",
     "AuthSession",
