@@ -1,8 +1,6 @@
 # PWD301 — Online Course Management Platform
 
 > **MASTER PROJECT README / COMPLETE PROJECT KNOWLEDGE BASE / HUMAN-READABLE SOURCE OF TRUTH**
->
-> File này tái cấu trúc toàn bộ kiến thức dự án PWD301 đã được chốt qua Plan Mode, full-context handoff, rubric môn học, Database Architecture đã QA và System Specification đã QA thành **một tài liệu duy nhất**. Mục tiêu là để User, developer mới, reviewer hoặc coding agent có thể đọc từ đầu tới cuối và hiểu cả nghiệp vụ lẫn các ràng buộc kỹ thuật mà không phải tự phát minh lại business rule.
 
 **Trạng thái nguồn tại thời điểm tạo README**
 
