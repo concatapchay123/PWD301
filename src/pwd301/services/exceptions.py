@@ -97,3 +97,27 @@ class InvalidRoleAssignmentError(AuthorizationError):
 
 class ResourceNotFoundError(ServiceError):
     """Raised when a requested resource (course, lesson, question, etc.) cannot be found."""
+
+
+class CourseError(ServiceError):
+    """Base exception for all course domain errors."""
+
+
+class CourseAlreadyExistsError(CourseError):
+    """Raised when a course with the same code or title already exists."""
+
+
+class CourseNotFoundError(ResourceNotFoundError):
+    """Raised when a requested course cannot be found."""
+
+
+class CourseStateViolationError(CourseError):
+    """Raised when an illegal course state machine transition is attempted."""
+
+
+class CourseDependencyError(CourseError):
+    """Raised when an action is blocked by course prerequisite dependencies."""
+
+
+class CourseValidationError(CourseError):
+    """Raised when course metadata fails domain validation rules."""

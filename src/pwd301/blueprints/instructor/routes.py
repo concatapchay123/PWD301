@@ -1,8 +1,8 @@
-"""Route handlers for the instructor role blueprint."""
-
 from __future__ import annotations
 
-from flask import Response, jsonify
+from typing import Any
+
+from flask import Response, jsonify, request
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
@@ -13,6 +13,29 @@ from pwd301.services.authorization_service import (
     require_course_manager,
     require_student_data_access,
 )
+from pwd301.services.course_service import (
+    change_course_status,
+    create_course,
+    get_course_detail,
+    trash_course,
+    update_course,
+)
+
+
+def _serialize_course(c: Course) -> dict[str, Any]:
+    return {
+        "course_id": str(c.public_id),
+        "course_code": c.course_code,
+        "title": c.title,
+        "description": c.description,
+        "category": c.category,
+        "difficulty": c.difficulty,
+        "capacity": c.capacity,
+        "status": c.status,
+        "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
+        "created_at": c.created_at.isoformat(),
+        "updated_at": c.updated_at.isoformat(),
+    }
 
 
 @instructor_bp.route("/dashboard", methods=["GET"])
@@ -117,3 +140,69 @@ def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] 
         "enrollment_status": enrollment.status if enrollment else None,
     }
     return jsonify(data), 200
+
+
+@instructor_bp.route("/courses", methods=["POST"])
+@instructor_required
+def create_course_route() -> tuple[Response, int] | Response:
+    """Create a new course in DRAFT status."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    course = create_course(actor, payload)
+    return jsonify(_serialize_course(course)), 201
+
+
+@instructor_bp.route("/courses/<course_id>", methods=["GET"])
+@instructor_required
+def get_course_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get detailed course information for managing."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    course = get_course_detail(actor, course_id)
+    return jsonify(_serialize_course(course)), 200
+
+
+@instructor_bp.route("/courses/<course_id>", methods=["PATCH", "PUT"])
+@instructor_required
+def update_course_route(course_id: str) -> tuple[Response, int] | Response:
+    """Update editable course metadata with mass-assignment defense."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    course = update_course(actor, course_id, payload)
+    return jsonify(_serialize_course(course)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/submit", methods=["POST"])
+@instructor_required
+def submit_course_route(course_id: str) -> tuple[Response, int] | Response:
+    """Submit a DRAFT course for admin review."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    course = change_course_status(
+        actor,
+        course_id,
+        "SUBMITTED_FOR_REVIEW",
+        reason=reason,
+    )
+    return jsonify(_serialize_course(course)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
+@instructor_required
+def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a course to TRASH."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    course = trash_course(actor, course_id, reason=reason)
+    return jsonify(_serialize_course(course)), 200

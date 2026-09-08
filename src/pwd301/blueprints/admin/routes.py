@@ -1,6 +1,6 @@
-"""Route handlers for the admin role blueprint."""
-
 from __future__ import annotations
+
+from typing import Any
 
 from flask import Response, jsonify, request
 
@@ -13,11 +13,28 @@ from pwd301.services.authorization_service import (
     admin_required,
     get_authenticated_actor,
 )
+from pwd301.services.course_service import (
+    change_course_status,
+    reassign_course_owner,
+    trash_course,
+)
 from pwd301.services.exceptions import (
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
 )
 from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
+
+
+def _serialize_course(c: Course) -> dict[str, Any]:
+    return {
+        "course_id": str(c.public_id),
+        "course_code": c.course_code,
+        "title": c.title,
+        "status": c.status,
+        "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
+        "created_at": c.created_at.isoformat(),
+        "updated_at": c.updated_at.isoformat(),
+    }
 
 
 @admin_bp.route("/dashboard", methods=["GET"])
@@ -110,3 +127,134 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
         ),
         200,
     )
+
+
+@admin_bp.route("/courses/pending", methods=["GET"])
+@admin_required
+def list_pending_courses() -> tuple[Response, int] | Response:
+    """List all courses currently submitted for review."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    sess = db.session
+    pending_courses = (
+        sess.query(Course)
+        .filter(
+            Course.status == "SUBMITTED_FOR_REVIEW",
+            Course.deleted_at.is_(None),
+        )
+        .order_by(Course.created_at.desc())
+        .all()
+    )
+
+    data = {
+        "pending_count": len(pending_courses),
+        "courses": [_serialize_course(c) for c in pending_courses],
+    }
+    return jsonify(data), 200
+
+
+@admin_bp.route("/courses/<course_id>/review", methods=["POST"])
+@admin_required
+def review_course(course_id: str) -> tuple[Response, int] | Response:
+    """Approve or reject a submitted course (Admin only)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = str(payload.get("action", "")).strip().lower()
+    reason = payload.get("reason")
+
+    if action not in ("approve", "reject"):
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Action must be 'approve' or 'reject'.",
+                    }
+                }
+            ),
+            400,
+        )
+
+    target_status = "APPROVED" if action == "approve" else "DRAFT"
+    course = change_course_status(
+        actor=actor,
+        course_id=course_id,
+        new_status=target_status,
+        reason=reason,
+    )
+    return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/courses/<course_id>/reassign", methods=["POST"])
+@admin_required
+def reassign_course(course_id: str) -> tuple[Response, int] | Response:
+    """Reassign course instructor ownership (Admin only)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    new_instructor_id = payload.get("new_instructor_id")
+    reason = payload.get("reason")
+
+    course = reassign_course_owner(
+        admin_actor=actor,
+        course_id=course_id,
+        new_instructor_id=new_instructor_id,
+        reason=reason,
+    )
+    return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/courses/<course_id>/publish", methods=["POST"])
+@admin_required
+def publish_course(course_id: str) -> tuple[Response, int] | Response:
+    """Publish an approved course (Admin only)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    course = change_course_status(
+        actor=actor,
+        course_id=course_id,
+        new_status="PUBLISHED",
+        reason=reason,
+    )
+    return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
+@admin_required
+def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a course to TRASH (Admin)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    course = trash_course(actor=actor, course_id=course_id, reason=reason)
+    return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/courses/<course_id>/restore", methods=["POST"])
+@admin_required
+def restore_course(course_id: str) -> tuple[Response, int] | Response:
+    """Restore a course from TRASH back to ARCHIVED (Admin only)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    course = change_course_status(
+        actor=actor,
+        course_id=course_id,
+        new_status="ARCHIVED",
+        reason=reason,
+    )
+    return jsonify(_serialize_course(course)), 200
