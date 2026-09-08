@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Flask/runtime local state
+instance/*
+!instance/.gitkeep
+logs/
+*.log
+
+# Generated/uploaded data and local storage
+storage/
+uploads/
+quarantine/
+backups/
+exports/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build/package
+build/
+dist/
+*.egg-info/
+
+# Local archives and generated packages
+_archives/
+*.zip
+*.zip.sha256
+
+# SQL Server local artifacts
+*.bak
+*.trn
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo

@@ -1,0 +1,3 @@
+# Migration and Seed Plan
+
+Use Flask-Migrate/Alembic targeting SQL Server; translate validated reference DDL in numeric dependency order. Prefer additive migration → backfill → validate → add constraint/index for upgrades. Seed only deterministic reference/demo-safe data: roles STUDENT/INSTRUCTOR/ADMIN, assessment type/config lookup values if represented as rows, safe notification/config categories and demo Course/User data only through development seed mechanism. Never seed hardcoded real passwords/tokens/API keys; demo password comes from explicit development setup and is not production credential.

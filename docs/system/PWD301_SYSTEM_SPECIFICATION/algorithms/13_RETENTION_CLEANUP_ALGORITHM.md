@@ -1,0 +1,3 @@
+# Retention Cleanup Algorithm
+
+Worker selects only records whose explicit retention/recovery deadline passed. For EnrollmentPeriod left >30 days without rejoin, mark/detail-purge in small resumable batches: answer events/autosave and detailed attempt learning records allowed by policy; preserve compact completion/prerequisite/final summary. Never delete exposed QuestionRevision, important audit, or historical records still referenced. File blobs require zero logical references plus expired recovery. AI conversations/messages purge at five-minute inactivity expiry. Jobs are idempotent and record counts/errors.

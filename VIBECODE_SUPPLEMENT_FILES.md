@@ -1,0 +1,107 @@
+# Vibecode Supplement File List
+
+This package intentionally contains only files absent from `PWD301_CLEAN_STRUCTURE.zip`.
+
+- Total supplement files: **95**
+- Markdown: **69**
+- Python: **3**
+- PowerShell: **4**
+- Shell: **4**
+
+## Files
+
+- `.editorconfig`
+- `.env.example`
+- `.gitattributes`
+- `.github/workflows/ci.yml`
+- `.gitignore`
+- `AGENT.md`
+- `AGENTS.md`
+- `BOOTSTRAP_MANIFEST.md`
+- `CONTRIBUTING.md`
+- `VIBECODE_SUPPLEMENT_FILES.md`
+- `docs/00_PROJECT_OVERVIEW.md`
+- `docs/01_REQUIREMENTS.md`
+- `docs/02_SYSTEM_ARCHITECTURE.md`
+- `docs/03_DATABASE_ARCHITECTURE.md`
+- `docs/04_API_SPECIFICATION.md`
+- `docs/05_FRONTEND_SPECIFICATION.md`
+- `docs/06_SECURITY_SPECIFICATION.md`
+- `docs/07_BUSINESS_RULES.md`
+- `docs/08_DATA_LIFECYCLE.md`
+- `docs/09_TESTING_STRATEGY.md`
+- `docs/10_DEPLOYMENT.md`
+- `docs/11_OBSERVABILITY.md`
+- `docs/12_CODING_STANDARDS.md`
+- `docs/13_ACCEPTANCE_CRITERIA.md`
+- `docs/14_ROADMAP.md`
+- `docs/README.md`
+- `docs/decisions/ADR-001-session-web-jwt-rest.md`
+- `docs/decisions/ADR-002-database-identifiers.md`
+- `docs/decisions/ADR-003-question-revisions.md`
+- `docs/decisions/ADR-004-attempt-snapshot.md`
+- `docs/decisions/ADR-005-attempt-lease.md`
+- `docs/decisions/ADR-006-server-timer.md`
+- `docs/decisions/ADR-007-background-regrade.md`
+- `docs/decisions/ADR-008-file-physical-logical.md`
+- `docs/decisions/ADR-009-versioned-rag.md`
+- `docs/decisions/ADR-010-append-only-audit.md`
+- `docs/decisions/README.md`
+- `docs/diagrams/README.md`
+- `docs/diagrams/container-diagram.md`
+- `docs/diagrams/erd.md`
+- `docs/diagrams/sequence-diagrams.md`
+- `docs/diagrams/system-context.md`
+- `docs/features/README.md`
+- `docs/features/admin.md`
+- `docs/features/ai-rag.md`
+- `docs/features/assessments.md`
+- `docs/features/attempts.md`
+- `docs/features/authentication.md`
+- `docs/features/courses.md`
+- `docs/features/enrollments.md`
+- `docs/features/files-import.md`
+- `docs/features/grading-regrading.md`
+- `docs/features/lessons.md`
+- `docs/features/notifications.md`
+- `docs/features/question-bank.md`
+- `docs/features/users.md`
+- `instance/.gitkeep`
+- `migrations/.gitkeep`
+- `prompts/BUG_FIX.md`
+- `prompts/CODE_REVIEW.md`
+- `prompts/CODING_AGENT_SYSTEM_PROMPT.md`
+- `prompts/DATABASE_CHANGE.md`
+- `prompts/IMPLEMENT_FEATURE.md`
+- `prompts/PROJECT_CONTEXT.md`
+- `prompts/README.md`
+- `prompts/REFACTOR.md`
+- `prompts/RELEASE_QA.md`
+- `prompts/SECURITY_AUDIT.md`
+- `pyproject.toml`
+- `requirements-dev.txt`
+- `requirements.txt`
+- `scripts/lint.ps1`
+- `scripts/lint.sh`
+- `scripts/repo_check.py`
+- `scripts/setup.ps1`
+- `scripts/setup.sh`
+- `scripts/test.ps1`
+- `scripts/test.sh`
+- `scripts/verify.ps1`
+- `scripts/verify.sh`
+- `src/pwd301/__init__.py`
+- `tasks/BACKLOG.md`
+- `tasks/CURRENT.md`
+- `tasks/DONE.md`
+- `tasks/README.md`
+- `tasks/templates/BUG_TEMPLATE.md`
+- `tasks/templates/DATABASE_TASK_TEMPLATE.md`
+- `tasks/templates/SECURITY_TASK_TEMPLATE.md`
+- `tasks/templates/TASK_TEMPLATE.md`
+- `tests/api/.gitkeep`
+- `tests/concurrency/.gitkeep`
+- `tests/integration/.gitkeep`
+- `tests/security/.gitkeep`
+- `tests/test_repository_contract.py`
+- `tests/unit/.gitkeep`

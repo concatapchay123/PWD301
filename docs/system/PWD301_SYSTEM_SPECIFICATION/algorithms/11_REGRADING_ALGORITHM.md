@@ -1,0 +1,3 @@
+# Regrading Algorithm
+
+Correction transaction creates new QuestionRevision + `question_corrections` + regrade job. Worker pages affected `attempt_questions` by source Question/revision and retained eligibility. For answer-only correction, recompute grade against latest approved correct answer. For text/choice correction, apply full-credit policy to attempts started/submitted before correction effective time as locked. Never rewrite AttemptQuestion/AttemptAnswer evidence. Update current grade/result and append old/new history atomically per item; mark unique regrade item completed so retry is safe. Notify only meaningful score/result changes. Purged EnrollmentPeriod details are naturally absent/ineligible.

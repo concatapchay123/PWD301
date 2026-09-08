@@ -1,0 +1,52 @@
+[project]
+name = "pwd301-lms"
+version = "0.0.0"
+description = "PWD301 Online Course Management Platform"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "integration: tests requiring integrated application/database components",
+  "security: security-focused tests",
+  "concurrency: race/concurrency tests",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+  ".git",
+  ".venv",
+  "migrations/versions",
+  "docs",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+no_implicit_optional = true
+exclude = "migrations/"
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
