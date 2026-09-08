@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime
 
-from flask import Flask
 import pytest
+from flask import Flask
 
 from pwd301.extensions import db
 from pwd301.models.identity import User

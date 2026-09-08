@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import datetime
 import uuid
 
-from flask import Flask
 import jwt
 import pytest
+from flask import Flask
 
 from pwd301.extensions import db
 from pwd301.models.identity import JwtTokenGrant, User
@@ -15,7 +14,6 @@ from pwd301.models.types import utc_now
 from pwd301.services.exceptions import (
     AccountNotActiveError,
     AuthVersionMismatchError,
-    JwtTokenExpiredError,
     JwtTokenInvalidError,
     JwtTokenRevokedError,
 )
@@ -83,8 +81,12 @@ class TestJwtAuthService:
         access_jti = uuid.UUID(access_claims["jti"])
         refresh_jti = uuid.UUID(refresh_claims["jti"])
 
-        access_grant = db.session.query(JwtTokenGrant).filter(JwtTokenGrant.jti == access_jti).first()
-        refresh_grant = db.session.query(JwtTokenGrant).filter(JwtTokenGrant.jti == refresh_jti).first()
+        access_grant = (
+            db.session.query(JwtTokenGrant).filter(JwtTokenGrant.jti == access_jti).first()
+        )
+        refresh_grant = (
+            db.session.query(JwtTokenGrant).filter(JwtTokenGrant.jti == refresh_jti).first()
+        )
 
         assert access_grant is not None
         assert access_grant.token_type == "ACCESS"
@@ -194,6 +196,9 @@ class TestJwtAuthService:
         # Entire token family must now be revoked: refresh2 and access2 should both fail
         with pytest.raises(JwtTokenRevokedError):
             refresh_tokens(refresh2)
+
+        with pytest.raises(JwtTokenRevokedError):
+            verify_access_token(access2)
 
     def test_revoke_all_user_tokens(self, jwt_user: User) -> None:
         """Test revoking all tokens for a user."""

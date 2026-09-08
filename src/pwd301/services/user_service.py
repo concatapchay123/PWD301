@@ -30,7 +30,6 @@ from pwd301.services.exceptions import (
 from pwd301.services.jwt_auth_service import revoke_all_user_tokens
 from pwd301.services.session_auth_service import revoke_all_user_sessions
 
-
 MIN_PASSWORD_LENGTH = 8
 MAX_EMAIL_LENGTH = 320
 
@@ -366,7 +365,6 @@ def suspend_user(
         raise
 
     return user
-
 
 
 def update_profile(

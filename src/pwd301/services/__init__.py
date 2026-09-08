@@ -124,4 +124,3 @@ __all__ = [
     "revoke_all_user_tokens",
     "jwt_required",
 ]
-

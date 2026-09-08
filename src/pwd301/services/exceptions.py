@@ -81,4 +81,3 @@ class JwtTokenRevokedError(AuthenticationError):
 
 class AuthVersionMismatchError(AuthenticationError):
     """Raised when a token or session auth_version does not match current user auth_version."""
-

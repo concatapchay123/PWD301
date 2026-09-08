@@ -155,9 +155,7 @@ def validate_auth_session(
     sess = session if session is not None else db.session
     key_hash = hash_session_key(raw_session_key)
 
-    auth_session = (
-        sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    )
+    auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
     if auth_session is None:
         return None
 
@@ -211,9 +209,7 @@ def verify_auth_session_or_raise(
     sess = session if session is not None else db.session
     key_hash = hash_session_key(raw_session_key)
 
-    auth_session = (
-        sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    )
+    auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
     if auth_session is None:
         raise InvalidCredentialsError("Invalid or nonexistent session.")
 
@@ -259,9 +255,7 @@ def revoke_auth_session(
     sess = session if session is not None else db.session
     key_hash = hash_session_key(raw_session_key)
 
-    auth_session = (
-        sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    )
+    auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
     if auth_session is None:
         return False
 

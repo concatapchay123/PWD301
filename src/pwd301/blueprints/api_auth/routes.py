@@ -187,7 +187,9 @@ def revoke() -> tuple[Response, int]:
                 {
                     "error": {
                         "code": "VALIDATION_ERROR",
-                        "message": "Token must be provided in request body or Authorization header.",
+                        "message": (
+                            "Token must be provided in request body or Authorization header."
+                        ),
                         "correlation_id": getattr(g, "correlation_id", ""),
                     }
                 }
@@ -196,12 +198,15 @@ def revoke() -> tuple[Response, int]:
         )
 
     revoked = revoke_token(token)
+    message = (
+        "Token grant revoked successfully." if revoked else "Token not found or already revoked."
+    )
     return (
         jsonify(
             {
                 "status": "ok",
                 "revoked": revoked,
-                "message": "Token grant revoked successfully." if revoked else "Token not found or already revoked.",
+                "message": message,
             }
         ),
         200,

@@ -11,12 +11,13 @@ Provides RFC 7519 compliant JSON Web Token lifecycle management:
 from __future__ import annotations
 
 import datetime
-from functools import wraps
-from typing import Any, Callable
 import uuid
+from collections.abc import Callable
+from functools import wraps
+from typing import Any
 
-from flask import current_app, g, jsonify, request
 import jwt
+from flask import current_app, g, jsonify, request
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db

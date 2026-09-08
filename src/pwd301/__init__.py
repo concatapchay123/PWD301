@@ -240,6 +240,7 @@ def create_app(config_name: str | None = None) -> Flask:
     @app.before_request
     def before_request() -> None:
         g.correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
+        g.pop("_login_user", None)
 
     @app.after_request
     def after_request(response: Response) -> Response:

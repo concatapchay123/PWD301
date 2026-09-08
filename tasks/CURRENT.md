@@ -1,57 +1,75 @@
 # CURRENT TASK
 
-## TASK-003 — User / Account / Email Verification Foundation
+## TASK-004 — Authentication & Identity Workflows (Web Session + JWT REST)
 
 **Status:** DONE
 
 ### 1. Goal
-Xây dựng tầng Service (Business Logic Layer) cốt lõi để quản lý vòng đời tài khoản người dùng, băm mật khẩu (password hashing), và sinh/xác thực mã an toàn (Security Tokens) dùng cho việc xác nhận email và đặt lại mật khẩu.
+Xây dựng hệ thống xác thực kép (Dual Authentication) cho PWD301:
+1. **Web UI / AJAX:** Sử dụng Flask-Login với Session Cookies (HttpOnly) và CSRF protection. Tuyệt đối không dùng/lưu JWT vào localStorage cho client Web.
+2. **REST API:** Sử dụng JWT Bearer token theo chuẩn RFC 7519 cho các API clients ngoài Web UI.
+3. **Session Revocation:** Quản lý vòng đời phiên đăng nhập thông qua `AuthSession` và `JwtTokenGrant`, hỗ trợ thu hồi toàn cục khi người dùng đổi mật khẩu hoặc bị khóa tài khoản thông qua trường `auth_version` của `User`.
 
 ### 2. Source-of-truth documents
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/01_AUTHENTICATION_ARCHITECTURE.md`
 - `docs/system/PWD301_SYSTEM_SPECIFICATION/business/02_USER_ACCOUNT_LIFECYCLE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/04_EMAIL_VERIFICATION.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/05_PASSWORD_AND_REAUTHENTICATION.md`
-- Bảng DB liên quan: `User`, `Role`, `UserRole`, `UserSecurityToken` (trong `src/pwd301/models/identity.py`).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
+- Canonical DDL: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/001_identity.sql` (`users`, `auth_sessions`, `jwt_token_grants`).
+- Frontend preview reference: `frontend-preview/views/login.html`, `frontend-preview/views/register.html`.
 
 ### 3. In scope
-Tạo các module tại `src/pwd301/services/` (bao gồm `exceptions.py`, `user_service.py`, `auth_token_service.py` và `__init__.py`):
-1. **User Registration & Management:** 
-   - Khởi tạo user mới (mặc định chưa verify email, băm mật khẩu bằng `werkzeug.security.generate_password_hash`).
-   - Chuẩn hóa (normalize) email trước khi query/insert.
-   - Cập nhật thông tin profile cơ bản.
-   - Thay đổi mật khẩu (phải tự động tăng `auth_version` của User lên 1 để sau này dùng cho việc revoke session).
-2. **Security Token Lifecycle (`UserSecurityToken`):**
-   - Sinh token ngẫu nhiên an toàn (ví dụ: dùng `secrets.token_urlsafe()`).
-   - Lưu trữ bản băm của token (`token_hash`) vào cơ sở dữ liệu để chống lộ lọt nếu DB bị dump. Hàm trả về raw token cho caller.
-   - Xử lý các `purpose`: `EMAIL_VERIFY` (thường hạn 24h), `PASSWORD_RESET` (thường hạn 1h), `EMAIL_CHANGE` (hạn 24h).
-   - Hàm verify token: Kiểm tra hash, kiểm tra hạn (expires_at), và đánh dấu đã sử dụng (`consumed_at`).
-3. **Unit Tests:**
-   - Viết test suite tại `tests/unit/test_user_service.py`.
+1. **Session Authentication Service (`session_auth_service.py`):**
+   - Băm session key bằng SHA-256 (`Binary32`) lưu vào bảng `auth_sessions`.
+   - Sinh session, kiểm tra session hợp lệ (`is_revoked`, `expires_at`, `auth_version`).
+   - Thu hồi phiên đơn lẻ (`revoke_auth_session`) và toàn bộ phiên người dùng (`revoke_all_user_sessions`).
+2. **JWT Authentication Service (`jwt_auth_service.py`):**
+   - Sinh cặp Access Token (ngắn hạn: 15 phút) và Refresh Token (dài hạn: 7 ngày) ký bằng `JWT_SECRET_KEY` (HS256).
+   - Lưu trữ và đối chiếu metadata trong `jwt_token_grants` theo `session_family_id`.
+   - Cơ chế xoay vòng Refresh Token (Refresh Token Rotation) và phát hiện tấn công tái sử dụng (Replay Attack) dẫn tới hủy toàn bộ token family.
+   - Decorator `@jwt_required` bảo vệ REST API endpoints.
+3. **User Service Updates (`user_service.py`):**
+   - Khi đổi mật khẩu (`change_password`, `set_password`), tự động tăng `auth_version` và gọi thu hồi toàn bộ session + JWT.
+   - Bổ sung hàm `suspend_user` khóa tài khoản và thu hồi toàn bộ phiên đăng nhập.
+4. **Web UI Blueprint & Templates (`src/pwd301/blueprints/auth/`):**
+   - Routes: `GET /auth/login`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/register`, `POST /auth/register`.
+   - Tích hợp Flask-Login (`login_user`, `logout_user`, `@login_required`).
+   - Templates: `login.html`, `register.html` dựa trên `frontend-preview/`.
+5. **REST API Blueprint (`src/pwd301/blueprints/api_auth/`):**
+   - Endpoints: `POST /api/v1/auth/token`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/revoke`, `GET /api/v1/auth/me`.
+   - Miễn trừ CSRF cho blueprint REST API theo đúng chuẩn Bearer Token.
+6. **Application Factory Integration (`src/pwd301/__init__.py`):**
+   - Cấu hình `login_manager.user_loader` xác thực cả user status, `auth_version` và `AuthSession` trong CSDL.
+   - Cấu hình `login_manager.unauthorized_handler` phân biệt Web (redirect) và AJAX/JSON (401).
+7. **Comprehensive Unit & Integration Test Suites:**
+   - Unit tests: `tests/unit/test_session_auth_service.py`, `tests/unit/test_jwt_auth_service.py`.
+   - API tests: `tests/api/test_auth_web.py`, `tests/api/test_auth_jwt.py`.
 
 ### 4. Out of scope
-- **KHÔNG** làm chức năng Login/Session/JWT (Đó là nhiệm vụ của TASK-004).
-- **KHÔNG** tích hợp SMTP hay gửi email thật (Đó là nhiệm vụ của TASK-021). Hàm tạo token chỉ cần trả về raw token string hoặc log ra console.
-- **KHÔNG** làm Web UI/Forms.
+- **Role-Based Access Control (RBAC)** — Scheduled for TASK-005.
+- **External Caching / In-memory Redis store** — Quản lý token/session dựa hoàn toàn trên database theo System Specification.
+- **Email Delivery (SMTP/SendGrid)** — Scheduled for TASK-021.
 
 ### 5. Security & Invariants
-- **Bất biến 1:** Email là định danh duy nhất (Unique Login Identifier) và phải được chuyển thành in thường (lowercase).
-- **Bất biến 2:** Không bao giờ lưu raw password hay raw security token vào CSDL.
-- **Bất biến 3:** Xử lý ngoại lệ (Exception) chuẩn xác khi tạo user bị trùng email (bắt lỗi IntegrityError và check trước).
-- **Bất biến 4:** Giao dịch DB phải an toàn (sử dụng `db.session.commit()` hợp lý, rollback nếu xảy ra lỗi).
+- **Bất biến 1:** Web UI chỉ dùng Session Cookies (`HttpOnly`, `SameSite=Lax`), CSRF protection enabled. Tuyệt đối không lưu JWT vào localStorage.
+- **Bất biến 2:** Khóa bí mật JWT (`JWT_SECRET_KEY`) tách biệt hoàn toàn với Flask `SECRET_KEY`.
+- **Bất biến 3:** Mọi thay đổi thông tin xác thực (đổi mật khẩu) hoặc khóa tài khoản (`SUSPENDED`) tăng `auth_version` và thu hồi tức thì toàn bộ phiên đăng nhập (Web & JWT).
+- **Bất biến 4:** Refresh token rotation phát hiện replay attack và thu hồi ngay lập tức toàn bộ họ token (`session_family_id`).
 
 ### 6. Acceptance Criteria & Kiểm thử (Checklist)
-Coding Agent đã hoàn thành và tự verify các tiêu chí sau:
-- [x] Hàm tạo User hoạt động tốt, từ chối tạo nếu email đã tồn tại.
-- [x] Mật khẩu được mã hóa an toàn, hàm kiểm tra mật khẩu (`check_password_hash`) hoạt động chính xác.
-- [x] Đổi mật khẩu thành công thì cột `auth_version` của User phải được cộng thêm 1.
-- [x] Hàm tạo Security Token sinh ra được token, DB lưu bản hash SHA-256 (hoặc tương đương) của token đó.
-- [x] Token hết hạn (`expires_at < utc_now()`) hoặc đã dùng (`consumed_at IS NOT NULL`) sẽ bị từ chối xác thực.
-- [x] Xác thực email thành công thì cập nhật cột `email_verified_at` của User.
+- [x] Tạo session đăng nhập Web lưu bản băm SHA-256 vào `AuthSession`, kiểm tra cookie HttpOnly.
+- [x] Đăng xuất Web xóa session cookie và đánh dấu `is_revoked = True` trong CSDL.
+- [x] Đăng nhập REST API sinh cặp Access Token (15m) và Refresh Token (7d).
+- [x] Xoay vòng Refresh Token thành công, nếu dùng lại token cũ sẽ thu hồi toàn bộ token family.
+- [x] Khi đổi mật khẩu hoặc đình chỉ tài khoản, `auth_version` tăng lên và toàn bộ session/JWT cũ bị từ chối xác thực.
+- [x] Route `/api/v1/auth/me` yêu cầu Bearer token hợp lệ, trả về thông tin user.
+- [x] Bộ test suite đạt 112/112 tests pass, 0 lỗi linter/format/types.
 
 ### 7. Verification commands
-1. `pytest tests/unit/ -v` (59 tests pass 100%).
-2. `mypy src/pwd301/services/` (Success: no issues found in 4 source files).
-3. `./scripts/verify.ps1` (Toàn bộ pipeline: ruff format, lint, mypy, 71 tests pass).
+1. `pytest tests/ -v` (112 passed in 25.03s).
+2. `mypy src/` (Success: no issues found in 30 source files).
+3. `ruff check src tests scripts` (All checks passed).
+4. `ruff format --check src tests scripts` (42 files already formatted).
+5. `./scripts/verify.ps1` (Toàn bộ pipeline: repository contract, lint, format, types, 112 tests pass).
 
 ---
 
@@ -59,47 +77,61 @@ Coding Agent đã hoàn thành và tự verify các tiêu chí sau:
 
 ### A. Scope and sources consulted
 - Operating contract: `AGENTS.md`
-- Database Architecture: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/001_identity.sql` (`users`, `roles`, `user_roles`, `user_security_tokens`)
+- Authentication architecture: `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/01_AUTHENTICATION_ARCHITECTURE.md`
 - User lifecycle specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/02_USER_ACCOUNT_LIFECYCLE.md`
-- Email verification specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/04_EMAIL_VERIFICATION.md`
-- Password specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/authentication/05_PASSWORD_AND_REAUTHENTICATION.md`
-- Workflows specification: `docs/system/PWD301_SYSTEM_SPECIFICATION/workflows/01_USER_ACCOUNT_WORKFLOWS.md`
 - Non-negotiable invariants: `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
+- Database Architecture DDL: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/001_identity.sql`
+- Frontend Preview: `frontend-preview/views/login.html`, `frontend-preview/views/register.html`, `frontend-preview/css/app.css`
 
 ### B. Reuse decisions
-- Reused `werkzeug.security` (`generate_password_hash`, `check_password_hash`) for adaptive, secure password hashing.
-- Reused Python standard library `secrets.token_urlsafe(32)` for cryptographically secure token generation.
-- Reused standard library `hashlib.sha256` for generating 32-byte binary digests mapping directly to `Binary32` / MSSQL `BINARY(32)`.
-- Reused `pwd301.models.identity` (`User`, `Role`, `UserSecurityToken`) and `pwd301.models.types` (`utc_now`).
-- Maintained clean separation of concerns: exceptions module, user management service, and auth token service.
+- Reused `flask_login` (`login_user`, `logout_user`, `login_required`, `current_user`) for web session management.
+- Reused `PyJWT` (RFC 7519) with `algorithms=["HS256"]` for token creation, verification, and decoding.
+- Reused `hashlib.sha256` for database session key hashing to match `BINARY(32)` column specification.
+- Reused `src/pwd301/models/identity.py` (`User`, `AuthSession`, `JwtTokenGrant`) and `src/pwd301/services/user_service.py` for user credentials validation.
+- Reused `frontend-preview/` visual structure for Jinja templates (`login.html`, `register.html`, navbar in `base.html`).
 
 ### C. Per-file changes
-- `src/pwd301/services/exceptions.py` (NEW): Defined 10 domain exceptions (`ServiceError`, `UserAlreadyExistsError`, `UserNotFoundError`, `InvalidEmailError`, `InvalidPasswordError`, `AccountNotActiveError`, `InvalidTokenError`, `TokenExpiredError`, `TokenAlreadyConsumedError`, `TokenPurposeMismatchError`).
-- `src/pwd301/services/user_service.py` (NEW): Core user business logic (`normalize_email`, `validate_password`, `register_user`, `get_user_by_id`, `get_user_by_public_id`, `get_user_by_email`, `verify_password`, `change_password`, `set_password`, `update_profile`, `mark_email_verified`).
-- `src/pwd301/services/auth_token_service.py` (NEW): Security token lifecycle service (`SecurityTokenPurpose`, `hash_token`, `generate_raw_token`, `create_security_token`, `verify_security_token`, `consume_security_token`, `verify_email_with_token`, `reset_password_with_token`, `apply_email_change_with_token`).
-- `src/pwd301/services/__init__.py` (NEW): Package exports for services layer.
-- `tests/unit/test_user_service.py` (NEW): 28 comprehensive unit tests covering all user management and token lifecycle paths.
+- `src/pwd301/services/exceptions.py` (MODIFY): Added authentication domain exceptions (`AuthenticationError`, `InvalidCredentialsError`, `SessionExpiredError`, `SessionRevokedError`, `JwtTokenInvalidError`, `JwtTokenExpiredError`, `JwtTokenRevokedError`, `AuthVersionMismatchError`).
+- `src/pwd301/services/session_auth_service.py` (NEW): Implemented session creation, validation, hash calculation, and granular/global revocation.
+- `src/pwd301/services/jwt_auth_service.py` (NEW): Implemented token generation, claims verification, token family rotation, replay attack revocation, and `@jwt_required` decorator.
+- `src/pwd301/services/user_service.py` (MODIFY): Connected password change and user suspension to `revoke_all_user_sessions()` and `revoke_all_user_tokens()`.
+- `src/pwd301/services/__init__.py` (MODIFY): Exported all auth services and exceptions.
+- `src/pwd301/blueprints/auth/` (NEW): Web authentication blueprint (`routes.py`) implementing login, logout, and register.
+- `src/pwd301/blueprints/api_auth/` (NEW): REST API authentication blueprint (`routes.py`) implementing `/token`, `/refresh`, `/revoke`, `/me`.
+- `src/pwd301/templates/auth/login.html` (NEW): Login template with CSRF and error alerts.
+- `src/pwd301/templates/auth/register.html` (NEW): Register template.
+- `src/pwd301/templates/base.html` (MODIFY): Updated navbar with dynamic auth status and logout form.
+- `src/pwd301/__init__.py` (MODIFY): Configured Flask-Login `user_loader` with database `AuthSession` validation, `unauthorized_handler`, blueprint registration, and CSRF exemptions for API.
+- `requirements.txt` (MODIFY): Added `PyJWT>=2.8,<3`.
+- `tests/unit/test_session_auth_service.py` (NEW): 12 unit tests for session lifecycle.
+- `tests/unit/test_jwt_auth_service.py` (NEW): 11 unit tests for JWT lifecycle and rotation.
+- `tests/api/test_auth_web.py` (NEW): 9 integration tests for Web UI authentication.
+- `tests/api/test_auth_jwt.py` (NEW): 9 integration tests for REST API authentication.
 
 ### D. Deletion and simplification list
 | Candidate | Classification | Reason | Action |
 |---|---|---|---|
-| Direct SMTP calls | KEEP (DEFERRED) | Out of scope for TASK-003, scheduled for TASK-021 | Kept token service focused on token lifecycle and returning raw token string |
-| Login / Session / JWT routes | KEEP (DEFERRED) | Out of scope for TASK-003, scheduled for TASK-004 | Service layer foundation ready for consumption by auth endpoints |
-| Offset-naive vs aware date comparison | SIMPLIFY NOW | SQLite default driver strips timezone offsets | Added `_ensure_utc` helper to guarantee UTC-aware datetime comparisons across all DB backends |
+| JWT storage in localStorage | REMOVE NOW | Invariant violation (XSS vulnerability) | Web UI strictly relies on Flask-Login HttpOnly session cookies |
+| Sharing `SECRET_KEY` for JWT | REMOVE NOW | Key isolation violation | Dedicated `JWT_SECRET_KEY` enforced in config and tests |
+| Token family tracking in external cache | SIMPLIFY NOW | Database-backed design mandated by specification | Tracked in `JwtTokenGrant` with `session_family_id` |
 
 ### E. Ponytails / deferred debt
-- None. All requirements for TASK-003 are fully fulfilled without technical shortcuts.
+- None. Dual authentication is fully implemented, verified, and adheres to all architectural invariants.
 
 ### F. Verification actually run and results
-1. `mypy src/pwd301/services/`:
+1. `mypy src/`:
    ```
-   Success: no issues found in 4 source files
+   Success: no issues found in 30 source files
    ```
-2. `pytest tests/unit/ -v`:
+2. `ruff check src tests scripts`:
    ```
-   59 passed in 7.85s (28 tests in test_user_service.py, 31 tests across existing unit suites)
+   All checks passed!
    ```
-3. `./scripts/verify.ps1`:
+3. `ruff format --check src tests scripts`:
+   ```
+   42 files already formatted
+   ```
+4. `./scripts/verify.ps1`:
    ```
    == Repository contract ==
    PWD301 repository check: E:\PWD301
@@ -113,19 +145,23 @@ Coding Agent đã hoàn thành và tự verify các tiêu chí sau:
    == Python compile ==
    == Lint / format / types ==
    All checks passed!
-   34 files already formatted
-   Success: no issues found in 24 source files
+   42 files already formatted
+   Success: no issues found in 30 source files
    == Tests ==
-   ============================= 71 passed in 9.62s ==============================
+   ============================ 112 passed in 25.03s =============================
    PWD301 verification PASS
    ```
 
 ### G. Remaining risks / next step
-- Next scheduled task: **TASK-004 — Authentication & Identity Workflows (Web Session + JWT REST)**.
+- Next scheduled task: **TASK-005 — Authorization & Role-Based Access Control (RBAC & Resource Ownership)**.
 
 ---
 
 ## Historical Tasks
+
+### TASK-003 — User / Account / Email Verification Foundation
+**Status:** DONE  
+*Core user account management, password hashing, and secure token lifecycle for email verification and password reset.*
 
 ### TASK-002 — Domain Models & Initial SQL Server Migrations
 **Status:** DONE  
