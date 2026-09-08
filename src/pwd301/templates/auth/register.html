@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Đăng ký tài khoản — PWD301{% endblock %}
+{% block meta_description %}Tạo tài khoản học viên mới trên PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center py-5" style="min-height: 75vh;">
+  <div class="card shadow-sm border border-slate-200" style="width: 100%; max-width: 440px;">
+    <div class="card-body p-4">
+      <div class="text-center mb-4">
+        <div class="topbar-brand-mark mx-auto mb-2" style="width: 40px; height: 40px; font-size: 18px;">P3</div>
+        <h4 class="page-title mb-1">Đăng ký tài khoản</h4>
+        <p class="text-caption text-muted m-0">Tạo tài khoản học viên PWD301</p>
+      </div>
+
+      <form action="{{ url_for('auth.register') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group mb-3">
+          <label class="form-label" for="reg-name">Họ và tên <span class="text-danger">*</span></label>
+          <input type="text" name="name" id="reg-name" class="form-control form-control-sm" placeholder="Nguyễn Văn A" required autofocus>
+        </div>
+
+        <div class="form-group mb-3">
+          <label class="form-label" for="reg-email">Địa chỉ email <span class="text-danger">*</span></label>
+          <input type="email" name="email" id="reg-email" class="form-control form-control-sm" placeholder="hocvien@domain.com" required>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label" for="reg-pwd">Mật khẩu <span class="text-danger">*</span></label>
+          <input type="password" name="password" id="reg-pwd" class="form-control form-control-sm" placeholder="Tối thiểu 8 ký tự" minlength="8" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-100 py-2 fw-semibold">Đăng ký tài khoản</button>
+      </form>
+
+      <div class="text-center mt-4 pt-3 border-top border-slate-200">
+        <span class="text-caption text-muted">Đã có tài khoản?</span>
+        <a href="{{ url_for('auth.login') }}" class="text-caption fw-semibold ms-1">Đăng nhập</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

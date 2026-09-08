@@ -20,7 +20,7 @@ class BaseConfig:
     # Security secrets
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "dev-insecure-secret-key-change-in-production")
     JWT_SECRET_KEY: str = os.environ.get(
-        "JWT_SECRET_KEY", "dev-insecure-jwt-secret-change-in-production"
+        "JWT_SECRET_KEY", "dev-insecure-jwt-secret-change-in-production-min32bytes"
     )
 
     # Database
@@ -87,7 +87,7 @@ class TestingConfig(BaseConfig):
     WTF_CSRF_ENABLED: bool = False
     SQLALCHEMY_DATABASE_URI: str = os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
     SECRET_KEY: str = "test-secret-key-pwd301"
-    JWT_SECRET_KEY: str = "test-jwt-secret-key-pwd301"
+    JWT_SECRET_KEY: str = "test-jwt-secret-key-pwd301-minimum-32-bytes!"
     SESSION_COOKIE_SECURE: bool = False
 
 

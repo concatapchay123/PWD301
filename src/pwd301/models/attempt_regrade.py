@@ -485,6 +485,13 @@ class AttemptQuestionGrade(Base):
             "grading_rule IN ('ORIGINAL','ANSWER_CORRECTION','CONTENT_FULL_CREDIT','MANUAL')",
             name="ck_attempt_question_grades_3",
         ),
+        sa.Index(
+            "ix_question_grades_pending",
+            "grading_status",
+            "graded_at",
+            mssql_where=sa.text("grading_status='PENDING'"),
+            sqlite_where=sa.text("grading_status='PENDING'"),
+        ),
     )
 
     attempt_question = relationship("AttemptQuestion", back_populates="current_grade")

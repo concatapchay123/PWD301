@@ -88,7 +88,7 @@
             </li>
             <li><hr class="dropdown-divider"></li>
             <li>
-              <form action="#logout" method="POST" class="m-0 p-0">
+              <form action="{{ url_for('auth.logout') }}" method="POST" class="m-0 p-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
                 <button type="submit" class="dropdown-item py-2 text-danger">Đăng xuất</button>
               </form>
@@ -98,8 +98,8 @@
         {% else %}
         <!-- Guest Navigation Buttons (Not authenticated) -->
         <div class="d-flex align-items-center gap-2">
-          <a href="#login" class="btn btn-ghost btn-sm px-3">Đăng nhập</a>
-          <a href="#register" class="btn btn-primary btn-sm px-3">Đăng ký</a>
+          <a href="{{ url_for('auth.login') }}" class="btn btn-ghost btn-sm px-3">Đăng nhập</a>
+          <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-sm px-3">Đăng ký</a>
         </div>
         {% endif %}
       </div>

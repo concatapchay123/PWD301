@@ -564,3 +564,115 @@ def test_audit_event_and_background_job(app):
         assert job.id is not None
         assert job.job_key is not None
         assert job.status == "QUEUED"
+
+
+def test_course_code_and_title_normalization(app):
+    """Verify application-level normalization and uniqueness for course_code and title."""
+    with app.app_context():
+        course = Course(
+            course_code="  cs101-web  ",
+            title="  Web Development Fundamentals  ",
+            status="DRAFT",
+        )
+        # Immediate in-memory normalization via @validates
+        assert course.course_code_normalized == "CS101-WEB"
+        assert course.title_normalized == "web development fundamentals"
+
+        db.session.add(course)
+        db.session.commit()
+
+        queried = db.session.get(Course, course.id)
+        assert queried is not None
+        assert queried.course_code_normalized == "CS101-WEB"
+        assert queried.title_normalized == "web development fundamentals"
+
+        # Test update normalization
+        queried.course_code = "  cs101-revised  "
+        queried.title = "  Revised Web Fundamentals  "
+        assert queried.course_code_normalized == "CS101-REVISED"
+        assert queried.title_normalized == "revised web fundamentals"
+        db.session.commit()
+
+        refreshed = db.session.get(Course, course.id)
+        assert refreshed is not None
+        assert refreshed.course_code_normalized == "CS101-REVISED"
+        assert refreshed.title_normalized == "revised web fundamentals"
+
+        # Test uniqueness constraint on normalized course_code
+        duplicate_code_course = Course(
+            course_code="CS101-REVISED",
+            title="Different Title",
+            status="DRAFT",
+        )
+        db.session.add(duplicate_code_course)
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+        # Test uniqueness constraint on normalized title
+        duplicate_title_course = Course(
+            course_code="UNIQUE-CODE",
+            title="revised web fundamentals",
+            status="DRAFT",
+        )
+        db.session.add(duplicate_title_course)
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+
+def test_soft_delete_architectural_docstrings():
+    """Verify that models with deleted_at include the required architectural notice."""
+    required_notice = (
+        "Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at). "
+        "Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service "
+        "phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python."
+    )
+    models_with_soft_delete = [
+        Course,
+        Lesson,
+        Question,
+        Assessment,
+        FileAsset,
+        FileBlob,
+    ]
+    for model_cls in models_with_soft_delete:
+        assert model_cls.__doc__ is not None, f"{model_cls.__name__} has no docstring"
+        normalized_doc = " ".join(model_cls.__doc__.split())
+        assert required_notice in normalized_doc, (
+            f"{model_cls.__name__} missing soft-delete architectural notice"
+        )
+
+
+def test_filtered_indexes_in_metadata():
+    """Verify that filtered indexes are defined with dialect-aware WHERE clauses."""
+    from pwd301.models import (
+        AIConversation,
+        AttemptQuestionGrade,
+        BackgroundJob,
+        FileRevision,
+        Notification,
+    )
+
+    models_and_indexes = [
+        (AIConversation, "ix_ai_conversations_user_active"),
+        (AIConversation, "ix_ai_conversations_expiry"),
+        (AttemptQuestionGrade, "ix_question_grades_pending"),
+        (FileRevision, "ux_file_revisions_active"),
+        (FileRevision, "ix_file_revisions_recovery"),
+        (Notification, "ix_notifications_user_unread"),
+        (Notification, "ix_notifications_expiry"),
+        (BackgroundJob, "ux_jobs_dedupe"),
+    ]
+
+    for model_cls, idx_name in models_and_indexes:
+        table = model_cls.__table__  # type: ignore[attr-defined]
+        matching = [idx for idx in table.indexes if idx.name == idx_name]
+        assert len(matching) == 1, f"Missing index {idx_name} on {table.name}"
+        idx = matching[0]
+        assert idx.dialect_options["mssql"]["where"] is not None, (
+            f"Index {idx_name} missing mssql_where"
+        )
+        assert idx.dialect_options["sqlite"]["where"] is not None, (
+            f"Index {idx_name} missing sqlite_where"
+        )

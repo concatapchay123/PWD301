@@ -88,7 +88,14 @@ class AIConversation(Base):
             "status IN ('ACTIVE','EXPIRED','DELETED')", name="ck_ai_conversations_2"
         ),
         sa.CheckConstraint("expires_at > created_at", name="ck_ai_conversations_3"),
-        sa.Index("ix_ai_conversations_user_active", "user_id", "status", "last_activity_at"),
+        sa.Index(
+            "ix_ai_conversations_user_active",
+            "user_id",
+            "status",
+            "last_activity_at",
+            mssql_where=sa.text("status='ACTIVE'"),
+            sqlite_where=sa.text("status='ACTIVE'"),
+        ),
         sa.Index(
             "ix_ai_conversations_expiry",
             "expires_at",

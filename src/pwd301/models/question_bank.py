@@ -27,7 +27,12 @@ from pwd301.models.types import (
 
 
 class Question(Base):
-    """Question identity model mapping to canonical 'questions' table."""
+    """Question identity model mapping to canonical 'questions' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "questions"
 

@@ -33,7 +33,12 @@ from pwd301.models.types import (
 
 
 class FileBlob(Base):
-    """Physical deduplicated storage blob mapping to 'file_blobs' table."""
+    """Physical deduplicated storage blob mapping to 'file_blobs' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "file_blobs"
 
@@ -70,7 +75,12 @@ class FileBlob(Base):
 
 
 class FileAsset(Base):
-    """Logical course-scoped file identity mapping to 'file_assets' table."""
+    """Logical course-scoped file identity mapping to 'file_assets' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "file_assets"
 
@@ -225,6 +235,20 @@ class FileRevision(Base):
             name="ck_file_revisions_3",
         ),
         sa.Index("ix_file_revisions_status", "status", "created_at"),
+        sa.Index(
+            "ux_file_revisions_active",
+            "file_asset_id",
+            unique=True,
+            mssql_where=sa.text("status='ACTIVE'"),
+            sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+        sa.Index(
+            "ix_file_revisions_recovery",
+            "recovery_until",
+            "status",
+            mssql_where=sa.text("recovery_until IS NOT NULL"),
+            sqlite_where=sa.text("recovery_until IS NOT NULL"),
+        ),
     )
 
     file_asset = relationship("FileAsset", foreign_keys=[file_asset_id], back_populates="revisions")

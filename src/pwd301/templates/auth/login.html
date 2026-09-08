@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Đăng nhập — PWD301{% endblock %}
+{% block meta_description %}Đăng nhập vào hệ thống Quản lý Khóa học Trực tuyến PWD301{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center py-5" style="min-height: 75vh;">
+  <div class="card shadow-sm border border-slate-200" style="width: 100%; max-width: 440px;">
+    <div class="card-body p-4">
+      <div class="text-center mb-4">
+        <div class="topbar-brand-mark mx-auto mb-2" style="width: 40px; height: 40px; font-size: 18px;">P3</div>
+        <h4 class="page-title mb-1">Đăng nhập PWD301</h4>
+        <p class="text-caption text-muted m-0">Hệ thống Quản lý Khóa học Trực tuyến</p>
+      </div>
+
+      <!-- Quick Demo Persona Helper (Functional UX reference) -->
+      <div class="p-3 bg-slate-50 border border-slate-200 rounded mb-4">
+        <div class="text-caption fw-semibold text-slate-700 mb-2">Truy cập nhanh tài khoản mẫu:</div>
+        <div class="d-grid gap-1">
+          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('student@demo.local', 'Demo@1234')">
+            <span><strong>Học viên:</strong> student@demo.local</span>
+            <span class="text-muted">→</span>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('instructor@demo.local', 'Demo@1234')">
+            <span><strong>Giảng viên:</strong> instructor@demo.local</span>
+            <span class="text-muted">→</span>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('admin@demo.local', 'Demo@1234')">
+            <span><strong>Quản trị viên:</strong> admin@demo.local</span>
+            <span class="text-muted">→</span>
+          </button>
+        </div>
+      </div>
+
+      <form action="{{ url_for('auth.login', next=request.args.get('next')) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if request.args.get('next') %}
+        <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+        {% endif %}
+
+        <div class="form-group mb-3">
+          <label class="form-label" for="login-email">Địa chỉ email</label>
+          <input type="email" name="email" id="login-email" class="form-control form-control-sm" placeholder="nhap@email.com" required autofocus>
+        </div>
+
+        <div class="form-group mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label m-0" for="login-password">Mật khẩu</label>
+          </div>
+          <input type="password" name="password" id="login-password" class="form-control form-control-sm" placeholder="••••••••" required>
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" name="remember" id="remember-me">
+          <label class="form-check-label text-caption" for="remember-me">
+            Ghi nhớ đăng nhập
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-100 py-2 fw-semibold">Đăng nhập</button>
+      </form>
+
+      <div class="text-center mt-4 pt-3 border-top border-slate-200">
+        <span class="text-caption text-muted">Chưa có tài khoản?</span>
+        <a href="{{ url_for('auth.register') }}" class="text-caption fw-semibold ms-1">Đăng ký mới</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function quickFill(email, pwd) {
+  document.getElementById('login-email').value = email;
+  document.getElementById('login-password').value = pwd;
+}
+</script>
+{% endblock %}

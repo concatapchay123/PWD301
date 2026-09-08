@@ -16,9 +16,10 @@ Implements canonical schema tables from sql/002_course_learning.sql:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -32,7 +33,12 @@ from pwd301.models.types import (
 
 
 class Course(Base):
-    """Course catalog and lifecycle model mapping to 'courses' table."""
+    """Course catalog and lifecycle model mapping to 'courses' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "courses"
 
@@ -47,13 +53,13 @@ class Course(Base):
     course_code = db.Column(sa.Unicode(50), nullable=False)
     course_code_normalized = db.Column(
         sa.Unicode(50),
-        sa.Computed("UPPER(LTRIM(RTRIM(course_code)))", persisted=True),
+        nullable=False,
         unique=True,
     )
     title = db.Column(sa.Unicode(200), nullable=False)
     title_normalized = db.Column(
         sa.Unicode(200),
-        sa.Computed("LOWER(LTRIM(RTRIM(title)))", persisted=True),
+        nullable=False,
         unique=True,
     )
     description = db.Column(NVarCharMax, nullable=True)
@@ -150,6 +156,43 @@ class Course(Base):
         order_by="Lesson.position",
     )
     enrollments = relationship("Enrollment", back_populates="course")
+
+    @validates("course_code")
+    def _validate_course_code(self, key: str, value: str | None) -> str | None:
+        if value is not None:
+            self.course_code_normalized = value.strip().upper()
+        return value
+
+    @validates("course_code_normalized")
+    def _validate_course_code_normalized(self, key: str, value: str | None) -> str | None:
+        if value is not None:
+            return value.strip().upper()
+        return value
+
+    @validates("title")
+    def _validate_title(self, key: str, value: str | None) -> str | None:
+        if value is not None:
+            self.title_normalized = value.strip().lower()
+        return value
+
+    @validates("title_normalized")
+    def _validate_title_normalized(self, key: str, value: str | None) -> str | None:
+        if value is not None:
+            return value.strip().lower()
+        return value
+
+
+@sa.event.listens_for(Course, "before_insert")
+@sa.event.listens_for(Course, "before_update")
+def _normalize_course_fields(
+    mapper: sa.orm.Mapper[Any],
+    connection: sa.Connection,
+    target: Course,
+) -> None:
+    if target.course_code is not None:
+        target.course_code_normalized = target.course_code.strip().upper()
+    if target.title is not None:
+        target.title_normalized = target.title.strip().lower()
 
 
 class CoursePrerequisite(Base):
@@ -330,7 +373,12 @@ class CourseChangeRequest(Base):
 
 
 class Lesson(Base):
-    """Lesson content and sequence unit mapping to 'lessons' table."""
+    """Lesson content and sequence unit mapping to 'lessons' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "lessons"
 

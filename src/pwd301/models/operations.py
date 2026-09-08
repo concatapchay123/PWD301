@@ -102,6 +102,14 @@ class BackgroundJob(Base):
             "payload_json IS NULL OR ISJSON(payload_json)=1", name="ck_background_jobs_6"
         ),
         sa.Index("ix_background_jobs_poll", "status", "available_at", "priority"),
+        sa.Index(
+            "ux_jobs_dedupe",
+            "job_type",
+            "dedupe_key",
+            unique=True,
+            mssql_where=sa.text("dedupe_key IS NOT NULL"),
+            sqlite_where=sa.text("dedupe_key IS NOT NULL"),
+        ),
     )
 
 

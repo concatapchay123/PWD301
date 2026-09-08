@@ -28,7 +28,12 @@ from pwd301.models.types import (
 
 
 class Assessment(Base):
-    """Assessment configuration model mapping to canonical 'assessments' table."""
+    """Assessment configuration model mapping to canonical 'assessments' table.
+
+    *Lưu ý kiến trúc: Model này sử dụng cơ chế Soft-delete (deleted_at).
+    Do DB áp dụng mặc định NO ACTION cho Foreign Keys, tầng Application Service
+    phải tự chịu trách nhiệm xử lý cascade data (ẩn/xóa dữ liệu con) bằng code Python.*
+    """
 
     __tablename__ = "assessments"
 

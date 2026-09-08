@@ -63,6 +63,7 @@ def upgrade():
     )
     with op.batch_alter_table('background_jobs', schema=None) as batch_op:
         batch_op.create_index('ix_background_jobs_poll', ['status', 'available_at', 'priority'], unique=False)
+        batch_op.create_index('ux_jobs_dedupe', ['job_type', 'dedupe_key'], unique=True, mssql_where=sa.text('dedupe_key IS NOT NULL'), sqlite_where=sa.text('dedupe_key IS NOT NULL'))
 
     op.create_table('file_blobs',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
@@ -205,9 +206,9 @@ def upgrade():
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
     sa.Column('public_id', sa.Uuid().with_variant(mssql.UNIQUEIDENTIFIER(), 'mssql'), server_default=sa.text('(NEWSEQUENTIALID())'), nullable=False),
     sa.Column('course_code', sa.Unicode(length=50), nullable=False),
-    sa.Column('course_code_normalized', sa.Unicode(length=50), sa.Computed('UPPER(LTRIM(RTRIM(course_code)))', persisted=True), nullable=True),
+    sa.Column('course_code_normalized', sa.Unicode(length=50), nullable=False),
     sa.Column('title', sa.Unicode(length=200), nullable=False),
-    sa.Column('title_normalized', sa.Unicode(length=200), sa.Computed('LOWER(LTRIM(RTRIM(title)))', persisted=True), nullable=True),
+    sa.Column('title_normalized', sa.Unicode(length=200), nullable=False),
     sa.Column('description', sa.UnicodeText().with_variant(sa.NVARCHAR(), 'mssql'), nullable=True),
     sa.Column('category', sa.Unicode(length=100), nullable=True),
     sa.Column('difficulty', sa.String(length=20), nullable=True),
@@ -633,6 +634,8 @@ def upgrade():
     )
     with op.batch_alter_table('notifications', schema=None) as batch_op:
         batch_op.create_index('ix_notifications_recipient', ['recipient_user_id', 'read_at', 'created_at'], unique=False)
+        batch_op.create_index('ix_notifications_user_unread', ['recipient_user_id', 'created_at'], unique=False, mssql_where=sa.text('read_at IS NULL'), sqlite_where=sa.text('read_at IS NULL'))
+        batch_op.create_index('ix_notifications_expiry', ['expires_at', 'id'], unique=False, mssql_where=sa.text('expires_at IS NOT NULL'), sqlite_where=sa.text('expires_at IS NOT NULL'))
 
     op.create_table('ai_conversations',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
@@ -657,7 +660,7 @@ def upgrade():
     )
     with op.batch_alter_table('ai_conversations', schema=None) as batch_op:
         batch_op.create_index('ix_ai_conversations_expiry', ['expires_at', 'status'], unique=False, mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
-        batch_op.create_index('ix_ai_conversations_user_active', ['user_id', 'status', 'last_activity_at'], unique=False)
+        batch_op.create_index('ix_ai_conversations_user_active', ['user_id', 'status', 'last_activity_at'], unique=False, mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
 
     op.create_table('assessment_blueprints',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
@@ -774,6 +777,8 @@ def upgrade():
     )
     with op.batch_alter_table('file_revisions', schema=None) as batch_op:
         batch_op.create_index('ix_file_revisions_status', ['status', 'created_at'], unique=False)
+        batch_op.create_index('ux_file_revisions_active', ['file_asset_id'], unique=True, mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
+        batch_op.create_index('ix_file_revisions_recovery', ['recovery_until', 'status'], unique=False, mssql_where=sa.text('recovery_until IS NOT NULL'), sqlite_where=sa.text('recovery_until IS NOT NULL'))
 
     op.create_table('grade_exports',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
@@ -1574,6 +1579,9 @@ def upgrade():
     sa.ForeignKeyConstraint(['graded_by_user_id'], ['users.id'], name='fk_attempt_question_grades_graded_by_user_id', ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('attempt_question_id')
     )
+    with op.batch_alter_table('attempt_question_grades', schema=None) as batch_op:
+        batch_op.create_index('ix_question_grades_pending', ['grading_status', 'graded_at'], unique=False, mssql_where=sa.text("grading_status='PENDING'"), sqlite_where=sa.text("grading_status='PENDING'"))
+
     op.create_table('regrade_jobs',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
     sa.Column('question_correction_id', sa.BigInteger(), nullable=False),
@@ -1643,6 +1651,9 @@ def downgrade():
         batch_op.drop_index('ix_regrade_jobs_status')
 
     op.drop_table('regrade_jobs')
+    with op.batch_alter_table('attempt_question_grades', schema=None) as batch_op:
+        batch_op.drop_index('ix_question_grades_pending', mssql_where=sa.text("grading_status='PENDING'"), sqlite_where=sa.text("grading_status='PENDING'"))
+
     op.drop_table('attempt_question_grades')
     with op.batch_alter_table('attempt_question_grade_history', schema=None) as batch_op:
         batch_op.drop_index('ix_attempt_grade_history_question')
@@ -1779,6 +1790,8 @@ def downgrade():
 
     op.drop_table('grade_exports')
     with op.batch_alter_table('file_revisions', schema=None) as batch_op:
+        batch_op.drop_index('ix_file_revisions_recovery', mssql_where=sa.text('recovery_until IS NOT NULL'), sqlite_where=sa.text('recovery_until IS NOT NULL'))
+        batch_op.drop_index('ux_file_revisions_active', mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
         batch_op.drop_index('ix_file_revisions_status')
 
     op.drop_table('file_revisions')
@@ -1801,11 +1814,13 @@ def downgrade():
 
     op.drop_table('assessment_blueprints')
     with op.batch_alter_table('ai_conversations', schema=None) as batch_op:
-        batch_op.drop_index('ix_ai_conversations_user_active')
+        batch_op.drop_index('ix_ai_conversations_user_active', mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
         batch_op.drop_index('ix_ai_conversations_expiry', mssql_where=sa.text("status='ACTIVE'"), sqlite_where=sa.text("status='ACTIVE'"))
 
     op.drop_table('ai_conversations')
     with op.batch_alter_table('notifications', schema=None) as batch_op:
+        batch_op.drop_index('ix_notifications_expiry', mssql_where=sa.text('expires_at IS NOT NULL'), sqlite_where=sa.text('expires_at IS NOT NULL'))
+        batch_op.drop_index('ix_notifications_user_unread', mssql_where=sa.text('read_at IS NULL'), sqlite_where=sa.text('read_at IS NULL'))
         batch_op.drop_index('ix_notifications_recipient')
 
     op.drop_table('notifications')
@@ -1904,6 +1919,7 @@ def downgrade():
     op.drop_table('roles')
     op.drop_table('file_blobs')
     with op.batch_alter_table('background_jobs', schema=None) as batch_op:
+        batch_op.drop_index('ux_jobs_dedupe', mssql_where=sa.text('dedupe_key IS NOT NULL'), sqlite_where=sa.text('dedupe_key IS NOT NULL'))
         batch_op.drop_index('ix_background_jobs_poll')
 
     op.drop_table('background_jobs')

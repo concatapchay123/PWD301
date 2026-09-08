@@ -51,6 +51,7 @@ exclude = "migrations/"
 module = [
   "flask_login.*",
   "flask_wtf.*",
+  "jwt",
 ]
 ignore_missing_imports = true
 

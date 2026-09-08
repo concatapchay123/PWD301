@@ -132,6 +132,20 @@ class Notification(Base):
             "read_at",
             "created_at",
         ),
+        sa.Index(
+            "ix_notifications_user_unread",
+            "recipient_user_id",
+            "created_at",
+            mssql_where=sa.text("read_at IS NULL"),
+            sqlite_where=sa.text("read_at IS NULL"),
+        ),
+        sa.Index(
+            "ix_notifications_expiry",
+            "expires_at",
+            "id",
+            mssql_where=sa.text("expires_at IS NOT NULL"),
+            sqlite_where=sa.text("expires_at IS NOT NULL"),
+        ),
     )
 
     event = relationship("NotificationEvent", back_populates="notifications")

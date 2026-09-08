@@ -14,11 +14,13 @@ import uuid
 from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, Response, g, jsonify, make_response, request
+from flask import Flask, Response, g, jsonify, make_response, redirect, request, session, url_for
 from flask_wtf.csrf import CSRFError
 from werkzeug.exceptions import HTTPException
 
 import pwd301.models  # noqa: F401
+from pwd301.blueprints.api_auth import api_auth_bp
+from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
 from pwd301.cli import register_cli_commands
 from pwd301.config import config_by_name
@@ -201,8 +203,35 @@ def create_app(config_name: str | None = None) -> Flask:
         except (ValueError, TypeError):
             return None
         from pwd301.models.identity import User
+        from pwd301.services.session_auth_service import validate_auth_session
 
-        return db.session.get(User, uid)
+        user = db.session.get(User, uid)
+        if user is None or not user.is_active:
+            return None
+
+        # Verify session auth_version against current user record
+        session_auth_version = session.get("auth_version")
+        if session_auth_version is not None and session_auth_version != user.auth_version:
+            return None
+
+        # If an auth_session_key exists in session, validate against database record
+        raw_key = session.get("auth_session_key")
+        if raw_key:
+            auth_sess = validate_auth_session(raw_key, session=db.session)
+            if auth_sess is None:
+                return None
+
+        return user
+
+    @login_manager.unauthorized_handler
+    def unauthorized() -> Any:
+        if _is_api_or_json_request():
+            return _format_error_response(
+                code="UNAUTHORIZED",
+                message="Authentication required to access this resource.",
+                status_code=401,
+            )
+        return redirect(url_for("auth.login", next=request.url))
 
     # Logging setup
     _configure_logging(app)
@@ -222,6 +251,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Register blueprints
     app.register_blueprint(core_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(api_auth_bp)
+
+    # Exempt REST API blueprint from CSRF validation (API clients use Bearer JWT)
+    csrf.exempt(api_auth_bp)
 
     # Register CLI commands
     register_cli_commands(app)
