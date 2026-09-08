@@ -9,8 +9,14 @@ from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
+from sqlalchemy.orm import DeclarativeBase
 
-db: SQLAlchemy = SQLAlchemy()
+
+class Base(DeclarativeBase):
+    """Declarative base class for PWD301 domain models."""
+
+
+db: SQLAlchemy = SQLAlchemy(model_class=Base)
 migrate: Migrate = Migrate()
 csrf: CSRFProtect = CSRFProtect()
 login_manager: LoginManager = LoginManager()

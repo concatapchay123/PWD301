@@ -18,7 +18,9 @@ from flask import Flask, Response, g, jsonify, make_response, request
 from flask_wtf.csrf import CSRFError
 from werkzeug.exceptions import HTTPException
 
+import pwd301.models  # noqa: F401
 from pwd301.blueprints.core import core_bp
+from pwd301.cli import register_cli_commands
 from pwd301.config import config_by_name
 from pwd301.extensions import csrf, db, login_manager, migrate
 
@@ -210,5 +212,8 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Register blueprints
     app.register_blueprint(core_bp)
+
+    # Register CLI commands
+    register_cli_commands(app)
 
     return app
