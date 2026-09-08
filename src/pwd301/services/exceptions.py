@@ -145,3 +145,31 @@ class LessonValidationError(LessonError):
 
 class LessonProgressError(LessonError):
     """Raised when lesson progress tracking encounters an error or tampering."""
+
+
+class EnrollmentError(ServiceError):
+    """Base exception for all enrollment and prerequisite domain errors."""
+
+
+class EnrollmentNotFoundError(ResourceNotFoundError, EnrollmentError):
+    """Raised when a requested enrollment cannot be found."""
+
+
+class EnrollmentCapacityExceededError(EnrollmentError):
+    """Raised when course enrollment capacity limit has been reached."""
+
+
+class EnrollmentPrerequisiteError(EnrollmentError):
+    """Raised when a student has not satisfied all prerequisite courses."""
+
+
+class EnrollmentStateViolationError(EnrollmentError):
+    """Raised when an illegal enrollment lifecycle state transition is attempted."""
+
+
+class PrerequisiteCycleError(EnrollmentError):
+    """Raised when adding a course prerequisite would introduce a cyclic dependency."""
+
+
+class CourseNotAvailableError(EnrollmentError):
+    """Raised when a course is not open or published for enrollment."""

@@ -22,7 +22,7 @@ env/
 !.env.example
 *.pem
 *.key
-api/
+/api/
 api_key.md
 
 # LLM context bundles

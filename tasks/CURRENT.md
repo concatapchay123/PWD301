@@ -1,152 +1,166 @@
 # CURRENT TASK
 
-## TASK-007 — Lesson Management, Reordering & Completion Tracking
+## TASK-008 — Student Enrollment Lifecycle, Capacity, Prerequisites & Re-Enrollment
 
 **Status:** DONE
 
 ### 1. Goal
-Triển khai toàn diện tầng nghiệp vụ (`lesson_service.py`), các ngoại lệ miền (`exceptions.py`), bộ điều khiển route (Web UI & REST API), giải thuật ghi nhận tiến độ (`02_LESSON_COMPLETION_ALGORITHM.md`) và cơ chế tái sắp xếp thứ tự bài học (Lesson Reordering) an toàn với ràng buộc CSDL. Tất cả thao tác tuân thủ nghiêm ngặt ma trận phân quyền (RBAC), phòng chống lỗ hổng IDOR, và ghi nhận Append-only Audit Log cho các hành vi thay đổi cấu trúc hoặc xóa bài học.
+Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học (`src/pwd301/services/enrollment_service.py`), quản lý chu kỳ học tập (`EnrollmentPeriod`), kiểm soát sĩ số khóa học chống race condition (`capacity`), thẩm định điều kiện tiên quyết và phòng chống chu kỳ đồ thị phụ thuộc (`CoursePrerequisite` DAG validation theo Algorithm 03), xử lý hủy khóa học (`LEFT`) với chính sách lưu trữ chi tiết 30 ngày, tái ghi danh (`REENROLLED`) tái sử dụng bản ghi `Enrollment` và mở `EnrollmentPeriod` mới, ghi nhận nhật ký sự kiện (`EnrollmentEvent`) và nhật ký kiểm toán hệ thống (`AuditEvent`), cùng toàn bộ route điều khiển (Web UI + REST API) và bộ kiểm thử tự động.
 
 ### 2. Source-of-truth documents
-- `AGENTS.md` (Quy tắc bất biến, phân quyền, Source-of-Truth Hierarchy).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/04_LESSON_AND_PROGRESS.md` (Đặc tả nghiệp vụ bài học & tiến độ).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/02_LESSON_COMPLETION_ALGORITHM.md` (Giải thuật hoàn thành bài học).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/04_COURSE_API.md` & `05_ENROLLMENT_PROGRESS_API.md`.
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md` (Chi tiết bảng `lessons`, `lesson_progress`).
-- `src/pwd301/models/course.py` (Domain models: `Lesson`, `LessonProgress`, `Course`, `Enrollment`, `EnrollmentPeriod`).
-- `src/pwd301/services/authorization_service.py` (`require_course_manager`, `can_manage_lesson`, `can_view_course`).
+- `AGENTS.md` (Hợp đồng vận hành kỹ thuật, quy tắc bất biến, phân quyền và Source-of-Truth Hierarchy).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/05_ENROLLMENT_AND_PREREQUISITES.md` (Đặc tả nghiệp vụ chu kỳ ghi danh, sức chứa và tiên quyết).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/03_PREREQUISITE_GRAPH_VALIDATION_ALGORITHM.md` (Giải thuật kiểm tra đồ thị phụ thuộc và phát hiện chu trình).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/05_ENROLLMENT_PROGRESS_API.md` (Đặc tả REST API ghi danh, rút lui, tái ghi danh và quản lý môn tiên quyết).
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md` (Chi tiết bảng `enrollments`, `enrollment_periods`, `enrollment_events`, `course_prerequisites`).
+- `src/pwd301/models/course.py` (Domain models: `Course`, `Enrollment`, `EnrollmentPeriod`, `EnrollmentEvent`, `CoursePrerequisite`).
+- `src/pwd301/services/authorization_service.py` (`require_course_manager`, `can_manage_course`, `can_view_course`).
 
 ### 3. In scope
 1. **Tầng Ngoại lệ (Domain Exceptions) — `src/pwd301/services/exceptions.py`:**
-   - `LessonError(ServiceError)`
-   - `LessonNotFoundError(ResourceNotFoundError, LessonError)`
-   - `LessonStateViolationError(LessonError)`
-   - `LessonPositionConflictError(LessonError)`
-   - `LessonValidationError(LessonError)`
-   - `LessonProgressError(LessonError)`
-2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/lesson_service.py`:**
-   - `create_lesson(actor, course_id, data)`: Kiểm tra quyền qua `require_course_manager`. Tự động gán `position` liên tục hoặc dịch chuyển bài học an toàn (kỹ thuật temporary positive offset `+ 1_000_000` tránh vi phạm `CheckConstraint("position > 0")` và `UniqueConstraint(course_id, position)`). Giá trị mặc định chuẩn: `status = 'DRAFT'`, `minimum_completion_seconds = 30`, `viewed_fraction_required = 0.8000`. Ghi `AuditEvent` khi khóa học đã ở trạng thái `PUBLISHED`.
-   - `update_lesson(actor, lesson_id, data)`: Kiểm tra quyền sở hữu. Chống Mass-Assignment qua whitelist fields (`title`, `summary`, `markdown_content`, `estimated_duration_minutes`, `minimum_completion_seconds`, `viewed_fraction_required`, `status`). Cấm sửa `position` trực tiếp. Cấm chuyển sang `PUBLISHED` nếu khóa học đang ở `TRASH` hoặc `ARCHIVED`.
-   - `reorder_lessons(actor, course_id, ordered_lesson_ids)`: Đổi thứ tự 1..N an toàn qua 2 pha trong 1 transaction duy nhất (Phase 1: temporary positive offset, Phase 2: contiguous 1..N). Kiểm tra tính toàn vẹn tuyệt đối (không thừa, thiếu, trùng lặp). Ghi `AuditEvent`.
-   - `trash_lesson(actor, lesson_id, reason)`: Soft-delete (`deleted_at = utc_now()`, `deleted_by_user_id = actor.id`, `status = 'TRASH'`). Đưa vị trí bài học đã xóa ra ngoài dải hoạt động (`10_000_000 + id`) và tự động co lại thứ tự các bài học còn lại thành 1..(N-1). Ghi nhật ký bắt buộc vào `AuditEvent`.
-   - `change_lesson_status(actor, lesson_id, new_status, reason)`: Quản lý chuyển đổi trạng thái (`DRAFT`, `PUBLISHED`, `HIDDEN`). Ghi `AuditEvent`.
-   - `get_lesson_detail(actor, lesson_id)`: Phân quyền theo vai trò: Instructor/Admin đọc được mọi trạng thái bài học thuộc khóa học quản lý. Student chỉ đọc được bài học `PUBLISHED` và phải có `Enrollment` trạng thái `ACTIVE` trong khóa học đó.
-   - `get_course_lessons(actor, course_id)`: Liệt kê danh sách bài học sắp xếp theo position, lọc theo quyền truy cập.
-   - `record_lesson_progress(actor, lesson_id, seconds_increment, view_fraction)`: Thuật toán 02 ghi nhận tiến độ học tập: Xác thực sinh viên có `Enrollment` và `EnrollmentPeriod` trạng thái `ACTIVE`. Chống gian lận (1 <= `seconds_increment` <= 60, 0.0 <= `view_fraction` <= 1.0). Tăng `seconds_spent`, cập nhật `max_view_fraction`. Đánh giá hoàn thành một chiều (Monotonic Completion): khi `seconds_spent >= minimum_completion_seconds` và `max_view_fraction >= viewed_fraction_required`, thiết lập `completed_at = utc_now()`, lưu `completion_rule_snapshot_json`, cập nhật cache `enrollment.current_progress_percent`. Trạng thái hoàn thành có tính bất biến và idempotent.
+   - `EnrollmentError(ServiceError)`
+   - `EnrollmentNotFoundError(ResourceNotFoundError, EnrollmentError)`
+   - `EnrollmentCapacityExceededError(EnrollmentError)`
+   - `EnrollmentPrerequisiteError(EnrollmentError)`
+   - `EnrollmentStateViolationError(EnrollmentError)`
+   - `PrerequisiteCycleError(EnrollmentError)`
+   - `CourseNotAvailableError(EnrollmentError)`
+2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/enrollment_service.py`:**
+   - `enroll_student(actor, course_id, student_user_id)`: Ghi danh khóa học cho sinh viên. Khóa dòng dữ liệu `Course` (`with_for_update`) để kiểm tra `capacity` chống race condition. Kiểm tra trạng thái khóa học phải là `PUBLISHED`. Kiểm tra thỏa mãn điều kiện tiên quyết. Idempotent nếu sinh viên đã có `Enrollment` trạng thái `ACTIVE`. Tạo `Enrollment` và `EnrollmentPeriod` (chu kỳ 1, trạng thái `ACTIVE`). Ghi `EnrollmentEvent` (`ENROLLED`) và `AuditEvent`.
+   - `leave_course(actor, course_id, student_user_id, reason)`: Sinh viên rút khỏi khóa học. Chuyển trạng thái `Enrollment` thành `LEFT`. Đóng `EnrollmentPeriod` hiện tại (`ended_at = utc_now()`). Thiết lập `detail_retention_due_at = utc_now() + 30 days`. Không xóa cứng dữ liệu học tập. Ghi `EnrollmentEvent` (`LEFT`) và `AuditEvent`. Idempotent nếu đã ở trạng thái `LEFT`.
+   - `re_enroll_student(actor, course_id, student_user_id)`: Tái ghi danh khóa học. Kiểm tra trạng thái hiện tại phải là `LEFT` hoặc `SUSPENDED`. Tái sử dụng bản ghi `Enrollment` (duy trì tính toàn vẹn 1 Enrollment duy nhất trên cặp `student_user_id, course_id`), chuyển trạng thái thành `REENROLLED` hoặc `ACTIVE`, tăng `period_no` và tạo bản ghi `EnrollmentPeriod` mới (trạng thái `ACTIVE`). Kiểm tra lại `capacity` và điều kiện tiên quyết. Ghi `EnrollmentEvent` (`REENROLLED`) và `AuditEvent`.
+   - `check_prerequisites_met(student_user_id, course_id, session)`: Kiểm tra tất cả các khóa học tiên quyết bắt buộc đã được sinh viên hoàn thành (`is_completed = True`) hay chưa.
+   - `add_course_prerequisite(actor, course_id, prerequisite_course_id)`: Thêm điều kiện tiên quyết. Kiểm tra quyền giảng viên quản lý khóa học. Kiểm tra khóa học không tự phụ thuộc chính nó (`course_id != prerequisite_course_id`). Kiểm tra chu trình đồ thị (Algorithm 03 DFS/Cycle Detection) — ngăn chặn triệt để chu trình trực tiếp hoặc gián tiếp. Ghi `AuditEvent`.
+   - `remove_course_prerequisite(actor, course_id, prerequisite_course_id)`: Giảng viên xóa điều kiện tiên quyết. Kiểm tra quyền sở hữu. Ghi `AuditEvent`.
+   - `get_course_prerequisites(course_id, session)`: Truy vấn danh sách môn tiên quyết của khóa học.
+   - `get_student_enrollments(student_user_id, status_filter, page, per_page, session)`: Lấy danh sách khóa học sinh viên đã ghi danh (phân trang và lọc theo trạng thái).
+   - `get_course_enrollments(actor, course_id, status_filter, page, per_page, session)`: Giảng viên/Admin xem danh sách sinh viên đã ghi danh vào khóa học quản lý.
 3. **Tầng Blueprints & Route Handlers:**
-   - Instructor Blueprint (`src/pwd301/blueprints/instructor/routes.py`):
-     - `POST /instructor/courses/<course_id>/lessons`
-     - `GET /instructor/lessons/<lesson_id>`
-     - `PATCH /instructor/lessons/<lesson_id>`
-     - `POST /instructor/courses/<course_id>/lessons/reorder`
-     - `POST /instructor/lessons/<lesson_id>/status`
-     - `POST /instructor/lessons/<lesson_id>/trash`
-   - Student Blueprint (`src/pwd301/blueprints/student/routes.py`):
-     - `GET /student/courses/<course_id>/lessons/<lesson_id>`
-     - `POST /student/lessons/<lesson_id>/progress`
-   - REST API Blueprint (`api_courses` & `api_lessons`):
-     - `GET /api/courses/<course_id>/lessons`
-     - `GET /api/lessons/<lesson_id>`
-     - `POST /api/lessons/<lesson_id>/progress` & alias `POST /api/lessons/<lesson_id>/activity`
+   - **Student Blueprint (`src/pwd301/blueprints/student/routes.py`):**
+     - `POST /student/courses/<course_id>/enroll`
+     - `POST /student/courses/<course_id>/leave`
+     - `POST /student/courses/<course_id>/re-enroll`
+     - `GET /student/enrollments`
+   - **Instructor Blueprint (`src/pwd301/blueprints/instructor/routes.py`):**
+     - `GET /instructor/courses/<course_id>/students`
+     - `GET /instructor/courses/<course_id>/prerequisites`
+     - `POST /instructor/courses/<course_id>/prerequisites`
+     - `DELETE /instructor/courses/<course_id>/prerequisites/<prereq_id>`
+   - **REST API Blueprints (`api_courses` & `api_student`):**
+     - `POST /api/courses/<course_id>/enroll`
+     - `POST /api/courses/<course_id>/leave`
+     - `POST /api/courses/<course_id>/re-enroll`
+     - `GET /api/courses/<course_id>/prerequisites`
+     - `POST /api/courses/<course_id>/prerequisites`
+     - `DELETE /api/courses/<course_id>/prerequisites/<prereq_id>`
+     - `GET /api/courses/<course_id>/enrollments`
+     - `GET /api/student/enrollments` (`src/pwd301/blueprints/api_student/routes.py`)
 4. **Error Handling & App Factory (`src/pwd301/__init__.py`):**
-   - Đăng ký map các Exception của Lesson sang mã HTTP chuẩn:
-     - `LessonNotFoundError` -> 404 RESOURCE_NOT_FOUND
-     - `LessonPositionConflictError` -> 409 CONFLICT
-     - `LessonStateViolationError` -> 409 STATE_VIOLATION
-     - `LessonValidationError` -> 400 VALIDATION_ERROR
-     - `LessonProgressError` -> 400 VALIDATION_ERROR
-   - Đăng ký `api_lesson_bp` và miễn trừ CSRF cho REST API clients.
+   - Đăng ký map Exception sang mã HTTP chuẩn:
+     - `EnrollmentNotFoundError` -> 404 RESOURCE_NOT_FOUND
+     - `EnrollmentCapacityExceededError` -> 409 CAPACITY_EXCEEDED
+     - `EnrollmentPrerequisiteError` -> 409 PREREQUISITE_NOT_MET
+     - `EnrollmentStateViolationError` -> 409 STATE_VIOLATION
+     - `PrerequisiteCycleError` -> 409 PREREQUISITE_CYCLE
+     - `CourseNotAvailableError` -> 400 COURSE_NOT_AVAILABLE
+   - Đăng ký blueprint `api_student_bp` và miễn trừ CSRF cho REST API clients.
 
 ### 4. Out of scope
-- Tải lên file đa phương tiện, video streaming hoặc asset đính kèm (`lesson_resources`) -> Đợi **TASK-018** & **TASK-019**.
-- Quá trình đăng ký ghi danh (`enrollment_service.py`) -> Đợi **TASK-008**.
-- Đánh giá tổng thể hoàn thành khóa học (`CourseCompletionSummary`) -> Đợi **TASK-009**.
+- Thanh toán / cổng thanh toán học phí (hệ thống hiện tại xử lý đăng ký trực tiếp).
+- Đánh giá hoàn thành tổng thể khóa học và cấp chứng chỉ (`CourseCompletionSummary`) -> Đợi **TASK-009**.
+- Quản lý bài tập, bài kiểm tra và chấm điểm (`assessment_service.py`) -> Đợi **TASK-010** & **TASK-011**.
 
 ### 5. Security & Invariants
-- **Bất biến 1 (IDOR & Resource Isolation):** Giảng viên chỉ được tạo, xem, cập nhật, reorder hoặc trash bài học của khóa học do mình trực tiếp quản lý (`owner_instructor_id == actor.id`).
-- **Bất biến 2 (Student Access Guard):** Sinh viên không được xem bài học `DRAFT`, `HIDDEN` hoặc `TRASH`, và không thể ghi nhận tiến độ nếu chưa có `Enrollment` và `EnrollmentPeriod` trạng thái `ACTIVE`.
-- **Bất biến 3 (Unique Contiguous Positions):** Tại mỗi khóa học, giá trị `position` của các bài học hoạt động phải là một dãy số nguyên dương liên tục bắt đầu từ 1, không được trùng lặp. Khi soft-delete, bài học bị trash được đưa ra ngoài dải (`10_000_000 + id`) và các bài học còn lại tự động co về `1..(N-1)`.
-- **Bất biến 4 (Monotonic & Idempotent Completion):** Sinh viên không thể gửi trực tiếp `completed=true`. Server đánh giá dựa trên `seconds_spent` và `max_view_fraction`. Khi đã hoàn thành (`completed_at IS NOT NULL`), trạng thái không bị đảo ngược khi tiếp tục ping.
-- **Bất biến 5 (Append-Only Audit):** Mọi thao tác soft-delete (`trash_lesson`), thay đổi cấu trúc (`reorder_lessons`), hoặc thay đổi bài học trên khóa học đã `PUBLISHED` đều ghi `AuditEvent` trong cùng transaction.
+- **Bất biến 1 (Single Logical Enrollment):** Một sinh viên chỉ có tối đa 1 bản ghi `Enrollment` duy nhất cho mỗi khóa học (`uq_enrollment_student_course`). Khi tái ghi danh (`re_enroll`), hệ thống cập nhật `Enrollment` hiện có và mở thêm `EnrollmentPeriod` mới với `period_no` tăng dần.
+- **Bất biến 2 (Course Availability):** Chỉ khóa học đang ở trạng thái `PUBLISHED` và chưa bị xóa mềm mới được phép tiếp nhận đăng ký mới hoặc tái ghi danh.
+- **Bất biến 3 (Capacity & Concurrency Guard):** Kiểm soát sĩ số khóa học với row lock `with_for_update` trên bản ghi `Course`, đếm số lượng sinh viên đang `ACTIVE` / `PENDING`. Khi đã đạt `capacity`, từ chối đăng ký mới (`EnrollmentCapacityExceededError`). Việc sinh viên rút khỏi khóa học (`LEFT`) giải phóng vị trí ngay lập tức.
+- **Bất biến 4 (DAG Prerequisite Cycle Prevention):** Cấm tuyệt đối việc tạo chu trình phụ thuộc trong đồ thị môn tiên quyết (cả trực tiếp `A -> B -> A` và gián tiếp `A -> B -> C -> A`) theo Algorithm 03 (DFS).
+- **Bất biến 5 (No Hard Delete & 30-Day Retention):** Khi sinh viên hủy môn (`leave`), hệ thống chuyển `status = 'LEFT'`, ghi nhận `detail_retention_due_at = utc_now() + 30 days`, giữ nguyên toàn bộ lịch sử học tập, nộp bài và tiến độ, không bao giờ xóa cứng dữ liệu.
+- **Bất biến 6 (Append-Only Event & Audit):** Mọi thao tác ghi danh, rút lui, tái ghi danh, thêm/xóa môn tiên quyết đều được ghi vào `EnrollmentEvent` và `AuditEvent` trong cùng transaction.
+- **Bất biến 7 (Resource-Based Authorization & IDOR Guard):** Giảng viên chỉ được quản lý môn tiên quyết và xem danh sách sinh viên của khóa học do mình trực tiếp phụ trách. Sinh viên chỉ được thao tác trên bản ghi ghi danh của chính mình.
 
 ### 6. Acceptance Criteria (Checklist)
-- [x] `exceptions.py` bổ sung đầy đủ các domain exceptions cho bài học.
-- [x] `lesson_service.py` triển khai đầy đủ các hàm xử lý logic với type hints và docstrings.
-- [x] Tạo bài học thành công với `position` tự tăng bắt đầu từ 1.
-- [x] Tạo bài học tại vị trí chỉ định tự động dịch chuyển các bài học phía sau an toàn.
-- [x] Cập nhật bài học với whitelist fields (chống mass-assignment) và cấm sửa `position` trực tiếp.
-- [x] Reorder bài học thành công không bị vi phạm UniqueConstraint `(course_id, position)`.
-- [x] Reorder thất bại khi danh sách ID bài học không hợp lệ, thiếu, hoặc trùng lặp.
-- [x] Soft-delete bài học và tự co lại thứ tự các bài học còn lại thành dãy liên tục 1..(N-1).
-- [x] Ghi nhận tiến độ học (`seconds_spent`, `max_view_fraction`) có kiểm tra anti-tampering.
-- [x] Đánh dấu hoàn thành đúng lúc khi đủ thời gian và tỷ lệ xem, lưu snapshot cấu hình hoàn thành.
-- [x] Tính bất biến và idempotent của trạng thái hoàn thành.
-- [x] IDOR: Giảng viên A không thể can thiệp vào bài học của Giảng viên B (HTTP 403).
-- [x] Sinh viên chưa ghi danh hoặc truy cập bài học DRAFT bị từ chối (HTTP 403).
-- [x] Blueprints Instructor, Student, REST API (`api_courses`, `api_lessons`) hoạt động đầy đủ.
+- [x] `exceptions.py` bổ sung đầy đủ domain exceptions cho enrollment và prerequisites.
+- [x] `enrollment_service.py` triển khai đầy đủ 9 hàm nghiệp vụ với docstrings và type hints chuẩn mực.
+- [x] Đăng ký khóa học thành công tạo bản ghi `Enrollment` và `EnrollmentPeriod` chu kỳ 1.
+- [x] Đăng ký bị từ chối khi khóa học chưa `PUBLISHED` hoặc đã bị xóa mềm (`CourseNotAvailableError`).
+- [x] Đăng ký bị từ chối khi vượt quá sĩ số tối đa (`EnrollmentCapacityExceededError`).
+- [x] Đăng ký bị từ chối khi sinh viên chưa hoàn thành môn tiên quyết bắt buộc (`EnrollmentPrerequisiteError`).
+- [x] Thêm môn tiên quyết phát hiện và ngăn chặn chu trình trực tiếp và gián tiếp theo Algorithm 03 (`PrerequisiteCycleError`).
+- [x] Thêm môn tiên quyết từ chối tự phụ thuộc chính nó.
+- [x] Rút lui khỏi khóa học (`leave_course`) chuyển `status = 'LEFT'`, đóng `EnrollmentPeriod`, đặt thời hạn lưu trữ 30 ngày (`detail_retention_due_at`), giải phóng sĩ số và không xóa cứng dữ liệu.
+- [x] Tái ghi danh (`re_enroll_student`) tái sử dụng bản ghi `Enrollment`, tăng `period_no` trên `EnrollmentPeriod` mới, kiểm tra lại sĩ số và môn tiên quyết.
+- [x] Thao tác đăng ký và rút lui có tính idempotent an toàn.
+- [x] IDOR: Giảng viên A không thể xem sinh viên hoặc thêm môn tiên quyết cho khóa học của Giảng viên B (HTTP 403).
+- [x] IDOR: Sinh viên A không thể rút lui hay thao tác trên ghi danh của Sinh viên B (HTTP 403).
+- [x] Mọi thay đổi trạng thái ghi danh đều phát sinh bản ghi append-only `EnrollmentEvent` và `AuditEvent`.
+- [x] Toàn bộ route Web UI (`/student/...`, `/instructor/...`) và REST API (`/api/courses/...`, `/api/student/...`) hoạt động đầy đủ, hỗ trợ JSON serialization chuẩn.
+- [x] Hệ thống kiểm thử toàn diện vượt qua 100% không có lỗi hồi quy (208/208 tests passed).
 
 ### 7. Verification commands
-1. `mypy src/pwd301/services/lesson_service.py tests/unit/test_lesson_service.py` -> Success: no issues found in 2 source files.
-2. `ruff check src tests scripts` -> All checks passed!
-3. `ruff format --check src tests scripts` -> 61 files already formatted.
-4. `pytest tests/unit/test_lesson_service.py tests/security/test_lesson_idor.py tests/api/test_lesson_api.py -v` -> 26 passed in 8.95s.
-5. `./scripts/verify.ps1` -> 183 passed in 46.21s (100% PASS, 0 failures).
+1. `mypy src/pwd301/services/enrollment_service.py tests/unit/test_enrollment_service.py` -> Success: no issues found in 2 source files.
+2. `mypy src` -> Success: no issues found in 46 source files.
+3. `ruff check src tests scripts` -> All checks passed!
+4. `ruff format --check src tests scripts` -> 67 files already formatted.
+5. `pytest tests/unit/test_enrollment_service.py tests/security/test_enrollment_idor.py tests/concurrency/test_enrollment_capacity.py tests/api/test_enrollment_api.py -v` -> 25 passed in 9.15s.
+6. `./scripts/verify.ps1` -> 208 passed in 75.23s (100% PASS, 0 failures).
 
 ---
 
 ## Completion Report
 
 ### A. Scope and sources consulted
-- Operating contract: `AGENTS.md`
-- Lesson & progress business rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/04_LESSON_AND_PROGRESS.md`
-- Lesson completion algorithm: `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/02_LESSON_COMPLETION_ALGORITHM.md`
-- Course & progress API contracts: `docs/system/PWD301_SYSTEM_SPECIFICATION/api/04_COURSE_API.md` & `05_ENROLLMENT_PROGRESS_API.md`
-- Course data dictionary: `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md`
-- Non-negotiable invariants: `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
-- Domain models: `src/pwd301/models/course.py`
-- Authorization service: `src/pwd301/services/authorization_service.py`
+- Operating contract: `AGENTS.md` (quy tắc bất biến, phân quyền, Source-of-Truth Hierarchy).
+- Enrollment & prerequisite business rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/05_ENROLLMENT_AND_PREREQUISITES.md`.
+- Prerequisite DAG validation algorithm: `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/03_PREREQUISITE_GRAPH_VALIDATION_ALGORITHM.md`.
+- Enrollment and progress REST API contracts: `docs/system/PWD301_SYSTEM_SPECIFICATION/api/05_ENROLLMENT_PROGRESS_API.md`.
+- Course & enrollment data dictionary: `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md`.
+- Non-negotiable invariants: `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`.
+- Domain models: `src/pwd301/models/course.py`.
+- Authorization service: `src/pwd301/services/authorization_service.py`.
 
 ### B. Reuse decisions
-- Reused `Lesson`, `LessonProgress`, `Course`, `Enrollment`, `EnrollmentPeriod` models from `src/pwd301/models/course.py`.
-- Reused `require_course_manager`, `can_manage_lesson`, `can_view_course`, `_resolve_course`, `_resolve_lesson`, `_resolve_user` from `src/pwd301/services/authorization_service.py`.
+- Reused `Course`, `Enrollment`, `EnrollmentPeriod`, `EnrollmentEvent`, `CoursePrerequisite` models from `src/pwd301/models/course.py`.
+- Reused `require_course_manager`, `can_manage_course`, `can_view_course`, `_resolve_course`, `_resolve_user` from `src/pwd301/services/authorization_service.py`.
 - Reused `AuditEvent` model from `src/pwd301/models/notification_audit.py` for append-only audit logging.
 - Reused `_format_error_response` and centralized error handling architecture in `src/pwd301/__init__.py`.
-- Reused `student_required`, `instructor_required`, `get_authenticated_actor` decorators for route protection.
+- Reused `student_required`, `instructor_required`, `get_authenticated_actor` decorators for route protection across session web and JWT REST environments.
 
 ### C. Per-file changes
-- `src/pwd301/services/exceptions.py` (MODIFY): Added domain exceptions `LessonError`, `LessonNotFoundError`, `LessonStateViolationError`, `LessonPositionConflictError`, `LessonValidationError`, `LessonProgressError`.
-- `src/pwd301/services/lesson_service.py` (NEW): Implemented complete lesson service layer: `create_lesson`, `update_lesson`, `reorder_lessons`, `trash_lesson`, `change_lesson_status`, `get_lesson_detail`, `get_course_lessons`, `record_lesson_progress`, `get_lesson_progress`, along with audit event logging and safe 2-phase reordering.
-- `src/pwd301/services/__init__.py` (MODIFY): Exported all lesson service functions and domain exceptions.
-- `src/pwd301/__init__.py` (MODIFY): Registered error handlers for lesson domain exceptions (mapping to 404 RESOURCE_NOT_FOUND, 409 CONFLICT, 409 STATE_VIOLATION, 400 VALIDATION_ERROR), registered `api_lesson_bp`, and exempted it from CSRF.
-- `src/pwd301/blueprints/instructor/routes.py` (MODIFY): Added instructor lesson routes for creation, viewing, updating, reordering, status change, and trashing.
-- `src/pwd301/blueprints/student/routes.py` (MODIFY): Added student lesson routes for studying a lesson with enrollment verification and heartbeat progress recording.
-- `src/pwd301/blueprints/api_courses/routes.py` (MODIFY): Added `GET /api/courses/<course_id>/lessons` with role-based scoping.
-- `src/pwd301/blueprints/api_lessons/__init__.py` (NEW): Initialized `api_lessons` blueprint with `/api/lessons` url prefix.
-- `src/pwd301/blueprints/api_lessons/routes.py` (NEW): Implemented REST API endpoints `GET /api/lessons/<id>`, `POST /api/lessons/<id>/progress`, and `POST /api/lessons/<id>/activity`.
-- `tests/unit/test_lesson_service.py` (NEW): Implemented 14 comprehensive unit tests covering auto-increment positioning, shifting, validation rules, course status blocks, update whitelist, reordering, unique collision prevention, soft-delete compaction, status transitions, access rules, Algorithm 02 monotonic progress, idempotency, anti-tampering, and audit logging.
-- `tests/security/test_lesson_idor.py` (NEW): Implemented 7 security and IDOR tests verifying cross-instructor edit/reorder/trash denial, student draft access denial, non-enrolled progress denial, anonymous access rejection, and admin oversight.
-- `tests/api/test_lesson_api.py` (NEW): Implemented 5 integration tests for REST API endpoints `/api/courses/<id>/lessons` and `/api/lessons/<id>/...`.
-- `tasks/CURRENT.md` (MODIFY): Recorded TASK-007 completion and moved TASK-006 to Historical Tasks.
+- `src/pwd301/services/exceptions.py` (MODIFY): Added domain exceptions `EnrollmentError`, `EnrollmentNotFoundError`, `EnrollmentCapacityExceededError`, `EnrollmentPrerequisiteError`, `EnrollmentStateViolationError`, `PrerequisiteCycleError`, `CourseNotAvailableError`.
+- `src/pwd301/services/enrollment_service.py` (NEW): Implemented complete enrollment service layer: `enroll_student`, `leave_course`, `re_enroll_student`, `check_prerequisites_met`, `add_course_prerequisite`, `remove_course_prerequisite`, `get_course_prerequisites`, `get_student_enrollments`, `get_course_enrollments`, DAG cycle detection (Algorithm 03 DFS), and append-only event/audit logging.
+- `src/pwd301/services/__init__.py` (MODIFY): Exported all enrollment service functions and domain exceptions.
+- `src/pwd301/__init__.py` (MODIFY): Registered error handlers for enrollment domain exceptions (mapping to 400 COURSE_NOT_AVAILABLE, 404 RESOURCE_NOT_FOUND, 409 CAPACITY_EXCEEDED, 409 PREREQUISITE_NOT_MET, 409 PREREQUISITE_CYCLE, 409 STATE_VIOLATION), registered `api_student_bp`, and exempted it from CSRF.
+- `src/pwd301/blueprints/student/routes.py` (MODIFY): Added student enrollment routes: `POST /student/courses/<course_id>/enroll`, `POST /student/courses/<course_id>/leave`, `POST /student/courses/<course_id>/re-enroll`, and `GET /student/enrollments` with pagination and status filtering.
+- `src/pwd301/blueprints/instructor/routes.py` (MODIFY): Added instructor routes: `GET /instructor/courses/<course_id>/students` (paginated roster), `GET /instructor/courses/<course_id>/prerequisites`, `POST /instructor/courses/<course_id>/prerequisites`, and `DELETE /instructor/courses/<course_id>/prerequisites/<prereq_id>`.
+- `src/pwd301/blueprints/api_courses/routes.py` (MODIFY): Added REST API endpoints: `POST /api/courses/<id>/enroll`, `POST /api/courses/<id>/leave`, `POST /api/courses/<id>/re-enroll`, `GET/POST/DELETE /api/courses/<id>/prerequisites`, and `GET /api/courses/<id>/enrollments`.
+- `src/pwd301/blueprints/api_student/__init__.py` (NEW): Initialized `api_student` blueprint with `/api/student` url prefix.
+- `src/pwd301/blueprints/api_student/routes.py` (NEW): Implemented REST API endpoint `GET /api/student/enrollments` with pagination and status filtering.
+- `tests/unit/test_enrollment_service.py` (NEW): Implemented 12 comprehensive unit tests covering standard enrollment, capacity limits, uncompleted prerequisite rejection, completed prerequisite acceptance, self-prerequisite rejection, direct and indirect DAG cycle prevention (Algorithm 03), soft withdrawal with 30-day retention and slot freeing, idempotent leave, re-enrollment period increment, and append-only event logging.
+- `tests/security/test_enrollment_idor.py` (NEW): Implemented 7 security and IDOR tests verifying cross-student leave/re-enroll denial, cross-instructor student roster viewing denial, cross-instructor prerequisite addition/deletion denial, unauthenticated access denial, and student prerequisite tampering denial.
+- `tests/concurrency/test_enrollment_capacity.py` (NEW): Implemented 3 concurrency and capacity tests verifying sequential capacity exhaustion, strict rejection on overflow, slot reclamation upon student leave, and re-enrollment capacity enforcement.
+- `tests/api/test_enrollment_api.py` (NEW): Implemented 3 REST API integration tests for enrollment lifecycle, prerequisite management, and student enrollments query.
+- `tasks/CURRENT.md` (MODIFY): Recorded TASK-008 completion and moved TASK-007 to Historical Tasks.
 
 ### D. Deletion and simplification list
 | Candidate | Classification | Reason | Action |
 |---|---|---|---|
-| Hard SQL DELETE on lessons table | REMOVE NOW | Invariant DELETE-001 & DATA_DICTIONARY prohibit destroying learning history | Implemented application-level soft-delete (`deleted_at`, `status='TRASH'`) and repositioning to `10_000_000 + id` |
-| Negative temporary positions during reorder | REMOVE NOW | Violates check constraint `ck_lessons_1 (position > 0)` | Replaced with positive offset (`position + 1_000_000`) in 2-phase update |
-| Client-provided `completed` flag in progress ping | REMOVE NOW | Anti-tampering / Invariant PROGRESS-001 prohibits client asserting completion | Enforced server-authoritative evaluation: `seconds_spent >= minimum_completion_seconds` and `max_view_fraction >= viewed_fraction_required` |
-| Unrestricted position editing via `update_lesson` | SIMPLIFY NOW | Avoid position gaps and collision bugs | Blocked position changes in `update_lesson`; isolated into dedicated `reorder_lessons` |
+| Hard SQL DELETE on `enrollments` or `enrollment_periods` | REMOVE NOW | Invariant DELETE-001 & DATA_DICTIONARY prohibit destroying learning history | Implemented application-level soft leave (`status='LEFT'`, `detail_retention_due_at = utc_now() + 30 days`) |
+| Creating duplicate `Enrollment` rows on re-enroll | REMOVE NOW | Violates database unique constraint `uq_enrollment_student_course` | Reused original `Enrollment` record and incremented `period_no` on new `EnrollmentPeriod` |
+| Client-supplied enrollment status updates | REMOVE NOW | Invariant ENROLL-001 & RBAC require server-authoritative state transitions | State machine strictly controlled via explicit service methods (`enroll_student`, `leave_course`, `re_enroll_student`) |
+| Client-side prerequisite cycle detection | SIMPLIFY NOW | Security and graph integrity must be verified on backend | Enforced server-side DFS cycle detection (Algorithm 03) inside database transaction |
 
 ### E. Ponytails / deferred debt
-- None. Complete business logic, anti-tampering bounds, safe 2-phase reordering, monotonic completion, and IDOR protection are verified and tested.
+- None. Complete business logic, concurrency guards, DAG cycle detection, 30-day retention policy, IDOR protection, and append-only audit/event logs are verified and tested.
 
 ### F. Verification actually run and results
-1. `mypy src/pwd301/services/lesson_service.py tests/unit/test_lesson_service.py`:
+1. `mypy src/pwd301/services/enrollment_service.py tests/unit/test_enrollment_service.py`:
    ```
    Success: no issues found in 2 source files
    ```
 2. `mypy src`:
    ```
-   Success: no issues found in 43 source files
+   Success: no issues found in 46 source files
    ```
 3. `ruff check src tests scripts`:
    ```
@@ -154,11 +168,11 @@ Triển khai toàn diện tầng nghiệp vụ (`lesson_service.py`), các ngo�
    ```
 4. `ruff format --check src tests scripts`:
    ```
-   61 files already formatted
+   73 files already formatted
    ```
-5. `pytest tests/unit/test_lesson_service.py tests/security/test_lesson_idor.py tests/api/test_lesson_api.py -v`:
+5. `pytest tests/unit/test_enrollment_service.py tests/security/test_enrollment_idor.py tests/concurrency/test_enrollment_capacity.py tests/api/test_enrollment_api.py -v`:
    ```
-   ============================= 26 passed in 8.95s ==============================
+   ============================= 25 passed in 9.15s ==============================
    ```
 6. `./scripts/verify.ps1`:
    ```
@@ -174,19 +188,23 @@ Triển khai toàn diện tầng nghiệp vụ (`lesson_service.py`), các ngo�
    == Python compile ==
    == Lint / format / types ==
    All checks passed!
-   61 files already formatted
-   Success: no issues found in 43 source files
+   73 files already formatted
+   Success: no issues found in 46 source files
    == Tests ==
-   ============================ 183 passed in 46.21s =============================
+   ======================= 208 passed in 72.25s (0:01:12) ========================
    PWD301 verification PASS
    ```
 
 ### G. Remaining risks / next step
-- Next scheduled task on roadmap: **TASK-008 — Student Enrollment Lifecycle & Period Management (`enrollment_service.py`)**.
+- Next scheduled task on roadmap: **TASK-009 — Course Completion Summary, Metrics & Aggregate Progress Tracking (`completion_service.py`)**.
 
 ---
 
 ## Historical Tasks
+
+### TASK-007 — Lesson Management, Reordering & Completion Tracking
+**Status:** DONE  
+*Triển khai toàn diện tầng nghiệp vụ (`lesson_service.py`), các ngoại lệ miền (`exceptions.py`), bộ điều khiển route (Web UI & REST API), giải thuật ghi nhận tiến độ (`02_LESSON_COMPLETION_ALGORITHM.md`) và cơ chế tái sắp xếp thứ tự bài học (Lesson Reordering) an toàn với kỹ thuật temporary positive offset `+ 1_000_000`. Tuân thủ nghiêm ngặt ma trận phân quyền (RBAC), phòng chống lỗ hổng IDOR, và ghi nhận Append-only Audit Log.*
 
 ### TASK-006 — Course Management, Lifecycle & Ownership/Reassignment
 **Status:** DONE  

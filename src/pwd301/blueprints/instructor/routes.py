@@ -21,7 +21,13 @@ from pwd301.services.course_service import (
     trash_course,
     update_course,
 )
-from pwd301.services.exceptions import LessonValidationError
+from pwd301.services.enrollment_service import (
+    add_course_prerequisite,
+    get_course_enrollments,
+    get_course_prerequisites,
+    remove_course_prerequisite,
+)
+from pwd301.services.exceptions import CourseValidationError, LessonValidationError
 from pwd301.services.lesson_service import (
     change_lesson_status,
     create_lesson,
@@ -321,3 +327,131 @@ def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
     lesson = trash_lesson(actor, lesson_id, reason=reason)
     return jsonify(_serialize_lesson(lesson)), 200
+
+
+def _serialize_enrolled_student(e: Enrollment) -> dict[str, Any]:
+    return {
+        "enrollment_id": str(e.public_id),
+        "student_id": str(e.student.public_id) if e.student else None,
+        "student_name": e.student.display_name if e.student else None,
+        "student_email": e.student.email if e.student else None,
+        "status": e.status,
+        "current_progress_percent": float(e.current_progress_percent),
+        "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+        "left_at": e.left_at.isoformat() if e.left_at else None,
+    }
+
+
+def _serialize_prerequisite_course(c: Course) -> dict[str, Any]:
+    return {
+        "course_id": str(c.public_id),
+        "course_code": c.course_code,
+        "title": c.title,
+        "category": c.category,
+        "difficulty": c.difficulty,
+        "status": c.status,
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/students", methods=["GET"])
+@instructor_required
+def list_course_students_route(course_id: str) -> tuple[Response, int] | Response:
+    """List students enrolled in the managed course with pagination and filtering."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    status = request.args.get("status")
+
+    items, total = get_course_enrollments(
+        actor=actor,
+        course_id=course_id,
+        status=status,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "items": [_serialize_enrolled_student(e) for e in items],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_items": total,
+                    "total_pages": (total + per_page - 1) // per_page if per_page > 0 else 0,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites", methods=["GET"])
+@instructor_required
+def list_course_prerequisites_route(course_id: str) -> tuple[Response, int] | Response:
+    """List direct prerequisite courses for a managed course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    require_course_manager(actor, course_id, session=db.session)
+    prereqs = get_course_prerequisites(course_id, session=db.session)
+    return jsonify({"prerequisites": [_serialize_prerequisite_course(c) for c in prereqs]}), 200
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites", methods=["POST"])
+@instructor_required
+def add_course_prerequisite_route(course_id: str) -> tuple[Response, int] | Response:
+    """Add a prerequisite course dependency (with DAG cycle detection)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    prerequisite_course_id = payload.get("prerequisite_course_id")
+    if not prerequisite_course_id:
+        raise CourseValidationError("prerequisite_course_id is required.")
+
+    link = add_course_prerequisite(
+        actor=actor,
+        course_id=course_id,
+        prerequisite_course_id=prerequisite_course_id,
+        session=db.session,
+    )
+    db.session.commit()
+    return (
+        jsonify(
+            {
+                "course_id": str(link.course.public_id) if link.course else str(link.course_id),
+                "prerequisite_course_id": (
+                    str(link.prerequisite_course.public_id)
+                    if link.prerequisite_course
+                    else str(link.prerequisite_course_id)
+                ),
+                "created_at": link.created_at.isoformat(),
+            }
+        ),
+        201,
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/prerequisites/<prereq_id>", methods=["DELETE"])
+@instructor_bp.route(
+    "/courses/<course_id>/prerequisites/<prereq_id>/delete", methods=["POST", "DELETE"]
+)
+@instructor_required
+def remove_course_prerequisite_route(
+    course_id: str, prereq_id: str
+) -> tuple[Response, int] | Response:
+    """Remove a prerequisite dependency."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    removed = remove_course_prerequisite(
+        actor=actor,
+        course_id=course_id,
+        prerequisite_course_id=prereq_id,
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify({"removed": removed}), 200

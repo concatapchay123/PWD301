@@ -35,6 +35,7 @@ from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
+from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
 from pwd301.blueprints.instructor import instructor_bp
@@ -46,14 +47,21 @@ from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
     CourseAlreadyExistsError,
     CourseDependencyError,
+    CourseNotAvailableError,
     CourseStateViolationError,
     CourseValidationError,
+    EnrollmentCapacityExceededError,
+    EnrollmentError,
+    EnrollmentNotFoundError,
+    EnrollmentPrerequisiteError,
+    EnrollmentStateViolationError,
     ForbiddenError,
     LessonNotFoundError,
     LessonPositionConflictError,
     LessonProgressError,
     LessonStateViolationError,
     LessonValidationError,
+    PrerequisiteCycleError,
     ResourceNotFoundError,
 )
 
@@ -285,6 +293,76 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=400,
         )
 
+    @app.errorhandler(EnrollmentNotFoundError)
+    def domain_enrollment_not_found_error(
+        error: EnrollmentNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(EnrollmentCapacityExceededError)
+    def domain_enrollment_capacity_exceeded_error(
+        error: EnrollmentCapacityExceededError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CAPACITY_EXCEEDED",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(EnrollmentPrerequisiteError)
+    def domain_enrollment_prerequisite_error(
+        error: EnrollmentPrerequisiteError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="PREREQUISITE_NOT_MET",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(EnrollmentStateViolationError)
+    def domain_enrollment_state_violation_error(
+        error: EnrollmentStateViolationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="STATE_VIOLATION",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(PrerequisiteCycleError)
+    def domain_prerequisite_cycle_error(
+        error: PrerequisiteCycleError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CYCLE_DETECTED",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(CourseNotAvailableError)
+    def domain_course_not_available_error(
+        error: CourseNotAvailableError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="COURSE_NOT_AVAILABLE",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(EnrollmentError)
+    def domain_enrollment_error(
+        error: EnrollmentError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="ENROLLMENT_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
     @app.errorhandler(405)
     def method_not_allowed_error(
         error: HTTPException | Exception,
@@ -465,11 +543,13 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_course_bp)
     app.register_blueprint(api_lesson_bp)
+    app.register_blueprint(api_student_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
+    csrf.exempt(api_student_bp)
 
     # Register CLI commands
     register_cli_commands(app)

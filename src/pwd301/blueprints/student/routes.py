@@ -14,6 +14,12 @@ from pwd301.services.authorization_service import (
     get_authenticated_actor,
     student_required,
 )
+from pwd301.services.enrollment_service import (
+    enroll_student,
+    get_student_enrollments,
+    leave_course,
+    re_enroll_student,
+)
 from pwd301.services.exceptions import LessonValidationError, ResourceNotFoundError
 from pwd301.services.lesson_service import (
     get_lesson_detail,
@@ -172,3 +178,74 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
     }
     return jsonify(data), 200
+
+
+def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
+    return {
+        "enrollment_id": str(e.public_id),
+        "course_id": str(e.course.public_id) if e.course else None,
+        "course_code": e.course.course_code if e.course else None,
+        "course_title": e.course.title if e.course else None,
+        "student_id": str(e.student.public_id) if e.student else None,
+        "status": e.status,
+        "current_period_id": e.current_period_id,
+        "current_progress_percent": float(e.current_progress_percent),
+        "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+        "left_at": e.left_at.isoformat() if e.left_at else None,
+        "detail_retention_due_at": (
+            e.detail_retention_due_at.isoformat() if e.detail_retention_due_at else None
+        ),
+    }
+
+
+@student_bp.route("/courses/<course_id>/enroll", methods=["POST"])
+@student_required
+def student_enroll_course(course_id: str) -> tuple[Response, int] | Response:
+    """Self-enroll in a published course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
+    db.session.commit()
+    return jsonify(_serialize_enrollment(enrollment)), 201
+
+
+@student_bp.route("/courses/<course_id>/leave", methods=["POST"])
+@student_required
+def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
+    """Withdraw from an active course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        reason = str(reason)
+
+    enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
+    db.session.commit()
+    return jsonify(_serialize_enrollment(enrollment)), 200
+
+
+@student_bp.route("/courses/<course_id>/re-enroll", methods=["POST"])
+@student_required
+def student_re_enroll_course(course_id: str) -> tuple[Response, int] | Response:
+    """Re-enroll in a previously left course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    enrollment = re_enroll_student(actor=actor, course_id=course_id, session=db.session)
+    db.session.commit()
+    return jsonify(_serialize_enrollment(enrollment)), 200
+
+
+@student_bp.route("/enrollments", methods=["GET"])
+@student_required
+def student_list_enrollments() -> tuple[Response, int] | Response:
+    """List all enrollments belonging to the authenticated student."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    status = request.args.get("status")
+    enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
+    return jsonify({"enrollments": [_serialize_enrollment(e) for e in enrollments]}), 200
