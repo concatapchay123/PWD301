@@ -49,6 +49,9 @@ from pwd301.services.exceptions import (
     AssessmentClosedError,
     AssessmentNotFoundError,
     AssessmentNotOpenError,
+    AttemptExpiredError,
+    AttemptLeaseConflictError,
+    AttemptLeaseExpiredError,
     AttemptLimitExceededError,
     AttemptNotFoundError,
     AttemptValidationError,
@@ -156,6 +159,48 @@ def _calculate_deadline(
     elif close_at is not None:
         return close_at
     return None
+
+
+def _check_and_expire_if_needed(
+    sess: Session | scoped_session[Any],
+    attempt: AssessmentAttempt,
+    now: datetime | None = None,
+) -> None:
+    """Check attempt deadline and status; transition to EXPIRED if past deadline.
+
+    Raises:
+        AttemptExpiredError: If attempt deadline has passed or status is EXPIRED.
+        AttemptValidationError: If attempt status is not IN_PROGRESS.
+    """
+    current_time = now if now is not None else utc_now()
+    norm_now = _normalize_dt(current_time)
+
+    deadline = _normalize_dt(attempt.deadline_at)
+    close_at = (
+        _normalize_dt(attempt.assessment.close_at) if attempt.assessment is not None else None
+    )
+
+    is_past_deadline = deadline is not None and norm_now is not None and norm_now >= deadline
+    is_past_close = close_at is not None and norm_now is not None and norm_now >= close_at
+
+    if attempt.status == "IN_PROGRESS" and (is_past_deadline or is_past_close):
+        attempt.status = "EXPIRED"
+        attempt.updated_at = current_time
+        sess.flush()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
+        raise AttemptExpiredError("Assessment attempt deadline has expired.")
+
+    if attempt.status == "EXPIRED":
+        raise AttemptExpiredError("Assessment attempt deadline has expired.")
+
+    if attempt.status != "IN_PROGRESS":
+        raise AttemptValidationError(
+            f"Assessment attempt is not in progress (status: {attempt.status})."
+        )
 
 
 # ============================================================================
@@ -633,3 +678,257 @@ def list_student_assessment_attempts(
             sess.rollback()
 
     return [_serialize_attempt(att) for att in attempts]
+
+
+# ============================================================================
+# ATTEMPT LEASE MANAGEMENT & MULTI-TAB TAKEOVER (TASK-014)
+# ============================================================================
+
+
+def renew_attempt_lease(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    raw_lease_token: str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Renew an active editing lease via heartbeat for an in-progress attempt.
+
+    Preconditions & Invariants (Algorithm 07, ADR-005, ADR-006):
+    1. Zero-Trust IDOR: Own-attempt access only (actor.id == attempt.student_user_id).
+       Instructors or peer students are rejected with ForbiddenError (403).
+    2. Attempt must be IN_PROGRESS and not past server deadline_at or close_at.
+       If expired, auto-transitions to EXPIRED and raises AttemptExpiredError (409).
+    3. SHA-256 digest of raw_lease_token must match attempt.lease_token_hash.
+       If token does not match (taken over or invalid), raises AttemptLeaseConflictError (409).
+    4. Current server time must be <= attempt.lease_expires_at.
+       If lease expired, raises AttemptLeaseExpiredError (409).
+    5. Extends lease_expires_at by ATTEMPT_LEASE_SECONDS (default 30s), clamped to deadline_at.
+    6. Updates last_heartbeat_at = now.
+
+    Returns:
+        dict with attempt_id, status, lease_expires_at, remaining_seconds, server_time.
+    """
+    sess = session if session is not None else db.session
+
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    # Zero-Trust IDOR check: only owning student can manage lease
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You do not have permission to manage this assessment attempt lease.")
+
+    now = utc_now()
+    _check_and_expire_if_needed(sess, attempt, now)
+
+    # Validate lease token match
+    if not raw_lease_token or not isinstance(raw_lease_token, str):
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    # Validate lease has not expired
+    norm_now = _normalize_dt(now)
+    lease_exp = _normalize_dt(attempt.lease_expires_at)
+    if lease_exp is None or (norm_now is not None and norm_now > lease_exp):
+        raise AttemptLeaseExpiredError("Editing lease was lost or taken over by another window.")
+
+    # Compute new lease expiration clamped to deadline_at
+    try:
+        lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 30))
+    except RuntimeError:
+        lease_seconds = 30
+
+    new_expiry = now + timedelta(seconds=lease_seconds)
+    deadline = _normalize_dt(attempt.deadline_at)
+    if deadline is not None and (_normalize_dt(new_expiry) or new_expiry) > deadline:
+        new_expiry = attempt.deadline_at
+
+    attempt.lease_expires_at = new_expiry
+    attempt.last_heartbeat_at = now
+    attempt.updated_at = now
+
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    remaining_seconds: int | None = None
+    if deadline is not None and norm_now is not None:
+        diff = (deadline - norm_now).total_seconds()
+        remaining_seconds = max(0, int(diff))
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "status": attempt.status,
+        "lease_expires_at": attempt.lease_expires_at.isoformat(),
+        "remaining_seconds": remaining_seconds,
+        "server_time": now.isoformat(),
+    }
+
+
+def takeover_attempt_lease(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[AssessmentAttempt, str]:
+    """Take over the editing lease from another window/device for an in-progress attempt.
+
+    Preconditions & Invariants (Algorithm 07, ADR-005, ADR-006):
+    1. Zero-Trust IDOR: Own-attempt access only (actor.id == attempt.student_user_id).
+       Instructors or peer students are rejected with ForbiddenError (403).
+    2. Attempt must be IN_PROGRESS and not past server deadline_at or close_at.
+       If expired, auto-transitions to EXPIRED and raises AttemptExpiredError (409).
+    3. Generates new cryptographically secure 32-byte hex token, hashes with SHA-256.
+    4. Overwrites lease_token_hash, invalidating the previous tab's lease immediately.
+    5. Sets lease_acquired_at = now, last_heartbeat_at = now.
+    6. Sets lease_expires_at = min(now + ATTEMPT_LEASE_SECONDS, deadline_at).
+    7. Records append-only AuditEvent with action='LEASE_TAKEOVER'.
+
+    Returns:
+        tuple of (AssessmentAttempt, raw_lease_token).
+    """
+    sess = session if session is not None else db.session
+
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    # Zero-Trust IDOR check: only owning student can takeover lease
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You do not have permission to manage this assessment attempt lease.")
+
+    now = utc_now()
+    _check_and_expire_if_needed(sess, attempt, now)
+
+    # Generate new 32-byte hex lease token and hash
+    try:
+        lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 30))
+    except RuntimeError:
+        lease_seconds = 30
+
+    raw_token, token_hash, acquired_at, expires_at = _generate_lease(lease_seconds=lease_seconds)
+
+    deadline = _normalize_dt(attempt.deadline_at)
+    if deadline is not None and (_normalize_dt(expires_at) or expires_at) > deadline:
+        expires_at = attempt.deadline_at
+
+    attempt.lease_token_hash = token_hash
+    attempt.lease_acquired_at = acquired_at
+    attempt.last_heartbeat_at = acquired_at
+    attempt.lease_expires_at = expires_at
+    attempt.updated_at = now
+
+    # Record Audit Event
+    _record_attempt_audit(
+        sess=sess,
+        actor=actor,
+        action="LEASE_TAKEOVER",
+        target_id=attempt.id,
+        reason=f"Student took over editing lease for attempt #{attempt.attempt_number}",
+    )
+
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return attempt, raw_token
+
+
+def release_attempt_lease(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    raw_lease_token: str,
+    session: Session | scoped_session[Any] | None = None,
+) -> None:
+    """Voluntarily release an editing lease when a tab or window closes.
+
+    Preconditions & Invariants (Algorithm 07, ADR-005):
+    1. Zero-Trust IDOR: Own-attempt access only (actor.id == attempt.student_user_id).
+       Instructors or peer students are rejected with ForbiddenError (403).
+    2. Validates raw_lease_token SHA-256 matches attempt.lease_token_hash.
+       If mismatch, raises AttemptLeaseConflictError (409).
+    3. Sets lease_token_hash = None, lease_expires_at = now.
+    4. Records append-only AuditEvent with action='LEASE_RELEASED'.
+    """
+    sess = session if session is not None else db.session
+
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    # Zero-Trust IDOR check
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You do not have permission to manage this assessment attempt lease.")
+
+    if attempt.status != "IN_PROGRESS":
+        return
+
+    if not raw_lease_token or not isinstance(raw_lease_token, str):
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    now = utc_now()
+    attempt.lease_token_hash = None
+    attempt.lease_expires_at = now
+    attempt.updated_at = now
+
+    _record_attempt_audit(
+        sess=sess,
+        actor=actor,
+        action="LEASE_RELEASED",
+        target_id=attempt.id,
+        reason=f"Student released editing lease for attempt #{attempt.attempt_number}",
+    )
+
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+
+def verify_attempt_lease(
+    attempt: AssessmentAttempt,
+    raw_lease_token: str | None,
+) -> bool:
+    """Helper to verify lease validity before autosave or submission.
+
+    Returns True if:
+    - Attempt status is IN_PROGRESS
+    - raw_lease_token is provided and SHA-256 matches attempt.lease_token_hash
+    - Server time <= attempt.lease_expires_at
+    - Server time < attempt.deadline_at (if deadline configured)
+    """
+    if attempt.status != "IN_PROGRESS":
+        return False
+
+    if not raw_lease_token or not isinstance(raw_lease_token, str):
+        return False
+
+    if attempt.lease_token_hash is None:
+        return False
+
+    token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+    if attempt.lease_token_hash != token_hash:
+        return False
+
+    now = utc_now()
+    norm_now = _normalize_dt(now)
+    lease_exp = _normalize_dt(attempt.lease_expires_at)
+    if lease_exp is None or (norm_now is not None and norm_now > lease_exp):
+        return False
+
+    deadline = _normalize_dt(attempt.deadline_at)
+    return not (deadline is not None and norm_now is not None and norm_now >= deadline)

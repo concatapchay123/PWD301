@@ -17,8 +17,8 @@ This backlog follows the documented dependency order. IDs are repository executi
 | TASK-011 | QuestionRevision + Correction Rules | TASK-010 | DONE |
 | TASK-012 | Assessment Builder / Blueprint / Publish Rules | TASK-011 | DONE |
 | TASK-013 | AssessmentAttempt Snapshot + Server Timer | TASK-012 | DONE |
-| TASK-014 | Attempt Lease + Multi-tab Takeover | TASK-013 | READY |
-| TASK-015 | Autosave + Offline Reconciliation + Idempotent Submit | TASK-013,TASK-014 | BACKLOG |
+| TASK-014 | Attempt Lease + Multi-tab Takeover | TASK-013 | DONE |
+| TASK-015 | Autosave + Offline Reconciliation + Idempotent Submit | TASK-013,TASK-014 | READY |
 | TASK-016 | Grading + Manual Essay Grading | TASK-015 | BACKLOG |
 | TASK-017 | Regrading + Score History | TASK-011,TASK-016 | BACKLOG |
 | TASK-018 | File Blob/Asset Storage + Authorization | TASK-005 | BACKLOG |

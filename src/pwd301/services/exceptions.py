@@ -293,3 +293,15 @@ class ActiveAttemptExistsError(ConflictError, AttemptError):
 
 class AttemptLeaseError(ConflictError, AttemptError):
     """Raised when an attempt editing lease conflict or authorization error occurs."""
+
+
+class AttemptLeaseConflictError(AttemptLeaseError):
+    """Raised when editing lease token does not match or was taken over by another window."""
+
+
+class AttemptLeaseExpiredError(AttemptLeaseError):
+    """Raised when editing lease has expired and requires renewal or takeover."""
+
+
+class AttemptExpiredError(ConflictError, AttemptError):
+    """Raised when an assessment attempt has exceeded its server-authoritative deadline."""

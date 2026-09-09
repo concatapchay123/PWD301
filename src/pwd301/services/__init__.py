@@ -30,7 +30,11 @@ from pwd301.services.attempt_service import (
     _serialize_attempt,
     get_attempt_delivery,
     list_student_assessment_attempts,
+    release_attempt_lease,
+    renew_attempt_lease,
     start_assessment_attempt,
+    takeover_attempt_lease,
+    verify_attempt_lease,
 )
 from pwd301.services.auth_token_service import (
     SecurityTokenPurpose,
@@ -104,7 +108,10 @@ from pwd301.services.exceptions import (
     AssessmentStateViolationError,
     AssessmentValidationError,
     AttemptError,
+    AttemptExpiredError,
+    AttemptLeaseConflictError,
     AttemptLeaseError,
+    AttemptLeaseExpiredError,
     AttemptLimitExceededError,
     AttemptNotFoundError,
     AttemptValidationError,
@@ -419,7 +426,7 @@ __all__ = [
     "_serialize_section",
     "_serialize_assignment",
     "_serialize_blueprint",
-    # Attempt Service & Delivery (TASK-013)
+    # Attempt Service & Delivery (TASK-013, TASK-014)
     "AttemptError",
     "AttemptNotFoundError",
     "AttemptValidationError",
@@ -427,9 +434,16 @@ __all__ = [
     "AssessmentNotOpenError",
     "AssessmentClosedError",
     "ActiveAttemptExistsError",
+    "AttemptExpiredError",
     "AttemptLeaseError",
+    "AttemptLeaseConflictError",
+    "AttemptLeaseExpiredError",
     "start_assessment_attempt",
     "get_attempt_delivery",
     "list_student_assessment_attempts",
+    "renew_attempt_lease",
+    "takeover_attempt_lease",
+    "release_attempt_lease",
+    "verify_attempt_lease",
     "_serialize_attempt",
 ]

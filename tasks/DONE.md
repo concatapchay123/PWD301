@@ -117,3 +117,17 @@
 - **Verification commands and results:**
   - `pytest tests/unit/test_attempt_service.py tests/api/test_attempt_api.py tests/security/test_attempt_idor.py`: PASS.
 
+## TASK-014 — Attempt Lease Management & Multi-Tab Takeover Engine
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (`AttemptLeaseExpiredError`, `AttemptLeaseConflictError`, `AttemptExpiredError`)
+  - `src/pwd301/services/attempt_service.py` (`renew_attempt_lease`, `takeover_attempt_lease`, `release_attempt_lease`, `verify_attempt_lease`)
+  - `src/pwd301/__init__.py` (Centralized domain error handlers for 409 LEASE_CONFLICT and DEADLINE_EXPIRED)
+  - `src/pwd301/blueprints/api_attempts/routes.py` (Heartbeat, takeover, release endpoints & aliases)
+  - `tests/unit/test_attempt_lease_service.py`, `tests/security/test_attempt_lease_idor.py`, `tests/concurrency/test_attempt_lease_race.py`, `tests/api/test_attempt_lease_api.py`
+- **Verification commands and results:**
+  - `repo_check.py`, `ruff check`, `ruff format --check`, `mypy src`: PASS
+  - `pytest tests/unit/test_attempt_lease_service.py tests/security/test_attempt_lease_idor.py tests/concurrency/test_attempt_lease_race.py tests/api/test_attempt_lease_api.py -v`: PASS (32/32 passed)
+  - `pytest`: PASS (397/397 passed)
+
+
