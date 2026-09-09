@@ -257,3 +257,35 @@ class AssessmentSectionNotFoundError(ResourceNotFoundError, AssessmentError):
 
 class BlueprintValidationError(ValidationError, AssessmentError):
     """Raised when assessment blueprint rules, constraints, or candidate pool generation fails."""
+
+
+class AttemptError(ServiceError):
+    """Base exception for all assessment attempt and delivery domain errors."""
+
+
+class AttemptNotFoundError(ResourceNotFoundError, AttemptError):
+    """Raised when a requested assessment attempt cannot be found."""
+
+
+class AttemptValidationError(ValidationError, AttemptError):
+    """Raised when attempt preconditions or parameters fail domain validation."""
+
+
+class AttemptLimitExceededError(ConflictError, AttemptError):
+    """Raised when student has reached or exceeded the allowed attempt limit."""
+
+
+class AssessmentNotOpenError(ValidationError, AttemptError):
+    """Raised when starting an attempt on an assessment that is not yet open or not published."""
+
+
+class AssessmentClosedError(ValidationError, AttemptError):
+    """Raised when starting an attempt on an assessment that has passed its close deadline."""
+
+
+class ActiveAttemptExistsError(ConflictError, AttemptError):
+    """Raised when a student starts an attempt while an active attempt is in progress."""
+
+
+class AttemptLeaseError(ConflictError, AttemptError):
+    """Raised when an attempt editing lease conflict or authorization error occurs."""

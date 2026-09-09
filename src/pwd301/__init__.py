@@ -33,6 +33,7 @@ from werkzeug.exceptions import HTTPException
 import pwd301.models  # noqa: F401
 from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_assessments import api_assessment_bp
+from pwd301.blueprints.api_attempts import api_attempt_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
@@ -47,12 +48,20 @@ from pwd301.config import config_by_name
 from pwd301.extensions import csrf, db, login_manager, migrate
 from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
+    ActiveAttemptExistsError,
+    AssessmentClosedError,
     AssessmentError,
     AssessmentLockedError,
     AssessmentNotFoundError,
+    AssessmentNotOpenError,
     AssessmentSectionNotFoundError,
     AssessmentStateViolationError,
     AssessmentValidationError,
+    AttemptError,
+    AttemptLeaseError,
+    AttemptLimitExceededError,
+    AttemptNotFoundError,
+    AttemptValidationError,
     BlueprintValidationError,
     CompletionRuleError,
     CompletionRuleNotFoundError,
@@ -574,6 +583,86 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=400,
         )
 
+    @app.errorhandler(AttemptNotFoundError)
+    def domain_attempt_not_found_error(
+        error: AttemptNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(AttemptValidationError)
+    def domain_attempt_validation_error(
+        error: AttemptValidationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(AttemptLimitExceededError)
+    def domain_attempt_limit_exceeded_error(
+        error: AttemptLimitExceededError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="ATTEMPT_LIMIT",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(AssessmentNotOpenError)
+    def domain_assessment_not_open_error(
+        error: AssessmentNotOpenError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="NOT_OPEN",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(AssessmentClosedError)
+    def domain_assessment_closed_error(
+        error: AssessmentClosedError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CLOSED",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(ActiveAttemptExistsError)
+    def domain_active_attempt_exists_error(
+        error: ActiveAttemptExistsError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CONFLICT",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(AttemptLeaseError)
+    def domain_attempt_lease_error(
+        error: AttemptLeaseError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="LEASE_CONFLICT",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(AttemptError)
+    def domain_attempt_error(
+        error: AttemptError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
     @app.errorhandler(405)
     def method_not_allowed_error(
         error: HTTPException | Exception,
@@ -757,6 +846,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(api_question_bp)
     app.register_blueprint(api_student_bp)
     app.register_blueprint(api_assessment_bp)
+    app.register_blueprint(api_attempt_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
@@ -765,6 +855,7 @@ def create_app(config_name: str | None = None) -> Flask:
     csrf.exempt(api_question_bp)
     csrf.exempt(api_student_bp)
     csrf.exempt(api_assessment_bp)
+    csrf.exempt(api_attempt_bp)
 
     # Register CLI commands
     register_cli_commands(app)

@@ -26,6 +26,12 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     update_assessment,
 )
+from pwd301.services.attempt_service import (
+    _serialize_attempt,
+    get_attempt_delivery,
+    list_student_assessment_attempts,
+    start_assessment_attempt,
+)
 from pwd301.services.auth_token_service import (
     SecurityTokenPurpose,
     apply_email_change_with_token,
@@ -87,12 +93,20 @@ from pwd301.services.enrollment_service import (
 )
 from pwd301.services.exceptions import (
     AccountNotActiveError,
+    ActiveAttemptExistsError,
+    AssessmentClosedError,
     AssessmentError,
     AssessmentLockedError,
     AssessmentNotFoundError,
+    AssessmentNotOpenError,
     AssessmentSectionNotFoundError,
     AssessmentStateViolationError,
     AssessmentValidationError,
+    AttemptError,
+    AttemptLeaseError,
+    AttemptLimitExceededError,
+    AttemptNotFoundError,
+    AttemptValidationError,
     AuthenticationError,
     AuthVersionMismatchError,
     BlueprintValidationError,
@@ -401,4 +415,17 @@ __all__ = [
     "_serialize_section",
     "_serialize_assignment",
     "_serialize_blueprint",
+    # Attempt Service & Delivery (TASK-013)
+    "AttemptError",
+    "AttemptNotFoundError",
+    "AttemptValidationError",
+    "AttemptLimitExceededError",
+    "AssessmentNotOpenError",
+    "AssessmentClosedError",
+    "ActiveAttemptExistsError",
+    "AttemptLeaseError",
+    "start_assessment_attempt",
+    "get_attempt_delivery",
+    "list_student_assessment_attempts",
+    "_serialize_attempt",
 ]
