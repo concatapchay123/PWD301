@@ -340,3 +340,18 @@ class AttemptNotSubmittedError(StateViolationError, GradingError):
 
 
 AttemptNotSubmitedError = AttemptNotSubmittedError
+
+
+class RegradeError(ServiceError):
+    """Base exception for all regrading engine errors."""
+
+
+NotFoundError = ResourceNotFoundError
+
+
+class RegradeJobNotFoundError(ResourceNotFoundError, RegradeError):
+    """Raised when a requested RegradeJob cannot be found."""
+
+
+class QuestionCorrectionNotFoundError(ResourceNotFoundError, RegradeError):
+    """Raised when a requested QuestionCorrection cannot be found."""

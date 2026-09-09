@@ -1,123 +1,138 @@
-# TASK-016 — Assessment Grading Engine & Manual Essay Evaluation
+# TASK-017 — Regrading Engine & Score History Implementation
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-015  
+**Depends on:** TASK-010, TASK-011, TASK-014, TASK-015, TASK-016  
 
 ---
 
-## 1. Goal / Problem Statement
-Implement the complete Assessment Grading Engine & Manual Essay Evaluation workflow in strict compliance with **Algorithm 10 (Grading Algorithm)**, **Business Domain 10 (Grading & Regrading)**, **Attempt API Specification**, **ADR-002 (Internal BIGINT Masking)**, and canonical database constraints:
-1. **Objective Auto-Grading Engine**:
-   - `SINGLE_CHOICE`: Exactly 1 selected choice matching `is_correct == True` awards 100% `points_assigned`; incorrect or unselected awards 0.
-   - `TRUE_FALSE`: Exactly 1 selected choice matching `is_correct == True` awards 100% `points_assigned`; incorrect or unselected awards 0.
-   - `MULTIPLE_CHOICE`: All-or-nothing exact set equality (`selected_choice_keys == correct_choice_keys`). Partial match or extraneous wrong choices award 0.
-   - `SHORT_ANSWER`: Case-insensitive and whitespace-normalized matching against `QuestionRevisionAcceptedAnswer` entries via Unicode NFKC normalization. Correct awards 100% `points_assigned`; non-matching awards 0.
-2. **Attempt Lifecycle Status Transitions**:
-   - **Pure Objective Assessments**: Submitting an attempt automatically grades all questions, transitions attempt status immediately to `GRADED` with `graded_at = utc_now()`, and computes `AssessmentResult` (`FINAL` or `RELEASED` based on score release policy).
-   - **Mixed / Essay Assessments**: Submitting an attempt evaluates objective questions immediately (`AUTO_GRADED`), marks essay questions as `PENDING` (`awarded_points = 0`, `grading_rule = 'MANUAL'`), transitions attempt to `PENDING_GRADING`, and creates `AssessmentResult` with `status = 'PENDING'`.
-3. **Manual Essay Evaluation Workflow**:
-   - Instructor/admin grading endpoints (`POST /instructor/attempts/<id>/grades/<qid>` and `POST /api/attempts/<id>/grades/<qid>`).
-   - Strict score bounds check: $0 \le \text{awarded\_points} \le \text{points\_assigned}$ (raises `MaxPointsExceededError` on breach).
-   - Attempt state check: grading an in-progress attempt raises 409 `AttemptNotSubmittedError`.
-   - Audit trail: appends `AttemptQuestionGradeHistory` with `reason_code = 'MANUAL_REVISION'` (satisfying DDL constraint `ck_attempt_question_grade_history_2`).
-   - Auto-finalization: when the last pending essay question is graded, the attempt automatically finalizes to `GRADED` with `graded_at = utc_now()`, and `AssessmentResult` is recalculated to `FINAL` or `RELEASED`.
-4. **Aggregate Result & Policies**:
-   - `AssessmentResult`: aggregates `raw_score`, `max_score`, `percent_score = (raw_score / max_score) * 100`, and `passed = percent_score >= passing_percent`.
-   - Score release policies: `IMMEDIATE`, `AFTER_CLOSE`, and `INSTRUCTOR_RELEASE` (scores hidden with `score_status: "SCORE_HIDDEN"` until released).
-   - Instructor score release endpoint: `POST /api/assessments/<id>/release-scores` transitions results from `FINAL` to `RELEASED` and records append-only `AuditEvent`.
-   - Answer visibility policies: `IMMEDIATE`, `AFTER_CLOSE`, `AFTER_ALL_ATTEMPTS`, and `NEVER` (hiding question explanations and choice feedback).
-5. **Course Completion Engine Integration**:
-   - Recalculates course completion (`recalculate_course_completion`) when a student passes an assessment marked with `is_required_for_completion == True` (Criterion 3).
-6. **ADR-002 BigInt Masking & Zero-Trust IDOR**:
-   - Zero internal database integer PKs/FKs disclosed in JSON responses across all grading and result endpoints. UUIDv4 public identifiers only.
-   - Enforce fail-closed authorization: peer students cannot view each other's results (403), non-course instructors cannot view or grade attempts (403), students cannot grade essays (403).
+## 1. Goal & Architectural Purpose
+Triển khai hoàn chỉnh toàn diện Động cơ chấm lại (Regrading Engine) và Lịch sử biến động điểm số (Score History) theo đúng Algorithm 11, Business Rules 07 & 10, State Machine `REGRADING_STATE_MACHINE.md`, APIs `07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`, ADR-002, và hợp đồng vận hành `AGENTS.md`:
+1. **Algorithm 11 Regrading Logic**:
+   - `ANSWER_ONLY`: Chấm lại tự động theo revision mới của câu hỏi (SINGLE_CHOICE, MULTIPLE_CHOICE, SHORT_ANSWER với chuẩn hóa NFKC / exact matching); chỉ cập nhật điểm của thí sinh đã làm câu hỏi này; ghi nhận `reason_code='AUTO_REGRADE'` vào `AttemptQuestionGradeHistory`.
+   - `CONTENT_OR_CHOICES`: Áp dụng Full-Credit Safety Policy; tự động tặng trọn điểm tối đa (`points_assigned`) cho tất cả thí sinh bị ảnh hưởng bởi câu hỏi có nội dung hoặc lựa chọn bị lỗi; ghi nhận `reason_code='FULL_CREDIT'`.
+2. **Strict Skip Logic**:
+   - Thí sinh có bài làm bị thanh lọc chi tiết (`is_detail_purged=True`) -> đánh dấu `RegradeItem.status='SKIPPED'`, `skip_reason='DETAIL_PURGED'`.
+   - Thí sinh có bài làm bị hủy (`status='CANCELLED'`) -> đánh dấu `RegradeItem.status='SKIPPED'`, `skip_reason='CANCELLED'`.
+   - Bài thi chưa nộp (`CREATED`, `IN_PROGRESS`) không tham gia job chấm lại.
+3. **Audit Trail & Score History**:
+   - Mọi thay đổi điểm số từng câu hỏi được ghi nhận vào `AttemptQuestionGradeHistory` (bất biến, append-only).
+   - Mọi thay đổi điểm số tổng thể (`raw_score`) được ghi nhận vào `AssessmentResultHistory` với `reason_code='REGRADE'`, liên kết `regrade_job_id`.
+   - Cập nhật bộ đếm `changed_results` trên `RegradeJob`.
+4. **Course Completion Integration**:
+   - Khi bài thi bắt buộc hoàn thành (`is_required_for_completion=True`) thay đổi trạng thái đạt/không đạt (`passed`), tự động kích hoạt `recalculate_course_completion` để cập nhật tiến độ và trạng thái hoàn thành khóa học của học viên.
+5. **Resumability, Batching & Idempotency**:
+   - Hỗ trợ thực thi theo batch (`batch_size`), cho phép ngắt quãng và tiếp tục từ vị trí dừng.
+   - Retry logic: Endpoint `POST /api/regrade-jobs/<job_id>/retry` cho phép reset trạng thái các `RegradeItem` bị `FAILED` (`attempt_count=0`, `last_error=None`) và chạy lại an toàn.
+   - Chạy lại nhiều lần trên cùng một job/revision đảm bảo tính Idempotent: không sinh thêm bản ghi lịch sử trùng lặp.
+6. **Zero-Trust Security & ADR-002**:
+   - Chỉ giảng viên phụ trách khóa học hoặc Admin mới có quyền kích hoạt regrade, đọc chi tiết job, hoặc retry job.
+   - Học viên chỉ xem được lịch sử điểm số của chính mình (`GET /api/attempts/<attempt_id>/grade-history`) khi thỏa mãn `score_release_policy`.
+   - Che giấu 100% khóa chính nội bộ `BIGINT PK`; toàn bộ API chỉ giao tiếp qua UUIDv4/v5 (`job_id`, `item_id`, `attempt_id`, `question_correction_id`).
 
 ---
 
-## 2. Key Architecture Decisions & Invariants
-- **Direct Query Persistence Guarantee**:
-  Because answers and grades can be inserted/updated across distinct service functions or sub-transactions, in-memory relationship caches (e.g. `aq.current_answer`, `aq.current_grade`) can lag. The grading engine resolves child entities through direct session queries (`sess.query(AttemptQuestionGrade).filter(...)`) ensuring 100% persistence fidelity.
-- **Strict Database Constraint Adherence**:
-  - `AttemptQuestionGradeHistory.reason_code`: Canonical check constraint `ck_attempt_question_grade_history_2` mandates `('INITIAL', 'AUTO_REGRADE', 'FULL_CREDIT', 'MANUAL_REVISION')`. The manual essay service records `'MANUAL_REVISION'`.
-  - `AssessmentResultHistory.reason_code`: Canonical check constraint `ck_assessment_result_history_2` mandates `('INITIAL', 'REGRADE', 'MANUAL', 'CORRECTION')`. Manual essay grading transitions record `'MANUAL'`.
-- **Course Completion Recalculation**:
-  Completing a required assessment triggers `recalculate_course_completion(student_user_id, course_id, session=sess)`. Criterion 3 checks that every published, non-deleted assessment with `is_required_for_completion == True` has at least one passed `GRADED` attempt.
-- **ADR-002 Masking Across All Entities**:
-  Every dictionary returned by `_serialize_attempt_grade` and `_serialize_assessment_result` uses public UUIDv4 identifiers (`attempt_id`, `assessment_id`, `attempt_question_id`) and omits internal integer primary keys.
+## 2. Source-of-Truth Documents
+- `AGENTS.md` (Hợp đồng vận hành & Core Invariants)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/11_REGRADING_ALGORITHM.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/10_GRADING_AND_REGRADING.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_QUESTION_VERSIONING_AND_CORRECTION.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/state-machines/REGRADING_STATE_MACHINE.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/08_DATA_DICTIONARY_ATTEMPT_REGRADING.md`
+- `docs/decisions/ADR-002-database-identifiers.md`
 
 ---
 
-## 3. Files Changed / Created
-- `src/pwd301/services/exceptions.py`:
-  - Added `GradingError(ServiceError)`
-  - Added `ScoreReleasePolicyError(ForbiddenError, GradingError)` (HTTP 403)
-  - Added `MaxPointsExceededError(ValidationError, GradingError)` (HTTP 400)
-  - Added `AttemptNotSubmittedError(StateViolationError, GradingError)` (HTTP 409)
-  - Added `AttemptNotSubmitedError = AttemptNotSubmittedError` (alias)
-- `src/pwd301/__init__.py`:
-  - Registered centralized Flask exception handlers for `MaxPointsExceededError`, `GradingError`, `AttemptNotSubmittedError`, and `ScoreReleasePolicyError`.
-- `src/pwd301/services/completion_service.py`:
-  - Implemented Criterion 3 (`require_required_assessments`) in `evaluate_course_completion`.
-  - Implemented `recalculate_course_completion(student_user_id, course_id, session=None)`.
-- `src/pwd301/services/assessment_service.py`:
-  - Added `release_assessment_scores(actor, assessment_id, session=None)`.
-  - Added support for `passing_score` as alias for `passing_percent`.
-- `src/pwd301/services/attempt_service.py`:
-  - Implemented `grade_attempt_objective_questions`: objective evaluation for all four types, essay pending status, and status transitions.
-  - Implemented `calculate_attempt_result`: score aggregation, passing check, score release policy check, and `AssessmentResultHistory` tracking.
-  - Implemented `grade_essay_question`: instructor essay evaluation, bounds check, audit history, and attempt auto-finalization.
-  - Implemented `get_attempt_result_for_student`: score release masking (`SCORE_HIDDEN`) and answer visibility masking (`show_answers`).
-  - Implemented `list_pending_grading_attempts` and `get_attempt_grading_detail` for instructors.
+## 3. In Scope & Implemented Components
+
+### Model Enhancements (`src/pwd301/models/attempt_regrade.py`)
+- Bổ sung `@property def public_id(self) -> uuid.UUID:` cho `QuestionCorrection`, `RegradeJob`, và `RegradeItem` sử dụng UUIDv5 determinism theo ADR-002, đảm bảo tương thích hoàn toàn với các quy ước định danh công khai.
+
+### Core Domain Services (`src/pwd301/services/regrade_worker.py`)
+- `get_regrade_job_detail`: Kiểm tra phân quyền Zero-Trust (`require_course_manager`), serialize danh sách items mà không làm lộ BIGINT PK.
+- `retry_regrade_job`: Kiểm tra phân quyền giảng viên, reset `attempt_count=0`, chuyển `FAILED` -> `PENDING`, và tiếp tục xử lý job.
+- `_evaluate_attempt_item_regrade`:
+  - Thực thi Algorithm 11 chính xác: áp dụng Full-Credit nếu `CONTENT_OR_CHOICES`, chấm lại theo revision mới nếu `ANSWER_ONLY`.
+  - Hỗ trợ so khớp lựa chọn linh hoạt (theo UUID `choice_key`, position fallback, hoặc text content fallback) bảo đảm an toàn trước các snapshot phức tạp.
+  - Tự động chuyển đổi `attempt.status` sang `GRADED` nếu không còn câu hỏi nào đang chờ chấm (`PENDING_GRADING`).
+  - Ghi nhận `AttemptQuestionGradeHistory` và `AssessmentResultHistory`.
+  - Tích hợp `recalculate_course_completion` khi `passed != old_passed` và bài thi là bắt buộc.
+- `process_regrade_job`: Quản lý batching, xử lý ngoại lệ từng item (đánh dấu `FAILED` thay vì crash job), chuyển trạng thái `QUEUED` -> `RUNNING` -> `COMPLETED` / `PARTIAL`.
+
+### REST API & Web Blueprint Routes
 - `src/pwd301/blueprints/api_assessments/routes.py`:
-  - Added `POST /api/assessments/<assessment_id>/release-scores`.
+  - `POST /api/assessments/<assessment_id>/regrade`: Endpoint JWT kích hoạt quy trình chấm lại đồng bộ/bất đồng bộ.
 - `src/pwd301/blueprints/api_attempts/routes.py`:
-  - Added `GET /api/attempts/<attempt_id>/result`.
-  - Added `POST /api/attempts/<attempt_id>/grades/<attempt_question_id>`.
-  - Updated `_extract_lease_token` to accept both `X-Attempt-Lease-Token` and `X-Lease-Token`.
+  - `GET /api/regrade-jobs/<job_id>`: Endpoint đọc tiến độ và danh sách items của regrade job.
+  - `POST /api/regrade-jobs/<job_id>/retry`: Endpoint retry các item bị lỗi.
+  - `GET /api/attempts/<attempt_id>/grade-history`: Endpoint đọc lịch sử biến động điểm chi tiết theo ADR-002.
 - `src/pwd301/blueprints/instructor/routes.py`:
-  - Added `GET /instructor/assessments/<assessment_id>/grading/pending`.
-  - Added `GET /instructor/attempts/<attempt_id>/grading`.
-  - Added `POST /instructor/attempts/<attempt_id>/grades/<attempt_question_id>`.
-- `src/pwd301/services/__init__.py`:
-  - Exported new grading exceptions and functions in `__all__`.
-- `tests/unit/test_grading_service.py`:
-  - 7 unit tests covering single choice, true/false boolean matching, multiple choice exact match, short answer normalization/exact match, mixed attempt pending transition, manual essay bounds/audit history, and course completion recalculation.
-- `tests/security/test_grading_idor.py`:
-  - 9 security & IDOR negative tests verifying fail-closed Zero-Trust protection (peer student 403, non-owner instructor 403, student grading 403, non-owner score release 403, `AFTER_CLOSE` policy, `INSTRUCTOR_RELEASE` policy, `NEVER` answer visibility, `AFTER_CLOSE` answer visibility, ADR-002 BigInt masking).
-- `tests/api/test_grading_api.py`:
-  - 5 end-to-end integration tests verifying pure objective flow, mixed essay flow, invalid bounds validation, dual HTML/JSON instructor support, and regrade history audit trail.
+  - `POST /instructor/assessments/<assessment_id>/regrade`: Giao diện/view giảng viên kích hoạt chấm lại.
+  - `GET /instructor/regrade-jobs/<job_id>`: View giảng viên theo dõi tiến độ chấm lại.
+  - `POST /instructor/regrade-jobs/<job_id>/retry`: View giảng viên retry các bản ghi lỗi.
 
 ---
 
-## 4. Verification Commands & Results
+## 4. Acceptance Criteria Verification
 
-| Verification Gate | Command | Result |
+- [x] **Thuật toán Algorithm 11 (ANSWER_ONLY)**: Tính toán lại điểm số dựa trên đáp án đúng mới; sinh `AttemptQuestionGradeHistory` với `reason_code='AUTO_REGRADE'`.
+- [x] **Thuật toán Algorithm 11 (CONTENT_OR_CHOICES)**: Áp dụng Full-Credit Safety Policy cho 100% thí sinh bị ảnh hưởng; sinh `reason_code='FULL_CREDIT'`.
+- [x] **Quy tắc Skip Logic**: Bỏ qua các attempt bị thanh lọc chi tiết (`DETAIL_PURGED`) hoặc bị hủy (`CANCELLED`) với mã lý do chuẩn hóa.
+- [x] **Tích hợp Course Completion**: Tự động tính lại tiến độ và cấp chứng chỉ/hoàn thành khóa học khi điểm regrade giúp thí sinh vượt qua bài kiểm tra bắt buộc.
+- [x] **Tính Resumable, Batching & Idempotent**: Hỗ trợ xử lý ngắt quãng theo batch, retry item lỗi, và không sinh lịch sử trùng lặp khi chạy lại.
+- [x] **Bảo mật Zero-Trust & IDOR**: Chặn 403 Forbidden đối với học viên và giảng viên không thuộc khóa học; kiểm soát `score_release_policy` trước khi cho phép xem lịch sử điểm.
+- [x] **Tuân thủ ADR-002**: Không để lộ bất kỳ khóa chính nội bộ `BIGINT` nào trong payload REST hay Web.
+
+---
+
+## 5. Verification Results
+
+| Gate | Command | Result |
 |---|---|---|
-| **1. Repository Contract** | `.venv/Scripts/python scripts/repo_check.py` | **PASS** (all 71 DDL tables, markdown fences balanced) |
-| **2. Code Linting** | `.venv/Scripts/ruff check <modified_and_new_files>` | **PASS** (0 errors, all imports sorted) |
-| **3. Code Formatting** | `.venv/Scripts/ruff format --check <modified_and_new_files>` | **PASS** (all 15 files formatted cleanly) |
-| **4. Type Checking** | `.venv/Scripts/mypy src` | **PASS** (Success: no issues found in 58 source files) |
-| **5. Task-016 Test Suite** | `.venv/Scripts/pytest tests/unit/test_grading_service.py tests/security/test_grading_idor.py tests/api/test_grading_api.py -v` | **PASS** (21/21 passed in 18.48s) |
-| **6. Full Regression Suite** | `.venv/Scripts/python -m pytest` | **PASS** (449/449 passed in 250.41s) |
+| **1. Repo Contract** | `python scripts/repo_check.py` | **PASS** (71 tables canonical DDL, balanced code fences) |
+| **2. Python Compile** | `python -m compileall -q src tests scripts` | **PASS** (Clean compilation) |
+| **3. Ruff Lint** | `ruff check src tests scripts` | **PASS** (All checks passed!) |
+| **4. Ruff Format** | `ruff format --check src tests scripts` | **PASS** (116 files already formatted) |
+| **5. Type Check** | `mypy src` | **PASS** (Success: no issues in 58 source files) |
+| **6. Task-017 Suites** | `pytest tests/unit/test_regrade_service.py tests/security/test_regrade_idor.py tests/api/test_regrade_api.py -v` | **PASS** (22/22 passed in 17.49s) |
+| **7. Full Regression** | `pytest` | **PASS** (471/471 passed in 280.21s) |
+| **8. Verify Script** | `./scripts/verify.ps1` | **PASS** (`PWD301 verification PASS`) |
 
 ---
 
-## 5. Security & Invariant Verification Summary
-- **Zero-Trust IDOR Protection**: Only enrolled students can access their own attempt results; peers and unauthorized instructors receive 403 Forbidden. Manual grading endpoints are strictly restricted to course managers and system administrators.
-- **ADR-002 Compliance**: Verified in `test_adr002_bigint_masking_in_grading_and_results` and across all integration tests that zero internal integer database PKs/FKs (`id`, `student_user_id`, `assessment_id`, etc.) leak in JSON payloads.
-- **Score Release Policies**: Student attempts with `AFTER_CLOSE` or `INSTRUCTOR_RELEASE` return `score_status: "SCORE_HIDDEN"` until the respective conditions are satisfied.
-- **Audit Logging**: Every manual essay grading operation creates an immutable `AttemptQuestionGradeHistory` record with `reason_code = 'MANUAL_REVISION'`, and instructor score releases create an immutable `AuditEvent`.
+## 6. Completion Report
 
----
+### A. Scope and sources consulted
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/11_REGRADING_ALGORITHM.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/10_GRADING_AND_REGRADING.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_QUESTION_VERSIONING_AND_CORRECTION.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/state-machines/REGRADING_STATE_MACHINE.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/08_DATA_DICTIONARY_ATTEMPT_REGRADING.md`
+- `docs/decisions/ADR-002-database-identifiers.md`
+- `AGENTS.md`
 
-## 6. Known Limitations & Deferred Work
-- **Regrading Engine & Worker**: Automatic regrading of submitted attempts upon question revisions/corrections, regrade job scheduling, and correction rule application are deferred to **TASK-017 (Regrading + Score History)**.
+### B. Reuse decisions
+- Tái sử dụng `recalculate_course_completion` trong `completion_service.py` để cập nhật trạng thái hoàn thành khóa học khi kết quả regrade thay đổi.
+- Tái sử dụng `require_course_manager` trong `authorization_service.py` để bảo vệ tài nguyên regrade job và trigger endpoint.
+- Tái sử dụng `_serialize_regrade_job` và `_serialize_regrade_item` cho cả REST API và Web view để đảm bảo định dạng UUIDv5 đồng nhất theo ADR-002.
 
----
+### C. Per-file changes
+- `src/pwd301/models/attempt_regrade.py`: Bổ sung `@property def public_id` cho `QuestionCorrection`, `RegradeJob`, `RegradeItem`.
+- `src/pwd301/services/regrade_worker.py`: Bổ sung Zero-Trust authorization, hoàn thiện choice matching fallback, retry counter reset, và cập nhật attempt transition.
+- `src/pwd301/blueprints/instructor/routes.py`: Thêm route `POST /instructor/regrade-jobs/<job_id>/retry`.
+- `tests/unit/test_regrade_service.py`: 7 unit tests kiểm tra Algorithm 11 (ANSWER_ONLY, CONTENT_OR_CHOICES), skip logic (DETAIL_PURGED, CANCELLED), course completion, idempotency, batching & retry.
+- `tests/security/test_regrade_idor.py`: 11 security/IDOR tests kiểm tra phân quyền học viên, giảng viên ngoại lai, score release policy và ADR-002 zero PK leakage.
+- `tests/api/test_regrade_api.py`: 4 API integration tests kiểm tra toàn bộ luồng REST API và Instructor Web view.
+- `tasks/CURRENT.md`: Hoàn thiện báo cáo nghiệm thu TASK-017.
+- `tasks/DONE.md`: Cập nhật mốc hoàn thành TASK-017.
 
-## 7. Recommended Next Action
-- Proceed to **TASK-017 — Regrading Engine & Score History**:
-  - Implement bulk and single-attempt regrading triggered by question corrections (`QuestionCorrection`).
-  - Implement background/synchronous `RegradeJob` and `RegradeItem` processing via `regrade_worker.py`.
-  - Audit all score modifications in `AssessmentResultHistory` and `AttemptQuestionGradeHistory`.
+### D. Deletion and simplification list
+- Không có abstraction thừa thãi nào được đưa vào; tái sử dụng các model và service sẵn có; worker chạy đồng bộ/resumable không cần phụ thuộc bên ngoài.
+
+### E. Ponytails / Deferred debt
+- Không có nợ kỹ thuật tồn đọng.
+
+### F. Verification actually run and results
+- Đã chạy đầy đủ và vượt qua 100% các cổng kiểm thử: repo check, ruff check, ruff format check, mypy type check, bộ test TASK-017 (22/22 passed), và toàn bộ regression suite (471/471 passed).

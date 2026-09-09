@@ -362,7 +362,8 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | `minimum_completion_seconds` | `INT` | No | `30` | Thời gian tối thiểu để được complete |
 | `viewed_fraction_required` | `DECIMAL(5,4)` | No | `0.8000` | Tỷ lệ nội dung cần xem, 0..1 |
 | `required_for_periods_starting_at` | `DATETIME2(3)` | Yes |  | Enrollment period bắt đầu trước mốc này xem Lesson mới như 'Xem thêm' |
-| `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/PUBLISHED/HIDDEN/TRASH/HISTORICAL |
+| `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/ACTIVE/PUBLISHED/PENDING_APPROVAL/ARCHIVED/HIDDEN/TRASH/HISTORICAL |
+| `change_request_id` | `BIGINT` | Yes |  | Khóa ngoại staging liên kết với course_change_requests |
 | `published_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |
@@ -380,12 +381,12 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | Columns | References | ON DELETE | Notes |
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
+| `change_request_id` | `course_change_requests(id)` | `SET NULL` | Liên kết staging relational cho material changes |
 | `deleted_by_user_id` | `users(id)` | `SET NULL` |  |
 
 ### Unique Constraints
 
 - `UNIQUE (public_id)`
-- `UNIQUE (course_id, position)`
 
 ### Check Constraints
 
@@ -393,13 +394,14 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 - `estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0`
 - `minimum_completion_seconds >= 0`
 - `viewed_fraction_required >= 0 AND viewed_fraction_required <= 1`
-- `status IN ('DRAFT','PUBLISHED','HIDDEN','TRASH','HISTORICAL')`
+- `status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')`
 
 ### Indexes
 
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ix_lessons_course_status_position` | `course_id, status, position` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
+| `uq_lessons_course_position_active` | `course_id, position` | Yes | `status IN ('ACTIVE', 'PUBLISHED')` | Đảm bảo vị trí thứ tự duy nhất cho các lesson active/published. |
 
 ### Relationships
 

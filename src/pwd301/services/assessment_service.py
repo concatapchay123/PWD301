@@ -32,7 +32,12 @@ from pwd301.models.assessment import (
     AssessmentQuestionPool,
     AssessmentSection,
 )
-from pwd301.models.attempt_regrade import AssessmentAttempt, AssessmentResult
+from pwd301.models.attempt_regrade import (
+    AssessmentAttempt,
+    AssessmentResult,
+    AttemptQuestion,
+    QuestionCorrection,
+)
 from pwd301.models.course import Course, Lesson
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -50,6 +55,7 @@ from pwd301.services.exceptions import (
     AssessmentStateViolationError,
     AssessmentValidationError,
     BlueprintValidationError,
+    QuestionCorrectionNotFoundError,
     QuestionNotFoundError,
     ResourceNotFoundError,
 )
@@ -1626,4 +1632,106 @@ def release_assessment_scores(
         "released_count": released_count,
         "score_release_policy": assessment.score_release_policy,
         "message": f"Successfully released scores for {released_count} attempts.",
+    }
+
+
+def trigger_assessment_regrade(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    payload: dict[str, Any] | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Trigger regrading for an assessment (or specific question correction).
+
+    Invariants:
+    - Actor must be managing instructor or system administrator.
+    - If question_correction_id is supplied in payload:
+      creates or retrieves RegradeJob for that correction and runs it.
+    - Otherwise, scans all questions assigned to this assessment with active/pending corrections
+      and processes their regrade jobs.
+    """
+    sess = session if session is not None else db.session
+    assessment = _resolve_assessment(assessment_id, session=sess)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    body = payload or {}
+    correction_id = body.get("question_correction_id") or body.get("correction_id")
+
+    from pwd301.services.regrade_worker import (
+        _resolve_question_correction,
+        create_or_get_regrade_job,
+        process_regrade_job,
+    )
+
+    if correction_id:
+        corr = _resolve_question_correction(correction_id, sess)
+        if corr is None:
+            raise QuestionCorrectionNotFoundError("Question correction not found.")
+        job = create_or_get_regrade_job(corr.id, session=sess)
+        result = process_regrade_job(job.id, actor=actor, session=sess)
+        return {
+            "message": "Assessment regrade job processed successfully.",
+            "assessment_id": str(assessment.public_id),
+            "job": result,
+        }
+
+    # Find question corrections related to questions assigned to this assessment
+    assigned_q_ids = [
+        a.question_id
+        for a in sess.query(AssessmentQuestionAssignment.question_id)
+        .filter(AssessmentQuestionAssignment.assessment_id == assessment.id)
+        .all()
+    ]
+
+    attempt_q_ids = [
+        aq.source_question_id
+        for aq in sess.query(AttemptQuestion.source_question_id)
+        .join(AssessmentAttempt, AssessmentAttempt.id == AttemptQuestion.attempt_id)
+        .filter(AssessmentAttempt.assessment_id == assessment.id)
+        .distinct()
+        .all()
+    ]
+    all_q_ids = list(set(assigned_q_ids + attempt_q_ids))
+
+    corrections: list[QuestionCorrection] = []
+    if all_q_ids:
+        corrections = (
+            sess.query(QuestionCorrection)
+            .filter(
+                QuestionCorrection.question_id.in_(all_q_ids),
+                QuestionCorrection.status.in_(["PENDING", "RUNNING"]),
+            )
+            .order_by(QuestionCorrection.id.asc())
+            .all()
+        )
+        if not corrections:
+            corrections = (
+                sess.query(QuestionCorrection)
+                .filter(QuestionCorrection.question_id.in_(all_q_ids))
+                .order_by(QuestionCorrection.id.desc())
+                .all()
+            )
+
+    if not corrections:
+        return {
+            "message": "No question corrections found to regrade for this assessment.",
+            "assessment_id": str(assessment.public_id),
+            "jobs": [],
+            "total_jobs": 0,
+        }
+
+    jobs_results = []
+    for corr in corrections:
+        job = create_or_get_regrade_job(corr.id, session=sess)
+        res = process_regrade_job(job.id, actor=actor, session=sess)
+        jobs_results.append(res)
+
+    return {
+        "message": f"Successfully processed {len(jobs_results)} regrade jobs for assessment.",
+        "assessment_id": str(assessment.public_id),
+        "jobs": jobs_results,
+        "total_jobs": len(jobs_results),
     }

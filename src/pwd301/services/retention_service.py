@@ -85,9 +85,9 @@ def purge_attempt_details_skeleton_tombstone(
                 AttemptAnswerChoice.attempt_answer_id.in_(ans_ids)
             ).delete(synchronize_session=False)
 
-            sess.query(AttemptAnswer).filter(
-                AttemptAnswer.id.in_(ans_ids)
-            ).delete(synchronize_session=False)
+            sess.query(AttemptAnswer).filter(AttemptAnswer.id.in_(ans_ids)).delete(
+                synchronize_session=False
+            )
 
         # 3. Truncate attempt_choice_snapshots
         sess.query(AttemptChoiceSnapshot).filter(

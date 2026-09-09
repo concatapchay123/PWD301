@@ -26,6 +26,7 @@ from pwd301.services.assessment_service import (
     remove_question_assignment,
     restore_assessment,
     trash_assessment,
+    trigger_assessment_regrade,
     update_assessment,
 )
 from pwd301.services.attempt_service import (
@@ -83,6 +84,10 @@ from pwd301.services.question_bank_service import (
     restore_question,
     trash_question,
     update_question,
+)
+from pwd301.services.regrade_worker import (
+    get_regrade_job_detail,
+    retry_regrade_job,
 )
 
 
@@ -976,4 +981,32 @@ def grade_instructor_essay_route(
         reason=reason,
         session=db.session,
     )
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/regrade", methods=["POST"])
+@instructor_required
+def trigger_instructor_regrade_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Trigger regrade job for an assessment from instructor view."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    result = trigger_assessment_regrade(actor, assessment_id, payload=payload, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/regrade-jobs/<job_id>", methods=["GET"])
+@instructor_required
+def get_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Retrieve regrade job progress for instructor view."""
+    actor = require_authenticated_actor()
+    result = get_regrade_job_detail(actor, job_id, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/regrade-jobs/<job_id>/retry", methods=["POST"])
+@instructor_required
+def retry_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Retry failed items in a regrade job for instructor view."""
+    actor = require_authenticated_actor()
+    result = retry_regrade_job(job_id, actor=actor, session=db.session)
     return jsonify(result), 200

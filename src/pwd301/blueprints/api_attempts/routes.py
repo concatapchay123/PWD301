@@ -10,6 +10,7 @@ from pwd301.models.types import utc_now
 from pwd301.services.assessment_service import _normalize_dt
 from pwd301.services.attempt_service import (
     get_attempt_delivery,
+    get_attempt_grade_history,
     get_attempt_result_for_student,
     grade_essay_question,
     list_student_assessment_attempts,
@@ -24,6 +25,10 @@ from pwd301.services.attempt_service import (
 from pwd301.services.authorization_service import require_authenticated_actor
 from pwd301.services.exceptions import AttemptValidationError
 from pwd301.services.jwt_auth_service import jwt_required
+from pwd301.services.regrade_worker import (
+    get_regrade_job_detail,
+    retry_regrade_job,
+)
 
 
 def _extract_lease_token() -> str | None:
@@ -316,4 +321,40 @@ def grade_attempt_question_route(
         reason=reason,
         session=db.session,
     )
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/grade-history", methods=["GET"])
+@jwt_required
+def get_attempt_grade_history_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve full audit history of score evaluations for an attempt.
+
+    GET /api/attempts/<attempt_id>/grade-history
+    """
+    actor = require_authenticated_actor()
+    result = get_attempt_grade_history(actor=actor, attempt_id=attempt_id, session=db.session)
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/regrade-jobs/<job_id>", methods=["GET"])
+@jwt_required
+def get_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Read regrade job status and progress per 08_ATTEMPT_API.md.
+
+    GET /api/regrade-jobs/<job_id>
+    """
+    actor = require_authenticated_actor()
+    result = get_regrade_job_detail(actor=actor, job_id=job_id, session=db.session)
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/regrade-jobs/<job_id>/retry", methods=["POST"])
+@jwt_required
+def retry_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
+    """Retry failed items in a regrade job.
+
+    POST /api/regrade-jobs/<job_id>/retry
+    """
+    actor = require_authenticated_actor()
+    result = retry_regrade_job(job_id=job_id, actor=actor, session=db.session)
     return jsonify(result), 200

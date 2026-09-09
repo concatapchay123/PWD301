@@ -164,3 +164,43 @@
   - `mypy src`: PASS (0 issues found across 58 source files)
   - `pytest` TASK-016 suite: PASS (21/21 passed in 18.48s)
   - `python -m pytest`: PASS (449/449 passed in 250.41s)
+
+## TASK-017 — LMS Database Architecture Refactor & Critical Integrity Defects Fix
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/` (002, 003, 005, 006, 007, 010, 011, 012)
+  - `docs/database/PWD301_DATABASE_ARCHITECTURE/` (05, 06, 08, 09, 10 data dictionaries)
+  - `migrations/versions/e8f9a1b2c3d4_0002_fix_critical_integrity_defects.py`
+  - `src/pwd301/models/` (`question_bank.py`, `file_import.py`, `ai_rag.py`, `attempt_regrade.py`, `course.py`)
+  - `src/pwd301/services/` (`attempt_service.py`, `question_bank_service.py`, `regrade_worker.py`, `retention_service.py`, `assessment_service.py`, `lesson_service.py`, `exceptions.py`)
+  - `src/pwd301/__init__.py` (Error handlers for 409 `STALE_LEASE_EPOCH` and `STALE_ANSWER`)
+  - `tests/unit/test_integrity_defects_fix.py` (Dedicated test suite for all 6 integrity defects)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `ruff check src tests scripts`: PASS (0 errors)
+  - `ruff format --check src tests scripts`: PASS (113 files formatted)
+  - `mypy src`: PASS (Success: no issues found in 58 source files)
+  - `pytest tests/unit/test_integrity_defects_fix.py -v`: PASS (6/6 passed in 3.36s)
+  - `pytest tests/integration/test_migrations.py -v`: PASS (1/1 passed)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 449/449 passed in 192.48s)
+
+## TASK-017 (Engine) — Regrading Engine & Score History Implementation
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `src/pwd301/models/attempt_regrade.py` (`public_id` property on `QuestionCorrection`, `RegradeJob`, `RegradeItem`)
+  - `src/pwd301/services/regrade_worker.py` (Zero-Trust authorization, choice matching fallback, retry counter reset, course completion recalculation)
+  - `src/pwd301/blueprints/instructor/routes.py` (`POST /instructor/regrade-jobs/<job_id>/retry`)
+  - `tests/unit/test_regrade_service.py` (7 unit tests for Algorithm 11, skip logic, completion integration, idempotency, batching/retry)
+  - `tests/security/test_regrade_idor.py` (11 security, IDOR, score release policy, and ADR-002 tests)
+  - `tests/api/test_regrade_api.py` (4 API integration & web view tests)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (116 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 58 source files)
+  - `pytest` TASK-017 test suites: PASS (22/22 passed in 17.49s)
+  - `python -m pytest`: PASS (471/471 passed in 280.21s)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
+
+

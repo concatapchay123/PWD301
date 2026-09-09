@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import foreign, relationship
+from sqlalchemy.orm import relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -414,7 +414,10 @@ class KnowledgeDocument(Base):
     )
     current_version = relationship(
         "KnowledgeVersion",
-        primaryjoin="and_(KnowledgeDocument.id == foreign(KnowledgeVersion.knowledge_document_id), KnowledgeVersion.is_current == True)",
+        primaryjoin=(
+            "and_(KnowledgeDocument.id == foreign(KnowledgeVersion.knowledge_document_id), "
+            "KnowledgeVersion.is_current == True)"
+        ),
         uselist=False,
         viewonly=True,
     )

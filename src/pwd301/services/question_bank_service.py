@@ -14,6 +14,7 @@ Implements business logic for:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import math
@@ -1157,10 +1158,8 @@ def create_question_revision(
                 raw_ck = c.get("choice_key")
                 assigned_ck = None
                 if raw_ck:
-                    try:
+                    with contextlib.suppress(ValueError, AttributeError):
                         assigned_ck = uuid.UUID(str(raw_ck))
-                    except (ValueError, AttributeError):
-                        pass
                 if not assigned_ck:
                     assigned_ck = existing_choices_by_pos.get(pos) or uuid.uuid4()
 
@@ -1356,6 +1355,11 @@ def create_question_revision(
         sess.add(correction_record)
         sess.flush()
 
+        # Trigger RegradeJob creation for affected attempts
+        from pwd301.services.regrade_worker import create_or_get_regrade_job
+
+        create_or_get_regrade_job(correction_record.id, session=sess)
+
         # Record AuditEvent QUESTION_CORRECTION_CREATED
         _record_question_audit(
             sess=sess,
@@ -1499,10 +1503,8 @@ def update_question(
                 raw_ck = c.get("choice_key")
                 assigned_ck = None
                 if raw_ck:
-                    try:
+                    with contextlib.suppress(ValueError, AttributeError):
                         assigned_ck = uuid.UUID(str(raw_ck))
-                    except (ValueError, AttributeError):
-                        pass
                 if not assigned_ck:
                     assigned_ck = existing_choices_by_pos.get(pos) or uuid.uuid4()
                 choice = QuestionRevisionChoice(

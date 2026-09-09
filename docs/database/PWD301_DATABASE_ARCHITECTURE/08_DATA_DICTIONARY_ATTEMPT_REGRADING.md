@@ -34,6 +34,9 @@ CREATED → IN_PROGRESS → SUBMITTED/EXPIRED → PENDING_GRADING/GRADED; Assess
 | `lease_acquired_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `lease_expires_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `last_heartbeat_at` | `DATETIME2(3)` | Yes |  | UTC |
+| `lease_epoch` | `INT` | No | `1` | Lease epoch fencing cho multi-tab takeover & autosave sequence collision prevention |
+| `is_detail_purged` | `BIT` | No | `0` | Cờ skeleton tombstone: chi tiết bài thi đã purge sau 30 ngày |
+| `detail_purged_at` | `DATETIME2(3)` | Yes |  | Thời điểm thực hiện skeleton tombstone purge (UTC) |
 | `cancel_reason` | `NVARCHAR(1000)` | Yes |  | Nếu cancelled |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |

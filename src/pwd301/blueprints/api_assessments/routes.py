@@ -24,6 +24,7 @@ from pwd301.services.assessment_service import (
     remove_question_assignment,
     restore_assessment,
     trash_assessment,
+    trigger_assessment_regrade,
     update_assessment,
 )
 from pwd301.services.authorization_service import require_authenticated_actor
@@ -256,4 +257,17 @@ def release_scores_route(assessment_id: str) -> tuple[Response, int] | Response:
     """
     actor = require_authenticated_actor()
     result = release_assessment_scores(actor, assessment_id, session=db.session)
+    return jsonify(result), 200
+
+
+@api_assessment_bp.route("/<assessment_id>/regrade", methods=["POST"])
+@jwt_required
+def regrade_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Trigger assessment regrading per 07_ASSESSMENT_API.md and Algorithm 11.
+
+    POST /api/assessments/<assessment_id>/regrade
+    """
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    result = trigger_assessment_regrade(actor, assessment_id, payload=payload, session=db.session)
     return jsonify(result), 200

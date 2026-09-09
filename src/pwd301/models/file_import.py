@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import foreign, relationship
+from sqlalchemy.orm import relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -158,7 +158,10 @@ class FileAsset(Base):
     )
     current_revision = relationship(
         "FileRevision",
-        primaryjoin="and_(FileAsset.id == foreign(FileRevision.file_asset_id), FileRevision.is_current == True)",
+        primaryjoin=(
+            "and_(FileAsset.id == foreign(FileRevision.file_asset_id), "
+            "FileRevision.is_current == True)"
+        ),
         uselist=False,
         viewonly=True,
     )

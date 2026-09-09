@@ -24,7 +24,6 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 | `difficulty` | `VARCHAR(20)` | No |  | REMEMBER/UNDERSTAND/APPLY hoặc mức tương đương |
 | `learning_objective` | `NVARCHAR(500)` | Yes |  | Mục tiêu học tập |
 | `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/ACTIVE/RETIRED/TRASH |
-| `current_revision_id` | `BIGINT` | Yes |  | Revision active; FK deferred sau question_revisions |
 | `first_used_at` | `DATETIME2(3)` | Yes |  | Lần đầu được đưa vào Assessment/pool |
 | `first_answered_at` | `DATETIME2(3)` | Yes |  | Lần đầu Student trả lời; từ đây type không được đổi |
 | `usage_count` | `BIGINT` | No | `0` | Cache số lần được gán vào Attempt |
@@ -48,7 +47,6 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 | `lesson_id` | `lessons(id)` | `SET NULL` |  |
 | `creator_user_id` | `users(id)` | `NO ACTION` | Preserve creator linkage; User is anonymized in place when required. |
 | `deleted_by_user_id` | `users(id)` | `NO ACTION` | Preserve deletion actor linkage. |
-| `current_revision_id` | `question_revisions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ### Unique Constraints
 
@@ -92,7 +90,7 @@ Instructor owner Course/Admin.
 
 - Thuộc đúng một Course
 - lesson nếu có phải thuộc cùng course (service)
-- current_revision_id trỏ revision cùng question
+- is_current = 1 trỏ revision active duy nhất của question (qua filtered unique index uq_question_revisions_current)
 - type không đổi sau first_answered_at
 
 ---
@@ -114,6 +112,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `question_id` | `BIGINT` | No |  | Question |
 | `revision_no` | `INT` | No |  | Tăng tuần tự |
+| `is_current` | `BIT` | No | `0` | Cờ đánh dấu revision active/current (kết hợp filtered unique index) |
 | `question_type` | `VARCHAR(24)` | No |  | SINGLE_CHOICE/MULTIPLE_CHOICE/TRUE_FALSE/SHORT_ANSWER/ESSAY |
 | `content` | `NVARCHAR(MAX)` | No |  | Nội dung câu hỏi |
 | `explanation` | `NVARCHAR(MAX)` | Yes |  | Lời giải/giải thích |
@@ -156,6 +155,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 |---|---|---:|---|---|
 | `ix_question_revisions_question` | `question_id, revision_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_question_revisions_exposure` | `was_student_exposed, was_used_for_grading` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
+| `uq_question_revisions_current` | `question_id` | Yes | `is_current = 1` | Đảm bảo duy nhất 1 revision active tại một thời điểm. |
 
 ### Relationships
 

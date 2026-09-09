@@ -433,7 +433,11 @@ class Lesson(Base):
     )
     change_request_id = db.Column(
         sa.BigInteger,
-        sa.ForeignKey("course_change_requests.id", name="fk_lessons_change_request_id", ondelete="SET NULL"),
+        sa.ForeignKey(
+            "course_change_requests.id",
+            name="fk_lessons_change_request_id",
+            ondelete="SET NULL",
+        ),
         nullable=True,
     )
     published_at = db.Column(UTCDateTime, nullable=True)
@@ -479,14 +483,19 @@ class Lesson(Base):
             name="ck_lessons_4",
         ),
         sa.CheckConstraint(
-            "status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')",
+            "status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED',"
+            "'HIDDEN','TRASH','HISTORICAL')",
             name="ck_lessons_5",
         ),
         sa.Index("ix_lessons_course_status_position", "course_id", "status", "position"),
     )
 
     course = relationship("Course", back_populates="lessons")
-    change_request = relationship("CourseChangeRequest", foreign_keys=[change_request_id], backref="staged_lessons")
+    change_request = relationship(
+        "CourseChangeRequest",
+        foreign_keys=[change_request_id],
+        backref="staged_lessons",
+    )
     deleted_by = relationship("User", foreign_keys=[deleted_by_user_id])
 
 

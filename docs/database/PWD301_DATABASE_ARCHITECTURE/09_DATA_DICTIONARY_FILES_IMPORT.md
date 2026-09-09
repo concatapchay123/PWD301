@@ -99,7 +99,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 | `created_by_user_id` | `BIGINT` | No |  | Uploader |
 | `asset_type` | `VARCHAR(24)` | No |  | RESOURCE/QUESTION_IMAGE/COURSE_IMAGE/IMPORT_SOURCE/EXPORT/OTHER |
 | `display_name` | `NVARCHAR(255)` | No |  | Tên hiển thị |
-| `current_revision_id` | `BIGINT` | Yes |  | Revision ACTIVE hiện hành; NULL trong lúc asset mới còn PENDING hoặc sau cleanup hợp lệ |
 | `status` | `VARCHAR(20)` | No | `'PENDING'` | PENDING/ACTIVE/REPLACED/TRASH/HISTORICAL |
 | `retention_until` | `DATETIME2(3)` | Yes |  | Mốc cleanup logical asset |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
@@ -120,7 +119,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 | `course_id` | `courses(id)` | `NO ACTION` |  |
 | `created_by_user_id` | `users(id)` | `NO ACTION` |  |
 | `deleted_by_user_id` | `users(id)` | `SET NULL` |  |
-| `current_revision_id` | `file_revisions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ### Unique Constraints
 
@@ -130,7 +128,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 
 - `asset_type IN ('RESOURCE','QUESTION_IMAGE','COURSE_IMAGE','IMPORT_SOURCE','EXPORT','OTHER')`
 - `status IN ('PENDING','ACTIVE','REPLACED','TRASH','HISTORICAL')`
-- `status <> 'ACTIVE' OR current_revision_id IS NOT NULL`
 
 ### Indexes
 
@@ -161,7 +158,7 @@ Authorization theo Course + logical references; direct storage path không publi
 
 ### Important invariants
 
-- `current_revision_id` chỉ được trỏ revision cùng asset có status `ACTIVE`; asset mới có thể `PENDING` với pointer NULL
+- `is_current = 1` chỉ áp dụng cho revision cùng asset có status `ACTIVE` (qua filtered unique index `uq_file_revisions_current`)
 - Quota tính logical usage theo policy, physical dedup không thay authorization
 
 ---
@@ -183,6 +180,7 @@ QUARANTINED → VALIDATING → SCANNING → SAFE → ACTIVE; fail → REJECTED. 
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `file_asset_id` | `BIGINT` | No |  | Asset |
 | `revision_no` | `INT` | No |  | Tăng tuần tự |
+| `is_current` | `BIT` | No | `0` | Cờ đánh dấu revision active/current (kết hợp filtered unique index) |
 | `blob_id` | `BIGINT` | Yes |  | Physical blob sau validation/dedup |
 | `original_filename` | `NVARCHAR(255)` | No |  | Tên file người dùng gửi |
 | `declared_mime_type` | `NVARCHAR(150)` | Yes |  | Client MIME |
@@ -226,6 +224,7 @@ QUARANTINED → VALIDATING → SCANNING → SAFE → ACTIVE; fail → REJECTED. 
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ux_file_revisions_active` | `file_asset_id` | Yes | `status = 'ACTIVE'` | DB-enforce tối đa một revision ACTIVE cho mỗi logical file asset. |
+| `uq_file_revisions_current` | `file_asset_id` | Yes | `is_current = 1` | Đảm bảo duy nhất 1 revision active tại một thời điểm. |
 | `ix_file_revisions_asset` | `file_asset_id, revision_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_file_revisions_processing` | `status, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_file_revisions_recovery` | `recovery_until, status` | No | `recovery_until IS NOT NULL` | Hỗ trợ truy vấn/filter/pagination chính của table. |

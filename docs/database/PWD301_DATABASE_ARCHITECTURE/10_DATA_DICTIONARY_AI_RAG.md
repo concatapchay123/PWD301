@@ -363,7 +363,6 @@ ACTIVE; source edit creates new version and invalidates old searchable version; 
 | `source_type` | `VARCHAR(24)` | No |  | LESSON/FILE/FAQ/POLICY |
 | `source_entity_id` | `BIGINT` | No |  | ID source entity |
 | `status` | `VARCHAR(20)` | No | `'ACTIVE'` | ACTIVE/INVALIDATED/DELETED |
-| `current_version_id` | `BIGINT` | Yes |  | Active KnowledgeVersion; NULL trước lần index thành công đầu tiên hoặc sau invalidation/cleanup hợp lệ |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |
 | `row_version` | `ROWVERSION` | No |  | Token lạc quan phát hiện ghi đè đồng thời |
@@ -378,7 +377,6 @@ ACTIVE; source edit creates new version and invalidates old searchable version; 
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
 | `lesson_id` | `lessons(id)` | `SET NULL` |  |
-| `current_version_id` | `knowledge_versions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ### Unique Constraints
 
@@ -441,6 +439,7 @@ PENDING → PROCESSING → ACTIVE; previous ACTIVE → INVALIDATED. FAILED khôn
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `knowledge_document_id` | `BIGINT` | No |  | Document |
 | `version_no` | `INT` | No |  | Sequence |
+| `is_current` | `BIT` | No | `0` | Cờ đánh dấu phiên bản active/current (kết hợp filtered unique index) |
 | `source_revision_type` | `VARCHAR(32)` | Yes |  | LESSON_VERSION/FILE_REVISION/QUESTION_REVISION/OTHER |
 | `source_revision_id` | `BIGINT` | Yes |  | Source revision id |
 | `content_hash` | `BINARY(32)` | No |  | Hash extracted text |
@@ -478,6 +477,7 @@ PENDING → PROCESSING → ACTIVE; previous ACTIVE → INVALIDATED. FAILED khôn
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ux_knowledge_versions_active` | `knowledge_document_id` | Yes | `status = 'ACTIVE'` | DB-enforce tối đa một knowledge version ACTIVE cho mỗi document. |
+| `uq_knowledge_versions_current` | `knowledge_document_id` | Yes | `is_current = 1` | Đảm bảo duy nhất 1 version active tại một thời điểm. |
 | `ix_knowledge_versions_doc` | `knowledge_document_id, version_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_knowledge_versions_status` | `status, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 

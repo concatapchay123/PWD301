@@ -77,6 +77,7 @@ from pwd301.services.exceptions import (
     AttemptValidationError,
     ForbiddenError,
     MaxPointsExceededError,
+    ScoreReleasePolicyError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
     SubmissionIdempotencyConflictError,
@@ -1725,6 +1726,7 @@ def calculate_attempt_result(
     actor: User | None = None,
     reason: str = "Initial automated grading",
     reason_code: str = "INITIAL",
+    regrade_job_id: int | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> AssessmentResult:
     """Aggregate question grades into AssessmentResult and append history.
@@ -1849,6 +1851,7 @@ def calculate_attempt_result(
         reason_code=valid_reason_code,
         reason=reason,
         actor_user_id=actor.id if actor else None,
+        regrade_job_id=regrade_job_id,
         created_at=now,
     )
     sess.add(history_entry)
@@ -2527,4 +2530,147 @@ def get_attempt_grading_detail(
         ),
         "passed": res.passed if res else None,
         "questions": questions_data,
+    }
+
+
+def get_attempt_grade_history(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve full audit history of score evaluations for an attempt per ADR-002.
+
+    Invariants:
+    - Actor authorization: student can view own attempt only; instructor must manage course;
+      admin can view all.
+    - If student: check score_release_policy. If not released, raises ScoreReleasePolicyError (403).
+    - Discloses zero internal database integer PKs/FKs; uses UUIDv4/v5 public identifiers.
+    """
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    is_owner = attempt.student_user_id == actor.id
+    is_admin = actor.is_admin
+    is_manager = False
+    if attempt.assessment and actor.has_role("INSTRUCTOR"):
+        is_manager = attempt.assessment.course.owner_instructor_id == actor.id
+
+    if not (is_owner or is_admin or is_manager):
+        raise ForbiddenError("You do not have permission to view this attempt grade history.")
+
+    # If student, enforce score release policy
+    if is_owner and not (is_admin or is_manager):
+        assessment = attempt.assessment
+        result = attempt.result
+        now = utc_now()
+        is_score_released = False
+        if assessment is None:
+            is_score_released = True
+        elif attempt.status in ("IN_PROGRESS", "PENDING_GRADING"):
+            is_score_released = False
+        else:
+            policy = assessment.score_release_policy
+            if policy == "IMMEDIATE":
+                is_score_released = (
+                    attempt.status == "GRADED"
+                    and result is not None
+                    and result.status in ("FINAL", "RELEASED")
+                )
+            elif policy == "AFTER_CLOSE":
+                close_at = _normalize_dt(assessment.close_at)
+                curr_now = _normalize_dt(now)
+                is_score_released = bool(
+                    close_at and curr_now and curr_now >= close_at and attempt.status == "GRADED"
+                )
+            elif policy == "INSTRUCTOR_RELEASE":
+                is_score_released = bool(result and result.status == "RELEASED")
+
+        if not is_score_released:
+            raise ScoreReleasePolicyError(
+                "Grade history is not accessible until assessment scores are released."
+            )
+
+    # Fetch result history
+    result_history = (
+        sess.query(AssessmentResultHistory)
+        .filter(AssessmentResultHistory.attempt_id == attempt.id)
+        .order_by(AssessmentResultHistory.created_at.asc(), AssessmentResultHistory.id.asc())
+        .all()
+    )
+
+    overall_data = [
+        {
+            "history_id": str(
+                uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.assessment_result_history.{h.id}")
+            ),
+            "attempt_id": str(attempt.public_id),
+            "old_score": float(h.old_score) if h.old_score is not None else None,
+            "new_score": float(h.new_score),
+            "old_percent": float(h.old_percent) if h.old_percent is not None else None,
+            "new_percent": float(h.new_percent) if h.new_percent is not None else None,
+            "reason_code": h.reason_code,
+            "reason": h.reason,
+            "actor_id": str(h.actor.public_id) if h.actor else None,
+            "regrade_job_id": (
+                str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_job.{h.regrade_job_id}"))
+                if h.regrade_job_id
+                else None
+            ),
+            "created_at": h.created_at.isoformat() if h.created_at else None,
+        }
+        for h in result_history
+    ]
+
+    # Fetch question grade history
+    q_map = {q.id: q for q in attempt.attempt_questions}
+    question_ids = list(q_map.keys())
+    q_histories: list[AttemptQuestionGradeHistory] = []
+    if question_ids:
+        q_histories = (
+            sess.query(AttemptQuestionGradeHistory)
+            .filter(AttemptQuestionGradeHistory.attempt_question_id.in_(question_ids))
+            .order_by(
+                AttemptQuestionGradeHistory.created_at.asc(),
+                AttemptQuestionGradeHistory.id.asc(),
+            )
+            .all()
+        )
+
+    question_data = [
+        {
+            "history_id": str(
+                uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question_grade_history.{qh.id}")
+            ),
+            "attempt_question_id": (
+                str(q_map[qh.attempt_question_id].public_id)
+                if qh.attempt_question_id in q_map
+                else None
+            ),
+            "old_points": float(qh.old_points) if qh.old_points is not None else None,
+            "new_points": float(qh.new_points),
+            "reason_code": qh.reason_code,
+            "reason": qh.reason,
+            "actor_id": str(qh.actor.public_id) if qh.actor else None,
+            "question_correction_id": (
+                str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_DNS,
+                        f"pwd301.question_correction.{qh.question_correction_id}",
+                    )
+                )
+                if qh.question_correction_id
+                else None
+            ),
+            "created_at": qh.created_at.isoformat() if qh.created_at else None,
+        }
+        for qh in q_histories
+    ]
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": str(attempt.assessment.public_id) if attempt.assessment else None,
+        "overall_history": overall_data,
+        "question_history": question_data,
     }

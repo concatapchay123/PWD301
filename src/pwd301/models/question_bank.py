@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import foreign, relationship
+from sqlalchemy.orm import relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -127,7 +127,10 @@ class Question(Base):
     )
     current_revision = relationship(
         "QuestionRevision",
-        primaryjoin="and_(Question.id == foreign(QuestionRevision.question_id), QuestionRevision.is_current == True)",
+        primaryjoin=(
+            "and_(Question.id == foreign(QuestionRevision.question_id), "
+            "QuestionRevision.is_current == True)"
+        ),
         uselist=False,
         viewonly=True,
     )

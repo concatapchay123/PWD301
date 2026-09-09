@@ -213,7 +213,9 @@ def create_lesson(
 
     if change_req_id or status == "PENDING_APPROVAL":
         # Staged lesson targeting a position for future approval
-        assigned_position = int(requested_position) if requested_position is not None else (max_position + 1)
+        assigned_position = (
+            int(requested_position) if requested_position is not None else (max_position + 1)
+        )
     elif requested_position is None:
         assigned_position = max_position + 1
     else:
@@ -1074,7 +1076,8 @@ def approve_course_change_request(
     """Approve a course change request and promote staged lessons atomically (Defect 6).
 
     For any staged lesson linked to the request:
-    - Retires any currently active/published lesson at the same position by setting status='HISTORICAL'.
+    - Retires any currently active/published lesson at the same position by
+      setting status='HISTORICAL'.
     - Activates the staged lesson by setting status='PUBLISHED'.
     - Marks the change request APPROVED.
     All done within a single transaction without violating uq_lessons_course_position_active.
@@ -1093,11 +1096,7 @@ def approve_course_change_request(
     now = utc_now()
 
     # Find staged lessons for this request
-    staged_lessons = (
-        sess.query(Lesson)
-        .filter(Lesson.change_request_id == req.id)
-        .all()
-    )
+    staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
 
     for staged in staged_lessons:
         # Check if there is an active/published lesson at the same position
@@ -1158,11 +1157,7 @@ def reject_course_change_request(
         raise LessonStateViolationError(f"Cannot reject change request in '{req.status}' status.")
 
     now = utc_now()
-    staged_lessons = (
-        sess.query(Lesson)
-        .filter(Lesson.change_request_id == req.id)
-        .all()
-    )
+    staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
     for staged in staged_lessons:
         staged.status = "TRASH"
         staged.deleted_at = now
@@ -1181,4 +1176,3 @@ def reject_course_change_request(
         raise
 
     return req
-

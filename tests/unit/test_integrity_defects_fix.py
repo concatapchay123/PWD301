@@ -1,18 +1,23 @@
-﻿"""Dedicated unit & regression test suite for the 6 critical database architecture fixes.
+"""Dedicated unit & regression test suite for the 6 critical database architecture fixes.
 
 Verifies:
-1. Circular Foreign Keys broken: current_revision_id/current_version_id removed, is_current with filtered unique index.
-2. Regrade Choice Key: choice_key preserved across revisions, regrade matches student snapshot against active revision.
-3. Autosave Sequence & Lease Epoch Collision: StaleLeaseEpochError (409) and StaleAnswerSequenceError (409) rejected.
-4. Skeleton Tombstone Purge: parent attempt retained with is_detail_purged=True, child details purged, regrade skips gracefully.
-5. Duration vs Window Timing: Assessment open_at/time_limit locked after publish, close_at can only extend forward with audit.
-6. Relational Staging for Lessons: staged lesson in PENDING_APPROVAL shares position without unique constraint violation,
-   approval atomically promotes staged lesson to PUBLISHED and sets old lesson to HISTORICAL.
+1. Circular Foreign Keys broken: current_revision_id/current_version_id removed,
+   is_current with filtered unique index.
+2. Regrade Choice Key: choice_key preserved across revisions, regrade matches
+   student snapshot against active revision.
+3. Autosave Sequence & Lease Epoch Collision: StaleLeaseEpochError (409) and
+   StaleAnswerSequenceError (409) rejected.
+4. Skeleton Tombstone Purge: parent attempt retained with is_detail_purged=True,
+   child details purged, regrade skips gracefully.
+5. Duration vs Window Timing: Assessment open_at/time_limit locked after publish,
+   close_at can only extend forward with audit.
+6. Relational Staging for Lessons: staged lesson in PENDING_APPROVAL shares position
+   without unique constraint violation, approval atomically promotes staged lesson
+   to PUBLISHED and sets old lesson to HISTORICAL.
 """
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -22,21 +27,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
+from pwd301.models.ai_rag import KnowledgeDocument, KnowledgeVersion
 from pwd301.models.attempt_regrade import (
     AssessmentAttempt,
     AttemptAnswer,
-    AttemptAnswerChoice,
     AttemptAnswerEvent,
     AttemptChoiceSnapshot,
-    AttemptQuestion,
 )
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
+from pwd301.models.course import Course, Lesson
 from pwd301.models.file_import import FileAsset, FileRevision
 from pwd301.models.identity import Role, User
-from pwd301.models.ai_rag import KnowledgeDocument, KnowledgeVersion
 from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question, QuestionRevision, QuestionRevisionChoice
+from pwd301.models.question_bank import Question, QuestionRevision
 from pwd301.services.assessment_service import (
     assign_question,
     create_assessment,
@@ -135,7 +137,7 @@ def enrolled_student(app: Flask, student_user: User, published_course: Course) -
 def test_defect_1_circular_foreign_keys_and_is_current_filtered_unique(
     app: Flask, instructor_user: User, published_course: Course
 ):
-    """Defect 1: Circular FKs dropped, is_current with filtered unique index prevents dual active revisions."""
+    """Defect 1: Circular FKs dropped, is_current filtered unique index prevents dual active."""
     sess: Session = db.session
 
     # 1. Check Question / QuestionRevision
@@ -266,9 +268,13 @@ def test_defect_1_circular_foreign_keys_and_is_current_filtered_unique(
 
 
 def test_defect_2_regrade_choice_key_invariant(
-    app: Flask, instructor_user: User, student_user: User, published_course: Course, enrolled_student: User
+    app: Flask,
+    instructor_user: User,
+    student_user: User,
+    published_course: Course,
+    enrolled_student: User,
 ):
-    """Defect 2: choice_key is preserved across revisions and correctly evaluated by regrade_attempt."""
+    """Defect 2: choice_key is preserved across revisions and evaluated by regrade_attempt."""
     sess: Session = db.session
 
     # 1. Create MCQ question with Choice Alpha (correct) and Choice Beta (incorrect)
@@ -303,8 +309,12 @@ def test_defect_2_regrade_choice_key_invariant(
         "open_at": (now - timedelta(hours=1)).isoformat(),
         "close_at": (now + timedelta(days=1)).isoformat(),
     }
-    assessment = create_assessment(instructor_user, published_course.id, assess_payload, session=sess)
-    sec = create_section(instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess)
+    assessment = create_assessment(
+        instructor_user, published_course.id, assess_payload, session=sess
+    )
+    sec = create_section(
+        instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess
+    )
     assign_question(
         instructor_user,
         assessment.public_id,
@@ -315,7 +325,9 @@ def test_defect_2_regrade_choice_key_invariant(
     sess.commit()
 
     # 3. Student takes attempt, answering Choice Alpha (TCP)
-    attempt, raw_lease_token = start_assessment_attempt(student_user, assessment.public_id, session=sess)
+    attempt, raw_lease_token = start_assessment_attempt(
+        student_user, assessment.public_id, session=sess
+    )
     aq = attempt.attempt_questions[0]
 
     # Save answer selecting key_alpha
@@ -358,7 +370,7 @@ def test_defect_2_regrade_choice_key_invariant(
 
     # 5. Regrade attempt against active revision:
     # Student selected key_alpha, but now key_beta is correct. Regrade worker must award 0 points!
-    result2 = regrade_attempt(attempt.id, session=sess)
+    regrade_attempt(attempt.id, session=sess)
     sess.commit()
     assert aq.current_grade.awarded_points == Decimal("0.0")
 
@@ -376,13 +388,17 @@ def test_defect_2_regrade_choice_key_invariant(
     assert rev3.is_current is True
 
     # Regrade again: student's key_alpha is correct again -> 10 points restored
-    result3 = regrade_attempt(attempt.id, session=sess)
+    regrade_attempt(attempt.id, session=sess)
     sess.commit()
     assert aq.current_grade.awarded_points == Decimal("10.0")
 
 
 def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
-    app: Flask, instructor_user: User, student_user: User, published_course: Course, enrolled_student: User
+    app: Flask,
+    instructor_user: User,
+    student_user: User,
+    published_course: Course,
+    enrolled_student: User,
 ):
     """Defect 3: Reject stale lease_epoch with 409 and stale client sequence with 409."""
     sess: Session = db.session
@@ -406,8 +422,12 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
         "open_at": (now - timedelta(hours=1)).isoformat(),
         "close_at": (now + timedelta(days=1)).isoformat(),
     }
-    assessment = create_assessment(instructor_user, published_course.id, assess_payload, session=sess)
-    sec = create_section(instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess)
+    assessment = create_assessment(
+        instructor_user, published_course.id, assess_payload, session=sess
+    )
+    sec = create_section(
+        instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess
+    )
     assign_question(
         instructor_user,
         assessment.public_id,
@@ -428,7 +448,11 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
         actor=student_user,
         attempt_id=attempt.id,
         attempt_question_id=aq.id,
-        payload={"text_answer": "same result after repeated calls", "client_sequence": 1, "lease_epoch": 1},
+        payload={
+            "text_answer": "same result after repeated calls",
+            "client_sequence": 1,
+            "lease_epoch": 1,
+        },
         raw_lease_token=token1,
         session=sess,
     )
@@ -436,7 +460,7 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
     assert save_res1["last_client_sequence"] == 1
     assert save_res1["lease_epoch"] == 1
 
-    # 2. Duplicate or stale sequence collision: sequence 1 again -> raises StaleAnswerSequenceError (409)
+    # 2. Duplicate or stale sequence collision: sequence 1 again -> raises error
     with pytest.raises(StaleAnswerSequenceError):
         save_attempt_answer(
             actor=student_user,
@@ -469,7 +493,11 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
             actor=student_user,
             attempt_id=attempt.id,
             attempt_question_id=aq.id,
-            payload={"text_answer": "late write from tab 1", "client_sequence": 2, "lease_epoch": 1},
+            payload={
+                "text_answer": "late write from tab 1",
+                "client_sequence": 2,
+                "lease_epoch": 1,
+            },
             raw_lease_token=token2,
             session=sess,
         )
@@ -489,9 +517,14 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
 
 
 def test_defect_4_skeleton_tombstone_purge_and_regrade_skip(
-    app: Flask, instructor_user: User, student_user: User, admin_user: User, published_course: Course, enrolled_student: User
+    app: Flask,
+    instructor_user: User,
+    student_user: User,
+    admin_user: User,
+    published_course: Course,
+    enrolled_student: User,
 ):
-    """Defect 4: Skeleton tombstone purge deletes detail rows, retains parent attempt with is_detail_purged=True, regrade skips it."""
+    """Defect 4: Skeleton tombstone purge deletes detail rows, retains parent attempt."""
     sess: Session = db.session
 
     payload = {
@@ -516,8 +549,12 @@ def test_defect_4_skeleton_tombstone_purge_and_regrade_skip(
         "open_at": (now - timedelta(hours=1)).isoformat(),
         "close_at": (now + timedelta(days=1)).isoformat(),
     }
-    assessment = create_assessment(instructor_user, published_course.id, assess_payload, session=sess)
-    sec = create_section(instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess)
+    assessment = create_assessment(
+        instructor_user, published_course.id, assess_payload, session=sess
+    )
+    sec = create_section(
+        instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess
+    )
     assign_question(
         instructor_user,
         assessment.public_id,
@@ -543,11 +580,21 @@ def test_defect_4_skeleton_tombstone_purge_and_regrade_skip(
 
     # Verify child details exist
     assert sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).count() > 0
-    assert sess.query(AttemptChoiceSnapshot).filter(AttemptChoiceSnapshot.attempt_question_id == aq.id).count() > 0
-    assert sess.query(AttemptAnswerEvent).filter(AttemptAnswerEvent.attempt_question_id == aq.id).count() > 0
+    assert (
+        sess.query(AttemptChoiceSnapshot)
+        .filter(AttemptChoiceSnapshot.attempt_question_id == aq.id)
+        .count()
+        > 0
+    )
+    assert (
+        sess.query(AttemptAnswerEvent)
+        .filter(AttemptAnswerEvent.attempt_question_id == aq.id)
+        .count()
+        > 0
+    )
 
     # Execute Skeleton Tombstone Purge
-    purged_attempt = purge_attempt_details_skeleton_tombstone(attempt.id, actor_id=admin_user.id, session=sess)
+    purge_attempt_details_skeleton_tombstone(attempt.id, actor_id=admin_user.id, session=sess)
     sess.commit()
 
     # Invariants:
@@ -559,8 +606,18 @@ def test_defect_4_skeleton_tombstone_purge_and_regrade_skip(
 
     # 2. Child detail tables MUST be truncated/purged
     assert sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).count() == 0
-    assert sess.query(AttemptChoiceSnapshot).filter(AttemptChoiceSnapshot.attempt_question_id == aq.id).count() == 0
-    assert sess.query(AttemptAnswerEvent).filter(AttemptAnswerEvent.attempt_question_id == aq.id).count() == 0
+    assert (
+        sess.query(AttemptChoiceSnapshot)
+        .filter(AttemptChoiceSnapshot.attempt_question_id == aq.id)
+        .count()
+        == 0
+    )
+    assert (
+        sess.query(AttemptAnswerEvent)
+        .filter(AttemptAnswerEvent.attempt_question_id == aq.id)
+        .count()
+        == 0
+    )
 
     # 3. Audit event is recorded
     audit = (
@@ -583,7 +640,7 @@ def test_defect_4_skeleton_tombstone_purge_and_regrade_skip(
 def test_defect_5_assessment_duration_vs_window_timing_freeze(
     app: Flask, instructor_user: User, published_course: Course
 ):
-    """Defect 5: Assessment open_at/time_limit locked after publish, close_at can only extend forward."""
+    """Defect 5: Assessment timing locked after publish, close_at can only extend forward."""
     sess: Session = db.session
 
     # Question required to satisfy publish gate
@@ -609,8 +666,12 @@ def test_defect_5_assessment_duration_vs_window_timing_freeze(
         "open_at": orig_open.isoformat(),
         "close_at": orig_close.isoformat(),
     }
-    assessment = create_assessment(instructor_user, published_course.id, assess_payload, session=sess)
-    sec = create_section(instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess)
+    assessment = create_assessment(
+        instructor_user, published_course.id, assess_payload, session=sess
+    )
+    sec = create_section(
+        instructor_user, assessment.public_id, {"title": "Section 1", "position": 1}, session=sess
+    )
     assign_question(
         instructor_user,
         assessment.public_id,
@@ -685,7 +746,7 @@ def test_defect_5_assessment_duration_vs_window_timing_freeze(
 def test_defect_6_relational_staging_lesson_change_request_and_approval(
     app: Flask, instructor_user: User, published_course: Course
 ):
-    """Defect 6: Staged lesson at position 1 does not collide with active lesson at position 1, approval promotes atomically."""
+    """Defect 6: Staged lesson at position 1 does not collide, approval promotes atomically."""
     sess: Session = db.session
 
     # 1. Create and publish initial lesson at position 1
@@ -729,7 +790,11 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     assert req.status == "PENDING"
 
     # Both lessons co-exist at position 1 in database
-    lessons_at_pos_1 = sess.query(Lesson).filter(Lesson.course_id == published_course.id, Lesson.position == 1).all()
+    lessons_at_pos_1 = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == published_course.id, Lesson.position == 1)
+        .all()
+    )
     assert len(lessons_at_pos_1) == 2
 
     # 3. Approve change request
@@ -745,7 +810,7 @@ def test_defect_6_relational_staging_lesson_change_request_and_approval(
     # - Old lesson status becomes 'HISTORICAL'
     # - Staged lesson status becomes 'PUBLISHED'
     # - Change request status becomes 'APPROVED' and applied_at is set
-    # - Filtered unique index continues to be satisfied because only ONE lesson is PUBLISHED at position 1
+    # - Filtered unique index satisfied because only ONE lesson is PUBLISHED at position 1
     sess.refresh(lesson1)
     sess.refresh(staged_lesson)
 

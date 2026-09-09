@@ -765,6 +765,11 @@ class QuestionCorrection(Base):
     to_revision = relationship("QuestionRevision", foreign_keys=[to_revision_id])
     actor = relationship("User", foreign_keys=[actor_user_id])
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.question_correction.{self.id}")
+
 
 class RegradeJob(Base):
     """Batch regrading operation job mapping to canonical 'regrade_jobs' table."""
@@ -843,6 +848,11 @@ class RegradeJob(Base):
     )
     items = relationship("RegradeItem", back_populates="regrade_job", cascade="all, delete-orphan")
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_job.{self.id}")
+
 
 class RegradeItem(Base):
     """Individual attempt affected by a regrade job mapping to 'regrade_items' table."""
@@ -897,3 +907,8 @@ class RegradeItem(Base):
 
     regrade_job = relationship("RegradeJob", foreign_keys=[regrade_job_id], back_populates="items")
     attempt = relationship("AssessmentAttempt", foreign_keys=[attempt_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_item.{self.id}")
