@@ -104,6 +104,7 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 reason=reason,
                 session=sess,
             )
+        sess.commit()
     except InvalidRoleAssignmentError as exc:
         return (
             jsonify(
@@ -185,6 +186,7 @@ def review_course(course_id: str) -> tuple[Response, int] | Response:
         new_status=target_status,
         reason=reason,
     )
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -205,6 +207,7 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
         new_instructor_id=new_instructor_id,
         reason=reason,
     )
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -224,6 +227,7 @@ def publish_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="PUBLISHED",
         reason=reason,
     )
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -238,6 +242,7 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -257,4 +262,5 @@ def restore_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="ARCHIVED",
         reason=reason,
     )
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200

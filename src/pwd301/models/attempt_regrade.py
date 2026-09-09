@@ -142,6 +142,14 @@ class AssessmentAttempt(Base):
             mssql_where=sa.text("submission_idempotency_key IS NOT NULL"),
             sqlite_where=sa.text("submission_idempotency_key IS NOT NULL"),
         ),
+        sa.Index(
+            "ux_attempt_single_active",
+            "assessment_id",
+            "student_user_id",
+            unique=True,
+            mssql_where=sa.text("status='IN_PROGRESS'"),
+            sqlite_where=sa.text("status='IN_PROGRESS'"),
+        ),
     )
 
     assessment = relationship("Assessment", back_populates="attempts")

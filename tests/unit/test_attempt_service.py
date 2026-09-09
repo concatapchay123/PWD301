@@ -582,3 +582,36 @@ def test_list_student_assessment_attempts(
     assert attempts[0]["status"] == "SUBMITTED"
     assert attempts[1]["attempt_number"] == 2
     assert attempts[1]["status"] == "IN_PROGRESS"
+
+
+def test_active_attempt_unique_index_concurrency(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that DB unique index ux_attempt_single_active catches race condition."""
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+
+    assessment, _ = _create_published_assessment(instructor_user, published_course)
+
+    # First attempt starts normally
+    start_assessment_attempt(enrolled_student, assessment.public_id, session=db.session)
+    db.session.commit()
+
+    # Simulate race condition where application-level select check is bypassed
+    original_query = db.session.query
+
+    def mocked_query(*args: Any, **kwargs: Any) -> Any:
+        q = original_query(*args, **kwargs)
+        if len(args) == 1 and args[0] is AssessmentAttempt:
+            return q.filter(db.text("1=0"))
+        return q
+
+    monkeypatch.setattr(db.session, "query", mocked_query)
+
+    # Even though app-level select check was bypassed, the DB unique index
+    # blocks duplicate active attempt
+    with pytest.raises(ActiveAttemptExistsError, match="already in progress"):
+        start_assessment_attempt(enrolled_student, assessment.public_id, session=db.session)

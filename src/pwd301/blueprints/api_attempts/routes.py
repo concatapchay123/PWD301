@@ -32,7 +32,11 @@ def start_assessment_attempt_route(assessment_id: str) -> tuple[Response, int] |
     )
     db.session.commit()
 
-    delivery = get_attempt_delivery(student_actor=actor, attempt_id=attempt.id, session=db.session)
+    delivery = get_attempt_delivery(
+        student_actor=actor,
+        attempt_id=str(attempt.public_id),
+        session=db.session,
+    )
 
     response_payload = {
         "attempt_id": str(attempt.public_id),
@@ -71,7 +75,6 @@ def get_attempt_delivery_route(attempt_id: str) -> tuple[Response, int] | Respon
         attempt_id=attempt_id,
         session=db.session,
     )
-    db.session.commit()
 
     return jsonify(delivery), 200
 

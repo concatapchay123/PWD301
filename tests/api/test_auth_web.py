@@ -196,3 +196,28 @@ class TestWebAuth:
         assert created is not None
         assert created.display_name == "New Student"
         assert any(r.code == "STUDENT" for r in created.roles)
+
+    def test_session_missing_keys_fails_closed(self, client: FlaskClient, web_user: User) -> None:
+        """Tampered session cookie missing auth_session_key or auth_version fails closed."""
+        # Log in to get valid session
+        client.post(
+            "/auth/login",
+            json={"email": "student@demo.local", "password": "Password123!"},
+        )
+        resp1 = client.get("/", headers={"Accept": "text/html"})
+        assert web_user.display_name.encode("utf-8") in resp1.data
+
+        # Tamper: remove auth_session_key from session
+        with client.session_transaction() as sess:
+            sess.pop("auth_session_key", None)
+
+        resp2 = client.get("/", headers={"Accept": "text/html"})
+        assert web_user.display_name.encode("utf-8") not in resp2.data
+
+        # Tamper: remove auth_version from session
+        with client.session_transaction() as sess:
+            sess["auth_session_key"] = "some-key"
+            sess.pop("auth_version", None)
+
+        resp3 = client.get("/", headers={"Accept": "text/html"})
+        assert web_user.display_name.encode("utf-8") not in resp3.data

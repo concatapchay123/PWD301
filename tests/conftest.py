@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from flask import Flask
@@ -34,3 +35,17 @@ def client(app: Flask) -> FlaskClient:
 def runner(app: Flask) -> FlaskCliRunner:
     """A test CLI runner for invoking Flask CLI commands."""
     return app.test_cli_runner()
+
+
+def login_web_user(client: FlaskClient, user: Any) -> str:
+    """Helper for testing Web UI routes: establishes a valid authenticated Flask session."""
+    from pwd301.services.session_auth_service import create_auth_session
+
+    _, raw_key = create_auth_session(user, session=db.session)
+    db.session.commit()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(user.id)
+        sess["auth_session_key"] = raw_key
+        sess["auth_version"] = user.auth_version
+        sess["auth_source"] = "SESSION"
+    return raw_key

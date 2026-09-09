@@ -22,7 +22,6 @@ from pwd301.services.authorization_service import (
     require_student_data_access,
 )
 from pwd301.services.completion_service import (
-    calculate_course_progress,
     get_or_create_default_completion_rule,
     set_course_completion_rule,
 )
@@ -110,6 +109,7 @@ def list_courses_catalog() -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("", methods=["POST"])
+@jwt_required
 @instructor_required
 def create_course_api() -> tuple[Response, int] | Response:
     """Create a new course (Instructor/Admin required)."""
@@ -130,6 +130,7 @@ def get_course_detail_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>", methods=["PATCH"])
+@jwt_required
 @instructor_required
 def update_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Update editable course metadata with mass-assignment defense."""
@@ -142,6 +143,7 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>/publish-request", methods=["POST"])
+@jwt_required
 @instructor_required
 def publish_request_api(course_id: str) -> tuple[Response, int] | Response:
     """Submit course for review."""
@@ -160,6 +162,7 @@ def publish_request_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>/archive", methods=["POST"])
+@jwt_required
 @instructor_required
 def archive_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Archive a course."""
@@ -228,6 +231,7 @@ def _serialize_prerequisite_api(c: Course) -> dict[str, Any]:
 
 
 @api_course_bp.route("/<course_id>/enroll", methods=["POST"])
+@jwt_required
 def enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Enroll authenticated student into a course per 05_ENROLLMENT_PROGRESS_API.md."""
     actor = get_authenticated_actor()
@@ -251,6 +255,7 @@ def enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>/leave", methods=["POST"])
+@jwt_required
 def leave_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Withdraw authenticated student from a course per 05_ENROLLMENT_PROGRESS_API.md."""
     actor = get_authenticated_actor()
@@ -278,6 +283,7 @@ def leave_course_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>/re-enroll", methods=["POST"])
+@jwt_required
 def re_enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Re-enroll in a previously left course."""
     actor = get_authenticated_actor()
@@ -307,6 +313,7 @@ def get_course_prerequisites_api(course_id: str) -> tuple[Response, int] | Respo
 
 
 @api_course_bp.route("/<course_id>/prerequisites", methods=["POST"])
+@jwt_required
 @instructor_required
 def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Response:
     """Add a prerequisite course dependency (Instructor/Admin required)."""
@@ -342,6 +349,7 @@ def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Respon
 
 
 @api_course_bp.route("/<course_id>/prerequisites/<prereq_id>", methods=["DELETE"])
+@jwt_required
 @instructor_required
 def remove_course_prerequisite_api(
     course_id: str, prereq_id: str
@@ -424,6 +432,7 @@ def get_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Re
 
 
 @api_course_bp.route("/<course_id>/completion-rules", methods=["PUT"])
+@jwt_required
 @instructor_required
 def set_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Response:
     """Update completion rule criteria for a managed course (REST API)."""
@@ -478,8 +487,7 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
     if enrollment is None:
         raise ResourceNotFoundError("Enrollment record not found for this student.")
 
-    pct = calculate_course_progress(enrollment.id, session=db.session)
-    db.session.commit()
+    pct = float(enrollment.current_progress_percent)
 
     data = {
         "course_id": str(course.public_id),

@@ -105,6 +105,10 @@ class ProductionConfig(BaseConfig):
         secret = os.environ.get("SECRET_KEY")
         if not secret or secret == "replace-me-with-a-long-random-secret":
             raise ValueError("In production, SECRET_KEY must be set to a secure, random value.")
+        jwt_secret = os.environ.get("JWT_SECRET_KEY")
+        insecure_jwt_default = "dev-insecure-jwt-secret-change-in-production-min32bytes"
+        if not jwt_secret or jwt_secret == insecure_jwt_default:
+            raise ValueError("In production, JWT_SECRET_KEY must be set to a secure, random value.")
 
 
 config_by_name: dict[str, type[BaseConfig]] = {

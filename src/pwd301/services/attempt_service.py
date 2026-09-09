@@ -23,6 +23,7 @@ from typing import Any
 
 from flask import current_app
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -322,7 +323,13 @@ def start_assessment_attempt(
         updated_at=now,
     )
     sess.add(attempt)
-    sess.flush()
+    try:
+        sess.flush()
+    except IntegrityError as exc:
+        sess.rollback()
+        raise ActiveAttemptExistsError(
+            "An active attempt is already in progress for this assessment."
+        ) from exc
 
     # 11. Collect candidate questions (fixed assignments + question pool)
     assignments = (

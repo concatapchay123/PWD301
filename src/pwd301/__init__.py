@@ -795,15 +795,16 @@ def create_app(config_name: str | None = None) -> Flask:
 
         # Verify session auth_version against current user record
         session_auth_version = session.get("auth_version")
-        if session_auth_version is not None and session_auth_version != user.auth_version:
+        if session_auth_version is None or session_auth_version != user.auth_version:
             return None
 
-        # If an auth_session_key exists in session, validate against database record
+        # Validate auth_session_key against database record
         raw_key = session.get("auth_session_key")
-        if raw_key:
-            auth_sess = validate_auth_session(raw_key, session=db.session)
-            if auth_sess is None:
-                return None
+        if not raw_key:
+            return None
+        auth_sess = validate_auth_session(raw_key, session=db.session)
+        if auth_sess is None:
+            return None
 
         return user
 

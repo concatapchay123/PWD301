@@ -26,4 +26,4 @@ def test_canonical_ddl_has_expected_table_count() -> None:
 
 def test_current_task_exists() -> None:
     text = (ROOT / "tasks/CURRENT.md").read_text(encoding="utf-8")
-    assert "TASK-001" in text
+    assert re.search(r"TASK-\d{3}", text) is not None

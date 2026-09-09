@@ -43,15 +43,19 @@ def test_testing_config() -> None:
 
 
 def test_production_config_security_enforcement(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify that ProductionConfig requires a valid, secure SECRET_KEY."""
+    """Verify that ProductionConfig requires valid, secure SECRET_KEY and JWT_SECRET_KEY."""
     assert ProductionConfig.DEBUG is False
     assert ProductionConfig.TESTING is False
     assert ProductionConfig.ENV == "production"
     assert ProductionConfig.SESSION_COOKIE_SECURE is True
     assert ProductionConfig.REMEMBER_COOKIE_SECURE is True
 
+    valid_secret = "super-secret-random-production-token-12345"
+    valid_jwt_secret = "super-jwt-secret-random-prod-key-32bytes-long"
+
     # When SECRET_KEY is default or missing, instantiation must fail
     monkeypatch.setenv("SECRET_KEY", "replace-me-with-a-long-random-secret")
+    monkeypatch.setenv("JWT_SECRET_KEY", valid_jwt_secret)
     with pytest.raises(ValueError, match="SECRET_KEY must be set to a secure, random value"):
         ProductionConfig()
 
@@ -59,8 +63,19 @@ def test_production_config_security_enforcement(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(ValueError, match="SECRET_KEY must be set to a secure, random value"):
         ProductionConfig()
 
-    # When a proper secret is supplied, instantiation succeeds
-    monkeypatch.setenv("SECRET_KEY", "super-secret-random-production-token-12345")
+    # When JWT_SECRET_KEY is default or missing, instantiation must fail
+    monkeypatch.setenv("SECRET_KEY", valid_secret)
+    monkeypatch.setenv("JWT_SECRET_KEY", "dev-insecure-jwt-secret-change-in-production-min32bytes")
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY must be set to a secure, random value"):
+        ProductionConfig()
+
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY must be set to a secure, random value"):
+        ProductionConfig()
+
+    # When proper secrets are supplied, instantiation succeeds
+    monkeypatch.setenv("SECRET_KEY", valid_secret)
+    monkeypatch.setenv("JWT_SECRET_KEY", valid_jwt_secret)
     prod = ProductionConfig()
     assert prod.ENV == "production"
 

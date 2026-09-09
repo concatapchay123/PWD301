@@ -435,12 +435,9 @@ def test_instructor_b_cannot_access_instructor_a_questions_web_ui(
     question_a: Question,
 ) -> None:
     """Instructor B cannot access Instructor A's questions via Web UI routes."""
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(instructor_b.id)
-        sess["auth_source"] = "SESSION"
-        sess["user_id"] = instructor_b.id
-        sess["user_public_id"] = str(instructor_b.public_id)
-        sess["role_codes"] = ["INSTRUCTOR"]
+    from tests.conftest import login_web_user
+
+    login_web_user(client, instructor_b)
 
     # View question list in Course A
     resp = client.get(

@@ -31,6 +31,7 @@ from pwd301.services.enrollment_service import (
 from pwd301.services.exceptions import CompletionRuleValidationError
 from pwd301.services.lesson_service import create_lesson, record_lesson_progress
 from pwd301.services.user_service import assign_role_to_user, register_user
+from tests.conftest import login_web_user
 
 
 @pytest.fixture
@@ -572,9 +573,7 @@ def test_web_instructor_completion_rules_routes(
 ) -> None:
     """Verify Web UI routes for instructor completion rules."""
     course = _create_published_course(instructor_user, admin_user, "WEB101", "Web Course 101")
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(instructor_user.id)
-        sess["auth_source"] = "SESSION"
+    login_web_user(client, instructor_user)
 
     # GET
     resp = client.get(f"/instructor/courses/{course.public_id}/completion-rules")
@@ -604,9 +603,7 @@ def test_web_student_course_completion_route(
     enroll_student(student_user, course.id)
     db.session.commit()
 
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(student_user.id)
-        sess["auth_source"] = "SESSION"
+    login_web_user(client, student_user)
 
     resp = client.get(f"/student/courses/{course.public_id}/completion")
     assert resp.status_code == 200

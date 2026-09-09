@@ -110,9 +110,9 @@ def test_instructor_cannot_modify_other_course_rules(
         )
 
     # Web UI IDOR check
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(instructor_b.id)
-        sess["auth_source"] = "SESSION"
+    from tests.conftest import login_web_user
+
+    login_web_user(client, instructor_b)
 
     resp = client.get(
         f"/instructor/courses/{course_a.public_id}/completion-rules",

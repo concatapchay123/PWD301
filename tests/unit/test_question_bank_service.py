@@ -609,10 +609,9 @@ def test_trash_and_restore_question_lifecycle(
 def test_instructor_web_routes(
     client: FlaskClient, app: Flask, instructor_user: User, course: Course
 ) -> None:
-    """Verify instructor web session endpoints for question bank."""
-    with client.session_transaction() as sess:
-        sess["_user_id"] = str(instructor_user.id)
-        sess["_fresh"] = True
+    from tests.conftest import login_web_user
+
+    login_web_user(client, instructor_user)
 
     # 1. POST create question
     resp = client.post(
