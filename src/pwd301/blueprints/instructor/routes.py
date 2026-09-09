@@ -40,6 +40,14 @@ from pwd301.services.lesson_service import (
     trash_lesson,
     update_lesson,
 )
+from pwd301.services.question_bank_service import (
+    _serialize_question,
+    create_question,
+    get_question_detail,
+    list_course_questions,
+    restore_question,
+    trash_question,
+)
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
@@ -507,3 +515,106 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
     )
     db.session.commit()
     return jsonify(_serialize_completion_rule(course, rule)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/questions", methods=["GET"])
+@instructor_required
+def list_course_questions_route(course_id: str) -> tuple[Response, int] | Response:
+    """List questions for a course in the instructor dashboard."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    filters = {
+        "difficulty": request.args.get("difficulty"),
+        "question_type": request.args.get("question_type") or request.args.get("type"),
+        "lesson_id": request.args.get("lesson_id"),
+        "status": request.args.get("status"),
+        "search": request.args.get("search") or request.args.get("q"),
+    }
+
+    items, total, p, pp, total_pages = list_course_questions(
+        actor=actor,
+        course_id=course_id,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+    }
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/courses/<course_id>/questions", methods=["POST"])
+@instructor_required
+def create_course_question_route(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new question in the instructor question authoring workflow."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    question = create_question(actor, course_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_question(question)), 201
+
+
+@instructor_bp.route("/questions/<question_id>", methods=["GET"])
+@instructor_required
+def get_question_detail_route(question_id: str) -> tuple[Response, int] | Response:
+    """Retrieve question details for viewing or editing."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    data = get_question_detail(actor, question_id, session=db.session)
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/questions/<question_id>/trash", methods=["POST"])
+@instructor_required
+def trash_question_route(question_id: str) -> tuple[Response, int] | Response:
+    """Move a question to TRASH."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason")
+
+    question = trash_question(actor, question_id, reason=reason, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Question moved to trash.",
+            "question": _serialize_question(question),
+        }
+    ), 200
+
+
+@instructor_bp.route("/questions/<question_id>/restore", methods=["POST"])
+@instructor_required
+def restore_question_route(question_id: str) -> tuple[Response, int] | Response:
+    """Restore a question from TRASH back to ACTIVE."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason")
+
+    question = restore_question(actor, question_id, reason=reason, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Question restored from trash.",
+            "question": _serialize_question(question),
+        }
+    ), 200

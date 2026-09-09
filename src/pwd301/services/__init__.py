@@ -32,6 +32,7 @@ from pwd301.services.authorization_service import (
     require_attempt_access,
     require_attempt_submission_owner,
     require_course_manager,
+    require_question_manager,
     require_roles,
     require_student_data_access,
     student_required,
@@ -100,6 +101,10 @@ from pwd301.services.exceptions import (
     LessonStateViolationError,
     LessonValidationError,
     PrerequisiteCycleError,
+    QuestionBankError,
+    QuestionNotFoundError,
+    QuestionStateViolationError,
+    QuestionValidationError,
     ResourceNotFoundError,
     ServiceError,
     SessionExpiredError,
@@ -129,6 +134,13 @@ from pwd301.services.lesson_service import (
     reorder_lessons,
     trash_lesson,
     update_lesson,
+)
+from pwd301.services.question_bank_service import (
+    create_question,
+    get_question_detail,
+    list_course_questions,
+    restore_question,
+    trash_question,
 )
 from pwd301.services.session_auth_service import (
     create_auth_session,
@@ -204,6 +216,16 @@ __all__ = [
     "CompletionRuleError",
     "CompletionRuleNotFoundError",
     "CompletionRuleValidationError",
+    "QuestionBankError",
+    "QuestionNotFoundError",
+    "QuestionValidationError",
+    "QuestionStateViolationError",
+    # Question Bank Service
+    "create_question",
+    "get_question_detail",
+    "list_course_questions",
+    "restore_question",
+    "trash_question",
     # Completion Service
     "calculate_course_progress",
     "evaluate_course_completion",
@@ -295,6 +317,7 @@ __all__ = [
     "can_submit_attempt",
     "can_grade_attempt",
     "require_course_manager",
+    "require_question_manager",
     "require_student_data_access",
     "require_attempt_access",
     "require_attempt_submission_owner",

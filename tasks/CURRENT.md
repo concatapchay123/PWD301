@@ -1,90 +1,130 @@
 # CURRENT TASK
 
-## TASK-009 — Course Progress Engine, Completion Rules & Durable Completion Summaries
+## TASK-010 — Question Bank Management & Question Authoring Engine
 
 **Status:** DONE
 
 ### 1. Goal
-Triển khai toàn diện Tầng dịch vụ tính toán tiến độ khóa học và động cơ thẩm định hoàn thành (`src/pwd301/services/completion_service.py`), bao gồm:
-1. **Thuật toán tính toán tiến độ khóa học (Algorithm 01)** dựa trên tỷ lệ bài học bắt buộc đã hoàn thành trong chu kỳ ghi danh hiện tại (`EnrollmentPeriod`).
-2. **Cấu hình tiêu chí hoàn thành khóa học (`CourseCompletionRule`)**: Quản trị cấu hình hoàn thành (bắt buộc học hết bài học, hoàn thành bài kiểm tra, ngưỡng % tiến độ tối thiểu).
-3. **Động cơ thẩm định và cấp chứng nhận hoàn thành (`evaluate_course_completion`)**: Đánh giá điều kiện, cập nhật trạng thái `Enrollment.status = 'COMPLETED'`, `EnrollmentPeriod.status = 'COMPLETED'`, khởi tạo/cập nhật bản ghi bền vững `CourseCompletionSummary` (`ever_completed=True`, `prerequisite_eligible=True`), ghi nhận sự kiện `EnrollmentEvent` (`COMPLETED`) và `AuditEvent` (`COURSE_COMPLETED`).
-4. **Bảo toàn điều kiện tiên quyết bền vững (Durable Prerequisite Eligibility)**: Cập nhật `check_prerequisites_met` trong `enrollment_service.py` đọc từ `CourseCompletionSummary.prerequisite_eligible.is_(True)` thay vì chỉ đọc `Enrollment.status == 'COMPLETED'`.
-5. **Tích hợp Hook tự động thẩm định**: Kết nối tự động trong `lesson_service.py` (`record_lesson_progress`) kích hoạt `evaluate_course_completion` khi bài học hoàn thành giúp tiến độ đạt điều kiện.
-6. **Web UI & REST API Endpoints**: Đầy đủ route cho Giảng viên (xem/cập nhật tiêu chí hoàn thành) và Học viên (truy vấn tiến độ và chứng nhận hoàn thành), tuân thủ kiểm soát IDOR và ADR-002 che giấu `BIGINT PK`.
+Xây dựng toàn diện Tầng dịch vụ quản lý Ngân hàng câu hỏi và Động cơ biên soạn câu hỏi (`src/pwd301/services/question_bank_service.py`), bao gồm:
+1. **Khởi tạo câu hỏi (Question Creation) & Phiên bản gốc (Initial Revision)**: Tạo đồng thời bản ghi `Question` và `QuestionRevision` (`revision_no=1`, trạng thái `ACTIVE`, `change_type='INITIAL'`), cùng thông tin nguồn gốc câu hỏi (`QuestionProvenance`).
+2. **Hỗ trợ đầy đủ 5 loại câu hỏi chuẩn hóa**:
+   - `SINGLE_CHOICE`: Tối thiểu 2 lựa chọn, chính xác 1 đáp án đúng (`fraction=1.0`, các đáp án sai `fraction=0.0`).
+   - `MULTIPLE_CHOICE`: Tối thiểu 2 lựa chọn, ít nhất 1 đáp án đúng, tổng fraction của các đáp án đúng bằng 1.0 (hoặc 100%).
+   - `TRUE_FALSE`: Chính xác 2 lựa chọn ("True" / "False"), chính xác 1 đáp án đúng.
+   - `SHORT_ANSWER`: Không dùng choices; lưu danh sách đáp án được chấp nhận (`accepted_answers`) với cơ chế chuẩn hóa chuỗi và tránh trùng lặp; hỗ trợ các chế độ khớp (`EXACT`, `CONTAINS`, `REGEX`, `NORMALIZED`).
+   - `ESSAY`: Không dùng choices hay accepted_answers; hỗ trợ stem và hướng dẫn chấm điểm / giải thích (`explanation`).
+3. **Phân loại độ khó theo Bloom Taxonomy**: Bắt buộc thuộc tập `{REMEMBER, UNDERSTAND, APPLY}` theo quy chuẩn kỹ thuật hệ thống và ràng buộc cơ sở dữ liệu `ck_questions_1`.
+4. **Kiểm soát tính toàn vẹn liên kết bài học (Same-Course Lesson Linkage)**: Câu hỏi thuộc về một Khóa học và có thể liên kết tùy chọn với một Bài học (`primary_lesson_id` / `lesson_id`). Bắt buộc thẩm định bài học phải thuộc cùng khóa học đó, ngăn chặn triệt để liên kết chéo khóa học.
+5. **Vòng đời xóa mềm 30 ngày (30-day Retention Trash & Restore Lifecycle)**:
+   - Thùng rác (`trash_question`): Chuyển trạng thái `TRASH`, đánh dấu `deleted_at`, ghi nhận `deleted_by_user_id`, thiết lập thời hạn khôi phục `restore_until = now + 30 days`, xử lý idempotent.
+   - Khôi phục (`restore_question`): Khôi phục về `ACTIVE`, xóa các mốc thời gian xóa mềm, xử lý idempotent, chặn khôi phục nếu trạng thái không hợp lệ.
+6. **Kiểm soát bảo mật và ủy quyền mức đối tượng (IDOR Prevention)**:
+   - Xây dựng helper `require_question_manager` trong `authorization_service.py`.
+   - Giảng viên chỉ được xem, tạo, xóa, khôi phục câu hỏi trong các khóa học do chính mình phụ trách.
+   - Học viên bị từ chối tuyệt đối (HTTP 403 Forbidden).
+   - Quản trị viên (Admin) có thẩm quyền giám sát toàn hệ thống.
+7. **Bảo toàn nguyên tắc kiến trúc ADR-002 (Internal PK Masking)**: Che giấu toàn bộ khóa chính số nguyên `BIGINT` (`id`, `creator_user_id`, `course_id` nội bộ) trong mọi payload JSON phản hồi; chỉ xuất `public_id` (UUIDv4/UUIDv7) và các thuộc tính nghiệp vụ.
+8. **Kiểm toán bất biến (Append-Only Audit Logging)**: Ghi nhận sự kiện kiểm toán `AuditEvent` (`QUESTION_CREATED`, `QUESTION_TRASHED`, `QUESTION_RESTORED`) cùng snapshot dữ liệu `before_json` và `after_json`.
+9. **Giao diện Web UI & REST API**:
+   - Blueprint REST `api_question_bp` (`/api/questions/...`) bảo vệ bằng `@jwt_required`.
+   - Bổ sung endpoints quản lý câu hỏi trong `api_course_bp` (`/api/courses/<course_id>/questions`).
+   - Bổ sung Web UI endpoints cho Giảng viên trong `instructor_bp` (`/instructor/courses/<course_id>/questions`, `/instructor/questions/...`).
+10. **Bộ kiểm thử toàn diện**: 100% test suite đạt chuẩn (270/270 tests pass), không phát sinh bất kỳ lỗi hồi quy nào.
+
+---
 
 ### 2. Source-of-truth documents
 - `AGENTS.md` (Hợp đồng vận hành kỹ thuật, quy tắc bất biến, phân quyền và Source-of-Truth Hierarchy).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` (Quy tắc nghiệp vụ hoàn thành khóa học và điều kiện tiên quyết).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/05_ENROLLMENT_AND_PREREQUISITES.md` (Đặc tả nghiệp vụ chu kỳ ghi danh, điều kiện tiên quyết bền vững).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/01_COURSE_PROGRESS_CALCULATION_ALGORITHM.md` (Giải thuật tính toán tiến độ khóa học).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/05_ENROLLMENT_PROGRESS_API.md` (Đặc tả REST API tiến độ, cấu hình tiêu chí và hoàn thành).
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md` (Chi tiết bảng `course_completion_rules`, `course_completion_summaries`, `enrollments`, `enrollment_periods`).
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/12_STATE_MACHINES.md` (Máy trạng thái Enrollment và EnrollmentPeriod).
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/16_CONCURRENCY_AND_TRANSACTIONS.md` (Xử lý giao dịch và concurrency khi thẩm định hoàn thành).
-- `src/pwd301/models/course.py` (Domain models: `CourseCompletionRule`, `CourseCompletionSummary`, `Enrollment`, `EnrollmentPeriod`, `LessonProgress`).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` (Quy tắc nghiệp vụ ngân hàng câu hỏi).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/06_QUESTION_BANK.md` (Đặc tả chi tiết ngân hàng câu hỏi, quy tắc phiên bản và bài học liên kết).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/06_QUESTION_BANK_API.md` (Đặc tả REST API ngân hàng câu hỏi, mã lỗi chuẩn hóa, tính idempotent).
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/003_question_bank.sql` (Canonical DDL tham chiếu Microsoft SQL Server cho ngân hàng câu hỏi).
+- `docs/decisions/ADR-002-public-id-and-primary-keys.md` (Quy tắc che giấu BIGINT PK và sử dụng UUID công khai).
+- `docs/decisions/ADR-003-question-revisions.md` (Chiến lược phiên bản hóa câu hỏi bất biến).
+- `src/pwd301/models/question_bank.py` (Domain models: `Question`, `QuestionRevision`, `QuestionRevisionChoice`, `QuestionRevisionAcceptedAnswer`, `QuestionProvenance`).
+
+---
 
 ### 3. In scope
 1. **Tầng Ngoại lệ (Domain Exceptions) — `src/pwd301/services/exceptions.py`:**
-   - `ValidationError` (trả về 400 Bad Request cho các lỗi dữ liệu đầu vào không hợp lệ)
-   - `CompletionRuleError(ServiceError)`
-   - `CompletionRuleNotFoundError(ResourceNotFoundError, CompletionRuleError)`
-   - `CompletionRuleValidationError(CompletionRuleError)`
-2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/completion_service.py`:**
-   - `get_or_create_default_completion_rule(course_id, session)`: Đọc hoặc khởi tạo quy tắc mặc định (100% progress, require_all_required_lessons=True).
-   - `set_course_completion_rule(actor, course_id, payload, session)`: Giảng viên phụ trách cấu hình tiêu chí hoàn thành, xác thực dữ liệu chặt chẽ và ghi append-only `AuditEvent`.
-   - `calculate_course_progress(enrollment_id, session)`: Triển khai chuẩn xác Algorithm 01, tổng hợp tiến độ bài học trong `EnrollmentPeriod` hiện tại, cập nhật cache `enrollment.current_progress_percent`.
-   - `evaluate_course_completion(enrollment_id, session)`: Thẩm định hoàn thành khóa học, cập nhật trạng thái `COMPLETED` cho enrollment và period, upsert bản ghi bền vững `CourseCompletionSummary`, ghi append-only `EnrollmentEvent` và `AuditEvent`, bảo đảm tính Idempotent tuyệt đối.
-   - `get_course_completion_summary(actor, course_id, student_id, session)`: Truy vấn chứng nhận hoàn thành an toàn IDOR (học viên chỉ xem của chính mình, giảng viên xem của học viên trong khóa phụ trách, admin xem tất cả).
-3. **Tích hợp Hooks & Prerequisite Engine:**
-   - `lesson_service.py`: Tích hợp tự động gọi `calculate_course_progress` và `evaluate_course_completion` khi hoàn thành bài học, cho phép học viên đã hoàn thành tiếp tục tương tác bài học mà không bị chặn 403.
-   - `enrollment_service.py`: Cập nhật `check_prerequisites_met` đọc từ `CourseCompletionSummary.prerequisite_eligible.is_(True)`, bảo đảm học viên dù sau này rời môn hoặc tái ghi danh vẫn giữ quyền tiên quyết vĩnh viễn.
+   - `QuestionBankError(ServiceError)`
+   - `QuestionNotFoundError(ResourceNotFoundError, QuestionBankError)`
+   - `QuestionValidationError(ValidationError, QuestionBankError)`
+   - `QuestionStateViolationError(StateViolationError, QuestionBankError)`
+2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/question_bank_service.py`:**
+   - `create_question(actor, course_id, payload, session)`: Khởi tạo Question, Revision 1, Choices / Accepted Answers, Provenance, và AuditEvent.
+   - `list_course_questions(actor, course_id, filters, page, per_page, session)`: Truy vấn danh sách câu hỏi hỗ trợ lọc theo loại, độ khó Bloom, bài học, từ khóa tìm kiếm, và phân trang.
+   - `get_question_detail(actor, question_id, session)`: Truy vấn chi tiết câu hỏi, cấu trúc phiên bản, lựa chọn và provenance.
+   - `trash_question(actor, question_id, reason, session)`: Đưa câu hỏi vào thùng rác với chính sách 30 ngày lưu trữ và tính idempotent.
+   - `restore_question(actor, question_id, reason, session)`: Khôi phục câu hỏi từ thùng rác về trạng thái hoạt động với tính idempotent.
+   - `_serialize_question(question, revision, include_answers)`: Chuyển đổi entity thành dictionary tuân thủ ADR-002 che giấu BIGINT PK.
+3. **Tầng Phân quyền (Authorization Service) — `src/pwd301/services/authorization_service.py`:**
+   - `require_question_manager(actor, question_id, session)`: Thẩm định quyền quản lý câu hỏi mức đối tượng.
 4. **Blueprints & Route Handlers:**
-   - **Instructor Blueprint (`src/pwd301/blueprints/instructor/routes.py`):**
-     - `GET /instructor/courses/<course_id>/completion-rules`
-     - `POST/PUT /instructor/courses/<course_id>/completion-rules`
-   - **Student Blueprint (`src/pwd301/blueprints/student/routes.py`):**
-     - `GET /student/courses/<course_id>/completion`
-   - **REST API Blueprints (`api_courses` & `api_student`):**
-     - `GET /api/courses/<course_id>/completion-rules`
-     - `PUT /api/courses/<course_id>/completion-rules`
-     - `GET /api/courses/<course_id>/progress`
-     - `GET /api/student/courses/<course_id>/completion`
-5. **Kiểm thử tự động toàn diện:**
-   - Unit tests (`tests/unit/test_completion_service.py`): 14 test cases.
-   - Security / IDOR tests (`tests/security/test_completion_idor.py`): 4 test cases.
-   - REST API integration tests (`tests/api/test_completion_api.py`): 3 test cases.
-   - Bảo toàn 100% test suite sẵn có (234/234 tests pass).
+   - **REST API Questions Blueprint (`src/pwd301/blueprints/api_questions/`):**
+     - `GET /api/questions/<question_id>`
+     - `POST /api/questions/<question_id>/trash`
+     - `POST /api/questions/<question_id>/restore`
+     - `DELETE /api/questions/<question_id>` (Alias của thao tác trash)
+   - **REST API Course Questions Routes (`src/pwd301/blueprints/api_courses/routes.py`):**
+     - `POST /api/courses/<course_id>/questions`
+     - `GET /api/courses/<course_id>/questions`
+   - **Instructor Web UI Blueprint (`src/pwd301/blueprints/instructor/routes.py`):**
+     - `GET /instructor/courses/<course_id>/questions`
+     - `POST /instructor/courses/<course_id>/questions`
+     - `GET /instructor/questions/<question_id>`
+     - `POST /instructor/questions/<question_id>/trash`
+     - `POST /instructor/questions/<question_id>/restore`
+     - `DELETE /instructor/questions/<question_id>`
+5. **Đăng ký Error Handlers & Exemptions — `src/pwd301/__init__.py`:**
+   - Đăng ký bộ xử lý lỗi cho `QuestionNotFoundError`, `QuestionValidationError`, `QuestionStateViolationError`, `QuestionBankError`.
+   - Đăng ký blueprint `api_question_bp` và miễn trừ CSRF (`csrf.exempt`).
+6. **Kiểm thử tự động toàn diện:**
+   - Unit tests (`tests/unit/test_question_bank_service.py`): 15 test cases.
+   - Security / IDOR tests (`tests/security/test_question_bank_idor.py`): 10 test cases.
+   - REST API integration tests (`tests/api/test_question_bank_api.py`): 11 test cases.
+   - Bảo toàn 100% test suite sẵn có (270/270 tests pass).
+
+---
 
 ### 4. Out of scope
-- Quản lý bài tập, ngân hàng câu hỏi, bài kiểm tra và chấm điểm tự động (`assessment_service.py`) -> Đợi **TASK-010** & **TASK-011**.
-- Tích hợp mô hình AI sinh bài kiểm tra và trợ giảng RAG -> Đợi **TASK-012** & **TASK-013**.
+- Biên tập câu hỏi đã qua sử dụng với cơ chế tạo phiên bản mới (Question Revisioning & Correction Workflow) -> Đợi **TASK-011**.
+- Quản lý bài kiểm tra, cấu hình đề thi tự động và động cơ chấm điểm (`assessment_service.py`) -> Đợi **TASK-011**.
+- Tích hợp mô hình AI sinh câu hỏi tự động (AI Question Generation) -> Đợi **TASK-012**.
+
+---
 
 ### 5. Security & Invariants
-- **Bất biến 1 (Server-Authoritative Progress):** Tuyệt đối không cho phép client gửi trực tiếp % tiến độ hoặc cờ hoàn thành; toàn bộ tiến độ và trạng thái hoàn thành do backend tính toán từ bằng chứng học tập thực tế.
-- **Bất biến 2 (ADR-002 Internal PK Masking):** Tuyệt đối không để lộ khóa chính nội bộ `BIGINT` (`id`, `student_user_id`, `course_id`) ra Web/REST JSON; sử dụng `public_id` (UUIDv4/UUIDv7) và các thuộc tính nghiệp vụ.
-- **Bất biến 3 (Durable Prerequisite Eligibility):** Bản ghi `CourseCompletionSummary` là vĩnh viễn; cờ `prerequisite_eligible` và `ever_completed` không bao giờ bị xóa hoặc hạ cờ khi học viên rời khóa học (`LEFT`), tái ghi danh (`REENROLLED`) hay khi giảng viên nâng tiêu chí hoàn thành sau đó.
-- **Bất biến 4 (Evaluation Idempotency):** Gọi `evaluate_course_completion` nhiều lần trên một enrollment đã hoàn thành không phát sinh trùng lặp sự kiện `EnrollmentEvent` hay `AuditEvent`.
-- **Bất biến 5 (IDOR & Object-Level Authorization):** Giảng viên chỉ được xem và cấu hình tiêu chí cho khóa học mình quản lý. Học viên chỉ được xem chứng nhận tiến độ và hoàn thành của bản thân.
-- **Bất biến 6 (Append-Only Event & Audit Log):** Mọi sự kiện hoàn thành khóa học và cập nhật quy tắc hoàn thành đều được ghi nhận vào `EnrollmentEvent` và `AuditEvent` trong cùng một transaction.
+- **Bất biến 1 (ADR-002 Internal PK Masking):** Tuyệt đối không để lộ khóa chính số nguyên `BIGINT` (`id`, `creator_user_id`, `course_id`) ra Web/REST JSON; sử dụng `public_id` (UUID) và các thuộc tính nghiệp vụ.
+- **Bất biến 2 (Same-Course Lesson Binding):** Câu hỏi chỉ được gắn với bài học thuộc cùng khóa học đó.
+- **Bất biến 3 (Bloom Taxonomy Difficulty):** Độ khó câu hỏi bắt buộc thuộc tập giá trị hợp lệ `{REMEMBER, UNDERSTAND, APPLY}` theo quy chuẩn và ràng buộc cơ sở dữ liệu.
+- **Bất biến 4 (Question Type Integrity):** Xác thực cấu trúc chặt chẽ cho từng loại câu hỏi (`SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`, `ESSAY`).
+- **Bất biến 5 (Object-Level Authorization & IDOR Prevention):** Giảng viên chỉ quản lý câu hỏi trong các khóa học do chính mình phụ trách. Học viên bị từ chối truy cập ngân hàng câu hỏi.
+- **Bất biến 6 (Append-Only Audit Log):** Mọi thao tác tạo mới, xóa mềm, khôi phục câu hỏi đều được ghi nhận vào `AuditEvent` với snapshot dữ liệu.
+- **Bất biến 7 (30-Day Trash Retention & Idempotency):** Câu hỏi đưa vào thùng rác có thời hạn khôi phục 30 ngày; các thao tác trash/restore có tính chất state-idempotent.
+
+---
 
 ### 6. Acceptance Criteria (Checklist)
-- [x] `exceptions.py` bổ sung đầy đủ domain exceptions `CompletionRuleError`, `CompletionRuleNotFoundError`, `CompletionRuleValidationError`, `ValidationError`.
-- [x] `completion_service.py` triển khai đầy đủ `calculate_course_progress` (Algorithm 01), `get_or_create_default_completion_rule`, `set_course_completion_rule`, `evaluate_course_completion`, `get_course_completion_summary`.
-- [x] `lesson_service.py` tích hợp tự động thẩm định hoàn thành khi hoàn tất bài học và cho phép học viên đã hoàn thành tiếp tục ôn tập/tương tác.
-- [x] `enrollment_service.py` cập nhật `check_prerequisites_met` dựa trên `CourseCompletionSummary.prerequisite_eligible.is_(True)` bền vững.
-- [x] Cấu hình tiêu chí kiểm tra dữ liệu chặt chẽ (ngưỡng 0-100%, ghi AuditEvent với before/after snapshot).
-- [x] Thẩm định hoàn thành tạo bản ghi bền vững `CourseCompletionSummary` và ghi append-only `EnrollmentEvent('COMPLETED')`, `AuditEvent('COURSE_COMPLETED')`.
-- [x] Toàn bộ route Web UI (`/instructor/...`, `/student/...`) và REST API (`/api/courses/...`, `/api/student/...`) hoạt động chuẩn xác, tuân thủ ADR-002.
-- [x] Bộ kiểm thử bảo mật IDOR ngăn chặn triệt để truy cập chéo giữa giảng viên và giữa học viên.
-- [x] Hệ thống kiểm thử toàn diện vượt qua 100% không có lỗi hồi quy (234/234 tests passed).
+- [x] `exceptions.py` bổ sung đầy đủ domain exceptions `QuestionBankError`, `QuestionNotFoundError`, `QuestionValidationError`, `QuestionStateViolationError`.
+- [x] `authorization_service.py` bổ sung `require_question_manager` bảo vệ truy cập mức đối tượng.
+- [x] `question_bank_service.py` triển khai toàn diện `create_question`, `list_course_questions`, `get_question_detail`, `trash_question`, `restore_question`, `_serialize_question`.
+- [x] Hỗ trợ đầy đủ 5 loại câu hỏi với logic kiểm tra dữ liệu chặt chẽ và chuẩn hóa Bloom Taxonomy.
+- [x] Kiểm tra tính toàn vẹn bài học cùng khóa học, ngăn chặn liên kết chéo.
+- [x] Xử lý vòng đời xóa mềm 30 ngày (TRASH/restore) và đảm bảo tính idempotent.
+- [x] Ghi nhận đầy đủ nhật ký kiểm toán Append-only `AuditEvent`.
+- [x] REST API endpoints (`/api/courses/<id>/questions`, `/api/questions/...`) và Web UI routes (`/instructor/...`) hoạt động chuẩn xác, tuân thủ ADR-002.
+- [x] Bộ kiểm thử bảo mật IDOR ngăn chặn triệt để truy cập chéo giữa các giảng viên, chặn học viên và người dùng chưa xác thực.
+- [x] Toàn bộ hệ thống kiểm thử tự động vượt qua 100% không có lỗi hồi quy (270/270 tests passed).
+
+---
 
 ### 7. Verification commands
-1. `mypy src` -> Success: no issues found in 47 source files.
+1. `mypy src` -> Success: no issues found in 50 source files.
 2. `ruff check src tests scripts` -> All checks passed!
-3. `ruff format --check src tests scripts` -> 77 files already formatted.
-4. `pytest tests/unit/test_completion_service.py tests/security/test_completion_idor.py tests/api/test_completion_api.py -v` -> 21 passed.
-5. `./scripts/verify.ps1` -> 234 passed in 99.22s (100% PASS, 0 failures).
+3. `ruff format --check src tests scripts` -> 83 files already formatted.
+4. `pytest tests/unit/test_question_bank_service.py tests/security/test_question_bank_idor.py tests/api/test_question_bank_api.py -v` -> 36 passed in 13.63s.
+5. `./scripts/verify.ps1` -> 270 passed in 113.24s (100% PASS, 0 failures).
 
 ---
 
@@ -92,54 +132,49 @@ Triển khai toàn diện Tầng dịch vụ tính toán tiến độ khóa họ
 
 ### A. Scope and sources consulted
 - Operating contract: `AGENTS.md` (quy tắc bất biến, phân quyền, Source-of-Truth Hierarchy).
-- Course completion & prerequisite business rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` & `05_ENROLLMENT_AND_PREREQUISITES.md`.
-- Progress calculation algorithm: `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/01_COURSE_PROGRESS_CALCULATION_ALGORITHM.md`.
-- Course completion & progress REST API contracts: `docs/system/PWD301_SYSTEM_SPECIFICATION/api/05_ENROLLMENT_PROGRESS_API.md`.
-- Course data dictionary & schema constraints: `docs/database/PWD301_DATABASE_ARCHITECTURE/05_DATA_DICTIONARY_COURSE.md`.
-- State machines & concurrency guidelines: `docs/database/PWD301_DATABASE_ARCHITECTURE/12_STATE_MACHINES.md` & `16_CONCURRENCY_AND_TRANSACTIONS.md`.
-- Domain models: `src/pwd301/models/course.py`.
-- Authorization service: `src/pwd301/services/authorization_service.py`.
+- Question bank business rules: `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` & `06_QUESTION_BANK.md`.
+- Question bank REST API specifications: `docs/system/PWD301_SYSTEM_SPECIFICATION/api/06_QUESTION_BANK_API.md`.
+- Reference database DDL: `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/003_question_bank.sql`.
+- Architectural decisions: `docs/decisions/ADR-002-public-id-and-primary-keys.md` & `ADR-003-question-revisions.md`.
+- Domain models: `src/pwd301/models/question_bank.py` & `src/pwd301/models/course.py`.
+- Authorization helpers: `src/pwd301/services/authorization_service.py`.
 
 ### B. Reuse decisions
-- Reused `CourseCompletionRule`, `CourseCompletionSummary`, `Enrollment`, `EnrollmentPeriod`, `Lesson`, `LessonProgress` models from `src/pwd301/models/course.py`.
-- Reused `require_course_manager`, `can_manage_course`, `can_view_course`, `_resolve_course`, `_resolve_user` from `src/pwd301/services/authorization_service.py`.
+- Reused `Question`, `QuestionRevision`, `QuestionRevisionChoice`, `QuestionRevisionAcceptedAnswer`, `QuestionProvenance` models from `src/pwd301/models/question_bank.py`.
+- Reused `require_course_manager`, `can_manage_course`, `_resolve_course`, `_resolve_lesson`, `_resolve_user` from `src/pwd301/services/authorization_service.py`.
 - Reused `AuditEvent` model from `src/pwd301/models/notification_audit.py` for append-only audit logging with before/after state snapshots.
 - Reused `_format_error_response` and centralized error handling architecture in `src/pwd301/__init__.py`.
-- Reused `student_required`, `instructor_required`, `get_authenticated_actor` decorators for route protection across session web and JWT REST environments.
+- Reused `instructor_required`, `jwt_required`, `get_authenticated_actor` decorators for route protection across session web and JWT REST environments.
 
 ### C. Per-file changes
-- `src/pwd301/services/exceptions.py` (MODIFY): Added domain exceptions `ValidationError`, `CompletionRuleError`, `CompletionRuleNotFoundError`, `CompletionRuleValidationError`.
-- `src/pwd301/__init__.py` (MODIFY): Registered error handlers mapping `CompletionRuleNotFoundError` to 404 RESOURCE_NOT_FOUND, and `CompletionRuleValidationError`, `ValidationError` to 400 BAD_REQUEST.
-- `src/pwd301/services/completion_service.py` (NEW): Implemented complete course progress and completion engine (`get_or_create_default_completion_rule`, `set_course_completion_rule`, `calculate_course_progress` Algorithm 01, `evaluate_course_completion`, `get_course_completion_summary`, IDOR resolution, append-only events, and durable summary upsert).
-- `src/pwd301/services/__init__.py` (MODIFY): Exported all completion service functions and domain exceptions.
-- `src/pwd301/services/lesson_service.py` (MODIFY): Connected lesson progress calculation to `calculate_course_progress`, added automatic course completion evaluation hook when lesson is completed, and allowed active or completed students to record progress.
-- `src/pwd301/services/enrollment_service.py` (MODIFY): Updated `check_prerequisites_met` to strictly verify `CourseCompletionSummary.prerequisite_eligible.is_(True)` and restored strict `status == 'ACTIVE'` check for `leave_course`.
-- `src/pwd301/services/course_service.py` (MODIFY): Initialized default `CourseCompletionRule` with `minimum_progress_percent=Decimal("100.00")` on course creation.
-- `src/pwd301/blueprints/instructor/routes.py` (MODIFY): Implemented Web UI endpoints `GET /instructor/courses/<course_id>/completion-rules` and `POST/PUT /instructor/courses/<course_id>/completion-rules`.
-- `src/pwd301/blueprints/student/routes.py` (MODIFY): Implemented Web UI endpoint `GET /student/courses/<course_id>/completion`.
-- `src/pwd301/blueprints/api_courses/routes.py` (MODIFY): Implemented REST API endpoints `GET /api/courses/<course_id>/completion-rules`, `PUT /api/courses/<course_id>/completion-rules`, and `GET /api/courses/<course_id>/progress`.
-- `src/pwd301/blueprints/api_student/routes.py` (MODIFY): Implemented REST API endpoint `GET /api/student/courses/<course_id>/completion`.
-- `tests/unit/test_completion_service.py` (NEW): Implemented 14 comprehensive unit tests for Algorithm 01, rule configuration, audit logging, completion evaluation, idempotency, durable prerequisite eligibility across re-enrollment and leave, and Web UI routes.
-- `tests/security/test_completion_idor.py` (NEW): Implemented 4 security tests verifying cross-instructor rule mutation denial, cross-student completion status leak denial, student rule tampering denial, and unauthenticated access denial.
-- `tests/api/test_completion_api.py` (NEW): Implemented 3 REST API tests for rule configuration via PUT, course progress query, student completion summary query, and ADR-002 BIGINT masking verification.
-- `tasks/CURRENT.md` (MODIFY): Updated with TASK-009 completion report and promoted TASK-008 to Historical Tasks.
+- `src/pwd301/services/exceptions.py` (MODIFY): Added domain exceptions `QuestionBankError`, `QuestionNotFoundError`, `QuestionValidationError`, `QuestionStateViolationError`.
+- `src/pwd301/services/authorization_service.py` (MODIFY): Implemented `require_question_manager(actor, question_id, session)`.
+- `src/pwd301/services/question_bank_service.py` (NEW): Implemented authoring engine, 5 question types, Bloom taxonomy validation, same-course lesson binding check, 30-day TRASH/restore lifecycle with idempotency, append-only `AuditEvent` logging, and ADR-002 BIGINT masking serialization.
+- `src/pwd301/services/__init__.py` (MODIFY): Exported question bank service functions and domain exceptions.
+- `src/pwd301/blueprints/api_questions/__init__.py` (NEW): Created question bank REST API blueprint package.
+- `src/pwd301/blueprints/api_questions/routes.py` (NEW): Implemented REST routes for `GET /api/questions/<id>`, `POST /api/questions/<id>/trash`, `POST /api/questions/<id>/restore`, and `DELETE /api/questions/<id>`.
+- `src/pwd301/blueprints/api_courses/routes.py` (MODIFY): Added `POST` & `GET /api/courses/<course_id>/questions` with pagination and multi-criteria filtering.
+- `src/pwd301/blueprints/instructor/routes.py` (MODIFY): Implemented instructor Web UI routes for course question list, creation, detail, trash, and restore.
+- `src/pwd301/__init__.py` (MODIFY): Registered error handlers for question bank exceptions, registered `api_question_bp`, and marked it `csrf.exempt`.
+- `tests/unit/test_question_bank_service.py` (NEW): Implemented 15 unit tests covering all 5 question types, validation errors, lesson binding check, 30-day lifecycle, and Web UI routes.
+- `tests/security/test_question_bank_idor.py` (NEW): Implemented 10 security tests covering cross-instructor IDOR denial, foreign lesson binding denial, student blocking, unauthenticated blocking, and admin oversight.
+- `tests/api/test_question_bank_api.py` (NEW): Implemented 11 REST API tests for question creation across types, filtering/pagination, detail, lifecycle, delete alias, and ADR-002 verification.
+- `tasks/CURRENT.md` (MODIFY): Updated with TASK-010 completion report and promoted TASK-009 to Historical Tasks.
 
 ### D. Deletion and simplification list
 | Candidate | Classification | Reason | Action |
 |---|---|---|---|
-| Inline progress calculation in `lesson_service.py` | REMOVE NOW | Inconsistent duplicated logic with Algorithm 01 | Replaced with authoritative call to `calculate_course_progress` in `completion_service.py` |
-| Client-supplied course completion status | REMOVE NOW | Invariant: progress and completion are strictly server-authoritative | Enforced server evaluation via `evaluate_course_completion` |
-| Resetting `prerequisite_eligible` on student leave | REMOVE NOW | Invariant COURSE-010: completion proof is durable and irrevocable | Verified and preserved `CourseCompletionSummary.prerequisite_eligible` across withdrawal and re-enrollment |
-| `BIGINT PK` in completion responses | REMOVE NOW | ADR-002: no internal database BIGINT IDs in public payloads | Mapped all JSON responses to public UUIDs (`course_id`, `student_id`, `rule_id`, `summary_id`) |
-| Duplicate `EnrollmentEvent('COMPLETED')` on repeated evaluation | REMOVE NOW | State machine and event logs must be idempotent | Short-circuited evaluation if enrollment already `COMPLETED` |
+| Redundant duplicate accepted answers in short answer questions | REMOVE NOW | SQLite/SQL Server unique constraint `(question_revision_id, answer_normalized)` | Normalized and deduplicated answers during `create_question` |
+| Internal `BIGINT PK` in API responses | REMOVE NOW | ADR-002: no internal database BIGINT IDs in public payloads | Serialized all entity IDs as public UUID strings |
+| Duplicate error on repeated trash or restore | REMOVE NOW | Specification `06_QUESTION_BANK_API.md`: state-idempotent operations | Return existing entity on idempotent re-trash or re-restore |
 
 ### E. Ponytails / deferred debt
-- None. Full progress engine, completion rule CRUD with AuditEvents, durable summaries, prerequisite integration, Web/REST routes, IDOR protection, and 100% regression testing are fully verified.
+- None. Full Question Bank service, authorization helper, Web/REST routes, IDOR protection, and 100% regression testing are completely implemented and verified.
 
 ### F. Verification actually run and results
 1. `mypy src`:
    ```
-   Success: no issues found in 47 source files
+   Success: no issues found in 50 source files
    ```
 2. `ruff check src tests scripts`:
    ```
@@ -147,11 +182,11 @@ Triển khai toàn diện Tầng dịch vụ tính toán tiến độ khóa họ
    ```
 3. `ruff format --check src tests scripts`:
    ```
-   77 files already formatted
+   83 files already formatted
    ```
-4. `pytest tests/unit/test_completion_service.py tests/security/test_completion_idor.py tests/api/test_completion_api.py -v`:
+4. `pytest tests/unit/test_question_bank_service.py tests/security/test_question_bank_idor.py tests/api/test_question_bank_api.py -v`:
    ```
-   ============================= 21 passed in 7.82s =============================
+   ============================= 36 passed in 13.63s =============================
    ```
 5. `./scripts/verify.ps1`:
    ```
@@ -167,19 +202,23 @@ Triển khai toàn diện Tầng dịch vụ tính toán tiến độ khóa họ
    == Python compile ==
    == Lint / format / types ==
    All checks passed!
-   77 files already formatted
-   Success: no issues found in 47 source files
+   83 files already formatted
+   Success: no issues found in 50 source files
    == Tests ==
-   ======================= 234 passed in 99.22s (0:01:39) ========================
+   ======================= 270 passed in 113.24s (0:01:53) =======================
    PWD301 verification PASS
    ```
 
 ### G. Remaining risks / next step
-- Next scheduled task on roadmap: **TASK-010 — Assessment Authoring, Question Banking & Lifecycle Management (`assessment_service.py`)**.
+- Next scheduled task on roadmap: **TASK-011 — Assessment Lifecycle, Test Delivery Engine & Automated Grading (`assessment_service.py`)**.
 
 ---
 
 ## Historical Tasks
+
+### TASK-009 — Course Progress Engine, Completion Rules & Durable Completion Summaries
+**Status:** DONE  
+*Triển khai toàn diện Tầng dịch vụ tính toán tiến độ khóa học và động cơ thẩm định hoàn thành (`completion_service.py`), thuật toán Algorithm 01, cấu hình tiêu chí hoàn thành (`CourseCompletionRule`), thẩm định và cấp chứng nhận bền vững (`CourseCompletionSummary`), bảo toàn điều kiện tiên quyết vĩnh viễn (`prerequisite_eligible`), tích hợp hook tự động khi bài học hoàn thành, cùng toàn bộ route Web UI, REST API và bộ test tự động.*
 
 ### TASK-008 — Student Enrollment Lifecycle, Capacity, Prerequisites & Re-Enrollment
 **Status:** DONE  

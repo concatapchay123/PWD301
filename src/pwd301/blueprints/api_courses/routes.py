@@ -42,7 +42,13 @@ from pwd301.services.exceptions import (
     ForbiddenError,
     ResourceNotFoundError,
 )
+from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.lesson_service import get_course_lessons
+from pwd301.services.question_bank_service import (
+    _serialize_question,
+    create_question,
+    list_course_questions,
+)
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
@@ -479,5 +485,73 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
         "period_no": enrollment.current_period.period_no if enrollment.current_period else None,
         "enrolled_at": enrollment.enrolled_at.isoformat() if enrollment.enrolled_at else None,
         "completed_at": enrollment.completed_at.isoformat() if enrollment.completed_at else None,
+    }
+    return jsonify(data), 200
+
+
+@api_course_bp.route("/<course_id>/questions", methods=["POST"])
+@jwt_required
+def create_course_question_route(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new Question in the course's question bank.
+
+    POST /api/courses/<course_id>/questions
+    """
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or {}
+    question = create_question(actor, course_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_question(question)), 201
+
+
+@api_course_bp.route("/<course_id>/questions", methods=["GET"])
+@jwt_required
+def list_course_questions_route(course_id: str) -> tuple[Response, int] | Response:
+    """List questions in course question bank with filtering and pagination.
+
+    GET /api/courses/<course_id>/questions
+    """
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", 1, type=int)
+    raw_per_page = request.args.get("per_page") or request.args.get("page_size")
+    try:
+        per_page = int(raw_per_page) if raw_per_page is not None else 20
+    except (ValueError, TypeError):
+        per_page = 20
+
+    filters = {
+        "difficulty": request.args.get("difficulty"),
+        "question_type": request.args.get("question_type") or request.args.get("type"),
+        "lesson_id": request.args.get("lesson_id"),
+        "status": request.args.get("status"),
+        "search": request.args.get("search") or request.args.get("q"),
+    }
+
+    items, total, p, pp, total_pages = list_course_questions(
+        actor=actor,
+        course_id=course_id,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+        "pagination": {
+            "page": p,
+            "per_page": pp,
+            "page_size": pp,
+            "total_items": total,
+            "total_pages": total_pages,
+        },
     }
     return jsonify(data), 200

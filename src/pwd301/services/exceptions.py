@@ -189,3 +189,19 @@ class CompletionRuleNotFoundError(ResourceNotFoundError, CompletionRuleError):
 
 class CompletionRuleValidationError(ValidationError, CompletionRuleError):
     """Raised when course completion rule configuration fails validation."""
+
+
+class QuestionBankError(ServiceError):
+    """Base exception for all question bank and authoring domain errors."""
+
+
+class QuestionNotFoundError(ResourceNotFoundError, QuestionBankError):
+    """Raised when a requested question or revision cannot be found."""
+
+
+class QuestionValidationError(ValidationError, QuestionBankError):
+    """Raised when question content, structure, or choices fail domain validation."""
+
+
+class QuestionStateViolationError(QuestionBankError):
+    """Raised when an illegal question lifecycle transition or locked-mutation is attempted."""

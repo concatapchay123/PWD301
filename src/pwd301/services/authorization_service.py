@@ -34,7 +34,11 @@ from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course, Enrollment, Lesson
 from pwd301.models.identity import User
 from pwd301.models.question_bank import Question
-from pwd301.services.exceptions import ForbiddenError, ResourceNotFoundError
+from pwd301.services.exceptions import (
+    ForbiddenError,
+    QuestionNotFoundError,
+    ResourceNotFoundError,
+)
 
 
 def _is_api_or_json_request() -> bool:
@@ -704,3 +708,28 @@ def require_attempt_submission_owner(
         raise ForbiddenError("Only the student owner can save answers or submit this attempt.")
 
     return attempt
+
+
+def require_question_manager(
+    user: User,
+    question_or_id: Question | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> Question:
+    """Enforce that the user is authorized to manage the specified question.
+
+    Returns:
+        The verified Question instance.
+
+    Raises:
+        QuestionNotFoundError: If question does not exist.
+        ForbiddenError: If user lacks management permissions.
+    """
+    sess = session if session is not None else db.session
+    question = _resolve_question(question_or_id, session=sess)
+    if question is None:
+        raise QuestionNotFoundError("Question not found.")
+
+    if not can_manage_question(user, question, session=sess):
+        raise ForbiddenError("You do not have permission to manage this question.")
+
+    return question

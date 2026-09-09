@@ -35,6 +35,7 @@ from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
+from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
@@ -65,6 +66,10 @@ from pwd301.services.exceptions import (
     LessonStateViolationError,
     LessonValidationError,
     PrerequisiteCycleError,
+    QuestionBankError,
+    QuestionNotFoundError,
+    QuestionStateViolationError,
+    QuestionValidationError,
     ResourceNotFoundError,
 )
 
@@ -396,6 +401,46 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=400,
         )
 
+    @app.errorhandler(QuestionNotFoundError)
+    def domain_question_not_found_error(
+        error: QuestionNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(QuestionValidationError)
+    def domain_question_validation_error(
+        error: QuestionValidationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(QuestionStateViolationError)
+    def domain_question_state_violation_error(
+        error: QuestionStateViolationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="STATE_VIOLATION",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(QuestionBankError)
+    def domain_question_bank_error(
+        error: QuestionBankError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="QUESTION_BANK_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
     @app.errorhandler(405)
     def method_not_allowed_error(
         error: HTTPException | Exception,
@@ -576,12 +621,14 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_course_bp)
     app.register_blueprint(api_lesson_bp)
+    app.register_blueprint(api_question_bp)
     app.register_blueprint(api_student_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
+    csrf.exempt(api_question_bp)
     csrf.exempt(api_student_bp)
 
     # Register CLI commands
