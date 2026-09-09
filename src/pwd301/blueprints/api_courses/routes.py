@@ -9,6 +9,11 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.services.assessment_service import (
+    _serialize_assessment,
+    create_assessment,
+    list_course_assessments,
+)
 from pwd301.services.authorization_service import (
     _resolve_course,
     get_authenticated_actor,
@@ -532,6 +537,71 @@ def list_course_questions_route(course_id: str) -> tuple[Response, int] | Respon
     }
 
     items, total, p, pp, total_pages = list_course_questions(
+        actor=actor,
+        course_id=course_id,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+        "pagination": {
+            "page": p,
+            "per_page": pp,
+            "page_size": pp,
+            "total_items": total,
+            "total_pages": total_pages,
+        },
+    }
+    return jsonify(data), 200
+
+
+@api_course_bp.route("/<course_id>/assessments", methods=["POST"])
+@jwt_required
+def create_course_assessment_route(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new Assessment for a course.
+
+    POST /api/courses/<course_id>/assessments
+    """
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or {}
+    assessment = create_assessment(actor, course_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_assessment(assessment, full=False)), 201
+
+
+@api_course_bp.route("/<course_id>/assessments", methods=["GET"])
+@jwt_required
+def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Response:
+    """List assessments for a course with pagination and filtering.
+
+    GET /api/courses/<course_id>/assessments
+    """
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", 1, type=int)
+    raw_per_page = request.args.get("per_page") or request.args.get("page_size")
+    try:
+        per_page = int(raw_per_page) if raw_per_page is not None else 20
+    except (ValueError, TypeError):
+        per_page = 20
+
+    filters = {
+        "assessment_type": request.args.get("assessment_type") or request.args.get("type"),
+        "status": request.args.get("status"),
+    }
+
+    items, total, p, pp, total_pages = list_course_assessments(
         actor=actor,
         course_id=course_id,
         filters=filters,

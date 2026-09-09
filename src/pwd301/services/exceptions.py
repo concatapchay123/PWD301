@@ -225,3 +225,35 @@ class QuestionCorrectionError(QuestionBankError):
 
 class QuestionImmutableError(QuestionBankError):
     """Raised when attempting in-place modification of an immutable or in-use question revision."""
+
+
+class ConflictError(ServiceError):
+    """Base exception for conflicting state, locked resource, or concurrency errors."""
+
+
+class AssessmentError(ServiceError):
+    """Base exception for all assessment domain errors."""
+
+
+class AssessmentNotFoundError(ResourceNotFoundError, AssessmentError):
+    """Raised when a requested assessment cannot be found."""
+
+
+class AssessmentValidationError(ValidationError, AssessmentError):
+    """Raised when assessment configuration, timings, or parameters fail domain validation."""
+
+
+class AssessmentStateViolationError(StateViolationError, AssessmentError):
+    """Raised when an illegal assessment lifecycle state transition is attempted."""
+
+
+class AssessmentLockedError(ConflictError, AssessmentError):
+    """Raised when attempting to modify frozen structure, timing, or points of an assessment."""
+
+
+class AssessmentSectionNotFoundError(ResourceNotFoundError, AssessmentError):
+    """Raised when a requested assessment section cannot be found."""
+
+
+class BlueprintValidationError(ValidationError, AssessmentError):
+    """Raised when assessment blueprint rules, constraints, or candidate pool generation fails."""

@@ -1,107 +1,105 @@
 # CURRENT TASK
 
-## TASK-011 — Question Revision Engine & Question Correction Mechanism
+## TASK-012 — Assessment Builder, Blueprint Materialization & Publish Rules Engine
 
 **Status:** DONE
 
 ### 1. Goal
-Xây dựng Động cơ quản lý phiên bản câu hỏi (`QuestionRevision`) và Cơ chế sửa đổi câu hỏi đã sử dụng (`QuestionCorrection`), bảo đảm tính bất biến của lịch sử thi cử và tính toàn vẹn khi chấm điểm:
-1. **Kiểm tra trạng thái sử dụng câu hỏi (In-Use Detection)**:
-   - Xây dựng hàm `is_question_in_use(question, session)`.
-   - Nhận diện câu hỏi đã xuất hiện trong bài thi xuất bản (`Assessment.status == 'PUBLISHED'` qua `AssessmentQuestionAssignment` hoặc `AssessmentQuestionPool`).
-   - Nhận diện câu hỏi đã có lượt làm bài (`AttemptQuestion.source_question_id == question.id`).
-   - Nhận diện câu hỏi có `usage_count > 0` hoặc `first_used_at is not None`.
-   - Nhận diện câu hỏi có phiên bản đã hiển thị cho học viên (`was_student_exposed`) hoặc dùng chấm điểm (`was_used_for_grading`).
-2. **Cơ chế phân nhánh chỉnh sửa (Branching Update Strategy)**:
-   - *Chưa sử dụng (Unused)*: Cho phép cập nhật tại chỗ (`in-place`) nội dung stem, choices, accepted answers, explanation mà không sinh revision mới (trừ khi yêu cầu rõ ràng).
-   - *Đã sử dụng (In-Use)*: Đóng băng revision cũ (`Freeze Revision Invariant`), tự động phân nhánh tạo `QuestionRevision` mới (`revision_no = latest + 1`), cấm đổi loại câu hỏi (`QuestionImmutableError`), yêu cầu bắt buộc có lý do sửa đổi `change_reason` (`QuestionValidationError`), và tự động sinh bản ghi `QuestionCorrection` (status `PENDING`) liên kết `from_revision_id` và `to_revision_id` phục vụ chấm lại sau này.
-3. **Chuẩn hóa change_type & correction_type**:
-   - `change_type`: `INITIAL`, `EDIT`, `TYPO_FIX`, `ANSWER_CHANGE`, `CONTENT_CHANGE`, `REVOCATION`.
-   - `correction_type`: `ANSWER_ONLY` (cho các thay đổi đáp án / key), `CONTENT_OR_CHOICES` (cho thay đổi nội dung, thêm/bớt lựa chọn).
-4. **Bảo tồn và sao chép sâu cấu trúc (Deep Cloning)**:
-   - Tự động nhân bản các lựa chọn (`QuestionRevisionChoice`) và đáp án được chấp nhận (`QuestionRevisionAcceptedAnswer`) sang revision mới khi không bị ghi đè, cấp phát `choice_key` / `public_id` mới nhằm bảo toàn tính độc lập.
-5. **Kiểm soát bảo mật và ủy quyền mức đối tượng (IDOR Prevention)**:
-   - Thẩm định quyền qua `require_question_manager`.
-   - Giảng viên chỉ được quản lý câu hỏi trong các khóa học do chính mình phụ trách.
-   - Học viên bị từ chối truy cập mọi endpoint revision/correction (HTTP 403 Forbidden).
-   - Quản trị viên (Admin) có toàn quyền quản lý trên toàn hệ thống.
-6. **Bảo toàn nguyên tắc kiến trúc ADR-002 (Internal PK Masking)**:
-   - Che giấu toàn bộ khóa chính số nguyên `BIGINT` (`id`, `creator_user_id`, `question_revision_id`, `actor_user_id`) trong mọi payload JSON.
-   - Sử dụng UUIDv5 định danh cho `correction_id` để che giấu `BIGINT PK` của bảng `question_corrections` (do canonical schema không có cột public_id) mà vẫn bảo đảm tính đơn nhất và tuân thủ UUID regex.
-7. **Kiểm toán bất biến (Append-Only Audit Logging)**:
-   - Ghi nhận sự kiện kiểm toán `AuditEvent` (`QUESTION_REVISED`, `QUESTION_CORRECTION_CREATED`) cùng snapshot metadata.
-8. **Giao diện Web UI & REST API**:
-   - `PATCH /api/questions/<question_id>` & `PATCH /instructor/questions/<question_id>`
-   - `GET /api/questions/<question_id>/revisions` & `GET /instructor/questions/<question_id>/revisions`
-   - `POST /api/questions/<question_id>/revisions` & `POST /instructor/questions/<question_id>/revisions`
-   - `GET /api/questions/<question_id>/revisions/<revision_no>` & `GET /instructor/questions/<question_id>/revisions/<revision_no>`
-   - `GET /api/questions/<question_id>/corrections` & `GET /instructor/questions/<question_id>/corrections`
-9. **Bộ kiểm thử tự động toàn diện**:
-   - Unit tests (`tests/unit/test_question_revision_service.py`): 18 tests.
-   - Security IDOR tests (`tests/security/test_question_revision_idor.py`): 10 tests.
-   - REST API integration tests (`tests/api/test_question_revision_api.py`): 9 tests.
-   - 100% test suite đạt chuẩn, không hồi quy (307/307 tests pass).
+Xây dựng Động cơ quản lý bài thi (`assessment_service.py`), hệ thống phân đoạn (`AssessmentSection`), gán câu hỏi tĩnh (`AssessmentQuestionAssignment`), cấu hình ma trận đề thi động (`AssessmentBlueprint`), tạo hồ câu hỏi ngẫu nhiên theo luật (Algorithm 05 Question Pool Materialization), cùng cơ chế khóa bất biến khi xuất bản (Publish Rules, Timing Freeze & Structural Freeze Invariants):
+1. **Khởi tạo và cấu hình bài thi (Assessment Lifecycle)**:
+   - Quản lý vòng đời trạng thái: `DRAFT -> PUBLISHED -> CANCELLED / ARCHIVED -> TRASH`.
+   - Hỗ trợ 5 loại bài thi chuẩn hóa: `PRACTICE`, `QUIZ`, `MIDTERM`, `FINAL`, `PLACEMENT`.
+   - Cấu hình chính sách tính điểm (`FIRST`, `LATEST`, `HIGHEST`, `AVERAGE`), chính sách công bố điểm (`IMMEDIATE`, `AFTER_CLOSE`, `INSTRUCTOR_RELEASE`), chính sách hiển thị đáp án (`IMMEDIATE`, `AFTER_CLOSE`, `AFTER_ALL_ATTEMPTS`, `NEVER`).
+   - Kiểm soát và thẩm định chéo thời gian mở/đóng (`open_at < close_at`), giới hạn thời gian làm bài (`time_limit_minutes > 0`), giới hạn số lượt nộp (`attempt_limit > 0`), tỷ lệ đạt (`passing_percent` trong khoảng `[0, 100]`).
+2. **Quản lý phân đoạn bài thi (Section Management)**:
+   - Thêm, sửa, xóa các phân đoạn bài thi (`AssessmentSection`) chứa tiêu đề, chỉ dẫn và vị trí (`position`).
+   - Tự động chuẩn hóa và dồn vị trí khi xóa phân đoạn.
+3. **Gán câu hỏi cố định (Fixed Question Assignments)**:
+   - Gán câu hỏi từ ngân hàng câu hỏi vào bài thi / phân đoạn (`AssessmentQuestionAssignment`).
+   - Ngăn chặn triệt để gán trùng câu hỏi trong cùng một bài thi (`AssessmentValidationError`).
+   - Phòng thủ chéo khóa học (Cross-Course Defense): cấm gán câu hỏi thuộc khóa học khác vào bài thi (`AssessmentValidationError`).
+   - Xóa gán câu hỏi và tự động dồn lại thứ tự vị trí (`position`).
+4. **Động cơ ma trận đề thi & Algorithm 05 (Blueprint & Question Pool Materialization)**:
+   - Cấu hình đề cương ma trận (`AssessmentBlueprint`) và các quy tắc phân bổ (`AssessmentBlueprintRule`) theo độ khó Bloom (`REMEMBER`, `UNDERSTAND`, `APPLY`), loại câu hỏi, bài học liên kết, số lượng câu hỏi và điểm số tương ứng.
+   - Triển khai Giải thuật Algorithm 05 (`materialize_blueprint_pool`): truy vấn các câu hỏi hợp lệ (`status == 'ACTIVE'`), loại trừ các câu hỏi đã được gán cố định, phân bổ ngẫu nhiên có hỗ trợ `random_seed` để tái tạo đề thi tất định.
+   - Cơ chế phát hiện thiếu hụt câu hỏi (Shortage Handling): nếu số lượng câu hỏi hợp lệ trong ngân hàng không đủ đáp ứng luật đề cương, báo lỗi `BlueprintValidationError` và rollback toàn bộ, không để lại dữ liệu rác hoặc pool không hoàn chỉnh.
+5. **Cổng kiểm soát xuất bản (Publish Rules Engine — AC-05)**:
+   - Thẩm định điều kiện xuất bản bài thi: yêu cầu phải có ít nhất 1 câu hỏi (hoặc trong fixed assignments hoặc trong question pool), tổng điểm tích lũy phải lớn hơn 0, và thời gian `open_at` phải trước `close_at`.
+   - Chuyển trạng thái sang `PUBLISHED`, đóng dấu `published_at`, đồng thời đóng băng tất cả blueprint liên kết (`status = 'FROZEN'`).
+   - Bảo đảm tính State-idempotent: gọi xuất bản nhiều lần trên bài thi đã `PUBLISHED` không gây lỗi.
+6. **Quy tắc khóa bất biến khi thi (Timing & Structural Freeze Invariants)**:
+   - **Timing Freeze Invariant (ASSESS-001)**: Khi bài thi đã xuất bản (`PUBLISHED`), các trường `open_at`, `time_limit_minutes`, `attempt_limit` bị khóa hoàn toàn (báo lỗi `AssessmentLockedError`). Trường `close_at` chỉ được phép gia hạn tịnh tiến về tương lai (nếu rút ngắn hoặc đẩy lùi sẽ bị từ chối bằng `AssessmentLockedError`).
+   - **Structural Freeze Invariant (ASSESS-002, AC-06)**: Khi học viên đầu tiên bắt đầu làm bài (`first_attempt_started_at is not None`), toàn bộ cấu trúc bài thi bị đóng băng vĩnh viễn. Mọi hành vi thêm/sửa/xóa section, gán/xóa câu hỏi, sửa đổi blueprint hoặc tạo lại question pool đều bị chặn với mã lỗi HTTP 409 Conflict (`AssessmentLockedError`).
+7. **Chính sách xóa mềm và khôi phục 30 ngày (Soft-Delete & 30-Day Restore Window)**:
+   - Chuyển trạng thái sang `TRASH`, thiết lập `deleted_at = utc_now()` và `restore_until = utc_now() + 30 days`.
+   - Cho phép khôi phục về `DRAFT` trong vòng 30 ngày. Quá hạn 30 ngày, hệ thống từ chối khôi phục (`AssessmentValidationError`).
+8. **Bảo toàn nguyên tắc kiến trúc ADR-002 (Internal PK Masking)**:
+   - Che giấu toàn bộ khóa chính số nguyên `BIGINT` (`id`, `creator_user_id`, `course_id`, `section_id`, `assignment_id`, `blueprint_id`, `rule_id`) trong toàn bộ REST API và Web UI JSON payload.
+   - Sử dụng UUIDv5 tất định cho các bảng con chỉ có `BIGINT PK` (`assessment_sections`, `assessment_question_assignments`, `assessment_blueprints`, `assessment_blueprint_rules`, `assessment_question_pool`) để bảo đảm 100% tuân thủ RFC 4122 UUID.
+9. **Kiểm toán bất biến (Append-Only Audit Logging)**:
+   - Ghi nhận `AuditEvent` cho mọi hành vi quan trọng: `ASSESSMENT_CREATED`, `ASSESSMENT_UPDATED`, `ASSESSMENT_PUBLISHED`, `ASSESSMENT_CANCELLED`, `ASSESSMENT_TRASHED`, `ASSESSMENT_RESTORED`.
+10. **Toàn diện REST API & Web UI Route Handlers**:
+    - Course-scoped routes (`/api/courses/<course_id>/assessments`).
+    - Assessment management routes (`/api/assessments`, `/api/assessments/<id>`, `/api/assessments/<id>/sections`, `/api/assessments/<id>/questions`, `/api/assessments/<id>/blueprint`, `/api/assessments/<id>/blueprint/materialize`, `/api/assessments/<id>/publish`, `/api/assessments/<id>/cancel`, `/api/assessments/<id>/trash`, `/api/assessments/<id>/restore`).
+    - Instructor Web UI routes (`/instructor/courses/<course_id>/assessments`, `/instructor/assessments/<id>`, etc.).
 
 ---
 
 ### 2. Source-of-truth documents
 - `AGENTS.md` (Hợp đồng vận hành kỹ thuật, quy tắc bất biến, phân quyền và Source-of-Truth Hierarchy).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` (Quy tắc nghiệp vụ ngân hàng câu hỏi và chấm thi).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/06_QUESTION_BANK.md` (Đặc tả chi tiết Question Bank, Question Revisioning và Freeze Invariant).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md` (Quy tắc bất biến: Historical QuestionRevision data retained, locked after publish/first attempt).
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/06_QUESTION_BANK_API.md` (Đặc tả REST API cho Question Revisions & Corrections).
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/003_question_bank.sql` (Canonical DDL tham chiếu Microsoft SQL Server cho `question_revisions`).
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/005_attempt_regrade.sql` (Canonical DDL tham chiếu Microsoft SQL Server cho `question_corrections` và `attempt_questions`).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` (Quy tắc nghiệp vụ bài thi, quản lý phân đoạn và ma trận đề).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_ASSESSMENT_SYSTEM.md` (Đặc tả chi tiết Assessment Lifecycle, Blueprint & Materialization Algorithm 05).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md` (Quy tắc bất biến: Assessment timing locked after publish, Question structure locked after first attempt started).
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md` (Đặc tả chuẩn REST API cho Assessments, Sections, Questions & Blueprints).
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/004_assessment.sql` (Canonical DDL tham chiếu Microsoft SQL Server cho `assessments`, `assessment_sections`, `assessment_question_assignments`, `assessment_blueprints`, `assessment_blueprint_rules`, `assessment_question_pool`).
 - `docs/decisions/ADR-002-public-id-and-primary-keys.md` (Quy tắc che giấu BIGINT PK và sử dụng UUID công khai).
-- `docs/decisions/ADR-003-question-revisions.md` (Chiến lược phiên bản hóa câu hỏi bất biến).
 
 ---
 
 ### 3. In scope
 1. **Tầng Ngoại lệ (Domain Exceptions) — `src/pwd301/services/exceptions.py`:**
-   - `StateViolationError(ServiceError)`
-   - `QuestionRevisionNotFoundError(ResourceNotFoundError)`
-   - `QuestionRevisionConflictError(ConflictError)`
-   - `QuestionImmutableError(ConflictError)`
-   - `QuestionCorrectionError(QuestionBankError)`
-2. **Mô hình Dữ liệu & DDL (Domain Models & DDL) — `src/pwd301/models/question_bank.py` & `sql/003_question_bank.sql`:**
-   - Cập nhật ràng buộc `ck_question_revisions_4` mở rộng hỗ trợ: `INITIAL`, `EDIT`, `ANSWER_ONLY`, `CONTENT_OR_CHOICES`, `TYPO_FIX`, `ANSWER_CHANGE`, `CONTENT_CHANGE`, `REVOCATION`.
-3. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/question_bank_service.py`:**
-   - `is_question_in_use(question, session)`
-   - `create_question_revision(actor, question_id, payload, session)`
-   - `update_question(actor, question_id, payload, session)`
-   - `list_question_revisions(actor, question_id, page, per_page, session)`
-   - `get_question_revision_detail(actor, question_id, revision_no, session)`
-   - `list_question_corrections(actor, question_id, session)`
-   - `_serialize_question_revision(rev, is_current, include_answers)`
-   - `_serialize_question_correction(correction)`
+   - `AssessmentError(ServiceError)`
+   - `AssessmentNotFoundError(ResourceNotFoundError)`
+   - `AssessmentValidationError(ValidationError)`
+   - `AssessmentStateViolationError(StateViolationError)`
+   - `AssessmentLockedError(ConflictError)`
+   - `AssessmentSectionNotFoundError(ResourceNotFoundError)`
+   - `BlueprintValidationError(ValidationError)`
+2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/assessment_service.py`:**
+   - Quản lý Lifecycle: `create_assessment`, `get_assessment_detail`, `update_assessment`, `publish_assessment`, `cancel_assessment`, `trash_assessment`, `restore_assessment`, `list_course_assessments`.
+   - Quản lý Section: `create_section`, `delete_section`.
+   - Quản lý Gán câu hỏi: `assign_question`, `remove_question_assignment`.
+   - Quản lý Ma trận & Algorithm 05: `configure_blueprint`, `materialize_blueprint_pool`.
+   - Serializers che giấu PK: `_serialize_assessment`, `_serialize_section`, `_serialize_assignment`, `_serialize_blueprint`, `_serialize_blueprint_rule`.
+   - Timezone normalization helper: `_normalize_dt`.
+   - Audit logging helper: `_record_assessment_audit`.
+3. **Re-export Tầng Dịch vụ — `src/pwd301/services/__init__.py`:**
+   - Export đầy đủ tất cả các hàm và ngoại lệ mới trong `__all__`.
 4. **Blueprints & Route Handlers:**
-   - **REST API Questions Blueprint (`src/pwd301/blueprints/api_questions/routes.py`):**
-     - `PATCH /api/questions/<question_id>`
-     - `GET /api/questions/<question_id>/revisions`
-     - `POST /api/questions/<question_id>/revisions`
-     - `GET /api/questions/<question_id>/revisions/<int:revision_no>`
-     - `GET /api/questions/<question_id>/corrections`
+   - **REST API Assessment Blueprint (`src/pwd301/blueprints/api_assessments/`):**
+     - Đăng ký blueprint `api_assessment_bp` với url_prefix `/api/assessments`.
+     - Triển khai 13 endpoints REST API theo đặc tả `07_ASSESSMENT_API.md`.
+   - **Course-Scoped Assessment Routes (`src/pwd301/blueprints/api_courses/routes.py`):**
+     - `POST /api/courses/<course_id>/assessments`
+     - `GET /api/courses/<course_id>/assessments`
    - **Instructor Web UI Blueprint (`src/pwd301/blueprints/instructor/routes.py`):**
-     - `PATCH /instructor/questions/<question_id>`
-     - `GET /instructor/questions/<question_id>/revisions`
-     - `POST /instructor/questions/<question_id>/revisions`
-     - `GET /instructor/questions/<question_id>/revisions/<int:revision_no>`
-     - `GET /instructor/questions/<question_id>/corrections`
-5. **Đăng ký Error Handlers — `src/pwd301/__init__.py`:**
-   - Đăng ký bộ xử lý lỗi cho `QuestionRevisionNotFoundError` (404), `QuestionRevisionConflictError` (409), `QuestionImmutableError` (409), `QuestionCorrectionError` (400).
+     - Triển khai 14 instructor assessment view & action routes.
+5. **Đăng ký Error Handlers & CSRF Exemption — `src/pwd301/__init__.py`:**
+   - Đăng ký `api_assessment_bp`.
+   - Cấu hình `csrf.exempt(api_assessment_bp)`.
+   - Đăng ký các HTTP error handler cho `AssessmentNotFoundError` (404), `AssessmentSectionNotFoundError` (404), `AssessmentLockedError` (409), `AssessmentStateViolationError` (409), `AssessmentValidationError` (400), `BlueprintValidationError` (400).
 6. **Kiểm thử tự động:**
-   - Unit tests (`tests/unit/test_question_revision_service.py`): 18 tests.
-   - Security IDOR tests (`tests/security/test_question_revision_idor.py`): 10 tests.
-   - REST API integration tests (`tests/api/test_question_revision_api.py`): 9 tests.
-   - Bảo đảm 100% test suite sẵn có không hồi quy.
+   - Unit tests (`tests/unit/test_assessment_service.py`): 13 tests.
+   - Security & IDOR negative tests (`tests/security/test_assessment_idor.py`): 4 tests.
+   - REST API integration tests (`tests/api/test_assessment_api.py`): 7 tests.
+   - Bảo đảm 100% test suite sẵn có không hồi quy (331/331 tests pass).
 
 ---
 
 ### 4. Out of scope
-- Quản lý bài thi, phòng thi và động cơ chấm bài thi tự động (`assessment_service.py`) -> Thuộc về **TASK-012**.
-- Động cơ chấm lại tự động theo đợt (Batch Regrading Engine) dựa trên `QuestionCorrection` -> Thuộc về **TASK-013**.
-- Tích hợp AI sinh câu hỏi tự động (AI Question Generation) -> Thuộc về giai đoạn sau.
+- Quản lý phiên làm bài của học viên và động cơ nộp bài / tính điểm tức thời (`AttemptService`, `AssessmentAttempt`) -> Thuộc về **TASK-013**.
+- Động cơ chấm lại tự động theo đợt (Batch Regrading Engine) dựa trên `QuestionCorrection` -> Thuộc về **TASK-014**.
+- Chống gian lận thời gian thực qua WebRTC / AI Proctoring -> Thuộc về giai đoạn sau.
 
 ---
 
@@ -110,53 +108,57 @@ Xây dựng Động cơ quản lý phiên bản câu hỏi (`QuestionRevision`) 
 #### A. Scope & Source-of-Truth Files Consulted
 - `AGENTS.md`
 - `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/06_QUESTION_BANK.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_ASSESSMENT_SYSTEM.md`
 - `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/06_QUESTION_BANK_API.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/003_question_bank.sql`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/005_attempt_regrade.sql`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/004_assessment.sql`
 - `docs/decisions/ADR-002-public-id-and-primary-keys.md`
-- `docs/decisions/ADR-003-question-revisions.md`
 
 #### B. Reuse Decisions
-- Tái sử dụng `require_question_manager` từ `authorization_service.py` cho toàn bộ các thao tác kiểm tra quyền truy cập trên revisions và corrections.
-- Tái sử dụng `_record_question_audit` từ `question_bank_service.py` để ghi nhận `QUESTION_REVISED` và `QUESTION_CORRECTION_CREATED`.
-- Tái sử dụng cấu trúc `_serialize_question_revision` đồng bộ giữa chi tiết câu hỏi (`_serialize_question`), danh sách revision, và chi tiết revision.
-- Sử dụng UUIDv5 xuất phát từ `correction.id` và namespace DNS `pwd301.question_correction.{id}` để che giấu `BIGINT PK` mà không cần thay đổi cấu trúc bảng cơ sở dữ liệu đã chốt.
+- Tái sử dụng `require_course_manager` và `can_manage_course` từ `authorization_service.py` để bảo đảm tính thống nhất trong kiểm tra quyền sở hữu khóa học giữa giảng viên và quản trị viên.
+- Tái sử dụng `_resolve_course` từ `course_service.py` cho các tham số đầu vào `course_id` đa hình (hỗ trợ `Course`, `public_id`, chuỗi số nguyên hoặc integer).
+- Tái sử dụng `_serialize_question` từ `question_bank_service.py` để đính kèm thông tin tóm tắt câu hỏi vào danh sách câu hỏi gán cố định mà không làm lộ đáp án đúng.
+- Tái sử dụng `jwt_required` và `get_authenticated_actor` cho toàn bộ các endpoint REST API trong `api_assessment_bp`.
+- Che giấu các khóa chính số nguyên `BIGINT PK` của các bảng con (`assessment_sections`, `assessment_question_assignments`, `assessment_blueprints`, `assessment_blueprint_rules`, `assessment_question_pool`) bằng UUIDv5 có namespace DNS `pwd301.<entity>.{id}`, thỏa mãn ADR-002 mà không cần sửa đổi canonical SQL schema.
 
 #### C. Per-File Changes
-- `src/pwd301/services/exceptions.py`: Bổ sung `StateViolationError`, `QuestionRevisionNotFoundError`, `QuestionRevisionConflictError`, `QuestionImmutableError`, `QuestionCorrectionError`.
-- `src/pwd301/models/question_bank.py`: Cập nhật ràng buộc `ck_question_revisions_4` mở rộng danh sách `change_type`.
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/003_question_bank.sql`: Cập nhật check constraint `ck_question_revisions_4` trong canonical SQL Server DDL.
-- `src/pwd301/services/question_bank_service.py`: Triển khai các hàm nghiệp vụ `is_question_in_use`, `create_question_revision`, `update_question`, `list_question_revisions`, `get_question_revision_detail`, `list_question_corrections`, `_serialize_question_correction`.
-- `src/pwd301/services/__init__.py`: Re-export các ngoại lệ và hàm nghiệp vụ mới.
-- `src/pwd301/__init__.py`: Đăng ký các HTTP error handler (400, 404, 409).
-- `src/pwd301/blueprints/api_questions/routes.py`: Triển khai các endpoints REST API revisions, corrections và update.
-- `src/pwd301/blueprints/instructor/routes.py`: Triển khai các Web UI endpoints revisions, corrections và update.
-- `tests/unit/test_question_revision_service.py`: 18 unit tests cho logic nghiệp vụ.
-- `tests/security/test_question_revision_idor.py`: 10 security & IDOR negative tests.
-- `tests/api/test_question_revision_api.py`: 9 integration & ADR-002 REST API tests.
+- `src/pwd301/services/exceptions.py`: Bổ sung 7 ngoại lệ miền nghiệp vụ chuyên biệt: `AssessmentError`, `AssessmentNotFoundError`, `AssessmentValidationError`, `AssessmentStateViolationError`, `AssessmentLockedError`, `AssessmentSectionNotFoundError`, `BlueprintValidationError`.
+- `src/pwd301/services/assessment_service.py`: Triển khai toàn bộ logic nghiệp vụ đánh giá, quản lý phân đoạn, gán câu hỏi tĩnh, thuật toán Algorithm 05 sinh đề từ blueprint, cổng kiểm soát xuất bản, quy tắc đóng băng thời gian và cấu trúc, chuẩn hóa timezone UTC, xóa mềm 30 ngày và ghi kiểm toán bất biến.
+- `src/pwd301/services/__init__.py`: Re-export toàn bộ ngoại lệ và hàm nghiệp vụ của assessment service.
+- `src/pwd301/__init__.py`: Đăng ký `api_assessment_bp`, miễn trừ CSRF cho blueprint REST API, và đăng ký các HTTP error handler (400, 404, 409).
+- `src/pwd301/blueprints/api_assessments/__init__.py`: Khởi tạo blueprint `api_assessment_bp`.
+- `src/pwd301/blueprints/api_assessments/routes.py`: Triển khai 13 endpoint REST API quản lý bài thi, phân đoạn, câu hỏi, blueprint và materialization.
+- `src/pwd301/blueprints/api_courses/routes.py`: Bổ sung route `POST` và `GET` `/api/courses/<course_id>/assessments`.
+- `src/pwd301/blueprints/instructor/routes.py`: Bổ sung 14 route điều khiển Web UI cho giảng viên quản lý bài thi.
+- `tests/unit/test_assessment_service.py`: 13 unit tests bao phủ toàn bộ lifecycle, publish gate, timing freeze, structural freeze, fixed assignments, Algorithm 05 và 30-day restore.
+- `tests/security/test_assessment_idor.py`: 4 security tests ngăn chặn IDOR giữa các giảng viên, ngăn chặn học viên truy cập, và xác nhận quyền superuser của Admin.
+- `tests/api/test_assessment_api.py`: 7 integration tests kiểm thử toàn diện REST API, xác thực JWT, phân trang, và kiểm định ADR-002 không rò rỉ BIGINT PK.
 
 #### D. Deletion / Simplification List
-- Loại bỏ các câu lệnh if/else thủ công lặp lại trong route handlers; chuyển toàn bộ thẩm định quyền vào `require_question_manager`.
-- Đơn giản hóa việc tính toán `correction_type` tự động dựa trên `change_type` (`ANSWER_CHANGE` -> `ANSWER_ONLY`, `TYPO_FIX`/`CONTENT_CHANGE` -> `CONTENT_OR_CHOICES`).
+- Đơn giản hóa việc tính toán tổng điểm và tổng số câu hỏi bằng cách truy vấn trực tiếp cơ sở dữ liệu qua session trong `_calculate_assessment_aggregates`, loại bỏ nguy cơ mất đồng bộ bộ nhớ đệm quan hệ SQLAlchemy.
+- Chuẩn hóa toàn bộ việc so sánh datetime qua helper `_normalize_dt`, giải quyết triệt để lỗi TypeError so sánh giữa naive datetime (từ SQLite) và aware datetime (từ payload ISO-8601).
 
 #### E. Ponytails / Deferred Technical Debt
-- None. Toàn bộ yêu cầu bất biến, che giấu khóa chính, phân quyền IDOR và kiểm thử tự động đều được giải quyết triệt để.
+- None. Toàn bộ các quy tắc bất biến, kiểm tra quyền hạn, che giấu khóa chính, và giải thuật materialization đều được hiện thực hóa và kiểm thử tự động 100%.
 
 #### F. Verification Actually Run & Results
-1. `scripts/repo_check.py`: PASS (71 canonical SQL tables verified, required files exist).
-2. `ruff check src tests scripts`: PASS (All checks passed).
-3. `ruff format --check src tests scripts`: PASS (86 files already formatted).
-4. `mypy src`: PASS (Success: no issues found in 50 source files).
-5. Pytest suite: 307 passed (37 new tests + 270 baseline tests, 0 failures, 0 regressions).
+1. `scripts/repo_check.py`: PASS (71 canonical SQL tables verified, balanced code fences, required files present).
+2. `ruff check src tests scripts`: PASS (All checks passed across 92 files).
+3. `ruff format --check src tests scripts`: PASS (92 files already formatted).
+4. `mypy src`: PASS (Success: no issues found in 53 source files).
+5. Pytest suite: 331 passed (24 new tests + 307 baseline tests, 0 failures, 0 regressions).
+6. `scripts/verify.ps1`: PASS (All repository contract checks, compile checks, lint/format/type checks, and unit/integration/security tests passed).
 
 #### G. Remaining Risks / Next Step
-- Tiếp tục theo lộ trình sang **TASK-012 — Assessment Lifecycle, Test Delivery Engine & Automated Grading (`assessment_service.py`)**.
+- Sẵn sàng chuyển tiếp sang **TASK-013 — Student Assessment Delivery, Active Editing Lease & Idempotent Submission Engine (`attempt_service.py`)**.
 
 ---
 
 ## Historical Tasks
+
+### TASK-011 — Question Revisioning, In-Use Freeze & Correction Mechanism
+**Status:** DONE  
+*Xây dựng Động cơ quản lý phiên bản câu hỏi (`QuestionRevision`) và Cơ chế sửa đổi câu hỏi đã sử dụng (`QuestionCorrection`), bảo đảm tính bất biến của lịch sử thi cử và tính toàn vẹn khi chấm điểm, kiểm tra in-use tự động, phân nhánh chỉnh sửa, bảo tồn cấu trúc choices/answers, phòng chống IDOR, che giấu BIGINT PK theo ADR-002, và ghi nhận kiểm toán bất biến.*
 
 ### TASK-010 — Question Bank Management & Question Authoring Engine
 **Status:** DONE  

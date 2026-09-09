@@ -8,6 +8,26 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.services.assessment_service import (
+    _serialize_assessment,
+    _serialize_assignment,
+    _serialize_blueprint,
+    _serialize_section,
+    assign_question,
+    cancel_assessment,
+    configure_blueprint,
+    create_assessment,
+    create_section,
+    delete_section,
+    get_assessment_detail,
+    list_course_assessments,
+    materialize_blueprint_pool,
+    publish_assessment,
+    remove_question_assignment,
+    restore_assessment,
+    trash_assessment,
+    update_assessment,
+)
 from pwd301.services.authorization_service import (
     get_authenticated_actor,
     instructor_required,
@@ -725,3 +745,243 @@ def list_question_corrections_route(question_id: str) -> tuple[Response, int] | 
         session=db.session,
     )
     return jsonify({"items": items}), 200
+
+
+# ============================================================================
+# INSTRUCTOR ASSESSMENT BUILDER & MANAGEMENT ROUTES
+# ============================================================================
+
+
+@instructor_bp.route("/courses/<course_id>/assessments", methods=["GET"])
+@instructor_required
+def list_instructor_course_assessments_route(course_id: str) -> tuple[Response, int] | Response:
+    """List assessments for a course in instructor view."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    filters = {
+        "assessment_type": request.args.get("assessment_type") or request.args.get("type"),
+        "status": request.args.get("status"),
+    }
+
+    items, total, p, pp, total_pages = list_course_assessments(
+        actor=actor,
+        course_id=course_id,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+    }
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/courses/<course_id>/assessments", methods=["POST"])
+@instructor_required
+def create_instructor_course_assessment_route(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new Assessment for a course in instructor view."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    assessment = create_assessment(actor, course_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_assessment(assessment, full=False)), 201
+
+
+@instructor_bp.route("/assessments/<assessment_id>", methods=["GET"])
+@instructor_required
+def get_instructor_assessment_detail_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed assessment configuration."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    data = get_assessment_detail(actor, assessment_id, session=db.session)
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>", methods=["PATCH", "PUT"])
+@instructor_required
+def update_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Update assessment configuration."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    assessment = update_assessment(actor, assessment_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_assessment(assessment, full=False)), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/publish", methods=["POST"])
+@instructor_required
+def publish_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Publish assessment (DRAFT -> PUBLISHED)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    assessment = publish_assessment(actor, assessment_id, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_assessment(assessment, full=False)), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/cancel", methods=["POST"])
+@instructor_required
+def cancel_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Cancel a published assessment."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason")
+
+    assessment = cancel_assessment(actor, assessment_id, reason=reason, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Assessment cancelled.",
+            "assessment": _serialize_assessment(assessment, full=False),
+        }
+    ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/trash", methods=["POST"])
+@instructor_required
+def trash_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Move assessment to TRASH."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = body.get("reason")
+
+    assessment = trash_assessment(actor, assessment_id, reason=reason, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Assessment moved to trash.",
+            "assessment": _serialize_assessment(assessment, full=False),
+        }
+    ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/restore", methods=["POST"])
+@instructor_required
+def restore_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Restore assessment from TRASH."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    assessment = restore_assessment(actor, assessment_id, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Assessment restored from trash.",
+            "assessment": _serialize_assessment(assessment, full=False),
+        }
+    ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/sections", methods=["POST"])
+@instructor_required
+def create_instructor_section_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Create a new section in assessment."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    section = create_section(actor, assessment_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_section(section)), 201
+
+
+@instructor_bp.route("/assessments/<assessment_id>/sections/<section_id>", methods=["DELETE"])
+@instructor_required
+def delete_instructor_section_route(
+    assessment_id: str, section_id: str
+) -> tuple[Response, int] | Response:
+    """Delete a section from assessment."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    delete_section(actor, assessment_id, section_id, session=db.session)
+    db.session.commit()
+
+    return jsonify({"message": "Section deleted successfully."}), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions", methods=["POST"])
+@instructor_required
+def assign_instructor_question_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Assign a fixed question to assessment."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    assignment = assign_question(actor, assessment_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_assignment(assignment)), 201
+
+
+@instructor_bp.route("/assessments/<assessment_id>/questions/<question_id>", methods=["DELETE"])
+@instructor_required
+def remove_instructor_question_route(
+    assessment_id: str, question_id: str
+) -> tuple[Response, int] | Response:
+    """Remove a fixed question from assessment."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    remove_question_assignment(actor, assessment_id, question_id, session=db.session)
+    db.session.commit()
+
+    return jsonify({"message": "Question unassigned successfully."}), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/blueprint", methods=["POST"])
+@instructor_required
+def configure_instructor_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Configure assessment blueprint rules."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    blueprint = configure_blueprint(actor, assessment_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_blueprint(blueprint)), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/blueprint/materialize", methods=["POST"])
+@instructor_required
+def materialize_instructor_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Materialize candidate question pool from blueprint rules (Algorithm 05)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    pool = materialize_blueprint_pool(actor, assessment_id, session=db.session)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "message": "Candidate pool materialized successfully.",
+            "pool_count": len(pool),
+        }
+    ), 200
