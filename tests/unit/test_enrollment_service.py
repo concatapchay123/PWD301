@@ -175,21 +175,116 @@ def test_enroll_student_unavailability(
         enroll_student(actor=student_user, course_id=draft_course.id, session=sess)
 
 
-def test_enroll_student_already_active_raises(
+def test_enroll_student_native_idempotency(
     app: Flask,
     instructor_user: User,
     admin_user: User,
     student_user: User,
 ) -> None:
-    """Verify attempting to enroll when already ACTIVE raises EnrollmentStateViolationError."""
+    """Verify enrolling when already ACTIVE is idempotent and returns current enrollment."""
     course = _create_published_course(instructor_user, admin_user, code="CS102", title="CS 102")
+    sess = db.session
+
+    enr1 = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+    assert enr1.status == "ACTIVE"
+
+    # Second call should return the exact same enrollment without raising an error
+    enr2 = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+
+    assert enr2.id == enr1.id
+    assert enr2.status == "ACTIVE"
+    periods = sess.query(EnrollmentPeriod).filter_by(enrollment_id=enr1.id).all()
+    assert len(periods) == 1
+
+
+def test_leave_course_native_idempotency(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Verify leaving a course when already LEFT is idempotent and returns current record."""
+    course = _create_published_course(instructor_user, admin_user, code="CS103", title="CS 103")
     sess = db.session
 
     enroll_student(actor=student_user, course_id=course.id, session=sess)
     sess.commit()
 
-    with pytest.raises(EnrollmentStateViolationError, match="already enrolled"):
-        enroll_student(actor=student_user, course_id=course.id, session=sess)
+    left1 = leave_course(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+    assert left1.status == "LEFT"
+
+    # Second leave call should return safely without raising EnrollmentStateViolationError
+    left2 = leave_course(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+    assert left2.id == left1.id
+    assert left2.status == "LEFT"
+
+
+def test_leave_course_non_active_raises(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Verify attempting to leave when enrollment is COMPLETED raises state error."""
+    course = _create_published_course(instructor_user, admin_user, code="CS106", title="CS 106")
+    sess = db.session
+
+    enr = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    enr.status = "COMPLETED"
+    sess.commit()
+
+    with pytest.raises(EnrollmentStateViolationError, match="expected 'ACTIVE'"):
+        leave_course(actor=student_user, course_id=course.id, session=sess)
+
+
+def test_enroll_student_auto_re_enrolls_when_left(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Verify calling enroll_student on a student who has LEFT automatically re-enrolls them."""
+    course = _create_published_course(instructor_user, admin_user, code="CS104", title="CS 104")
+    sess = db.session
+
+    # 1. Initial enroll
+    enr1 = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    orig_id = enr1.id
+    sess.commit()
+
+    # 2. Leave
+    leave_course(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+
+    # 3. Call regular enroll_student again
+    reenrolled = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+
+    # Invariant: single logical enrollment preserved, status must be ACTIVE (NEVER 'REENROLLED')
+    assert reenrolled.id == orig_id
+    assert reenrolled.status != "REENROLLED"
+    assert reenrolled.status == "ACTIVE"
+    assert reenrolled.left_at is None
+    assert reenrolled.detail_retention_due_at is None
+
+    # Verify period 2 created
+    period = sess.get(EnrollmentPeriod, reenrolled.current_period_id)
+    assert period is not None
+    assert period.period_no == 2
+    assert period.status == "ACTIVE"
+
+    # Verify event logged with event_type REENROLLED
+    re_event = (
+        sess.query(EnrollmentEvent)
+        .filter_by(enrollment_id=orig_id, event_type="REENROLLED")
+        .first()
+    )
+    assert re_event is not None
+    assert re_event.period_id == period.id
 
 
 def test_enroll_student_capacity_limit(
@@ -444,6 +539,7 @@ def test_re_enroll_student_lifecycle(
 
     # Verify single logical enrollment maintained
     assert reenrolled.id == original_enrollment_id
+    assert reenrolled.status != "REENROLLED"
     assert reenrolled.status == "ACTIVE"
     assert reenrolled.left_at is None
     assert reenrolled.detail_retention_due_at is None
@@ -470,6 +566,32 @@ def test_re_enroll_student_lifecycle(
     )
     assert re_event is not None
     assert re_event.period_id == period_2_id
+
+
+def test_re_enroll_student_already_active_is_idempotent(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Verify re-enrolling when student is already ACTIVE returns current enrollment safely."""
+    course = _create_published_course(
+        instructor_user, admin_user, code="RE102", title="Re-enroll Idempotent Course"
+    )
+    sess = db.session
+
+    enr1 = enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+    assert enr1.status == "ACTIVE"
+
+    # Direct call to re_enroll_student on active enrollment returns safely
+    enr2 = re_enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+
+    assert enr2.id == enr1.id
+    assert enr2.status == "ACTIVE"
+    periods = sess.query(EnrollmentPeriod).filter_by(enrollment_id=enr1.id).all()
+    assert len(periods) == 1
 
 
 def test_get_student_enrollments_filtering(
@@ -529,3 +651,33 @@ def test_get_course_enrollments_pagination(
     )
     assert total == 2
     assert len(items) == 1
+
+
+def test_first_student_enrolled_at_persistence(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+    second_student: User,
+) -> None:
+    """Verify course.first_student_enrolled_at is set on initial enrollment and preserved."""
+    course = _create_published_course(instructor_user, admin_user, code="CS105", title="CS 105")
+    sess = db.session
+
+    assert course.first_student_enrolled_at is None
+
+    # First student enrolls
+    enroll_student(actor=student_user, course_id=course.id, session=sess)
+    sess.commit()
+    sess.refresh(course)
+
+    first_enrolled_time = course.first_student_enrolled_at
+    assert first_enrolled_time is not None
+
+    # Second student enrolls
+    enroll_student(actor=second_student, course_id=course.id, session=sess)
+    sess.commit()
+    sess.refresh(course)
+
+    # Must preserve the first student enrolled timestamp
+    assert course.first_student_enrolled_at == first_enrolled_time

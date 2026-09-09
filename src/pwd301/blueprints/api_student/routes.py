@@ -24,7 +24,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
         "course_title": e.course.title if e.course else None,
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
-        "current_period_id": e.current_period_id,
+        "period_no": e.current_period.period_no if e.current_period else None,
         "current_progress_percent": float(e.current_progress_percent),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,

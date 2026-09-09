@@ -95,11 +95,16 @@ def test_api_enroll_and_leave_workflow(
     data = resp.get_json()
     assert data["status"] == "ACTIVE"
     assert data["course_id"] == str(c1.public_id)
+    assert data["period_no"] == 1
+    assert "current_period_id" not in data
 
     # 2. Idempotent enrollment returns 200
     resp2 = client.post(f"/api/courses/{c1.public_id}/enroll", headers=headers)
     assert resp2.status_code == 200
-    assert resp2.get_json()["status"] == "ACTIVE"
+    data2 = resp2.get_json()
+    assert data2["status"] == "ACTIVE"
+    assert data2["period_no"] == 1
+    assert "current_period_id" not in data2
 
     # 3. Read own enrollments
     resp3 = client.get("/api/student/enrollments", headers=headers)
@@ -107,6 +112,8 @@ def test_api_enroll_and_leave_workflow(
     enrollments = resp3.get_json()["enrollments"]
     assert len(enrollments) == 1
     assert enrollments[0]["course_id"] == str(c1.public_id)
+    assert enrollments[0]["period_no"] == 1
+    assert "current_period_id" not in enrollments[0]
 
     # 4. Leave course
     resp4 = client.post(
@@ -115,7 +122,9 @@ def test_api_enroll_and_leave_workflow(
         json={"reason": "Completed study goals"},
     )
     assert resp4.status_code == 200
-    assert resp4.get_json()["status"] == "LEFT"
+    data4 = resp4.get_json()
+    assert data4["status"] == "LEFT"
+    assert "current_period_id" not in data4
 
     # 5. State-idempotent leave returns 200
     resp5 = client.post(
@@ -123,12 +132,26 @@ def test_api_enroll_and_leave_workflow(
         headers=headers,
     )
     assert resp5.status_code == 200
-    assert resp5.get_json()["status"] == "LEFT"
+    data5 = resp5.get_json()
+    assert data5["status"] == "LEFT"
+    assert "current_period_id" not in data5
 
-    # 6. Re-enroll
+    # 6. Explicit Re-enroll endpoint
     resp6 = client.post(f"/api/courses/{c1.public_id}/re-enroll", headers=headers)
     assert resp6.status_code == 200
-    assert resp6.get_json()["status"] == "ACTIVE"
+    data6 = resp6.get_json()
+    assert data6["status"] == "ACTIVE"
+    assert data6["period_no"] == 2
+    assert "current_period_id" not in data6
+
+    # 7. Seamless auto-re-enrollment via standard enroll endpoint after leaving
+    client.post(f"/api/courses/{c1.public_id}/leave", headers=headers)
+    resp7 = client.post(f"/api/courses/{c1.public_id}/enroll", headers=headers)
+    assert resp7.status_code == 200
+    data7 = resp7.get_json()
+    assert data7["status"] == "ACTIVE"
+    assert data7["period_no"] == 3
+    assert "current_period_id" not in data7
 
 
 def test_api_prerequisites_management(
@@ -197,3 +220,5 @@ def test_api_course_enrollments_roster(
     assert data["pagination"]["total_items"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["student_id"] == str(student_user.public_id)
+    assert data["items"][0]["period_no"] == 1
+    assert "current_period_id" not in data["items"][0]

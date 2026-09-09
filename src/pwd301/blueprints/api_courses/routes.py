@@ -183,7 +183,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
         "course_title": e.course.title if e.course else None,
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
-        "current_period_id": e.current_period_id,
+        "period_no": e.current_period.period_no if e.current_period else None,
         "current_progress_percent": float(e.current_progress_percent),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
@@ -221,25 +221,10 @@ def enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
             401,
         )
 
-    from pwd301.services.authorization_service import _resolve_course
-    from pwd301.services.exceptions import EnrollmentStateViolationError
-
-    try:
-        enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
-        db.session.commit()
-        return jsonify(_serialize_enrollment_api(enrollment)), 201
-    except EnrollmentStateViolationError as err:
-        # Idempotent for already-active enrollment
-        c = _resolve_course(course_id, session=db.session)
-        if c is not None:
-            existing = (
-                db.session.query(Enrollment)
-                .filter(Enrollment.student_user_id == actor.id, Enrollment.course_id == c.id)
-                .first()
-            )
-            if existing and existing.status == "ACTIVE":
-                return jsonify(_serialize_enrollment_api(existing)), 200
-        raise err
+    enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
+    db.session.commit()
+    status_code = 201 if getattr(enrollment, "_is_new", False) else 200
+    return jsonify(_serialize_enrollment_api(enrollment)), status_code
 
 
 @api_course_bp.route("/<course_id>/leave", methods=["POST"])
@@ -264,27 +249,9 @@ def leave_course_api(course_id: str) -> tuple[Response, int] | Response:
     if reason is not None and not isinstance(reason, str):
         reason = str(reason)
 
-    from pwd301.services.authorization_service import _resolve_course
-    from pwd301.services.exceptions import EnrollmentStateViolationError
-
-    try:
-        enrollment = leave_course(
-            actor=actor, course_id=course_id, reason=reason, session=db.session
-        )
-        db.session.commit()
-        return jsonify(_serialize_enrollment_api(enrollment)), 200
-    except EnrollmentStateViolationError as err:
-        # State-idempotent for already-left enrollment
-        c = _resolve_course(course_id, session=db.session)
-        if c is not None:
-            existing = (
-                db.session.query(Enrollment)
-                .filter(Enrollment.student_user_id == actor.id, Enrollment.course_id == c.id)
-                .first()
-            )
-            if existing and existing.status == "LEFT":
-                return jsonify(_serialize_enrollment_api(existing)), 200
-        raise err
+    enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
+    db.session.commit()
+    return jsonify(_serialize_enrollment_api(enrollment)), 200
 
 
 @api_course_bp.route("/<course_id>/re-enroll", methods=["POST"])

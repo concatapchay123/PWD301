@@ -5,7 +5,7 @@
 **Status:** DONE
 
 ### 1. Goal
-Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học (`src/pwd301/services/enrollment_service.py`), quản lý chu kỳ học tập (`EnrollmentPeriod`), kiểm soát sĩ số khóa học chống race condition (`capacity`), thẩm định điều kiện tiên quyết và phòng chống chu kỳ đồ thị phụ thuộc (`CoursePrerequisite` DAG validation theo Algorithm 03), xử lý hủy khóa học (`LEFT`) với chính sách lưu trữ chi tiết 30 ngày, tái ghi danh (`REENROLLED`) tái sử dụng bản ghi `Enrollment` và mở `EnrollmentPeriod` mới, ghi nhận nhật ký sự kiện (`EnrollmentEvent`) và nhật ký kiểm toán hệ thống (`AuditEvent`), cùng toàn bộ route điều khiển (Web UI + REST API) và bộ kiểm thử tự động.
+Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học (`src/pwd301/services/enrollment_service.py`), quản lý chu kỳ học tập (`EnrollmentPeriod`), kiểm soát sĩ số khóa học chống race condition (`capacity`), thẩm định điều kiện tiên quyết và phòng chống chu kỳ đồ thị phụ thuộc (`CoursePrerequisite` DAG validation theo Algorithm 03), xử lý hủy khóa học (`LEFT`) với chính sách lưu trữ chi tiết 30 ngày, tái ghi danh (`re_enroll_student`) tái sử dụng bản ghi `Enrollment` (chuyển `status = 'ACTIVE'`, ghi sự kiện `event_type = 'REENROLLED'`) và mở `EnrollmentPeriod` mới, tự động kích hoạt tái ghi danh khi gọi `enroll_student` trên học viên đã `LEFT` (Seamless Re-enrollment UX), đóng gói tính idempotent triệt để tại Service Layer cho cả Web UI và REST API, cập nhật mốc thời gian `course.first_student_enrolled_at`, che giấu khóa chính nội bộ `BIGINT PK` (`current_period_id` -> `period_no` theo ADR-002), ghi nhận nhật ký sự kiện (`EnrollmentEvent`) và nhật ký kiểm toán hệ thống (`AuditEvent`), cùng toàn bộ route điều khiển (Web UI + REST API) và bộ kiểm thử tự động.
 
 ### 2. Source-of-truth documents
 - `AGENTS.md` (Hợp đồng vận hành kỹ thuật, quy tắc bất biến, phân quyền và Source-of-Truth Hierarchy).
@@ -26,9 +26,9 @@ Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học
    - `PrerequisiteCycleError(EnrollmentError)`
    - `CourseNotAvailableError(EnrollmentError)`
 2. **Tầng Dịch vụ (Service Layer) — `src/pwd301/services/enrollment_service.py`:**
-   - `enroll_student(actor, course_id, student_user_id)`: Ghi danh khóa học cho sinh viên. Khóa dòng dữ liệu `Course` (`with_for_update`) để kiểm tra `capacity` chống race condition. Kiểm tra trạng thái khóa học phải là `PUBLISHED`. Kiểm tra thỏa mãn điều kiện tiên quyết. Idempotent nếu sinh viên đã có `Enrollment` trạng thái `ACTIVE`. Tạo `Enrollment` và `EnrollmentPeriod` (chu kỳ 1, trạng thái `ACTIVE`). Ghi `EnrollmentEvent` (`ENROLLED`) và `AuditEvent`.
-   - `leave_course(actor, course_id, student_user_id, reason)`: Sinh viên rút khỏi khóa học. Chuyển trạng thái `Enrollment` thành `LEFT`. Đóng `EnrollmentPeriod` hiện tại (`ended_at = utc_now()`). Thiết lập `detail_retention_due_at = utc_now() + 30 days`. Không xóa cứng dữ liệu học tập. Ghi `EnrollmentEvent` (`LEFT`) và `AuditEvent`. Idempotent nếu đã ở trạng thái `LEFT`.
-   - `re_enroll_student(actor, course_id, student_user_id)`: Tái ghi danh khóa học. Kiểm tra trạng thái hiện tại phải là `LEFT` hoặc `SUSPENDED`. Tái sử dụng bản ghi `Enrollment` (duy trì tính toàn vẹn 1 Enrollment duy nhất trên cặp `student_user_id, course_id`), chuyển trạng thái thành `REENROLLED` hoặc `ACTIVE`, tăng `period_no` và tạo bản ghi `EnrollmentPeriod` mới (trạng thái `ACTIVE`). Kiểm tra lại `capacity` và điều kiện tiên quyết. Ghi `EnrollmentEvent` (`REENROLLED`) và `AuditEvent`.
+   - `enroll_student(actor, course_id, student_user_id)`: Ghi danh khóa học cho sinh viên. Khóa dòng dữ liệu `Course` (`with_for_update`) để kiểm tra `capacity` chống race condition. Kiểm tra trạng thái khóa học phải là `PUBLISHED`. Kiểm tra thỏa mãn điều kiện tiên quyết. Idempotent native tại tầng dịch vụ: nếu sinh viên đã có `Enrollment` trạng thái `ACTIVE`, trả về bản ghi hiện tại không ném lỗi. Tự động ủy quyền thực thi sang `re_enroll_student` nếu sinh viên đang ở trạng thái `LEFT` (Seamless Re-enrollment UX). Thiết lập `course.first_student_enrolled_at = utc_now()` khi sinh viên đầu tiên ghi danh. Tạo `Enrollment` và `EnrollmentPeriod` (chu kỳ 1, trạng thái `ACTIVE`). Ghi `EnrollmentEvent` (`ENROLLED`) và `AuditEvent`.
+   - `leave_course(actor, course_id, student_user_id, reason)`: Sinh viên rút khỏi khóa học. Idempotent native: nếu đã ở trạng thái `LEFT`, trả về bản ghi an toàn. Chuyển trạng thái `Enrollment` thành `LEFT`. Đóng `EnrollmentPeriod` hiện tại (`ended_at = utc_now()`). Thiết lập `detail_retention_due_at = utc_now() + 30 days`. Không xóa cứng dữ liệu học tập. Ghi `EnrollmentEvent` (`LEFT`) và `AuditEvent`.
+   - `re_enroll_student(actor, course_id, student_user_id)`: Tái ghi danh khóa học. Kiểm tra trạng thái hiện tại phải là `LEFT`, `DETAIL_PURGED`, `COMPLETED`, hoặc `RETENTION_PENDING` (hoặc `ACTIVE` trả về an toàn idempotent). Tái sử dụng bản ghi `Enrollment` (duy trì tính toàn vẹn 1 Enrollment duy nhất trên cặp `student_user_id, course_id`), chuyển trạng thái `status = 'ACTIVE'` (tuyệt đối không gán `status = 'REENROLLED'` nhằm tuân thủ Check Constraint `ck_enrollments_1`), tăng `period_no` và tạo bản ghi `EnrollmentPeriod` mới (trạng thái `ACTIVE`). Kiểm tra lại `capacity` và điều kiện tiên quyết. Ghi `EnrollmentEvent` (`event_type = 'REENROLLED'`) và `AuditEvent`.
    - `check_prerequisites_met(student_user_id, course_id, session)`: Kiểm tra tất cả các khóa học tiên quyết bắt buộc đã được sinh viên hoàn thành (`is_completed = True`) hay chưa.
    - `add_course_prerequisite(actor, course_id, prerequisite_course_id)`: Thêm điều kiện tiên quyết. Kiểm tra quyền giảng viên quản lý khóa học. Kiểm tra khóa học không tự phụ thuộc chính nó (`course_id != prerequisite_course_id`). Kiểm tra chu trình đồ thị (Algorithm 03 DFS/Cycle Detection) — ngăn chặn triệt để chu trình trực tiếp hoặc gián tiếp. Ghi `AuditEvent`.
    - `remove_course_prerequisite(actor, course_id, prerequisite_course_id)`: Giảng viên xóa điều kiện tiên quyết. Kiểm tra quyền sở hữu. Ghi `AuditEvent`.
@@ -139,19 +139,22 @@ Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học
 - `tests/unit/test_enrollment_service.py` (NEW): Implemented 12 comprehensive unit tests covering standard enrollment, capacity limits, uncompleted prerequisite rejection, completed prerequisite acceptance, self-prerequisite rejection, direct and indirect DAG cycle prevention (Algorithm 03), soft withdrawal with 30-day retention and slot freeing, idempotent leave, re-enrollment period increment, and append-only event logging.
 - `tests/security/test_enrollment_idor.py` (NEW): Implemented 7 security and IDOR tests verifying cross-student leave/re-enroll denial, cross-instructor student roster viewing denial, cross-instructor prerequisite addition/deletion denial, unauthenticated access denial, and student prerequisite tampering denial.
 - `tests/concurrency/test_enrollment_capacity.py` (NEW): Implemented 3 concurrency and capacity tests verifying sequential capacity exhaustion, strict rejection on overflow, slot reclamation upon student leave, and re-enrollment capacity enforcement.
-- `tests/api/test_enrollment_api.py` (NEW): Implemented 3 REST API integration tests for enrollment lifecycle, prerequisite management, and student enrollments query.
-- `tasks/CURRENT.md` (MODIFY): Recorded TASK-008 completion and moved TASK-007 to Historical Tasks.
+- `tests/api/test_enrollment_api.py` (NEW): Implemented REST API integration tests for enrollment lifecycle, idempotent double-action handling, seamless re-enrollment, prerequisite management, and student enrollments query with ADR-002 PK protection.
+- `tasks/CURRENT.md` (MODIFY): Recorded TASK-008 completion, documented defect fixes (check constraint conflict, service-layer idempotency, seamless re-enrollment, ADR-002 internal PK protection, and first_student_enrolled_at timestamp update), and moved TASK-007 to Historical Tasks.
 
 ### D. Deletion and simplification list
 | Candidate | Classification | Reason | Action |
 |---|---|---|---|
+| Patchwork try-catch blocks in route handlers for idempotency | REMOVE NOW | Idempotency must be encapsulated authoritatively within Service Layer (`enroll_student`, `leave_course`, `re_enroll_student`) | Eliminated try-except blocks from `api_courses/routes.py` and `student/routes.py`; routes cleanly return 200/201 based on `_is_new` |
+| `current_period_id` (BIGINT PK) in JSON serialization | REMOVE NOW | ADR-002 prohibits leaking internal database BIGINT primary keys | Replaced with `period_no` (`e.current_period.period_no`) across `api_courses`, `student`, `api_student`, and `instructor` routes |
+| Setting `enrollment.status = 'REENROLLED'` | REMOVE NOW | Database CheckConstraint `ck_enrollments_1` only accepts `('ACTIVE','LEFT','COMPLETED','RETENTION_PENDING','DETAIL_PURGED')` | Ensured `enrollment.status = 'ACTIVE'` and logged append-only `EnrollmentEvent(event_type='REENROLLED')` |
 | Hard SQL DELETE on `enrollments` or `enrollment_periods` | REMOVE NOW | Invariant DELETE-001 & DATA_DICTIONARY prohibit destroying learning history | Implemented application-level soft leave (`status='LEFT'`, `detail_retention_due_at = utc_now() + 30 days`) |
 | Creating duplicate `Enrollment` rows on re-enroll | REMOVE NOW | Violates database unique constraint `uq_enrollment_student_course` | Reused original `Enrollment` record and incremented `period_no` on new `EnrollmentPeriod` |
 | Client-supplied enrollment status updates | REMOVE NOW | Invariant ENROLL-001 & RBAC require server-authoritative state transitions | State machine strictly controlled via explicit service methods (`enroll_student`, `leave_course`, `re_enroll_student`) |
 | Client-side prerequisite cycle detection | SIMPLIFY NOW | Security and graph integrity must be verified on backend | Enforced server-side DFS cycle detection (Algorithm 03) inside database transaction |
 
 ### E. Ponytails / deferred debt
-- None. Complete business logic, concurrency guards, DAG cycle detection, 30-day retention policy, IDOR protection, and append-only audit/event logs are verified and tested.
+- None. Complete business logic, concurrency guards, DAG cycle detection, 30-day retention policy, IDOR protection, service-layer idempotency, and append-only audit/event logs are verified and tested.
 
 ### F. Verification actually run and results
 1. `mypy src/pwd301/services/enrollment_service.py tests/unit/test_enrollment_service.py`:
@@ -172,7 +175,7 @@ Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học
    ```
 5. `pytest tests/unit/test_enrollment_service.py tests/security/test_enrollment_idor.py tests/concurrency/test_enrollment_capacity.py tests/api/test_enrollment_api.py -v`:
    ```
-   ============================= 25 passed in 9.15s ==============================
+   ============================= 29 passed in 10.45s =============================
    ```
 6. `./scripts/verify.ps1`:
    ```
@@ -191,7 +194,7 @@ Triển khai toàn diện tầng nghiệp vụ quản lý đăng ký khóa học
    73 files already formatted
    Success: no issues found in 46 source files
    == Tests ==
-   ======================= 208 passed in 72.25s (0:01:12) ========================
+   ======================= 213 passed in 64.09s (0:01:04) ========================
    PWD301 verification PASS
    ```
 

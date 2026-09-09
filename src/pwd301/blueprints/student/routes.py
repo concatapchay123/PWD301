@@ -188,7 +188,7 @@ def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
         "course_title": e.course.title if e.course else None,
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
-        "current_period_id": e.current_period_id,
+        "period_no": e.current_period.period_no if e.current_period else None,
         "current_progress_percent": float(e.current_progress_percent),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
@@ -196,6 +196,9 @@ def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
             e.detail_retention_due_at.isoformat() if e.detail_retention_due_at else None
         ),
     }
+
+
+_serialize_enrollment_api = _serialize_enrollment
 
 
 @student_bp.route("/courses/<course_id>/enroll", methods=["POST"])
@@ -207,7 +210,8 @@ def student_enroll_course(course_id: str) -> tuple[Response, int] | Response:
 
     enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
     db.session.commit()
-    return jsonify(_serialize_enrollment(enrollment)), 201
+    status_code = 201 if getattr(enrollment, "_is_new", False) else 200
+    return jsonify(_serialize_enrollment(enrollment)), status_code
 
 
 @student_bp.route("/courses/<course_id>/leave", methods=["POST"])

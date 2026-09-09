@@ -264,15 +264,22 @@ def enroll_student(
 
     if existing_enrollment is not None:
         if existing_enrollment.status == "ACTIVE":
-            raise EnrollmentStateViolationError("Student is already enrolled in this course.")
-        if existing_enrollment.status in ("LEFT", "DETAIL_PURGED", "COMPLETED"):
-            # Re-enrollment flow reuses the existing Enrollment record
-            return re_enroll_student(
+            # Native idempotency: already enrolled, return current enrollment safely
+            existing_enrollment._is_new = False
+            return existing_enrollment
+
+        re_enroll_statuses = ("LEFT", "DETAIL_PURGED", "COMPLETED", "RETENTION_PENDING")
+        if existing_enrollment.status in re_enroll_statuses:
+            # Seamless re-enrollment flow reuses the existing Enrollment record
+            reenrolled = re_enroll_student(
                 actor=actor,
                 course_id=course.id,
                 student_id=target_student.id,
                 session=sess,
             )
+            reenrolled._is_new = False
+            return reenrolled
+
         raise EnrollmentStateViolationError(
             f"Cannot enroll student with current enrollment status: {existing_enrollment.status}."
         )
@@ -337,6 +344,7 @@ def enroll_student(
     )
     sess.flush()
 
+    enrollment._is_new = True
     return enrollment
 
 
@@ -388,6 +396,10 @@ def leave_course(
     )
     if enrollment is None:
         raise EnrollmentNotFoundError("Enrollment record not found for this course.")
+
+    if enrollment.status == "LEFT":
+        # Native idempotency: already left, return current record safely
+        return enrollment
 
     if enrollment.status != "ACTIVE":
         raise EnrollmentStateViolationError(
@@ -489,7 +501,14 @@ def re_enroll_student(
         )
 
     if enrollment.status == "ACTIVE":
-        raise EnrollmentStateViolationError("Student is already actively enrolled in this course.")
+        # Native idempotency: already active, return current record safely
+        return enrollment
+
+    re_enroll_statuses = ("LEFT", "DETAIL_PURGED", "COMPLETED", "RETENTION_PENDING")
+    if enrollment.status not in re_enroll_statuses:
+        raise EnrollmentStateViolationError(
+            f"Cannot re-enroll student with current enrollment status: '{enrollment.status}'."
+        )
 
     # 5. Re-evaluate prerequisites
     is_eligible, missing_titles = check_prerequisites_met(
@@ -548,6 +567,9 @@ def re_enroll_student(
     enrollment.current_period_id = new_period.id
     enrollment.current_progress_percent = 0
     enrollment.updated_at = now
+
+    if locked_course.first_student_enrolled_at is None:
+        locked_course.first_student_enrolled_at = now
 
     # 10. Record append-only event
     _record_enrollment_event(

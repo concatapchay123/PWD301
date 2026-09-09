@@ -336,6 +336,7 @@ def _serialize_enrolled_student(e: Enrollment) -> dict[str, Any]:
         "student_name": e.student.display_name if e.student else None,
         "student_email": e.student.email if e.student else None,
         "status": e.status,
+        "period_no": e.current_period.period_no if e.current_period else None,
         "current_progress_percent": float(e.current_progress_percent),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,

@@ -470,6 +470,9 @@ class Enrollment(Base):
 
     __tablename__ = "enrollments"
 
+    # Transient runtime flag indicating initial creation (not mapped to database)
+    _is_new: bool = False
+
     id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
     public_id = db.Column(
         GUID,
