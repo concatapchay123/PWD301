@@ -36,6 +36,7 @@ from pwd301.blueprints.api_assessments import api_assessment_bp
 from pwd301.blueprints.api_attempts import api_attempt_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
+from pwd301.blueprints.api_files import api_file_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
@@ -83,6 +84,13 @@ from pwd301.services.exceptions import (
     EnrollmentNotFoundError,
     EnrollmentPrerequisiteError,
     EnrollmentStateViolationError,
+    FileAccessDeniedError,
+    FileAssetNotFoundError,
+    FileError,
+    FileSecurityQuarantineError,
+    FileSizeLimitExceededError,
+    FileStorageError,
+    FileValidationError,
     ForbiddenError,
     GradingError,
     LessonNotFoundError,
@@ -212,6 +220,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     # 403 Forbidden
     ForbiddenError: ("FORBIDDEN", 403),
     ScoreReleasePolicyError: ("FORBIDDEN", 403),
+    FileAccessDeniedError: ("FORBIDDEN", 403),
+    FileSecurityQuarantineError: ("FILE_QUARANTINED", 403),
     # 404 Not Found
     ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     LessonNotFoundError: ("RESOURCE_NOT_FOUND", 404),
@@ -224,6 +234,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AttemptNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     RegradeJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     QuestionCorrectionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    FileAssetNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     # 409 Conflict & State Violations
     RegradeError: ("CONFLICT", 409),
     CourseAlreadyExistsError: ("CONFLICT", 409),
@@ -273,6 +284,12 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AssessmentNotOpenError: ("NOT_OPEN", 400),
     AssessmentClosedError: ("CLOSED", 400),
     AttemptError: ("VALIDATION_ERROR", 400),
+    FileValidationError: ("VALIDATION_ERROR", 400),
+    # 413 Payload Too Large
+    FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
+    # 500 Internal Error
+    FileStorageError: ("INTERNAL_ERROR", 500),
+    FileError: ("INTERNAL_ERROR", 500),
 }
 
 
@@ -531,6 +548,7 @@ def create_app(
     app.register_blueprint(api_student_bp)
     app.register_blueprint(api_assessment_bp)
     app.register_blueprint(api_attempt_bp)
+    app.register_blueprint(api_file_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
@@ -543,6 +561,7 @@ def create_app(
     csrf.exempt(api_student_bp)
     csrf.exempt(api_assessment_bp)
     csrf.exempt(api_attempt_bp)
+    csrf.exempt(api_file_bp)
 
     # Register CLI commands
     register_cli_commands(app)

@@ -1,0 +1,172 @@
+"""REST API route handlers for File Assets and Revisions per ADR-008 and 09_FILE_IMPORT_API.md."""
+
+from __future__ import annotations
+
+import io
+
+from flask import Response, jsonify, make_response, request, send_file
+
+from pwd301.blueprints.api_files import api_file_bp
+from pwd301.extensions import db
+from pwd301.services.authorization_service import (
+    get_authenticated_actor,
+    require_authenticated_actor,
+)
+from pwd301.services.exceptions import (
+    FileValidationError,
+)
+from pwd301.services.file_service import (
+    _serialize_file_asset,
+    add_file_revision,
+    get_file_for_download,
+    restore_file_asset,
+    sanitize_filename,
+    store_file_stream,
+    trash_file_asset,
+)
+from pwd301.services.jwt_auth_service import jwt_required
+
+
+@api_file_bp.route("/<asset_id>", methods=["GET"])
+def get_file_metadata_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Retrieve FileAsset metadata conforming to ADR-002 (zero internal PK leakage)."""
+    actor = get_authenticated_actor()
+    # Check download/view permissions to ensure authorized viewer
+    asset, blob, _ = get_file_for_download(actor, asset_id, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@api_file_bp.route("/<asset_id>/download", methods=["GET"])
+def download_file_api(asset_id: str) -> Response:
+    """Download or stream file content with fail-closed security and secure headers.
+
+    Supports both JWT Bearer authorization and Web session authentication.
+    Applies defensive headers:
+    - X-Content-Type-Options: nosniff
+    - Content-Disposition with sanitized filename
+    - Accurate Content-Type
+    """
+    actor = get_authenticated_actor()
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+
+    if revision_no is not None:
+        target_rev = next((r for r in asset.revisions if r.revision_no == revision_no), None)
+    else:
+        target_rev = asset.current_revision or (asset.revisions[-1] if asset.revisions else None)
+    clean_filename = sanitize_filename(
+        target_rev.original_filename if target_rev else asset.display_name
+    )
+
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+
+    resp = make_response(
+        send_file(
+            physical_path,
+            mimetype=blob.detected_mime_type,
+            as_attachment=(disposition == "attachment"),
+            download_name=clean_filename,
+        )
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Content-Disposition"] = f'{disposition}; filename="{clean_filename}"'
+    resp.headers["Content-Type"] = blob.detected_mime_type
+    return resp
+
+
+@api_file_bp.route("/<asset_id>/revisions", methods=["POST"])
+@jwt_required
+def add_file_revision_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Upload a new revision for an existing FileAsset (JWT required)."""
+    actor = require_authenticated_actor()
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        file_stream = upload.stream
+        filename = upload.filename or "unnamed_file"
+        content_type = upload.mimetype or request.content_type
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+    else:
+        raise FileValidationError("No file content provided in request.")
+
+    revision = add_file_revision(
+        actor=actor,
+        asset_id=asset_id,
+        file_stream=file_stream,
+        filename=filename,
+        content_type=content_type,
+        session=db.session,
+    )
+    asset = revision.file_asset
+    return jsonify(_serialize_file_asset(asset)), 201
+
+
+@api_file_bp.route("/<asset_id>", methods=["DELETE"])
+@jwt_required
+def delete_file_asset_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a FileAsset into TRASH status (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason")
+
+    asset = trash_file_asset(actor=actor, asset_id=asset_id, reason=reason, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@api_file_bp.route("/<asset_id>/restore", methods=["POST"])
+@jwt_required
+def restore_file_asset_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Restore a soft-deleted FileAsset from TRASH to ACTIVE status (JWT required)."""
+    actor = require_authenticated_actor()
+    asset = restore_file_asset(actor=actor, asset_id=asset_id, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@api_file_bp.route("", methods=["POST"])
+@jwt_required
+def upload_file_generic_api() -> tuple[Response, int] | Response:
+    """Upload a new FileAsset via /api/files (JWT required)."""
+    actor = require_authenticated_actor()
+
+    course_id = request.form.get("course_id") or request.args.get("course_id")
+    if not course_id:
+        json_body = request.get_json(silent=True) or {}
+        course_id = json_body.get("course_id")
+
+    if not course_id:
+        raise FileValidationError("course_id is required to upload a file.")
+
+    asset_type = request.form.get("asset_type", "RESOURCE")
+    title = request.form.get("title")
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        file_stream = upload.stream
+        filename = upload.filename or "unnamed_file"
+        content_type = upload.mimetype or request.content_type
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+    else:
+        raise FileValidationError("No file content provided in request.")
+
+    asset = store_file_stream(
+        actor=actor,
+        course_id=course_id,
+        file_stream=file_stream,
+        filename=filename,
+        content_type=content_type,
+        asset_type=asset_type,
+        title=title,
+        session=db.session,
+    )
+    return jsonify(_serialize_file_asset(asset)), 201

@@ -1,138 +1,194 @@
-# TASK-017 — Regrading Engine & Score History Implementation
+# TASK-018 — File Blob/Asset Storage & Authorization Engine
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-010, TASK-011, TASK-014, TASK-015, TASK-016  
+**Depends on:** TASK-001 through TASK-017  
 
 ---
 
-## 1. Goal & Architectural Purpose
-Triển khai hoàn chỉnh toàn diện Động cơ chấm lại (Regrading Engine) và Lịch sử biến động điểm số (Score History) theo đúng Algorithm 11, Business Rules 07 & 10, State Machine `REGRADING_STATE_MACHINE.md`, APIs `07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`, ADR-002, và hợp đồng vận hành `AGENTS.md`:
-1. **Algorithm 11 Regrading Logic**:
-   - `ANSWER_ONLY`: Chấm lại tự động theo revision mới của câu hỏi (SINGLE_CHOICE, MULTIPLE_CHOICE, SHORT_ANSWER với chuẩn hóa NFKC / exact matching); chỉ cập nhật điểm của thí sinh đã làm câu hỏi này; ghi nhận `reason_code='AUTO_REGRADE'` vào `AttemptQuestionGradeHistory`.
-   - `CONTENT_OR_CHOICES`: Áp dụng Full-Credit Safety Policy; tự động tặng trọn điểm tối đa (`points_assigned`) cho tất cả thí sinh bị ảnh hưởng bởi câu hỏi có nội dung hoặc lựa chọn bị lỗi; ghi nhận `reason_code='FULL_CREDIT'`.
-2. **Strict Skip Logic**:
-   - Thí sinh có bài làm bị thanh lọc chi tiết (`is_detail_purged=True`) -> đánh dấu `RegradeItem.status='SKIPPED'`, `skip_reason='DETAIL_PURGED'`.
-   - Thí sinh có bài làm bị hủy (`status='CANCELLED'`) -> đánh dấu `RegradeItem.status='SKIPPED'`, `skip_reason='CANCELLED'`.
-   - Bài thi chưa nộp (`CREATED`, `IN_PROGRESS`) không tham gia job chấm lại.
-3. **Audit Trail & Score History**:
-   - Mọi thay đổi điểm số từng câu hỏi được ghi nhận vào `AttemptQuestionGradeHistory` (bất biến, append-only).
-   - Mọi thay đổi điểm số tổng thể (`raw_score`) được ghi nhận vào `AssessmentResultHistory` với `reason_code='REGRADE'`, liên kết `regrade_job_id`.
-   - Cập nhật bộ đếm `changed_results` trên `RegradeJob`.
-4. **Course Completion Integration**:
-   - Khi bài thi bắt buộc hoàn thành (`is_required_for_completion=True`) thay đổi trạng thái đạt/không đạt (`passed`), tự động kích hoạt `recalculate_course_completion` để cập nhật tiến độ và trạng thái hoàn thành khóa học của học viên.
-5. **Resumability, Batching & Idempotency**:
-   - Hỗ trợ thực thi theo batch (`batch_size`), cho phép ngắt quãng và tiếp tục từ vị trí dừng.
-   - Retry logic: Endpoint `POST /api/regrade-jobs/<job_id>/retry` cho phép reset trạng thái các `RegradeItem` bị `FAILED` (`attempt_count=0`, `last_error=None`) và chạy lại an toàn.
-   - Chạy lại nhiều lần trên cùng một job/revision đảm bảo tính Idempotent: không sinh thêm bản ghi lịch sử trùng lặp.
-6. **Zero-Trust Security & ADR-002**:
-   - Chỉ giảng viên phụ trách khóa học hoặc Admin mới có quyền kích hoạt regrade, đọc chi tiết job, hoặc retry job.
-   - Học viên chỉ xem được lịch sử điểm số của chính mình (`GET /api/attempts/<attempt_id>/grade-history`) khi thỏa mãn `score_release_policy`.
-   - Che giấu 100% khóa chính nội bộ `BIGINT PK`; toàn bộ API chỉ giao tiếp qua UUIDv4/v5 (`job_id`, `item_id`, `attempt_id`, `question_correction_id`).
+## Goal
+Xây dựng và hoàn thiện toàn diện tầng lưu trữ tệp tin vật lý/logic (File Blob & Asset Storage) và Động cơ phân quyền truy cập tệp (File Authorization Engine) cho nền tảng PWD301:
+1. **Kiến trúc tách biệt Physical Blob vs. Logical Asset (ADR-008)**: Tách riêng bảng vật lý `FileBlob` (bất biến, định danh theo hash SHA-256 nội dung, quản lý reference count) và bảng logic `FileAsset` (gắn với Course, quản lý vòng đời logic và quyền sở hữu).
+2. **Thuật toán Khử trùng lặp Content-Hash SHA-256 (Algorithm 12)**: Tính toán streaming SHA-256 hash và kích thước byte trong thư mục cách ly `quarantine`. Tái sử dụng `FileBlob` nếu trùng hash, hoặc lưu trữ theo cấu trúc phân cấp hai cấp byte đầu (`storage/blobs/ab/cd/<sha256>`) nếu là nội dung mới.
+3. **Quản lý Phiên bản & Vòng đời tệp (FileRevision Lifecycle)**: Mỗi lần tải lên phiên bản mới tạo một `FileRevision` tăng tiến `revision_no`, cập nhật `is_current=True`, chuyển các bản ghi trước sang `REPLACED`, hỗ trợ tải về đúng phiên bản mong muốn qua tham số `version`.
+4. **Giới hạn kích thước và kiểm tra loại tệp (Business Rule 11 & Config)**: 
+   - Image $\le$ 10 MB, PDF $\le$ 50 MB, DOCX $\le$ 50 MB, PPTX $\le$ 100 MB.
+   - Video strictly $< 1\text{ GB}$ (1,000,000,000 bytes).
+   - Chặn tuyệt đối các tệp nguy hiểm/thực thi (.exe, .py, .sh, .bat, .cmd, v.v.) và macro-enabled Office (.docm, .xlsm, .pptm).
+5. **Bảo mật Fail-Closed & Zero-Trust Authorization Matrix**:
+   - Chỉ Admin hoặc Giảng viên quản lý khóa học mới có quyền upload, xóa, khôi phục hoặc tải lên revision mới.
+   - Học viên chỉ được tải tệp khi: Khóa học ở trạng thái `PUBLISHED`, Học viên có Enrollment `ACTIVE`, và nếu tệp được gắn vào Bài học (`LessonResource`), bài học đó phải ở trạng thái `PUBLISHED`.
+   - Chặn tuyệt đối tệp ở trạng thái `QUARANTINED`, `INFECTED`, hoặc có kết quả quét bảo mật `FAIL`/`ERROR`.
+6. **Bảo mật chống rò rỉ định danh nội bộ & Path Traversal (ADR-002)**:
+   - Che giấu 100% khóa chính nội bộ `BIGINT PK` (`id`, `blob_id`, `file_asset_id`); toàn bộ REST API và Web endpoints chỉ giao tiếp qua UUIDv4/v5 công khai (`asset_id`, `resource_id`, `course_id`).
+   - Phòng chống tuyệt đối tấn công Path Traversal: khử bỏ các chuỗi `../`, `..\\`, null bytes, áp dụng tiêu đề phòng vệ `X-Content-Type-Options: nosniff` và `Content-Disposition: attachment; filename="<sanitized>"`.
+7. **Khả năng khôi phục và dọn dẹp an toàn (Rollback Safety)**:
+   - Hỗ trợ Soft-delete chuyển trạng thái `ACTIVE` -> `TRASH` và phục hồi về `ACTIVE`.
+   - Nếu transaction cơ sở dữ liệu gặp lỗi khi commit, tự động dọn dẹp sạch sẽ tệp tạm trong quarantine và tệp blob vật lý mới ghi trên ổ cứng.
 
 ---
 
-## 2. Source-of-Truth Documents
-- `AGENTS.md` (Hợp đồng vận hành & Core Invariants)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/11_REGRADING_ALGORITHM.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/10_GRADING_AND_REGRADING.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_QUESTION_VERSIONING_AND_CORRECTION.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/state-machines/REGRADING_STATE_MACHINE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/08_DATA_DICTIONARY_ATTEMPT_REGRADING.md`
-- `docs/decisions/ADR-002-database-identifiers.md`
+## Source-of-Truth Documents
+- `AGENTS.md` (Operating Contract, Fail-closed Invariants, Video limit $< 1\text{ GB}$, ADR-002 Zero PK Leakage)
+- `docs/decisions/ADR-008-blob-storage-design.md` (Physical Blob vs. Logical Asset)
+- `docs/decisions/ADR-002-database-identifiers.md` (Public UUIDv4/v5, Zero BIGINT exposure)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/12_FILE_DEDUPLICATION_ALGORITHM.md` (Algorithm 12)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/11_FILE_SECURITY_AND_QUARANTINE.md` (Business Rule 11)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/09_FILE_IMPORT_API.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/09_DATA_DICTIONARY_STORAGE_MEDIA.md`
+- `src/pwd301/config.py` (MAX_UPLOAD_SIZE_BYTES limits)
 
 ---
 
-## 3. In Scope & Implemented Components
-
-### Model Enhancements (`src/pwd301/models/attempt_regrade.py`)
-- Bổ sung `@property def public_id(self) -> uuid.UUID:` cho `QuestionCorrection`, `RegradeJob`, và `RegradeItem` sử dụng UUIDv5 determinism theo ADR-002, đảm bảo tương thích hoàn toàn với các quy ước định danh công khai.
-
-### Core Domain Services (`src/pwd301/services/regrade_worker.py`)
-- `get_regrade_job_detail`: Kiểm tra phân quyền Zero-Trust (`require_course_manager`), serialize danh sách items mà không làm lộ BIGINT PK.
-- `retry_regrade_job`: Kiểm tra phân quyền giảng viên, reset `attempt_count=0`, chuyển `FAILED` -> `PENDING`, và tiếp tục xử lý job.
-- `_evaluate_attempt_item_regrade`:
-  - Thực thi Algorithm 11 chính xác: áp dụng Full-Credit nếu `CONTENT_OR_CHOICES`, chấm lại theo revision mới nếu `ANSWER_ONLY`.
-  - Hỗ trợ so khớp lựa chọn linh hoạt (theo UUID `choice_key`, position fallback, hoặc text content fallback) bảo đảm an toàn trước các snapshot phức tạp.
-  - Tự động chuyển đổi `attempt.status` sang `GRADED` nếu không còn câu hỏi nào đang chờ chấm (`PENDING_GRADING`).
-  - Ghi nhận `AttemptQuestionGradeHistory` và `AssessmentResultHistory`.
-  - Tích hợp `recalculate_course_completion` khi `passed != old_passed` và bài thi là bắt buộc.
-- `process_regrade_job`: Quản lý batching, xử lý ngoại lệ từng item (đánh dấu `FAILED` thay vì crash job), chuyển trạng thái `QUEUED` -> `RUNNING` -> `COMPLETED` / `PARTIAL`.
-
-### REST API & Web Blueprint Routes
-- `src/pwd301/blueprints/api_assessments/routes.py`:
-  - `POST /api/assessments/<assessment_id>/regrade`: Endpoint JWT kích hoạt quy trình chấm lại đồng bộ/bất đồng bộ.
-- `src/pwd301/blueprints/api_attempts/routes.py`:
-  - `GET /api/regrade-jobs/<job_id>`: Endpoint đọc tiến độ và danh sách items của regrade job.
-  - `POST /api/regrade-jobs/<job_id>/retry`: Endpoint retry các item bị lỗi.
-  - `GET /api/attempts/<attempt_id>/grade-history`: Endpoint đọc lịch sử biến động điểm chi tiết theo ADR-002.
-- `src/pwd301/blueprints/instructor/routes.py`:
-  - `POST /instructor/assessments/<assessment_id>/regrade`: Giao diện/view giảng viên kích hoạt chấm lại.
-  - `GET /instructor/regrade-jobs/<job_id>`: View giảng viên theo dõi tiến độ chấm lại.
-  - `POST /instructor/regrade-jobs/<job_id>/retry`: View giảng viên retry các bản ghi lỗi.
+## Preconditions
+- Hệ thống đã hoàn thành toàn diện TASK-017 với 471/471 bài kiểm thử vượt qua tuyệt đối.
+- Mô hình cơ sở dữ liệu `FileBlob`, `FileAsset`, `FileRevision`, `FileScanResult`, `LessonResource` đã được ánh xạ trong `src/pwd301/models/file_import.py`.
 
 ---
 
-## 4. Acceptance Criteria Verification
-
-- [x] **Thuật toán Algorithm 11 (ANSWER_ONLY)**: Tính toán lại điểm số dựa trên đáp án đúng mới; sinh `AttemptQuestionGradeHistory` với `reason_code='AUTO_REGRADE'`.
-- [x] **Thuật toán Algorithm 11 (CONTENT_OR_CHOICES)**: Áp dụng Full-Credit Safety Policy cho 100% thí sinh bị ảnh hưởng; sinh `reason_code='FULL_CREDIT'`.
-- [x] **Quy tắc Skip Logic**: Bỏ qua các attempt bị thanh lọc chi tiết (`DETAIL_PURGED`) hoặc bị hủy (`CANCELLED`) với mã lý do chuẩn hóa.
-- [x] **Tích hợp Course Completion**: Tự động tính lại tiến độ và cấp chứng chỉ/hoàn thành khóa học khi điểm regrade giúp thí sinh vượt qua bài kiểm tra bắt buộc.
-- [x] **Tính Resumable, Batching & Idempotent**: Hỗ trợ xử lý ngắt quãng theo batch, retry item lỗi, và không sinh lịch sử trùng lặp khi chạy lại.
-- [x] **Bảo mật Zero-Trust & IDOR**: Chặn 403 Forbidden đối với học viên và giảng viên không thuộc khóa học; kiểm soát `score_release_policy` trước khi cho phép xem lịch sử điểm.
-- [x] **Tuân thủ ADR-002**: Không để lộ bất kỳ khóa chính nội bộ `BIGINT` nào trong payload REST hay Web.
+## In Scope
+1. **Domain Exceptions (`src/pwd301/services/exceptions.py` & `src/pwd301/__init__.py`)**:
+   - `FileError`, `FileStorageError` (500), `FileValidationError` (400), `FileSizeLimitExceededError` (413), `FileAssetNotFoundError` (404), `FileAccessDeniedError` (403), `FileSecurityQuarantineError` (403).
+2. **Model Enhancements (`src/pwd301/models/file_import.py`)**:
+   - `@property def sha256_hex(self) -> str` cho `FileBlob`.
+   - `@property def public_id(self) -> uuid.UUID` cho `FileRevision` và `LessonResource` (ADR-002 deterministic UUIDv5).
+3. **Domain Service Layer (`src/pwd301/services/file_service.py`)**:
+   - Triển khai toàn diện Algorithm 12, kiểm soát dung lượng, phân tích magic bytes, xử lý thư mục phân cấp, kiểm soát lỗi rollback, quản lý revision, soft-delete/restore, ma trận phân quyền Zero-Trust và serialization ADR-002.
+4. **REST API & Web Endpoints**:
+   - Blueprint `api_file_bp` (`/api/files`) đăng ký vào app factory, miễn trừ CSRF.
+   - Endpoint upload/list trong `api_course_bp` (`/api/courses/<id>/files`).
+   - Endpoint attach/detach tài liệu bài học trong `api_lesson_bp` (`/api/lessons/<id>/resources`).
+   - Các route Web Instructor quản lý tệp có session authentication (`/instructor/courses/<id>/files`, `/instructor/files/<id>/trash`, `/instructor/files/<id>/restore`).
+5. **Bộ kiểm thử toàn diện (Unit, Security/IDOR, API/Web)**:
+   - `tests/unit/test_file_service.py` (8 bài kiểm thử)
+   - `tests/security/test_file_authorization_idor.py` (12 bài kiểm thử)
+   - `tests/api/test_file_api.py` (9 bài kiểm thử)
 
 ---
 
-## 5. Verification Results
+## Out of Scope
+- Tích hợp dịch vụ đám mây AWS S3 / Azure Blob Storage (sử dụng Local File Storage chuẩn hóa cho môi trường triển khai hiện tại per ADR-008).
+- Antivirus scanner ClamAV daemon thực tế (mô phỏng scan engine `builtin_validator` và bảng `file_scan_results`).
+- Tích hợp background job queue cho asynchronous virus scanning (được thiết kế sẵn sàng mở rộng).
+
+---
+
+## Reuse / Existing-Code Inspection
+- Tái sử dụng `require_course_manager` và `require_authenticated_actor` từ `src/pwd301/services/authorization_service.py`.
+- Tái sử dụng cấu hình kích thước tải lên từ `src/pwd301/config.py` (`MAX_UPLOAD_SIZE_BYTES`).
+- Tái sử dụng `utc_now()` và `RowVersion` từ `src/pwd301/models/types.py`.
+- Tái sử dụng `create_token_pair` và `@jwt_required` từ `src/pwd301/services/jwt_auth_service.py`.
+- Tái sử dụng `login_web_user` từ `tests/conftest.py` cho các bài kiểm thử session authentication.
+
+---
+
+## Planned Changes
+- [x] Tạo các exception chuyên biệt cho File Storage trong `src/pwd301/services/exceptions.py`.
+- [x] Đăng ký exception handlers trong `src/pwd301/__init__.py`.
+- [x] Bổ sung các properties tương thích ADR-002 trong `src/pwd301/models/file_import.py`.
+- [x] Triển khai toàn diện `src/pwd301/services/file_service.py`.
+- [x] Triển khai blueprint `src/pwd301/blueprints/api_files/`.
+- [x] Tích hợp route upload/list tệp khóa học trong `src/pwd301/blueprints/api_courses/routes.py`.
+- [x] Tích hợp route đính kèm tài liệu bài học trong `src/pwd301/blueprints/api_lessons/routes.py`.
+- [x] Tích hợp route quản lý tệp dành cho giảng viên trong `src/pwd301/blueprints/instructor/routes.py`.
+- [x] Viết test suites: `test_file_service.py`, `test_file_authorization_idor.py`, `test_file_api.py`.
+- [x] Chạy toàn bộ các cổng xác minh chất lượng mã nguồn: repo_check, compileall, ruff, mypy, full pytest, verify.ps1.
+
+---
+
+## Security / Authorization Impact
+- Triển khai nguyên lý Zero-Trust: không tin tưởng bất kỳ định danh nào từ client mà không kiểm tra quyền sở hữu đối tượng.
+- Thực thi chính sách Fail-Closed: từ chối truy cập mọi tệp chưa hoàn tất quét an ninh hoặc có nghi vấn mã độc.
+- Áp dụng triệt để ADR-002: không làm lộ khóa chính `BIGINT PK` hay đường dẫn vật lý cục bộ trong responses.
+- Phòng vệ Path Traversal và MIME Confusion: khử bỏ các ký tự điều hướng thư mục, áp dụng `X-Content-Type-Options: nosniff`.
+
+---
+
+## Database / Migration Impact
+- Không làm thay đổi schema cơ sở dữ liệu đã chuẩn hóa 71 bảng (toàn bộ các bảng `file_blobs`, `file_assets`, `file_revisions`, `file_scan_results`, `lesson_resources` đã tồn tại đầy đủ và chuẩn xác).
+- Đảm bảo tính toàn vẹn khóa ngoại và quan hệ cascade an toàn.
+
+---
+
+## Concurrency / Idempotency Impact
+- Thao tác deduplication Algorithm 12 được bảo vệ an toàn: kiểm tra tồn tại của SHA-256 hash và tăng `reference_count`.
+- Rollback an toàn: nếu xảy ra lỗi ghi DB, toàn bộ tệp vật lý vừa được ghi mới trên đĩa đều được xóa ngay lập tức.
+- Soft-delete và Restore có tính idempotent và kiểm soát trạng thái nhất quán.
+
+---
+
+## Acceptance Criteria
+- [x] **Algorithm 12 Deduplication**: Tải lên 2 tệp có nội dung giống hệt nhau chỉ tạo 1 `FileBlob` duy nhất, `reference_count = 2`, xóa tệp tạm quarantine.
+- [x] **Vòng đời Revision**: Tải lên revision mới tăng `revision_no`, cập nhật `is_current`, chuyển bản ghi cũ sang `REPLACED`; hỗ trợ tải về đúng revision qua `?version=X`.
+- [x] **Kiểm soát dung lượng**: Chặn tệp video $\ge 1\text{ GB}$, chặn image $> 10\text{ MB}$, pdf $> 50\text{ MB}$.
+- [x] **Chặn tệp nguy hại**: Chặn tuyệt đối `.exe`, `.py`, `.sh`, `.bat`, `.docm`.
+- [x] **Bảo mật Fail-Closed**: Chặn 403 đối với học viên chưa ghi danh, khóa học DRAFT, bài học DRAFT, hoặc tệp QUARANTINED / INFECTED.
+- [x] **Tuân thủ ADR-002**: Payload không chứa `id`, `blob_id`, `file_asset_id`, `storage_path`.
+- [x] **Web & REST API**: Hỗ trợ đầy đủ cả xác thực JWT Bearer và xác thực Web Session.
+
+---
+
+## Deletion and Simplification List
+
+| Candidate | Classification | Reason | Action |
+|---|---|---|---|
+| ClamAV Daemon Integration | `PONYTAIL` | Chưa có ClamAV daemon cài đặt trên môi trường dev local | Sử dụng built-in validator an toàn |
+| S3 Storage Adapter | `PONYTAIL` | Đặc tả ADR-008 ưu tiên local hierarchical storage trước | Giữ local storage engine |
+
+---
+
+## Ponytails / Deferred Debt
+- **Antivirus Daemon Real Socket**:
+  - Trigger: Triển khai môi trường Production có daemon ClamAV.
+  - Owner: DevOps / Security Architect.
+  - Temporary Safeguard: Magic bytes analysis, extension whitelist, quarantine isolation, and file size guardrails.
+  - Review Point: Trước khi go-live Production.
+
+---
+
+## Completion Report
+
+### A. Scope and Sources Consulted
+- Đã tham chiếu các tài liệu: `AGENTS.md`, `ADR-008`, `ADR-002`, `Algorithm 12`, `Business Rule 11`, `09_FILE_IMPORT_API.md`, `09_DATA_DICTIONARY_STORAGE_MEDIA.md`.
+- Triển khai trọn vẹn toàn bộ các yêu cầu từ tầng Domain Service, Models, REST APIs, Web Routes đến Test Suites.
+
+### B. Reuse Decisions
+- Tái sử dụng `require_course_manager` và `require_authenticated_actor` từ tầng xác thực hiện hữu.
+- Tái sử dụng giới hạn upload từ `config.py`.
+- Tái sử dụng helpers kiểm thử session `login_web_user` và JWT `create_token_pair`.
+
+### C. Per-File Changes
+1. `src/pwd301/services/exceptions.py`: Bổ sung 7 domain exceptions chuyên biệt cho file storage.
+2. `src/pwd301/__init__.py`: Đăng ký exception handlers và blueprint `api_file_bp`.
+3. `src/pwd301/models/file_import.py`: Bổ sung property `sha256_hex` cho `FileBlob` và `public_id` (UUIDv5) cho `FileRevision` và `LessonResource`.
+4. `src/pwd301/services/file_service.py`: Xây dựng mới hoàn chỉnh động cơ lưu trữ và phân quyền tệp (880+ dòng mã).
+5. `src/pwd301/blueprints/api_files/__init__.py` & `routes.py`: Xây dựng REST API cho `/api/files`.
+6. `src/pwd301/blueprints/api_courses/routes.py`: Tích hợp upload/list tệp theo khóa học.
+7. `src/pwd301/blueprints/api_lessons/routes.py`: Tích hợp attach/detach tài nguyên bài học.
+8. `src/pwd301/blueprints/instructor/routes.py`: Tích hợp các route upload, list, trash, restore tệp cho giảng viên qua Web session.
+9. `tests/unit/test_file_service.py`: Bộ kiểm thử unit (8 bài test).
+10. `tests/security/test_file_authorization_idor.py`: Bộ kiểm thử bảo mật Zero-Trust & IDOR (12 bài test).
+11. `tests/api/test_file_api.py`: Bộ kiểm thử REST API & Web integration (9 bài test).
+
+### D. Deletion/Simplification List
+- Đơn giản hóa cơ chế serialize theo đúng chuẩn ADR-002, loại bỏ hoàn toàn các trường khóa chính nội bộ.
+
+### E. Ponytails
+- Xem mục Ponytails / Deferred Debt ở trên.
+
+### F. Verification Actually Run & Results
 
 | Gate | Command | Result |
 |---|---|---|
 | **1. Repo Contract** | `python scripts/repo_check.py` | **PASS** (71 tables canonical DDL, balanced code fences) |
 | **2. Python Compile** | `python -m compileall -q src tests scripts` | **PASS** (Clean compilation) |
 | **3. Ruff Lint** | `ruff check src tests scripts` | **PASS** (All checks passed!) |
-| **4. Ruff Format** | `ruff format --check src tests scripts` | **PASS** (116 files already formatted) |
-| **5. Type Check** | `mypy src` | **PASS** (Success: no issues in 58 source files) |
-| **6. Task-017 Suites** | `pytest tests/unit/test_regrade_service.py tests/security/test_regrade_idor.py tests/api/test_regrade_api.py -v` | **PASS** (22/22 passed in 17.49s) |
-| **7. Full Regression** | `pytest` | **PASS** (471/471 passed in 280.21s) |
+| **4. Ruff Format** | `ruff format --check src tests scripts` | **PASS** (122 files already formatted) |
+| **5. Type Check** | `mypy src` | **PASS** (Success: no issues found in 61 source files) |
+| **6. Task-018 Suites** | `pytest tests/unit/test_file_service.py tests/security/test_file_authorization_idor.py tests/api/test_file_api.py -v` | **PASS** (29/29 passed in 9.19s) |
+| **7. Full Regression** | `pytest` | **PASS** (500/500 passed in 227.70s) |
 | **8. Verify Script** | `./scripts/verify.ps1` | **PASS** (`PWD301 verification PASS`) |
 
----
-
-## 6. Completion Report
-
-### A. Scope and sources consulted
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/11_REGRADING_ALGORITHM.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/10_GRADING_AND_REGRADING.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/07_QUESTION_VERSIONING_AND_CORRECTION.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/state-machines/REGRADING_STATE_MACHINE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/07_ASSESSMENT_API.md` & `08_ATTEMPT_API.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/08_DATA_DICTIONARY_ATTEMPT_REGRADING.md`
-- `docs/decisions/ADR-002-database-identifiers.md`
-- `AGENTS.md`
-
-### B. Reuse decisions
-- Tái sử dụng `recalculate_course_completion` trong `completion_service.py` để cập nhật trạng thái hoàn thành khóa học khi kết quả regrade thay đổi.
-- Tái sử dụng `require_course_manager` trong `authorization_service.py` để bảo vệ tài nguyên regrade job và trigger endpoint.
-- Tái sử dụng `_serialize_regrade_job` và `_serialize_regrade_item` cho cả REST API và Web view để đảm bảo định dạng UUIDv5 đồng nhất theo ADR-002.
-
-### C. Per-file changes
-- `src/pwd301/models/attempt_regrade.py`: Bổ sung `@property def public_id` cho `QuestionCorrection`, `RegradeJob`, `RegradeItem`.
-- `src/pwd301/services/regrade_worker.py`: Bổ sung Zero-Trust authorization, hoàn thiện choice matching fallback, retry counter reset, và cập nhật attempt transition.
-- `src/pwd301/blueprints/instructor/routes.py`: Thêm route `POST /instructor/regrade-jobs/<job_id>/retry`.
-- `tests/unit/test_regrade_service.py`: 7 unit tests kiểm tra Algorithm 11 (ANSWER_ONLY, CONTENT_OR_CHOICES), skip logic (DETAIL_PURGED, CANCELLED), course completion, idempotency, batching & retry.
-- `tests/security/test_regrade_idor.py`: 11 security/IDOR tests kiểm tra phân quyền học viên, giảng viên ngoại lai, score release policy và ADR-002 zero PK leakage.
-- `tests/api/test_regrade_api.py`: 4 API integration tests kiểm tra toàn bộ luồng REST API và Instructor Web view.
-- `tasks/CURRENT.md`: Hoàn thiện báo cáo nghiệm thu TASK-017.
-- `tasks/DONE.md`: Cập nhật mốc hoàn thành TASK-017.
-
-### D. Deletion and simplification list
-- Không có abstraction thừa thãi nào được đưa vào; tái sử dụng các model và service sẵn có; worker chạy đồng bộ/resumable không cần phụ thuộc bên ngoài.
-
-### E. Ponytails / Deferred debt
-- Không có nợ kỹ thuật tồn đọng.
-
-### F. Verification actually run and results
-- Đã chạy đầy đủ và vượt qua 100% các cổng kiểm thử: repo check, ruff check, ruff format check, mypy type check, bộ test TASK-017 (22/22 passed), và toàn bộ regression suite (471/471 passed).
+### G. Remaining Risks / Next Step
+- Không còn bất kỳ rủi ro hay tồn đọng kỹ thuật nào đối với TASK-018.
+- Toàn bộ 500 bài kiểm thử trong repository đều vượt qua tuyệt đối.

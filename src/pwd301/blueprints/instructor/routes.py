@@ -1010,3 +1010,78 @@ def retry_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Re
     actor = require_authenticated_actor()
     result = retry_regrade_job(job_id, actor=actor, session=db.session)
     return jsonify(result), 200
+
+
+@instructor_bp.route("/courses/<course_id>/files", methods=["POST"])
+@instructor_required
+def instructor_upload_course_file(course_id: str) -> tuple[Response, int] | Response:
+    """Upload a new FileAsset for a managed course from Instructor Web portal."""
+    import io
+
+    from pwd301.services.exceptions import FileValidationError
+    from pwd301.services.file_service import _serialize_file_asset, store_file_stream
+
+    actor = require_authenticated_actor()
+    asset_type = request.form.get("asset_type", "RESOURCE")
+    title = request.form.get("title")
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        file_stream = upload.stream
+        filename = upload.filename or "unnamed_file"
+        content_type = upload.mimetype or request.content_type
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+    else:
+        raise FileValidationError("No file content provided in request.")
+
+    asset = store_file_stream(
+        actor=actor,
+        course_id=course_id,
+        file_stream=file_stream,
+        filename=filename,
+        content_type=content_type,
+        asset_type=asset_type,
+        title=title,
+        session=db.session,
+    )
+    return jsonify(_serialize_file_asset(asset)), 201
+
+
+@instructor_bp.route("/courses/<course_id>/files", methods=["GET"])
+@instructor_required
+def instructor_list_course_files(course_id: str) -> tuple[Response, int] | Response:
+    """List FileAssets belonging to a course for Instructor Web portal."""
+    from pwd301.services.file_service import _serialize_file_asset, list_course_files
+
+    actor = require_authenticated_actor()
+    status = request.args.get("status", "ACTIVE")
+    files = list_course_files(actor=actor, course_id=course_id, status=status, session=db.session)
+    return jsonify({"items": [_serialize_file_asset(f) for f in files]}), 200
+
+
+@instructor_bp.route("/files/<asset_id>", methods=["DELETE"])
+@instructor_bp.route("/files/<asset_id>/trash", methods=["POST"])
+@instructor_required
+def instructor_trash_file(asset_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a course file asset from Instructor Web portal."""
+    from pwd301.services.file_service import _serialize_file_asset, trash_file_asset
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+    asset = trash_file_asset(actor=actor, asset_id=asset_id, reason=reason, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@instructor_bp.route("/files/<asset_id>/restore", methods=["POST"])
+@instructor_required
+def instructor_restore_file(asset_id: str) -> tuple[Response, int] | Response:
+    """Restore a soft-deleted course file asset from Instructor Web portal."""
+    from pwd301.services.file_service import _serialize_file_asset, restore_file_asset
+
+    actor = require_authenticated_actor()
+    asset = restore_file_asset(actor=actor, asset_id=asset_id, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200

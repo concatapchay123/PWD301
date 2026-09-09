@@ -355,3 +355,31 @@ class RegradeJobNotFoundError(ResourceNotFoundError, RegradeError):
 
 class QuestionCorrectionNotFoundError(ResourceNotFoundError, RegradeError):
     """Raised when a requested QuestionCorrection cannot be found."""
+
+
+class FileError(ServiceError):
+    """Base exception for all file domain errors."""
+
+
+class FileStorageError(FileError):
+    """Raised when an underlying physical file storage I/O operation fails."""
+
+
+class FileValidationError(ValidationError, FileError):
+    """Raised when an uploaded file fails validation (format, dangerous extension, invalid MIME)."""
+
+
+class FileSizeLimitExceededError(ValidationError, FileError):
+    """Raised when an uploaded file exceeds the configured size limit (e.g. video >= 1 GB)."""
+
+
+class FileAssetNotFoundError(ResourceNotFoundError, FileError):
+    """Raised when a requested logical file asset cannot be found."""
+
+
+class FileAccessDeniedError(ForbiddenError, FileError):
+    """Raised when an actor is denied access to a file asset or physical blob."""
+
+
+class FileSecurityQuarantineError(ForbiddenError, FileError):
+    """Raised when accessing a quarantined, rejected, or infected file asset/blob."""

@@ -203,4 +203,26 @@
   - `python -m pytest`: PASS (471/471 passed in 280.21s)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
 
-
+## TASK-018 — File Blob/Asset Storage & Authorization Engine
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (Added 7 domain exceptions for File Storage and Security)
+  - `src/pwd301/__init__.py` (Registered exception handlers and `api_file_bp` with CSRF exemption)
+  - `src/pwd301/models/file_import.py` (Added `sha256_hex` property on `FileBlob`, `public_id` UUIDv5 property on `FileRevision` and `LessonResource`)
+  - `src/pwd301/services/file_service.py` (Full implementation of Algorithm 12 deduplication, size limits, dangerous extension checks, magic byte detection, revision lifecycle, soft delete/restore, Zero-Trust authorization, and ADR-002 serialization)
+  - `src/pwd301/blueprints/api_files/` (`__init__.py`, `routes.py`: REST endpoints for metadata, versioned download, revisions, soft-delete/restore, generic upload)
+  - `src/pwd301/blueprints/api_courses/routes.py` (`POST /api/courses/<id>/files`, `GET /api/courses/<id>/files`)
+  - `src/pwd301/blueprints/api_lessons/routes.py` (`POST /api/lessons/<id>/resources`, `DELETE /api/lessons/<id>/resources/<resource_id>`)
+  - `src/pwd301/blueprints/instructor/routes.py` (Web session endpoints for course files list, upload, trash, and restore)
+  - `tests/unit/test_file_service.py` (8 unit tests for Algorithm 12, limits, dangerous extensions, rollback safety, ADR-002)
+  - `tests/security/test_file_authorization_idor.py` (12 security and IDOR tests for Zero-Trust matrix, draft states, fail-closed quarantine, path traversal)
+  - `tests/api/test_file_api.py` (9 REST API & Web integration tests)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (Clean compilation)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (122 files formatted)
+  - `mypy src`: PASS (Success: no issues found in 61 source files)
+  - `pytest` TASK-018 test suites: PASS (29/29 passed in 9.19s)
+  - `python -m pytest`: PASS (500/500 passed in 227.70s)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)

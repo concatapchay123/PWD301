@@ -73,6 +73,13 @@ class FileBlob(Base):
         sa.CheckConstraint("reference_count >= 0", name="ck_file_blobs_3"),
     )
 
+    @property
+    def sha256_hex(self) -> str:
+        """Return SHA-256 hash as hexadecimal string."""
+        if isinstance(self.sha256, (bytes, bytearray)):
+            return self.sha256.hex()
+        return str(self.sha256)
+
 
 class FileAsset(Base):
     """Logical course-scoped file identity mapping to 'file_assets' table.
@@ -263,6 +270,11 @@ class FileRevision(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.file_revision.{self.id}")
+
 
 class FileScanResult(Base):
     """Malware and integrity verification record mapping to 'file_scan_results' table."""
@@ -353,6 +365,11 @@ class LessonResource(Base):
 
     lesson = relationship("Lesson", foreign_keys=[lesson_id])
     file_asset = relationship("FileAsset", foreign_keys=[file_asset_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.lesson_resource.{self.id}")
 
 
 class QuestionRevisionResource(Base):

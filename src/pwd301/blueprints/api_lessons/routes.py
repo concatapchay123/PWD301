@@ -104,3 +104,51 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
 def record_activity_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Alias for /progress conforming to 04_COURSE_API.md activity endpoint."""
     return record_progress_api(lesson_id)
+
+
+@api_lesson_bp.route("/<lesson_id>/resources", methods=["POST"])
+def attach_lesson_resource_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Attach a FileAsset to a Lesson as a learning resource (JWT required)."""
+    from pwd301.extensions import db
+    from pwd301.services.authorization_service import require_authenticated_actor
+    from pwd301.services.exceptions import FileValidationError
+    from pwd301.services.file_service import (
+        _serialize_lesson_resource,
+        attach_resource_to_lesson,
+    )
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    asset_id = payload.get("file_asset_id") or payload.get("asset_id")
+    if not asset_id:
+        raise FileValidationError("file_asset_id is required.")
+
+    label = payload.get("label") or payload.get("title")
+    is_downloadable = payload.get("is_downloadable", True)
+
+    resource = attach_resource_to_lesson(
+        actor=actor,
+        lesson_id=lesson_id,
+        asset_id=asset_id,
+        is_downloadable=is_downloadable,
+        label=label,
+        session=db.session,
+    )
+    return jsonify(_serialize_lesson_resource(resource)), 201
+
+
+@api_lesson_bp.route("/<lesson_id>/resources/<resource_id>", methods=["DELETE"])
+def detach_lesson_resource_api(lesson_id: str, resource_id: str) -> tuple[Response, int] | Response:
+    """Detach a learning resource link from a Lesson (JWT required)."""
+    from pwd301.extensions import db
+    from pwd301.services.authorization_service import require_authenticated_actor
+    from pwd301.services.file_service import detach_resource_from_lesson
+
+    actor = require_authenticated_actor()
+    detached = detach_resource_from_lesson(
+        actor=actor,
+        lesson_id=lesson_id,
+        resource_id=resource_id,
+        session=db.session,
+    )
+    return jsonify({"detached": detached}), 200

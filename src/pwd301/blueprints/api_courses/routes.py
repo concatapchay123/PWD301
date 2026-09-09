@@ -618,3 +618,53 @@ def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Resp
         },
     }
     return jsonify(data), 200
+
+
+@api_course_bp.route("/<course_id>/files", methods=["POST"])
+@jwt_required
+def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
+    """Upload a new FileAsset for a course (JWT required)."""
+    import io
+
+    from pwd301.services.exceptions import FileValidationError
+    from pwd301.services.file_service import _serialize_file_asset, store_file_stream
+
+    actor = require_authenticated_actor()
+    asset_type = request.form.get("asset_type", "RESOURCE")
+    title = request.form.get("title")
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        file_stream = upload.stream
+        filename = upload.filename or "unnamed_file"
+        content_type = upload.mimetype or request.content_type
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+    else:
+        raise FileValidationError("No file content provided in request.")
+
+    asset = store_file_stream(
+        actor=actor,
+        course_id=course_id,
+        file_stream=file_stream,
+        filename=filename,
+        content_type=content_type,
+        asset_type=asset_type,
+        title=title,
+        session=db.session,
+    )
+    return jsonify(_serialize_file_asset(asset)), 201
+
+
+@api_course_bp.route("/<course_id>/files", methods=["GET"])
+@jwt_required
+def list_course_files_api(course_id: str) -> tuple[Response, int] | Response:
+    """List FileAssets belonging to a course (JWT required)."""
+    from pwd301.services.file_service import _serialize_file_asset, list_course_files
+
+    actor = require_authenticated_actor()
+    status = request.args.get("status", "ACTIVE")
+    files = list_course_files(actor=actor, course_id=course_id, status=status, session=db.session)
+    return jsonify({"items": [_serialize_file_asset(f) for f in files]}), 200
