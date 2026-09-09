@@ -172,7 +172,7 @@ BEGIN
         JOIN questions q ON q.id = qr.question_id
         WHERE qr.was_student_exposed = 1
            OR qr.was_used_for_grading = 1
-           OR (q.first_used_at IS NOT NULL AND q.current_revision_id = qr.id)
+           OR (q.first_used_at IS NOT NULL AND qr.is_current = 1)
     )
         THROW 51007, 'Choices of an activated/used revision are immutable; create a new revision.', 1;
 END;
@@ -195,34 +195,33 @@ BEGIN
         JOIN questions q ON q.id = qr.question_id
         WHERE qr.was_student_exposed = 1
            OR qr.was_used_for_grading = 1
-           OR (q.first_used_at IS NOT NULL AND q.current_revision_id = qr.id)
+           OR (q.first_used_at IS NOT NULL AND qr.is_current = 1)
     )
         THROW 51008, 'Accepted answers of an activated/used revision are immutable; create a new revision.', 1;
 END;
 GO
 
 CREATE OR ALTER TRIGGER trg_question_type_lock_after_answered
-ON questions
-AFTER UPDATE
+ON question_revisions
+AFTER INSERT, UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN deleted d ON d.id = i.id
-        JOIN question_revisions oldr ON oldr.id = d.current_revision_id
-        JOIN question_revisions newr ON newr.id = i.current_revision_id
-        WHERE i.first_answered_at IS NOT NULL
-          AND ISNULL(i.current_revision_id,0) <> ISNULL(d.current_revision_id,0)
-          AND oldr.question_type <> newr.question_type
+        JOIN questions q ON q.id = i.question_id
+        JOIN question_revisions prior ON prior.question_id = q.id AND prior.id <> i.id
+        WHERE q.first_answered_at IS NOT NULL
+          AND i.is_current = 1
+          AND prior.question_type <> i.question_type
     )
         THROW 51009, 'Question type cannot change after any student has answered it.', 1;
 END;
 GO
 
-CREATE OR ALTER TRIGGER trg_file_asset_current_revision_safe
-ON file_assets
+CREATE OR ALTER TRIGGER trg_file_revisions_current_active
+ON file_revisions
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -230,16 +229,15 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN file_revisions fr ON fr.id = i.current_revision_id
-        WHERE i.current_revision_id IS NOT NULL
-          AND (fr.file_asset_id <> i.id OR fr.status <> 'ACTIVE')
+        WHERE i.is_current = 1
+          AND i.status <> 'ACTIVE'
     )
-        THROW 51010, 'Current file revision must belong to the asset and be ACTIVE.', 1;
+        THROW 51010, 'Current file revision must have status ACTIVE.', 1;
 END;
 GO
 
-CREATE OR ALTER TRIGGER trg_knowledge_document_current_version_active
-ON knowledge_documents
+CREATE OR ALTER TRIGGER trg_knowledge_versions_current_active
+ON knowledge_versions
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -247,11 +245,10 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN knowledge_versions kv ON kv.id = i.current_version_id
-        WHERE i.current_version_id IS NOT NULL
-          AND (kv.knowledge_document_id <> i.id OR kv.status <> 'ACTIVE')
+        WHERE i.is_current = 1
+          AND i.status <> 'ACTIVE'
     )
-        THROW 51011, 'Current knowledge version must belong to the document and be ACTIVE.', 1;
+        THROW 51011, 'Current knowledge version must have status ACTIVE.', 1;
 END;
 GO
 

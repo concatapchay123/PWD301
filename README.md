@@ -431,6 +431,7 @@ Course đã có Student khi “delete” không được phá learning history; 
 - Lesson đã được Student học thì hidden/remove khỏi active curriculum nhưng minimal historical record giữ.
 - Material rewrite không bắt Student đã complete học lại.
 - Course đã completed vẫn completed khi Instructor thêm Lesson mới; Lesson mới là **“Xem thêm”** cho existing cohort.
+- **Relational Staging cho Bài học**: Thay vì lưu trữ cấu trúc bài học chờ duyệt trong JSON lỏng lẻo, bài học mới hoặc bài học sửa đổi cấu trúc lớn được lưu quan hệ trực tiếp trong bảng `lessons` với `status = 'PENDING_APPROVAL'` và liên kết qua `change_request_id` trỏ về `course_change_requests(id)`. Ràng buộc duy nhất vị trí được triển khai bằng Filtered Unique Index `uq_lessons_course_position_active` trên `(course_id, position) WHERE status IN ('ACTIVE', 'PUBLISHED')`. Nhờ đó, bài học đang chờ duyệt có thể giữ trước vị trí dự kiến mà không bị đụng độ (collision) với bài học đang live của khóa học. Khi Admin phê duyệt yêu cầu thay đổi, transaction sẽ hoán đổi/kích hoạt trạng thái sang `PUBLISHED` một cách nguyên tử.
 
 ## 17. Enrollment
 
@@ -524,17 +525,20 @@ Question type không được đổi sau khi bất kỳ Student đã answer Ques
 - Unused Question: important edit có thể update current revision/in-place theo service.
 - Used Question: important edit tạo `QuestionRevision` mới.
 - Choices và accepted short answers **thuộc revision**, không dùng mutable shared choices.
+- **Loại bỏ khóa ngoại vòng (Circular FK)**: Bảng `questions` không còn lưu con trỏ `current_revision_id`. Trạng thái active được quản lý bởi cờ `is_current BIT NOT NULL DEFAULT 0` trong `question_revisions` kết hợp Filtered Unique Index `uq_question_revisions_current (question_id) WHERE is_current = 1`. Thiết kế này xóa bỏ nguy cơ deadlock khi bootstrap question và bảo đảm pointer semantic integrity.
+- **Định danh phương án bền vững (`choice_key`)**: Mỗi choice trong `question_revision_choices` có `choice_key` (chuỗi định danh logic duy nhất trong revision, ví dụ: 'A', 'B', 'C' hoặc stable UUID) được bảo toàn khi sao chép sang revision mới.
 - Revision từng được Student thấy hoặc dùng grading giữ indefinite.
 - `QuestionRevision.revision_no` khác `ROWVERSION`: một cái là business version, một cái là concurrency token.
 
-Student chưa start Assessment resolve latest valid revision lúc start. Student đã start không bị thay snapshot.
+Student chưa start Assessment resolve latest valid revision (`is_current = 1`) lúc start. Student đã start không bị thay snapshot.
 
 ## 24. Question Correction
 
 ### 24.1 Correct-answer-only correction
 
-- Tạo revision/correction record mới.
+- Tạo revision/correction record mới (`is_current = 1` chuyển sang revision mới).
 - Eligible submitted attempts được background regrade.
+- **Đối soát Regrade chính xác qua `choice_key`**: Regrade worker so khớp lựa chọn của sinh viên (`attempt_choice_snapshots.choice_key`) với đáp án đúng của revision mới (`question_revision_choices.choice_key`), bảo đảm không bị lệch đáp án khi ID khóa chính của choice thay đổi qua từng revision.
 - Preserve old score/new score, actor, reason, timestamp, source revision.
 - Student được notification khi score thay đổi.
 - Không rewrite question/choice snapshot hoặc answer Student đã submit.
@@ -542,13 +546,13 @@ Student chưa start Assessment resolve latest valid revision lúc start. Student
 ### 24.2 Text/choices correction
 
 - Student start trước correction vẫn thấy frozen snapshot cũ.
-- Student start sau correction nhận latest revision.
+- Student start sau correction nhận latest revision (`is_current = 1`).
 - Những attempts affected theo rule đã khóa nhận **full credit** cho changed question.
 - Điều này áp dụng cả submitted attempts trước correction và active attempts đã start trước save, theo Plan Mode current rule.
 
 ### 24.3 Retention interaction
 
-EnrollmentPeriod đã detailed-purge sau >30 ngày không rejoin **không còn future auto-regrade**. Compact completion/prerequisite history vẫn giữ.
+EnrollmentPeriod đã detailed-purge (hoặc Attempt đã được dọn sạch chi tiết theo cơ chế Skeleton Tombstone Purging `is_detail_purged = 1`) sau >30 ngày không rejoin **không còn future auto-regrade**. Compact completion/prerequisite history vẫn giữ nguyên vẹn.
 
 ## 25. Assessment Engine
 
@@ -584,13 +588,13 @@ Publish chạy preflight validation. Active Assessment phát hiện lỗi nghiê
 
 ### Assessment mutability matrix
 
-| Giai đoạn | Timing | Structure/question set | Assigned points | Question correction |
-|---|---|---|---|---|
-| Draft | Có thể sửa | Có thể sửa | Có thể sửa | Có |
-| Published nhưng chưa ai start | **Khóa timing** | Có thể sửa nếu workflow cho phép và không phá preflight | Có thể sửa trước first start | Có qua QuestionRevision |
-| Sau Student đầu tiên start | **Khóa** | **Khóa add/remove/structure** | **Khóa** | **Vẫn cho phép** qua correction/regrade |
+| Giai đoạn | Duration Timing (`open_at`, `time_limit_minutes`) | Window Timing (`close_at`) | Structure/question set | Assigned points | Question correction |
+|---|---|---|---|---|---|
+| Draft | Có thể sửa | Có thể sửa | Có thể sửa | Có thể sửa | Có |
+| Published nhưng chưa ai start | **Đóng băng tuyệt đối (Immutable)** | **Chỉ nới rộng về tương lai** (Forward extension only, ghi nhận audit event `ASSESSMENT_CLOSE_AT_EXTENDED`) | Có thể sửa nếu workflow cho phép và không phá preflight | Có thể sửa trước first start | Có qua QuestionRevision (`is_current = 1`) |
+| Sau Student đầu tiên start | **Đóng băng tuyệt đối (Immutable)** | **Chỉ nới rộng về tương lai** (Forward extension only, ghi nhận audit event `ASSESSMENT_CLOSE_AT_EXTENDED`) | **Khóa add/remove/structure** | **Khóa** | **Vẫn cho phép** qua correction/regrade |
 
-Rule “Published Assessment immutable hoàn toàn” là `SUPERSEDED`.
+Rule “Published Assessment immutable hoàn toàn” là `SUPERSEDED`. Timing được phân tách chặt chẽ: **Duration timing** bị đóng băng nhằm giữ công bằng thi cử; **Window timing** (`close_at`) cho phép gia hạn nới rộng về tương lai khi gặp sự cố, nhưng nghiêm cấm rút ngắn. Cả hai điều kiện đều được bảo vệ bởi trigger SQL Server `trg_assessments_timing_immutable`.
 
 ## 28. Question Selection
 
@@ -662,13 +666,14 @@ deadline_at = MIN(started_at + time_limit, close_at)
 
 Browser chỉ display countdown. Client clock manipulation, refresh, tab crash hoặc offline không thay deadline server. Nếu Student start sát close, họ chỉ có phần thời gian còn lại đến `close_at`.
 
-Timing config bị khóa sau publish, nên không có chuyện Instructor đổi 60 phút thành 30/90 phút giữa một bài đã publish.
+Timing config bị khóa sau publish, nên không có chuyện Instructor đổi 60 phút thành 30/90 phút giữa một bài đã publish. Cụ thể: `open_at` và `time_limit_minutes` bị đóng băng bất biến; `close_at` chỉ có thể được nới rộng về tương lai (forward extension) và bắt buộc ghi nhận audit event `ASSESSMENT_CLOSE_AT_EXTENDED`.
 
 ## 33. Autosave
 
 - MCQ: save ngay khi selection change.
 - Short answer/Essay: debounce khoảng **1–2 giây** sau inactivity.
-- Save request mang `client_change_id` và monotonic `client_sequence` (derived implementation) để retry/dedup/stale ordering.
+- Save request mang `lease_token`, `lease_epoch`, `client_change_id` và monotonic `sequence_no` (hoặc `client_sequence`) để phân xử thứ tự/dedup/stale ordering.
+- **Fencing bảo vệ Autosave**: Server kiểm tra đồng thời tính hợp lệ của `lease_token` và `lease_epoch`. Nếu `lease_epoch` trong request nhỏ hơn `assessment_attempts.lease_epoch` (do tab khác đã takeover) hoặc sequence cũ hơn câu trả lời hiện tại, server từ chối ngay với HTTP 409 Conflict (`STALE_LEASE_EPOCH` / `STALE_ANSWER`).
 - Server response trả accepted version/timestamp để UI hiển thị trạng thái saved.
 
 Current answer và optional answer event history tách nhau: `attempt_answers` là current source cho resume; `attempt_answer_events` phục vụ reconciliation/troubleshooting trong retention window.
@@ -679,7 +684,7 @@ Browser có thể giữ unsent answer changes temporary (ví dụ IndexedDB/loca
 
 1. gửi lại theo change ID/sequence.
 2. server dedupe duplicate request.
-3. stale older sequence không được overwrite newer accepted answer.
+3. stale older sequence hoặc stale lease_epoch không được overwrite newer accepted answer.
 4. request đến sau authoritative deadline bị reject/không tính.
 
 Nếu hết giờ khi offline, server finalizes bằng answers **đã save thành công trước deadline**; local unsent data không được retroactively tính.
@@ -689,15 +694,16 @@ Nếu hết giờ khi offline, server finalizes bằng answers **đã save thàn
 Một Attempt chỉ có tối đa một editor lease hợp lệ.
 
 ```text
-Tab A acquire lease → heartbeat
-Tab B mở → đọc được cảnh báo nhưng edit bị block
-A crash/network disappears → heartbeat ngừng
-lease_expires_at qua hạn
-B takeover bằng conditional update
-→ vẫn cùng Attempt ID, snapshot, answers, deadline
+Tab A acquire lease (lease_epoch = 1) → heartbeat định kỳ
+Tab B mở cùng attempt → đọc cảnh báo, nút takeover
+Tab B takeover khi lease hết hạn (hoặc user xác nhận):
+  → atomic update: lease_token mới, lease_epoch = lease_epoch + 1 (epoch = 2)
+Tab A gửi autosave/heartbeat với epoch = 1 → Server từ chối HTTP 409 STALE_LEASE_EPOCH
+  → Tab A hiển thị cảnh báo session đã được chuyển sang tab khác và khóa input
+→ Dữ liệu toàn vẹn: cùng Attempt ID, snapshot, answers, deadline, không bị ghi đè chéo
 ```
 
-Database không giữ long-running row lock. Mỗi acquire/heartbeat/save/takeover là transaction ngắn. Lease token random, scoped Attempt+owner và không log raw token. `ROWVERSION`/conditional predicate phân xử race khi hai tab cùng takeover.
+Database không giữ long-running row lock. Mỗi acquire/heartbeat/save/takeover là transaction ngắn. Lease token ngẫu nhiên dạng hash, scoped Attempt+owner và không log raw token. `lease_epoch` đóng vai trò fencing token phân xử race condition triệt để giữa các tab. `ROWVERSION`/conditional predicate phân xử race khi hai tab cùng cố gắng takeover đồng thời.
 
 ## 36. Submission
 
@@ -739,11 +745,11 @@ create QuestionCorrection + RegradeJob
   ↓
 worker tìm affected AttemptQuestion/Attempt
   ↓
-filter retention-eligible periods
+filter retention-eligible periods & unpurged attempts (is_detail_purged = 0)
   ↓
 claim RegradeItems idempotently
   ↓
-calculate new grade/full-credit policy
+calculate new grade qua persistent choice_key matching / full-credit policy
   ↓
 append grade/result history
   ↓
@@ -752,7 +758,7 @@ update current result
 notify Student nếu score thay đổi
 ```
 
-Job phải resumable, retry-safe, track pending/completed. Nếu fail giữa 2,431 attempts, không bắt buộc làm lại từ đầu và không double-adjust score.
+Job phải resumable, retry-safe, track pending/completed. Nếu fail giữa 2,431 attempts, không bắt buộc làm lại từ đầu và không double-adjust score. Worker đối soát chính xác giữa snapshot lựa chọn của thí sinh (`attempt_choice_snapshots.choice_key`) và đáp án được cập nhật trong `question_revision_choices.choice_key`, không dùng ID nội bộ nhằm đảm bảo an toàn tuyệt đối trước mọi đợt chỉnh sửa revision. Các bài làm đã bị dọn chi tiết (`is_detail_purged = 1`) sẽ tự động được bỏ qua khỏi luồng regrade mà không gây lỗi.
 
 ## 39. Manual Essay Grading
 
@@ -1007,7 +1013,7 @@ Không dùng broad `ON DELETE CASCADE` cho historical learning/assessment graph.
 | Lesson | Active | Hidden/trash | Unused có thể hard-delete | Learned Lesson minimal history |
 | EnrollmentPeriod | Active | LEFT | Detail purge sau >30d không rejoin | Logical Enrollment/events/summary giữ |
 | LessonProgress | Active source | Retention eligible | purge theo period policy | completion summary giữ |
-| Attempt/answers | Active/detail | retention eligible | old period detail có thể purge | purged attempt không future regrade |
+| Attempt/answers | Active/detail | retention eligible | Skeleton Tombstone Purge sau >30d: dọn child tables (`attempt_answers`, `attempt_answer_events`, `attempt_choice_snapshots`, `attempt_questions`), đánh dấu `is_detail_purged=1`, `detail_purged_at`; giữ parent attempt & results | purged attempt không future regrade; bảo toàn completion & audit integrity |
 | QuestionRevision | Active/history | không dùng cleanup nếu unused | shown/graded giữ indefinitely | historical integrity |
 | Score history | Current + history | giữ theo assessment history | không rewrite | old/new reason/actor/time |
 | FileRevision | Safe/current | replacement recovery | ~30d target, ref-aware | minimal metadata nếu history cần |
@@ -1173,10 +1179,14 @@ Major invariants phân lớp:
 - unique Course code/title.
 - one logical Enrollment User-Course.
 - one active EnrollmentPeriod boundary/filter as validated schema.
-- one active FileRevision per FileAsset (filtered unique index).
-- one active KnowledgeVersion per KnowledgeDocument.
+- one active QuestionRevision per Question (filtered unique index `uq_question_revisions_current` WHERE `is_current = 1`).
+- one active FileRevision per FileAsset (filtered unique index `uq_file_revisions_current` WHERE `is_current = 1`).
+- one active KnowledgeVersion per KnowledgeDocument (filtered unique index `uq_knowledge_versions_current` WHERE `is_current = 1`).
+- unique active lesson position per Course (filtered unique index `uq_lessons_course_position_active` WHERE `status IN ('ACTIVE', 'PUBLISHED')`).
 - bounded status/check values.
-- append-only/critical immutability triggers nơi cần defense-in-depth.
+- append-only/critical immutability triggers nơi cần defense-in-depth:
+  - `trg_assessments_timing_immutable`: Duration timing (`open_at`, `time_limit_minutes`) đóng băng tuyệt đối sau publish; Window timing (`close_at`) chỉ được phép nới rộng về tương lai.
+  - `trg_question_choice_revision_lock`, `trg_question_accepted_answer_revision_lock`, `trg_question_type_lock_after_answered`: bảo vệ bất biến cho revision đã kích hoạt/sử dụng.
 
 ### Transaction-enforced
 
@@ -1184,22 +1194,22 @@ Major invariants phân lớp:
 - prerequisite eligibility + active enrollment creation.
 - attempt number/limit.
 - start snapshot.
-- lease acquisition/takeover.
+- lease acquisition/takeover with `lease_epoch` increment.
 - submit terminal transition.
-- current file/RAG version activation.
+- current file/RAG/question version activation.
 
 ### Service-enforced
 
 - role combination closure.
 - object authorization.
-- material-change rules.
+- material-change rules & relational lesson staging.
 - lesson completion algorithm.
 - blueprint shortage/preflight.
 - correction semantics.
 
 ### Worker-enforced
 
-- regrade, file scan/process, import, RAG indexing, email retry, retention cleanup, analytics, backup tracking.
+- regrade (với persistent `choice_key` matching), file scan/process, import, RAG indexing, email retry, skeleton tombstone retention cleanup (`is_detail_purged = 1`), analytics, backup tracking.
 
 ## 61. Indexing
 
@@ -1209,16 +1219,16 @@ Không index mọi column. Index strategy tập trung vào query thật:
 - Course catalog code/title/status/owner.
 - prerequisite reverse lookup.
 - active enrollment and Student-Course lookup.
-- Lesson order/progress.
-- Question Bank course/lesson/type/difficulty/status/usage/provenance.
+- Lesson order/progress và filtered unique active position (`uq_lessons_course_position_active`).
+- Question Bank course/lesson/type/difficulty/status/usage/provenance và active revision (`uq_question_revisions_current`).
 - Assessment course/status/open-close.
-- Attempt Student/assessment/status/deadline.
+- Attempt Student/assessment/status/deadline và lease expiry.
 - pending manual grading.
 - regrade targeting Question/Revision → AttemptQuestion → Attempt/Period.
 - unread notifications.
 - audit actor/target/time.
 - pending jobs/status/next retry.
-- active file/knowledge versions.
+- active file/knowledge versions (`uq_file_revisions_current`, `uq_knowledge_versions_current`).
 
 Large tables dùng database-backed pagination/filter/sort. Dashboard analytics có snapshot/cache; search input debounce để tránh request mỗi keystroke.
 
@@ -1230,17 +1240,17 @@ Các race quan trọng và protection:
 |---|---|---|
 | Email change/register | duplicate email | normalized UNIQUE + transaction |
 | Enrollment | last seat | lock/serialize Course + re-check capacity + active-period unique |
-| Lesson reorder | two editors | `ROWVERSION` + reorder transaction + unique order strategy |
-| Question edit | stale editor | `ROWVERSION`; business revision when used |
-| Assessment edit/publish | stale config | `ROWVERSION` + publish/first-start invariants |
+| Lesson reorder / staging | two editors | `ROWVERSION` + reorder transaction + relational staging (`change_request_id`) + filtered unique active position |
+| Question edit | stale editor | `ROWVERSION`; business revision when used (`is_current = 1`) |
+| Assessment edit/publish | stale config / timing | `ROWVERSION` + trigger `trg_assessments_timing_immutable` (freeze duration, forward extension only for window) |
 | Attempt start | double start/limit | transaction + unique attempt number/idempotency |
-| Lease | two tabs | conditional UPDATE + lease expiry/token |
-| Answer save | duplicate/stale offline | `client_change_id` + sequence + lease + deadline |
+| Lease takeover | two tabs | conditional UPDATE + lease expiry/token + `lease_epoch` fence (HTTP 409 `STALE_LEASE_EPOCH`) |
+| Answer save | duplicate/stale offline/cross-tab | `client_change_id` + sequence + lease_token + `lease_epoch` fence (HTTP 409 `STALE_ANSWER` / `STALE_LEASE_EPOCH`) + deadline |
 | Submit | two POSTs | idempotency key + serialized terminal transition |
 | Manual grade | two graders/edits | rowversion/history transaction |
-| Regrade | retry/parallel worker | unique RegradeItem + claim status |
-| File activation | two worker completions | filtered unique active index + transaction |
-| RAG activation | two index builds | filtered unique active version + transaction |
+| Regrade | retry/parallel worker | unique RegradeItem + claim status + `choice_key` matching |
+| File activation | two worker completions | filtered unique active index (`is_current = 1`) + transaction |
+| RAG activation | two index builds | filtered unique active version (`is_current = 1`) + transaction |
 
 Optimistic concurrency không đồng nghĩa QuestionRevision. `ROWVERSION` chỉ detect stale write; revision là historical business object.
 
@@ -6444,7 +6454,7 @@ Core filters:
 - current status;
 - provenance;
 - used/unused via `first_used_at`/usage metadata;
-- current type by join to `current_revision_id`.
+- current type by join to current active revision (`question_revisions.is_current = 1`).
 
 If free-text content search becomes a bottleneck, add SQL Server Full-Text Search to current revision content rather than an unbounded `%LIKE%` scan.
 
@@ -6857,7 +6867,7 @@ Nếu legacy schema có `questions.content` + choices trực tiếp:
 1. tạo `question_revisions`;
 2. tạo choice/accepted answer revision tables;
 3. tạo revision `1` từ Question hiện tại;
-4. set `questions.current_revision_id`;
+4. set `question_revisions.is_current = 1`;
 5. map Assessment/Attempt theo source identity;
 6. chỉ sau validate mới bỏ legacy mutable fields.
 
@@ -8230,7 +8240,8 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | `minimum_completion_seconds` | `INT` | No | `30` | Thời gian tối thiểu để được complete |
 | `viewed_fraction_required` | `DECIMAL(5,4)` | No | `0.8000` | Tỷ lệ nội dung cần xem, 0..1 |
 | `required_for_periods_starting_at` | `DATETIME2(3)` | Yes |  | Enrollment period bắt đầu trước mốc này xem Lesson mới như 'Xem thêm' |
-| `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/PUBLISHED/HIDDEN/TRASH/HISTORICAL |
+| `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/ACTIVE/PUBLISHED/PENDING_APPROVAL/ARCHIVED/HIDDEN/TRASH/HISTORICAL |
+| `change_request_id` | `BIGINT` | Yes |  | CourseChangeRequest liên kết khi lesson đang ở relational staging chờ duyệt |
 | `published_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |
@@ -8248,12 +8259,13 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | Columns | References | ON DELETE | Notes |
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
+| `change_request_id` | `course_change_requests(id)` | `SET NULL` | Liên kết relational staging với change request |
 | `deleted_by_user_id` | `users(id)` | `SET NULL` |  |
 
 ###### Unique Constraints
 
 - `UNIQUE (public_id)`
-- `UNIQUE (course_id, position)`
+- *(Vị trí bài học được bảo đảm duy nhất cho các bài active/published qua Filtered Unique Index `uq_lessons_course_position_active`)*
 
 ###### Check Constraints
 
@@ -8261,13 +8273,14 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 - `estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0`
 - `minimum_completion_seconds >= 0`
 - `viewed_fraction_required >= 0 AND viewed_fraction_required <= 1`
-- `status IN ('DRAFT','PUBLISHED','HIDDEN','TRASH','HISTORICAL')`
+- `status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')`
 
 ###### Indexes
 
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ix_lessons_course_status_position` | `course_id, status, position` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
+| `uq_lessons_course_position_active` | `course_id, position` | Yes | `WHERE status IN ('ACTIVE', 'PUBLISHED')` | Đảm bảo duy nhất vị trí cho bài học active/published; cho phép staged lessons giữ vị trí dự kiến. |
 
 ###### Relationships
 
@@ -8725,7 +8738,6 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 | `difficulty` | `VARCHAR(20)` | No |  | REMEMBER/UNDERSTAND/APPLY hoặc mức tương đương |
 | `learning_objective` | `NVARCHAR(500)` | Yes |  | Mục tiêu học tập |
 | `status` | `VARCHAR(20)` | No | `'DRAFT'` | DRAFT/ACTIVE/RETIRED/TRASH |
-| `current_revision_id` | `BIGINT` | Yes |  | Revision active; FK deferred sau question_revisions |
 | `first_used_at` | `DATETIME2(3)` | Yes |  | Lần đầu được đưa vào Assessment/pool |
 | `first_answered_at` | `DATETIME2(3)` | Yes |  | Lần đầu Student trả lời; từ đây type không được đổi |
 | `usage_count` | `BIGINT` | No | `0` | Cache số lần được gán vào Attempt |
@@ -8749,7 +8761,6 @@ DRAFT → ACTIVE; có thể RETIRED/TRASH. Unused có thể hard-delete sau reco
 | `lesson_id` | `lessons(id)` | `SET NULL` |  |
 | `creator_user_id` | `users(id)` | `NO ACTION` | Preserve creator linkage; User is anonymized in place when required. |
 | `deleted_by_user_id` | `users(id)` | `NO ACTION` | Preserve deletion actor linkage. |
-| `current_revision_id` | `question_revisions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ###### Unique Constraints
 
@@ -8793,7 +8804,7 @@ Instructor owner Course/Admin.
 
 - Thuộc đúng một Course
 - lesson nếu có phải thuộc cùng course (service)
-- current_revision_id trỏ revision cùng question
+- Quản lý active revision thông qua cờ is_current=1 và filtered unique index uq_question_revisions_current trên question_revisions (loại bỏ circular foreign key)
 - type không đổi sau first_answered_at
 
 ---
@@ -8815,6 +8826,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `question_id` | `BIGINT` | No |  | Question |
 | `revision_no` | `INT` | No |  | Tăng tuần tự |
+| `is_current` | `BIT` | No | `0` | Đánh dấu revision active hiện hành; duy nhất 1 revision active trên mỗi question qua Filtered Unique Index |
 | `question_type` | `VARCHAR(24)` | No |  | SINGLE_CHOICE/MULTIPLE_CHOICE/TRUE_FALSE/SHORT_ANSWER/ESSAY |
 | `content` | `NVARCHAR(MAX)` | No |  | Nội dung câu hỏi |
 | `explanation` | `NVARCHAR(MAX)` | Yes |  | Lời giải/giải thích |
@@ -8856,6 +8868,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ix_question_revisions_question` | `question_id, revision_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
+| `uq_question_revisions_current` | `question_id` | Yes | `WHERE is_current = 1` | Đảm bảo mỗi câu hỏi chỉ có tối đa một revision active. |
 | `ix_question_revisions_exposure` | `was_student_exposed, was_used_for_grading` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 
 ###### Relationships
@@ -9654,6 +9667,9 @@ CREATED → IN_PROGRESS → SUBMITTED/EXPIRED → PENDING_GRADING/GRADED; Assess
 | `lease_acquired_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `lease_expires_at` | `DATETIME2(3)` | Yes |  | UTC |
 | `last_heartbeat_at` | `DATETIME2(3)` | Yes |  | UTC |
+| `lease_epoch` | `INT` | No | `1` | Thế hệ lease hiện hành, tăng mỗi lần takeover để phân xử multi-tab race & fence autosave |
+| `is_detail_purged` | `BIT` | No | `0` | Đánh dấu attempt đã được dọn sạch các bảng con chi tiết (answers, events, snapshots) theo chính sách retention |
+| `detail_purged_at` | `DATETIME2(3)` | Yes |  | Thời điểm thực hiện skeleton tombstone purging |
 | `cancel_reason` | `NVARCHAR(1000)` | Yes |  | Nếu cancelled |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |
@@ -10778,7 +10794,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 | `created_by_user_id` | `BIGINT` | No |  | Uploader |
 | `asset_type` | `VARCHAR(24)` | No |  | RESOURCE/QUESTION_IMAGE/COURSE_IMAGE/IMPORT_SOURCE/EXPORT/OTHER |
 | `display_name` | `NVARCHAR(255)` | No |  | Tên hiển thị |
-| `current_revision_id` | `BIGINT` | Yes |  | Revision ACTIVE hiện hành; NULL trong lúc asset mới còn PENDING hoặc sau cleanup hợp lệ |
 | `status` | `VARCHAR(20)` | No | `'PENDING'` | PENDING/ACTIVE/REPLACED/TRASH/HISTORICAL |
 | `retention_until` | `DATETIME2(3)` | Yes |  | Mốc cleanup logical asset |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
@@ -10799,7 +10814,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 | `course_id` | `courses(id)` | `NO ACTION` |  |
 | `created_by_user_id` | `users(id)` | `NO ACTION` |  |
 | `deleted_by_user_id` | `users(id)` | `SET NULL` |  |
-| `current_revision_id` | `file_revisions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ###### Unique Constraints
 
@@ -10809,7 +10823,6 @@ PENDING asset → activate security-cleared revision → ACTIVE; replace giữ s
 
 - `asset_type IN ('RESOURCE','QUESTION_IMAGE','COURSE_IMAGE','IMPORT_SOURCE','EXPORT','OTHER')`
 - `status IN ('PENDING','ACTIVE','REPLACED','TRASH','HISTORICAL')`
-- `status <> 'ACTIVE' OR current_revision_id IS NOT NULL`
 
 ###### Indexes
 
@@ -10840,7 +10853,7 @@ Authorization theo Course + logical references; direct storage path không publi
 
 ###### Important invariants
 
-- `current_revision_id` chỉ được trỏ revision cùng asset có status `ACTIVE`; asset mới có thể `PENDING` với pointer NULL
+- Quản lý active revision thông qua cờ `is_current = 1` và filtered unique index `uq_file_revisions_current` trên `file_revisions` (loại bỏ circular foreign key)
 - Quota tính logical usage theo policy, physical dedup không thay authorization
 
 ---
@@ -10862,6 +10875,7 @@ QUARANTINED → VALIDATING → SCANNING → SAFE → ACTIVE; fail → REJECTED. 
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `file_asset_id` | `BIGINT` | No |  | Asset |
 | `revision_no` | `INT` | No |  | Tăng tuần tự |
+| `is_current` | `BIT` | No | `0` | Đánh dấu revision active hiện hành; duy nhất 1 revision active trên mỗi file asset qua Filtered Unique Index |
 | `blob_id` | `BIGINT` | Yes |  | Physical blob sau validation/dedup |
 | `original_filename` | `NVARCHAR(255)` | No |  | Tên file người dùng gửi |
 | `declared_mime_type` | `NVARCHAR(150)` | Yes |  | Client MIME |
@@ -10905,6 +10919,7 @@ QUARANTINED → VALIDATING → SCANNING → SAFE → ACTIVE; fail → REJECTED. 
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ux_file_revisions_active` | `file_asset_id` | Yes | `status = 'ACTIVE'` | DB-enforce tối đa một revision ACTIVE cho mỗi logical file asset. |
+| `uq_file_revisions_current` | `file_asset_id` | Yes | `WHERE is_current = 1` | Đảm bảo mỗi file asset chỉ có tối đa một revision active. |
 | `ix_file_revisions_asset` | `file_asset_id, revision_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_file_revisions_processing` | `status, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_file_revisions_recovery` | `recovery_until, status` | No | `recovery_until IS NOT NULL` | Hỗ trợ truy vấn/filter/pagination chính của table. |
@@ -11871,7 +11886,6 @@ ACTIVE; source edit creates new version and invalidates old searchable version; 
 | `source_type` | `VARCHAR(24)` | No |  | LESSON/FILE/FAQ/POLICY |
 | `source_entity_id` | `BIGINT` | No |  | ID source entity |
 | `status` | `VARCHAR(20)` | No | `'ACTIVE'` | ACTIVE/INVALIDATED/DELETED |
-| `current_version_id` | `BIGINT` | Yes |  | Active KnowledgeVersion; NULL trước lần index thành công đầu tiên hoặc sau invalidation/cleanup hợp lệ |
 | `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm tạo (UTC) |
 | `updated_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | Thời điểm cập nhật cuối (UTC) |
 | `row_version` | `ROWVERSION` | No |  | Token lạc quan phát hiện ghi đè đồng thời |
@@ -11886,7 +11900,6 @@ ACTIVE; source edit creates new version and invalidates old searchable version; 
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
 | `lesson_id` | `lessons(id)` | `SET NULL` |  |
-| `current_version_id` | `knowledge_versions(id)` | `SET NULL` | Deferred cross-domain FK created in `010_cross_domain_constraints.sql`. |
 
 ###### Unique Constraints
 
@@ -11929,6 +11942,7 @@ RAG retrieval must prefilter by published/authorized Course/Lesson + active stat
 
 - Archived Course excluded from retrieval
 - Deleted source stops retrieval immediately even if physical file recovery exists
+- Quản lý active version thông qua cờ `is_current = 1` và filtered unique index `uq_knowledge_versions_current` trên `knowledge_versions` (loại bỏ circular foreign key)
 
 ---
 
@@ -11949,6 +11963,7 @@ PENDING → PROCESSING → ACTIVE; previous ACTIVE → INVALIDATED. FAILED khôn
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `knowledge_document_id` | `BIGINT` | No |  | Document |
 | `version_no` | `INT` | No |  | Sequence |
+| `is_current` | `BIT` | No | `0` | Đánh dấu version active hiện hành; duy nhất 1 version active trên mỗi document qua Filtered Unique Index |
 | `source_revision_type` | `VARCHAR(32)` | Yes |  | LESSON_VERSION/FILE_REVISION/QUESTION_REVISION/OTHER |
 | `source_revision_id` | `BIGINT` | Yes |  | Source revision id |
 | `content_hash` | `BINARY(32)` | No |  | Hash extracted text |
@@ -11986,6 +12001,7 @@ PENDING → PROCESSING → ACTIVE; previous ACTIVE → INVALIDATED. FAILED khôn
 | Index | Columns | Unique | Filter | Purpose |
 |---|---|---:|---|---|
 | `ux_knowledge_versions_active` | `knowledge_document_id` | Yes | `status = 'ACTIVE'` | DB-enforce tối đa một knowledge version ACTIVE cho mỗi document. |
+| `uq_knowledge_versions_current` | `knowledge_document_id` | Yes | `WHERE is_current = 1` | Đảm bảo mỗi knowledge document chỉ có tối đa một version active. |
 | `ix_knowledge_versions_doc` | `knowledge_document_id, version_no` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 | `ix_knowledge_versions_status` | `status, created_at` | No | `` | Hỗ trợ truy vấn/filter/pagination chính của table. |
 
@@ -13757,6 +13773,7 @@ CREATE TABLE lessons (
     viewed_fraction_required DECIMAL(5,4) NOT NULL DEFAULT (0.8000),
     required_for_periods_starting_at DATETIME2(3) NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('DRAFT'),
+    change_request_id BIGINT NULL,
     published_at DATETIME2(3) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     updated_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -13766,13 +13783,13 @@ CREATE TABLE lessons (
     deleted_by_user_id BIGINT NULL,
     CONSTRAINT pk_lessons PRIMARY KEY (id),
     CONSTRAINT uq_lessons_public_id_1 UNIQUE (public_id),
-    CONSTRAINT uq_lessons_course_id_position_2 UNIQUE (course_id, position),
     CONSTRAINT ck_lessons_1 CHECK (position > 0),
     CONSTRAINT ck_lessons_2 CHECK (estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0),
     CONSTRAINT ck_lessons_3 CHECK (minimum_completion_seconds >= 0),
     CONSTRAINT ck_lessons_4 CHECK (viewed_fraction_required >= 0 AND viewed_fraction_required <= 1),
-    CONSTRAINT ck_lessons_5 CHECK (status IN ('DRAFT','PUBLISHED','HIDDEN','TRASH','HISTORICAL')),
+    CONSTRAINT ck_lessons_5 CHECK (status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')),
     CONSTRAINT fk_lessons_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
+    CONSTRAINT fk_lessons_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id) ON DELETE SET NULL,
     CONSTRAINT fk_lessons_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id) ON DELETE SET NULL
 );
 GO
@@ -13902,7 +13919,6 @@ CREATE TABLE questions (
     difficulty VARCHAR(20) NOT NULL,
     learning_objective NVARCHAR(500) NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('DRAFT'),
-    current_revision_id BIGINT NULL,
     first_used_at DATETIME2(3) NULL,
     first_answered_at DATETIME2(3) NULL,
     usage_count BIGINT NOT NULL DEFAULT (0),
@@ -13929,6 +13945,7 @@ CREATE TABLE question_revisions (
     id BIGINT IDENTITY(1,1) NOT NULL,
     question_id BIGINT NOT NULL,
     revision_no INT NOT NULL,
+    is_current BIT NOT NULL DEFAULT (0),
     question_type VARCHAR(24) NOT NULL,
     content NVARCHAR(MAX) NOT NULL,
     explanation NVARCHAR(MAX) NULL,
@@ -14195,6 +14212,9 @@ CREATE TABLE assessment_attempts (
     lease_acquired_at DATETIME2(3) NULL,
     lease_expires_at DATETIME2(3) NULL,
     last_heartbeat_at DATETIME2(3) NULL,
+    lease_epoch INT NOT NULL DEFAULT (1),
+    is_detail_purged BIT NOT NULL DEFAULT (0),
+    detail_purged_at DATETIME2(3) NULL,
     cancel_reason NVARCHAR(1000) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     updated_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -14486,7 +14506,6 @@ CREATE TABLE file_assets (
     created_by_user_id BIGINT NOT NULL,
     asset_type VARCHAR(24) NOT NULL,
     display_name NVARCHAR(255) NOT NULL,
-    current_revision_id BIGINT NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('PENDING'),
     retention_until DATETIME2(3) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -14499,7 +14518,6 @@ CREATE TABLE file_assets (
     CONSTRAINT uq_file_assets_public_id_1 UNIQUE (public_id),
     CONSTRAINT ck_file_assets_1 CHECK (asset_type IN ('RESOURCE','QUESTION_IMAGE','COURSE_IMAGE','IMPORT_SOURCE','EXPORT','OTHER')),
     CONSTRAINT ck_file_assets_2 CHECK (status IN ('PENDING','ACTIVE','REPLACED','TRASH','HISTORICAL')),
-    CONSTRAINT ck_file_assets_3 CHECK (status <> 'ACTIVE' OR current_revision_id IS NOT NULL),
     CONSTRAINT fk_file_assets_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
     CONSTRAINT fk_file_assets_created_by_user_id FOREIGN KEY (created_by_user_id) REFERENCES users (id),
     CONSTRAINT fk_file_assets_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id) ON DELETE SET NULL
@@ -14510,6 +14528,7 @@ CREATE TABLE file_revisions (
     id BIGINT IDENTITY(1,1) NOT NULL,
     file_asset_id BIGINT NOT NULL,
     revision_no INT NOT NULL,
+    is_current BIT NOT NULL DEFAULT (0),
     blob_id BIGINT NULL,
     original_filename NVARCHAR(255) NOT NULL,
     declared_mime_type NVARCHAR(150) NULL,
@@ -14817,7 +14836,6 @@ CREATE TABLE knowledge_documents (
     source_type VARCHAR(24) NOT NULL,
     source_entity_id BIGINT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('ACTIVE'),
-    current_version_id BIGINT NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     updated_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     row_version ROWVERSION,
@@ -14835,6 +14853,7 @@ CREATE TABLE knowledge_versions (
     id BIGINT IDENTITY(1,1) NOT NULL,
     knowledge_document_id BIGINT NOT NULL,
     version_no INT NOT NULL,
+    is_current BIT NOT NULL DEFAULT (0),
     source_revision_type VARCHAR(32) NULL,
     source_revision_id BIGINT NULL,
     content_hash BINARY(32) NOT NULL,
@@ -15165,9 +15184,6 @@ GO
 ALTER TABLE enrollments ADD CONSTRAINT fk_enrollments_current_period_id FOREIGN KEY (current_period_id) REFERENCES enrollment_periods (id) ON DELETE SET NULL;
 GO
 
-ALTER TABLE questions ADD CONSTRAINT fk_questions_current_revision_id FOREIGN KEY (current_revision_id) REFERENCES question_revisions (id) ON DELETE SET NULL;
-GO
-
 ALTER TABLE attempt_question_grade_history ADD CONSTRAINT fk_attempt_question_grade_history_question_correction_id FOREIGN KEY (question_correction_id) REFERENCES question_corrections (id) ON DELETE SET NULL;
 GO
 
@@ -15177,13 +15193,7 @@ GO
 ALTER TABLE regrade_jobs ADD CONSTRAINT fk_regrade_jobs_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;
 GO
 
-ALTER TABLE file_assets ADD CONSTRAINT fk_file_assets_current_revision_id FOREIGN KEY (current_revision_id) REFERENCES file_revisions (id) ON DELETE SET NULL;
-GO
-
 ALTER TABLE document_import_jobs ADD CONSTRAINT fk_document_import_jobs_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;
-GO
-
-ALTER TABLE knowledge_documents ADD CONSTRAINT fk_knowledge_documents_current_version_id FOREIGN KEY (current_version_id) REFERENCES knowledge_versions (id) ON DELETE SET NULL;
 GO
 
 ALTER TABLE knowledge_versions ADD CONSTRAINT fk_knowledge_versions_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;
@@ -15254,6 +15264,9 @@ GO
 CREATE INDEX ix_lessons_course_status_position ON lessons (course_id, status, position);
 GO
 
+CREATE UNIQUE INDEX uq_lessons_course_position_active ON lessons (course_id, position) WHERE status IN ('ACTIVE', 'PUBLISHED');
+GO
+
 CREATE INDEX ix_enrollments_course_status ON enrollments (course_id, status, student_user_id);
 GO
 
@@ -15288,6 +15301,9 @@ CREATE INDEX ix_questions_usage ON questions (course_id, last_used_at, usage_cou
 GO
 
 CREATE INDEX ix_question_revisions_question ON question_revisions (question_id, revision_no);
+GO
+
+CREATE UNIQUE INDEX uq_question_revisions_current ON question_revisions (question_id) WHERE is_current = 1;
 GO
 
 CREATE INDEX ix_question_revisions_exposure ON question_revisions (was_student_exposed, was_used_for_grading);
@@ -15404,6 +15420,9 @@ GO
 CREATE UNIQUE INDEX ux_file_revisions_active ON file_revisions (file_asset_id) WHERE status = 'ACTIVE';
 GO
 
+CREATE UNIQUE INDEX uq_file_revisions_current ON file_revisions (file_asset_id) WHERE is_current = 1;
+GO
+
 CREATE INDEX ix_file_revisions_asset ON file_revisions (file_asset_id, revision_no);
 GO
 
@@ -15462,6 +15481,9 @@ CREATE INDEX ix_knowledge_docs_course_status ON knowledge_documents (course_id, 
 GO
 
 CREATE UNIQUE INDEX ux_knowledge_versions_active ON knowledge_versions (knowledge_document_id) WHERE status = 'ACTIVE';
+GO
+
+CREATE UNIQUE INDEX uq_knowledge_versions_current ON knowledge_versions (knowledge_document_id) WHERE is_current = 1;
 GO
 
 CREATE INDEX ix_knowledge_versions_doc ON knowledge_versions (knowledge_document_id, version_no);
@@ -15557,6 +15579,7 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
+    -- 1. Structure Timing is strictly immutable once published or started
     IF EXISTS (
         SELECT 1
         FROM inserted i
@@ -15567,7 +15590,6 @@ BEGIN
                   i.published_at IS NULL
                OR i.published_at <> d.published_at
                OR ISNULL(i.open_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.open_at, CONVERT(DATETIME2(3),'1900-01-01'))
-               OR ISNULL(i.close_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.close_at, CONVERT(DATETIME2(3),'1900-01-01'))
                OR ISNULL(i.time_limit_minutes,-1) <> ISNULL(d.time_limit_minutes,-1)
               )
           )
@@ -15576,7 +15598,21 @@ BEGIN
               AND (i.first_attempt_started_at IS NULL OR i.first_attempt_started_at <> d.first_attempt_started_at)
           )
     )
-        THROW 51001, 'Assessment publish/first-start markers and locked timing are immutable once set.', 1;
+        THROW 51001, 'Assessment publish/first-start markers and structure timing (open_at, time_limit) are immutable once set.', 1;
+
+    -- 2. Window Timing (close_at): only forward extension allowed once published; shortening or terminal modification is forbidden
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        JOIN deleted d ON d.id = i.id
+        WHERE d.published_at IS NOT NULL
+          AND (
+              (d.status IN ('ARCHIVED','CANCELLED','TRASH') AND ISNULL(i.close_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.close_at, CONVERT(DATETIME2(3),'1900-01-01')))
+              OR (d.close_at IS NOT NULL AND i.close_at IS NULL)
+              OR (d.close_at IS NOT NULL AND i.close_at IS NOT NULL AND i.close_at < d.close_at)
+          )
+    )
+        THROW 51007, 'Assessment close_at can only be extended forward into the future after publish.', 1;
 END;
 GO
 
@@ -15698,7 +15734,7 @@ BEGIN
         JOIN questions q ON q.id = qr.question_id
         WHERE qr.was_student_exposed = 1
            OR qr.was_used_for_grading = 1
-           OR (q.first_used_at IS NOT NULL AND q.current_revision_id = qr.id)
+           OR (q.first_used_at IS NOT NULL AND qr.is_current = 1)
     )
         THROW 51007, 'Choices of an activated/used revision are immutable; create a new revision.', 1;
 END;
@@ -15721,34 +15757,33 @@ BEGIN
         JOIN questions q ON q.id = qr.question_id
         WHERE qr.was_student_exposed = 1
            OR qr.was_used_for_grading = 1
-           OR (q.first_used_at IS NOT NULL AND q.current_revision_id = qr.id)
+           OR (q.first_used_at IS NOT NULL AND qr.is_current = 1)
     )
         THROW 51008, 'Accepted answers of an activated/used revision are immutable; create a new revision.', 1;
 END;
 GO
 
 CREATE OR ALTER TRIGGER trg_question_type_lock_after_answered
-ON questions
-AFTER UPDATE
+ON question_revisions
+AFTER INSERT, UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN deleted d ON d.id = i.id
-        JOIN question_revisions oldr ON oldr.id = d.current_revision_id
-        JOIN question_revisions newr ON newr.id = i.current_revision_id
-        WHERE i.first_answered_at IS NOT NULL
-          AND ISNULL(i.current_revision_id,0) <> ISNULL(d.current_revision_id,0)
-          AND oldr.question_type <> newr.question_type
+        JOIN questions q ON q.id = i.question_id
+        JOIN question_revisions prior ON prior.question_id = q.id AND prior.id <> i.id
+        WHERE q.first_answered_at IS NOT NULL
+          AND i.is_current = 1
+          AND prior.question_type <> i.question_type
     )
         THROW 51009, 'Question type cannot change after any student has answered it.', 1;
 END;
 GO
 
-CREATE OR ALTER TRIGGER trg_file_asset_current_revision_safe
-ON file_assets
+CREATE OR ALTER TRIGGER trg_file_revisions_current_active
+ON file_revisions
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -15756,16 +15791,15 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN file_revisions fr ON fr.id = i.current_revision_id
-        WHERE i.current_revision_id IS NOT NULL
-          AND (fr.file_asset_id <> i.id OR fr.status <> 'ACTIVE')
+        WHERE i.is_current = 1
+          AND i.status <> 'ACTIVE'
     )
-        THROW 51010, 'Current file revision must belong to the asset and be ACTIVE.', 1;
+        THROW 51010, 'Current file revision must have status ACTIVE.', 1;
 END;
 GO
 
-CREATE OR ALTER TRIGGER trg_knowledge_document_current_version_active
-ON knowledge_documents
+CREATE OR ALTER TRIGGER trg_knowledge_versions_current_active
+ON knowledge_versions
 AFTER INSERT, UPDATE
 AS
 BEGIN
@@ -15773,11 +15807,10 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM inserted i
-        JOIN knowledge_versions kv ON kv.id = i.current_version_id
-        WHERE i.current_version_id IS NOT NULL
-          AND (kv.knowledge_document_id <> i.id OR kv.status <> 'ACTIVE')
+        WHERE i.is_current = 1
+          AND i.status <> 'ACTIVE'
     )
-        THROW 51011, 'Current knowledge version must belong to the document and be ACTIVE.', 1;
+        THROW 51011, 'Current knowledge version must have status ACTIVE.', 1;
 END;
 GO
 
@@ -15981,7 +16014,7 @@ Business rule superseded “published immutable”: Student chưa start luôn nh
 
 **Decision**
 
-`assessment_question_assignments`/pool reference `questions.id`. Khi start attempt, transaction resolve `questions.current_revision_id`, tạo `attempt_questions` snapshot và choice snapshots.
+`assessment_question_assignments`/pool reference `questions.id`. Khi start attempt, transaction resolve active question revision (`question_revisions.is_current = 1`), tạo `attempt_questions` snapshot và choice snapshots.
 
 **Alternatives considered**
 

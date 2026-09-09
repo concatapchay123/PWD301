@@ -31,6 +31,7 @@
 - Mutable business rows dùng SQL Server `ROWVERSION` khi cần optimistic concurrency.
 - `QuestionRevision` là **business versioning**, không phải optimistic-lock version.
 - AssessmentAttempt dùng expiring editor lease/heartbeat; chỉ một tab được edit, stale lease có thể takeover mà không tạo attempt mới.
+- Multi-tab lease takeover & autosave sequence collision protection: sử dụng `lease_epoch INT NOT NULL DEFAULT 1` và monotonic `sequence_no`. Khi takeover, `lease_epoch` tăng lên; request mang stale lease token/epoch hoặc stale sequence bị từ chối với HTTP 409 Conflict (`STALE_LEASE_EPOCH` / `STALE_ANSWER`), triệt tiêu race condition ghi đè giữa các tab.
 - Không giữ long-lived DB row lock trong suốt thời gian Student làm bài.
 
 ## Major domain map
@@ -111,20 +112,21 @@ Reference DDL là architecture contract, không phải bằng chứng migrations
 1. Authorization luôn kiểm tra object ownership/resource relationship, không chỉ role.
 2. Không trả correct-answer flags/explanations cho active Student attempt trước visibility policy.
 3. Không rewrite Attempt snapshot khi Question thay đổi.
-4. Assessment timing bị khóa sau publish.
+4. Assessment duration timing (`open_at`, `time_limit_minutes`) bị đóng băng (immutable) sau publish. Window timing (`close_at`) chỉ được phép nới rộng về tương lai (forward extension only) kèm theo ghi nhận bắt buộc audit event `ASSESSMENT_CLOSE_AT_EXTENDED`; tuyệt đối không cho phép rút ngắn thời gian kết thúc.
 5. Assessment structure và assigned points bị khóa sau Student đầu tiên start.
 6. Question correction vẫn tạo revision/regrade theo rule; không được biến Assessment thành “immutable hoàn toàn sau publish”.
 7. Server time quyết định deadline; save đến sau deadline bị reject/not counted.
-8. Answer save yêu cầu lease hợp lệ + deadline + monotonic/offline reconciliation rule.
+8. Answer save yêu cầu lease hợp lệ + `lease_epoch` + deadline + monotonic/offline reconciliation rule.
 9. Submit idempotent: retry không tạo duplicate result.
-10. Regrade/full-credit correction ghi history và không sửa những gì Student từng thấy/chọn.
-11. Enrollment detail purge sau >30 ngày không rejoin loại period đó khỏi future regrade nhưng giữ compact completion/prerequisite summary.
+10. Regrade worker đối soát dựa trên `choice_key` bền vững (persistent across revisions) giữa snapshot của Student và active QuestionRevision, tránh chấm lệch 0 điểm khi IDs nội bộ thay đổi. Regrade/full-credit correction ghi history và không sửa những gì Student từng thấy/chọn.
+11. Cơ chế Skeleton Tombstone Purging cho AssessmentAttempt (`is_detail_purged = 1`, `detail_purged_at`): sau >30 ngày leave không rejoin, chỉ dọn dẹp các bảng con chi tiết (`attempt_answers`, `attempt_answer_events`, `attempt_choice_snapshots`, `attempt_questions`), giữ nguyên metadata của parent attempt và `assessment_results` để bảo toàn audit trail và lịch sử hoàn thành khóa học mà không vi phạm retention.
 12. Unsafe/unscanned file không thể trở thành current/Student-accessible; official video upload limit là **< 1 GB**.
-13. Mỗi `FileAsset` tối đa một ACTIVE revision; mỗi `KnowledgeDocument` tối đa một ACTIVE knowledge version.
+13. Loại bỏ hoàn toàn quan hệ khóa ngoại vòng (Circular Foreign Keys) giữa entities và revisions (`questions`, `file_assets`, `knowledge_documents`). Trạng thái active/current được chuyển sang cờ `is_current BIT NOT NULL DEFAULT 0` tại bảng revision/version con kết hợp Filtered Unique Indexes (`WHERE is_current = 1`), bảo đảm không xảy ra deadlock khi bootstrap và bảo đảm tính toàn vẹn ngữ nghĩa (semantic pointer integrity).
 14. RAG prefilter authorization + published/active state trước khi expose chunks cho Gemini; archived/deleted content bị loại.
 15. Sensitive mutation cần required audit trong transaction thích hợp; audit important records append-only.
 16. Không dùng broad `ON DELETE CASCADE` cho historical learning/assessment data.
 17. Stale UI editors phải fail optimistic concurrency thay vì silent overwrite.
+18. Relational Staging cho Lessons thông qua `change_request_id`, status `PENDING_APPROVAL` và Filtered Unique Index `uq_lessons_course_position_active` trên `(course_id, position) WHERE status IN ('ACTIVE', 'PUBLISHED')`, cho phép staged reordering an toàn mà không xung đột vị trí với bài học đang hiển thị.
 
 ## Implementation starting point
 

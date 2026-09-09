@@ -25,8 +25,8 @@ Các file trong thư mục này là **reference architecture DDL** cho Microsoft
 - SQL Server `ROWVERSION` dùng cho optimistic concurrency; không phải business revision number.
 - JSON metadata dùng `NVARCHAR(MAX)` và `ISJSON` khi applicable.
 - `ON DELETE CASCADE` chỉ dùng với disposable child data; historical learning/assessment data được application-managed.
-- Các cross-domain current pointers được tạo sau domain tables để tránh circular bootstrap dependency.
-- Filtered unique indexes đảm bảo tối đa một ACTIVE `file_revision`/asset và một ACTIVE `knowledge_version`/document.
+- Đã loại bỏ hoàn toàn các circular foreign keys (`current_revision_id`, `current_version_id`); trạng thái active/current được quản lý nhất quán bằng cờ `is_current BIT NOT NULL DEFAULT 0` tại các bảng revision/version kết hợp Filtered Unique Indexes (`WHERE is_current = 1`).
+- Filtered unique indexes đảm bảo tối đa một current/ACTIVE revision per Question (`uq_question_revisions_current`), per FileAsset (`uq_file_revisions_current`), per KnowledgeDocument (`uq_knowledge_versions_current`), cũng như thứ tự duy nhất cho bài học active/published per Course (`uq_lessons_course_position_active`).
 - Trigger chỉ bảo vệ critical immutable/history invariants, không thay service-layer business logic.
 
 ## Verification
