@@ -14,6 +14,7 @@ Implements business logic and invariants for:
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 import secrets
 import uuid
@@ -34,6 +35,9 @@ from pwd301.models.assessment import (
 )
 from pwd301.models.attempt_regrade import (
     AssessmentAttempt,
+    AttemptAnswer,
+    AttemptAnswerChoice,
+    AttemptAnswerEvent,
     AttemptChoiceSnapshot,
     AttemptQuestion,
 )
@@ -56,6 +60,8 @@ from pwd301.services.exceptions import (
     AttemptNotFoundError,
     AttemptValidationError,
     ForbiddenError,
+    StaleAnswerSequenceError,
+    StaleLeaseEpochError,
 )
 
 # ============================================================================
@@ -132,6 +138,8 @@ def _serialize_attempt(attempt: AssessmentAttempt) -> dict[str, Any]:
         "lease_expires_at": (
             attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
         ),
+        "lease_epoch": attempt.lease_epoch or 1,
+        "is_detail_purged": bool(attempt.is_detail_purged),
         "created_at": attempt.created_at.isoformat() if attempt.created_at else None,
         "updated_at": attempt.updated_at.isoformat() if attempt.updated_at else None,
     }
@@ -367,6 +375,8 @@ def start_assessment_attempt(
         lease_token_hash=lease_token_hash,
         lease_acquired_at=lease_acquired_at,
         lease_expires_at=lease_expires_at,
+        lease_epoch=1,
+        is_detail_purged=False,
         last_heartbeat_at=lease_acquired_at,
         created_at=now,
         updated_at=now,
@@ -498,7 +508,7 @@ def start_assessment_attempt(
                 choice_snap = AttemptChoiceSnapshot(
                     attempt_question_id=attempt_q.id,
                     source_choice_id=choice.id,
-                    choice_key_snapshot=uuid.uuid4(),
+                    choice_key_snapshot=choice.choice_key,
                     content_snapshot=choice.content,
                     position=choice_pos,
                     created_at=now,
@@ -628,6 +638,7 @@ def get_attempt_delivery(
         "remaining_seconds": remaining_seconds,
         "total_questions": len(questions_data),
         "total_points": float(total_points),
+        "lease_epoch": attempt.lease_epoch or 1,
         "questions": questions_data,
     }
 
@@ -767,6 +778,7 @@ def renew_attempt_lease(
         "status": attempt.status,
         "lease_expires_at": attempt.lease_expires_at.isoformat(),
         "remaining_seconds": remaining_seconds,
+        "lease_epoch": attempt.lease_epoch or 1,
         "server_time": now.isoformat(),
     }
 
@@ -821,6 +833,7 @@ def takeover_attempt_lease(
     attempt.lease_acquired_at = acquired_at
     attempt.last_heartbeat_at = acquired_at
     attempt.lease_expires_at = expires_at
+    attempt.lease_epoch = (attempt.lease_epoch or 1) + 1
     attempt.updated_at = now
 
     # Record Audit Event
@@ -932,3 +945,242 @@ def verify_attempt_lease(
 
     deadline = _normalize_dt(attempt.deadline_at)
     return not (deadline is not None and norm_now is not None and norm_now >= deadline)
+
+
+def _resolve_attempt_question(
+    attempt: AssessmentAttempt,
+    attempt_question_id: AttemptQuestion | int | uuid.UUID | str,
+    session: Session | scoped_session[Any],
+) -> AttemptQuestion | None:
+    """Resolve AttemptQuestion within an attempt by object, internal integer ID, public UUID, or uuid5."""
+    if isinstance(attempt_question_id, AttemptQuestion):
+        return attempt_question_id
+
+    if isinstance(attempt_question_id, int):
+        return (
+            session.query(AttemptQuestion)
+            .filter(
+                AttemptQuestion.attempt_id == attempt.id,
+                AttemptQuestion.id == attempt_question_id,
+            )
+            .first()
+        )
+
+    if isinstance(attempt_question_id, str) and attempt_question_id.isdigit():
+        aq = (
+            session.query(AttemptQuestion)
+            .filter(
+                AttemptQuestion.attempt_id == attempt.id,
+                AttemptQuestion.id == int(attempt_question_id),
+            )
+            .first()
+        )
+        if aq is not None:
+            return aq
+
+    try:
+        val_uuid = (
+            attempt_question_id
+            if isinstance(attempt_question_id, uuid.UUID)
+            else uuid.UUID(str(attempt_question_id))
+        )
+        aq = (
+            session.query(AttemptQuestion)
+            .filter(
+                AttemptQuestion.attempt_id == attempt.id,
+                AttemptQuestion.public_id == val_uuid,
+            )
+            .first()
+        )
+        if aq is not None:
+            return aq
+    except (ValueError, TypeError):
+        pass
+
+    aq_list = (
+        session.query(AttemptQuestion)
+        .filter(AttemptQuestion.attempt_id == attempt.id)
+        .all()
+    )
+    for aq in aq_list:
+        uuid5_val = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question.{aq.id}"))
+        if uuid5_val == str(attempt_question_id):
+            return aq
+
+    return None
+
+
+def save_attempt_answer(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    attempt_question_id: AttemptQuestion | int | uuid.UUID | str,
+    payload: dict[str, Any],
+    raw_lease_token: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Save an answer for a specific question in an attempt with lease epoch fencing and client sequencing.
+
+    Enforces:
+    1. Zero-Trust IDOR check (actor.id == attempt.student_user_id).
+    2. Attempt status is IN_PROGRESS and deadline has not expired.
+    3. Valid lease token and active lease.
+    4. Lease epoch fencing: If payload specifies lease_epoch, must match attempt.lease_epoch.
+       If mismatch -> raises StaleLeaseEpochError (409 STALE_LEASE_EPOCH).
+    5. Client sequencing: client_sequence must be strictly > last_client_sequence.
+       If <= -> records rejected event and raises StaleAnswerSequenceError (409 STALE_ANSWER).
+    6. Persists AttemptAnswer, AttemptAnswerChoice (if choices provided), and accepted AttemptAnswerEvent.
+    """
+    sess = session if session is not None else db.session
+
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You do not have permission to modify this assessment attempt.")
+
+    now = utc_now()
+    _check_and_expire_if_needed(sess, attempt, now)
+
+    if attempt.status != "IN_PROGRESS":
+        raise AttemptValidationError(
+            f"Assessment attempt is not in progress (status: {attempt.status})."
+        )
+
+    # Validate lease token
+    if not raw_lease_token or not isinstance(raw_lease_token, str):
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+
+    # Validate lease expiration
+    norm_now = _normalize_dt(now)
+    lease_exp = _normalize_dt(attempt.lease_expires_at)
+    if lease_exp is None or (norm_now is not None and norm_now > lease_exp):
+        raise AttemptLeaseExpiredError("Editing lease has expired.")
+
+    # 4. Lease Epoch check
+    payload_epoch = payload.get("lease_epoch")
+    if payload_epoch is not None and int(payload_epoch) != (attempt.lease_epoch or 1):
+        raise StaleLeaseEpochError(
+            f"Stale lease epoch ({payload_epoch} != {attempt.lease_epoch or 1})."
+        )
+
+    # Resolve AttemptQuestion
+    aq = _resolve_attempt_question(attempt, attempt_question_id, session=sess)
+    if aq is None:
+        raise AttemptValidationError("Attempt question not found in this attempt.")
+
+    # 5. Client Sequence check
+    client_seq = int(payload.get("client_sequence", 0))
+    raw_change_id = payload.get("client_change_id") or payload.get("change_id")
+    try:
+        change_uuid = (
+            raw_change_id
+            if isinstance(raw_change_id, uuid.UUID)
+            else (uuid.UUID(str(raw_change_id)) if raw_change_id else uuid.uuid4())
+        )
+    except (ValueError, TypeError):
+        change_uuid = uuid.uuid4()
+
+    answer_record = (
+        sess.query(AttemptAnswer)
+        .filter(AttemptAnswer.attempt_question_id == aq.id)
+        .first()
+    )
+
+    if answer_record is not None and client_seq <= answer_record.last_client_sequence:
+        # Record rejected event
+        event = AttemptAnswerEvent(
+            attempt_question_id=aq.id,
+            change_id=change_uuid,
+            client_sequence=client_seq,
+            server_answer_version=answer_record.answer_version,
+            payload_json=json.dumps(payload, default=str),
+            received_at=now,
+            accepted=False,
+            rejection_reason="STALE",
+        )
+        sess.add(event)
+        sess.commit()
+        raise StaleAnswerSequenceError(
+            f"Stale answer sequence ({client_seq} <= {answer_record.last_client_sequence})."
+        )
+
+    # 6. Apply answer
+    raw_answer_text = payload.get("answer_text") or payload.get("answer")
+    answer_text = str(raw_answer_text).strip() if raw_answer_text is not None else None
+
+    if answer_record is None:
+        answer_record = AttemptAnswer(
+            attempt_question_id=aq.id,
+            answer_text=answer_text,
+            answer_version=1,
+            last_client_sequence=client_seq,
+            last_change_id=change_uuid,
+            saved_at=now,
+        )
+        sess.add(answer_record)
+        sess.flush()
+    else:
+        if answer_text is not None or "answer_text" in payload or "answer" in payload:
+            answer_record.answer_text = answer_text
+        answer_record.answer_version = (answer_record.answer_version or 0) + 1
+        answer_record.last_client_sequence = client_seq
+        answer_record.last_change_id = change_uuid
+        answer_record.saved_at = now
+        sess.flush()
+
+    # Handle choices (for single/multiple choice questions)
+    selected_choice_keys = payload.get("selected_choice_keys") or payload.get("choice_keys")
+    if selected_choice_keys is not None:
+        sess.query(AttemptAnswerChoice).filter(
+            AttemptAnswerChoice.attempt_answer_id == answer_record.id
+        ).delete()
+
+        snapshots = (
+            sess.query(AttemptChoiceSnapshot)
+            .filter(AttemptChoiceSnapshot.attempt_question_id == aq.id)
+            .all()
+        )
+        snap_map = {str(s.choice_key_snapshot): s for s in snapshots}
+        for k in selected_choice_keys:
+            snap = snap_map.get(str(k))
+            if snap is not None:
+                ac = AttemptAnswerChoice(
+                    attempt_answer_id=answer_record.id,
+                    attempt_choice_snapshot_id=snap.id,
+                )
+                sess.add(ac)
+
+    # Record accepted AttemptAnswerEvent
+    event = AttemptAnswerEvent(
+        attempt_question_id=aq.id,
+        change_id=change_uuid,
+        client_sequence=client_seq,
+        server_answer_version=answer_record.answer_version,
+        payload_json=json.dumps(payload, default=str),
+        received_at=now,
+        accepted=True,
+        rejection_reason=None,
+    )
+    sess.add(event)
+    sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "attempt_question_id": str(aq.public_id) if getattr(aq, "public_id", None) else str(attempt_question_id),
+        "answer_version": answer_record.answer_version,
+        "last_client_sequence": answer_record.last_client_sequence,
+        "saved_at": answer_record.saved_at.isoformat() if answer_record.saved_at else now.isoformat(),
+        "lease_epoch": attempt.lease_epoch or 1,
+    }
+

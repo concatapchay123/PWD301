@@ -305,3 +305,11 @@ class AttemptLeaseExpiredError(AttemptLeaseError):
 
 class AttemptExpiredError(ConflictError, AttemptError):
     """Raised when an assessment attempt has exceeded its server-authoritative deadline."""
+
+
+class StaleLeaseEpochError(AttemptLeaseError):
+    """Raised when an autosave payload has a stale lease_epoch."""
+
+
+class StaleAnswerSequenceError(AttemptLeaseError):
+    """Raised when an autosave payload has a stale client sequence."""

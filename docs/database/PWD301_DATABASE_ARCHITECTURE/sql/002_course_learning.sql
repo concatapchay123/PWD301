@@ -121,6 +121,7 @@ CREATE TABLE lessons (
     viewed_fraction_required DECIMAL(5,4) NOT NULL DEFAULT (0.8000),
     required_for_periods_starting_at DATETIME2(3) NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('DRAFT'),
+    change_request_id BIGINT NULL,
     published_at DATETIME2(3) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     updated_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -130,13 +131,13 @@ CREATE TABLE lessons (
     deleted_by_user_id BIGINT NULL,
     CONSTRAINT pk_lessons PRIMARY KEY (id),
     CONSTRAINT uq_lessons_public_id_1 UNIQUE (public_id),
-    CONSTRAINT uq_lessons_course_id_position_2 UNIQUE (course_id, position),
     CONSTRAINT ck_lessons_1 CHECK (position > 0),
     CONSTRAINT ck_lessons_2 CHECK (estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0),
     CONSTRAINT ck_lessons_3 CHECK (minimum_completion_seconds >= 0),
     CONSTRAINT ck_lessons_4 CHECK (viewed_fraction_required >= 0 AND viewed_fraction_required <= 1),
-    CONSTRAINT ck_lessons_5 CHECK (status IN ('DRAFT','PUBLISHED','HIDDEN','TRASH','HISTORICAL')),
+    CONSTRAINT ck_lessons_5 CHECK (status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')),
     CONSTRAINT fk_lessons_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
+    CONSTRAINT fk_lessons_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id) ON DELETE SET NULL,
     CONSTRAINT fk_lessons_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id) ON DELETE SET NULL
 );
 GO

@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -727,6 +728,15 @@ def update_assessment(
 
     assessment.updated_at = utc_now()
     sess.flush()
+
+    if is_published and "close_at" in payload:
+        _record_assessment_audit(
+            sess=sess,
+            actor=actor,
+            action="ASSESSMENT_CLOSE_AT_EXTENDED",
+            target_id=assessment.id,
+            reason=payload.get("reason") or "Window timing (close_at) extended forward",
+        )
 
     _record_assessment_audit(
         sess=sess,
@@ -1480,7 +1490,13 @@ def materialize_blueprint_pool(
     for rule in sorted(blueprint.rules, key=lambda r: r.position):
         cand_query = (
             sess.query(Question)
-            .join(QuestionRevision, Question.current_revision_id == QuestionRevision.id)
+            .join(
+                QuestionRevision,
+                sa.and_(
+                    Question.id == QuestionRevision.question_id,
+                    QuestionRevision.is_current == True,
+                ),
+            )
             .filter(
                 Question.course_id == assessment.course_id,
                 Question.status == "ACTIVE",

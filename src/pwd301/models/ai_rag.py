@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -372,16 +372,6 @@ class KnowledgeDocument(Base):
         default="ACTIVE",
         server_default=sa.text("'ACTIVE'"),
     )
-    current_version_id = db.Column(
-        sa.BigInteger,
-        sa.ForeignKey(
-            "knowledge_versions.id",
-            name="fk_knowledge_documents_current_version_id",
-            use_alter=True,
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
     created_at = db.Column(
         UTCDateTime,
         nullable=False,
@@ -424,8 +414,9 @@ class KnowledgeDocument(Base):
     )
     current_version = relationship(
         "KnowledgeVersion",
-        foreign_keys=[current_version_id],
-        post_update=True,
+        primaryjoin="and_(KnowledgeDocument.id == foreign(KnowledgeVersion.knowledge_document_id), KnowledgeVersion.is_current == True)",
+        uselist=False,
+        viewonly=True,
     )
 
 
@@ -444,6 +435,12 @@ class KnowledgeVersion(Base):
         nullable=False,
     )
     version_no = db.Column(sa.Integer, nullable=False)
+    is_current = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("0"),
+    )
     source_revision_type = db.Column(sa.String(32), nullable=True)
     source_revision_id = db.Column(sa.BigInteger, nullable=True)
     content_hash = db.Column(Binary32, nullable=False)
@@ -493,6 +490,13 @@ class KnowledgeVersion(Base):
             unique=True,
             mssql_where=sa.text("status='ACTIVE'"),
             sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+        sa.Index(
+            "uq_knowledge_versions_current",
+            "knowledge_document_id",
+            unique=True,
+            mssql_where=sa.text("is_current = 1"),
+            sqlite_where=sa.text("is_current = 1"),
         ),
     )
 

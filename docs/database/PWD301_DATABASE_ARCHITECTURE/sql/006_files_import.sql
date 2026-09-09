@@ -33,7 +33,6 @@ CREATE TABLE file_assets (
     created_by_user_id BIGINT NOT NULL,
     asset_type VARCHAR(24) NOT NULL,
     display_name NVARCHAR(255) NOT NULL,
-    current_revision_id BIGINT NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('PENDING'),
     retention_until DATETIME2(3) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -46,7 +45,6 @@ CREATE TABLE file_assets (
     CONSTRAINT uq_file_assets_public_id_1 UNIQUE (public_id),
     CONSTRAINT ck_file_assets_1 CHECK (asset_type IN ('RESOURCE','QUESTION_IMAGE','COURSE_IMAGE','IMPORT_SOURCE','EXPORT','OTHER')),
     CONSTRAINT ck_file_assets_2 CHECK (status IN ('PENDING','ACTIVE','REPLACED','TRASH','HISTORICAL')),
-    CONSTRAINT ck_file_assets_3 CHECK (status <> 'ACTIVE' OR current_revision_id IS NOT NULL),
     CONSTRAINT fk_file_assets_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
     CONSTRAINT fk_file_assets_created_by_user_id FOREIGN KEY (created_by_user_id) REFERENCES users (id),
     CONSTRAINT fk_file_assets_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id) ON DELETE SET NULL
@@ -57,6 +55,7 @@ CREATE TABLE file_revisions (
     id BIGINT IDENTITY(1,1) NOT NULL,
     file_asset_id BIGINT NOT NULL,
     revision_no INT NOT NULL,
+    is_current BIT NOT NULL DEFAULT (0),
     blob_id BIGINT NULL,
     original_filename NVARCHAR(255) NOT NULL,
     declared_mime_type NVARCHAR(150) NULL,

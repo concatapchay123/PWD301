@@ -19,9 +19,6 @@ GO
 ALTER TABLE enrollments ADD CONSTRAINT fk_enrollments_current_period_id FOREIGN KEY (current_period_id) REFERENCES enrollment_periods (id) ON DELETE SET NULL;
 GO
 
-ALTER TABLE questions ADD CONSTRAINT fk_questions_current_revision_id FOREIGN KEY (current_revision_id) REFERENCES question_revisions (id) ON DELETE SET NULL;
-GO
-
 ALTER TABLE attempt_question_grade_history ADD CONSTRAINT fk_attempt_question_grade_history_question_correction_id FOREIGN KEY (question_correction_id) REFERENCES question_corrections (id) ON DELETE SET NULL;
 GO
 
@@ -31,13 +28,7 @@ GO
 ALTER TABLE regrade_jobs ADD CONSTRAINT fk_regrade_jobs_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;
 GO
 
-ALTER TABLE file_assets ADD CONSTRAINT fk_file_assets_current_revision_id FOREIGN KEY (current_revision_id) REFERENCES file_revisions (id) ON DELETE SET NULL;
-GO
-
 ALTER TABLE document_import_jobs ADD CONSTRAINT fk_document_import_jobs_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;
-GO
-
-ALTER TABLE knowledge_documents ADD CONSTRAINT fk_knowledge_documents_current_version_id FOREIGN KEY (current_version_id) REFERENCES knowledge_versions (id) ON DELETE SET NULL;
 GO
 
 ALTER TABLE knowledge_versions ADD CONSTRAINT fk_knowledge_versions_background_job_id FOREIGN KEY (background_job_id) REFERENCES background_jobs (id) ON DELETE SET NULL;

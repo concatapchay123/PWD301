@@ -87,6 +87,19 @@ class AssessmentAttempt(Base):
     lease_acquired_at = db.Column(UTCDateTime, nullable=True)
     lease_expires_at = db.Column(UTCDateTime, nullable=True)
     last_heartbeat_at = db.Column(UTCDateTime, nullable=True)
+    lease_epoch = db.Column(
+        sa.Integer,
+        nullable=False,
+        default=1,
+        server_default=sa.text("1"),
+    )
+    is_detail_purged = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("0"),
+    )
+    detail_purged_at = db.Column(UTCDateTime, nullable=True)
     cancel_reason = db.Column(sa.Unicode(1000), nullable=True)
     created_at = db.Column(
         UTCDateTime,

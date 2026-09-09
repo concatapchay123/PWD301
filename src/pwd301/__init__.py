@@ -65,6 +65,8 @@ from pwd301.services.exceptions import (
     AttemptLimitExceededError,
     AttemptNotFoundError,
     AttemptValidationError,
+    StaleAnswerSequenceError,
+    StaleLeaseEpochError,
     BlueprintValidationError,
     CompletionRuleError,
     CompletionRuleNotFoundError,
@@ -230,6 +232,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AttemptLeaseError: ("LEASE_CONFLICT", 409),
     AttemptLeaseConflictError: ("LEASE_CONFLICT", 409),
     AttemptLeaseExpiredError: ("LEASE_CONFLICT", 409),
+    StaleLeaseEpochError: ("STALE_LEASE_EPOCH", 409),
+    StaleAnswerSequenceError: ("STALE_ANSWER", 409),
     AttemptExpiredError: ("DEADLINE_EXPIRED", 409),
     # 400 Bad Request & Validation Errors
     CourseValidationError: ("VALIDATION_ERROR", 400),

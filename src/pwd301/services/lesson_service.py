@@ -20,7 +20,13 @@ from typing import Any
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.course import Enrollment, EnrollmentPeriod, Lesson, LessonProgress
+from pwd301.models.course import (
+    CourseChangeRequest,
+    Enrollment,
+    EnrollmentPeriod,
+    Lesson,
+    LessonProgress,
+)
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
@@ -40,7 +46,16 @@ from pwd301.services.exceptions import (
 )
 
 # Allowed lesson statuses per check constraint ck_lessons_5
-VALID_LESSON_STATUSES = {"DRAFT", "PUBLISHED", "HIDDEN", "TRASH", "HISTORICAL"}
+VALID_LESSON_STATUSES = {
+    "DRAFT",
+    "ACTIVE",
+    "PUBLISHED",
+    "PENDING_APPROVAL",
+    "ARCHIVED",
+    "HIDDEN",
+    "TRASH",
+    "HISTORICAL",
+}
 
 # Mass-assignment safe writable lesson fields
 UPDATABLE_LESSON_FIELDS = {
@@ -180,10 +195,10 @@ def create_lesson(
 
     # Validate status
     status = data.get("status", "DRAFT")
-    if status not in ("DRAFT", "PUBLISHED", "HIDDEN"):
+    if status not in VALID_LESSON_STATUSES:
         raise LessonValidationError(f"Invalid initial lesson status: {status}.")
 
-    published_at = utc_now() if status == "PUBLISHED" else None
+    published_at = utc_now() if status in ("PUBLISHED", "ACTIVE") else None
 
     # Calculate position and shift if needed
     active_lessons = (
@@ -194,8 +209,12 @@ def create_lesson(
     )
     max_position = len(active_lessons)
     requested_position = data.get("position")
+    change_req_id = data.get("change_request_id")
 
-    if requested_position is None:
+    if change_req_id or status == "PENDING_APPROVAL":
+        # Staged lesson targeting a position for future approval
+        assigned_position = int(requested_position) if requested_position is not None else (max_position + 1)
+    elif requested_position is None:
         assigned_position = max_position + 1
     else:
         try:
@@ -222,6 +241,7 @@ def create_lesson(
 
     lesson = Lesson(
         course_id=course.id,
+        change_request_id=change_req_id,
         title=clean_title,
         summary=clean_summary,
         markdown_content=clean_markdown,
@@ -621,9 +641,10 @@ def change_lesson_status(
 
     course = require_course_manager(actor, lesson.course_id, session=sess)
 
-    if new_status not in ("DRAFT", "PUBLISHED", "HIDDEN"):
+    if new_status not in VALID_LESSON_STATUSES:
+        valid_str = ", ".join(sorted(VALID_LESSON_STATUSES))
         raise LessonValidationError(
-            f"Invalid status: '{new_status}'. Allowed transitions: DRAFT, PUBLISHED, HIDDEN."
+            f"Invalid status: '{new_status}'. Allowed transitions: {valid_str}."
         )
 
     if new_status == "PUBLISHED" and course.status in ("TRASH", "ARCHIVED"):
@@ -999,3 +1020,165 @@ def get_lesson_progress(
         )
         .first()
     )
+
+
+def create_lesson_change_request(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[CourseChangeRequest, Lesson]:
+    """Create a relational staged lesson change request (Defect 6).
+
+    Creates a CourseChangeRequest and a corresponding Lesson in 'PENDING_APPROVAL' status,
+    linked via change_request_id. Avoids JSON de-normalization while respecting the
+    filtered unique index uq_lessons_course_position_active.
+    """
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+
+    req = CourseChangeRequest(
+        course_id=course.id,
+        requested_by_user_id=actor.id,
+        change_type=payload.get("change_type", "LESSON_STRUCTURE"),
+        target_type="LESSON",
+        target_id=payload.get("target_id"),
+        proposed_payload_json=json.dumps(payload, default=str),
+        status="PENDING",
+        created_at=utc_now(),
+    )
+    sess.add(req)
+    sess.flush()
+
+    lesson_data = dict(payload)
+    lesson_data["status"] = "PENDING_APPROVAL"
+    lesson_data["change_request_id"] = req.id
+    staged_lesson = create_lesson(actor, course.id, lesson_data, session=sess)
+    req.target_id = staged_lesson.id
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return req, staged_lesson
+
+
+def approve_course_change_request(
+    actor: User,
+    change_request_id: int | uuid.UUID | str,
+    review_reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Approve a course change request and promote staged lessons atomically (Defect 6).
+
+    For any staged lesson linked to the request:
+    - Retires any currently active/published lesson at the same position by setting status='HISTORICAL'.
+    - Activates the staged lesson by setting status='PUBLISHED'.
+    - Marks the change request APPROVED.
+    All done within a single transaction without violating uq_lessons_course_position_active.
+    """
+    sess = session if session is not None else db.session
+
+    req = sess.get(CourseChangeRequest, change_request_id)
+    if req is None:
+        raise ResourceNotFoundError("Course change request not found.")
+
+    require_course_manager(actor, req.course_id, session=sess)
+
+    if req.status != "PENDING":
+        raise LessonStateViolationError(f"Cannot approve change request in '{req.status}' status.")
+
+    now = utc_now()
+
+    # Find staged lessons for this request
+    staged_lessons = (
+        sess.query(Lesson)
+        .filter(Lesson.change_request_id == req.id)
+        .all()
+    )
+
+    for staged in staged_lessons:
+        # Check if there is an active/published lesson at the same position
+        active_at_pos = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == req.course_id,
+                Lesson.position == staged.position,
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                Lesson.id != staged.id,
+                Lesson.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if active_at_pos is not None:
+            active_at_pos.status = "HISTORICAL"
+            active_at_pos.updated_at = now
+            sess.flush()
+
+        staged.status = "PUBLISHED"
+        if staged.published_at is None:
+            staged.published_at = now
+        staged.updated_at = now
+        sess.flush()
+
+    req.status = "APPROVED"
+    req.reviewed_by_user_id = actor.id
+    req.review_reason = review_reason
+    req.reviewed_at = now
+    req.applied_at = now
+    sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return req
+
+
+def reject_course_change_request(
+    actor: User,
+    change_request_id: int | uuid.UUID | str,
+    review_reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Reject a course change request and trash its staged lessons."""
+    sess = session if session is not None else db.session
+
+    req = sess.get(CourseChangeRequest, change_request_id)
+    if req is None:
+        raise ResourceNotFoundError("Course change request not found.")
+
+    require_course_manager(actor, req.course_id, session=sess)
+
+    if req.status != "PENDING":
+        raise LessonStateViolationError(f"Cannot reject change request in '{req.status}' status.")
+
+    now = utc_now()
+    staged_lessons = (
+        sess.query(Lesson)
+        .filter(Lesson.change_request_id == req.id)
+        .all()
+    )
+    for staged in staged_lessons:
+        staged.status = "TRASH"
+        staged.deleted_at = now
+        staged.updated_at = now
+
+    req.status = "REJECTED"
+    req.reviewed_by_user_id = actor.id
+    req.review_reason = review_reason
+    req.reviewed_at = now
+    sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return req
+

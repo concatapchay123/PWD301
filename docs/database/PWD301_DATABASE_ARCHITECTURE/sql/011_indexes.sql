@@ -55,6 +55,9 @@ GO
 CREATE INDEX ix_lessons_course_status_position ON lessons (course_id, status, position);
 GO
 
+CREATE UNIQUE INDEX uq_lessons_course_position_active ON lessons (course_id, position) WHERE status IN ('ACTIVE', 'PUBLISHED');
+GO
+
 CREATE INDEX ix_enrollments_course_status ON enrollments (course_id, status, student_user_id);
 GO
 
@@ -89,6 +92,9 @@ CREATE INDEX ix_questions_usage ON questions (course_id, last_used_at, usage_cou
 GO
 
 CREATE INDEX ix_question_revisions_question ON question_revisions (question_id, revision_no);
+GO
+
+CREATE UNIQUE INDEX uq_question_revisions_current ON question_revisions (question_id) WHERE is_current = 1;
 GO
 
 CREATE INDEX ix_question_revisions_exposure ON question_revisions (was_student_exposed, was_used_for_grading);
@@ -205,6 +211,9 @@ GO
 CREATE UNIQUE INDEX ux_file_revisions_active ON file_revisions (file_asset_id) WHERE status = 'ACTIVE';
 GO
 
+CREATE UNIQUE INDEX uq_file_revisions_current ON file_revisions (file_asset_id) WHERE is_current = 1;
+GO
+
 CREATE INDEX ix_file_revisions_asset ON file_revisions (file_asset_id, revision_no);
 GO
 
@@ -263,6 +272,9 @@ CREATE INDEX ix_knowledge_docs_course_status ON knowledge_documents (course_id, 
 GO
 
 CREATE UNIQUE INDEX ux_knowledge_versions_active ON knowledge_versions (knowledge_document_id) WHERE status = 'ACTIVE';
+GO
+
+CREATE UNIQUE INDEX uq_knowledge_versions_current ON knowledge_versions (knowledge_document_id) WHERE is_current = 1;
 GO
 
 CREATE INDEX ix_knowledge_versions_doc ON knowledge_versions (knowledge_document_id, version_no);

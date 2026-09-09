@@ -431,6 +431,11 @@ class Lesson(Base):
         default="DRAFT",
         server_default=sa.text("'DRAFT'"),
     )
+    change_request_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("course_change_requests.id", name="fk_lessons_change_request_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     published_at = db.Column(UTCDateTime, nullable=True)
     created_at = db.Column(
         UTCDateTime,
@@ -455,7 +460,14 @@ class Lesson(Base):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("course_id", "position", name="uq_lessons_course_id_position_2"),
+        sa.Index(
+            "uq_lessons_course_position_active",
+            "course_id",
+            "position",
+            unique=True,
+            mssql_where=sa.text("status IN ('ACTIVE','PUBLISHED')"),
+            sqlite_where=sa.text("status IN ('ACTIVE','PUBLISHED')"),
+        ),
         sa.CheckConstraint("position > 0", name="ck_lessons_1"),
         sa.CheckConstraint(
             "estimated_duration_minutes IS NULL OR estimated_duration_minutes > 0",
@@ -467,13 +479,14 @@ class Lesson(Base):
             name="ck_lessons_4",
         ),
         sa.CheckConstraint(
-            "status IN ('DRAFT','PUBLISHED','HIDDEN','TRASH','HISTORICAL')",
+            "status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')",
             name="ck_lessons_5",
         ),
         sa.Index("ix_lessons_course_status_position", "course_id", "status", "position"),
     )
 
     course = relationship("Course", back_populates="lessons")
+    change_request = relationship("CourseChangeRequest", foreign_keys=[change_request_id], backref="staged_lessons")
     deleted_by = relationship("User", foreign_keys=[deleted_by_user_id])
 
 

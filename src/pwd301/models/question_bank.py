@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -66,16 +66,6 @@ class Question(Base):
         nullable=False,
         default="DRAFT",
         server_default=sa.text("'DRAFT'"),
-    )
-    current_revision_id = db.Column(
-        sa.BigInteger,
-        sa.ForeignKey(
-            "question_revisions.id",
-            name="fk_questions_current_revision_id",
-            use_alter=True,
-            ondelete="SET NULL",
-        ),
-        nullable=True,
     )
     first_used_at = db.Column(UTCDateTime, nullable=True)
     first_answered_at = db.Column(UTCDateTime, nullable=True)
@@ -137,8 +127,9 @@ class Question(Base):
     )
     current_revision = relationship(
         "QuestionRevision",
-        foreign_keys=[current_revision_id],
-        post_update=True,
+        primaryjoin="and_(Question.id == foreign(QuestionRevision.question_id), QuestionRevision.is_current == True)",
+        uselist=False,
+        viewonly=True,
     )
 
 
@@ -154,6 +145,12 @@ class QuestionRevision(Base):
         nullable=False,
     )
     revision_no = db.Column(sa.Integer, nullable=False)
+    is_current = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("0"),
+    )
     question_type = db.Column(sa.String(24), nullable=False)
     content = db.Column(NVarCharMax, nullable=False)
     explanation = db.Column(NVarCharMax, nullable=True)
@@ -220,6 +217,13 @@ class QuestionRevision(Base):
             "ix_question_revisions_exposure",
             "was_student_exposed",
             "was_used_for_grading",
+        ),
+        sa.Index(
+            "uq_question_revisions_current",
+            "question_id",
+            unique=True,
+            mssql_where=sa.text("is_current = 1"),
+            sqlite_where=sa.text("is_current = 1"),
         ),
     )
 

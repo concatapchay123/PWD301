@@ -13,6 +13,7 @@ from pwd301.services.attempt_service import (
     list_student_assessment_attempts,
     release_attempt_lease,
     renew_attempt_lease,
+    save_attempt_answer,
     start_assessment_attempt,
     takeover_attempt_lease,
 )
@@ -68,6 +69,7 @@ def start_assessment_attempt_route(assessment_id: str) -> tuple[Response, int] |
         "lease_expires_at": (
             attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
         ),
+        "lease_epoch": attempt.lease_epoch or 1,
         "total_questions": delivery["total_questions"],
         "total_points": delivery["total_points"],
         "delivery": delivery,
@@ -163,10 +165,32 @@ def takeover_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Resp
         "lease_expires_at": (
             attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
         ),
+        "lease_epoch": attempt.lease_epoch or 1,
         "remaining_seconds": remaining_seconds,
         "server_time": now.isoformat(),
     }
     return jsonify(response_payload), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/answers/<attempt_question_id>", methods=["PUT"])
+@jwt_required
+def save_attempt_answer_route(attempt_id: str, attempt_question_id: str) -> tuple[Response, int] | Response:
+    """Save an answer during an active attempt (autosave).
+
+    PUT /api/attempts/<attempt_id>/answers/<attempt_question_id>
+    """
+    actor = require_authenticated_actor()
+    raw_token = _extract_lease_token()
+    payload = request.get_json(silent=True) or {}
+    result = save_attempt_answer(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        payload=payload,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify(result), 200
 
 
 @api_attempt_bp.route("/api/attempts/<attempt_id>/lease/release", methods=["POST"])

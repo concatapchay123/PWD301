@@ -155,8 +155,7 @@ def _serialize_question_revision(
 ) -> dict[str, Any]:
     """Serialize a QuestionRevision entity into an API dictionary masking BIGINT PKs (ADR-002)."""
     question = rev.question
-    current_rev_id = question.current_revision_id if question else None
-    active = (rev.id == current_rev_id) if is_current is None else is_current
+    active = rev.is_current if is_current is None else is_current
     status_str = "ACTIVE" if active else "SUPERSEDED"
 
     choices_data: list[dict[str, Any]] = []
@@ -591,12 +590,10 @@ def create_question(
         approved_at=utc_now(),
         was_student_exposed=False,
         was_used_for_grading=False,
+        is_current=True,
     )
     sess.add(revision)
     sess.flush()
-
-    # Point current_revision_id to the created revision
-    question.current_revision_id = revision.id
 
     # 11. Create Choices
     for c_data in parsed_choices:
@@ -694,7 +691,13 @@ def list_course_questions(
     flt = filters or {}
     query = (
         sess.query(Question)
-        .join(QuestionRevision, Question.current_revision_id == QuestionRevision.id)
+        .join(
+            QuestionRevision,
+            sa.and_(
+                Question.id == QuestionRevision.question_id,
+                QuestionRevision.is_current.is_(True),
+            ),
+        )
         .filter(Question.course_id == course.id)
     )
 
@@ -1139,6 +1142,7 @@ def create_question_revision(
             if q_type != "TRUE_FALSE" and len(raw_choices) < 2:
                 raise QuestionValidationError(f"{q_type} questions must have at least 2 choices.")
 
+            existing_choices_by_pos = {c.position: c.choice_key for c in latest_rev.choices}
             correct_count = 0
             for idx, c in enumerate(raw_choices, start=1):
                 if not isinstance(c, dict):
@@ -1149,11 +1153,23 @@ def create_question_revision(
                 is_corr = bool(c.get("is_correct", False))
                 if is_corr:
                     correct_count += 1
+                pos = int(c.get("position", idx))
+                raw_ck = c.get("choice_key")
+                assigned_ck = None
+                if raw_ck:
+                    try:
+                        assigned_ck = uuid.UUID(str(raw_ck))
+                    except (ValueError, AttributeError):
+                        pass
+                if not assigned_ck:
+                    assigned_ck = existing_choices_by_pos.get(pos) or uuid.uuid4()
+
                 parsed_choices.append(
                     {
+                        "choice_key": assigned_ck,
                         "content": c_text.strip(),
                         "is_correct": is_corr,
-                        "position": int(c.get("position", idx)),
+                        "position": pos,
                         "is_fixed_position": bool(c.get("is_fixed_position", False)),
                     }
                 )
@@ -1168,10 +1184,11 @@ def create_question_revision(
                     "MULTIPLE_CHOICE questions must have at least 1 correct answer."
                 )
         else:
-            # Clone from latest_rev choices
+            # Clone from latest_rev choices preserving choice_key
             sorted_choices = sorted(latest_rev.choices, key=lambda c: c.position)
             parsed_choices = [
                 {
+                    "choice_key": c.choice_key,
                     "content": c.content,
                     "is_correct": c.is_correct,
                     "position": c.position,
@@ -1251,6 +1268,12 @@ def create_question_revision(
             )
 
     # 11. Create new QuestionRevision
+    # Demote current revision(s)
+    sess.query(QuestionRevision).filter(
+        QuestionRevision.question_id == question.id,
+        QuestionRevision.is_current.is_(True),
+    ).update({"is_current": False})
+
     new_revision_no = latest_rev.revision_no + 1
     new_revision = QuestionRevision(
         question_id=question.id,
@@ -1266,6 +1289,7 @@ def create_question_revision(
         approved_at=utc_now(),
         was_student_exposed=False,
         was_used_for_grading=False,
+        is_current=True,
     )
     sess.add(new_revision)
     sess.flush()
@@ -1274,7 +1298,7 @@ def create_question_revision(
     for c_data in parsed_choices:
         choice = QuestionRevisionChoice(
             question_revision_id=new_revision.id,
-            choice_key=uuid.uuid4(),
+            choice_key=c_data.get("choice_key") or uuid.uuid4(),
             content=c_data["content"],
             is_correct=c_data["is_correct"],
             position=c_data["position"],
@@ -1292,8 +1316,7 @@ def create_question_revision(
         )
         sess.add(answer)
 
-    # 14. Update Question current_revision pointer
-    question.current_revision_id = new_revision.id
+    # 14. Update Question timestamp
     question.updated_at = utc_now()
 
     # 15. Create QuestionCorrection if question was in-use and change requires correction
@@ -1434,7 +1457,6 @@ def update_question(
             )
 
         new_rev, _ = create_question_revision(actor, question.id, payload, session=sess)
-        question.current_revision_id = new_rev.id
         sess.flush()
         return question
 
@@ -1467,17 +1489,28 @@ def update_question(
             "MULTIPLE_CHOICE",
             "TRUE_FALSE",
         ):
+            existing_choices_by_pos = {c.position: c.choice_key for c in rev.choices}
             sess.query(QuestionRevisionChoice).filter(
                 QuestionRevisionChoice.question_revision_id == rev.id
             ).delete()
             raw_choices = payload.get("choices") or []
             for idx, c in enumerate(raw_choices, start=1):
+                pos = int(c.get("position", idx))
+                raw_ck = c.get("choice_key")
+                assigned_ck = None
+                if raw_ck:
+                    try:
+                        assigned_ck = uuid.UUID(str(raw_ck))
+                    except (ValueError, AttributeError):
+                        pass
+                if not assigned_ck:
+                    assigned_ck = existing_choices_by_pos.get(pos) or uuid.uuid4()
                 choice = QuestionRevisionChoice(
                     question_revision_id=rev.id,
-                    choice_key=uuid.uuid4(),
+                    choice_key=assigned_ck,
                     content=c.get("content", "").strip(),
                     is_correct=bool(c.get("is_correct", False)),
-                    position=int(c.get("position", idx)),
+                    position=pos,
                     is_fixed_position=bool(c.get("is_fixed_position", False)),
                 )
                 sess.add(choice)

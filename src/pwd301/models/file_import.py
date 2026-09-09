@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -104,16 +104,6 @@ class FileAsset(Base):
     )
     asset_type = db.Column(sa.String(24), nullable=False)
     display_name = db.Column(sa.Unicode(255), nullable=False)
-    current_revision_id = db.Column(
-        sa.BigInteger,
-        sa.ForeignKey(
-            "file_revisions.id",
-            name="fk_file_assets_current_revision_id",
-            use_alter=True,
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-    )
     status = db.Column(
         sa.String(20),
         nullable=False,
@@ -153,10 +143,6 @@ class FileAsset(Base):
             "status IN ('PENDING','ACTIVE','REPLACED','TRASH','HISTORICAL')",
             name="ck_file_assets_2",
         ),
-        sa.CheckConstraint(
-            "status <> 'ACTIVE' OR current_revision_id IS NOT NULL",
-            name="ck_file_assets_3",
-        ),
         sa.Index("ix_file_assets_course", "course_id", "status"),
     )
 
@@ -172,8 +158,9 @@ class FileAsset(Base):
     )
     current_revision = relationship(
         "FileRevision",
-        foreign_keys=[current_revision_id],
-        post_update=True,
+        primaryjoin="and_(FileAsset.id == foreign(FileRevision.file_asset_id), FileRevision.is_current == True)",
+        uselist=False,
+        viewonly=True,
     )
 
 
@@ -189,6 +176,12 @@ class FileRevision(Base):
         nullable=False,
     )
     revision_no = db.Column(sa.Integer, nullable=False)
+    is_current = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.text("0"),
+    )
     blob_id = db.Column(
         sa.BigInteger,
         sa.ForeignKey("file_blobs.id", name="fk_file_revisions_blob_id", ondelete="SET NULL"),
@@ -241,6 +234,13 @@ class FileRevision(Base):
             unique=True,
             mssql_where=sa.text("status='ACTIVE'"),
             sqlite_where=sa.text("status='ACTIVE'"),
+        ),
+        sa.Index(
+            "uq_file_revisions_current",
+            "file_asset_id",
+            unique=True,
+            mssql_where=sa.text("is_current = 1"),
+            sqlite_where=sa.text("is_current = 1"),
         ),
         sa.Index(
             "ix_file_revisions_recovery",

@@ -17,6 +17,7 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
+    -- 1. Structure Timing is strictly immutable once published or started
     IF EXISTS (
         SELECT 1
         FROM inserted i
@@ -27,7 +28,6 @@ BEGIN
                   i.published_at IS NULL
                OR i.published_at <> d.published_at
                OR ISNULL(i.open_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.open_at, CONVERT(DATETIME2(3),'1900-01-01'))
-               OR ISNULL(i.close_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.close_at, CONVERT(DATETIME2(3),'1900-01-01'))
                OR ISNULL(i.time_limit_minutes,-1) <> ISNULL(d.time_limit_minutes,-1)
               )
           )
@@ -36,7 +36,21 @@ BEGIN
               AND (i.first_attempt_started_at IS NULL OR i.first_attempt_started_at <> d.first_attempt_started_at)
           )
     )
-        THROW 51001, 'Assessment publish/first-start markers and locked timing are immutable once set.', 1;
+        THROW 51001, 'Assessment publish/first-start markers and structure timing (open_at, time_limit) are immutable once set.', 1;
+
+    -- 2. Window Timing (close_at): only forward extension allowed once published; shortening or terminal modification is forbidden
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        JOIN deleted d ON d.id = i.id
+        WHERE d.published_at IS NOT NULL
+          AND (
+              (d.status IN ('ARCHIVED','CANCELLED','TRASH') AND ISNULL(i.close_at, CONVERT(DATETIME2(3),'1900-01-01')) <> ISNULL(d.close_at, CONVERT(DATETIME2(3),'1900-01-01')))
+              OR (d.close_at IS NOT NULL AND i.close_at IS NULL)
+              OR (d.close_at IS NOT NULL AND i.close_at IS NOT NULL AND i.close_at < d.close_at)
+          )
+    )
+        THROW 51007, 'Assessment close_at can only be extended forward into the future after publish.', 1;
 END;
 GO
 
