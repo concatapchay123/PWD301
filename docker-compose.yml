@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: pwd301_db
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-U", "sa", "-P", "${DB_PASSWORD}", "-Q", "SELECT 1", "-No"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clamav:
+    image: clamav/clamav:latest
+    container_name: pwd301_clamav
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: pwd301_web
+    command: flask run --host=0.0.0.0 --port=5000
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    volumes:
+      - ./app:/app/app 
+      - private_storage:/app/private_storage 
+
+  worker:
+    build: .
+    container_name: pwd301_worker
+    command: python -m workers.main 
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - private_storage:/app/private_storage
+
+volumes:
+  sqldata:
+  private_storage:
