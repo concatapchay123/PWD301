@@ -258,7 +258,11 @@ def start_assessment_attempt(
     )
     for existing in in_progress_attempts:
         existing_deadline = _normalize_dt(existing.deadline_at)
-        if existing_deadline is not None and norm_now is not None and norm_now >= existing_deadline:
+        is_past_deadline = (
+            existing_deadline is not None and norm_now is not None and norm_now >= existing_deadline
+        )
+        is_past_close = close_at is not None and norm_now is not None and norm_now >= close_at
+        if is_past_deadline or is_past_close:
             existing.status = "EXPIRED"
             existing.updated_at = now
             sess.flush()
@@ -465,6 +469,12 @@ def start_assessment_attempt(
         reason=f"Student started attempt #{attempt.attempt_number}",
     )
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return attempt, raw_lease_token
 
 
@@ -525,8 +535,12 @@ def get_attempt_delivery(
 
     for aq in attempt.attempt_questions:
         total_points += aq.points_assigned
-        # Deterministic synthetic UUIDv5 for AttemptQuestion hiding BIGINT PK
-        aq_public_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question.{aq.id}"))
+        # ADR-002: Direct public UUID for AttemptQuestion
+        aq_public_id = (
+            str(aq.public_id)
+            if getattr(aq, "public_id", None)
+            else str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question.{aq.id}"))
+        )
 
         choices_data: list[dict[str, Any]] = []
         for cs in aq.choice_snapshots:
@@ -594,5 +608,28 @@ def list_student_assessment_attempts(
         .order_by(AssessmentAttempt.attempt_number.asc())
         .all()
     )
+
+    now = utc_now()
+    norm_now = _normalize_dt(now)
+    close_at = _normalize_dt(assessment.close_at)
+    mutated = False
+    for att in attempts:
+        if att.status == "IN_PROGRESS":
+            deadline = _normalize_dt(att.deadline_at)
+            is_past_deadline = (
+                deadline is not None and norm_now is not None and norm_now >= deadline
+            )
+            is_past_close = close_at is not None and norm_now is not None and norm_now >= close_at
+            if is_past_deadline or is_past_close:
+                att.status = "EXPIRED"
+                att.updated_at = now
+                mutated = True
+
+    if mutated:
+        sess.flush()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
 
     return [_serialize_attempt(att) for att in attempts]

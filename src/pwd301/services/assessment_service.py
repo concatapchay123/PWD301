@@ -564,6 +564,12 @@ def create_assessment(
         target_id=assessment.id,
     )
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return assessment
 
 
@@ -729,6 +735,12 @@ def update_assessment(
         target_id=assessment.id,
     )
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return assessment
 
 
@@ -865,6 +877,12 @@ def publish_assessment(
         target_id=assessment.id,
     )
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return assessment
 
 
@@ -905,6 +923,12 @@ def cancel_assessment(
         reason=reason,
     )
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return assessment
 
 
@@ -941,6 +965,12 @@ def trash_assessment(
         target_id=assessment.id,
         reason=reason,
     )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return assessment
 
@@ -987,6 +1017,12 @@ def restore_assessment(
         action="ASSESSMENT_RESTORED",
         target_id=assessment.id,
     )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return assessment
 
@@ -1041,6 +1077,13 @@ def create_section(
     )
     sess.add(section)
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return section
 
 
@@ -1079,6 +1122,11 @@ def delete_section(
             s.position -= 1
 
     sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return True
 
 
@@ -1186,6 +1234,11 @@ def assign_question(
     )
     sess.add(assignment)
     sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return assignment
 
 
@@ -1234,6 +1287,11 @@ def remove_question_assignment(
             a.position -= 1
 
     sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return True
 
 
@@ -1375,6 +1433,11 @@ def configure_blueprint(
         sess.add(rule)
 
     sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return blueprint
 
 
@@ -1469,5 +1532,10 @@ def materialize_blueprint_pool(
     blueprint.status = "READY"
     blueprint.updated_at = utc_now()
     sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return created_pool

@@ -93,6 +93,7 @@ from pwd301.services.exceptions import (
     QuestionStateViolationError,
     QuestionValidationError,
     ResourceNotFoundError,
+    UnauthorizedError,
 )
 
 __version__ = "0.0.0"
@@ -190,6 +191,61 @@ def _format_error_response(
     return response
 
 
+DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
+    # 401 Unauthorized
+    UnauthorizedError: ("UNAUTHORIZED", 401),
+    # 403 Forbidden
+    ForbiddenError: ("FORBIDDEN", 403),
+    # 404 Not Found
+    ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    LessonNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    EnrollmentNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    CompletionRuleNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    QuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    QuestionRevisionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AssessmentNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AssessmentSectionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AttemptNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    # 409 Conflict & State Violations
+    CourseAlreadyExistsError: ("CONFLICT", 409),
+    CourseStateViolationError: ("STATE_VIOLATION", 409),
+    CourseDependencyError: ("PREREQUISITE_DEPENDENCY", 409),
+    LessonPositionConflictError: ("CONFLICT", 409),
+    LessonStateViolationError: ("STATE_VIOLATION", 409),
+    EnrollmentCapacityExceededError: ("CAPACITY_EXCEEDED", 409),
+    EnrollmentPrerequisiteError: ("PREREQUISITE_NOT_MET", 409),
+    EnrollmentStateViolationError: ("STATE_VIOLATION", 409),
+    PrerequisiteCycleError: ("CYCLE_DETECTED", 409),
+    QuestionStateViolationError: ("STATE_VIOLATION", 409),
+    QuestionRevisionConflictError: ("CONFLICT", 409),
+    QuestionImmutableError: ("STATE_VIOLATION", 409),
+    AssessmentStateViolationError: ("STATE_VIOLATION", 409),
+    AssessmentLockedError: ("CONFLICT", 409),
+    ConflictError: ("CONFLICT", 409),
+    AttemptLimitExceededError: ("ATTEMPT_LIMIT", 409),
+    ActiveAttemptExistsError: ("CONFLICT", 409),
+    AttemptLeaseError: ("LEASE_CONFLICT", 409),
+    # 400 Bad Request & Validation Errors
+    CourseValidationError: ("VALIDATION_ERROR", 400),
+    LessonValidationError: ("VALIDATION_ERROR", 400),
+    LessonProgressError: ("VALIDATION_ERROR", 400),
+    CourseNotAvailableError: ("COURSE_NOT_AVAILABLE", 400),
+    EnrollmentError: ("ENROLLMENT_ERROR", 400),
+    CompletionRuleValidationError: ("VALIDATION_ERROR", 400),
+    CompletionRuleError: ("COMPLETION_RULE_ERROR", 400),
+    QuestionValidationError: ("VALIDATION_ERROR", 400),
+    QuestionCorrectionError: ("VALIDATION_ERROR", 400),
+    QuestionBankError: ("QUESTION_BANK_ERROR", 400),
+    AssessmentValidationError: ("VALIDATION_ERROR", 400),
+    BlueprintValidationError: ("VALIDATION_ERROR", 400),
+    AssessmentError: ("VALIDATION_ERROR", 400),
+    AttemptValidationError: ("VALIDATION_ERROR", 400),
+    AssessmentNotOpenError: ("NOT_OPEN", 400),
+    AssessmentClosedError: ("CLOSED", 400),
+    AttemptError: ("VALIDATION_ERROR", 400),
+}
+
+
 def _register_error_handlers(app: Flask) -> None:
     """Register centralized error handlers conforming to the API error model."""
 
@@ -201,19 +257,21 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=400,
         )
 
+    @app.errorhandler(401)
+    def unauthorized_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="UNAUTHORIZED",
+            message=getattr(
+                error, "description", "Authentication required to access this resource."
+            ),
+            status_code=401,
+        )
+
     @app.errorhandler(403)
     def forbidden_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
         return _format_error_response(
             code="FORBIDDEN",
             message=getattr(error, "description", "Access denied: insufficient permissions."),
-            status_code=403,
-        )
-
-    @app.errorhandler(ForbiddenError)
-    def domain_forbidden_error(error: ForbiddenError) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="FORBIDDEN",
-            message=str(error),
             status_code=403,
         )
 
@@ -223,444 +281,6 @@ def _register_error_handlers(app: Flask) -> None:
             code="RESOURCE_NOT_FOUND",
             message=getattr(error, "description", "The requested resource was not found."),
             status_code=404,
-        )
-
-    @app.errorhandler(ResourceNotFoundError)
-    def domain_not_found_error(error: ResourceNotFoundError) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(CourseAlreadyExistsError)
-    def domain_course_already_exists_error(
-        error: CourseAlreadyExistsError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(CourseStateViolationError)
-    def domain_course_state_violation_error(
-        error: CourseStateViolationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(CourseDependencyError)
-    def domain_course_dependency_error(
-        error: CourseDependencyError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="PREREQUISITE_DEPENDENCY",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(CourseValidationError)
-    def domain_course_validation_error(
-        error: CourseValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(LessonNotFoundError)
-    def domain_lesson_not_found_error(
-        error: LessonNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(LessonPositionConflictError)
-    def domain_lesson_position_conflict_error(
-        error: LessonPositionConflictError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(LessonStateViolationError)
-    def domain_lesson_state_violation_error(
-        error: LessonStateViolationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(LessonValidationError)
-    def domain_lesson_validation_error(
-        error: LessonValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(LessonProgressError)
-    def domain_lesson_progress_error(
-        error: LessonProgressError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(EnrollmentNotFoundError)
-    def domain_enrollment_not_found_error(
-        error: EnrollmentNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(EnrollmentCapacityExceededError)
-    def domain_enrollment_capacity_exceeded_error(
-        error: EnrollmentCapacityExceededError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CAPACITY_EXCEEDED",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(EnrollmentPrerequisiteError)
-    def domain_enrollment_prerequisite_error(
-        error: EnrollmentPrerequisiteError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="PREREQUISITE_NOT_MET",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(EnrollmentStateViolationError)
-    def domain_enrollment_state_violation_error(
-        error: EnrollmentStateViolationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(PrerequisiteCycleError)
-    def domain_prerequisite_cycle_error(
-        error: PrerequisiteCycleError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CYCLE_DETECTED",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(CourseNotAvailableError)
-    def domain_course_not_available_error(
-        error: CourseNotAvailableError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="COURSE_NOT_AVAILABLE",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(EnrollmentError)
-    def domain_enrollment_error(
-        error: EnrollmentError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="ENROLLMENT_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(CompletionRuleNotFoundError)
-    def domain_completion_rule_not_found_error(
-        error: CompletionRuleNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(CompletionRuleValidationError)
-    def domain_completion_rule_validation_error(
-        error: CompletionRuleValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(CompletionRuleError)
-    def domain_completion_rule_error(
-        error: CompletionRuleError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="COMPLETION_RULE_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(QuestionNotFoundError)
-    def domain_question_not_found_error(
-        error: QuestionNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(QuestionValidationError)
-    def domain_question_validation_error(
-        error: QuestionValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(QuestionStateViolationError)
-    def domain_question_state_violation_error(
-        error: QuestionStateViolationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(QuestionRevisionNotFoundError)
-    def domain_question_revision_not_found_error(
-        error: QuestionRevisionNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(QuestionRevisionConflictError)
-    def domain_question_revision_conflict_error(
-        error: QuestionRevisionConflictError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(QuestionImmutableError)
-    def domain_question_immutable_error(
-        error: QuestionImmutableError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(QuestionCorrectionError)
-    def domain_question_correction_error(
-        error: QuestionCorrectionError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(QuestionBankError)
-    def domain_question_bank_error(
-        error: QuestionBankError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="QUESTION_BANK_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(AssessmentNotFoundError)
-    def domain_assessment_not_found_error(
-        error: AssessmentNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(AssessmentSectionNotFoundError)
-    def domain_assessment_section_not_found_error(
-        error: AssessmentSectionNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(AssessmentValidationError)
-    def domain_assessment_validation_error(
-        error: AssessmentValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(BlueprintValidationError)
-    def domain_blueprint_validation_error(
-        error: BlueprintValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(AssessmentStateViolationError)
-    def domain_assessment_state_violation_error(
-        error: AssessmentStateViolationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="STATE_VIOLATION",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(AssessmentLockedError)
-    def domain_assessment_locked_error(
-        error: AssessmentLockedError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(ConflictError)
-    def domain_conflict_error(
-        error: ConflictError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(AssessmentError)
-    def domain_assessment_error(
-        error: AssessmentError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(AttemptNotFoundError)
-    def domain_attempt_not_found_error(
-        error: AttemptNotFoundError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="RESOURCE_NOT_FOUND",
-            message=str(error),
-            status_code=404,
-        )
-
-    @app.errorhandler(AttemptValidationError)
-    def domain_attempt_validation_error(
-        error: AttemptValidationError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(AttemptLimitExceededError)
-    def domain_attempt_limit_exceeded_error(
-        error: AttemptLimitExceededError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="ATTEMPT_LIMIT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(AssessmentNotOpenError)
-    def domain_assessment_not_open_error(
-        error: AssessmentNotOpenError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="NOT_OPEN",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(AssessmentClosedError)
-    def domain_assessment_closed_error(
-        error: AssessmentClosedError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CLOSED",
-            message=str(error),
-            status_code=400,
-        )
-
-    @app.errorhandler(ActiveAttemptExistsError)
-    def domain_active_attempt_exists_error(
-        error: ActiveAttemptExistsError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(AttemptLeaseError)
-    def domain_attempt_lease_error(
-        error: AttemptLeaseError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="LEASE_CONFLICT",
-            message=str(error),
-            status_code=409,
-        )
-
-    @app.errorhandler(AttemptError)
-    def domain_attempt_error(
-        error: AttemptError,
-    ) -> Response | tuple[Response, int]:
-        return _format_error_response(
-            code="VALIDATION_ERROR",
-            message=str(error),
-            status_code=400,
         )
 
     @app.errorhandler(405)
@@ -674,6 +294,16 @@ def _register_error_handlers(app: Flask) -> None:
             status_code=405,
         )
 
+    @app.errorhandler(413)
+    def request_entity_too_large_error(
+        error: HTTPException | Exception,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="PAYLOAD_TOO_LARGE",
+            message=getattr(error, "description", "Request payload exceeds maximum allowed size."),
+            status_code=413,
+        )
+
     @app.errorhandler(CSRFError)
     def csrf_error(error: CSRFError) -> Response | tuple[Response, int]:
         return _format_error_response(
@@ -681,6 +311,20 @@ def _register_error_handlers(app: Flask) -> None:
             message=getattr(error, "description", "CSRF token missing or invalid."),
             status_code=400,
         )
+
+    for exc_cls, (code, status) in DOMAIN_EXCEPTION_HANDLERS.items():
+
+        def _make_handler(c: str, s: int):
+            def handler(error: Exception) -> Response | tuple[Response, int]:
+                return _format_error_response(
+                    code=c,
+                    message=str(error),
+                    status_code=s,
+                )
+
+            return handler
+
+        app.errorhandler(exc_cls)(_make_handler(code, status))
 
     @app.errorhandler(500)
     def internal_error(error: HTTPException | Exception) -> Response | tuple[Response, int]:
@@ -726,7 +370,9 @@ def create_app(config_name: str | None = None) -> Flask:
         )
 
     app = Flask(__name__)
-    app.config.from_object(config_by_name[config_name])
+    config_cls = config_by_name[config_name]
+    config_obj = config_cls() if isinstance(config_cls, type) else config_cls
+    app.config.from_object(config_obj)
 
     # Initialize extensions
     db.init_app(app)
@@ -839,6 +485,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
+    app.register_blueprint(api_auth_bp, url_prefix="/api/auth", name="api_auth_unversioned")
     app.register_blueprint(student_bp)
     app.register_blueprint(instructor_bp)
     app.register_blueprint(admin_bp)
@@ -851,6 +498,9 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
+    unversioned_auth = app.blueprints.get("api_auth_unversioned")
+    if unversioned_auth:
+        csrf.exempt(unversioned_auth)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_question_bp)

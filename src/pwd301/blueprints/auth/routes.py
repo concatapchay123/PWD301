@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from flask import (
     flash,
@@ -26,6 +27,22 @@ from pwd301.services.user_service import (
     register_user,
     verify_password,
 )
+
+
+def _is_safe_redirect_url(target: str) -> bool:
+    """Validate that target redirect URL is strictly local and cannot trigger open redirect."""
+    if not target or not isinstance(target, str):
+        return False
+    # Backslashes are normalized to slashes in modern browsers (e.g. /\attacker.com)
+    if "\\" in target:
+        return False
+    try:
+        parsed = urlsplit(target)
+    except Exception:
+        return False
+    if parsed.scheme or parsed.netloc:
+        return False
+    return parsed.path.startswith("/") and not parsed.path.startswith("//")
 
 
 def _is_json_request() -> bool:
@@ -111,7 +128,7 @@ def login() -> Any:
 
     # Safe next_url redirect to prevent open-redirect vulnerabilities
     target_url = url_for("core.index")
-    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+    if next_url and _is_safe_redirect_url(next_url):
         target_url = next_url
 
     if _is_json_request():

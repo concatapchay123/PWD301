@@ -53,6 +53,9 @@ class BaseConfig:
     MAX_DOCX_BYTES: int = int(os.environ.get("MAX_DOCX_BYTES", "50000000"))
     MAX_PPTX_BYTES: int = int(os.environ.get("MAX_PPTX_BYTES", "100000000"))
     MAX_VIDEO_BYTES_EXCLUSIVE: int = int(os.environ.get("MAX_VIDEO_BYTES_EXCLUSIVE", "1000000000"))
+    MAX_CONTENT_LENGTH: int = int(
+        os.environ.get("MAX_CONTENT_LENGTH", str(MAX_VIDEO_BYTES_EXCLUSIVE))
+    )
 
     # Retention / lifecycle parameters (in days / seconds)
     ENROLLMENT_DETAIL_RETENTION_DAYS: int = int(
@@ -103,12 +106,22 @@ class ProductionConfig(BaseConfig):
     def __init__(self) -> None:
         super().__init__()
         secret = os.environ.get("SECRET_KEY")
-        if not secret or secret == "replace-me-with-a-long-random-secret":
+        insecure_secrets = {
+            "replace-me-with-a-long-random-secret",
+            "dev-insecure-secret-key-change-in-production",
+            "test-secret-key-pwd301",
+        }
+        if not secret or secret in insecure_secrets or len(secret) < 16:
             raise ValueError("In production, SECRET_KEY must be set to a secure, random value.")
         jwt_secret = os.environ.get("JWT_SECRET_KEY")
-        insecure_jwt_default = "dev-insecure-jwt-secret-change-in-production-min32bytes"
-        if not jwt_secret or jwt_secret == insecure_jwt_default:
+        insecure_jwt_defaults = {
+            "dev-insecure-jwt-secret-change-in-production-min32bytes",
+            "test-jwt-secret-key-pwd301-minimum-32-bytes!",
+        }
+        if not jwt_secret or jwt_secret in insecure_jwt_defaults or len(jwt_secret) < 32:
             raise ValueError("In production, JWT_SECRET_KEY must be set to a secure, random value.")
+        self.SECRET_KEY = secret
+        self.JWT_SECRET_KEY = jwt_secret
 
 
 config_by_name: dict[str, type[BaseConfig]] = {

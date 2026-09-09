@@ -25,7 +25,7 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     update_assessment,
 )
-from pwd301.services.authorization_service import get_authenticated_actor
+from pwd301.services.authorization_service import require_authenticated_actor
 from pwd301.services.exceptions import AssessmentValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 
@@ -37,8 +37,7 @@ def create_assessment_route() -> tuple[Response, int] | Response:
 
     POST /api/assessments
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     course_id = payload.get("course_id")
@@ -46,7 +45,6 @@ def create_assessment_route() -> tuple[Response, int] | Response:
         raise AssessmentValidationError("course_id is required to create an assessment.")
 
     assessment = create_assessment(actor, course_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_assessment(assessment, full=False)), 201
 
@@ -58,8 +56,7 @@ def get_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
 
     GET /api/assessments/<assessment_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     data = get_assessment_detail(actor, assessment_id, session=db.session)
     return jsonify(data), 200
@@ -72,12 +69,10 @@ def patch_assessment_route(assessment_id: str) -> tuple[Response, int] | Respons
 
     PATCH /api/assessments/<assessment_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     assessment = update_assessment(actor, assessment_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_assessment(assessment, full=False)), 200
 
@@ -89,11 +84,9 @@ def publish_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
 
     POST /api/assessments/<assessment_id>/publish
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     assessment = publish_assessment(actor, assessment_id, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_assessment(assessment, full=False)), 200
 
@@ -105,14 +98,12 @@ def cancel_assessment_route(assessment_id: str) -> tuple[Response, int] | Respon
 
     POST /api/assessments/<assessment_id>/cancel
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
 
     assessment = cancel_assessment(actor, assessment_id, reason=reason, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -129,14 +120,12 @@ def trash_assessment_route(assessment_id: str) -> tuple[Response, int] | Respons
 
     POST /api/assessments/<assessment_id>/trash
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
 
     assessment = trash_assessment(actor, assessment_id, reason=reason, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -153,11 +142,9 @@ def restore_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
 
     POST /api/assessments/<assessment_id>/restore
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     assessment = restore_assessment(actor, assessment_id, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -174,12 +161,10 @@ def create_section_route(assessment_id: str) -> tuple[Response, int] | Response:
 
     POST /api/assessments/<assessment_id>/sections
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     section = create_section(actor, assessment_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_section(section)), 201
 
@@ -191,11 +176,9 @@ def delete_section_route(assessment_id: str, section_id: str) -> tuple[Response,
 
     DELETE /api/assessments/<assessment_id>/sections/<section_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     delete_section(actor, assessment_id, section_id, session=db.session)
-    db.session.commit()
 
     return jsonify({"message": "Section deleted successfully."}), 200
 
@@ -207,12 +190,10 @@ def assign_question_route(assessment_id: str) -> tuple[Response, int] | Response
 
     POST /api/assessments/<assessment_id>/questions
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     assignment = assign_question(actor, assessment_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_assignment(assignment)), 201
 
@@ -224,11 +205,9 @@ def remove_question_route(assessment_id: str, question_id: str) -> tuple[Respons
 
     DELETE /api/assessments/<assessment_id>/questions/<question_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     remove_question_assignment(actor, assessment_id, question_id, session=db.session)
-    db.session.commit()
 
     return jsonify({"message": "Question unassigned successfully."}), 200
 
@@ -240,12 +219,10 @@ def configure_blueprint_route(assessment_id: str) -> tuple[Response, int] | Resp
 
     POST /api/assessments/<assessment_id>/blueprint
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     blueprint = configure_blueprint(actor, assessment_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_blueprint(blueprint)), 200
 
@@ -257,11 +234,9 @@ def materialize_blueprint_route(assessment_id: str) -> tuple[Response, int] | Re
 
     POST /api/assessments/<assessment_id>/blueprint/materialize
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     pool = materialize_blueprint_pool(actor, assessment_id, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {

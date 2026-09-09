@@ -176,6 +176,13 @@ class AttemptQuestion(Base):
     __tablename__ = "attempt_questions"
 
     id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
     attempt_id = db.Column(
         sa.BigInteger,
         sa.ForeignKey("assessment_attempts.id", name="fk_attempt_questions_attempt_id"),

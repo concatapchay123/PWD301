@@ -11,7 +11,7 @@ from pwd301.extensions import db
 from pwd301.models.course import Enrollment
 from pwd301.services.authorization_service import (
     _resolve_course,
-    get_authenticated_actor,
+    require_authenticated_actor,
     student_required,
 )
 from pwd301.services.completion_service import get_course_completion_summary
@@ -41,8 +41,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
 @student_required
 def get_student_enrollments_api() -> tuple[Response, int] | Response:
     """Retrieve enrollments for the authenticated student."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     status = request.args.get("status")
     enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
@@ -53,8 +52,7 @@ def get_student_enrollments_api() -> tuple[Response, int] | Response:
 @student_required
 def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve completion summary for the authenticated student (REST API)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     course = _resolve_course(course_id, session=db.session)
     if course is None:

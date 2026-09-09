@@ -536,3 +536,40 @@ def test_list_courses_pagination_and_filtering(
     # Filter by category
     courses_bio, total_bio = list_courses(actor=admin_user, category="Bio")
     assert total_bio == 2
+
+
+def test_course_soft_delete_and_reuse_code(
+    app: Flask,
+    instructor_one: User,
+) -> None:
+    """Verify that a soft-deleted course's code can be reused by a new course (AC-01 / Item 3.2)."""
+    course1 = create_course(
+        instructor_one,
+        {"course_code": "CS-101", "title": "Intro to CS 1"},
+    )
+    assert course1.status == "DRAFT"
+
+    # Creating another active course with CS-101 must fail
+    with pytest.raises(CourseAlreadyExistsError, match="already exists"):
+        create_course(
+            instructor_one,
+            {"course_code": "cs-101", "title": "Another CS 1"},
+        )
+
+    # Soft-delete the course to TRASH
+    trashed = trash_course(
+        actor=instructor_one,
+        course_id=course1.id,
+        reason="Retiring old syllabus",
+    )
+    assert trashed.deleted_at is not None
+    assert trashed.status == "TRASH"
+
+    # Creating a new course with identical code 'CS-101' MUST SUCCEED because old one is deleted
+    course2 = create_course(
+        instructor_one,
+        {"course_code": "CS-101", "title": "New Syllabus CS 1"},
+    )
+    assert course2.id != course1.id
+    assert course2.course_code == "CS-101"
+    assert course2.deleted_at is None

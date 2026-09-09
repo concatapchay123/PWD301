@@ -11,7 +11,7 @@ from pwd301.extensions import db
 from pwd301.models.course import Enrollment, Lesson, LessonProgress
 from pwd301.services.authorization_service import (
     _resolve_course,
-    get_authenticated_actor,
+    require_authenticated_actor,
     student_required,
 )
 from pwd301.services.completion_service import get_course_completion_summary
@@ -33,8 +33,7 @@ from pwd301.services.lesson_service import (
 @student_required
 def dashboard() -> tuple[Response, int] | Response:
     """Student dashboard displaying current enrolled courses."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     sess = db.session
     enrollments = (
@@ -68,8 +67,7 @@ def dashboard() -> tuple[Response, int] | Response:
 @student_required
 def course_progress(course_id: str) -> tuple[Response, int] | Response:
     """Get the authenticated student's progress in a specific course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     sess = db.session
     course = _resolve_course(course_id, session=sess)
@@ -123,8 +121,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 @student_required
 def get_student_lesson_route(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
     """Access lesson content for learning, protected by active enrollment check."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     sess = db.session
     course = _resolve_course(course_id, session=sess)
@@ -143,8 +140,7 @@ def get_student_lesson_route(course_id: str, lesson_id: str) -> tuple[Response, 
 @student_required
 def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Response:
     """Heartbeat endpoint to record lesson engagement progress."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     if not isinstance(payload, dict):
@@ -206,11 +202,9 @@ _serialize_enrollment_api = _serialize_enrollment
 @student_required
 def student_enroll_course(course_id: str) -> tuple[Response, int] | Response:
     """Self-enroll in a published course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
-    db.session.commit()
     status_code = 201 if getattr(enrollment, "_is_new", False) else 200
     return jsonify(_serialize_enrollment(enrollment)), status_code
 
@@ -219,8 +213,7 @@ def student_enroll_course(course_id: str) -> tuple[Response, int] | Response:
 @student_required
 def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
     """Withdraw from an active course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
@@ -228,7 +221,6 @@ def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
         reason = str(reason)
 
     enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
-    db.session.commit()
     return jsonify(_serialize_enrollment(enrollment)), 200
 
 
@@ -236,11 +228,9 @@ def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
 @student_required
 def student_re_enroll_course(course_id: str) -> tuple[Response, int] | Response:
     """Re-enroll in a previously left course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     enrollment = re_enroll_student(actor=actor, course_id=course_id, session=db.session)
-    db.session.commit()
     return jsonify(_serialize_enrollment(enrollment)), 200
 
 
@@ -248,8 +238,7 @@ def student_re_enroll_course(course_id: str) -> tuple[Response, int] | Response:
 @student_required
 def student_list_enrollments() -> tuple[Response, int] | Response:
     """List all enrollments belonging to the authenticated student."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     status = request.args.get("status")
     enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
@@ -260,8 +249,7 @@ def student_list_enrollments() -> tuple[Response, int] | Response:
 @student_required
 def get_student_course_completion_route(course_id: str) -> tuple[Response, int] | Response:
     """Get the authenticated student's completion summary for a course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     course = _resolve_course(course_id, session=db.session)
     if course is None:

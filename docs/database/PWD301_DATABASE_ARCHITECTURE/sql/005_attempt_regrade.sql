@@ -45,6 +45,7 @@ GO
 
 CREATE TABLE attempt_questions (
     id BIGINT IDENTITY(1,1) NOT NULL,
+    public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
     attempt_id BIGINT NOT NULL,
     source_question_id BIGINT NOT NULL,
     source_question_revision_id BIGINT NOT NULL,
@@ -58,8 +59,9 @@ CREATE TABLE attempt_questions (
     question_changed_after_start_at DATETIME2(3) NULL,
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
     CONSTRAINT pk_attempt_questions PRIMARY KEY (id),
-    CONSTRAINT uq_attempt_questions_attempt_id_position_1 UNIQUE (attempt_id, position),
-    CONSTRAINT uq_attempt_questions_attempt_id_source_question_id_2 UNIQUE (attempt_id, source_question_id),
+    CONSTRAINT uq_attempt_questions_public_id_1 UNIQUE (public_id),
+    CONSTRAINT uq_attempt_questions_attempt_id_position_2 UNIQUE (attempt_id, position),
+    CONSTRAINT uq_attempt_questions_attempt_id_source_question_id_3 UNIQUE (attempt_id, source_question_id),
     CONSTRAINT ck_attempt_questions_1 CHECK (position > 0),
     CONSTRAINT ck_attempt_questions_2 CHECK (points_assigned > 0),
     CONSTRAINT ck_attempt_questions_3 CHECK (question_type_snapshot IN ('SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE','SHORT_ANSWER','ESSAY')),

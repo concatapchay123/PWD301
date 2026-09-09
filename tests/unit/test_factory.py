@@ -137,3 +137,56 @@ def test_csrf_error_handler(app: Flask) -> None:
     assert response.is_json
     data = response.get_json()
     assert data["error"]["code"] == "CSRF_ERROR"
+
+
+def test_create_app_production_rejects_insecure_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that create_app('production') triggers validation and fails on insecure secrets."""
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    with pytest.raises(ValueError, match="SECRET_KEY must be set to a secure, random value"):
+        create_app("production")
+
+    monkeypatch.setenv("SECRET_KEY", "valid-prod-secret-key-12345")
+    monkeypatch.setenv("JWT_SECRET_KEY", "dev-insecure-jwt-secret-change-in-production-min32bytes")
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY must be set to a secure, random value"):
+        create_app("production")
+
+
+def test_create_app_production_with_valid_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that create_app('production') succeeds when secure keys are provided."""
+    monkeypatch.setenv("SECRET_KEY", "secure-production-secret-random-token-999")
+    monkeypatch.setenv("JWT_SECRET_KEY", "secure-jwt-production-secret-key-32bytes-long!")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    app = create_app("production")
+    assert isinstance(app, Flask)
+    assert app.config["ENV"] == "production"
+    assert app.config["SECRET_KEY"] == "secure-production-secret-random-token-999"
+
+
+def test_413_payload_too_large_error_handler(app: Flask) -> None:
+    """Verify 413 RequestEntityTooLarge returns PAYLOAD_TOO_LARGE."""
+    from werkzeug.exceptions import RequestEntityTooLarge
+
+    @app.route("/api/test-payload-too-large")
+    def trigger_413() -> None:
+        raise RequestEntityTooLarge("Payload exceeds limit.")
+
+    client = app.test_client()
+    response = client.get("/api/test-payload-too-large")
+    assert response.status_code == 413
+    assert response.is_json
+    data = response.get_json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+
+
+def test_api_auth_unversioned_alias(client: FlaskClient) -> None:
+    """Verify unversioned /api/auth alias endpoint routes correctly to api_auth."""
+    # Calling POST /api/auth/login with invalid data returns 400 (reaches auth handler, not 404)
+    response = client.post("/api/auth/login", json={})
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data["error"]["code"] in ("VALIDATION_ERROR", "INVALID_CREDENTIALS")

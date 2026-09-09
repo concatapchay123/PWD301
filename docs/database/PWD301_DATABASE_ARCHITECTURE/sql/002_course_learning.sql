@@ -34,8 +34,6 @@ CREATE TABLE courses (
     deleted_by_user_id BIGINT NULL,
     CONSTRAINT pk_courses PRIMARY KEY (id),
     CONSTRAINT uq_courses_public_id_1 UNIQUE (public_id),
-    CONSTRAINT uq_courses_course_code_normalized_2 UNIQUE (course_code_normalized),
-    CONSTRAINT uq_courses_title_normalized_3 UNIQUE (title_normalized),
     CONSTRAINT ck_courses_1 CHECK (status IN ('DRAFT','SUBMITTED_FOR_REVIEW','APPROVED','PUBLISHED','ARCHIVED','TRASH')),
     CONSTRAINT ck_courses_2 CHECK (difficulty IS NULL OR difficulty IN ('BEGINNER','INTERMEDIATE','ADVANCED')),
     CONSTRAINT ck_courses_3 CHECK (capacity IS NULL OR capacity > 0),
@@ -44,6 +42,16 @@ CREATE TABLE courses (
     CONSTRAINT fk_courses_approved_by_user_id FOREIGN KEY (approved_by_user_id) REFERENCES users (id),
     CONSTRAINT fk_courses_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id)
 );
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX ux_courses_course_code_active
+ON courses (course_code_normalized)
+WHERE deleted_at IS NULL;
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX ux_courses_title_active
+ON courses (title_normalized)
+WHERE deleted_at IS NULL;
 GO
 
 CREATE TABLE course_prerequisites (

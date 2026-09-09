@@ -54,13 +54,11 @@ class Course(Base):
     course_code_normalized = db.Column(
         sa.Unicode(50),
         nullable=False,
-        unique=True,
     )
     title = db.Column(sa.Unicode(200), nullable=False)
     title_normalized = db.Column(
         sa.Unicode(200),
         nullable=False,
-        unique=True,
     )
     description = db.Column(NVarCharMax, nullable=True)
     category = db.Column(sa.Unicode(100), nullable=True)
@@ -134,6 +132,20 @@ class Course(Base):
         ),
         sa.Index("ix_courses_catalog", "status", "category", "difficulty", "title"),
         sa.Index("ix_courses_owner", "owner_instructor_id", "status"),
+        sa.Index(
+            "ux_courses_course_code_active",
+            "course_code_normalized",
+            unique=True,
+            mssql_where=sa.text("deleted_at IS NULL"),
+            sqlite_where=sa.text("deleted_at IS NULL"),
+        ),
+        sa.Index(
+            "ux_courses_title_active",
+            "title_normalized",
+            unique=True,
+            mssql_where=sa.text("deleted_at IS NULL"),
+            sqlite_where=sa.text("deleted_at IS NULL"),
+        ),
     )
 
     owner_instructor = relationship(

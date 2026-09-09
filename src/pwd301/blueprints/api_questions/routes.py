@@ -8,7 +8,7 @@ from flask import Response, jsonify, request
 
 from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.extensions import db
-from pwd301.services.authorization_service import get_authenticated_actor
+from pwd301.services.authorization_service import require_authenticated_actor
 from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.question_bank_service import (
     _serialize_question,
@@ -32,8 +32,7 @@ def get_question_route(question_id: str) -> tuple[Response, int] | Response:
 
     GET /api/questions/<question_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     data = get_question_detail(actor, question_id, session=db.session)
     return jsonify(data), 200
@@ -46,12 +45,10 @@ def patch_question_route(question_id: str) -> tuple[Response, int] | Response:
 
     PATCH /api/questions/<question_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     question = update_question(actor, question_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_question(question)), 200
 
@@ -63,14 +60,12 @@ def trash_question_route(question_id: str) -> tuple[Response, int] | Response:
 
     POST /api/questions/<question_id>/trash
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
 
     question = trash_question(actor, question_id, reason=reason, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -87,14 +82,12 @@ def delete_question_route(question_id: str) -> tuple[Response, int] | Response:
 
     DELETE /api/questions/<question_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
 
     question = trash_question(actor, question_id, reason=reason, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -111,14 +104,12 @@ def restore_question_route(question_id: str) -> tuple[Response, int] | Response:
 
     POST /api/questions/<question_id>/restore
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or {}
     reason = body.get("reason")
 
     question = restore_question(actor, question_id, reason=reason, session=db.session)
-    db.session.commit()
 
     return jsonify(
         {
@@ -135,8 +126,7 @@ def list_question_revisions_route(question_id: str) -> tuple[Response, int] | Re
 
     GET /api/questions/<question_id>/revisions
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     page = request.args.get("page", default=1, type=int)
     per_page = request.args.get("per_page", default=20, type=int)
@@ -164,12 +154,10 @@ def create_question_revision_route(question_id: str) -> tuple[Response, int] | R
 
     POST /api/questions/<question_id>/revisions
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     revision, correction = create_question_revision(actor, question_id, payload, session=db.session)
-    db.session.commit()
 
     resp: dict[str, Any] = {
         "revision": _serialize_question_revision(revision),
@@ -189,8 +177,7 @@ def get_question_revision_detail_route(
 
     GET /api/questions/<question_id>/revisions/<revision_no>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     data = get_question_revision_detail(actor, question_id, revision_no, session=db.session)
     return jsonify(data), 200
@@ -203,8 +190,7 @@ def list_question_corrections_route(question_id: str) -> tuple[Response, int] | 
 
     GET /api/questions/<question_id>/corrections
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     corrections = list_question_corrections(actor, question_id, session=db.session)
     return jsonify(

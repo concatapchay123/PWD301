@@ -282,7 +282,16 @@ def enroll_student(
         )
 
     # 7. Concurrency & Capacity check with row locking
-    locked_course = sess.query(Course).filter(Course.id == course.id).with_for_update().first()
+    course_q = sess.query(Course).filter(Course.id == course.id)
+    try:
+        bind = sess.get_bind()
+        if bind is not None and bind.dialect.name == "mssql":
+            course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
+        else:
+            course_q = course_q.with_for_update()
+    except Exception:
+        course_q = course_q.with_for_update()
+    locked_course = course_q.first()
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
@@ -340,6 +349,12 @@ def enroll_student(
         actor_user_id=actor.id,
     )
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     enrollment._is_new = True
     return enrollment
@@ -431,6 +446,12 @@ def leave_course(
     )
     sess.flush()
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return enrollment
 
 
@@ -516,7 +537,16 @@ def re_enroll_student(
         raise EnrollmentPrerequisiteError(f"Prerequisite courses not completed: {missing_str}")
 
     # 6. Concurrency & Capacity check with row locking
-    locked_course = sess.query(Course).filter(Course.id == course.id).with_for_update().first()
+    course_q = sess.query(Course).filter(Course.id == course.id)
+    try:
+        bind = sess.get_bind()
+        if bind is not None and bind.dialect.name == "mssql":
+            course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
+        else:
+            course_q = course_q.with_for_update()
+    except Exception:
+        course_q = course_q.with_for_update()
+    locked_course = course_q.first()
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
@@ -577,6 +607,12 @@ def re_enroll_student(
         actor_user_id=actor.id,
     )
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return enrollment
 
@@ -672,6 +708,12 @@ def add_course_prerequisite(
     )
     sess.flush()
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return link
 
 
@@ -719,6 +761,12 @@ def remove_course_prerequisite(
         ),
     )
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return True
 

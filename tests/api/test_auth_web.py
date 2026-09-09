@@ -221,3 +221,44 @@ class TestWebAuth:
 
         resp3 = client.get("/", headers={"Accept": "text/html"})
         assert web_user.display_name.encode("utf-8") not in resp3.data
+
+    def test_login_open_redirect_defense(self, client: FlaskClient, web_user: User) -> None:
+        """Verify login next parameter blocks open redirect attacks (e.g. /\\attacker.com)."""
+        malicious_urls = [
+            "/\\attacker.com",
+            "/\\evil.com/phish",
+            "//attacker.com",
+            "//attacker.com/steal",
+            "https://attacker.com",
+            "http://evil.com/login",
+            "javascript:alert(1)",
+        ]
+        for bad_url in malicious_urls:
+            resp = client.post(
+                f"/auth/login?next={bad_url}",
+                data={
+                    "email": "student@demo.local",
+                    "password": "Password123!",
+                },
+                follow_redirects=False,
+            )
+            assert resp.status_code == 302
+            redirect_target = resp.headers.get("Location", "")
+            # Must NOT redirect to the attacker host or scheme
+            assert not redirect_target.startswith("//")
+            assert not redirect_target.startswith("/\\")
+            assert "attacker.com" not in redirect_target
+            assert "evil.com" not in redirect_target
+            assert redirect_target in ("/", "/student/dashboard")
+
+        # Legitimate relative next URL must be preserved
+        good_resp = client.post(
+            "/auth/login?next=/courses/my-course-123",
+            data={
+                "email": "student@demo.local",
+                "password": "Password123!",
+            },
+            follow_redirects=False,
+        )
+        assert good_resp.status_code == 302
+        assert good_resp.headers.get("Location") == "/courses/my-course-123"

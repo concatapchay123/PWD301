@@ -18,6 +18,7 @@ from pwd301.services.authorization_service import (
     _resolve_course,
     get_authenticated_actor,
     instructor_required,
+    require_authenticated_actor,
     require_course_manager,
     require_student_data_access,
 )
@@ -113,8 +114,7 @@ def list_courses_catalog() -> tuple[Response, int] | Response:
 @instructor_required
 def create_course_api() -> tuple[Response, int] | Response:
     """Create a new course (Instructor/Admin required)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     course = create_course(actor, payload)
@@ -134,8 +134,7 @@ def get_course_detail_api(course_id: str) -> tuple[Response, int] | Response:
 @instructor_required
 def update_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Update editable course metadata with mass-assignment defense."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     course = update_course(actor, course_id, payload)
@@ -143,12 +142,12 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_course_bp.route("/<course_id>/publish-request", methods=["POST"])
+@api_course_bp.route("/<course_id>/submit", methods=["POST"])
 @jwt_required
 @instructor_required
 def publish_request_api(course_id: str) -> tuple[Response, int] | Response:
     """Submit course for review."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
@@ -166,8 +165,7 @@ def publish_request_api(course_id: str) -> tuple[Response, int] | Response:
 @instructor_required
 def archive_course_api(course_id: str) -> tuple[Response, int] | Response:
     """Archive a course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
@@ -317,8 +315,7 @@ def get_course_prerequisites_api(course_id: str) -> tuple[Response, int] | Respo
 @instructor_required
 def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Response:
     """Add a prerequisite course dependency (Instructor/Admin required)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     prerequisite_course_id = payload.get("prerequisite_course_id")
@@ -331,7 +328,6 @@ def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Respon
         prerequisite_course_id=prerequisite_course_id,
         session=db.session,
     )
-    db.session.commit()
     return (
         jsonify(
             {
@@ -355,8 +351,7 @@ def remove_course_prerequisite_api(
     course_id: str, prereq_id: str
 ) -> tuple[Response, int] | Response:
     """Remove a prerequisite course dependency (Instructor/Admin required)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     removed = remove_course_prerequisite(
         actor=actor,
@@ -364,7 +359,6 @@ def remove_course_prerequisite_api(
         prerequisite_course_id=prereq_id,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"removed": removed}), 200
 
 
@@ -372,8 +366,7 @@ def remove_course_prerequisite_api(
 @instructor_required
 def get_course_enrollments_api(course_id: str) -> tuple[Response, int] | Response:
     """List enrolled students for managed course."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
@@ -423,8 +416,7 @@ def _serialize_completion_rule_api(course: Course, rule: Any) -> dict[str, Any]:
 @instructor_required
 def get_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve completion rule criteria for a managed course (REST API)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     course = require_course_manager(actor, course_id, session=db.session)
     rule = get_or_create_default_completion_rule(course.id, session=db.session)
@@ -436,8 +428,7 @@ def get_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Re
 @instructor_required
 def set_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Response:
     """Update completion rule criteria for a managed course (REST API)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     course = require_course_manager(actor, course_id, session=db.session)
@@ -509,12 +500,10 @@ def create_course_question_route(course_id: str) -> tuple[Response, int] | Respo
 
     POST /api/courses/<course_id>/questions
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     question = create_question(actor, course_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_question(question)), 201
 
@@ -526,8 +515,7 @@ def list_course_questions_route(course_id: str) -> tuple[Response, int] | Respon
 
     GET /api/courses/<course_id>/questions
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     page = request.args.get("page", 1, type=int)
     raw_per_page = request.args.get("per_page") or request.args.get("page_size")
@@ -577,12 +565,10 @@ def create_course_assessment_route(course_id: str) -> tuple[Response, int] | Res
 
     POST /api/courses/<course_id>/assessments
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
     assessment = create_assessment(actor, course_id, payload, session=db.session)
-    db.session.commit()
 
     return jsonify(_serialize_assessment(assessment, full=False)), 201
 
@@ -594,8 +580,7 @@ def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Resp
 
     GET /api/courses/<course_id>/assessments
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     page = request.args.get("page", 1, type=int)
     raw_per_page = request.args.get("per_page") or request.args.get("page_size")

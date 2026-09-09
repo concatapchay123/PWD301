@@ -55,6 +55,10 @@ class AuthenticationError(ServiceError):
     """Base exception for all authentication errors."""
 
 
+class UnauthorizedError(AuthenticationError):
+    """Raised when authentication is required to access a resource."""
+
+
 class InvalidCredentialsError(AuthenticationError):
     """Raised when provided login credentials (email or password) are incorrect."""
 

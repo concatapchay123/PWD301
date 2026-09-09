@@ -650,6 +650,12 @@ def create_question(
     )
     sess.flush()
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return question
 
 
@@ -819,6 +825,12 @@ def trash_question(
     )
     sess.flush()
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return question
 
 
@@ -873,6 +885,12 @@ def restore_question(
         after_json=json.dumps({"status": "ACTIVE", "question_id": str(question.public_id)}),
     )
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return question
 
@@ -1353,6 +1371,12 @@ def create_question_revision(
     )
     sess.flush()
 
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return new_revision, correction_record
 
 
@@ -1460,6 +1484,13 @@ def update_question(
 
     question.updated_at = utc_now()
     sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return question
 
 

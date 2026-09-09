@@ -11,7 +11,7 @@ from pwd301.services.attempt_service import (
     list_student_assessment_attempts,
     start_assessment_attempt,
 )
-from pwd301.services.authorization_service import get_authenticated_actor
+from pwd301.services.authorization_service import require_authenticated_actor
 from pwd301.services.jwt_auth_service import jwt_required
 
 
@@ -22,15 +22,13 @@ def start_assessment_attempt_route(assessment_id: str) -> tuple[Response, int] |
 
     POST /api/assessments/<assessment_id>/attempts
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     attempt, raw_lease_token = start_assessment_attempt(
         student_actor=actor,
         assessment_id=assessment_id,
         session=db.session,
     )
-    db.session.commit()
 
     delivery = get_attempt_delivery(
         student_actor=actor,
@@ -67,8 +65,7 @@ def get_attempt_delivery_route(attempt_id: str) -> tuple[Response, int] | Respon
 
     GET /api/attempts/<attempt_id>
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     delivery = get_attempt_delivery(
         student_actor=actor,
@@ -86,8 +83,7 @@ def list_student_assessment_attempts_route(assessment_id: str) -> tuple[Response
 
     GET /api/assessments/<assessment_id>/attempts
     """
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     attempts = list_student_assessment_attempts(
         student_actor=actor,

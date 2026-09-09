@@ -38,6 +38,7 @@ from pwd301.services.exceptions import (
     ForbiddenError,
     QuestionNotFoundError,
     ResourceNotFoundError,
+    UnauthorizedError,
 )
 
 
@@ -98,6 +99,18 @@ def get_authenticated_actor() -> User | None:
         return current_user
 
     return None
+
+
+def require_authenticated_actor() -> User:
+    """Resolve the currently authenticated actor, raising UnauthorizedError if unauthenticated.
+
+    This guarantees fail-closed security and avoids relying on `assert actor is not None`,
+    which is removed when Python runs with optimization flags (-O).
+    """
+    actor = get_authenticated_actor()
+    if actor is None:
+        raise UnauthorizedError("Authentication required.")
+    return actor
 
 
 def require_roles(*role_codes: str) -> Callable[..., Any]:

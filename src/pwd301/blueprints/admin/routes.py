@@ -11,7 +11,7 @@ from pwd301.models.identity import User
 from pwd301.services.authorization_service import (
     _resolve_user,
     admin_required,
-    get_authenticated_actor,
+    require_authenticated_actor,
 )
 from pwd301.services.course_service import (
     change_course_status,
@@ -41,8 +41,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 @admin_required
 def dashboard() -> tuple[Response, int] | Response:
     """Administrator dashboard overview."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     sess = db.session
     total_users = sess.query(User).count()
@@ -61,8 +60,7 @@ def dashboard() -> tuple[Response, int] | Response:
 @admin_required
 def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     """Assign or revoke user roles adhering to AUTH-002 cumulative hierarchy."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     sess = db.session
     target_user = _resolve_user(user_id, session=sess)
@@ -134,8 +132,7 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def list_pending_courses() -> tuple[Response, int] | Response:
     """List all courses currently submitted for review."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    require_authenticated_actor()
 
     sess = db.session
     pending_courses = (
@@ -159,8 +156,7 @@ def list_pending_courses() -> tuple[Response, int] | Response:
 @admin_required
 def review_course(course_id: str) -> tuple[Response, int] | Response:
     """Approve or reject a submitted course (Admin only)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()
@@ -194,8 +190,7 @@ def review_course(course_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def reassign_course(course_id: str) -> tuple[Response, int] | Response:
     """Reassign course instructor ownership (Admin only)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     new_instructor_id = payload.get("new_instructor_id")
@@ -215,8 +210,7 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def publish_course(course_id: str) -> tuple[Response, int] | Response:
     """Publish an approved course (Admin only)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
@@ -235,8 +229,7 @@ def publish_course(course_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
     """Soft-delete a course to TRASH (Admin)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
@@ -250,8 +243,7 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def restore_course(course_id: str) -> tuple[Response, int] | Response:
     """Restore a course from TRASH back to ARCHIVED (Admin only)."""
-    actor = get_authenticated_actor()
-    assert actor is not None
+    actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
