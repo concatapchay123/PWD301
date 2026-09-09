@@ -210,7 +210,9 @@ class QuestionRevision(Base):
             name="ck_question_revisions_3",
         ),
         sa.CheckConstraint(
-            "change_type IN ('INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES')",
+            "change_type IN ("
+            "'INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES',"
+            "'TYPO_FIX','ANSWER_CHANGE','CONTENT_CHANGE','REVOCATION')",
             name="ck_question_revisions_4",
         ),
         sa.Index("ix_question_revisions_question", "question_id", "revision_no"),

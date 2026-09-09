@@ -25,6 +25,15 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
+from pwd301.models.assessment import (
+    Assessment,
+    AssessmentQuestionAssignment,
+    AssessmentQuestionPool,
+)
+from pwd301.models.attempt_regrade import (
+    AttemptQuestion,
+    QuestionCorrection,
+)
 from pwd301.models.course import Lesson
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -38,11 +47,15 @@ from pwd301.models.question_bank import (
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
     _resolve_lesson,
+    _resolve_question,
     require_course_manager,
     require_question_manager,
 )
 from pwd301.services.exceptions import (
     LessonNotFoundError,
+    QuestionImmutableError,
+    QuestionNotFoundError,
+    QuestionRevisionNotFoundError,
     QuestionStateViolationError,
     QuestionValidationError,
 )
@@ -73,6 +86,22 @@ VALID_PROVENANCE_TYPES: set[str] = {
     "IMPORT",
     "AI_GENERATED",
     "DUPLICATED",
+}
+
+VALID_REVISION_CHANGE_TYPES: set[str] = {
+    "INITIAL",
+    "TYPO_FIX",
+    "ANSWER_CHANGE",
+    "CONTENT_CHANGE",
+    "REVOCATION",
+    "EDIT",
+    "ANSWER_ONLY",
+    "CONTENT_OR_CHOICES",
+}
+
+VALID_CORRECTION_TYPES: set[str] = {
+    "ANSWER_ONLY",
+    "CONTENT_OR_CHOICES",
 }
 
 
@@ -117,6 +146,91 @@ def _validate_points(default_points: Any) -> Decimal:
         raise QuestionValidationError("default_points must be greater than zero.")
 
     return val
+
+
+def _serialize_question_revision(
+    rev: QuestionRevision,
+    include_answers: bool = True,
+    is_current: bool | None = None,
+) -> dict[str, Any]:
+    """Serialize a QuestionRevision entity into an API dictionary masking BIGINT PKs (ADR-002)."""
+    question = rev.question
+    current_rev_id = question.current_revision_id if question else None
+    active = (rev.id == current_rev_id) if is_current is None else is_current
+    status_str = "ACTIVE" if active else "SUPERSEDED"
+
+    choices_data: list[dict[str, Any]] = []
+    if rev.choices:
+        sorted_choices = sorted(rev.choices, key=lambda c: c.position)
+        choices_data = [
+            {
+                "choice_id": str(c.choice_key),
+                "choice_key": str(c.choice_key),
+                "content": c.content,
+                "is_correct": c.is_correct if include_answers else None,
+                "position": c.position,
+                "is_fixed_position": bool(c.is_fixed_position),
+            }
+            for c in sorted_choices
+        ]
+
+    accepted_answers_data: list[dict[str, Any]] = []
+    if rev.accepted_answers:
+        sorted_answers = sorted(rev.accepted_answers, key=lambda a: a.position)
+        accepted_answers_data = [
+            {
+                "answer_text": a.answer_text if include_answers else None,
+                "answer_normalized": a.answer_normalized if include_answers else None,
+                "position": a.position,
+            }
+            for a in sorted_answers
+        ]
+
+    return {
+        "question_id": str(question.public_id) if question else None,
+        "revision_no": rev.revision_no,
+        "question_type": rev.question_type,
+        "content": rev.content,
+        "stem": rev.content,
+        "explanation": rev.explanation,
+        "short_answer_match_mode": rev.short_answer_match_mode,
+        "change_type": rev.change_type,
+        "change_reason": rev.change_reason,
+        "status": status_str,
+        "was_student_exposed": bool(rev.was_student_exposed),
+        "was_used_for_grading": bool(rev.was_used_for_grading),
+        "choices": choices_data,
+        "accepted_answers": accepted_answers_data,
+        "created_at": rev.created_at.isoformat() if rev.created_at else None,
+        "approved_at": rev.approved_at.isoformat() if rev.approved_at else None,
+    }
+
+
+def _serialize_question_correction(
+    correction: QuestionCorrection,
+) -> dict[str, Any]:
+    """Serialize a QuestionCorrection entity into an API dictionary masking BIGINT PKs (ADR-002)."""
+    question = correction.question
+    from_rev = correction.from_revision
+    to_rev = correction.to_revision
+    actor = correction.actor
+
+    synthetic_id = str(
+        uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.question_correction.{correction.id}")
+    )
+
+    return {
+        "correction_id": synthetic_id,
+        "question_id": str(question.public_id) if question else None,
+        "from_revision_no": from_rev.revision_no if from_rev else None,
+        "to_revision_no": to_rev.revision_no if to_rev else None,
+        "correction_type": correction.correction_type,
+        "status": correction.status,
+        "reason": correction.reason,
+        "effective_at": (correction.effective_at.isoformat() if correction.effective_at else None),
+        "created_at": (correction.created_at.isoformat() if correction.created_at else None),
+        "actor_id": str(actor.public_id) if actor else None,
+    }
 
 
 def _serialize_question(
@@ -180,18 +294,7 @@ def _serialize_question(
         "deleted_at": question.deleted_at.isoformat() if question.deleted_at else None,
         "restore_until": question.restore_until.isoformat() if question.restore_until else None,
         "current_revision": (
-            {
-                "revision_no": rev.revision_no,
-                "question_type": rev.question_type,
-                "content": rev.content,
-                "explanation": rev.explanation,
-                "short_answer_match_mode": rev.short_answer_match_mode,
-                "change_type": rev.change_type,
-                "was_student_exposed": bool(rev.was_student_exposed),
-                "was_used_for_grading": bool(rev.was_used_for_grading),
-                "choices": choices_data,
-                "accepted_answers": accepted_answers_data,
-            }
+            _serialize_question_revision(rev, include_answers=include_answers, is_current=True)
             if rev
             else None
         ),
@@ -772,3 +875,659 @@ def restore_question(
     sess.flush()
 
     return question
+
+
+def is_question_in_use(
+    question_or_id: Question | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Determine whether a question is currently in use in assessments or attempts.
+
+    A question is in-use if:
+    1. It has appeared in an AttemptQuestion (any student attempt).
+    2. It is assigned to a published Assessment (via AssessmentQuestionAssignment).
+    3. It is part of an AssessmentQuestionPool for a published Assessment.
+    4. Its usage_count > 0 or first_used_at is not None.
+    5. Any of its revisions has was_student_exposed=True or was_used_for_grading=True.
+
+    Args:
+        question_or_id: Question instance, internal BIGINT id, UUID, or string.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        True if the question has been used in assessments or attempts, False otherwise.
+
+    Raises:
+        QuestionNotFoundError: If the question does not exist.
+    """
+    sess = session if session is not None else db.session
+    question = _resolve_question(question_or_id, session=sess)
+    if question is None:
+        raise QuestionNotFoundError("Question not found.")
+
+    # 1. Check if question appeared in any attempt
+    has_attempt = (
+        sess.query(AttemptQuestion.id)
+        .filter(AttemptQuestion.source_question_id == question.id)
+        .first()
+        is not None
+    )
+    if has_attempt:
+        return True
+
+    # 2. Check if assigned to a published Assessment
+    has_published_assignment = (
+        sess.query(AssessmentQuestionAssignment.id)
+        .join(Assessment, AssessmentQuestionAssignment.assessment_id == Assessment.id)
+        .filter(
+            AssessmentQuestionAssignment.question_id == question.id,
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
+        )
+        .first()
+        is not None
+    )
+    if has_published_assignment:
+        return True
+
+    # 3. Check if in question pool for a published Assessment
+    has_published_pool = (
+        sess.query(AssessmentQuestionPool.id)
+        .join(Assessment, AssessmentQuestionPool.assessment_id == Assessment.id)
+        .filter(
+            AssessmentQuestionPool.question_id == question.id,
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
+        )
+        .first()
+        is not None
+    )
+    if has_published_pool:
+        return True
+
+    # 4. Check question usage counters
+    if question.usage_count > 0 or question.first_used_at is not None:
+        return True
+
+    # 5. Check historical revision exposure flags
+    has_exposed_revision = (
+        sess.query(QuestionRevision.id)
+        .filter(
+            QuestionRevision.question_id == question.id,
+            sa.or_(
+                QuestionRevision.was_student_exposed.is_(True),
+                QuestionRevision.was_used_for_grading.is_(True),
+            ),
+        )
+        .first()
+        is not None
+    )
+    return bool(has_exposed_revision)
+
+
+def create_question_revision(
+    actor: User,
+    question_id: int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[QuestionRevision, QuestionCorrection | None]:
+    """Create a new incremented revision for a question (ADR-003).
+
+    Enforces:
+    - Actor management authorization.
+    - Incremented revision_no (latest.revision_no + 1).
+    - In-use branching strategy:
+      - If in-use: requires non-empty reason, locks question_type,
+        and generates a linked QuestionCorrection record (PENDING)
+        for ANSWER_CHANGE, CONTENT_CHANGE, or other correction types.
+    - Deep cloning of choices and accepted answers when not overridden in payload.
+    - Append-only AuditEvent logging (QUESTION_REVISED, QUESTION_CORRECTION_CREATED).
+
+    Args:
+        actor: Authenticated instructor or admin user.
+        question_id: Question identifier.
+        payload: Modification metadata, content, and choices/answers.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        Created QuestionRevision instance.
+
+    Raises:
+        QuestionNotFoundError: If question does not exist.
+        ForbiddenError: If actor lacks permission.
+        QuestionStateViolationError: If question status is TRASH or RETIRED.
+        QuestionValidationError: If payload fails validation.
+        QuestionRevisionConflictError: If attempting to change question_type of an in-use question.
+    """
+    sess = session if session is not None else db.session
+    question = require_question_manager(actor, question_id, session=sess)
+
+    # 1. Lifecycle check
+    if question.status in ("TRASH", "RETIRED"):
+        raise QuestionStateViolationError(
+            f"Cannot create revision for question in '{question.status}' status."
+        )
+
+    # 2. Get latest revision
+    latest_rev = (
+        sess.query(QuestionRevision)
+        .filter(QuestionRevision.question_id == question.id)
+        .order_by(QuestionRevision.revision_no.desc())
+        .first()
+    )
+    if latest_rev is None:
+        raise QuestionRevisionNotFoundError("No baseline revision exists for this question.")
+
+    # 3. Detect in-use status
+    in_use = is_question_in_use(question, session=sess)
+
+    # 4. Extract and validate change_type
+    raw_change_type = payload.get("change_type")
+    if raw_change_type:
+        change_type = str(raw_change_type).strip().upper()
+    else:
+        change_type = "CONTENT_CHANGE" if in_use else "EDIT"
+
+    if change_type not in VALID_REVISION_CHANGE_TYPES:
+        valid_types = ", ".join(sorted(VALID_REVISION_CHANGE_TYPES))
+        raise QuestionValidationError(
+            f"Invalid change_type '{change_type}'. Must be one of {valid_types}."
+        )
+
+    if change_type == "INITIAL":
+        raise QuestionValidationError(
+            "change_type 'INITIAL' is only valid for initial question authoring."
+        )
+
+    # 5. Handle reason and type locking when in-use
+    raw_reason = payload.get("reason") or payload.get("change_reason")
+    if in_use:
+        if not raw_reason or not isinstance(raw_reason, str) or not raw_reason.strip():
+            raise QuestionValidationError(
+                "Reason is required when revising a question that is in use."
+            )
+        reason: str | None = raw_reason.strip()
+
+        # Check question_type immutability lock
+        req_type = payload.get("question_type") or payload.get("type")
+        if req_type and str(req_type).strip().upper() != latest_rev.question_type:
+            raise QuestionImmutableError(
+                f"Cannot change question_type of an in-use question from "
+                f"'{latest_rev.question_type}' to '{str(req_type).strip().upper()}'. "
+                "Question type is locked after assessment use."
+            )
+    else:
+        reason = raw_reason.strip() if isinstance(raw_reason, str) and raw_reason.strip() else None
+
+    # 6. Extract question-level metadata updates (difficulty, learning_objective)
+    raw_diff = payload.get("difficulty")
+    if raw_diff:
+        diff_upper = str(raw_diff).strip().upper()
+        if diff_upper not in VALID_DIFFICULTIES:
+            valid_diffs = ", ".join(sorted(VALID_DIFFICULTIES))
+            raise QuestionValidationError(
+                f"Invalid difficulty '{diff_upper}'. Must be one of {valid_diffs}."
+            )
+        question.difficulty = diff_upper
+
+    if "learning_objective" in payload:
+        raw_lo = payload.get("learning_objective")
+        question.learning_objective = str(raw_lo).strip() if raw_lo else None
+
+    # 7. Extract stem / content
+    raw_content = payload.get("content") or payload.get("stem")
+    if raw_content is not None:
+        if not isinstance(raw_content, str) or not raw_content.strip():
+            raise QuestionValidationError("Question content cannot be empty.")
+        content = raw_content.strip()
+    else:
+        content = latest_rev.content
+
+    # 8. Extract explanation
+    raw_explanation = payload.get("explanation")
+    if raw_explanation is not None:
+        explanation = (
+            raw_explanation.strip()
+            if isinstance(raw_explanation, str) and raw_explanation.strip()
+            else None
+        )
+    else:
+        explanation = latest_rev.explanation
+
+    # 9. Question type
+    req_type = payload.get("question_type") or payload.get("type")
+    if req_type and not in_use:
+        q_type = str(req_type).strip().upper()
+        if q_type not in VALID_QUESTION_TYPES:
+            valid_qtypes = ", ".join(sorted(VALID_QUESTION_TYPES))
+            raise QuestionValidationError(
+                f"Invalid question type '{q_type}'. Must be one of {valid_qtypes}."
+            )
+    else:
+        q_type = latest_rev.question_type
+
+    # 10. Process Choices and Accepted Answers
+    parsed_choices: list[dict[str, Any]] = []
+    parsed_answers: list[dict[str, Any]] = []
+    short_answer_match_mode = latest_rev.short_answer_match_mode
+
+    if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+        if "choices" in payload:
+            raw_choices = payload.get("choices")
+            if not isinstance(raw_choices, list):
+                raise QuestionValidationError("choices must be a list.")
+            if q_type == "TRUE_FALSE" and len(raw_choices) != 2:
+                raise QuestionValidationError("TRUE_FALSE questions must have exactly 2 choices.")
+            if q_type != "TRUE_FALSE" and len(raw_choices) < 2:
+                raise QuestionValidationError(f"{q_type} questions must have at least 2 choices.")
+
+            correct_count = 0
+            for idx, c in enumerate(raw_choices, start=1):
+                if not isinstance(c, dict):
+                    raise QuestionValidationError("Each choice must be an object.")
+                c_text = c.get("content") or c.get("text")
+                if not c_text or not isinstance(c_text, str) or not c_text.strip():
+                    raise QuestionValidationError(f"Choice {idx} content cannot be empty.")
+                is_corr = bool(c.get("is_correct", False))
+                if is_corr:
+                    correct_count += 1
+                parsed_choices.append(
+                    {
+                        "content": c_text.strip(),
+                        "is_correct": is_corr,
+                        "position": int(c.get("position", idx)),
+                        "is_fixed_position": bool(c.get("is_fixed_position", False)),
+                    }
+                )
+
+            if q_type in ("SINGLE_CHOICE", "TRUE_FALSE") and correct_count != 1:
+                raise QuestionValidationError(
+                    f"{q_type} questions must have exactly 1 correct answer "
+                    f"(found {correct_count})."
+                )
+            if q_type == "MULTIPLE_CHOICE" and correct_count < 1:
+                raise QuestionValidationError(
+                    "MULTIPLE_CHOICE questions must have at least 1 correct answer."
+                )
+        else:
+            # Clone from latest_rev choices
+            sorted_choices = sorted(latest_rev.choices, key=lambda c: c.position)
+            parsed_choices = [
+                {
+                    "content": c.content,
+                    "is_correct": c.is_correct,
+                    "position": c.position,
+                    "is_fixed_position": c.is_fixed_position,
+                }
+                for c in sorted_choices
+            ]
+
+    elif q_type == "SHORT_ANSWER":
+        if "choices" in payload and payload["choices"]:
+            raise QuestionValidationError("SHORT_ANSWER questions cannot have choices.")
+        if "accepted_answers" in payload:
+            raw_answers = payload.get("accepted_answers")
+            if not isinstance(raw_answers, list) or len(raw_answers) < 1:
+                raise QuestionValidationError(
+                    "SHORT_ANSWER questions must have at least 1 accepted answer."
+                )
+
+            match_type = payload.get("match_type") or payload.get("short_answer_match_mode")
+            is_case_sensitive = payload.get("is_case_sensitive", False)
+            if match_type:
+                mt_upper = str(match_type).strip().upper()
+                if mt_upper not in {"EXACT", "CONTAINS", "REGEX", "NORMALIZED"}:
+                    raise QuestionValidationError(
+                        f"Invalid match_type '{match_type}'. "
+                        "Must be EXACT, CONTAINS, REGEX, or NORMALIZED."
+                    )
+                short_answer_match_mode = (
+                    "EXACT" if (mt_upper == "EXACT" or is_case_sensitive) else "NORMALIZED"
+                )
+            elif is_case_sensitive:
+                short_answer_match_mode = "EXACT"
+
+            seen_norm: set[str] = set()
+            pos = 1
+            for idx, ans in enumerate(raw_answers, start=1):
+                if isinstance(ans, str):
+                    ans_text = ans.strip()
+                elif isinstance(ans, dict):
+                    ans_text = str(ans.get("answer_text") or ans.get("text") or "").strip()
+                else:
+                    raise QuestionValidationError(
+                        f"Accepted answer {idx} must be a string or object."
+                    )
+                if not ans_text:
+                    raise QuestionValidationError(f"Accepted answer {idx} text cannot be empty.")
+                norm = ans_text.lower()
+                if norm in seen_norm:
+                    continue
+                seen_norm.add(norm)
+                parsed_answers.append(
+                    {
+                        "answer_text": ans_text,
+                        "answer_normalized": norm,
+                        "position": pos,
+                    }
+                )
+                pos += 1
+        else:
+            # Clone from latest_rev accepted_answers
+            sorted_ans = sorted(latest_rev.accepted_answers, key=lambda a: a.position)
+            parsed_answers = [
+                {
+                    "answer_text": a.answer_text,
+                    "answer_normalized": a.answer_normalized,
+                    "position": a.position,
+                }
+                for a in sorted_ans
+            ]
+
+    elif q_type == "ESSAY":
+        if payload.get("choices"):
+            raise QuestionValidationError("ESSAY questions cannot have choices.")
+        if payload.get("accepted_answers"):
+            raise QuestionValidationError(
+                "ESSAY questions cannot have predefined accepted answers."
+            )
+
+    # 11. Create new QuestionRevision
+    new_revision_no = latest_rev.revision_no + 1
+    new_revision = QuestionRevision(
+        question_id=question.id,
+        revision_no=new_revision_no,
+        question_type=q_type,
+        content=content,
+        explanation=explanation,
+        short_answer_match_mode=short_answer_match_mode,
+        change_type=change_type,
+        change_reason=reason,
+        created_by_user_id=actor.id,
+        approved_by_user_id=actor.id,
+        approved_at=utc_now(),
+        was_student_exposed=False,
+        was_used_for_grading=False,
+    )
+    sess.add(new_revision)
+    sess.flush()
+
+    # 12. Create Choices
+    for c_data in parsed_choices:
+        choice = QuestionRevisionChoice(
+            question_revision_id=new_revision.id,
+            choice_key=uuid.uuid4(),
+            content=c_data["content"],
+            is_correct=c_data["is_correct"],
+            position=c_data["position"],
+            is_fixed_position=c_data.get("is_fixed_position", False),
+        )
+        sess.add(choice)
+
+    # 13. Create Accepted Answers
+    for a_data in parsed_answers:
+        answer = QuestionRevisionAcceptedAnswer(
+            question_revision_id=new_revision.id,
+            answer_text=a_data["answer_text"],
+            answer_normalized=a_data["answer_normalized"],
+            position=a_data["position"],
+        )
+        sess.add(answer)
+
+    # 14. Update Question current_revision pointer
+    question.current_revision_id = new_revision.id
+    question.updated_at = utc_now()
+
+    # 15. Create QuestionCorrection if question was in-use and change requires correction
+    correction_record: QuestionCorrection | None = None
+    if in_use and change_type in {
+        "ANSWER_CHANGE",
+        "CONTENT_CHANGE",
+        "ANSWER_ONLY",
+        "CONTENT_OR_CHOICES",
+        "TYPO_FIX",
+        "REVOCATION",
+    }:
+        raw_corr_type = payload.get("correction_type")
+        if raw_corr_type:
+            corr_upper = str(raw_corr_type).strip().upper()
+            if corr_upper not in VALID_CORRECTION_TYPES:
+                raise QuestionValidationError(
+                    f"correction_type must be one of {sorted(VALID_CORRECTION_TYPES)}."
+                )
+            correction_type = corr_upper
+        else:
+            if change_type in ("ANSWER_CHANGE", "ANSWER_ONLY"):
+                correction_type = "ANSWER_ONLY"
+            else:
+                correction_type = "CONTENT_OR_CHOICES"
+
+        correction_record = QuestionCorrection(
+            question_id=question.id,
+            from_revision_id=latest_rev.id,
+            to_revision_id=new_revision.id,
+            correction_type=correction_type,
+            effective_at=utc_now(),
+            reason=reason or "Question correction",
+            actor_user_id=actor.id,
+            status="PENDING",
+        )
+        sess.add(correction_record)
+        sess.flush()
+
+        # Record AuditEvent QUESTION_CORRECTION_CREATED
+        _record_question_audit(
+            sess=sess,
+            actor=actor,
+            action="QUESTION_CORRECTION_CREATED",
+            target_id=question.id,
+            reason=reason,
+            after_json=json.dumps(
+                {
+                    "question_id": str(question.public_id),
+                    "from_revision_no": latest_rev.revision_no,
+                    "to_revision_no": new_revision.revision_no,
+                    "correction_type": correction_type,
+                    "status": "PENDING",
+                }
+            ),
+        )
+
+    # 16. Record AuditEvent QUESTION_REVISED
+    _record_question_audit(
+        sess=sess,
+        actor=actor,
+        action="QUESTION_REVISED",
+        target_id=question.id,
+        reason=reason or "Question revised",
+        before_json=json.dumps({"current_revision_no": latest_rev.revision_no}),
+        after_json=json.dumps(
+            {
+                "question_id": str(question.public_id),
+                "new_revision_no": new_revision.revision_no,
+                "change_type": change_type,
+                "in_use": in_use,
+                "correction_created": bool(correction_record),
+            }
+        ),
+    )
+    sess.flush()
+
+    return new_revision, correction_record
+
+
+def update_question(
+    actor: User,
+    question_id: int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> Question:
+    """Update question metadata or edit content adhering to the Freeze Revision Invariant.
+
+    If question is in-use:
+    - In-place mutation of content/choices/answers is strictly forbidden
+      and raises QuestionImmutableError.
+    - If payload explicitly requests a new revision (create_revision=True), creates one.
+
+    If question is unused:
+    - Allows in-place editing of current revision content, choices, or answers.
+    """
+    sess = session if session is not None else db.session
+    question = require_question_manager(actor, question_id, session=sess)
+
+    if question.status in ("TRASH", "RETIRED"):
+        raise QuestionStateViolationError(f"Cannot update question in '{question.status}' status.")
+
+    in_use = is_question_in_use(question, session=sess)
+    has_content_edits = any(
+        k in payload
+        for k in (
+            "content",
+            "stem",
+            "choices",
+            "accepted_answers",
+            "question_type",
+            "type",
+            "explanation",
+            "general_feedback",
+        )
+    )
+
+    if in_use and has_content_edits:
+        req_type = payload.get("question_type") or payload.get("type")
+        latest_rev = question.current_revision
+        if req_type and latest_rev and str(req_type).strip().upper() != latest_rev.question_type:
+            raise QuestionImmutableError(
+                f"Cannot change question_type of an in-use question from "
+                f"'{latest_rev.question_type}' to '{str(req_type).strip().upper()}'. "
+                "Question type is locked after assessment use."
+            )
+
+        raw_reason = payload.get("reason") or payload.get("change_reason")
+        if not raw_reason or not isinstance(raw_reason, str) or not raw_reason.strip():
+            raise QuestionValidationError(
+                "change_reason is required when modifying a question that is in use."
+            )
+
+        new_rev, _ = create_question_revision(actor, question.id, payload, session=sess)
+        question.current_revision_id = new_rev.id
+        sess.flush()
+        return question
+
+    # Metadata updates
+    if "difficulty" in payload:
+        diff_val = str(payload["difficulty"]).strip().upper()
+        if diff_val not in VALID_DIFFICULTIES:
+            raise QuestionValidationError(f"Invalid difficulty '{diff_val}'.")
+        question.difficulty = diff_val
+
+    if "learning_objective" in payload:
+        raw_lo = payload.get("learning_objective")
+        question.learning_objective = str(raw_lo).strip() if raw_lo else None
+
+    # In-place updates for unused question
+    rev = question.current_revision
+    if rev and has_content_edits:
+        new_content = payload.get("content") or payload.get("stem")
+        if new_content is not None:
+            if not isinstance(new_content, str) or not new_content.strip():
+                raise QuestionValidationError("Question content cannot be empty.")
+            rev.content = new_content.strip()
+
+        if "explanation" in payload or "general_feedback" in payload:
+            raw_exp = payload.get("explanation") or payload.get("general_feedback")
+            rev.explanation = str(raw_exp).strip() if raw_exp else None
+
+        if "choices" in payload and rev.question_type in (
+            "SINGLE_CHOICE",
+            "MULTIPLE_CHOICE",
+            "TRUE_FALSE",
+        ):
+            sess.query(QuestionRevisionChoice).filter(
+                QuestionRevisionChoice.question_revision_id == rev.id
+            ).delete()
+            raw_choices = payload.get("choices") or []
+            for idx, c in enumerate(raw_choices, start=1):
+                choice = QuestionRevisionChoice(
+                    question_revision_id=rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=c.get("content", "").strip(),
+                    is_correct=bool(c.get("is_correct", False)),
+                    position=int(c.get("position", idx)),
+                    is_fixed_position=bool(c.get("is_fixed_position", False)),
+                )
+                sess.add(choice)
+
+    question.updated_at = utc_now()
+    sess.flush()
+    return question
+
+
+def list_question_revisions(
+    actor: User,
+    question_id: int | uuid.UUID | str,
+    page: int = 1,
+    per_page: int = 20,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[list[dict[str, Any]], int, int, int, int]:
+    """Retrieve all historical and current revisions for a question, ordered by revision_no DESC."""
+    sess = session if session is not None else db.session
+    question = require_question_manager(actor, question_id, session=sess)
+
+    query = (
+        sess.query(QuestionRevision)
+        .filter(QuestionRevision.question_id == question.id)
+        .order_by(QuestionRevision.revision_no.desc())
+    )
+    total_count = query.count()
+    p = max(1, page)
+    pp = max(1, min(100, per_page))
+    total_pages = math.ceil(total_count / pp) if total_count > 0 else 1
+
+    revisions = query.offset((p - 1) * pp).limit(pp).all()
+    items = [_serialize_question_revision(r, include_answers=True) for r in revisions]
+    return items, total_count, p, pp, total_pages
+
+
+def get_question_revision_detail(
+    actor: User,
+    question_id: int | uuid.UUID | str,
+    revision_no: int,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve full details of a specific question revision."""
+    sess = session if session is not None else db.session
+    question = require_question_manager(actor, question_id, session=sess)
+
+    rev = (
+        sess.query(QuestionRevision)
+        .filter(
+            QuestionRevision.question_id == question.id,
+            QuestionRevision.revision_no == revision_no,
+        )
+        .first()
+    )
+    if rev is None:
+        raise QuestionRevisionNotFoundError(
+            f"Revision {revision_no} not found for question '{question.public_id}'."
+        )
+
+    return _serialize_question_revision(rev, include_answers=True)
+
+
+def list_question_corrections(
+    actor: User,
+    question_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve all question correction incidents for a question."""
+    sess = session if session is not None else db.session
+    question = require_question_manager(actor, question_id, session=sess)
+
+    corrections = (
+        sess.query(QuestionCorrection)
+        .filter(QuestionCorrection.question_id == question.id)
+        .order_by(QuestionCorrection.created_at.desc(), QuestionCorrection.id.desc())
+        .all()
+    )
+    return [_serialize_question_correction(c) for c in corrections]

@@ -42,11 +42,18 @@ from pwd301.services.lesson_service import (
 )
 from pwd301.services.question_bank_service import (
     _serialize_question,
+    _serialize_question_correction,
+    _serialize_question_revision,
     create_question,
+    create_question_revision,
     get_question_detail,
+    get_question_revision_detail,
     list_course_questions,
+    list_question_corrections,
+    list_question_revisions,
     restore_question,
     trash_question,
+    update_question,
 )
 
 
@@ -618,3 +625,103 @@ def restore_question_route(question_id: str) -> tuple[Response, int] | Response:
             "question": _serialize_question(question),
         }
     ), 200
+
+
+@instructor_bp.route("/questions/<question_id>", methods=["PATCH", "PUT"])
+@instructor_required
+def update_question_route(question_id: str) -> tuple[Response, int] | Response:
+    """Update question or create a revision if branched."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    question = update_question(actor, question_id, payload, session=db.session)
+    db.session.commit()
+
+    return jsonify(_serialize_question(question)), 200
+
+
+@instructor_bp.route("/questions/<question_id>/revisions", methods=["GET"])
+@instructor_required
+def list_question_revisions_route(question_id: str) -> tuple[Response, int] | Response:
+    """List revisions for a question."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    page = request.args.get("page", default=1, type=int)
+    per_page = request.args.get("per_page", default=20, type=int)
+
+    items, total, p, pp, total_pages = list_question_revisions(
+        actor=actor,
+        question_id=question_id,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    data = {
+        "items": items,
+        "total": total,
+        "page": p,
+        "per_page": pp,
+        "total_pages": total_pages,
+    }
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/questions/<question_id>/revisions", methods=["POST"])
+@instructor_required
+def create_question_revision_route(question_id: str) -> tuple[Response, int] | Response:
+    """Create a new revision explicitly for a question."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    revision, correction = create_question_revision(
+        actor=actor,
+        question_id=question_id,
+        payload=payload,
+        session=db.session,
+    )
+    db.session.commit()
+
+    resp: dict[str, Any] = {
+        "revision": _serialize_question_revision(revision),
+    }
+    if correction is not None:
+        resp["correction"] = _serialize_question_correction(correction)
+
+    return jsonify(resp), 201
+
+
+@instructor_bp.route("/questions/<question_id>/revisions/<int:revision_no>", methods=["GET"])
+@instructor_required
+def get_question_revision_detail_route(
+    question_id: str, revision_no: int
+) -> tuple[Response, int] | Response:
+    """Retrieve detailed information for a specific question revision."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    data = get_question_revision_detail(
+        actor=actor,
+        question_id=question_id,
+        revision_no=revision_no,
+        session=db.session,
+    )
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/questions/<question_id>/corrections", methods=["GET"])
+@instructor_required
+def list_question_corrections_route(question_id: str) -> tuple[Response, int] | Response:
+    """List corrections for a question."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    items = list_question_corrections(
+        actor=actor,
+        question_id=question_id,
+        session=db.session,
+    )
+    return jsonify({"items": items}), 200

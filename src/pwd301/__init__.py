@@ -67,7 +67,11 @@ from pwd301.services.exceptions import (
     LessonValidationError,
     PrerequisiteCycleError,
     QuestionBankError,
+    QuestionCorrectionError,
+    QuestionImmutableError,
     QuestionNotFoundError,
+    QuestionRevisionConflictError,
+    QuestionRevisionNotFoundError,
     QuestionStateViolationError,
     QuestionValidationError,
     ResourceNotFoundError,
@@ -429,6 +433,46 @@ def _register_error_handlers(app: Flask) -> None:
             code="STATE_VIOLATION",
             message=str(error),
             status_code=409,
+        )
+
+    @app.errorhandler(QuestionRevisionNotFoundError)
+    def domain_question_revision_not_found_error(
+        error: QuestionRevisionNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(QuestionRevisionConflictError)
+    def domain_question_revision_conflict_error(
+        error: QuestionRevisionConflictError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="CONFLICT",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(QuestionImmutableError)
+    def domain_question_immutable_error(
+        error: QuestionImmutableError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="STATE_VIOLATION",
+            message=str(error),
+            status_code=409,
+        )
+
+    @app.errorhandler(QuestionCorrectionError)
+    def domain_question_correction_error(
+        error: QuestionCorrectionError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
         )
 
     @app.errorhandler(QuestionBankError)

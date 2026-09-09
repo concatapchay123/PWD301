@@ -111,7 +111,11 @@ class CourseNotFoundError(ResourceNotFoundError):
     """Raised when a requested course cannot be found."""
 
 
-class CourseStateViolationError(CourseError):
+class StateViolationError(ServiceError):
+    """Base exception for invalid state machine transitions or state violations."""
+
+
+class CourseStateViolationError(StateViolationError, CourseError):
     """Raised when an illegal course state machine transition is attempted."""
 
 
@@ -131,7 +135,7 @@ class LessonNotFoundError(ResourceNotFoundError, LessonError):
     """Raised when a requested lesson cannot be found."""
 
 
-class LessonStateViolationError(LessonError):
+class LessonStateViolationError(StateViolationError, LessonError):
     """Raised when an illegal lesson state transition is attempted."""
 
 
@@ -163,7 +167,7 @@ class EnrollmentPrerequisiteError(EnrollmentError):
     """Raised when a student has not satisfied all prerequisite courses."""
 
 
-class EnrollmentStateViolationError(EnrollmentError):
+class EnrollmentStateViolationError(StateViolationError, EnrollmentError):
     """Raised when an illegal enrollment lifecycle state transition is attempted."""
 
 
@@ -196,12 +200,28 @@ class QuestionBankError(ServiceError):
 
 
 class QuestionNotFoundError(ResourceNotFoundError, QuestionBankError):
-    """Raised when a requested question or revision cannot be found."""
+    """Raised when a requested question cannot be found."""
 
 
 class QuestionValidationError(ValidationError, QuestionBankError):
     """Raised when question content, structure, or choices fail domain validation."""
 
 
-class QuestionStateViolationError(QuestionBankError):
+class QuestionStateViolationError(StateViolationError, QuestionBankError):
     """Raised when an illegal question lifecycle transition or locked-mutation is attempted."""
+
+
+class QuestionRevisionNotFoundError(ResourceNotFoundError, QuestionBankError):
+    """Raised when a requested question revision cannot be found."""
+
+
+class QuestionRevisionConflictError(StateViolationError, QuestionBankError):
+    """Raised when an operation violates revision immutability, type locking, or sequence state."""
+
+
+class QuestionCorrectionError(QuestionBankError):
+    """Raised when a question correction incident fails domain validation or processing rules."""
+
+
+class QuestionImmutableError(QuestionBankError):
+    """Raised when attempting in-place modification of an immutable or in-use question revision."""

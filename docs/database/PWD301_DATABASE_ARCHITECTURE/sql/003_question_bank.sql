@@ -60,7 +60,7 @@ CREATE TABLE question_revisions (
     CONSTRAINT ck_question_revisions_1 CHECK (revision_no > 0),
     CONSTRAINT ck_question_revisions_2 CHECK (question_type IN ('SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE','SHORT_ANSWER','ESSAY')),
     CONSTRAINT ck_question_revisions_3 CHECK (short_answer_match_mode IS NULL OR short_answer_match_mode IN ('NORMALIZED','EXACT')),
-    CONSTRAINT ck_question_revisions_4 CHECK (change_type IN ('INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES')),
+    CONSTRAINT ck_question_revisions_4 CHECK (change_type IN ('INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES','TYPO_FIX','ANSWER_CHANGE','CONTENT_CHANGE','REVOCATION')),
     CONSTRAINT fk_question_revisions_question_id FOREIGN KEY (question_id) REFERENCES questions (id),
     CONSTRAINT fk_question_revisions_created_by_user_id FOREIGN KEY (created_by_user_id) REFERENCES users (id),
     CONSTRAINT fk_question_revisions_approved_by_user_id FOREIGN KEY (approved_by_user_id) REFERENCES users (id)
