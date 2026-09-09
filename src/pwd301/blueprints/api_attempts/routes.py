@@ -15,6 +15,8 @@ from pwd301.services.attempt_service import (
     renew_attempt_lease,
     save_attempt_answer,
     start_assessment_attempt,
+    submit_assessment_attempt,
+    sync_offline_answers,
     takeover_attempt_lease,
 )
 from pwd301.services.authorization_service import require_authenticated_actor
@@ -174,7 +176,10 @@ def takeover_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Resp
 
 @api_attempt_bp.route("/api/attempts/<attempt_id>/answers/<attempt_question_id>", methods=["PUT"])
 @jwt_required
-def save_attempt_answer_route(attempt_id: str, attempt_question_id: str) -> tuple[Response, int] | Response:
+def save_attempt_answer_route(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> tuple[Response, int] | Response:
     """Save an answer during an active attempt (autosave).
 
     PUT /api/attempts/<attempt_id>/answers/<attempt_question_id>
@@ -187,6 +192,60 @@ def save_attempt_answer_route(attempt_id: str, attempt_question_id: str) -> tupl
         attempt_id=attempt_id,
         attempt_question_id=attempt_question_id,
         payload=payload,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/answers/sync", methods=["POST"])
+@jwt_required
+def sync_offline_answers_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Synchronize a batch of offline answers accumulated while disconnected.
+
+    POST /api/attempts/<attempt_id>/answers/sync
+    """
+    actor = require_authenticated_actor()
+    raw_token = _extract_lease_token()
+    body = request.get_json(silent=True)
+    if isinstance(body, list):
+        answers_batch = body
+    elif isinstance(body, dict):
+        answers_batch = body.get("answers") or body.get("items") or []
+    else:
+        answers_batch = []
+
+    result = sync_offline_answers(
+        actor=actor,
+        attempt_id=attempt_id,
+        answers_batch=answers_batch,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/submit", methods=["POST"])
+@jwt_required
+def submit_assessment_attempt_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Submit assessment attempt with idempotency protection.
+
+    POST /api/attempts/<attempt_id>/submit
+    """
+    actor = require_authenticated_actor()
+    raw_token = _extract_lease_token()
+
+    idempotency_key = request.headers.get("X-Submission-Idempotency-Key") or request.headers.get(
+        "X-Idempotency-Key"
+    )
+    if not idempotency_key and request.is_json:
+        body = request.get_json(silent=True) or {}
+        idempotency_key = body.get("submission_idempotency_key") or body.get("idempotency_key")
+
+    result = submit_assessment_attempt(
+        actor=actor,
+        attempt_id=attempt_id,
+        idempotency_key=idempotency_key,
         raw_lease_token=raw_token,
         session=db.session,
     )

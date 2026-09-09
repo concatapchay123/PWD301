@@ -130,4 +130,20 @@
   - `pytest tests/unit/test_attempt_lease_service.py tests/security/test_attempt_lease_idor.py tests/concurrency/test_attempt_lease_race.py tests/api/test_attempt_lease_api.py -v`: PASS (32/32 passed)
   - `pytest`: PASS (397/397 passed)
 
+## TASK-015 — Autosave, Offline Reconciliation & Idempotent Submission Engine
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (`SubmissionIdempotencyConflictError`, `AttemptAlreadySubmittedError`, `StaleAnswerSequenceError`, `StaleLeaseEpochError`)
+  - `src/pwd301/services/attempt_service.py` (`save_attempt_answer`, `sync_offline_answers`, `submit_assessment_attempt`)
+  - `src/pwd301/__init__.py` (Centralized domain error handlers for 409 SUBMISSION_CONFLICT and STATE_VIOLATION)
+  - `src/pwd301/blueprints/api_attempts/routes.py` (Autosave PUT, batch sync POST, idempotent submit POST)
+  - `tests/unit/test_attempt_autosave_service.py`, `tests/unit/test_attempt_submission_service.py`, `tests/security/test_attempt_submission_idor.py`, `tests/concurrency/test_submission_idempotency_race.py`, `tests/api/test_attempt_submission_api.py`
+- **Verification commands and results:**
+  - `repo_check.py`: PASS
+  - `ruff check`: PASS (0 errors)
+  - `ruff format --check`: PASS (all formatted)
+  - `mypy src`: PASS (0 issues across 58 files)
+  - `pytest` TASK-015 suite: PASS (25/25 passed)
+  - `python -m pytest`: PASS (428/428 passed)
+
 

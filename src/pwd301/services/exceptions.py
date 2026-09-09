@@ -313,3 +313,11 @@ class StaleLeaseEpochError(AttemptLeaseError):
 
 class StaleAnswerSequenceError(AttemptLeaseError):
     """Raised when an autosave payload has a stale client sequence."""
+
+
+class SubmissionIdempotencyConflictError(ConflictError, AttemptError):
+    """Raised when submitting with a different idempotency key than recorded."""
+
+
+class AttemptAlreadySubmittedError(StateViolationError, AttemptError):
+    """Raised when attempting an operation on an attempt that has already been submitted."""

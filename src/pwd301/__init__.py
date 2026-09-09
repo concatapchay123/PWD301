@@ -57,6 +57,7 @@ from pwd301.services.exceptions import (
     AssessmentSectionNotFoundError,
     AssessmentStateViolationError,
     AssessmentValidationError,
+    AttemptAlreadySubmittedError,
     AttemptError,
     AttemptExpiredError,
     AttemptLeaseConflictError,
@@ -65,8 +66,6 @@ from pwd301.services.exceptions import (
     AttemptLimitExceededError,
     AttemptNotFoundError,
     AttemptValidationError,
-    StaleAnswerSequenceError,
-    StaleLeaseEpochError,
     BlueprintValidationError,
     CompletionRuleError,
     CompletionRuleNotFoundError,
@@ -98,6 +97,9 @@ from pwd301.services.exceptions import (
     QuestionStateViolationError,
     QuestionValidationError,
     ResourceNotFoundError,
+    StaleAnswerSequenceError,
+    StaleLeaseEpochError,
+    SubmissionIdempotencyConflictError,
     UnauthorizedError,
 )
 
@@ -235,6 +237,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     StaleLeaseEpochError: ("STALE_LEASE_EPOCH", 409),
     StaleAnswerSequenceError: ("STALE_ANSWER", 409),
     AttemptExpiredError: ("DEADLINE_EXPIRED", 409),
+    AttemptAlreadySubmittedError: ("STATE_VIOLATION", 409),
+    SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
     # 400 Bad Request & Validation Errors
     CourseValidationError: ("VALIDATION_ERROR", 400),
     LessonValidationError: ("VALIDATION_ERROR", 400),
