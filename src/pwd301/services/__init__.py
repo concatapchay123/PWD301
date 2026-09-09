@@ -36,6 +36,13 @@ from pwd301.services.authorization_service import (
     require_student_data_access,
     student_required,
 )
+from pwd301.services.completion_service import (
+    calculate_course_progress,
+    evaluate_course_completion,
+    get_course_completion_summary,
+    get_or_create_default_completion_rule,
+    set_course_completion_rule,
+)
 from pwd301.services.course_service import (
     change_course_status,
     create_course,
@@ -62,6 +69,9 @@ from pwd301.services.exceptions import (
     AuthenticationError,
     AuthorizationError,
     AuthVersionMismatchError,
+    CompletionRuleError,
+    CompletionRuleNotFoundError,
+    CompletionRuleValidationError,
     CourseAlreadyExistsError,
     CourseDependencyError,
     CourseError,
@@ -99,6 +109,7 @@ from pwd301.services.exceptions import (
     TokenPurposeMismatchError,
     UserAlreadyExistsError,
     UserNotFoundError,
+    ValidationError,
 )
 from pwd301.services.jwt_auth_service import (
     create_token_pair,
@@ -189,6 +200,16 @@ __all__ = [
     "EnrollmentStateViolationError",
     "PrerequisiteCycleError",
     "CourseNotAvailableError",
+    "ValidationError",
+    "CompletionRuleError",
+    "CompletionRuleNotFoundError",
+    "CompletionRuleValidationError",
+    # Completion Service
+    "calculate_course_progress",
+    "evaluate_course_completion",
+    "get_course_completion_summary",
+    "get_or_create_default_completion_rule",
+    "set_course_completion_rule",
     # Enrollment Service
     "ENROLLMENT_DETAIL_RETENTION_DAYS",
     "enroll_student",

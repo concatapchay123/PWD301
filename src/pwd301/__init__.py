@@ -45,6 +45,9 @@ from pwd301.config import config_by_name
 from pwd301.extensions import csrf, db, login_manager, migrate
 from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
+    CompletionRuleError,
+    CompletionRuleNotFoundError,
+    CompletionRuleValidationError,
     CourseAlreadyExistsError,
     CourseDependencyError,
     CourseNotAvailableError,
@@ -359,6 +362,36 @@ def _register_error_handlers(app: Flask) -> None:
     ) -> Response | tuple[Response, int]:
         return _format_error_response(
             code="ENROLLMENT_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(CompletionRuleNotFoundError)
+    def domain_completion_rule_not_found_error(
+        error: CompletionRuleNotFoundError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="RESOURCE_NOT_FOUND",
+            message=str(error),
+            status_code=404,
+        )
+
+    @app.errorhandler(CompletionRuleValidationError)
+    def domain_completion_rule_validation_error(
+        error: CompletionRuleValidationError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="VALIDATION_ERROR",
+            message=str(error),
+            status_code=400,
+        )
+
+    @app.errorhandler(CompletionRuleError)
+    def domain_completion_rule_error(
+        error: CompletionRuleError,
+    ) -> Response | tuple[Response, int]:
+        return _format_error_response(
+            code="COMPLETION_RULE_ERROR",
             message=str(error),
             status_code=400,
         )

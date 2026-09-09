@@ -172,16 +172,13 @@ def check_prerequisites_met(
 
     prereq_ids = [link.prerequisite_course_id for link in prereq_links]
 
-    # Find durable completion summaries
+    # Find durable completion summaries where prerequisite_eligible is True
     summaries = (
         sess.query(CourseCompletionSummary)
         .filter(
             CourseCompletionSummary.student_user_id == student_user_id,
             CourseCompletionSummary.course_id.in_(prereq_ids),
-            sa.or_(
-                CourseCompletionSummary.prerequisite_eligible.is_(True),
-                CourseCompletionSummary.ever_completed.is_(True),
-            ),
+            CourseCompletionSummary.prerequisite_eligible.is_(True),
         )
         .all()
     )
@@ -410,7 +407,7 @@ def leave_course(
     now = utc_now()
     retention_due = now + timedelta(days=ENROLLMENT_DETAIL_RETENTION_DAYS)
 
-    # Close active period
+    # Close period
     if enrollment.current_period_id is not None:
         current_period = sess.get(EnrollmentPeriod, enrollment.current_period_id)
         if current_period is not None and current_period.status == "ACTIVE":

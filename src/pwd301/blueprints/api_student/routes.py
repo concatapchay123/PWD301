@@ -10,10 +10,13 @@ from pwd301.blueprints.api_student import api_student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment
 from pwd301.services.authorization_service import (
+    _resolve_course,
     get_authenticated_actor,
     student_required,
 )
+from pwd301.services.completion_service import get_course_completion_summary
 from pwd301.services.enrollment_service import get_student_enrollments
+from pwd301.services.exceptions import ResourceNotFoundError
 
 
 def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
@@ -44,3 +47,55 @@ def get_student_enrollments_api() -> tuple[Response, int] | Response:
     status = request.args.get("status")
     enrollments = get_student_enrollments(actor=actor, status=status, session=db.session)
     return jsonify({"enrollments": [_serialize_enrollment_api(e) for e in enrollments]}), 200
+
+
+@api_student_bp.route("/courses/<course_id>/completion", methods=["GET"])
+@student_required
+def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | Response:
+    """Retrieve completion summary for the authenticated student (REST API)."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+
+    data = {
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "course_title": course.title,
+        "student_id": str(actor.public_id),
+        "ever_completed": summary.ever_completed if summary else False,
+        "first_completed_at": (
+            summary.first_completed_at.isoformat()
+            if summary and summary.first_completed_at
+            else None
+        ),
+        "latest_completed_at": (
+            summary.latest_completed_at.isoformat()
+            if summary and summary.latest_completed_at
+            else None
+        ),
+        "prerequisite_eligible": summary.prerequisite_eligible if summary else False,
+        "current_status": enrollment.status if enrollment else None,
+        "current_progress_percent": (
+            float(enrollment.current_progress_percent) if enrollment else 0.0
+        ),
+    }
+    return jsonify(data), 200

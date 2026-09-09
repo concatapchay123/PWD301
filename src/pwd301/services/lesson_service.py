@@ -17,7 +17,6 @@ import json
 import uuid
 from typing import Any
 
-import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -854,13 +853,13 @@ def record_lesson_progress(
     if not (0.0 <= vf <= 1.0):
         raise LessonValidationError("view_fraction must be between 0.0 and 1.0.")
 
-    # Verify student active enrollment
+    # Verify student enrollment (ACTIVE or COMPLETED)
     enrollment = (
         sess.query(Enrollment)
         .filter(
             Enrollment.student_user_id == actor.id,
             Enrollment.course_id == lesson.course_id,
-            Enrollment.status == "ACTIVE",
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
         )
         .first()
     )
@@ -873,7 +872,7 @@ def record_lesson_progress(
     active_period: EnrollmentPeriod | None = None
     if enrollment.current_period_id:
         active_period = sess.get(EnrollmentPeriod, enrollment.current_period_id)
-        if active_period is not None and active_period.status != "ACTIVE":
+        if active_period is not None and active_period.status not in ("ACTIVE", "COMPLETED"):
             active_period = None
 
     if active_period is None:
@@ -881,8 +880,9 @@ def record_lesson_progress(
             sess.query(EnrollmentPeriod)
             .filter(
                 EnrollmentPeriod.enrollment_id == enrollment.id,
-                EnrollmentPeriod.status == "ACTIVE",
+                EnrollmentPeriod.status.in_(["ACTIVE", "COMPLETED"]),
             )
+            .order_by(EnrollmentPeriod.period_no.desc())
             .first()
         )
 
@@ -927,6 +927,7 @@ def record_lesson_progress(
         and float(progress.max_view_fraction) >= viewed_fraction_required
     )
 
+    newly_completed = False
     if criteria_met and progress.completed_at is None:
         progress.completed_at = now
         progress.completion_rule_snapshot_json = json.dumps(
@@ -936,35 +937,19 @@ def record_lesson_progress(
                 "completed_at": now.isoformat(),
             }
         )
+        newly_completed = True
 
-    # Update derived progress cache on Enrollment
-    total_published_lessons = (
-        sess.query(sa.func.count(Lesson.id))
-        .filter(
-            Lesson.course_id == lesson.course_id,
-            Lesson.status == "PUBLISHED",
-            Lesson.deleted_at.is_(None),
-        )
-        .scalar()
-        or 0
+    # Update derived progress cache on Enrollment via Algorithm 01
+    from pwd301.services.completion_service import (
+        calculate_course_progress,
+        evaluate_course_completion,
     )
 
-    if total_published_lessons > 0:
-        completed_count = (
-            sess.query(sa.func.count(LessonProgress.id))
-            .join(Lesson, Lesson.id == LessonProgress.lesson_id)
-            .filter(
-                LessonProgress.enrollment_period_id == active_period.id,
-                LessonProgress.completed_at.isnot(None),
-                Lesson.course_id == lesson.course_id,
-                Lesson.status == "PUBLISHED",
-                Lesson.deleted_at.is_(None),
-            )
-            .scalar()
-            or 0
-        )
-        pct = min(100.0, round((completed_count / total_published_lessons) * 100.0, 2))
-        enrollment.current_progress_percent = pct
+    calculate_course_progress(enrollment.id, session=sess)
+
+    # Immediately evaluate course completion when lesson completes
+    if newly_completed:
+        evaluate_course_completion(enrollment.id, session=sess)
 
     sess.flush()
 

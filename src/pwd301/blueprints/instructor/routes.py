@@ -14,6 +14,10 @@ from pwd301.services.authorization_service import (
     require_course_manager,
     require_student_data_access,
 )
+from pwd301.services.completion_service import (
+    get_or_create_default_completion_rule,
+    set_course_completion_rule,
+)
 from pwd301.services.course_service import (
     change_course_status,
     create_course,
@@ -456,3 +460,50 @@ def remove_course_prerequisite_route(
     )
     db.session.commit()
     return jsonify({"removed": removed}), 200
+
+
+def _serialize_completion_rule(course: Course, rule: Any) -> dict[str, Any]:
+    return {
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "title": course.title,
+        "require_all_required_lessons": bool(rule.require_all_required_lessons),
+        "require_required_assessments": bool(rule.require_required_assessments),
+        "minimum_progress_percent": (
+            float(rule.minimum_progress_percent)
+            if rule.minimum_progress_percent is not None
+            else None
+        ),
+        "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/completion-rules", methods=["GET"])
+@instructor_required
+def get_course_completion_rules_route(course_id: str) -> tuple[Response, int] | Response:
+    """Retrieve completion rule criteria for a managed course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    course = require_course_manager(actor, course_id, session=db.session)
+    rule = get_or_create_default_completion_rule(course.id, session=db.session)
+    return jsonify(_serialize_completion_rule(course, rule)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/completion-rules", methods=["POST", "PUT"])
+@instructor_required
+def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | Response:
+    """Set or update completion rule criteria for a managed course."""
+    actor = get_authenticated_actor()
+    assert actor is not None
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    course = require_course_manager(actor, course_id, session=db.session)
+    rule = set_course_completion_rule(
+        actor=actor,
+        course_id=course.id,
+        payload=payload,
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify(_serialize_completion_rule(course, rule)), 200

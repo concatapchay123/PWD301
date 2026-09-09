@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
@@ -280,6 +281,7 @@ def create_course(
         course_id=course.id,
         require_all_required_lessons=True,
         require_required_assessments=True,
+        minimum_progress_percent=Decimal("100.00"),
         updated_at=now,
     )
     sess.add(completion_rule)

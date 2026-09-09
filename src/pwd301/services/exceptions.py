@@ -173,3 +173,19 @@ class PrerequisiteCycleError(EnrollmentError):
 
 class CourseNotAvailableError(EnrollmentError):
     """Raised when a course is not open or published for enrollment."""
+
+
+class ValidationError(ServiceError):
+    """Base exception for domain validation errors."""
+
+
+class CompletionRuleError(ServiceError):
+    """Base exception for all course completion rule and progress domain errors."""
+
+
+class CompletionRuleNotFoundError(ResourceNotFoundError, CompletionRuleError):
+    """Raised when a course completion rule cannot be found."""
+
+
+class CompletionRuleValidationError(ValidationError, CompletionRuleError):
+    """Raised when course completion rule configuration fails validation."""
