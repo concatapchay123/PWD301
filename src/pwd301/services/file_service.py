@@ -12,6 +12,7 @@ Implements:
 from __future__ import annotations
 
 import hashlib
+import json
 import mimetypes
 import os
 import re
@@ -34,6 +35,7 @@ from pwd301.models.file_import import (
     LessonResource,
 )
 from pwd301.models.identity import User
+from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
     _resolve_lesson,
@@ -42,11 +44,16 @@ from pwd301.services.authorization_service import (
 from pwd301.services.exceptions import (
     FileAccessDeniedError,
     FileAssetNotFoundError,
+    FileInfectedError,
     FileSecurityQuarantineError,
     FileSizeLimitExceededError,
     FileStorageError,
     FileValidationError,
     ResourceNotFoundError,
+)
+from pwd301.services.scanner_service import (
+    scan_blob_file,
+    scan_file_all_engines,
 )
 
 # Dangerous executable extensions strictly forbidden per security architecture
@@ -132,6 +139,13 @@ def get_file_quarantine_root() -> Path:
     path = Path(raw).resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def get_file_infected_root() -> Path:
+    """Resolve the isolated quarantine root for infected files."""
+    root = get_file_quarantine_root() / "infected"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def validate_file_metadata(filename: str, declared_mime: str | None = None) -> None:
@@ -321,40 +335,11 @@ def store_file_stream(
         digest_bytes = hasher.digest()
         hex_hash = hasher.hexdigest()
 
-        # Algorithm 12 Deduplication lookup
-        blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
-        if blob is not None and blob.status == "PRESENT":
-            # Reuse existing blob
-            blob.reference_count += 1
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-        else:
-            # New unique blob: create hierarchical storage path
-            storage_root = get_file_storage_root()
-            ab = hex_hash[:2]
-            cd = hex_hash[2:4]
-            dest_dir = storage_root / "blobs" / ab / cd
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_path = dest_dir / hex_hash
+        # Multi-engine malware scanning while quarantined
+        now = utc_now()
+        scan_verdicts = scan_file_all_engines(temp_path)
+        main_verdict = scan_blob_file(temp_path)
 
-            # Move quarantine temp file to permanent storage
-            if temp_path.exists():
-                os.replace(temp_path, dest_path)
-            newly_created_dest = dest_path
-
-            storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
-            blob = FileBlob(
-                sha256=digest_bytes,
-                size_bytes=total_size,
-                detected_mime_type=detected_mime,
-                storage_key=storage_key,
-                status="PRESENT",
-                reference_count=1,
-            )
-            sess.add(blob)
-            sess.flush()
-
-        # Create logical FileAsset
         valid_asset_types = {
             "RESOURCE",
             "QUESTION_IMAGE",
@@ -369,49 +354,198 @@ def store_file_stream(
             else "RESOURCE"
         )
 
-        asset = FileAsset(
-            course_id=course.id,
-            created_by_user_id=actor.id,
-            asset_type=chosen_type,
-            display_name=title or clean_filename,
-            status="ACTIVE",
-        )
-        sess.add(asset)
-        sess.flush()
+        blob: FileBlob | None = None
 
-        # Create initial FileRevision (revision_no=1)
-        revision = FileRevision(
-            file_asset_id=asset.id,
-            revision_no=1,
-            is_current=True,
-            blob_id=blob.id,
-            original_filename=clean_filename,
-            declared_mime_type=content_type or detected_mime,
-            detected_mime_type=detected_mime,
-            size_bytes=total_size,
-            status="ACTIVE",
-            uploaded_by_user_id=actor.id,
-            security_checks_completed_at=utc_now(),
-            activated_at=utc_now(),
-        )
-        sess.add(revision)
-        sess.flush()
+        if main_verdict.status == "PASS":
+            # Algorithm 12 Deduplication lookup for clean files
+            blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
+            if blob is not None and blob.status == "PRESENT":
+                # Reuse existing clean blob
+                blob.reference_count += 1
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+            else:
+                # Promote to permanent hierarchical storage path
+                storage_root = get_file_storage_root()
+                ab = hex_hash[:2]
+                cd = hex_hash[2:4]
+                dest_dir = storage_root / "blobs" / ab / cd
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = dest_dir / hex_hash
 
-        # Record validation scan result
-        scan_result = FileScanResult(
-            file_revision_id=revision.id,
-            scan_type="FILE_VALIDATION",
-            engine="builtin_validator",
-            engine_version="1.0",
-            status="PASS",
-            details_json=None,
-            started_at=utc_now(),
-            completed_at=utc_now(),
-        )
-        sess.add(scan_result)
-        sess.commit()
+                if temp_path.exists():
+                    os.replace(temp_path, dest_path)
+                newly_created_dest = dest_path
 
-        return asset
+                storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
+                blob = FileBlob(
+                    sha256=digest_bytes,
+                    size_bytes=total_size,
+                    detected_mime_type=detected_mime,
+                    storage_key=storage_key,
+                    status="PRESENT",
+                    reference_count=1,
+                )
+                sess.add(blob)
+                sess.flush()
+
+            asset = FileAsset(
+                course_id=course.id,
+                created_by_user_id=actor.id,
+                asset_type=chosen_type,
+                display_name=title or clean_filename,
+                status="ACTIVE",
+            )
+            sess.add(asset)
+            sess.flush()
+
+            revision = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=1,
+                is_current=True,
+                blob_id=blob.id,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="ACTIVE",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+                activated_at=now,
+            )
+            sess.add(revision)
+            sess.flush()
+
+            # Record scan results
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=revision.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.add(
+                FileScanResult(
+                    file_revision_id=revision.id,
+                    scan_type="FILE_VALIDATION",
+                    engine="builtin_validator",
+                    engine_version="1.0",
+                    status="PASS",
+                    details_json=None,
+                    started_at=now,
+                    completed_at=now,
+                )
+            )
+            sess.commit()
+            return asset
+
+        elif main_verdict.status == "FAIL":
+            # Isolate infected file to quarantine/infected/
+            infected_dir = get_file_infected_root()
+            infected_path = infected_dir / hex_hash
+            if temp_path.exists():
+                os.replace(temp_path, infected_path)
+            newly_created_dest = infected_path
+
+            asset = FileAsset(
+                course_id=course.id,
+                created_by_user_id=actor.id,
+                asset_type=chosen_type,
+                display_name=title or clean_filename,
+                status="PENDING",
+            )
+            sess.add(asset)
+            sess.flush()
+
+            sig_desc = main_verdict.signature_name or "Malware detected"
+            revision = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=1,
+                is_current=False,
+                blob_id=None,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="REJECTED",
+                quarantine_key=f"infected/{hex_hash}",
+                rejection_reason=f"Infected: {sig_desc}",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+            )
+            sess.add(revision)
+            sess.flush()
+
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=revision.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.commit()
+            return asset
+
+        else:
+            # Scanner error or timeout: fail-closed quarantine
+            asset = FileAsset(
+                course_id=course.id,
+                created_by_user_id=actor.id,
+                asset_type=chosen_type,
+                display_name=title or clean_filename,
+                status="PENDING",
+            )
+            sess.add(asset)
+            sess.flush()
+
+            revision = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=1,
+                is_current=False,
+                blob_id=None,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="QUARANTINED",
+                quarantine_key=f"quarantine/{temp_filename}",
+                rejection_reason=f"Scanner error: {main_verdict.details or 'Unavailable'}",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+            )
+            sess.add(revision)
+            sess.flush()
+
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=revision.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.commit()
+            return asset
 
     except Exception:
         sess.rollback()
@@ -482,86 +616,185 @@ def add_file_revision(
         digest_bytes = hasher.digest()
         hex_hash = hasher.hexdigest()
 
-        # Deduplication lookup
-        blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
-        if blob is not None and blob.status == "PRESENT":
-            blob.reference_count += 1
-            if temp_path.exists():
-                temp_path.unlink(missing_ok=True)
-        else:
-            storage_root = get_file_storage_root()
-            ab = hex_hash[:2]
-            cd = hex_hash[2:4]
-            dest_dir = storage_root / "blobs" / ab / cd
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_path = dest_dir / hex_hash
-
-            if temp_path.exists():
-                os.replace(temp_path, dest_path)
-            newly_created_dest = dest_path
-
-            storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
-            blob = FileBlob(
-                sha256=digest_bytes,
-                size_bytes=total_size,
-                detected_mime_type=detected_mime,
-                storage_key=storage_key,
-                status="PRESENT",
-                reference_count=1,
-            )
-            sess.add(blob)
-            sess.flush()
-
-        # Mark all existing revisions for this asset as inactive/replaced
+        # Multi-engine malware scanning while quarantined
         now = utc_now()
+        scan_verdicts = scan_file_all_engines(temp_path)
+        main_verdict = scan_blob_file(temp_path)
+
         existing_revisions = (
             sess.query(FileRevision).filter(FileRevision.file_asset_id == asset.id).all()
         )
-        max_rev = 0
-        for rev in existing_revisions:
-            if rev.revision_no > max_rev:
-                max_rev = rev.revision_no
-            if rev.is_current:
-                rev.is_current = False
-                rev.replaced_at = now
-                rev.status = "REPLACED"
-                rev.recovery_until = now + timedelta(days=30)
+        max_rev = max([r.revision_no for r in existing_revisions], default=0)
 
-        # Create new active revision
-        new_rev = FileRevision(
-            file_asset_id=asset.id,
-            revision_no=max_rev + 1,
-            is_current=True,
-            blob_id=blob.id,
-            original_filename=clean_filename,
-            declared_mime_type=content_type or detected_mime,
-            detected_mime_type=detected_mime,
-            size_bytes=total_size,
-            status="ACTIVE",
-            uploaded_by_user_id=actor.id,
-            security_checks_completed_at=now,
-            activated_at=now,
-        )
-        sess.add(new_rev)
-        sess.flush()
+        if main_verdict.status == "PASS":
+            # Deduplication lookup for clean revision
+            blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
+            if blob is not None and blob.status == "PRESENT":
+                blob.reference_count += 1
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+            else:
+                storage_root = get_file_storage_root()
+                ab = hex_hash[:2]
+                cd = hex_hash[2:4]
+                dest_dir = storage_root / "blobs" / ab / cd
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = dest_dir / hex_hash
 
-        asset.display_name = clean_filename
-        asset.updated_at = now
+                if temp_path.exists():
+                    os.replace(temp_path, dest_path)
+                newly_created_dest = dest_path
 
-        scan_result = FileScanResult(
-            file_revision_id=new_rev.id,
-            scan_type="FILE_VALIDATION",
-            engine="builtin_validator",
-            engine_version="1.0",
-            status="PASS",
-            details_json=None,
-            started_at=now,
-            completed_at=now,
-        )
-        sess.add(scan_result)
-        sess.commit()
+                storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
+                blob = FileBlob(
+                    sha256=digest_bytes,
+                    size_bytes=total_size,
+                    detected_mime_type=detected_mime,
+                    storage_key=storage_key,
+                    status="PRESENT",
+                    reference_count=1,
+                )
+                sess.add(blob)
+                sess.flush()
 
-        return new_rev
+            # Mark all existing active revisions for this asset as replaced
+            for rev in existing_revisions:
+                if rev.is_current:
+                    rev.is_current = False
+                    rev.replaced_at = now
+                    rev.status = "REPLACED"
+                    rev.recovery_until = now + timedelta(days=30)
+
+            # Create new active revision
+            new_rev = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=max_rev + 1,
+                is_current=True,
+                blob_id=blob.id,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="ACTIVE",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+                activated_at=now,
+            )
+            sess.add(new_rev)
+            sess.flush()
+
+            asset.display_name = clean_filename
+            asset.updated_at = now
+
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=new_rev.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.add(
+                FileScanResult(
+                    file_revision_id=new_rev.id,
+                    scan_type="FILE_VALIDATION",
+                    engine="builtin_validator",
+                    engine_version="1.0",
+                    status="PASS",
+                    details_json=None,
+                    started_at=now,
+                    completed_at=now,
+                )
+            )
+            sess.commit()
+            return new_rev
+
+        elif main_verdict.status == "FAIL":
+            # Isolate infected revision to quarantine/infected/
+            infected_dir = get_file_infected_root()
+            infected_path = infected_dir / hex_hash
+            if temp_path.exists():
+                os.replace(temp_path, infected_path)
+            newly_created_dest = infected_path
+
+            sig_desc = main_verdict.signature_name or "Malware detected"
+            new_rev = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=max_rev + 1,
+                is_current=False,
+                blob_id=None,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="REJECTED",
+                quarantine_key=f"infected/{hex_hash}",
+                rejection_reason=f"Infected: {sig_desc}",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+            )
+            sess.add(new_rev)
+            sess.flush()
+
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=new_rev.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.commit()
+            return new_rev
+
+        else:
+            # Scanner error: keep in quarantine
+            new_rev = FileRevision(
+                file_asset_id=asset.id,
+                revision_no=max_rev + 1,
+                is_current=False,
+                blob_id=None,
+                original_filename=clean_filename,
+                declared_mime_type=content_type or detected_mime,
+                detected_mime_type=detected_mime,
+                size_bytes=total_size,
+                status="QUARANTINED",
+                quarantine_key=f"quarantine/{temp_filename}",
+                rejection_reason=f"Scanner error: {main_verdict.details or 'Unavailable'}",
+                uploaded_by_user_id=actor.id,
+                security_checks_completed_at=now,
+            )
+            sess.add(new_rev)
+            sess.flush()
+
+            for v in scan_verdicts:
+                sess.add(
+                    FileScanResult(
+                        file_revision_id=new_rev.id,
+                        scan_type="MALWARE",
+                        engine=v.engine_name,
+                        engine_version=v.engine_version,
+                        status=v.status,
+                        details_json=v.details_json,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                )
+
+            sess.commit()
+            return new_rev
 
     except Exception:
         sess.rollback()
@@ -694,10 +927,7 @@ def get_file_for_download(
     if not is_authorized:
         raise FileAccessDeniedError("You do not have permission to access this file.")
 
-    # Fail-Closed Security Checks
-    if asset.status != "ACTIVE":
-        raise FileAccessDeniedError(f"File asset is not accessible (status: {asset.status}).")
-
+    # Fail-Closed Security Checks: resolve target revision first
     if revision_no is not None:
         revision = (
             sess.query(FileRevision)
@@ -712,31 +942,42 @@ def get_file_for_download(
     else:
         revision = asset.current_revision
         if revision is None:
-            # Fallback to the latest current revision
+            # Fallback to the latest revision (even if quarantined/rejected)
             revision = (
                 sess.query(FileRevision)
-                .filter(
-                    FileRevision.file_asset_id == asset.id,
-                    FileRevision.is_current.is_(True),
-                )
+                .filter(FileRevision.file_asset_id == asset.id)
+                .order_by(FileRevision.revision_no.desc())
                 .first()
             )
+
+    # If revision is quarantined, rejected, or infected, fail-closed with 403 FILE_QUARANTINED
+    if revision is not None:
+        if revision.status == "REJECTED":
+            raise FileInfectedError("File revision is rejected due to malware detection.")
+        if revision.status == "QUARANTINED":
+            raise FileSecurityQuarantineError(
+                "File revision is quarantined pending security clearance."
+            )
+        for scan in revision.scan_results:
+            if scan.status == "FAIL":
+                raise FileInfectedError("File security verification detected malware.")
+            elif scan.status == "ERROR":
+                raise FileSecurityQuarantineError("File security verification error.")
+
+    if asset.status == "TRASH":
+        raise FileAccessDeniedError("File asset is in trash and cannot be accessed.")
+
+    if asset.status != "ACTIVE":
+        raise FileSecurityQuarantineError(f"File asset is not accessible (status: {asset.status}).")
 
     if revision is None or revision.status not in ("ACTIVE", "REPLACED"):
         raise FileSecurityQuarantineError(
             "File revision is quarantined or not approved for access."
         )
 
-    # Check scan results: reject if any failed or error
-    for scan in revision.scan_results:
-        if scan.status in ("FAIL", "ERROR"):
-            raise FileSecurityQuarantineError(
-                "File security verification failed or malware detected."
-            )
-
     blob = revision.blob
     if blob is None or blob.status != "PRESENT":
-        raise FileStorageError("Physical storage blob is missing or deleted.")
+        raise FileSecurityQuarantineError("Physical storage blob is quarantined or missing.")
 
     storage_root = get_file_storage_root()
     physical_path = storage_root / blob.storage_key
@@ -858,6 +1099,353 @@ def list_course_files(
     return query.order_by(FileAsset.created_at.desc()).all()
 
 
+def get_file_scan_history(
+    actor: User,
+    asset_id: FileAsset | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve security scan history for a FileAsset conforming to ADR-002."""
+    sess = session if session is not None else db.session
+    asset = _resolve_file_asset(asset_id, session=sess)
+    if asset is None:
+        raise FileAssetNotFoundError("File asset not found.")
+
+    require_course_manager(actor, asset.course_id, session=sess)
+
+    results: list[dict[str, Any]] = []
+    revisions = (
+        sess.query(FileRevision)
+        .filter(FileRevision.file_asset_id == asset.id)
+        .order_by(FileRevision.revision_no.desc())
+        .all()
+    )
+    for rev in revisions:
+        scans = (
+            sess.query(FileScanResult)
+            .filter(FileScanResult.file_revision_id == rev.id)
+            .order_by(FileScanResult.created_at.desc())
+            .all()
+        )
+        for scan in scans:
+            sig_name: str | None = None
+            details_str: str | None = None
+            if scan.details_json:
+                try:
+                    parsed = json.loads(scan.details_json)
+                    sig_name = parsed.get("signature_name")
+                    details_str = parsed.get("details")
+                except Exception:
+                    pass
+
+            scan_synthetic_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.file_scan.{scan.id}")
+            scan_time = scan.completed_at or scan.created_at
+            results.append(
+                {
+                    "scan_id": str(scan_synthetic_uuid),
+                    "revision_no": rev.revision_no,
+                    "scan_type": scan.scan_type,
+                    "engine": scan.engine,
+                    "engine_version": scan.engine_version,
+                    "status": scan.status,
+                    "signature_name": sig_name,
+                    "details": details_str,
+                    "details_json": scan.details_json,
+                    "scanned_at": scan_time.isoformat() if scan_time else None,
+                    "created_at": scan.created_at.isoformat() if scan.created_at else None,
+                }
+            )
+    return results
+
+
+def rescan_file_asset(
+    actor: User,
+    asset_id: FileAsset | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> FileAsset:
+    """Rescan a FileAsset's physical bytes on-demand and update lifecycle status."""
+    sess = session if session is not None else db.session
+    asset = _resolve_file_asset(asset_id, session=sess)
+    if asset is None:
+        raise FileAssetNotFoundError("File asset not found.")
+
+    require_course_manager(actor, asset.course_id, session=sess)
+
+    revision = (
+        sess.query(FileRevision)
+        .filter(FileRevision.file_asset_id == asset.id)
+        .order_by(FileRevision.revision_no.desc())
+        .first()
+    )
+    if revision is None:
+        raise FileValidationError("File asset has no revisions to rescan.")
+
+    target_path: Path | None = None
+    if revision.blob and revision.blob.status == "PRESENT":
+        storage_root = get_file_storage_root()
+        target_path = storage_root / revision.blob.storage_key
+    elif revision.quarantine_key:
+        if revision.quarantine_key.startswith("infected/"):
+            target_path = get_file_infected_root() / Path(revision.quarantine_key).name
+        elif revision.quarantine_key.startswith("quarantine/"):
+            target_path = get_file_quarantine_root() / Path(revision.quarantine_key).name
+        else:
+            target_path = get_file_quarantine_root() / revision.quarantine_key
+
+    if target_path is None or not target_path.exists():
+        raise FileStorageError("Physical file for rescan could not be located on disk.")
+
+    now = utc_now()
+    scan_verdicts = scan_file_all_engines(target_path)
+    main_verdict = scan_blob_file(target_path)
+
+    for v in scan_verdicts:
+        sess.add(
+            FileScanResult(
+                file_revision_id=revision.id,
+                scan_type="MALWARE",
+                engine=v.engine_name,
+                engine_version=v.engine_version,
+                status=v.status,
+                details_json=v.details_json,
+                started_at=now,
+                completed_at=now,
+            )
+        )
+
+    if main_verdict.status == "PASS":
+        hasher = hashlib.sha256()
+        with open(target_path, "rb") as f:
+            while True:
+                chunk = f.read(64 * 1024)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+        digest_bytes = hasher.digest()
+        hex_hash = hasher.hexdigest()
+
+        blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
+        if blob is None:
+            storage_root = get_file_storage_root()
+            ab = hex_hash[:2]
+            cd = hex_hash[2:4]
+            dest_dir = storage_root / "blobs" / ab / cd
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / hex_hash
+            if target_path != dest_path:
+                os.replace(target_path, dest_path)
+            blob = FileBlob(
+                sha256=digest_bytes,
+                size_bytes=revision.size_bytes,
+                detected_mime_type=revision.detected_mime_type or "application/octet-stream",
+                storage_key=f"blobs/{ab}/{cd}/{hex_hash}",
+                status="PRESENT",
+                reference_count=1,
+            )
+            sess.add(blob)
+            sess.flush()
+        else:
+            if revision.blob_id != blob.id:
+                blob.reference_count += 1
+            if target_path.exists() and "quarantine" in str(target_path):
+                target_path.unlink(missing_ok=True)
+
+        revision.blob_id = blob.id
+        revision.status = "ACTIVE"
+        revision.is_current = True
+        revision.rejection_reason = None
+        revision.security_checks_completed_at = now
+        revision.activated_at = now
+        asset.status = "ACTIVE"
+
+    elif main_verdict.status == "FAIL":
+        if "infected" not in str(target_path):
+            infected_dir = get_file_infected_root()
+            hasher = hashlib.sha256()
+            with open(target_path, "rb") as f:
+                while True:
+                    chunk = f.read(64 * 1024)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+            hex_hash = hasher.hexdigest()
+            infected_path = infected_dir / hex_hash
+            if target_path != infected_path:
+                os.replace(target_path, infected_path)
+            revision.quarantine_key = f"infected/{hex_hash}"
+
+        revision.status = "REJECTED"
+        revision.is_current = False
+        sig_desc = main_verdict.signature_name or "Threat detected"
+        revision.rejection_reason = f"Malware detected: {sig_desc}"
+        has_active = (
+            sess.query(FileRevision)
+            .filter(
+                FileRevision.file_asset_id == asset.id,
+                FileRevision.status == "ACTIVE",
+                FileRevision.id != revision.id,
+            )
+            .count()
+            > 0
+        )
+        if not has_active:
+            asset.status = "PENDING"
+
+    else:
+        revision.status = "QUARANTINED"
+        revision.is_current = False
+        revision.rejection_reason = f"Scanner error: {main_verdict.details or 'Unavailable'}"
+        has_active = (
+            sess.query(FileRevision)
+            .filter(
+                FileRevision.file_asset_id == asset.id,
+                FileRevision.status == "ACTIVE",
+                FileRevision.id != revision.id,
+            )
+            .count()
+            > 0
+        )
+        if not has_active:
+            asset.status = "PENDING"
+
+    sess.commit()
+    return asset
+
+
+def quarantine_override(
+    admin_actor: User,
+    asset_id: FileAsset | int | uuid.UUID | str,
+    reason: str,
+    session: Session | scoped_session[Any] | None = None,
+) -> FileAsset:
+    """Admin override to release a quarantined/rejected file with justification and audit log."""
+    sess = session if session is not None else db.session
+    if not admin_actor.is_admin:
+        raise FileAccessDeniedError("Administrator privileges required for quarantine override.")
+
+    clean_reason = (reason or "").strip()
+    if not clean_reason:
+        raise FileValidationError("Justification reason is required for quarantine override.")
+
+    asset = _resolve_file_asset(asset_id, session=sess)
+    if asset is None:
+        raise FileAssetNotFoundError("File asset not found.")
+
+    revision = (
+        sess.query(FileRevision)
+        .filter(FileRevision.file_asset_id == asset.id)
+        .order_by(FileRevision.revision_no.desc())
+        .first()
+    )
+    if revision is None:
+        raise FileValidationError("File asset has no revisions to override.")
+
+    target_path: Path | None = None
+    if revision.blob and revision.blob.status == "PRESENT":
+        storage_root = get_file_storage_root()
+        target_path = storage_root / revision.blob.storage_key
+    elif revision.quarantine_key:
+        if revision.quarantine_key.startswith("infected/"):
+            target_path = get_file_infected_root() / Path(revision.quarantine_key).name
+        elif revision.quarantine_key.startswith("quarantine/"):
+            target_path = get_file_quarantine_root() / Path(revision.quarantine_key).name
+        else:
+            target_path = get_file_quarantine_root() / revision.quarantine_key
+
+    if target_path is None or not target_path.exists():
+        raise FileStorageError("Physical file could not be located on disk for override.")
+
+    now = utc_now()
+    hasher = hashlib.sha256()
+    with open(target_path, "rb") as f:
+        while True:
+            chunk = f.read(64 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    digest_bytes = hasher.digest()
+    hex_hash = hasher.hexdigest()
+
+    storage_root = get_file_storage_root()
+    ab = hex_hash[:2]
+    cd = hex_hash[2:4]
+    dest_dir = storage_root / "blobs" / ab / cd
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / hex_hash
+
+    if target_path != dest_path:
+        os.replace(target_path, dest_path)
+
+    blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
+    if blob is None:
+        blob = FileBlob(
+            sha256=digest_bytes,
+            size_bytes=revision.size_bytes,
+            detected_mime_type=revision.detected_mime_type or "application/octet-stream",
+            storage_key=f"blobs/{ab}/{cd}/{hex_hash}",
+            status="PRESENT",
+            reference_count=1,
+        )
+        sess.add(blob)
+        sess.flush()
+    else:
+        if revision.blob_id != blob.id:
+            blob.reference_count += 1
+
+    before_state = {
+        "asset_status": asset.status,
+        "revision_status": revision.status,
+    }
+
+    revision.blob_id = blob.id
+    revision.status = "ACTIVE"
+    revision.is_current = True
+    revision.rejection_reason = None
+    revision.security_checks_completed_at = now
+    revision.activated_at = now
+    asset.status = "ACTIVE"
+    asset.updated_at = now
+
+    after_state = {
+        "asset_status": "ACTIVE",
+        "revision_status": "ACTIVE",
+    }
+
+    scan_result = FileScanResult(
+        file_revision_id=revision.id,
+        scan_type="CONTENT_SECURITY",
+        engine="admin_override",
+        engine_version="1.0",
+        status="PASS",
+        details_json=json.dumps(
+            {
+                "override_by": str(admin_actor.public_id),
+                "reason": clean_reason,
+            },
+            ensure_ascii=False,
+        ),
+        started_at=now,
+        completed_at=now,
+    )
+    sess.add(scan_result)
+
+    audit_entry = AuditEvent(
+        actor_user_id=admin_actor.id,
+        actor_roles_snapshot="ADMIN",
+        action="QUARANTINE_OVERRIDE",
+        target_type="FILE_ASSET",
+        target_id=asset.id,
+        reason=clean_reason,
+        before_json=json.dumps(before_state),
+        after_json=json.dumps(after_state),
+        performed_as_admin=True,
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    sess.commit()
+    return asset
+
+
 # ==============================================================================
 # ADR-002 Compliant Serializers (Zero Internal PK or Storage Key Leakage)
 # ==============================================================================
@@ -866,6 +1454,13 @@ def list_course_files(
 def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
     """Serialize FileAsset exposing only public UUIDs and safe metadata."""
     cur_rev = asset.current_revision or (asset.revisions[-1] if asset.revisions else None)
+    effective_status = asset.status
+    if cur_rev:
+        if cur_rev.status == "REJECTED":
+            effective_status = "INFECTED"
+        elif cur_rev.status == "QUARANTINED":
+            effective_status = "QUARANTINED"
+
     return {
         "asset_id": str(asset.public_id),
         "course_id": str(asset.course.public_id) if asset.course else None,
@@ -884,7 +1479,9 @@ def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
             if cur_rev
             else "application/octet-stream"
         ),
-        "status": asset.status,
+        "status": effective_status,
+        "asset_status": asset.status,
+        "revision_status": cur_rev.status if cur_rev else asset.status,
         "current_version": cur_rev.revision_no if cur_rev else 1,
         "revision_no": cur_rev.revision_no if cur_rev else 1,
         "created_at": asset.created_at.isoformat() if asset.created_at else None,

@@ -382,4 +382,8 @@ class FileAccessDeniedError(ForbiddenError, FileError):
 
 
 class FileSecurityQuarantineError(ForbiddenError, FileError):
-    """Raised when accessing a quarantined, rejected, or infected file asset/blob."""
+    """Raised when accessing a quarantined or blocked file asset/blob."""
+
+
+class FileInfectedError(FileSecurityQuarantineError):
+    """Raised when accessing an infected file asset/blob."""

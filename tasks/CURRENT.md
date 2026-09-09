@@ -1,194 +1,154 @@
-# TASK-018 — File Blob/Asset Storage & Authorization Engine
+# TASK-019 — File Security, Quarantine Isolation & Malware Scanning Engine
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-001 through TASK-017  
+**Depends on:** TASK-001 through TASK-018  
 
 ---
 
 ## Goal
-Xây dựng và hoàn thiện toàn diện tầng lưu trữ tệp tin vật lý/logic (File Blob & Asset Storage) và Động cơ phân quyền truy cập tệp (File Authorization Engine) cho nền tảng PWD301:
-1. **Kiến trúc tách biệt Physical Blob vs. Logical Asset (ADR-008)**: Tách riêng bảng vật lý `FileBlob` (bất biến, định danh theo hash SHA-256 nội dung, quản lý reference count) và bảng logic `FileAsset` (gắn với Course, quản lý vòng đời logic và quyền sở hữu).
-2. **Thuật toán Khử trùng lặp Content-Hash SHA-256 (Algorithm 12)**: Tính toán streaming SHA-256 hash và kích thước byte trong thư mục cách ly `quarantine`. Tái sử dụng `FileBlob` nếu trùng hash, hoặc lưu trữ theo cấu trúc phân cấp hai cấp byte đầu (`storage/blobs/ab/cd/<sha256>`) nếu là nội dung mới.
-3. **Quản lý Phiên bản & Vòng đời tệp (FileRevision Lifecycle)**: Mỗi lần tải lên phiên bản mới tạo một `FileRevision` tăng tiến `revision_no`, cập nhật `is_current=True`, chuyển các bản ghi trước sang `REPLACED`, hỗ trợ tải về đúng phiên bản mong muốn qua tham số `version`.
-4. **Giới hạn kích thước và kiểm tra loại tệp (Business Rule 11 & Config)**: 
-   - Image $\le$ 10 MB, PDF $\le$ 50 MB, DOCX $\le$ 50 MB, PPTX $\le$ 100 MB.
-   - Video strictly $< 1\text{ GB}$ (1,000,000,000 bytes).
-   - Chặn tuyệt đối các tệp nguy hiểm/thực thi (.exe, .py, .sh, .bat, .cmd, v.v.) và macro-enabled Office (.docm, .xlsm, .pptm).
-5. **Bảo mật Fail-Closed & Zero-Trust Authorization Matrix**:
-   - Chỉ Admin hoặc Giảng viên quản lý khóa học mới có quyền upload, xóa, khôi phục hoặc tải lên revision mới.
-   - Học viên chỉ được tải tệp khi: Khóa học ở trạng thái `PUBLISHED`, Học viên có Enrollment `ACTIVE`, và nếu tệp được gắn vào Bài học (`LessonResource`), bài học đó phải ở trạng thái `PUBLISHED`.
-   - Chặn tuyệt đối tệp ở trạng thái `QUARANTINED`, `INFECTED`, hoặc có kết quả quét bảo mật `FAIL`/`ERROR`.
-6. **Bảo mật chống rò rỉ định danh nội bộ & Path Traversal (ADR-002)**:
-   - Che giấu 100% khóa chính nội bộ `BIGINT PK` (`id`, `blob_id`, `file_asset_id`); toàn bộ REST API và Web endpoints chỉ giao tiếp qua UUIDv4/v5 công khai (`asset_id`, `resource_id`, `course_id`).
-   - Phòng chống tuyệt đối tấn công Path Traversal: khử bỏ các chuỗi `../`, `..\\`, null bytes, áp dụng tiêu đề phòng vệ `X-Content-Type-Options: nosniff` và `Content-Disposition: attachment; filename="<sanitized>"`.
-7. **Khả năng khôi phục và dọn dẹp an toàn (Rollback Safety)**:
-   - Hỗ trợ Soft-delete chuyển trạng thái `ACTIVE` -> `TRASH` và phục hồi về `ACTIVE`.
-   - Nếu transaction cơ sở dữ liệu gặp lỗi khi commit, tự động dọn dẹp sạch sẽ tệp tạm trong quarantine và tệp blob vật lý mới ghi trên ổ cứng.
+Xây dựng và hoàn thiện toàn diện Động cơ an toàn tệp tin, cơ chế cách ly thư mục Quarantine và quét mã độc (Malware Scanning Engine) cho hệ sinh thái PWD301:
+1. **Kiến trúc cách ly vật lý Quarantine (Fail-Closed Quarantine Isolation)**:
+   - Mọi tệp tải lên ban đầu bắt buộc phải được lưu trữ trong thư mục cách ly `quarantine/` (`FILE_QUARANTINE_ROOT`), tuyệt đối không ghi trực tiếp vào `storage/blobs/`.
+   - Tạo bản ghi `FileBlob` với trạng thái `status = 'PRESENT'` khi và chỉ khi đã vượt qua các bài kiểm tra bảo mật sạch (`PASS`).
+   - Tuyệt đối không cho phép bất kỳ người dùng nào (kể cả tác giả tệp hay học viên) tải về tệp khi trạng thái chưa là `ACTIVE` / `SAFE` / `CLEAN` (trả về 403 `FileSecurityQuarantineError`).
+2. **Hạ tầng quét mã độc đa tầng (Pluggable Malware Scanner Architecture)**:
+   - Giao diện `BaseScanner` (ABC).
+   - `BuiltinHeuristicScanner`:
+     - Nhận diện chuỗi thử nghiệm chuẩn `EICAR` (`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`) trong plain text, base64 payload, và bên trong các tệp nén ZIP.
+     - Quét sâu heuristic cho PDF (ưu tiên longest marker: `/JavaScript`, `/EmbeddedFiles`, `/Launch`, `/JS` tránh shadowing).
+     - Quét sâu OOXML/ZIP (phát hiện macro binary parts `vbaProject.bin`, executable headers `MZ`, scripts nhúng).
+     - Phát hiện header spoofing (MZ/ELF trong tệp tài liệu/hình ảnh).
+   - `ClamAVScanner`:
+     - Kết nối TCP socket tới ClamAV daemon (`nINSTREAM` protocol).
+     - Fallback fail-closed an toàn (status `ERROR`, chi tiết lỗi, không làm crash ứng dụng).
+3. **Quản lý Vòng đời & Thăng cấp tệp (Blob Promotion / Threat Lifecycle)**:
+   - Khi quét **CLEAN** (`PASS`): Thăng cấp tệp từ `quarantine/` sang kho lưu trữ vĩnh viễn phân cấp 2 cấp byte (`storage/blobs/ab/cd/<sha256>`). Cập nhật `FileBlob.status = 'PRESENT'`, `FileRevision.status = 'ACTIVE'`, `FileAsset.status = 'ACTIVE'`, ghi nhận bản ghi chi tiết vào `file_scan_results`.
+   - Khi quét **INFECTED** (`FAIL`): Chuyển tệp sang `quarantine/infected/<sha256>`, cập nhật `FileRevision.status = 'REJECTED'`, `FileAsset.status = 'PENDING'`, ghi nhận bản ghi chi tiết `FileScanResult(scan_status='FAIL', signature_name=...)`.
+   - Khi quét **ERROR**: Giữ nguyên trong quarantine, cập nhật `FileRevision.status = 'QUARANTINED'`, ghi nhận `FileScanResult(scan_status='ERROR')`, chặn tải về.
+4. **Bảo vệ Fail-Closed & Chống rò rỉ thông tin (ADR-002)**:
+   - `get_file_for_download` lập tức từ chối với HTTP 403 `FileSecurityQuarantineError` nếu revision/blob chưa được phê duyệt an ninh hoặc bị nhiễm mã độc.
+   - Tuyệt đối không để lộ đường dẫn ổ cứng vật lý (`storage_path`, `quarantine_path`) hoặc `BIGINT PK` ra REST API / Web view theo chuẩn ADR-002.
+5. **REST API & Web Endpoints cho Giám sát, Quét lại và Giải phóng Cách ly**:
+   - `GET /api/files/<asset_id>/scans` & `/api/files/<asset_id>/scan-results`: Xem lịch sử quét an ninh của tệp (chỉ Instructor quản lý khóa học hoặc Admin).
+   - `POST /api/files/<asset_id>/rescan`: Kích hoạt quét lại theo yêu cầu (Instructor/Admin).
+   - `POST /api/files/<asset_id>/quarantine-override`, `POST /api/admin/files/<asset_id>/quarantine-override`, `POST /admin/files/<asset_id>/quarantine-override`: Admin ghi đè giải phóng cách ly thủ công (bắt buộc kèm lý do giải trình, ghi nhận Audit Event).
 
 ---
 
 ## Source-of-Truth Documents
 - `AGENTS.md` (Operating Contract, Fail-closed Invariants, Video limit $< 1\text{ GB}$, ADR-002 Zero PK Leakage)
-- `docs/decisions/ADR-008-blob-storage-design.md` (Physical Blob vs. Logical Asset)
-- `docs/decisions/ADR-002-database-identifiers.md` (Public UUIDv4/v5, Zero BIGINT exposure)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/12_FILE_DEDUPLICATION_ALGORITHM.md` (Algorithm 12)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/11_FILE_SECURITY_AND_QUARANTINE.md` (Business Rule 11)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/09_FILE_IMPORT_API.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/09_DATA_DICTIONARY_STORAGE_MEDIA.md`
-- `src/pwd301/config.py` (MAX_UPLOAD_SIZE_BYTES limits)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/11_FILE_MANAGEMENT.md` & `17_MAJOR_FEATURE_SPECIFICATIONS.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/security/05_FILE_UPLOAD_SECURITY.md` & `09_SECURITY_TEST_PLAN.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/12_FILE_DEDUPLICATION.md`
+- `docs/decisions/ADR-008-file-physical-logical.md` & `ADR-002-database-identifiers.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/09_DATA_DICTIONARY_FILES_IMPORT.md` & `006_files_import.sql`
 
 ---
 
 ## Preconditions
-- Hệ thống đã hoàn thành toàn diện TASK-017 với 471/471 bài kiểm thử vượt qua tuyệt đối.
-- Mô hình cơ sở dữ liệu `FileBlob`, `FileAsset`, `FileRevision`, `FileScanResult`, `LessonResource` đã được ánh xạ trong `src/pwd301/models/file_import.py`.
+- Hoàn thành trọn vẹn TASK-001 đến TASK-018 với 500/500 tests PASS tuyệt đối.
+- Bảng `file_scan_results`, `file_blobs`, `file_revisions`, `file_assets` đã định nghĩa đầy đủ trong reference DDL.
 
 ---
 
 ## In Scope
-1. **Domain Exceptions (`src/pwd301/services/exceptions.py` & `src/pwd301/__init__.py`)**:
-   - `FileError`, `FileStorageError` (500), `FileValidationError` (400), `FileSizeLimitExceededError` (413), `FileAssetNotFoundError` (404), `FileAccessDeniedError` (403), `FileSecurityQuarantineError` (403).
-2. **Model Enhancements (`src/pwd301/models/file_import.py`)**:
-   - `@property def sha256_hex(self) -> str` cho `FileBlob`.
-   - `@property def public_id(self) -> uuid.UUID` cho `FileRevision` và `LessonResource` (ADR-002 deterministic UUIDv5).
-3. **Domain Service Layer (`src/pwd301/services/file_service.py`)**:
-   - Triển khai toàn diện Algorithm 12, kiểm soát dung lượng, phân tích magic bytes, xử lý thư mục phân cấp, kiểm soát lỗi rollback, quản lý revision, soft-delete/restore, ma trận phân quyền Zero-Trust và serialization ADR-002.
-4. **REST API & Web Endpoints**:
-   - Blueprint `api_file_bp` (`/api/files`) đăng ký vào app factory, miễn trừ CSRF.
-   - Endpoint upload/list trong `api_course_bp` (`/api/courses/<id>/files`).
-   - Endpoint attach/detach tài liệu bài học trong `api_lesson_bp` (`/api/lessons/<id>/resources`).
-   - Các route Web Instructor quản lý tệp có session authentication (`/instructor/courses/<id>/files`, `/instructor/files/<id>/trash`, `/instructor/files/<id>/restore`).
-5. **Bộ kiểm thử toàn diện (Unit, Security/IDOR, API/Web)**:
-   - `tests/unit/test_file_service.py` (8 bài kiểm thử)
-   - `tests/security/test_file_authorization_idor.py` (12 bài kiểm thử)
-   - `tests/api/test_file_api.py` (9 bài kiểm thử)
+1. **Malware Scanning Engine (`src/pwd301/services/scanner_service.py`)**:
+   - `ScanVerdict` dataclass với serialization JSON hợp lệ cho ISJSON constraint.
+   - `BaseScanner` interface.
+   - `BuiltinHeuristicScanner` phát hiện EICAR (plain, base64, zip), PDF dangerous markers (/JavaScript, /EmbeddedFiles, /Launch, /JS), OOXML macros, embedded binaries, and header spoofing.
+   - `ClamAVScanner` kết nối daemon clamd TCP socket qua nINSTREAM protocol fail-closed.
+   - `scan_file_all_engines` và `scan_blob_file` điều phối quét đa tầng.
+2. **File Service Integration (`src/pwd301/services/file_service.py`)**:
+   - Tích hợp quét tự động vào quy trình tải lên (`store_file_stream`, `add_file_revision`).
+   - Thăng cấp tệp sạch (`quarantine/` -> `storage/blobs/ab/cd/<sha256>`).
+   - Cách ly tệp nhiễm mã độc (`quarantine/infected/<sha256>`).
+   - Fail-closed download blocking trong `get_file_for_download`.
+   - `rescan_file_asset`, `get_file_scan_history`, `quarantine_override` với ghi nhận `AuditEvent`.
+3. **Application Routing & Endpoints**:
+   - Đăng ký alias `/api/admin` cho `admin_bp` với CSRF exemption trong `src/pwd301/__init__.py`.
+   - Endpoints REST API trong `src/pwd301/blueprints/api_files/routes.py`:
+     - `GET /api/files/<asset_id>/scans` & `/api/files/<asset_id>/scan-results`
+     - `POST /api/files/<asset_id>/rescan`
+     - `POST /api/files/<asset_id>/quarantine-override`
+   - Endpoints Admin trong `src/pwd301/blueprints/admin/routes.py`:
+     - `POST /admin/files/<asset_id>/quarantine-override`
+     - `POST /api/admin/files/<asset_id>/quarantine-override`
+4. **Test Suites**:
+   - `tests/unit/test_malware_scan_service.py` (11 unit tests)
+   - `tests/security/test_quarantine_fail_closed.py` (11 security tests)
+   - `tests/api/test_scan_api.py` (13 REST API integration tests)
 
 ---
 
 ## Out of Scope
-- Tích hợp dịch vụ đám mây AWS S3 / Azure Blob Storage (sử dụng Local File Storage chuẩn hóa cho môi trường triển khai hiện tại per ADR-008).
-- Antivirus scanner ClamAV daemon thực tế (mô phỏng scan engine `builtin_validator` và bảng `file_scan_results`).
-- Tích hợp background job queue cho asynchronous virus scanning (được thiết kế sẵn sàng mở rộng).
+- Tích hợp ClamAV cloud microservices hoặc daemon bên thứ ba qua internet (sử dụng local TCP socket and heuristic scanner).
+- Asynchronous task worker queue (sẽ được tích hợp trong hạ tầng background worker theo roadmap).
 
 ---
 
 ## Reuse / Existing-Code Inspection
 - Tái sử dụng `require_course_manager` và `require_authenticated_actor` từ `src/pwd301/services/authorization_service.py`.
-- Tái sử dụng cấu hình kích thước tải lên từ `src/pwd301/config.py` (`MAX_UPLOAD_SIZE_BYTES`).
-- Tái sử dụng `utc_now()` và `RowVersion` từ `src/pwd301/models/types.py`.
-- Tái sử dụng `create_token_pair` và `@jwt_required` từ `src/pwd301/services/jwt_auth_service.py`.
-- Tái sử dụng `login_web_user` từ `tests/conftest.py` cho các bài kiểm thử session authentication.
+- Tái sử dụng `FileBlob`, `FileAsset`, `FileRevision`, `FileScanResult` từ `src/pwd301/models/file_import.py`.
+- Tái sử dụng `AuditEvent` từ `src/pwd301/models/notification_audit.py`.
+- Tái sử dụng các exceptions: `FileSecurityQuarantineError`, `FileInfectedError`, `FileAccessDeniedError`, `ValidationError` từ `src/pwd301/services/exceptions.py`.
+- Tái sử dụng helper `create_token_pair` và `login_web_user` cho testing.
 
 ---
 
 ## Planned Changes
-- [x] Tạo các exception chuyên biệt cho File Storage trong `src/pwd301/services/exceptions.py`.
-- [x] Đăng ký exception handlers trong `src/pwd301/__init__.py`.
-- [x] Bổ sung các properties tương thích ADR-002 trong `src/pwd301/models/file_import.py`.
-- [x] Triển khai toàn diện `src/pwd301/services/file_service.py`.
-- [x] Triển khai blueprint `src/pwd301/blueprints/api_files/`.
-- [x] Tích hợp route upload/list tệp khóa học trong `src/pwd301/blueprints/api_courses/routes.py`.
-- [x] Tích hợp route đính kèm tài liệu bài học trong `src/pwd301/blueprints/api_lessons/routes.py`.
-- [x] Tích hợp route quản lý tệp dành cho giảng viên trong `src/pwd301/blueprints/instructor/routes.py`.
-- [x] Viết test suites: `test_file_service.py`, `test_file_authorization_idor.py`, `test_file_api.py`.
-- [x] Chạy toàn bộ các cổng xác minh chất lượng mã nguồn: repo_check, compileall, ruff, mypy, full pytest, verify.ps1.
+- [x] Sửa thứ tự ưu tiên `PDF_DANGEROUS_MARKERS` trong `src/pwd301/services/scanner_service.py` theo thứ tự longest-first để tránh prefix shadowing.
+- [x] Đăng ký `api_admin` blueprint alias tại `/api/admin` và miễn trừ CSRF trong `src/pwd301/__init__.py`.
+- [x] Hoàn thiện bộ kiểm thử unit `tests/unit/test_malware_scan_service.py` (11 tests).
+- [x] Hoàn thiện bộ kiểm thử security `tests/security/test_quarantine_fail_closed.py` (11 tests).
+- [x] Xây dựng mới hoàn chỉnh bộ kiểm thử REST API `tests/api/test_scan_api.py` (13 tests).
+- [x] Chạy toàn bộ 8 cổng xác minh chất lượng mã nguồn: repo_check, compileall, ruff check, ruff format, mypy src, task test suites, full regression pytest, và verify.ps1.
 
 ---
 
 ## Security / Authorization Impact
-- Triển khai nguyên lý Zero-Trust: không tin tưởng bất kỳ định danh nào từ client mà không kiểm tra quyền sở hữu đối tượng.
-- Thực thi chính sách Fail-Closed: từ chối truy cập mọi tệp chưa hoàn tất quét an ninh hoặc có nghi vấn mã độc.
-- Áp dụng triệt để ADR-002: không làm lộ khóa chính `BIGINT PK` hay đường dẫn vật lý cục bộ trong responses.
-- Phòng vệ Path Traversal và MIME Confusion: khử bỏ các ký tự điều hướng thư mục, áp dụng `X-Content-Type-Options: nosniff`.
+- Bảo mật Fail-Closed: Tuyệt đối không cho phép tải về tệp chưa sạch hoặc có nghi vấn mã độc.
+- Chống rò rỉ định danh (ADR-002): Không lộ `BIGINT PK` hay đường dẫn vật lý cục bộ trong bất kỳ phản hồi nào.
+- Chống Path Traversal: Khử bỏ ký tự điều hướng thư mục và null byte.
+- Kiểm soát can thiệp Admin: Quarantine override bắt buộc có lý do giải trình và lưu AuditEvent bất biến.
 
 ---
 
 ## Database / Migration Impact
-- Không làm thay đổi schema cơ sở dữ liệu đã chuẩn hóa 71 bảng (toàn bộ các bảng `file_blobs`, `file_assets`, `file_revisions`, `file_scan_results`, `lesson_resources` đã tồn tại đầy đủ và chuẩn xác).
-- Đảm bảo tính toàn vẹn khóa ngoại và quan hệ cascade an toàn.
-
----
-
-## Concurrency / Idempotency Impact
-- Thao tác deduplication Algorithm 12 được bảo vệ an toàn: kiểm tra tồn tại của SHA-256 hash và tăng `reference_count`.
-- Rollback an toàn: nếu xảy ra lỗi ghi DB, toàn bộ tệp vật lý vừa được ghi mới trên đĩa đều được xóa ngay lập tức.
-- Soft-delete và Restore có tính idempotent và kiểm soát trạng thái nhất quán.
+- Tuân thủ tuyệt đối schema 71 bảng hiện hữu, không sửa đổi hay thêm bảng ngoài canonical DDL.
+- Dữ liệu `file_scan_results` tuân thủ check constraint `scan_type`, `status IN ('PASS','FAIL','ERROR')`, và `ISJSON(details_json)=1`.
 
 ---
 
 ## Acceptance Criteria
-- [x] **Algorithm 12 Deduplication**: Tải lên 2 tệp có nội dung giống hệt nhau chỉ tạo 1 `FileBlob` duy nhất, `reference_count = 2`, xóa tệp tạm quarantine.
-- [x] **Vòng đời Revision**: Tải lên revision mới tăng `revision_no`, cập nhật `is_current`, chuyển bản ghi cũ sang `REPLACED`; hỗ trợ tải về đúng revision qua `?version=X`.
-- [x] **Kiểm soát dung lượng**: Chặn tệp video $\ge 1\text{ GB}$, chặn image $> 10\text{ MB}$, pdf $> 50\text{ MB}$.
-- [x] **Chặn tệp nguy hại**: Chặn tuyệt đối `.exe`, `.py`, `.sh`, `.bat`, `.docm`.
-- [x] **Bảo mật Fail-Closed**: Chặn 403 đối với học viên chưa ghi danh, khóa học DRAFT, bài học DRAFT, hoặc tệp QUARANTINED / INFECTED.
-- [x] **Tuân thủ ADR-002**: Payload không chứa `id`, `blob_id`, `file_asset_id`, `storage_path`.
-- [x] **Web & REST API**: Hỗ trợ đầy đủ cả xác thực JWT Bearer và xác thực Web Session.
+- [x] **Quarantine Isolation**: Tệp tải lên ban đầu luôn nằm trong `quarantine/`, chỉ thăng cấp sang `storage/blobs/` khi verdict là `PASS`.
+- [x] **Infection Isolation**: Tệp nhiễm mã độc bị chuyển vào `quarantine/infected/`, revision bị đánh dấu `REJECTED`.
+- [x] **Fail-Closed Download**: Tệp `QUARANTINED` hoặc `INFECTED` bị từ chối 403 khi học viên/người dùng tải về.
+- [x] **Multi-tier Scanning**: Nhận diện thành công EICAR (plain/b64/zip), macro OOXML, executable headers MZ/ELF, và stream PDF độc hại.
+- [x] **ClamAV Resilience**: Không crash ứng dụng khi daemon clamd không khả dụng, trả về verdict `ERROR` an toàn.
+- [x] **Admin Override**: Chỉ Admin mới có thể override với lý do bắt buộc, tạo `AuditEvent` và giải phóng tệp thành `ACTIVE`.
+- [x] **REST API**: Các endpoints scans, scan-results, rescan, quarantine-override hoạt động chuẩn xác với ma trận phân quyền Zero-Trust.
 
 ---
 
-## Deletion and Simplification List
-
-| Candidate | Classification | Reason | Action |
-|---|---|---|---|
-| ClamAV Daemon Integration | `PONYTAIL` | Chưa có ClamAV daemon cài đặt trên môi trường dev local | Sử dụng built-in validator an toàn |
-| S3 Storage Adapter | `PONYTAIL` | Đặc tả ADR-008 ưu tiên local hierarchical storage trước | Giữ local storage engine |
-
----
-
-## Ponytails / Deferred Debt
-- **Antivirus Daemon Real Socket**:
-  - Trigger: Triển khai môi trường Production có daemon ClamAV.
-  - Owner: DevOps / Security Architect.
-  - Temporary Safeguard: Magic bytes analysis, extension whitelist, quarantine isolation, and file size guardrails.
-  - Review Point: Trước khi go-live Production.
-
----
-
-## Completion Report
-
-### A. Scope and Sources Consulted
-- Đã tham chiếu các tài liệu: `AGENTS.md`, `ADR-008`, `ADR-002`, `Algorithm 12`, `Business Rule 11`, `09_FILE_IMPORT_API.md`, `09_DATA_DICTIONARY_STORAGE_MEDIA.md`.
-- Triển khai trọn vẹn toàn bộ các yêu cầu từ tầng Domain Service, Models, REST APIs, Web Routes đến Test Suites.
-
-### B. Reuse Decisions
-- Tái sử dụng `require_course_manager` và `require_authenticated_actor` từ tầng xác thực hiện hữu.
-- Tái sử dụng giới hạn upload từ `config.py`.
-- Tái sử dụng helpers kiểm thử session `login_web_user` và JWT `create_token_pair`.
-
-### C. Per-File Changes
-1. `src/pwd301/services/exceptions.py`: Bổ sung 7 domain exceptions chuyên biệt cho file storage.
-2. `src/pwd301/__init__.py`: Đăng ký exception handlers và blueprint `api_file_bp`.
-3. `src/pwd301/models/file_import.py`: Bổ sung property `sha256_hex` cho `FileBlob` và `public_id` (UUIDv5) cho `FileRevision` và `LessonResource`.
-4. `src/pwd301/services/file_service.py`: Xây dựng mới hoàn chỉnh động cơ lưu trữ và phân quyền tệp (880+ dòng mã).
-5. `src/pwd301/blueprints/api_files/__init__.py` & `routes.py`: Xây dựng REST API cho `/api/files`.
-6. `src/pwd301/blueprints/api_courses/routes.py`: Tích hợp upload/list tệp theo khóa học.
-7. `src/pwd301/blueprints/api_lessons/routes.py`: Tích hợp attach/detach tài nguyên bài học.
-8. `src/pwd301/blueprints/instructor/routes.py`: Tích hợp các route upload, list, trash, restore tệp cho giảng viên qua Web session.
-9. `tests/unit/test_file_service.py`: Bộ kiểm thử unit (8 bài test).
-10. `tests/security/test_file_authorization_idor.py`: Bộ kiểm thử bảo mật Zero-Trust & IDOR (12 bài test).
-11. `tests/api/test_file_api.py`: Bộ kiểm thử REST API & Web integration (9 bài test).
-
-### D. Deletion/Simplification List
-- Đơn giản hóa cơ chế serialize theo đúng chuẩn ADR-002, loại bỏ hoàn toàn các trường khóa chính nội bộ.
-
-### E. Ponytails
-- Xem mục Ponytails / Deferred Debt ở trên.
-
-### F. Verification Actually Run & Results
+## Verification Actually Run & Results
 
 | Gate | Command | Result |
 |---|---|---|
 | **1. Repo Contract** | `python scripts/repo_check.py` | **PASS** (71 tables canonical DDL, balanced code fences) |
-| **2. Python Compile** | `python -m compileall -q src tests scripts` | **PASS** (Clean compilation) |
+| **2. Python Compile** | `python -m compileall -q src tests scripts` | **PASS** (Clean bytecode compilation) |
 | **3. Ruff Lint** | `ruff check src tests scripts` | **PASS** (All checks passed!) |
-| **4. Ruff Format** | `ruff format --check src tests scripts` | **PASS** (122 files already formatted) |
-| **5. Type Check** | `mypy src` | **PASS** (Success: no issues found in 61 source files) |
-| **6. Task-018 Suites** | `pytest tests/unit/test_file_service.py tests/security/test_file_authorization_idor.py tests/api/test_file_api.py -v` | **PASS** (29/29 passed in 9.19s) |
-| **7. Full Regression** | `pytest` | **PASS** (500/500 passed in 227.70s) |
-| **8. Verify Script** | `./scripts/verify.ps1` | **PASS** (`PWD301 verification PASS`) |
+| **4. Ruff Format** | `ruff format --check src tests scripts` | **PASS** (126 files already formatted) |
+| **5. Type Check** | `mypy src` | **PASS** (Success: no issues found in 62 source files) |
+| **6. TASK-019 Suites** | `pytest tests/unit/test_malware_scan_service.py tests/security/test_quarantine_fail_closed.py tests/api/test_scan_api.py -v` | **PASS** (35/35 passed in 13.53s) |
+| **7. Full Regression** | `pytest` | **PASS** (535/535 passed in 324.76s) |
+| **8. Verify Script** | `./scripts/verify.ps1` | **PASS** (`PWD301 verification PASS`, 535 passed in 299.47s) |
 
-### G. Remaining Risks / Next Step
-- Không còn bất kỳ rủi ro hay tồn đọng kỹ thuật nào đối với TASK-018.
-- Toàn bộ 500 bài kiểm thử trong repository đều vượt qua tuyệt đối.
+---
+
+## Ponytails / Deferred Debt
+- **External ClamAV Production Cluster**:
+  - Trigger: Triển khai lên cụm máy chủ Production với dịch vụ ClamAV daemon chạy nền liên tục.
+  - Owner: DevOps & SecOps Team.
+  - Temporary Safeguard: `BuiltinHeuristicScanner` (static signatures, deep PDF/OOXML inspection, header spoofing guard) cùng fallback `ERROR` fail-closed an toàn của `ClamAVScanner`.
+  - Review Point: Production deployment readiness review.

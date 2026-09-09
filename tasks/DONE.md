@@ -226,3 +226,25 @@
   - `pytest` TASK-018 test suites: PASS (29/29 passed in 9.19s)
   - `python -m pytest`: PASS (500/500 passed in 227.70s)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
+
+## TASK-019 — File Security, Quarantine Isolation & Malware Scanning Engine
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/services/scanner_service.py` (Multi-tier scanner architecture: `BuiltinHeuristicScanner` with longest-prefix priority for EICAR, deep PDF streams, OOXML macros, embedded binaries, header spoofing; `ClamAVScanner` fail-closed TCP socket communication via `nINSTREAM` protocol; aggregate scanning via `scan_file_all_engines` and `scan_blob_file`)
+  - `src/pwd301/services/file_service.py` (Quarantine isolation workflow, clean blob promotion to hierarchical storage `storage/blobs/ab/cd/<sha256>`, threat isolation into `quarantine/infected/<sha256>`, fail-closed download denial with 403 `FileSecurityQuarantineError` and `FileInfectedError`, rescan engine, scan history retrieval, and admin quarantine override with `AuditEvent` audit logging)
+  - `src/pwd301/__init__.py` (Registered `admin_bp` alias at `/api/admin` with CSRF exemption for JWT API requests)
+  - `src/pwd301/blueprints/api_files/routes.py` (`GET /api/files/<asset_id>/scans`, `GET /api/files/<asset_id>/scan-results`, `POST /api/files/<asset_id>/rescan`, `POST /api/files/<asset_id>/quarantine-override`)
+  - `src/pwd301/blueprints/admin/routes.py` (`POST /admin/files/<asset_id>/quarantine-override`)
+  - `tests/unit/test_malware_scan_service.py` (11 unit tests for EICAR, clean files, PDF dangerous objects, OOXML macros, zip embedded payloads, header mismatches, ClamAV fail-closed & mock protocol, storage promotion, infected isolation)
+  - `tests/security/test_quarantine_fail_closed.py` (11 security tests for student blocked on quarantined/infected, unauthenticated blocked, foreign instructor IDOR blocked, path traversal isolation, admin override authorization and audit logging)
+  - `tests/api/test_scan_api.py` (13 REST API integration tests for scan history, scan-results alias, rescan, and quarantine override across `/api/files/`, `/api/admin/files/`, and `/admin/files/`)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (Clean compilation)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (126 files formatted)
+  - `mypy src`: PASS (Success: no issues found in 62 source files)
+  - `pytest` TASK-019 test suites: PASS (35/35 passed in 13.53s)
+  - `python -m pytest`: PASS (535/535 passed in 324.76s)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 535/535 passed in 299.47s)
+

@@ -22,6 +22,7 @@ from pwd301.services.exceptions import (
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
 )
+from pwd301.services.file_service import _serialize_file_asset, quarantine_override
 from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
 
 
@@ -256,3 +257,16 @@ def restore_course(course_id: str) -> tuple[Response, int] | Response:
     )
     db.session.commit()
     return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/files/<asset_id>/quarantine-override", methods=["POST"])
+@admin_required
+def override_file_quarantine(asset_id: str) -> tuple[Response, int] | Response:
+    """Admin override to release a quarantined/rejected file asset."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason", "")
+    asset = quarantine_override(
+        admin_actor=actor, asset_id=asset_id, reason=reason, session=db.session
+    )
+    return jsonify(_serialize_file_asset(asset)), 200

@@ -87,6 +87,7 @@ from pwd301.services.exceptions import (
     FileAccessDeniedError,
     FileAssetNotFoundError,
     FileError,
+    FileInfectedError,
     FileSecurityQuarantineError,
     FileSizeLimitExceededError,
     FileStorageError,
@@ -221,6 +222,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     ForbiddenError: ("FORBIDDEN", 403),
     ScoreReleasePolicyError: ("FORBIDDEN", 403),
     FileAccessDeniedError: ("FORBIDDEN", 403),
+    FileInfectedError: ("FILE_INFECTED", 403),
     FileSecurityQuarantineError: ("FILE_QUARANTINED", 403),
     # 404 Not Found
     ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
@@ -542,6 +544,7 @@ def create_app(
     app.register_blueprint(student_bp)
     app.register_blueprint(instructor_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_bp, url_prefix="/api/admin", name="api_admin")
     app.register_blueprint(api_course_bp)
     app.register_blueprint(api_lesson_bp)
     app.register_blueprint(api_question_bp)
@@ -555,6 +558,9 @@ def create_app(
     unversioned_auth = app.blueprints.get("api_auth_unversioned")
     if unversioned_auth:
         csrf.exempt(unversioned_auth)
+    api_admin = app.blueprints.get("api_admin")
+    if api_admin:
+        csrf.exempt(api_admin)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_question_bp)

@@ -19,6 +19,9 @@ from pwd301.services.file_service import (
     _serialize_file_asset,
     add_file_revision,
     get_file_for_download,
+    get_file_scan_history,
+    quarantine_override,
+    rescan_file_asset,
     restore_file_asset,
     sanitize_filename,
     store_file_stream,
@@ -170,3 +173,35 @@ def upload_file_generic_api() -> tuple[Response, int] | Response:
         session=db.session,
     )
     return jsonify(_serialize_file_asset(asset)), 201
+
+
+@api_file_bp.route("/<asset_id>/scans", methods=["GET"])
+@api_file_bp.route("/<asset_id>/scan-results", methods=["GET"])
+@jwt_required
+def get_file_scans_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Retrieve malware and security scan history for a FileAsset (JWT required)."""
+    actor = require_authenticated_actor()
+    history = get_file_scan_history(actor=actor, asset_id=asset_id, session=db.session)
+    return jsonify({"asset_id": asset_id, "scans": history, "scan_history": history}), 200
+
+
+@api_file_bp.route("/<asset_id>/rescan", methods=["POST"])
+@jwt_required
+def rescan_file_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Trigger an on-demand malware rescan of a FileAsset (JWT required)."""
+    actor = require_authenticated_actor()
+    asset = rescan_file_asset(actor=actor, asset_id=asset_id, session=db.session)
+    return jsonify(_serialize_file_asset(asset)), 200
+
+
+@api_file_bp.route("/<asset_id>/quarantine-override", methods=["POST"])
+@jwt_required
+def quarantine_override_api(asset_id: str) -> tuple[Response, int] | Response:
+    """Admin override to release a quarantined/rejected file asset (Admin JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason", "")
+    asset = quarantine_override(
+        admin_actor=actor, asset_id=asset_id, reason=reason, session=db.session
+    )
+    return jsonify(_serialize_file_asset(asset)), 200
