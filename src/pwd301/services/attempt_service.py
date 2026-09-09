@@ -17,6 +17,8 @@ import hashlib
 import json
 import random
 import secrets
+import time
+import unicodedata
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,7 +26,7 @@ from typing import Any
 
 from flask import current_app
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -35,19 +37,31 @@ from pwd301.models.assessment import (
 )
 from pwd301.models.attempt_regrade import (
     AssessmentAttempt,
+    AssessmentResult,
+    AssessmentResultHistory,
     AttemptAnswer,
     AttemptAnswerChoice,
     AttemptAnswerEvent,
     AttemptChoiceSnapshot,
     AttemptQuestion,
+    AttemptQuestionGrade,
+    AttemptQuestionGradeHistory,
 )
 from pwd301.models.course import Enrollment, EnrollmentPeriod
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.question_bank import Question, QuestionRevision, QuestionRevisionChoice
+from pwd301.models.question_bank import (
+    Question,
+    QuestionRevision,
+    QuestionRevisionChoice,
+)
 from pwd301.models.types import utc_now
 from pwd301.services.assessment_service import _normalize_dt, _resolve_assessment
-from pwd301.services.authorization_service import _resolve_attempt
+from pwd301.services.authorization_service import (
+    _resolve_attempt,
+    require_course_manager,
+)
+from pwd301.services.completion_service import recalculate_course_completion
 from pwd301.services.exceptions import (
     ActiveAttemptExistsError,
     AssessmentClosedError,
@@ -59,8 +73,10 @@ from pwd301.services.exceptions import (
     AttemptLeaseExpiredError,
     AttemptLimitExceededError,
     AttemptNotFoundError,
+    AttemptNotSubmittedError,
     AttemptValidationError,
     ForbiddenError,
+    MaxPointsExceededError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
     SubmissionIdempotencyConflictError,
@@ -1037,7 +1053,7 @@ def save_attempt_answer(
     if attempt.student_user_id != actor.id:
         raise ForbiddenError("You do not have permission to modify this assessment attempt.")
 
-    if attempt.status == "SUBMITTED":
+    if attempt.status in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
         raise AttemptAlreadySubmittedError("Assessment attempt has already been submitted.")
 
     now = utc_now()
@@ -1257,7 +1273,7 @@ def sync_offline_answers(
     if attempt.student_user_id != actor.id:
         raise ForbiddenError("You do not have permission to modify this assessment attempt.")
 
-    if attempt.status == "SUBMITTED":
+    if attempt.status in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
         raise AttemptAlreadySubmittedError("Assessment attempt has already been submitted.")
 
     now = utc_now()
@@ -1509,8 +1525,8 @@ def submit_assessment_attempt(
                 "Invalid submission idempotency key format; must be a valid UUID."
             ) from err
 
-    # Idempotent replay check if already SUBMITTED
-    if attempt.status == "SUBMITTED":
+    # Idempotent replay check if already SUBMITTED / PENDING_GRADING / GRADED
+    if attempt.status in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
         if attempt.submission_idempotency_key is not None and str(
             attempt.submission_idempotency_key
         ) == str(key_uuid):
@@ -1552,32 +1568,49 @@ def submit_assessment_attempt(
             )
 
     # Atomically update attempt if and only if status is still 'IN_PROGRESS'
-    updated_rows = (
-        sess.query(AssessmentAttempt)
-        .filter(
-            AssessmentAttempt.id == attempt.id,
-            AssessmentAttempt.status == "IN_PROGRESS",
+    try:
+        updated_rows = (
+            sess.query(AssessmentAttempt)
+            .filter(
+                AssessmentAttempt.id == attempt.id,
+                AssessmentAttempt.status == "IN_PROGRESS",
+            )
+            .update(
+                {
+                    "status": "SUBMITTED",
+                    "submitted_at": now,
+                    "finalized_at": now,
+                    "submission_idempotency_key": key_uuid,
+                    "lease_token_hash": None,
+                    "lease_expires_at": None,
+                    "editor_session_id": None,
+                    "updated_at": now,
+                },
+                synchronize_session=False,
+            )
         )
-        .update(
-            {
-                "status": "SUBMITTED",
-                "submitted_at": now,
-                "finalized_at": now,
-                "submission_idempotency_key": key_uuid,
-                "lease_token_hash": None,
-                "lease_expires_at": None,
-                "editor_session_id": None,
-                "updated_at": now,
-            },
-            synchronize_session=False,
-        )
-    )
+    except (OperationalError, DBAPIError):
+        # Database lock contention / serialization conflict under concurrent requests
+        sess.rollback()
+        updated_rows = 0
 
     if updated_rows == 0:
         # Another concurrent request transitioned or submitted this attempt
-        sess.expire_all()
-        reloaded = sess.query(AssessmentAttempt).filter(AssessmentAttempt.id == attempt.id).first()
-        if reloaded is not None and reloaded.status == "SUBMITTED":
+        reloaded: AssessmentAttempt | None = None
+        for _ in range(10):
+            sess.expire_all()
+            reloaded = (
+                sess.query(AssessmentAttempt).filter(AssessmentAttempt.id == attempt.id).first()
+            )
+            if reloaded is not None and reloaded.status in (
+                "SUBMITTED",
+                "PENDING_GRADING",
+                "GRADED",
+            ):
+                break
+            time.sleep(0.05)
+
+        if reloaded is not None and reloaded.status in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
             if reloaded.submission_idempotency_key is not None and str(
                 reloaded.submission_idempotency_key
             ) == str(key_uuid):
@@ -1627,6 +1660,15 @@ def submit_assessment_attempt(
         sess.rollback()
         raise
 
+    # Trigger objective auto-grading engine (Algorithm 10)
+    grade_attempt_objective_questions(attempt, session=sess)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
     return {
         "attempt_id": str(attempt.public_id),
         "status": attempt.status,
@@ -1636,4 +1678,853 @@ def submit_assessment_attempt(
         "submission_idempotency_key": str(attempt.submission_idempotency_key),
         "is_idempotent_replay": False,
         "message": "Assessment attempt submitted successfully.",
+    }
+
+
+# ============================================================================
+# GRADING ENGINE & RESULT AGGREGATION (Algorithm 10)
+# ============================================================================
+
+
+def _serialize_attempt_grade(grade: AttemptQuestionGrade, aq: AttemptQuestion) -> dict[str, Any]:
+    """Serialize AttemptQuestionGrade without leaking internal BIGINT PKs (ADR-002)."""
+    return {
+        "attempt_question_id": str(aq.public_id),
+        "position": aq.position,
+        "question_type": aq.question_type_snapshot,
+        "points_assigned": float(aq.points_assigned),
+        "awarded_points": float(grade.awarded_points),
+        "grading_status": grade.grading_status,
+        "grading_rule": grade.grading_rule,
+        "graded_at": grade.graded_at.isoformat() if grade.graded_at else None,
+        "manual_reason": grade.manual_reason,
+    }
+
+
+def _serialize_assessment_result(
+    result: AssessmentResult, attempt: AssessmentAttempt
+) -> dict[str, Any]:
+    """Serialize AssessmentResult without leaking internal BIGINT PKs (ADR-002)."""
+    return {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": str(attempt.assessment.public_id) if attempt.assessment else None,
+        "attempt_number": attempt.attempt_number,
+        "raw_score": float(result.raw_score),
+        "max_score": float(result.max_score),
+        "percent_score": float(result.percent_score) if result.percent_score is not None else None,
+        "passed": result.passed,
+        "status": result.status,
+        "released_at": result.released_at.isoformat() if result.released_at else None,
+        "graded_at": result.graded_at.isoformat() if result.graded_at else None,
+        "updated_at": result.updated_at.isoformat() if result.updated_at else None,
+    }
+
+
+def calculate_attempt_result(
+    attempt: AssessmentAttempt,
+    actor: User | None = None,
+    reason: str = "Initial automated grading",
+    reason_code: str = "INITIAL",
+    session: Session | scoped_session[Any] | None = None,
+) -> AssessmentResult:
+    """Aggregate question grades into AssessmentResult and append history.
+
+    Calculations:
+    - raw_score = sum(awarded_points)
+    - max_score = sum(points_assigned)
+    - percent_score = (raw_score / max_score) * 100
+    - passed = percent_score >= passing_percent (if configured, else True)
+    - Status evaluation: PENDING if any question has grading_status == 'PENDING',
+      otherwise FINAL or RELEASED based on score_release_policy.
+    """
+    sess = session if session is not None else db.session
+    now = utc_now()
+    assessment = attempt.assessment
+
+    raw_score = Decimal("0.0000")
+    max_score = Decimal("0.0000")
+    has_pending = False
+
+    for aq in attempt.attempt_questions:
+        max_score += Decimal(str(aq.points_assigned))
+        grade = aq.current_grade or (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        if grade is not None:
+            raw_score += Decimal(str(grade.awarded_points))
+            if grade.grading_status == "PENDING":
+                has_pending = True
+        else:
+            has_pending = True
+
+    if max_score <= Decimal("0"):
+        max_score = Decimal("1.0000")
+
+    percent_score: Decimal | None = None
+    passed: bool | None = None
+    status: str = "PENDING"
+    released_at: datetime | None = None
+    graded_at: datetime | None = None
+
+    if not has_pending:
+        pct = (raw_score / max_score) * Decimal("100.0")
+        percent_score = Decimal(str(round(float(pct), 4)))
+        graded_at = now
+
+        if assessment and assessment.passing_percent is not None:
+            passed = bool(percent_score >= Decimal(str(assessment.passing_percent)))
+        else:
+            passed = True
+
+        policy = assessment.score_release_policy if assessment else "IMMEDIATE"
+        if policy == "IMMEDIATE":
+            status = "RELEASED"
+            released_at = now
+        elif policy == "AFTER_CLOSE":
+            close_at = _normalize_dt(assessment.close_at) if assessment else None
+            curr_now = _normalize_dt(now)
+            if close_at and curr_now and curr_now >= close_at:
+                status = "RELEASED"
+                released_at = now
+            else:
+                status = "FINAL"
+                released_at = None
+        else:  # INSTRUCTOR_RELEASE
+            if attempt.result and attempt.result.status == "RELEASED":
+                status = "RELEASED"
+                released_at = attempt.result.released_at or now
+            else:
+                status = "FINAL"
+                released_at = None
+    else:
+        status = "PENDING"
+        percent_score = None
+        passed = None
+
+    result = attempt.result or (
+        sess.query(AssessmentResult).filter(AssessmentResult.attempt_id == attempt.id).first()
+    )
+    old_score = result.raw_score if result else None
+    old_percent = result.percent_score if result else None
+
+    if result is None:
+        result = AssessmentResult(
+            attempt_id=attempt.id,
+            raw_score=raw_score,
+            max_score=max_score,
+            percent_score=percent_score,
+            passed=passed,
+            status=status,
+            released_at=released_at,
+            graded_at=graded_at,
+            updated_at=now,
+        )
+        attempt.result = result
+        sess.add(result)
+        sess.flush()
+    else:
+        result.raw_score = raw_score
+        result.max_score = max_score
+        result.percent_score = percent_score
+        result.passed = passed
+        result.status = status
+        if released_at is not None:
+            result.released_at = released_at
+        if graded_at is not None:
+            result.graded_at = graded_at
+        result.updated_at = now
+        sess.flush()
+
+    valid_reason_code = (
+        reason_code if reason_code in ("INITIAL", "REGRADE", "MANUAL", "CORRECTION") else "MANUAL"
+    )
+    history_entry = AssessmentResultHistory(
+        attempt_id=attempt.id,
+        old_score=old_score,
+        new_score=raw_score,
+        old_percent=old_percent,
+        new_percent=percent_score,
+        reason_code=valid_reason_code,
+        reason=reason,
+        actor_user_id=actor.id if actor else None,
+        created_at=now,
+    )
+    sess.add(history_entry)
+    sess.flush()
+
+    return result
+
+
+def grade_attempt_objective_questions(
+    attempt: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Automatically grade all objective questions for an assessment attempt.
+
+    Evaluates:
+    - SINGLE_CHOICE: Exactly 1 selected choice with is_correct = True -> 100% points, else 0.
+    - TRUE_FALSE: Exactly 1 selected choice with is_correct = True -> 100% points, else 0.
+    - MULTIPLE_CHOICE: Exact set match with all correct choices -> 100% points, else 0.
+    - SHORT_ANSWER: Normalized text match against accepted answers -> 100% points, else 0.
+    - ESSAY: Sets status to PENDING with 0 points and MANUAL rule.
+
+    Transition:
+    - If no ESSAY questions: attempt.status -> 'GRADED', graded_at = utc_now().
+    - If has ESSAY question: attempt.status -> 'PENDING_GRADING'.
+    """
+    sess = session if session is not None else db.session
+    resolved_attempt = _resolve_attempt(attempt, session=sess)
+    if resolved_attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    now = utc_now()
+    has_essay = False
+
+    for aq in resolved_attempt.attempt_questions:
+        q_type = aq.question_type_snapshot
+        assigned_pts = Decimal(str(aq.points_assigned))
+        awarded_pts = Decimal("0.0000")
+        grading_status = "AUTO_GRADED"
+        grading_rule = "ORIGINAL"
+        is_essay = False
+
+        ans = aq.current_answer or (
+            sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
+        )
+        selected_snaps = (
+            (
+                sess.query(AttemptChoiceSnapshot)
+                .join(
+                    AttemptAnswerChoice,
+                    AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
+                )
+                .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
+                .all()
+            )
+            if ans
+            else []
+        )
+
+        if q_type in ("SINGLE_CHOICE", "TRUE_FALSE"):
+            if len(selected_snaps) == 1:
+                sel = selected_snaps[0]
+                is_correct = False
+                if sel.source_choice_id is not None:
+                    c = sess.get(QuestionRevisionChoice, sel.source_choice_id)
+                    if c is not None:
+                        is_correct = bool(c.is_correct)
+                if not is_correct:
+                    rev = aq.source_question_revision or (
+                        sess.get(QuestionRevision, aq.source_question_revision_id)
+                        if aq.source_question_revision_id
+                        else None
+                    )
+                    if rev:
+                        for c in rev.choices:
+                            if str(c.choice_key).lower() == str(sel.choice_key_snapshot).lower():
+                                is_correct = bool(c.is_correct)
+                                break
+                if is_correct:
+                    awarded_pts = assigned_pts
+        elif q_type == "MULTIPLE_CHOICE":
+            rev = aq.source_question_revision or (
+                sess.get(QuestionRevision, aq.source_question_revision_id)
+                if aq.source_question_revision_id
+                else None
+            )
+            correct_keys = (
+                {str(c.choice_key).lower() for c in rev.choices if c.is_correct} if rev else set()
+            )
+            selected_keys = {str(sel.choice_key_snapshot).lower() for sel in selected_snaps}
+            if len(correct_keys) > 0 and selected_keys == correct_keys:
+                awarded_pts = assigned_pts
+        elif q_type == "SHORT_ANSWER":
+            if ans and ans.answer_text:
+                student_text = ans.answer_text.strip()
+                rev = aq.source_question_revision or (
+                    sess.get(QuestionRevision, aq.source_question_revision_id)
+                    if aq.source_question_revision_id
+                    else None
+                )
+                accepted = rev.accepted_answers if rev else []
+                match_mode = (rev.short_answer_match_mode if rev else None) or "NORMALIZED"
+
+                if match_mode == "EXACT":
+                    for aa in accepted:
+                        if student_text == aa.answer_text.strip():
+                            awarded_pts = assigned_pts
+                            break
+                else:
+                    norm_student = unicodedata.normalize("NFKC", student_text.lower())
+                    for aa in accepted:
+                        cand = aa.answer_normalized or aa.answer_text
+                        cand_norm = unicodedata.normalize("NFKC", cand.strip().lower())
+                        if norm_student == cand_norm:
+                            awarded_pts = assigned_pts
+                            break
+        elif q_type == "ESSAY":
+            has_essay = True
+            is_essay = True
+            awarded_pts = Decimal("0.0000")
+            grading_status = "PENDING"
+            grading_rule = "MANUAL"
+        else:
+            awarded_pts = Decimal("0.0000")
+
+        grade = aq.current_grade or (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        old_points = grade.awarded_points if grade else None
+        if grade is None:
+            grade = AttemptQuestionGrade(
+                attempt_question_id=aq.id,
+                awarded_points=awarded_pts,
+                grading_status=grading_status,
+                grading_rule=grading_rule,
+                graded_against_revision_id=aq.source_question_revision_id,
+                graded_at=None if is_essay else now,
+            )
+            aq.current_grade = grade
+            sess.add(grade)
+        else:
+            grade.awarded_points = awarded_pts
+            grade.grading_status = grading_status
+            grade.grading_rule = grading_rule
+            grade.graded_against_revision_id = aq.source_question_revision_id
+            grade.graded_at = None if is_essay else now
+
+        sess.flush()
+
+        grade_hist = AttemptQuestionGradeHistory(
+            attempt_question_id=aq.id,
+            old_points=old_points,
+            new_points=awarded_pts,
+            reason_code="INITIAL",
+            reason="Initial pending essay evaluation" if is_essay else "Initial automated grading",
+            actor_user_id=None,
+            created_at=now,
+        )
+        sess.add(grade_hist)
+
+    sess.flush()
+
+    if not has_essay:
+        resolved_attempt.status = "GRADED"
+        resolved_attempt.graded_at = now
+        res = calculate_attempt_result(
+            attempt=resolved_attempt,
+            actor=None,
+            reason="Initial automated grading",
+            reason_code="INITIAL",
+            session=sess,
+        )
+        if (
+            res.passed
+            and resolved_attempt.assessment
+            and resolved_attempt.assessment.is_required_for_completion
+        ):
+            recalculate_course_completion(
+                student_user_id=resolved_attempt.student_user_id,
+                course_id=resolved_attempt.assessment.course_id,
+                session=sess,
+            )
+    else:
+        resolved_attempt.status = "PENDING_GRADING"
+        res = calculate_attempt_result(
+            attempt=resolved_attempt,
+            actor=None,
+            reason="Initial pending essay evaluation",
+            reason_code="INITIAL",
+            session=sess,
+        )
+
+    resolved_attempt.updated_at = now
+    sess.flush()
+
+    return {
+        "attempt_id": str(resolved_attempt.public_id),
+        "status": resolved_attempt.status,
+        "has_essay": has_essay,
+        "result": _serialize_assessment_result(res, resolved_attempt),
+    }
+
+
+def grade_essay_question(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    attempt_question_id: AttemptQuestion | int | uuid.UUID | str,
+    awarded_points: float | Decimal | int | str,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Grade or update manual score for an essay question.
+
+    Invariants:
+    - Actor must be managing instructor or system administrator.
+    - Attempt must be in terminal or pending grading state (cannot be IN_PROGRESS).
+    - 0 <= awarded_points <= points_assigned (raises MaxPointsExceededError).
+    - Appends history to AttemptQuestionGradeHistory (reason_code='MANUAL_REVISION').
+    - If all questions are now graded, attempt transitions to 'GRADED'.
+    """
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    if attempt.status == "IN_PROGRESS":
+        raise AttemptNotSubmittedError("Cannot grade an attempt that is still in progress.")
+
+    if attempt.assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+    require_course_manager(actor, attempt.assessment.course_id, session=sess)
+
+    aq: AttemptQuestion | None = None
+    if isinstance(attempt_question_id, AttemptQuestion):
+        aq = attempt_question_id
+    elif isinstance(attempt_question_id, int):
+        aq = sess.get(AttemptQuestion, attempt_question_id)
+    elif isinstance(attempt_question_id, uuid.UUID):
+        aq = (
+            sess.query(AttemptQuestion)
+            .filter(AttemptQuestion.public_id == attempt_question_id)
+            .first()
+        )
+    elif isinstance(attempt_question_id, str):
+        try:
+            val_uuid = uuid.UUID(attempt_question_id.strip())
+            aq = sess.query(AttemptQuestion).filter(AttemptQuestion.public_id == val_uuid).first()
+        except ValueError:
+            if attempt_question_id.isdigit():
+                aq = sess.get(AttemptQuestion, int(attempt_question_id))
+
+    if aq is None or aq.attempt_id != attempt.id:
+        raise AttemptValidationError("Attempt question not found for this attempt.")
+
+    try:
+        dec_points = Decimal(str(awarded_points))
+    except (ValueError, TypeError) as err:
+        raise AttemptValidationError("Invalid awarded_points value; must be numeric.") from err
+
+    if dec_points < Decimal("0"):
+        raise MaxPointsExceededError("Awarded points cannot be negative.")
+    if dec_points > aq.points_assigned:
+        raise MaxPointsExceededError(
+            f"Awarded points ({dec_points}) exceed maximum assigned points ({aq.points_assigned})."
+        )
+
+    now = utc_now()
+    grade = aq.current_grade or (
+        sess.query(AttemptQuestionGrade)
+        .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+        .first()
+    )
+    old_points = grade.awarded_points if grade else None
+
+    if grade is None:
+        grade = AttemptQuestionGrade(
+            attempt_question_id=aq.id,
+            awarded_points=dec_points,
+            grading_status="MANUAL_GRADED",
+            grading_rule="MANUAL",
+            graded_against_revision_id=aq.source_question_revision_id,
+            graded_by_user_id=actor.id,
+            graded_at=now,
+            manual_reason=reason,
+        )
+        sess.add(grade)
+    else:
+        grade.awarded_points = dec_points
+        grade.grading_status = "MANUAL_GRADED"
+        grade.grading_rule = "MANUAL"
+        grade.graded_by_user_id = actor.id
+        grade.graded_at = now
+        grade.manual_reason = reason
+
+    sess.flush()
+
+    grade_hist = AttemptQuestionGradeHistory(
+        attempt_question_id=aq.id,
+        old_points=old_points,
+        new_points=dec_points,
+        reason_code="MANUAL_REVISION",
+        reason=reason or "Manual essay grade by instructor",
+        actor_user_id=actor.id,
+        created_at=now,
+    )
+    sess.add(grade_hist)
+    sess.flush()
+
+    pending_count = (
+        sess.query(AttemptQuestionGrade)
+        .join(AttemptQuestion, AttemptQuestion.id == AttemptQuestionGrade.attempt_question_id)
+        .filter(
+            AttemptQuestion.attempt_id == attempt.id,
+            AttemptQuestionGrade.grading_status == "PENDING",
+        )
+        .count()
+    )
+
+    if pending_count == 0:
+        attempt.status = "GRADED"
+        attempt.graded_at = now
+        attempt.updated_at = now
+        sess.flush()
+        res = calculate_attempt_result(
+            attempt=attempt,
+            actor=actor,
+            reason=reason or "Manual grading finalized",
+            reason_code="MANUAL",
+            session=sess,
+        )
+        if res.passed and attempt.assessment and attempt.assessment.is_required_for_completion:
+            recalculate_course_completion(
+                student_user_id=attempt.student_user_id,
+                course_id=attempt.assessment.course_id,
+                session=sess,
+            )
+    else:
+        res = calculate_attempt_result(
+            attempt=attempt,
+            actor=actor,
+            reason=reason or "Manual grade updated",
+            reason_code="MANUAL",
+            session=sess,
+        )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "attempt_question_id": str(aq.public_id),
+        "awarded_points": float(dec_points),
+        "grading_status": grade.grading_status,
+        "attempt_status": attempt.status,
+        "is_finalized": (pending_count == 0),
+        "result": _serialize_assessment_result(res, attempt),
+    }
+
+
+def get_attempt_result_for_student(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve attempt result for student respecting score and answer release policies.
+
+    Invariants:
+    - Student can only view their own attempt; managing instructor or admin can view all.
+    - score_release_policy ('IMMEDIATE', 'AFTER_CLOSE', 'INSTRUCTOR_RELEASE'):
+      If not yet released, returns score_status='SCORE_HIDDEN' with masked scores.
+    - answer_visibility_policy ('IMMEDIATE', 'AFTER_CLOSE', 'AFTER_ALL_ATTEMPTS', 'NEVER'):
+      Controls visibility of explanations and question-level breakdowns.
+    """
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    is_owner = attempt.student_user_id == actor.id
+    is_admin = actor.is_admin
+    is_manager = False
+    if attempt.assessment and actor.has_role("INSTRUCTOR"):
+        is_manager = attempt.assessment.course.owner_instructor_id == actor.id
+
+    if not (is_owner or is_admin or is_manager):
+        raise ForbiddenError("You do not have permission to view this attempt result.")
+
+    assessment = attempt.assessment
+    result = attempt.result
+    now = utc_now()
+
+    is_score_released = False
+    if is_admin or is_manager:
+        is_score_released = True
+    elif attempt.status in ("IN_PROGRESS", "PENDING_GRADING"):
+        is_score_released = False
+    elif assessment is None:
+        is_score_released = True
+    else:
+        policy = assessment.score_release_policy
+        if policy == "IMMEDIATE":
+            is_score_released = (
+                attempt.status == "GRADED"
+                and result is not None
+                and result.status in ("FINAL", "RELEASED")
+            )
+        elif policy == "AFTER_CLOSE":
+            close_at = _normalize_dt(assessment.close_at)
+            curr_now = _normalize_dt(now)
+            is_score_released = bool(
+                close_at and curr_now and curr_now >= close_at and attempt.status == "GRADED"
+            )
+        elif policy == "INSTRUCTOR_RELEASE":
+            is_score_released = bool(result and result.status == "RELEASED")
+
+    if not is_score_released:
+        return {
+            "attempt_id": str(attempt.public_id),
+            "assessment_id": str(assessment.public_id) if assessment else None,
+            "attempt_number": attempt.attempt_number,
+            "status": attempt.status,
+            "score_status": "SCORE_HIDDEN",
+            "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
+            "message": "Scores have not been released yet.",
+            "raw_score": None,
+            "max_score": None,
+            "percent_score": None,
+            "passed": None,
+            "questions": None,
+        }
+
+    ans_policy = assessment.answer_visibility_policy if assessment else "AFTER_CLOSE"
+    show_answers = False
+    if is_admin or is_manager or ans_policy == "IMMEDIATE":
+        show_answers = True
+    elif ans_policy == "AFTER_CLOSE":
+        close_at = _normalize_dt(assessment.close_at) if assessment else None
+        curr_now = _normalize_dt(now)
+        show_answers = bool(close_at and curr_now and curr_now >= close_at)
+    elif ans_policy == "AFTER_ALL_ATTEMPTS":
+        if (
+            assessment
+            and assessment.attempt_limit
+            and attempt.attempt_number >= assessment.attempt_limit
+        ):
+            show_answers = True
+        else:
+            close_at = _normalize_dt(assessment.close_at) if assessment else None
+            curr_now = _normalize_dt(now)
+            show_answers = bool(close_at and curr_now and curr_now >= close_at)
+    elif ans_policy == "NEVER":
+        show_answers = False
+
+    question_grades = []
+    for aq in attempt.attempt_questions:
+        grade = aq.current_grade or (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        ans = aq.current_answer or (
+            sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
+        )
+        q_info: dict[str, Any] = {
+            "attempt_question_id": str(aq.public_id),
+            "position": aq.position,
+            "question_type": aq.question_type_snapshot,
+            "points_assigned": float(aq.points_assigned),
+            "awarded_points": float(grade.awarded_points) if grade else 0.0,
+            "grading_status": grade.grading_status if grade else "PENDING",
+        }
+        if show_answers:
+            q_info["explanation"] = aq.explanation_snapshot
+            if ans:
+                q_info["student_answer_text"] = ans.answer_text
+                selected_snaps = (
+                    sess.query(AttemptChoiceSnapshot)
+                    .join(
+                        AttemptAnswerChoice,
+                        AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
+                    )
+                    .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
+                    .all()
+                )
+                q_info["selected_choice_keys"] = [
+                    str(c.choice_key_snapshot) for c in selected_snaps
+                ]
+            if grade and grade.manual_reason:
+                q_info["feedback"] = grade.manual_reason
+        question_grades.append(q_info)
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": str(assessment.public_id) if assessment else None,
+        "attempt_number": attempt.attempt_number,
+        "status": attempt.status,
+        "score_status": "RELEASED",
+        "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
+        "answer_visibility_policy": ans_policy,
+        "raw_score": float(result.raw_score) if result else 0.0,
+        "max_score": float(result.max_score) if result else 0.0,
+        "percent_score": (
+            float(result.percent_score) if result and result.percent_score is not None else None
+        ),
+        "passed": result.passed if result else None,
+        "released_at": result.released_at.isoformat() if result and result.released_at else None,
+        "graded_at": result.graded_at.isoformat() if result and result.graded_at else None,
+        "questions": question_grades,
+    }
+
+
+def list_pending_grading_attempts(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """List attempts for an assessment that are pending manual grading.
+
+    Enforces course manager authorization (or admin).
+    Returns list of attempt summaries with student display names and pending essay counts.
+    """
+    sess = session if session is not None else db.session
+    assessment = _resolve_assessment(assessment_id, session=sess)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    attempts = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.assessment_id == assessment.id,
+            AssessmentAttempt.status == "PENDING_GRADING",
+        )
+        .order_by(AssessmentAttempt.submitted_at.asc())
+        .all()
+    )
+
+    results: list[dict[str, Any]] = []
+    for att in attempts:
+        pending_count = (
+            sess.query(AttemptQuestionGrade)
+            .join(AttemptQuestion, AttemptQuestion.id == AttemptQuestionGrade.attempt_question_id)
+            .filter(
+                AttemptQuestion.attempt_id == att.id,
+                AttemptQuestionGrade.grading_status == "PENDING",
+            )
+            .count()
+        )
+        results.append(
+            {
+                "attempt_id": str(att.public_id),
+                "assessment_id": str(assessment.public_id),
+                "attempt_number": att.attempt_number,
+                "student_id": str(att.student.public_id) if att.student else None,
+                "student_name": att.student.display_name if att.student else None,
+                "status": att.status,
+                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "total_questions": len(att.attempt_questions),
+                "pending_essay_count": pending_count,
+            }
+        )
+    return results
+
+
+def get_attempt_grading_detail(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve detailed attempt question and answer information for instructor grading.
+
+    Enforces course manager authorization (or admin).
+    """
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    if attempt.assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, attempt.assessment.course_id, session=sess)
+
+    questions_data: list[dict[str, Any]] = []
+    for aq in sorted(attempt.attempt_questions, key=lambda q: q.position):
+        grade = aq.current_grade or (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        ans = aq.current_answer or (
+            sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
+        )
+        rev = aq.source_question_revision or (
+            sess.get(QuestionRevision, aq.source_question_revision_id)
+            if aq.source_question_revision_id
+            else None
+        )
+
+        correct_info: dict[str, Any] = {}
+        if rev:
+            if aq.question_type_snapshot in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+                correct_info["correct_choice_keys"] = [
+                    str(c.choice_key) for c in rev.choices if c.is_correct
+                ]
+            elif aq.question_type_snapshot == "SHORT_ANSWER":
+                correct_info["accepted_answers"] = [
+                    {"answer_text": a.answer_text, "answer_normalized": a.answer_normalized}
+                    for a in rev.accepted_answers
+                ]
+            elif aq.question_type_snapshot == "ESSAY":
+                correct_info["rubric"] = getattr(rev, "rubric", None) or aq.explanation_snapshot
+
+        selected_keys: list[str] = []
+        if ans:
+            selected_snaps = (
+                sess.query(AttemptChoiceSnapshot)
+                .join(
+                    AttemptAnswerChoice,
+                    AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
+                )
+                .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
+                .all()
+            )
+            selected_keys = [str(c.choice_key_snapshot) for c in selected_snaps]
+
+        choices_data: list[dict[str, Any]] = []
+        for cs in sorted(aq.choice_snapshots, key=lambda c: c.position):
+            choices_data.append(
+                {
+                    "choice_key": str(cs.choice_key_snapshot),
+                    "content": cs.content_snapshot,
+                    "position": cs.position,
+                }
+            )
+
+        questions_data.append(
+            {
+                "attempt_question_id": str(aq.public_id),
+                "position": aq.position,
+                "question_type": aq.question_type_snapshot,
+                "content": aq.content_snapshot,
+                "explanation": aq.explanation_snapshot,
+                "points_assigned": float(aq.points_assigned),
+                "awarded_points": float(grade.awarded_points) if grade else 0.0,
+                "grading_status": grade.grading_status if grade else "PENDING",
+                "manual_reason": grade.manual_reason if grade else None,
+                "student_answer_text": ans.answer_text if ans else None,
+                "selected_choice_keys": selected_keys,
+                "choices": choices_data,
+                "correct_info": correct_info,
+            }
+        )
+
+    res = attempt.result
+    return {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": str(attempt.assessment.public_id),
+        "assessment_title": attempt.assessment.title,
+        "attempt_number": attempt.attempt_number,
+        "status": attempt.status,
+        "student_id": str(attempt.student.public_id) if attempt.student else None,
+        "student_name": attempt.student.display_name if attempt.student else None,
+        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
+        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        "graded_at": attempt.graded_at.isoformat() if attempt.graded_at else None,
+        "raw_score": float(res.raw_score) if res else None,
+        "max_score": float(res.max_score) if res else None,
+        "percent_score": (
+            float(res.percent_score) if res and res.percent_score is not None else None
+        ),
+        "passed": res.passed if res else None,
+        "questions": questions_data,
     }

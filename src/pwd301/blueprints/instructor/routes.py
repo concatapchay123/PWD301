@@ -28,6 +28,11 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     update_assessment,
 )
+from pwd301.services.attempt_service import (
+    get_attempt_grading_detail,
+    grade_essay_question,
+    list_pending_grading_attempts,
+)
 from pwd301.services.authorization_service import (
     instructor_required,
     require_authenticated_actor,
@@ -51,7 +56,11 @@ from pwd301.services.enrollment_service import (
     get_course_prerequisites,
     remove_course_prerequisite,
 )
-from pwd301.services.exceptions import CourseValidationError, LessonValidationError
+from pwd301.services.exceptions import (
+    AttemptValidationError,
+    CourseValidationError,
+    LessonValidationError,
+)
 from pwd301.services.lesson_service import (
     change_lesson_status,
     create_lesson,
@@ -923,3 +932,48 @@ def materialize_instructor_blueprint_route(assessment_id: str) -> tuple[Response
             "pool_count": len(pool),
         }
     ), 200
+
+
+@instructor_bp.route("/assessments/<assessment_id>/grading/pending", methods=["GET"])
+@instructor_required
+def list_instructor_pending_grading_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """List attempts for an assessment requiring manual grading."""
+    actor = require_authenticated_actor()
+    attempts = list_pending_grading_attempts(actor, assessment_id, session=db.session)
+    return jsonify({"attempts": attempts, "total": len(attempts)}), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/grading", methods=["GET"])
+@instructor_required
+def get_instructor_attempt_grading_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed attempt answers for grading evaluation."""
+    actor = require_authenticated_actor()
+    data = get_attempt_grading_detail(actor, attempt_id, session=db.session)
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/attempts/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
+@instructor_required
+def grade_instructor_essay_route(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> tuple[Response, int] | Response:
+    """Grade or revise manual score for an essay question."""
+    actor = require_authenticated_actor()
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    points = body.get("awarded_points")
+    if points is None:
+        points = body.get("score")
+    if points is None:
+        raise AttemptValidationError("awarded_points (or score) is required.")
+
+    reason = body.get("reason") or body.get("feedback")
+    result = grade_essay_question(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        awarded_points=points,
+        reason=reason,
+        session=db.session,
+    )
+    return jsonify(result), 200

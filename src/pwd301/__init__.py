@@ -65,6 +65,8 @@ from pwd301.services.exceptions import (
     AttemptLeaseExpiredError,
     AttemptLimitExceededError,
     AttemptNotFoundError,
+    AttemptNotSubmitedError,
+    AttemptNotSubmittedError,
     AttemptValidationError,
     BlueprintValidationError,
     CompletionRuleError,
@@ -82,11 +84,13 @@ from pwd301.services.exceptions import (
     EnrollmentPrerequisiteError,
     EnrollmentStateViolationError,
     ForbiddenError,
+    GradingError,
     LessonNotFoundError,
     LessonPositionConflictError,
     LessonProgressError,
     LessonStateViolationError,
     LessonValidationError,
+    MaxPointsExceededError,
     PrerequisiteCycleError,
     QuestionBankError,
     QuestionCorrectionError,
@@ -97,6 +101,7 @@ from pwd301.services.exceptions import (
     QuestionStateViolationError,
     QuestionValidationError,
     ResourceNotFoundError,
+    ScoreReleasePolicyError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
     SubmissionIdempotencyConflictError,
@@ -203,6 +208,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     UnauthorizedError: ("UNAUTHORIZED", 401),
     # 403 Forbidden
     ForbiddenError: ("FORBIDDEN", 403),
+    ScoreReleasePolicyError: ("FORBIDDEN", 403),
     # 404 Not Found
     ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     LessonNotFoundError: ("RESOURCE_NOT_FOUND", 404),
@@ -238,8 +244,12 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     StaleAnswerSequenceError: ("STALE_ANSWER", 409),
     AttemptExpiredError: ("DEADLINE_EXPIRED", 409),
     AttemptAlreadySubmittedError: ("STATE_VIOLATION", 409),
+    AttemptNotSubmittedError: ("STATE_VIOLATION", 409),
+    AttemptNotSubmitedError: ("STATE_VIOLATION", 409),
     SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
     # 400 Bad Request & Validation Errors
+    MaxPointsExceededError: ("VALIDATION_ERROR", 400),
+    GradingError: ("VALIDATION_ERROR", 400),
     CourseValidationError: ("VALIDATION_ERROR", 400),
     LessonValidationError: ("VALIDATION_ERROR", 400),
     LessonProgressError: ("VALIDATION_ERROR", 400),
@@ -366,12 +376,16 @@ def _register_error_handlers(app: Flask) -> None:
         )
 
 
-def create_app(config_name: str | None = None) -> Flask:
+def create_app(
+    config_name: str | None = None,
+    config_override: dict[str, Any] | None = None,
+) -> Flask:
     """Create and configure an instance of the Flask application.
 
     Args:
         config_name: The name of the configuration ('development', 'testing', 'production').
                      If None, resolves from the APP_ENV environment variable.
+        config_override: Optional dictionary of configuration key-value pairs to override defaults.
     """
     load_dotenv()
 
@@ -387,6 +401,8 @@ def create_app(config_name: str | None = None) -> Flask:
     config_cls = config_by_name[config_name]
     config_obj = config_cls() if isinstance(config_cls, type) else config_cls
     app.config.from_object(config_obj)
+    if config_override:
+        app.config.update(config_override)
 
     # Initialize extensions
     db.init_app(app)

@@ -32,6 +32,7 @@ from pwd301.models.assessment import (
     AssessmentQuestionPool,
     AssessmentSection,
 )
+from pwd301.models.attempt_regrade import AssessmentAttempt, AssessmentResult
 from pwd301.models.course import Course, Lesson
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -517,7 +518,11 @@ def create_assessment(
     random_question_count = _parse_int_opt("random_question_count")
 
     passing_percent: Decimal | None = None
-    raw_pass = payload.get("passing_percent")
+    raw_pass = (
+        payload.get("passing_percent")
+        if "passing_percent" in payload
+        else payload.get("passing_score")
+    )
     if raw_pass is not None and raw_pass != "":
         try:
             passing_percent = Decimal(str(raw_pass))
@@ -692,8 +697,12 @@ def update_assessment(
         raw_al = payload.get("attempt_limit")
         assessment.attempt_limit = int(raw_al) if raw_al is not None and raw_al != "" else None
 
-    if "passing_percent" in payload:
-        raw_pass = payload.get("passing_percent")
+    if "passing_percent" in payload or "passing_score" in payload:
+        raw_pass = (
+            payload.get("passing_percent")
+            if "passing_percent" in payload
+            else payload.get("passing_score")
+        )
         if raw_pass is not None and raw_pass != "":
             try:
                 assessment.passing_percent = Decimal(str(raw_pass))
@@ -1202,7 +1211,9 @@ def assign_question(
         section_id = sec.id
 
     # Points validation
-    raw_points = payload.get("points", 1.0)
+    raw_points = payload.get("points")
+    if raw_points is None:
+        raw_points = payload.get("points_assigned", 1.0)
     try:
         pts = Decimal(str(raw_points))
         if pts <= 0:
@@ -1494,7 +1505,7 @@ def materialize_blueprint_pool(
                 QuestionRevision,
                 sa.and_(
                     Question.id == QuestionRevision.question_id,
-                    QuestionRevision.is_current == True,
+                    QuestionRevision.is_current.is_(True),
                 ),
             )
             .filter(
@@ -1555,3 +1566,64 @@ def materialize_blueprint_pool(
         raise
 
     return created_pool
+
+
+def release_assessment_scores(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Release scores for an assessment (INSTRUCTOR_RELEASE policy).
+
+    Invariants:
+    - Actor must be managing instructor or system administrator (403 Forbidden otherwise).
+    - Transitions all FINAL results for attempts to RELEASED with released_at = utc_now().
+    - Records append-only AuditEvent.
+    - Zero BIGINT leakage (ADR-002).
+    """
+    sess = session if session is not None else db.session
+    assessment = _resolve_assessment(assessment_id, session=sess)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    now = utc_now()
+    results = (
+        sess.query(AssessmentResult)
+        .join(AssessmentAttempt, AssessmentAttempt.id == AssessmentResult.attempt_id)
+        .filter(
+            AssessmentAttempt.assessment_id == assessment.id,
+            AssessmentResult.status == "FINAL",
+        )
+        .all()
+    )
+
+    released_count = 0
+    for res in results:
+        res.status = "RELEASED"
+        res.released_at = now
+        released_count += 1
+
+    sess.flush()
+
+    _record_assessment_audit(
+        sess=sess,
+        actor=actor,
+        action="ASSESSMENT_SCORES_RELEASED",
+        target_id=assessment.id,
+        reason=f"Instructor released scores for {released_count} attempts",
+    )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return {
+        "assessment_id": str(assessment.public_id),
+        "released_count": released_count,
+        "score_release_policy": assessment.score_release_policy,
+        "message": f"Successfully released scores for {released_count} attempts.",
+    }

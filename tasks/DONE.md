@@ -145,5 +145,22 @@
   - `mypy src`: PASS (0 issues across 58 files)
   - `pytest` TASK-015 suite: PASS (25/25 passed)
   - `python -m pytest`: PASS (428/428 passed)
-
-
+## TASK-016 — Assessment Grading Engine & Manual Essay Evaluation
+- **Completion date:** 2026-09-09
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (`GradingError`, `ScoreReleasePolicyError`, `MaxPointsExceededError`, `AttemptNotSubmittedError`)
+  - `src/pwd301/__init__.py` (Centralized domain error handlers for 400 VALIDATION_ERROR, 403 FORBIDDEN, 409 STATE_VIOLATION)
+  - `src/pwd301/services/completion_service.py` (Criterion 3 assessment completion evaluation & `recalculate_course_completion`)
+  - `src/pwd301/services/assessment_service.py` (`release_assessment_scores`, passing_score aliases, blueprint queries)
+  - `src/pwd301/services/attempt_service.py` (`grade_attempt_objective_questions`, `grade_essay_question`, `calculate_attempt_result`, `get_attempt_result_for_student`, `list_pending_grading_attempts`, `get_attempt_grading_detail`)
+  - `src/pwd301/blueprints/api_assessments/routes.py` (`POST /api/assessments/<assessment_id>/release-scores`)
+  - `src/pwd301/blueprints/api_attempts/routes.py` (`GET /api/attempts/<attempt_id>/result`, `POST /api/attempts/<attempt_id>/grades/<attempt_question_id>`)
+  - `src/pwd301/blueprints/instructor/routes.py` (`GET /instructor/assessments/<assessment_id>/grading/pending`, `GET /instructor/attempts/<attempt_id>/grading`, `POST /instructor/attempts/<attempt_id>/grades/<attempt_question_id>`)
+  - `tests/unit/test_grading_service.py`, `tests/security/test_grading_idor.py`, `tests/api/test_grading_api.py`
+- **Verification commands and results:**
+  - `repo_check.py`: PASS (all 71 DDL tables, markdown fences balanced)
+  - `ruff check`: PASS (0 errors across all modified and newly created files)
+  - `ruff format --check`: PASS (all 15 files formatted cleanly)
+  - `mypy src`: PASS (0 issues found across 58 source files)
+  - `pytest` TASK-016 suite: PASS (21/21 passed in 18.48s)
+  - `python -m pytest`: PASS (449/449 passed in 250.41s)

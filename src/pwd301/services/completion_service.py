@@ -20,6 +20,8 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
+from pwd301.models.assessment import Assessment
+from pwd301.models.attempt_regrade import AssessmentAttempt, AssessmentResult
 from pwd301.models.course import (
     CourseCompletionRule,
     CourseCompletionSummary,
@@ -458,8 +460,39 @@ def evaluate_course_completion(
                 return False, existing_summary
 
     # Criterion 3: Required assessments
-    # In current phase (prior to TASK-012/013 assessment engine), if no required assessments exist,
-    # this condition is considered satisfied.
+    if rule.require_required_assessments:
+        required_assessments = (
+            sess.query(Assessment)
+            .filter(
+                Assessment.course_id == enrollment.course_id,
+                Assessment.is_required_for_completion.is_(True),
+                Assessment.status == "PUBLISHED",
+                Assessment.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for req_ass in required_assessments:
+            passed_attempt = (
+                sess.query(AssessmentAttempt)
+                .join(AssessmentResult, AssessmentResult.attempt_id == AssessmentAttempt.id)
+                .filter(
+                    AssessmentAttempt.assessment_id == req_ass.id,
+                    AssessmentAttempt.student_user_id == enrollment.student_user_id,
+                    AssessmentAttempt.status == "GRADED",
+                    AssessmentResult.passed.is_(True),
+                )
+                .first()
+            )
+            if passed_attempt is None:
+                existing_summary = (
+                    sess.query(CourseCompletionSummary)
+                    .filter(
+                        CourseCompletionSummary.student_user_id == enrollment.student_user_id,
+                        CourseCompletionSummary.course_id == enrollment.course_id,
+                    )
+                    .first()
+                )
+                return False, existing_summary
 
     # === All criteria satisfied -> Mark Completed ===
     now = utc_now()
@@ -587,3 +620,40 @@ def get_course_completion_summary(
         )
         .first()
     )
+
+
+def recalculate_course_completion(
+    student_user_id: int | uuid.UUID | str,
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[bool, CourseCompletionSummary | None]:
+    """Recalculate course completion status for a student in a course.
+
+    Resolves student, course, and enrollment, and triggers evaluate_course_completion.
+
+    Args:
+        student_user_id: Internal ID, UUID, or string of the student.
+        course_id: Internal ID, UUID, or string of the course.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        tuple of (bool is_completed, CourseCompletionSummary | None).
+    """
+    sess = session if session is not None else db.session
+    student = _resolve_user(student_user_id, session=sess)
+    course = _resolve_course(course_id, session=sess)
+    if student is None or course is None:
+        return False, None
+
+    enrollment = (
+        sess.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == student.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+    if enrollment is None:
+        return False, None
+
+    return evaluate_course_completion(enrollment, session=sess)

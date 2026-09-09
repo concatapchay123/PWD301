@@ -321,3 +321,22 @@ class SubmissionIdempotencyConflictError(ConflictError, AttemptError):
 
 class AttemptAlreadySubmittedError(StateViolationError, AttemptError):
     """Raised when attempting an operation on an attempt that has already been submitted."""
+
+
+class GradingError(ServiceError):
+    """Base exception for all assessment grading domain errors."""
+
+
+class ScoreReleasePolicyError(ForbiddenError, GradingError):
+    """Raised when attempting to view scores before the configured release policy permits."""
+
+
+class MaxPointsExceededError(ValidationError, GradingError):
+    """Raised when awarded manual points exceed points_assigned or are negative."""
+
+
+class AttemptNotSubmittedError(StateViolationError, GradingError):
+    """Raised when grading is attempted on an attempt that has not been submitted."""
+
+
+AttemptNotSubmitedError = AttemptNotSubmittedError

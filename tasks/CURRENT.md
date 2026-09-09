@@ -1,74 +1,92 @@
-# TASK-015 — Autosave, Offline Reconciliation & Idempotent Submission Engine
+# TASK-016 — Assessment Grading Engine & Manual Essay Evaluation
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-013, TASK-014  
+**Depends on:** TASK-015  
 
 ---
 
 ## 1. Goal / Problem Statement
-Implement the autosave, offline reconciliation, and idempotent submission engine for student assessment attempts in compliance with **ADR-002 (Internal BIGINT Masking)**, **ADR-004 (Attempt Snapshot Preservation)**, **ADR-005 (Editing Lease & Epoch Fencing)**, **ADR-006 (Server-Authoritative Timer)**, **Algorithm 08 (Autosave & Offline Reconciliation)**, and **Algorithm 09 (Submission Idempotency)**:
-1. **Autosave & Event Sourcing**: Direct answer saving for MCQ and text answers with immutable event log generation (`AttemptAnswerEvent`) tracking every change state, client sequence, and client timestamp.
-2. **Offline Reconciliation & Monotonic Sequencing**: Enforce strictly increasing monotonic sequence numbers (`client_sequence > last_client_sequence`) per question; detect network race conditions, reject stale writes with 409 `STALE_ANSWER` while persisting rejected audit events, and support bulk offline synchronization (`POST /api/attempts/<id>/answers/sync`).
-3. **Lease & Epoch Fencing**: Validate active 30s editing lease and match `lease_epoch` to block stale tabs/devices (409 `STALE_LEASE_EPOCH`).
-4. **Server-Authoritative Timer Clamping**: Validate current server time strictly before `deadline_at` and assessment `close_at`. Automatically transition overdue attempts to `EXPIRED` status (409 `DEADLINE_EXPIRED`).
-5. **Idempotent Submission Engine**: Atomic state transition from `IN_PROGRESS` to `SUBMITTED` with `submission_idempotency_key` (UUIDv4). Repeated submissions with the same key return cached original results (200 OK, `is_idempotent_replay: true`), whereas mismatched keys for an already submitted attempt raise 409 `SUBMISSION_CONFLICT`.
-6. **Lease Revocation & Audit Logging**: Atomically clear editing lease (`lease_token_hash`, `lease_expires_at`, `editor_session_id`) on submission and record append-only audit event (`ATTEMPT_SUBMITTED`).
-7. **Fail-Closed Zero-Trust IDOR & ADR-002 Invariants**: Confine all autosave, sync, and submit operations strictly to the student owning the attempt (403 Forbidden for peers/instructors/admins, 401 for unauthenticated). Ensure zero internal `BIGINT` PK/FK IDs leak in JSON responses.
+Implement the complete Assessment Grading Engine & Manual Essay Evaluation workflow in strict compliance with **Algorithm 10 (Grading Algorithm)**, **Business Domain 10 (Grading & Regrading)**, **Attempt API Specification**, **ADR-002 (Internal BIGINT Masking)**, and canonical database constraints:
+1. **Objective Auto-Grading Engine**:
+   - `SINGLE_CHOICE`: Exactly 1 selected choice matching `is_correct == True` awards 100% `points_assigned`; incorrect or unselected awards 0.
+   - `TRUE_FALSE`: Exactly 1 selected choice matching `is_correct == True` awards 100% `points_assigned`; incorrect or unselected awards 0.
+   - `MULTIPLE_CHOICE`: All-or-nothing exact set equality (`selected_choice_keys == correct_choice_keys`). Partial match or extraneous wrong choices award 0.
+   - `SHORT_ANSWER`: Case-insensitive and whitespace-normalized matching against `QuestionRevisionAcceptedAnswer` entries via Unicode NFKC normalization. Correct awards 100% `points_assigned`; non-matching awards 0.
+2. **Attempt Lifecycle Status Transitions**:
+   - **Pure Objective Assessments**: Submitting an attempt automatically grades all questions, transitions attempt status immediately to `GRADED` with `graded_at = utc_now()`, and computes `AssessmentResult` (`FINAL` or `RELEASED` based on score release policy).
+   - **Mixed / Essay Assessments**: Submitting an attempt evaluates objective questions immediately (`AUTO_GRADED`), marks essay questions as `PENDING` (`awarded_points = 0`, `grading_rule = 'MANUAL'`), transitions attempt to `PENDING_GRADING`, and creates `AssessmentResult` with `status = 'PENDING'`.
+3. **Manual Essay Evaluation Workflow**:
+   - Instructor/admin grading endpoints (`POST /instructor/attempts/<id>/grades/<qid>` and `POST /api/attempts/<id>/grades/<qid>`).
+   - Strict score bounds check: $0 \le \text{awarded\_points} \le \text{points\_assigned}$ (raises `MaxPointsExceededError` on breach).
+   - Attempt state check: grading an in-progress attempt raises 409 `AttemptNotSubmittedError`.
+   - Audit trail: appends `AttemptQuestionGradeHistory` with `reason_code = 'MANUAL_REVISION'` (satisfying DDL constraint `ck_attempt_question_grade_history_2`).
+   - Auto-finalization: when the last pending essay question is graded, the attempt automatically finalizes to `GRADED` with `graded_at = utc_now()`, and `AssessmentResult` is recalculated to `FINAL` or `RELEASED`.
+4. **Aggregate Result & Policies**:
+   - `AssessmentResult`: aggregates `raw_score`, `max_score`, `percent_score = (raw_score / max_score) * 100`, and `passed = percent_score >= passing_percent`.
+   - Score release policies: `IMMEDIATE`, `AFTER_CLOSE`, and `INSTRUCTOR_RELEASE` (scores hidden with `score_status: "SCORE_HIDDEN"` until released).
+   - Instructor score release endpoint: `POST /api/assessments/<id>/release-scores` transitions results from `FINAL` to `RELEASED` and records append-only `AuditEvent`.
+   - Answer visibility policies: `IMMEDIATE`, `AFTER_CLOSE`, `AFTER_ALL_ATTEMPTS`, and `NEVER` (hiding question explanations and choice feedback).
+5. **Course Completion Engine Integration**:
+   - Recalculates course completion (`recalculate_course_completion`) when a student passes an assessment marked with `is_required_for_completion == True` (Criterion 3).
+6. **ADR-002 BigInt Masking & Zero-Trust IDOR**:
+   - Zero internal database integer PKs/FKs disclosed in JSON responses across all grading and result endpoints. UUIDv4 public identifiers only.
+   - Enforce fail-closed authorization: peer students cannot view each other's results (403), non-course instructors cannot view or grade attempts (403), students cannot grade essays (403).
 
 ---
 
 ## 2. Key Architecture Decisions & Invariants
-- **Algorithm 08 (Autosave & Offline Reconciliation)**:
-  - Validates active lease and deadline. Checks `change_id` (UUIDv4) deduplication: duplicate `change_id` with identical content is treated idempotently without bumping sequence or erroring.
-  - Stale sequence check: If `client_sequence <= last_client_sequence`, an immutable `AttemptAnswerEvent` is recorded with `rejection_reason = 'STALE'`, and `StaleAnswerSequenceError` (409 `STALE_ANSWER`) is raised.
-  - Batch offline sync: Validates batch inputs, orders items by `client_sequence` ascending, reconciles valid items, skips stale items without aborting valid ones, and returns granular reconciliation summary (`synced_count`, `skipped_count`, `synced`, `skipped`).
-- **Algorithm 09 & Atomic Submission Idempotency**:
-  - High-concurrency race protection uses conditional SQL execution:
-    ```sql
-    UPDATE assessment_attempts
-    SET status = 'SUBMITTED', submitted_at = :now, finalized_at = :now,
-        submission_idempotency_key = :key, lease_token_hash = NULL,
-        lease_expires_at = NULL, editor_session_id = NULL
-    WHERE id = :attempt_id AND status = 'IN_PROGRESS'
-    ```
-  - Exactly one concurrent thread/process succeeds. Concurrent losers re-query the row: if the stored `submission_idempotency_key` matches the requester's key, an idempotent replay response is returned; if keys mismatch, 409 `SUBMISSION_CONFLICT` is raised.
-- **ADR-002 Strict Exposure**:
-  - All public APIs accept and return public UUIDs (`attempt_id`, `attempt_question_id`, `choice_id`). Zero internal database integer PKs/FKs are exposed in JSON payloads.
-- **ADR-005 Lease Revocation**:
-  - Submitting immediately revokes any editing lease, preventing further autosave modifications or lease takeovers.
+- **Direct Query Persistence Guarantee**:
+  Because answers and grades can be inserted/updated across distinct service functions or sub-transactions, in-memory relationship caches (e.g. `aq.current_answer`, `aq.current_grade`) can lag. The grading engine resolves child entities through direct session queries (`sess.query(AttemptQuestionGrade).filter(...)`) ensuring 100% persistence fidelity.
+- **Strict Database Constraint Adherence**:
+  - `AttemptQuestionGradeHistory.reason_code`: Canonical check constraint `ck_attempt_question_grade_history_2` mandates `('INITIAL', 'AUTO_REGRADE', 'FULL_CREDIT', 'MANUAL_REVISION')`. The manual essay service records `'MANUAL_REVISION'`.
+  - `AssessmentResultHistory.reason_code`: Canonical check constraint `ck_assessment_result_history_2` mandates `('INITIAL', 'REGRADE', 'MANUAL', 'CORRECTION')`. Manual essay grading transitions record `'MANUAL'`.
+- **Course Completion Recalculation**:
+  Completing a required assessment triggers `recalculate_course_completion(student_user_id, course_id, session=sess)`. Criterion 3 checks that every published, non-deleted assessment with `is_required_for_completion == True` has at least one passed `GRADED` attempt.
+- **ADR-002 Masking Across All Entities**:
+  Every dictionary returned by `_serialize_attempt_grade` and `_serialize_assessment_result` uses public UUIDv4 identifiers (`attempt_id`, `assessment_id`, `attempt_question_id`) and omits internal integer primary keys.
 
 ---
 
 ## 3. Files Changed / Created
 - `src/pwd301/services/exceptions.py`:
-  - Added `SubmissionIdempotencyConflictError(ConflictError, AttemptError)` (maps to 409 `SUBMISSION_CONFLICT`).
-  - Added `AttemptAlreadySubmittedError(StateViolationError, AttemptError)` (maps to 409 `STATE_VIOLATION`).
-  - Re-used `StaleAnswerSequenceError` (409 `STALE_ANSWER`), `StaleLeaseEpochError` (409 `STALE_LEASE_EPOCH`), `AttemptExpiredError` (409 `DEADLINE_EXPIRED`).
+  - Added `GradingError(ServiceError)`
+  - Added `ScoreReleasePolicyError(ForbiddenError, GradingError)` (HTTP 403)
+  - Added `MaxPointsExceededError(ValidationError, GradingError)` (HTTP 400)
+  - Added `AttemptNotSubmittedError(StateViolationError, GradingError)` (HTTP 409)
+  - Added `AttemptNotSubmitedError = AttemptNotSubmittedError` (alias)
 - `src/pwd301/__init__.py`:
-  - Registered centralized Flask exception handlers for `SubmissionIdempotencyConflictError` and `AttemptAlreadySubmittedError`.
+  - Registered centralized Flask exception handlers for `MaxPointsExceededError`, `GradingError`, `AttemptNotSubmittedError`, and `ScoreReleasePolicyError`.
+- `src/pwd301/services/completion_service.py`:
+  - Implemented Criterion 3 (`require_required_assessments`) in `evaluate_course_completion`.
+  - Implemented `recalculate_course_completion(student_user_id, course_id, session=None)`.
+- `src/pwd301/services/assessment_service.py`:
+  - Added `release_assessment_scores(actor, assessment_id, session=None)`.
+  - Added support for `passing_score` as alias for `passing_percent`.
 - `src/pwd301/services/attempt_service.py`:
-  - Implemented `save_attempt_answer`: single question autosave with lease validation, epoch fencing, change-id idempotency, monotonic sequence check, `AttemptAnswer` upsert, `AttemptAnswerChoice` persistence, and `AttemptAnswerEvent` audit log.
-  - Implemented `sync_offline_answers`: batch offline reconciliation with ascending sequence ordering, item-level validation, stale filtering, and summary statistics.
-  - Implemented `submit_assessment_attempt`: atomic state transition to `SUBMITTED`, idempotency key validation/caching, conflict detection, lease revocation, and `ATTEMPT_SUBMITTED` audit logging.
+  - Implemented `grade_attempt_objective_questions`: objective evaluation for all four types, essay pending status, and status transitions.
+  - Implemented `calculate_attempt_result`: score aggregation, passing check, score release policy check, and `AssessmentResultHistory` tracking.
+  - Implemented `grade_essay_question`: instructor essay evaluation, bounds check, audit history, and attempt auto-finalization.
+  - Implemented `get_attempt_result_for_student`: score release masking (`SCORE_HIDDEN`) and answer visibility masking (`show_answers`).
+  - Implemented `list_pending_grading_attempts` and `get_attempt_grading_detail` for instructors.
+- `src/pwd301/blueprints/api_assessments/routes.py`:
+  - Added `POST /api/assessments/<assessment_id>/release-scores`.
 - `src/pwd301/blueprints/api_attempts/routes.py`:
-  - Added `PUT /api/attempts/<attempt_id>/answers/<attempt_question_id>` (Autosave answer).
-  - Added `POST /api/attempts/<attempt_id>/answers/sync` (Batch offline sync).
-  - Added `POST /api/attempts/<attempt_id>/submit` (Idempotent submission via header or body key).
+  - Added `GET /api/attempts/<attempt_id>/result`.
+  - Added `POST /api/attempts/<attempt_id>/grades/<attempt_question_id>`.
+  - Updated `_extract_lease_token` to accept both `X-Attempt-Lease-Token` and `X-Lease-Token`.
+- `src/pwd301/blueprints/instructor/routes.py`:
+  - Added `GET /instructor/assessments/<assessment_id>/grading/pending`.
+  - Added `GET /instructor/attempts/<attempt_id>/grading`.
+  - Added `POST /instructor/attempts/<attempt_id>/grades/<attempt_question_id>`.
 - `src/pwd301/services/__init__.py`:
-  - Exported new functions and domain exceptions in `__all__`.
-- `pyproject.toml`:
-  - Configured `pythonpath = ["src", "."]` to allow running pytest cleanly in all execution environments.
-- `tests/unit/test_attempt_autosave_service.py`:
-  - 9 unit tests covering text & MCQ autosave, sequence rejection, duplicate `change_id` idempotency, epoch fencing, invalid lease token rejection, submitted attempt rejection, expired deadline rejection, and batch offline sync.
-- `tests/unit/test_attempt_submission_service.py`:
-  - 5 unit tests covering normal submission transition, idempotent replay, idempotency key mismatch conflict (409), expired deadline rejection, and invalid idempotency key UUID format validation.
-- `tests/security/test_attempt_submission_idor.py`:
-  - 6 security & IDOR negative tests verifying fail-closed Zero-Trust isolation for peer students, instructors, and admins on autosave, sync, and submit endpoints, along with unauthenticated 401 checks and ADR-002 zero BIGINT leakage validation.
-- `tests/concurrency/test_submission_idempotency_race.py`:
-  - 2 multithreaded concurrency tests verifying convergence under concurrent submissions with identical keys and conflict resolution (1 success, 1 conflict) with differing keys.
-- `tests/api/test_attempt_submission_api.py`:
-  - 3 end-to-end REST API integration tests verifying full attempt lifecycle (Start -> Autosave -> Sync -> Submit), JSON body idempotency key submission, and overdue attempt 409 rejection.
+  - Exported new grading exceptions and functions in `__all__`.
+- `tests/unit/test_grading_service.py`:
+  - 7 unit tests covering single choice, true/false boolean matching, multiple choice exact match, short answer normalization/exact match, mixed attempt pending transition, manual essay bounds/audit history, and course completion recalculation.
+- `tests/security/test_grading_idor.py`:
+  - 9 security & IDOR negative tests verifying fail-closed Zero-Trust protection (peer student 403, non-owner instructor 403, student grading 403, non-owner score release 403, `AFTER_CLOSE` policy, `INSTRUCTOR_RELEASE` policy, `NEVER` answer visibility, `AFTER_CLOSE` answer visibility, ADR-002 BigInt masking).
+- `tests/api/test_grading_api.py`:
+  - 5 end-to-end integration tests verifying pure objective flow, mixed essay flow, invalid bounds validation, dual HTML/JSON instructor support, and regrade history audit trail.
 
 ---
 
@@ -76,31 +94,30 @@ Implement the autosave, offline reconciliation, and idempotent submission engine
 
 | Verification Gate | Command | Result |
 |---|---|---|
-| **1. Repository Contract** | `.venv/Scripts/python scripts/repo_check.py` | **PASS** (all structural contracts and DDL valid) |
-| **2. Code Linting** | `.venv/Scripts/ruff check src/pwd301 tests/api tests/concurrency tests/security tests/unit` | **PASS** (0 errors, all imports sorted) |
-| **3. Code Formatting** | `.venv/Scripts/ruff format --check src/pwd301 tests/api tests/concurrency tests/security tests/unit` | **PASS** (all files formatted cleanly) |
+| **1. Repository Contract** | `.venv/Scripts/python scripts/repo_check.py` | **PASS** (all 71 DDL tables, markdown fences balanced) |
+| **2. Code Linting** | `.venv/Scripts/ruff check <modified_and_new_files>` | **PASS** (0 errors, all imports sorted) |
+| **3. Code Formatting** | `.venv/Scripts/ruff format --check <modified_and_new_files>` | **PASS** (all 15 files formatted cleanly) |
 | **4. Type Checking** | `.venv/Scripts/mypy src` | **PASS** (Success: no issues found in 58 source files) |
-| **5. Task-015 Test Suite** | `.venv/Scripts/pytest tests/unit/test_attempt_autosave_service.py tests/unit/test_attempt_submission_service.py tests/security/test_attempt_submission_idor.py tests/concurrency/test_submission_idempotency_race.py tests/api/test_attempt_submission_api.py -v` | **PASS** (25/25 passed in 20.23s) |
-| **6. Full Regression Suite** | `.venv/Scripts/python -m pytest` | **PASS** (428/428 passed in 228.35s) |
+| **5. Task-016 Test Suite** | `.venv/Scripts/pytest tests/unit/test_grading_service.py tests/security/test_grading_idor.py tests/api/test_grading_api.py -v` | **PASS** (21/21 passed in 18.48s) |
+| **6. Full Regression Suite** | `.venv/Scripts/python -m pytest` | **PASS** (449/449 passed in 250.41s) |
 
 ---
 
 ## 5. Security & Invariant Verification Summary
-- **Fail-Closed Zero-Trust IDOR**: Only the enrolled student who owns the attempt can autosave answers, sync offline batches, or submit the attempt. Peers receive 403 Forbidden. Instructors and administrators are also forbidden from altering student answers or submitting attempts.
-- **ADR-002 Compliance**: Verified across all 25 TASK-015 tests and explicitly asserted in `test_adr002_zero_bigint_leakage_in_responses` that zero internal integer database PKs/FKs (`id`, `student_user_id`, `assessment_id`, etc.) leak in API JSON responses.
-- **Monotonic Sequence Enforcement**: Verified rejected events are recorded with `rejection_reason = 'STALE'` in the append-only `AttemptAnswerEvent` table and return 409 `STALE_ANSWER`.
-- **Atomic Concurrency Protection**: Verified with 10 concurrent threads that multiple simultaneous submissions with the same idempotency key converge to 200 OK without race conditions or duplicate audit records, and concurrent submissions with different keys cleanly resolve to exactly one winner and one 409 `SUBMISSION_CONFLICT`.
+- **Zero-Trust IDOR Protection**: Only enrolled students can access their own attempt results; peers and unauthorized instructors receive 403 Forbidden. Manual grading endpoints are strictly restricted to course managers and system administrators.
+- **ADR-002 Compliance**: Verified in `test_adr002_bigint_masking_in_grading_and_results` and across all integration tests that zero internal integer database PKs/FKs (`id`, `student_user_id`, `assessment_id`, etc.) leak in JSON payloads.
+- **Score Release Policies**: Student attempts with `AFTER_CLOSE` or `INSTRUCTOR_RELEASE` return `score_status: "SCORE_HIDDEN"` until the respective conditions are satisfied.
+- **Audit Logging**: Every manual essay grading operation creates an immutable `AttemptQuestionGradeHistory` record with `reason_code = 'MANUAL_REVISION'`, and instructor score releases create an immutable `AuditEvent`.
 
 ---
 
 ## 6. Known Limitations & Deferred Work
-- **Objective Auto-Grading & Manual Essay Grading**: Grading computation and scoring logic are strictly decoupled and deferred to **TASK-016 (Grading + Manual Essay Grading)**.
-- **Regrading Engine & Score History**: Recalculating attempt grades upon question revisions/corrections is deferred to **TASK-017 (Regrading + Score History)**.
+- **Regrading Engine & Worker**: Automatic regrading of submitted attempts upon question revisions/corrections, regrade job scheduling, and correction rule application are deferred to **TASK-017 (Regrading + Score History)**.
 
 ---
 
 ## 7. Recommended Next Action
-- Proceed to **TASK-016 — Grading + Manual Essay Grading Engine**:
-  - Implement objective auto-grading for SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE questions against question snapshots.
-  - Implement instructor manual grading workflow and rubric-based scoring for ESSAY questions.
-  - Implement attempt final grade aggregation and course completion trigger integration.
+- Proceed to **TASK-017 — Regrading Engine & Score History**:
+  - Implement bulk and single-attempt regrading triggered by question corrections (`QuestionCorrection`).
+  - Implement background/synchronous `RegradeJob` and `RegradeItem` processing via `regrade_worker.py`.
+  - Audit all score modifications in `AssessmentResultHistory` and `AttemptQuestionGradeHistory`.

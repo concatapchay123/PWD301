@@ -20,6 +20,7 @@ from pwd301.services.assessment_service import (
     get_assessment_detail,
     materialize_blueprint_pool,
     publish_assessment,
+    release_assessment_scores,
     remove_question_assignment,
     restore_assessment,
     trash_assessment,
@@ -244,3 +245,15 @@ def materialize_blueprint_route(assessment_id: str) -> tuple[Response, int] | Re
             "pool_count": len(pool),
         }
     ), 200
+
+
+@api_assessment_bp.route("/<assessment_id>/release-scores", methods=["POST"])
+@jwt_required
+def release_scores_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Release scores for an assessment (INSTRUCTOR_RELEASE policy).
+
+    POST /api/assessments/<assessment_id>/release-scores
+    """
+    actor = require_authenticated_actor()
+    result = release_assessment_scores(actor, assessment_id, session=db.session)
+    return jsonify(result), 200

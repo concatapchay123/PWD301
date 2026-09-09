@@ -10,6 +10,8 @@ from pwd301.models.types import utc_now
 from pwd301.services.assessment_service import _normalize_dt
 from pwd301.services.attempt_service import (
     get_attempt_delivery,
+    get_attempt_result_for_student,
+    grade_essay_question,
     list_student_assessment_attempts,
     release_attempt_lease,
     renew_attempt_lease,
@@ -20,12 +22,13 @@ from pwd301.services.attempt_service import (
     takeover_attempt_lease,
 )
 from pwd301.services.authorization_service import require_authenticated_actor
+from pwd301.services.exceptions import AttemptValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 
 
 def _extract_lease_token() -> str | None:
-    """Extract raw lease token from X-Attempt-Lease-Token header or JSON body."""
-    token = request.headers.get("X-Attempt-Lease-Token")
+    """Extract raw lease token from headers or JSON body."""
+    token = request.headers.get("X-Attempt-Lease-Token") or request.headers.get("X-Lease-Token")
     if token:
         return token.strip()
     if request.is_json:
@@ -268,3 +271,49 @@ def release_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Respo
         session=db.session,
     )
     return jsonify({"message": "Lease released successfully."}), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/result", methods=["GET"])
+@jwt_required
+def get_attempt_result_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Retrieve attempt result for the candidate student or authorized reviewer.
+
+    GET /api/attempts/<attempt_id>/result
+    """
+    actor = require_authenticated_actor()
+    result = get_attempt_result_for_student(
+        actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@api_attempt_bp.route("/api/attempts/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
+@jwt_required
+def grade_attempt_question_route(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> tuple[Response, int] | Response:
+    """Manual essay evaluation / score override endpoint per 08_ATTEMPT_API.md.
+
+    POST /api/attempts/<attempt_id>/grades/<attempt_question_id>
+    """
+    actor = require_authenticated_actor()
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    points = body.get("awarded_points")
+    if points is None:
+        points = body.get("score")
+    if points is None:
+        raise AttemptValidationError("awarded_points (or score) is required.")
+
+    reason = body.get("reason") or body.get("feedback")
+    result = grade_essay_question(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        awarded_points=points,
+        reason=reason,
+        session=db.session,
+    )
+    return jsonify(result), 200

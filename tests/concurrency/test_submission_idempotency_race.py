@@ -13,13 +13,16 @@ from __future__ import annotations
 
 import concurrent.futures
 import uuid
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
 
+from pwd301 import create_app
 from pwd301.extensions import db
 from pwd301.models.assessment import Assessment
 from pwd301.models.attempt_regrade import AssessmentAttempt
@@ -41,6 +44,21 @@ from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.exceptions import SubmissionIdempotencyConflictError
 from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
+
+
+@pytest.fixture
+def app(tmp_path: Path) -> Generator[Flask, None, None]:
+    """Create a test application using a temporary SQLite file for safe cross-thread pooling."""
+    db_file = tmp_path / "race_test.db"
+    test_app = create_app(
+        "testing",
+        config_override={"SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_file.as_posix()}?timeout=30"},
+    )
+    with test_app.app_context():
+        db.create_all()
+        yield test_app
+        db.session.remove()
+        db.drop_all()
 
 
 @pytest.fixture
@@ -185,9 +203,9 @@ def test_concurrent_submit_same_idempotency_key_converges(
         res1 = f1.result()
         res2 = f2.result()
 
-    # Both must succeed with SUBMITTED status and matching idempotency key
-    assert res1["status"] == "SUBMITTED"
-    assert res2["status"] == "SUBMITTED"
+    # Both must succeed with SUBMITTED/GRADED status and matching idempotency key
+    assert res1["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
+    assert res2["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert res1["submission_idempotency_key"] == str(idempotency_key)
     assert res2["submission_idempotency_key"] == str(idempotency_key)
 
@@ -198,7 +216,7 @@ def test_concurrent_submit_same_idempotency_key_converges(
     # Check database state
     sess.expire_all()
     final_attempt = sess.query(AssessmentAttempt).filter(AssessmentAttempt.id == attempt_id).one()
-    assert final_attempt.status == "SUBMITTED"
+    assert final_attempt.status in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert str(final_attempt.submission_idempotency_key) == str(idempotency_key)
     assert final_attempt.lease_token_hash is None
 
@@ -259,6 +277,6 @@ def test_concurrent_submit_different_keys_race_conflict(
 
     # One succeeds, and one raises SubmissionIdempotencyConflictError
     assert len(results) == 1
-    assert results[0]["status"] == "SUBMITTED"
+    assert results[0]["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert len(errors) == 1
     assert isinstance(errors[0], SubmissionIdempotencyConflictError)

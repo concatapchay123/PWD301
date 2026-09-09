@@ -315,7 +315,7 @@ def test_full_lifecycle_start_autosave_sync_submit(
     assert sub_resp1.status_code == 200
     sub_data1 = sub_resp1.get_json()
     assert_adr002_clean(sub_data1)
-    assert sub_data1["status"] == "SUBMITTED"
+    assert sub_data1["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert sub_data1["is_idempotent_replay"] is False
     assert sub_data1["submission_idempotency_key"] == idempotency_key
 
@@ -330,7 +330,7 @@ def test_full_lifecycle_start_autosave_sync_submit(
     assert sub_resp2.status_code == 200
     sub_data2 = sub_resp2.get_json()
     assert_adr002_clean(sub_data2)
-    assert sub_data2["status"] == "SUBMITTED"
+    assert sub_data2["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert sub_data2["is_idempotent_replay"] is True
     assert sub_data2["submitted_at"] == sub_data1["submitted_at"]
 
@@ -387,7 +387,7 @@ def test_submit_via_json_body_idempotency_key(
     )
     assert sub_resp.status_code == 200
     sub_data = sub_resp.get_json()
-    assert sub_data["status"] == "SUBMITTED"
+    assert sub_data["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert sub_data["submission_idempotency_key"] == idempotency_key
     assert sub_data["is_idempotent_replay"] is False
 
