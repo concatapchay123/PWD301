@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Nhật ký Kiểm toán Hệ thống — PWD301 Quản trị{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" style="font-size: 11px;">APPEND-ONLY AUDIT TRAIL</span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1" style="font-size: 11px;">ADR-010 / ADR-002</span>
+      </div>
+      <h2 class="h4 fw-bold text-slate-900 mb-0">Nhật ký Kiểm toán Hệ thống</h2>
+      <p class="text-muted small mb-0">Truy vết toàn bộ các hành động nhạy cảm của Quản trị viên và Giảng viên trong hệ thống</p>
+    </div>
+    <div class="text-caption text-muted">
+      Tổng số sự kiện: <strong class="text-slate-900">{{ total }}</strong>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="card shadow-sm border-slate-200 mb-4">
+    <div class="card-body p-3">
+      <form method="GET" action="{{ url_for('admin.list_audit_logs') }}" class="row g-2 align-items-end">
+        <div class="col-md-2">
+          <label class="form-label text-caption text-muted mb-1" style="font-size: 11.5px;">Hành động (Action)</label>
+          <input type="text" name="action" class="form-control form-control-sm" placeholder="e.g. USER_SUSPEND" value="{{ filters.get('action', '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-caption text-muted mb-1" style="font-size: 11.5px;">Loại đối tượng (Target Type)</label>
+          <input type="text" name="target_type" class="form-control form-control-sm" placeholder="e.g. USER, COURSE" value="{{ filters.get('target_type', '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-caption text-muted mb-1" style="font-size: 11.5px;">ID Thực thi (Actor ID)</label>
+          <input type="text" name="actor_id" class="form-control form-control-sm" placeholder="Public UUID" value="{{ filters.get('actor_id', '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-caption text-muted mb-1" style="font-size: 11.5px;">Từ ngày (Date From)</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.get('date_from', '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-caption text-muted mb-1" style="font-size: 11.5px;">Đến ngày (Date To)</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.get('date_to', '') }}">
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm flex-grow-1">Lọc</button>
+          <a href="{{ url_for('admin.list_audit_logs') }}" class="btn btn-outline-secondary btn-sm" title="Đặt lại bộ lọc">Xóa</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Audit Table Card -->
+  <div class="card shadow-sm border-slate-200">
+    <div class="card-header bg-white py-3 border-slate-100 d-flex align-items-center justify-content-between">
+      <span class="fw-semibold text-slate-800">Danh sách Bản ghi Kiểm toán (Trang {{ page }}/{{ total_pages }})</span>
+      <span class="badge bg-light text-muted border border-slate-200">Bảo mật bất biến</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+        <thead class="table-light text-caption text-muted">
+          <tr>
+            <th class="ps-3" style="width: 150px;">Thời gian (UTC)</th>
+            <th style="width: 170px;">Người thực thi</th>
+            <th style="width: 160px;">Hành động</th>
+            <th style="width: 160px;">Đối tượng</th>
+            <th>Lý do & Chi tiết</th>
+            <th style="width: 130px;">Mã tương quan</th>
+            <th class="text-end pe-3" style="width: 80px;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if items %}
+          {% for item in items %}
+          <tr>
+            <td class="ps-3 text-nowrap text-muted text-caption" style="font-size: 12px;">
+              {{ item.created_at[:19].replace('T', ' ') if item.created_at else '—' }}
+            </td>
+            <td>
+              <div class="fw-semibold text-slate-900">{{ item.actor_name or 'Hệ thống' }}</div>
+              <div class="text-caption text-muted" style="font-size: 11px;">{{ item.actor_roles or 'SYSTEM' }}</div>
+            </td>
+            <td>
+              <span class="badge bg-dark-subtle text-dark border px-2 py-1 text-caption">
+                {{ item.action }}
+              </span>
+            </td>
+            <td>
+              <div class="fw-medium text-slate-800">{{ item.target_type }}</div>
+              <div class="text-caption text-muted font-monospace" style="font-size: 10.5px;">
+                {{ (item.target_id[:8] + '...') if item.target_id and item.target_id|length > 8 else (item.target_id or '—') }}
+              </div>
+            </td>
+            <td>
+              <div class="text-truncate text-slate-700" style="max-width: 300px;" title="{{ item.reason or '' }}">
+                {{ item.reason or '<span class="text-muted fst-italic">Không ghi lý do</span>'|safe }}
+              </div>
+            </td>
+            <td>
+              <span class="badge bg-light text-muted font-monospace border" style="font-size: 10px;" title="{{ item.correlation_id or '' }}">
+                {{ (item.correlation_id[:8] + '...') if item.correlation_id else '—' }}
+              </span>
+            </td>
+            <td class="text-end pe-3">
+              <button class="btn btn-outline-secondary btn-sm px-2 py-0.5 text-caption"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#collapse-{{ item.id }}"
+                      aria-expanded="false"
+                      style="font-size: 11px;">
+                Chi tiết
+              </button>
+            </td>
+          </tr>
+          <!-- Collapsible Payload View -->
+          <tr class="collapse bg-slate-50" id="collapse-{{ item.id }}">
+            <td colspan="7" class="p-3 border-bottom">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <div class="text-caption fw-semibold text-slate-700 mb-1">Trạng thái Trước (Before State)</div>
+                  <pre class="bg-white p-2 border rounded font-monospace small mb-0 text-caption" style="max-height: 200px; overflow-y: auto;">{{ item.before | tojson(indent=2) if item.before else '(Không có dữ liệu)' }}</pre>
+                </div>
+                <div class="col-md-6">
+                  <div class="text-caption fw-semibold text-slate-700 mb-1">Trạng thái Sau (After State)</div>
+                  <pre class="bg-white p-2 border rounded font-monospace small mb-0 text-caption" style="max-height: 200px; overflow-y: auto;">{{ item.after | tojson(indent=2) if item.after else '(Không có dữ liệu)' }}</pre>
+                </div>
+              </div>
+              <div class="mt-2 text-caption text-muted">
+                <strong>Event ID:</strong> {{ item.id }} &bull;
+                <strong>IP:</strong> {{ item.ip_address or '—' }} &bull;
+                <strong>Admin override:</strong> {{ 'Có' if item.performed_as_admin else 'Không' }}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="7" class="text-center py-5 text-muted">
+              <div class="mb-2">Không tìm thấy bản ghi kiểm toán nào phù hợp với bộ lọc.</div>
+              <a href="{{ url_for('admin.list_audit_logs') }}" class="btn btn-sm btn-link text-decoration-none">Đặt lại bộ lọc</a>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="card-footer bg-white py-2 border-slate-100 d-flex align-items-center justify-content-between">
+      <div class="text-caption text-muted">
+        Hiển thị trang {{ page }} / {{ total_pages }} ({{ total }} bản ghi)
+      </div>
+      <nav aria-label="Phân trang kiểm toán">
+        <ul class="pagination pagination-sm mb-0">
+          {% if page > 1 %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page - 1 }}&per_page={{ per_page }}&action={{ filters.get('action', '') }}&target_type={{ filters.get('target_type', '') }}&actor_id={{ filters.get('actor_id', '') }}&date_from={{ filters.get('date_from', '') }}&date_to={{ filters.get('date_to', '') }}">Trước</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Trước</span></li>
+          {% endif %}
+
+          <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+
+          {% if page < total_pages %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page + 1 }}&per_page={{ per_page }}&action={{ filters.get('action', '') }}&target_type={{ filters.get('target_type', '') }}&actor_id={{ filters.get('actor_id', '') }}&date_from={{ filters.get('date_from', '') }}&date_to={{ filters.get('date_to', '') }}">Sau</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Sau</span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

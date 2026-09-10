@@ -435,3 +435,22 @@ class EmailDeliveryNotFoundError(ResourceNotFoundError, EmailDeliveryError):
 
 class EmailRateLimitExceededError(ServiceError):
     """Raised when outbound email dispatch exceeds the configured rate limit."""
+
+
+class AuditError(ServiceError):
+    """Base exception for all audit domain errors."""
+
+
+class AuditPersistenceError(AuditError):
+    """Raised when an append-only audit event cannot be reliably persisted.
+
+    Triggers fail-closed abort on sensitive administrative operations.
+    """
+
+
+class AuditNotFoundError(ResourceNotFoundError, AuditError):
+    """Raised when a requested audit log entry cannot be found."""
+
+
+class AdminActionForbiddenError(ForbiddenError):
+    """Raised when an administrative action violates authorization or privilege policy."""

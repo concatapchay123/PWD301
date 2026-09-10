@@ -271,4 +271,51 @@
   - `python -m pytest`: PASS (560/560 passed in 244.60s)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
 
+## TASK-021 — Notifications & Email Delivery/Retry Engine
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (Added `NotificationError`, `NotificationNotFoundError`, `NotificationPreferenceError`, `MandatoryNotificationOptOutError`, `EmailDeliveryError`, `EmailDeliveryNotFoundError`, `EmailRateLimitExceededError`)
+  - `src/pwd301/models/notification_audit.py` (`NotificationEvent`, `Notification`, `NotificationPreference`, `EmailDelivery` with ADR-002 `public_id` and zero internal PK leakage)
+  - `src/pwd301/services/email_service.py` (Outbox queue, exponential backoff retry engine, MockMailClient, admin manual retry)
+  - `src/pwd301/services/notification_service.py` (Decoupled event emitter, automated payload redaction, category resolver, dispatch engine, preference manager with mandatory security invariants, broadcast engine)
+  - `src/pwd301/blueprints/api_notifications/` (REST API with `@jwt_required`: list, unread-count, read, mark-all-read, dismiss, preferences, broadcast, email retry)
+  - `src/pwd301/templates/notifications/`, `src/pwd301/templates/base.html`, `src/pwd301/blueprints/student/routes.py` (Student notifications Web UI with unread badge and pagination)
+  - `src/pwd301/blueprints/admin/routes.py` (Admin broadcast and email retry triggers)
+  - `tests/unit/test_notification_service.py` (10 tests)
+  - `tests/unit/test_email_service.py` (8 tests)
+  - `tests/security/test_notification_idor.py` (7 tests)
+  - `tests/api/test_notification_api.py` (7 tests)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS
+  - `python -m compileall -q src tests scripts`: PASS
+  - `ruff check src tests scripts`: PASS
+  - `ruff format --check src tests scripts`: PASS
+  - `mypy src`: PASS
+  - `pytest` TASK-021 test suites: PASS (32/32 passed)
+  - `python -m pytest`: PASS (592/592 passed)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
+
+## TASK-022 — Audit Logging Engine & Sensitive Admin Actions
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (Added `AuditError`, `AuditPersistenceError`, `AuditNotFoundError`, `AdminActionForbiddenError`)
+  - `src/pwd301/__init__.py` (Centralized error handlers for audit domain exceptions, isolated CSRF exemption for `/api/admin` Bearer JWT requests)
+  - `src/pwd301/models/notification_audit.py` (`AuditEvent.public_id`, `actor` joined relationship, `AuditEvent.to_dict()` strictly adhering to ADR-002 zero internal PK leakage)
+  - `src/pwd301/services/audit_service.py` (Recursive sensitive data redaction, append-only immutable audit recording, fail-closed persistence guarantees, query engine with multi-field filtering and pagination, atomic user suspension, unsuspension, and forced session revocation)
+  - `src/pwd301/blueprints/admin/routes.py` (`GET /audit-logs`, `GET /audit-logs/<audit_id>`, `POST /users/<user_id>/suspend`, `POST /users/<user_id>/unsuspend`, `POST /users/<user_id>/revoke-sessions`)
+  - `src/pwd301/templates/admin/audit_logs.html` (Administrative audit trail UI with filter bar, responsive table, expandable before/after state diffs, pagination)
+  - `tests/unit/test_audit_service.py` (11 unit tests for redaction, recording, correlation ID, queries, suspension, unsuspension, revocation, fail-closed rollback, self-suspension guard)
+  - `tests/security/test_audit_security.py` (5 security and IDOR tests for student/instructor 403, unauthenticated 401, append-only 405 immutability, ADR-002 zero PK leakage)
+  - `tests/api/test_admin_audit_api.py` (6 REST API and integration tests for suspend, unsuspend, revoke-sessions, audit log query/detail, web UI rendering, CSRF enforcement)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (Clean compilation)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (144 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 70 source files)
+  - `pytest` TASK-022 test suites: PASS (22/22 passed in 11.23s)
+  - `python -m pytest`: PASS (614/614 passed in 318.62s)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 614/614 passed)
+
+
 

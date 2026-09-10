@@ -15,6 +15,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from flask import (
+    Blueprint,
     Flask,
     Response,
     g,
@@ -52,6 +53,7 @@ from pwd301.extensions import csrf, db, login_manager, migrate
 from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
     ActiveAttemptExistsError,
+    AdminActionForbiddenError,
     AssessmentClosedError,
     AssessmentError,
     AssessmentLockedError,
@@ -71,6 +73,9 @@ from pwd301.services.exceptions import (
     AttemptNotSubmitedError,
     AttemptNotSubmittedError,
     AttemptValidationError,
+    AuditError,
+    AuditNotFoundError,
+    AuditPersistenceError,
     BlueprintValidationError,
     CompletionRuleError,
     CompletionRuleNotFoundError,
@@ -234,6 +239,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     UnauthorizedError: ("UNAUTHORIZED", 401),
     # 403 Forbidden
     ForbiddenError: ("FORBIDDEN", 403),
+    AdminActionForbiddenError: ("FORBIDDEN", 403),
     ScoreReleasePolicyError: ("FORBIDDEN", 403),
     FileAccessDeniedError: ("FORBIDDEN", 403),
     FileInfectedError: ("FILE_INFECTED", 403),
@@ -255,6 +261,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     ImportQuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     NotificationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     EmailDeliveryNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AuditNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     # 409 Conflict & State Violations
     DocumentImportStateViolationError: ("STATE_VIOLATION", 409),
     RegradeError: ("CONFLICT", 409),
@@ -311,6 +318,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     NotificationPreferenceError: ("VALIDATION_ERROR", 400),
     MandatoryNotificationOptOutError: ("VALIDATION_ERROR", 400),
     NotificationError: ("NOTIFICATION_ERROR", 400),
+    AuditError: ("AUDIT_ERROR", 400),
     # 413 Payload Too Large
     FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
     # 429 Rate Limit Exceeded
@@ -319,6 +327,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     FileStorageError: ("INTERNAL_ERROR", 500),
     FileError: ("INTERNAL_ERROR", 500),
     EmailDeliveryError: ("EMAIL_DELIVERY_ERROR", 500),
+    AuditPersistenceError: ("AUDIT_PERSISTENCE_FAILED", 500),
 }
 
 
@@ -587,9 +596,10 @@ def create_app(
     unversioned_auth = app.blueprints.get("api_auth_unversioned")
     if unversioned_auth:
         csrf.exempt(unversioned_auth)
-    api_admin = app.blueprints.get("api_admin")
-    if api_admin:
-        csrf.exempt(api_admin)
+    # Distinct marker for api_admin so CSRF exemption does not leak to web session admin_bp
+    api_admin_marker = Blueprint("api_admin", __name__)
+    app.blueprints["api_admin"] = api_admin_marker
+    csrf.exempt(api_admin_marker)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_question_bp)

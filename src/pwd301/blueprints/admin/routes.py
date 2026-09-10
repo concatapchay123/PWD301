@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Response, jsonify, request
+from flask import Response, jsonify, render_template, request
 
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
@@ -323,3 +323,189 @@ def admin_retry_failed_emails() -> tuple[Response, int] | Response:
     )
     db.session.commit()
     return jsonify({"retried_count": count}), 200
+
+
+def _is_api_request() -> bool:
+    """Determine whether the incoming request expects a JSON/API response."""
+    if request.path.startswith("/api/"):
+        return True
+    if request.is_json:
+        return True
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best == "application/json"
+
+
+@admin_bp.route("/audit-logs", methods=["GET"])
+@admin_required
+def list_audit_logs() -> tuple[Response, int] | Response | str:
+    """List and filter append-only audit trail logs with pagination (Admin only)."""
+    from pwd301.services.audit_service import query_audit_logs
+
+    actor = require_authenticated_actor()
+
+    action = request.args.get("action")
+    target_type = request.args.get("target_type")
+    actor_id = request.args.get("actor_id")
+    target_id = request.args.get("target_id")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    correlation_id = request.args.get("correlation_id")
+
+    try:
+        page = int(request.args.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        per_page = int(request.args.get("per_page", 20))
+    except (ValueError, TypeError):
+        per_page = 20
+
+    filters: dict[str, Any] = {}
+    if action:
+        filters["action"] = action
+    if target_type:
+        filters["target_type"] = target_type
+    if actor_id:
+        filters["actor_id"] = actor_id
+    if target_id:
+        filters["target_id"] = target_id
+    if date_from:
+        filters["date_from"] = date_from
+    if date_to:
+        filters["date_to"] = date_to
+    if correlation_id:
+        filters["correlation_id"] = correlation_id
+
+    items, total, p, pp, total_pages = query_audit_logs(
+        actor=actor,
+        filters=filters,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+
+    if _is_api_request():
+        return (
+            jsonify(
+                {
+                    "items": items,
+                    "total": total,
+                    "page": p,
+                    "per_page": pp,
+                    "total_pages": total_pages,
+                }
+            ),
+            200,
+        )
+
+    return render_template(
+        "admin/audit_logs.html",
+        items=items,
+        total=total,
+        page=p,
+        per_page=pp,
+        total_pages=total_pages,
+        filters=filters,
+    )
+
+
+@admin_bp.route("/audit-logs/<audit_id>", methods=["GET"])
+@admin_required
+def get_audit_log_by_id(audit_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed single audit log entry by Public UUID event_id (Admin only)."""
+    from pwd301.services.audit_service import get_audit_log_detail
+
+    actor = require_authenticated_actor()
+    detail = get_audit_log_detail(actor=actor, audit_id=audit_id, session=db.session)
+    return jsonify(detail), 200
+
+
+@admin_bp.route("/users/<user_id>/suspend", methods=["POST"])
+@admin_required
+def admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
+    """Suspend a user account with mandatory fail-closed audit log (Admin only)."""
+    from pwd301.services.audit_service import suspend_user_account
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason", "")
+
+    user = suspend_user_account(
+        admin_actor=actor,
+        target_user_id=user_id,
+        reason=reason,
+        session=db.session,
+    )
+
+    return (
+        jsonify(
+            {
+                "user_id": str(user.public_id),
+                "status": user.status,
+                "auth_version": user.auth_version,
+                "suspended_at": user.suspended_at.isoformat() if user.suspended_at else None,
+                "message": "User account suspended successfully.",
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/users/<user_id>/unsuspend", methods=["POST"])
+@admin_required
+def admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
+    """Reactivate a suspended user account with mandatory fail-closed audit log (Admin only)."""
+    from pwd301.services.audit_service import unsuspend_user_account
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    user = unsuspend_user_account(
+        admin_actor=actor,
+        target_user_id=user_id,
+        reason=reason,
+        session=db.session,
+    )
+
+    return (
+        jsonify(
+            {
+                "user_id": str(user.public_id),
+                "status": user.status,
+                "auth_version": user.auth_version,
+                "message": "User account reactivated successfully.",
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/users/<user_id>/revoke-sessions", methods=["POST"])
+@admin_required
+def admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response:
+    """Force revocation of all active sessions and tokens for a user (Admin only)."""
+    from pwd301.services.audit_service import force_revoke_user_sessions
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = payload.get("reason")
+
+    user = force_revoke_user_sessions(
+        admin_actor=actor,
+        target_user_id=user_id,
+        reason=reason,
+        session=db.session,
+    )
+
+    return (
+        jsonify(
+            {
+                "user_id": str(user.public_id),
+                "auth_version": user.auth_version,
+                "message": "All user sessions and tokens have been revoked.",
+            }
+        ),
+        200,
+    )

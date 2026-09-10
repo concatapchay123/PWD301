@@ -1,89 +1,71 @@
-# TASK-021 — Notifications & Email Delivery/Retry Engine
+# TASK-022 — Audit Logging Engine & Sensitive Admin Actions
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-001, TASK-002, TASK-003, TASK-011, TASK-012, TASK-018, TASK-020  
+**Depends on:** TASK-001, TASK-002, TASK-003, TASK-004, TASK-005, TASK-021  
 
 ---
 
 ## Goal
-Triển khai hoàn chỉnh **Động cơ Thông báo Đa kênh & Chuyển phát Email có cơ chế thử lại (Notifications & Email Delivery/Retry Engine)** cho nền tảng PWD301:
-1. **Kiến trúc Outbox bất đồng bộ (Decoupled Outbox Pattern)**:
-   - Tách rời hoàn toàn giao dịch ghi nhận sự kiện (in-app notification) khỏi quá trình kết nối chuyển phát email ngoại vi (SMTP / Mock Mail Client).
-   - Lỗi gửi email không làm ảnh hưởng (rollback) hay gián đoạn giao dịch chính; email được ghi vào hàng đợi `email_deliveries` ở trạng thái `PENDING`.
-2. **Cơ chế Backoff hàm mũ & Thử lại an toàn (Exponential Backoff & Retry Engine)**:
-   - Khoảng thời gian thử lại lũy thừa theo số lần thất bại: delay = 2^(retry_count) * 60 giây.
-   - Thử lại tối đa `max_retries` (mặc định 3 lần); sau đó chuyển trạng thái `FAILED`.
-   - Endpoint quản trị viên cho phép kích hoạt thử lại các email thất bại (`retry_failed_emails`).
-3. **Quản lý Tùy chọn Thông báo & Bất biến An ninh Bắt buộc (Mandatory Security Invariant)**:
-   - Người dùng có thể tùy chỉnh bật/tắt email cho các danh mục thông thường (`COURSE`, `ASSESSMENT`, `SYSTEM`).
-   - Các cảnh báo an ninh bảo mật bắt buộc (`SECURITY_PASSWORD_CHANGED`, `SECURITY_ACCOUNT_SUSPENDED`, `SECURITY_LOGIN_ANOMALY`, `ACCOUNT_SUSPENDED`, `SYSTEM_SECURITY_ALERT`) **không thể bị tắt**.
-   - Mọi hành vi cố tình tắt thông báo an ninh đều bị chặn đứng ở tầng dịch vụ bằng `MandatoryNotificationOptOutError` (HTTP 400).
-4. **Bảo mật tuyệt đối ADR-002 (Zero PK Leakage) & Phòng chống IDOR**:
-   - Mọi API trả về public UUIDs; không làm rò rỉ bất kỳ `BIGINT PK/FK` nội bộ nào trong JSON payloads.
-   - Kiểm tra quyền sở hữu chặt chẽ: người dùng chỉ được xem, đánh dấu đọc, đóng hoặc cấu hình tùy chọn thông báo của chính mình.
-   - Quản trị viên (ADMIN) có quyền phát thông báo toàn hệ thống (`broadcast`) và kích hoạt retry email hàng loạt.
-5. **Đồng bộ Đa giao diện (Session Web UI & REST API)**:
-   - REST API đầy đủ `@jwt_required` tại `/api/notifications/...`.
-   - Giao diện Web Student Jinja2 tại `/student/notifications` với thanh Notification Bell tích hợp badge số lượng tin chưa đọc.
+Implement the comprehensive **Audit Logging Engine & Sensitive Admin Actions** for PWD301:
+1. **Append-Only Immutability & Fail-Closed Semantics (ADR-010)**:
+   - `AuditEvent` records are strictly append-only; update/delete endpoints are forbidden (returning 405 Method Not Allowed).
+   - Sensitive admin actions (`USER_SUSPEND`, `USER_UNSUSPEND`, `USER_REVOKE_SESSIONS`) execute within the exact same database transaction as their audit log.
+   - Any database failure during audit logging triggers immediate rollback of the action and raises `AuditPersistenceError` (HTTP 500).
+2. **Zero Internal PK Leakage (ADR-002)**:
+   - No `BIGINT` PKs/FKs (`user_id`, `actor_user_id`, `target_user_id`, etc.) leak in JSON responses.
+   - All external identifiers are public UUIDs (`event_id`, `actor_id`, `target_id`, `correlation_id`).
+3. **Automated Sensitive Field Redaction**:
+   - Recursive pre-commit sanitization masks secrets, credentials, passwords, JWT tokens, and session keys into `"[REDACTED]"`.
+4. **Immediate Authentication Invalidation**:
+   - Account suspension (`USER_SUSPEND`) and forced session revocation (`USER_REVOKE_SESSIONS`) immediately invalidate all active web sessions (`auth_sessions`), revoke all JWT token grants (`jwt_token_grants`), and increment `user.auth_version`.
+5. **Multi-Interface Access & Administration**:
+   - REST API with Bearer JWT for audit log queries and details at `/api/admin/audit-logs`.
+   - Web UI Session routes with CSRF protection at `/admin/audit-logs` rendering Jinja2 template (`audit_logs.html`).
+   - Prevention of admin self-suspension (`AdminActionForbiddenError`, HTTP 403).
 
 ---
 
 ## Source-of-Truth Documents Consulted
-- `AGENTS.md` (Source-of-truth hierarchy, Fail-closed Invariants, ADR-002 Zero PK Leakage, Session CSRF)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/14_NOTIFICATION_AND_EMAIL.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/11_NOTIFICATION_API.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/workflows/11_NOTIFICATION_WORKFLOW.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/008_notification_audit.sql`
+- `AGENTS.md` (Operational contract, Fail-closed invariants, Zero PK Leakage, CSRF protection)
+- `docs/decisions/ADR-010-append-only-audit.md`
 - `docs/decisions/ADR-002-database-identifiers.md`
-- `frontend-preview/views/student/notifications.html`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/15_AUDIT_AND_ADMIN_ACTIONS.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/12_ADMIN_API.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/security/07_AUDIT_SECURITY.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/008_notification_audit.sql`
+- `frontend-preview/views/admin/audit-logs.html`
 
 ---
 
 ## Deliverables & Changes
 1. **Domain Exceptions (`src/pwd301/services/exceptions.py`)**:
-   - `NotificationError`, `NotificationNotFoundError`, `NotificationPreferenceError`, `MandatoryNotificationOptOutError`, `EmailDeliveryError`, `EmailDeliveryNotFoundError`, `EmailRateLimitExceededError`.
-2. **Model Enhancements & ADR-002 Compliance (`src/pwd301/models/notification_audit.py`)**:
-   - `NotificationEvent`: `public_id` (`event_key`).
-   - `Notification`: `public_id`, `is_read` helper, `to_dict()` che giấu hoàn toàn `BIGINT PK/FK`.
-   - `NotificationPreference`: `to_dict()`.
-   - `EmailDelivery`: `public_id` (`dedupe_key`), `to_dict()`.
-3. **Email Delivery & Retry Service (`src/pwd301/services/email_service.py`)**:
-   - `MockMailClient` & `validate_email_syntax`.
-   - `enqueue_email`: Ghi email vào hàng đợi `email_deliveries` với deduplication và tự động tạo `NotificationEvent` nếu chưa có.
-   - `send_single_email`: Chuyển phát email, tính toán exponential backoff khi lỗi.
-   - `process_email_queue`: Xử lý theo lô các email đến hạn (`next_attempt_at <= now`).
-   - `retry_failed_emails`: Kích hoạt thử lại thủ công bởi Admin.
-4. **Notification Service (`src/pwd301/services/notification_service.py`)**:
-   - `emit_event`: Ghi nhận sự kiện với payload redaction (loại bỏ mật khẩu/tokens).
-   - `determine_event_category`: Phân loại tự động các sự kiện.
-   - `dispatch_notification`: Tạo in-app notification và kích hoạt outbox email nếu danh mục được phép hoặc là sự kiện bảo mật bắt buộc.
-   - `list_user_notifications`: Liệt kê thông báo phân trang, lọc chưa đọc/danh mục.
-   - `get_unread_count`: Đếm số thông báo chưa đọc cho badge.
-   - `mark_notification_as_read`, `mark_all_as_read`, `dismiss_notification`: Thao tác trạng thái an toàn chống IDOR.
-   - `get_user_preferences`, `update_user_preferences`: Quản lý sở thích nhận email; chặn tắt danh mục bảo mật (`MandatoryNotificationOptOutError`).
-   - `broadcast_system_notification`: Phát thông báo toàn hệ thống (Admin only).
-5. **REST API (`src/pwd301/blueprints/api_notifications/`)**:
-   - `GET /api/notifications`
-   - `GET /api/notifications/unread-count`
-   - `PATCH /api/notifications/<id>/read`
-   - `POST /api/notifications/mark-all-read`
-   - `DELETE /api/notifications/<id>/dismiss`
-   - `GET /api/notifications/preferences`
-   - `PUT /api/notifications/preferences`
-   - `POST /api/notifications/broadcast`
-   - `POST /api/notifications/emails/retry-failed`
-6. **Web UI & Session Integration (`src/pwd301/templates/notifications/`, `src/pwd301/templates/base.html`, `src/pwd301/blueprints/student/routes.py`)**:
-   - Template Jinja2 `notifications/index.html` hiển thị bộ lọc, phân trang, hành động đọc/xóa.
-   - Header `base.html` bổ sung notification bell liên kết tới trang thông báo và hiển thị badge.
-   - Route `GET /student/notifications` được bảo vệ bởi session auth.
-7. **Admin Blueprints Integration (`src/pwd301/blueprints/admin/routes.py`)**:
-   - Hỗ trợ `/api/admin/notifications/broadcast` và `/api/admin/emails/retry-failed`.
-8. **Comprehensive Test Suites (32 tests total — 100% PASS)**:
-   - `tests/unit/test_notification_service.py` (10 tests)
-   - `tests/unit/test_email_service.py` (8 tests)
-   - `tests/security/test_notification_idor.py` (7 tests)
-   - `tests/api/test_notification_api.py` (7 tests)
+   - `AuditError`, `AuditPersistenceError`, `AuditNotFoundError`, `AdminActionForbiddenError`.
+2. **Centralized Error Handlers (`src/pwd301/__init__.py`)**:
+   - Mapped exceptions to HTTP 400, 500, 404, and 403.
+   - Isolated CSRF exemption for Bearer JWT `/api/admin` endpoints without exempting web session `/admin` routes.
+3. **Model & Serialization Layer (`src/pwd301/models/notification_audit.py`)**:
+   - Added `public_id` property (`str(self.event_id)`).
+   - Configured `actor = relationship("User", foreign_keys=[actor_user_id], lazy="joined")` eliminating N+1 queries.
+   - Implemented `AuditEvent.to_dict()` strictly adhering to ADR-002.
+4. **Audit Service Layer (`src/pwd301/services/audit_service.py`)**:
+   - `redact_sensitive_data(val, parent_key_is_sensitive=False)`: Deep recursive sanitization.
+   - `record_audit_event(...)`: Immutable event creation with fail-closed transaction guarantees.
+   - `query_audit_logs(...)`: RBAC-protected query engine with pagination and multi-field filtering (`action`, `actor_id`, `target_type`, `target_id`, `date_from`, `date_to`, `correlation_id`) using batch UUID resolution.
+   - `get_audit_log_detail(...)`: Single event retrieval by public UUID.
+   - `suspend_user_account(...)`, `unsuspend_user_account(...)`, `force_revoke_user_sessions(...)`: Atomic admin actions with in-transaction session and token grant revocation.
+5. **Blueprint & Routes (`src/pwd301/blueprints/admin/routes.py`)**:
+   - `GET /audit-logs`: Dual JSON/HTML responses.
+   - `GET /audit-logs/<audit_id>`: Detail endpoint.
+   - `POST /users/<user_id>/suspend`: Atomic account suspension with audit logging.
+   - `POST /users/<user_id>/unsuspend`: Atomic account reactivation with audit logging.
+   - `POST /users/<user_id>/revoke-sessions`: Atomic session/grant revocation with audit logging.
+6. **Web UI Template (`src/pwd301/templates/admin/audit_logs.html`)**:
+   - Administrative audit trail interface with filter form, responsive table, expandable before/after state diffs, and pagination controls.
+7. **Comprehensive Test Suites (22 tests total — 100% PASS)**:
+   - `tests/unit/test_audit_service.py` (11 tests)
+   - `tests/security/test_audit_security.py` (5 tests)
+   - `tests/api/test_admin_audit_api.py` (6 tests)
 
 ---
 
@@ -91,8 +73,8 @@ Triển khai hoàn chỉnh **Động cơ Thông báo Đa kênh & Chuyển phát 
 - Gate 1: `python scripts/repo_check.py` — **PASS**
 - Gate 2: `python -m compileall -q src tests scripts` — **PASS**
 - Gate 3: `ruff check src tests scripts` — **PASS** (0 errors)
-- Gate 4: `ruff format --check src tests scripts` — **PASS** (140 files already formatted)
-- Gate 5: `mypy src` — **PASS** (0 issues across 69 source files)
-- Gate 6: TASK-021 test suites — **PASS** (32/32 passed)
-- Gate 7: Full regression pytest — **PASS** (592/592 passed)
+- Gate 4: `ruff format --check src tests scripts` — **PASS** (144 files already formatted)
+- Gate 5: `mypy src` — **PASS** (0 issues across 70 source files)
+- Gate 6: TASK-022 test suites — **PASS** (22/22 passed in 11.23s)
+- Gate 7: Full regression pytest — **PASS** (614/614 passed in 318.62s)
 - Gate 8: `./scripts/verify.ps1` — **PASS**

@@ -10,6 +10,7 @@ Implements canonical schema tables from sql/008_notification_audit.sql:
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -362,4 +363,60 @@ class AuditEvent(Base):
         sa.Index("ix_audit_events_target", "target_type", "target_id", "created_at"),
     )
 
-    actor = relationship("User", foreign_keys=[actor_user_id])
+    actor = relationship("User", foreign_keys=[actor_user_id], lazy="joined")
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching event_id per ADR-002."""
+        return str(self.event_id)
+
+    def to_dict(self, target_public_id: str | None = None) -> dict[str, Any]:
+        """Convert audit event to dictionary strictly conforming to ADR-002 Zero PK Leakage."""
+        before_data = None
+        if self.before_json:
+            try:
+                before_data = json.loads(self.before_json)
+            except Exception:
+                before_data = self.before_json
+
+        after_data = None
+        if self.after_json:
+            try:
+                after_data = json.loads(self.after_json)
+            except Exception:
+                after_data = self.after_json
+
+        actor_public_id = str(self.actor.public_id) if self.actor is not None else None
+        actor_name = self.actor.display_name if self.actor is not None else None
+        actor_email = self.actor.email if self.actor is not None else None
+
+        # Resolve target public identifier per ADR-002 Zero PK Leakage
+        resolved_target_id = target_public_id
+        if resolved_target_id is None and after_data and isinstance(after_data, dict):
+            # Check if target public id is explicitly recorded in details/after_data
+            for key in ("target_public_id", "target_id", "user_id", "course_id", "file_asset_id"):
+                candidate = after_data.get(key)
+                if candidate is not None:
+                    resolved_target_id = str(candidate)
+                    break
+
+        correlation_id_str = str(self.request_id) if self.request_id else None
+
+        return {
+            "id": str(self.public_id),
+            "event_id": str(self.public_id),
+            "action": self.action,
+            "actor_id": actor_public_id,
+            "actor_name": actor_name,
+            "actor_email": actor_email,
+            "actor_roles": self.actor_roles_snapshot,
+            "target_type": self.target_type,
+            "target_id": resolved_target_id,
+            "reason": self.reason,
+            "before": before_data,
+            "after": after_data,
+            "correlation_id": correlation_id_str,
+            "ip_address": self.ip_address,
+            "performed_as_admin": bool(self.performed_as_admin),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
