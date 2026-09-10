@@ -64,6 +64,11 @@ class BaseConfig:
     FILE_RECOVERY_DAYS: int = int(os.environ.get("FILE_RECOVERY_DAYS", "30"))
     AI_CHAT_INACTIVITY_SECONDS: int = int(os.environ.get("AI_CHAT_INACTIVITY_SECONDS", "300"))
 
+    # Gemini & AI configuration
+    GEMINI_API_KEY: str | None = os.environ.get("GEMINI_API_KEY")
+    GEMINI_MODEL_NAME: str = os.environ.get("GEMINI_MODEL_NAME", "gemini-1.5-flash")
+    GEMINI_TIMEOUT_SECONDS: int = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "10"))
+
     # Attempt lease and autosave configuration
     ATTEMPT_LEASE_SECONDS: int = int(os.environ.get("ATTEMPT_LEASE_SECONDS", "30"))
     ATTEMPT_HEARTBEAT_SECONDS: int = int(os.environ.get("ATTEMPT_HEARTBEAT_SECONDS", "10"))

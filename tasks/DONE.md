@@ -317,5 +317,27 @@
   - `python -m pytest`: PASS (614/614 passed in 318.62s)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 614/614 passed)
 
-
-
+## TASK-023 — Gemini Integration & Backend Rule Recommendation Engine
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/config.py` (Added `GEMINI_API_KEY`, `GEMINI_MODEL_NAME`, `GEMINI_TIMEOUT_SECONDS`, `AI_CHAT_INACTIVITY_SECONDS`)
+  - `src/pwd301/services/exceptions.py` (Added `AIError`, `AIValidationError`, `AIPromptInjectionError`, `AIConversationNotFoundError`, `AIConversationExpiredError`, `AIQuotaExceededError`, `AIServiceUnavailableError`, `AIDraftNotFoundError`)
+  - `src/pwd301/models/ai_rag.py` (ADR-002 Zero Internal PK Leakage: `public_id`, `resolve_id_from_public_id`, `is_expired`, deterministic bijective UUID mapping, `to_dict()` methods for `AIConversation`, `AIMessage`, `AIRequest`, `AIGeneratedQuestionDraft`)
+  - `src/pwd301/services/gemini_service.py` (Real Gemini API client via stdlib `urllib.request`, deterministic offline `MockGeminiClient`, fault injection, prompt sanitization, adversarial prompt injection defense, token estimation, telemetry logging into `ai_requests` with bounded transactions and zero secrets logging)
+  - `src/pwd301/services/recommendation_service.py` (Algorithm 14 hybrid course recommendation: candidate filtering excluding active/completed/archived/unmet prerequisites, scoring with beginner +15/+30, category match +30, progression +20, prerequisites met +25, Gemini explanation enrichment, graceful degradation fallback)
+  - `src/pwd301/services/ai_service.py` (AI question drafting with instructor/admin authorization, structured question drafting persisted in `ai_generated_question_drafts` in `PENDING` state, conversation lifecycle with 300s inactivity deadline, message exchange, automated purge engine)
+  - `src/pwd301/blueprints/api_ai/__init__.py` & `src/pwd301/blueprints/api_ai/routes.py` (REST API with `@jwt_required`: `/recommendations`, `/questions/draft`, `/questions/generate`, `/questions/drafts`, `/conversations`, `/conversations/<id>`, `/conversations/<id>/messages`, `/chat`, `/conversations/cleanup`)
+  - `src/pwd301/__init__.py` (Registered `api_ai_bp`, CSRF exemption for Bearer token AI API endpoints, registered AI domain exceptions in `DOMAIN_EXCEPTION_HANDLERS`)
+  - `tests/unit/test_ai_service.py` (11 unit tests)
+  - `tests/unit/test_recommendation_service.py` (6 unit tests)
+  - `tests/security/test_ai_security.py` (4 security & IDOR tests)
+  - `tests/api/test_ai_api.py` (6 API integration tests)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (153 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 75 source files)
+  - `pytest` TASK-023 test suites: PASS (27/27 passed in 8.29s)
+  - `python -m pytest`: PASS (641/641 passed in 280.48s, 0 regressions)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 641/641 passed)

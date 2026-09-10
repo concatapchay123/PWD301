@@ -33,6 +33,7 @@ from werkzeug.exceptions import HTTPException
 
 import pwd301.models  # noqa: F401
 from pwd301.blueprints.admin import admin_bp
+from pwd301.blueprints.api_ai import api_ai_bp
 from pwd301.blueprints.api_assessments import api_assessment_bp
 from pwd301.blueprints.api_attempts import api_attempt_bp
 from pwd301.blueprints.api_auth import api_auth_bp
@@ -54,6 +55,14 @@ from pwd301.models.identity import AnonymousUser
 from pwd301.services.exceptions import (
     ActiveAttemptExistsError,
     AdminActionForbiddenError,
+    AIConversationExpiredError,
+    AIConversationNotFoundError,
+    AIDraftNotFoundError,
+    AIError,
+    AIPromptInjectionError,
+    AIQuotaExceededError,
+    AIServiceUnavailableError,
+    AIValidationError,
     AssessmentClosedError,
     AssessmentError,
     AssessmentLockedError,
@@ -262,7 +271,10 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     NotificationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     EmailDeliveryNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     AuditNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AIConversationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    AIDraftNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     # 409 Conflict & State Violations
+    AIConversationExpiredError: ("CONVERSATION_EXPIRED", 409),
     DocumentImportStateViolationError: ("STATE_VIOLATION", 409),
     RegradeError: ("CONFLICT", 409),
     CourseAlreadyExistsError: ("CONFLICT", 409),
@@ -293,6 +305,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AttemptNotSubmitedError: ("STATE_VIOLATION", 409),
     SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
     # 400 Bad Request & Validation Errors
+    AIValidationError: ("VALIDATION_ERROR", 400),
+    AIPromptInjectionError: ("PROMPT_INJECTION_DETECTED", 400),
     MaxPointsExceededError: ("VALIDATION_ERROR", 400),
     GradingError: ("VALIDATION_ERROR", 400),
     CourseValidationError: ("VALIDATION_ERROR", 400),
@@ -323,11 +337,15 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
     # 429 Rate Limit Exceeded
     EmailRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
+    AIQuotaExceededError: ("RATE_LIMIT_EXCEEDED", 429),
     # 500 Internal Error
     FileStorageError: ("INTERNAL_ERROR", 500),
     FileError: ("INTERNAL_ERROR", 500),
     EmailDeliveryError: ("EMAIL_DELIVERY_ERROR", 500),
     AuditPersistenceError: ("AUDIT_PERSISTENCE_FAILED", 500),
+    AIError: ("AI_ERROR", 500),
+    # 503 Service Unavailable
+    AIServiceUnavailableError: ("EXTERNAL_SERVICE_UNAVAILABLE", 503),
 }
 
 
@@ -590,6 +608,7 @@ def create_app(
     app.register_blueprint(api_file_bp)
     app.register_blueprint(api_import_bp)
     app.register_blueprint(api_notification_bp)
+    app.register_blueprint(api_ai_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
@@ -609,6 +628,7 @@ def create_app(
     csrf.exempt(api_file_bp)
     csrf.exempt(api_import_bp)
     csrf.exempt(api_notification_bp)
+    csrf.exempt(api_ai_bp)
 
     # Register CLI commands
     register_cli_commands(app)

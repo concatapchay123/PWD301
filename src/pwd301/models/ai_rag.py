@@ -13,7 +13,9 @@ Implements canonical schema tables from sql/007_ai_rag.sql:
 
 from __future__ import annotations
 
+import json
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
@@ -28,6 +30,9 @@ from pwd301.models.types import (
     UTCDateTime,
     utc_now,
 )
+
+_MSG_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00])
+_DRAFT_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00])
 
 
 class AIConversation(Base):
@@ -115,6 +120,45 @@ class AIConversation(Base):
         order_by="AIMessage.sequence_no",
     )
 
+    @property
+    def is_expired(self) -> bool:
+        """Return True if conversation has expired due to 5-min inactivity or status."""
+        if self.status == "EXPIRED":
+            return True
+        if self.expires_at is not None:
+            exp = self.expires_at
+            now = utc_now()
+            if exp.tzinfo is None and now.tzinfo is not None:
+                exp = exp.replace(tzinfo=now.tzinfo)
+            elif exp.tzinfo is not None and now.tzinfo is None:
+                now = now.replace(tzinfo=exp.tzinfo)
+            return exp < now
+        return False
+
+    def to_dict(self, include_messages: bool = False) -> dict[str, Any]:
+        """Convert conversation to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "conversation_id": str(self.public_id),
+            "context_type": self.context_type,
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "last_activity_at": self.last_activity_at.isoformat()
+            if self.last_activity_at
+            else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "status": "EXPIRED" if self.is_expired else self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "messages": (
+                [m.to_dict() for m in self.messages]
+                if (include_messages and not self.is_expired)
+                else []
+            ),
+        }
+
 
 class AIMessage(Base):
     """Chat message inside an AI conversation mapping to 'ai_messages' table."""
@@ -149,6 +193,35 @@ class AIMessage(Base):
     )
 
     conversation = relationship("AIConversation", back_populates="messages")
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_MSG_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _MSG_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert message to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "message_id": str(self.public_id),
+            "conversation_id": (str(self.conversation.public_id) if self.conversation else None),
+            "sender": self.sender,
+            "content": self.content,
+            "sequence_no": self.sequence_no,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class AIRequest(Base):
@@ -224,6 +297,26 @@ class AIRequest(Base):
 
     conversation = relationship("AIConversation", foreign_keys=[conversation_id])
     user = relationship("User", foreign_keys=[user_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Return public identifier for AIRequest (alias to request_id)."""
+        return self.request_id
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert AIRequest telemetry record to dict conforming to ADR-002."""
+        return {
+            "request_id": str(self.request_id),
+            "route_type": self.route_type,
+            "model_name": self.model_name,
+            "scope_decision": self.scope_decision,
+            "input_token_count": self.input_token_count,
+            "output_token_count": self.output_token_count,
+            "latency_ms": self.latency_ms,
+            "status": self.status,
+            "error_code": self.error_code,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class AIGeneratedQuestionDraft(Base):
@@ -339,6 +432,59 @@ class AIGeneratedQuestionDraft(Base):
     ai_request = relationship("AIRequest", foreign_keys=[ai_request_id])
     approved_question = relationship("Question", foreign_keys=[approved_question_id])
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_DRAFT_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _DRAFT_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert draft to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        choices = None
+        if self.choices_json:
+            try:
+                choices = json.loads(self.choices_json)
+            except Exception:
+                choices = self.choices_json
+        answer = None
+        if self.answer_json:
+            try:
+                answer = json.loads(self.answer_json)
+            except Exception:
+                answer = self.answer_json
+
+        return {
+            "draft_id": str(self.public_id),
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "ordinal": self.ordinal,
+            "question_type": self.question_type,
+            "difficulty": self.difficulty,
+            "content": self.content,
+            "choices": choices,
+            "answer": answer,
+            "explanation": self.explanation,
+            "review_state": self.review_state,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class KnowledgeDocument(Base):

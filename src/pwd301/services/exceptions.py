@@ -454,3 +454,35 @@ class AuditNotFoundError(ResourceNotFoundError, AuditError):
 
 class AdminActionForbiddenError(ForbiddenError):
     """Raised when an administrative action violates authorization or privilege policy."""
+
+
+class AIError(ServiceError):
+    """Base exception for all AI and Gemini integration domain errors."""
+
+
+class AIValidationError(ValidationError, AIError):
+    """Raised when AI input parameters, context target, or prompt payload are invalid."""
+
+
+class AIPromptInjectionError(AIValidationError):
+    """Raised when suspicious prompt injection or instruction override patterns are detected."""
+
+
+class AIConversationNotFoundError(ResourceNotFoundError, AIError):
+    """Raised when a requested AI conversation cannot be found."""
+
+
+class AIConversationExpiredError(StateViolationError, AIError):
+    """Raised when an operation is attempted on an expired AI conversation session."""
+
+
+class AIQuotaExceededError(AIError):
+    """Raised when Gemini API quota or external AI rate limit is exceeded."""
+
+
+class AIServiceUnavailableError(AIError):
+    """Raised when Gemini API is unreachable, timed out, or returns 503 Service Unavailable."""
+
+
+class AIDraftNotFoundError(ResourceNotFoundError, AIError):
+    """Raised when a requested AI-generated question draft cannot be found."""
