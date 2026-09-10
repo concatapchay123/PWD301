@@ -486,3 +486,27 @@ class AIServiceUnavailableError(AIError):
 
 class AIDraftNotFoundError(ResourceNotFoundError, AIError):
     """Raised when a requested AI-generated question draft cannot be found."""
+
+
+class BackupError(ServiceError):
+    """Base exception for database backup and restore operations."""
+
+
+class BackupNotFoundError(ResourceNotFoundError, BackupError):
+    """Raised when a requested database backup cannot be found."""
+
+
+class BackupIntegrityError(BackupError):
+    """Raised when a database backup fails SHA-256 verification or structural checks."""
+
+
+class RestoreForbiddenError(ForbiddenError, BackupError):
+    """Raised when a database restore is unauthorized, unconfirmed, or lacks admin credentials."""
+
+
+class RestoreVerificationFailedError(BackupError):
+    """Raised when a backup restore drill or dry-run validation fails compatibility checks."""
+
+
+class MaintenanceModeActiveError(ServiceError):
+    """Raised when user access is blocked due to active scheduled system maintenance."""

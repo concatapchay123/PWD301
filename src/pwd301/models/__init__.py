@@ -94,7 +94,9 @@ from pwd301.models.operations import (
     BackgroundJob,
     BackupRun,
     GradeExport,
+    MaintenanceWindow,
     SystemAlert,
+    SystemBackup,
     SystemHealthSnapshot,
 )
 from pwd301.models.question_bank import (
@@ -185,6 +187,8 @@ __all__ = [
     "BackgroundJob",
     "SystemAlert",
     "BackupRun",
+    "SystemBackup",
+    "MaintenanceWindow",
     "GradeExport",
     "AnalyticsSnapshot",
     "SystemHealthSnapshot",

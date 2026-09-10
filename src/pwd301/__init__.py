@@ -85,6 +85,9 @@ from pwd301.services.exceptions import (
     AuditError,
     AuditNotFoundError,
     AuditPersistenceError,
+    BackupError,
+    BackupIntegrityError,
+    BackupNotFoundError,
     BlueprintValidationError,
     CompletionRuleError,
     CompletionRuleNotFoundError,
@@ -123,6 +126,7 @@ from pwd301.services.exceptions import (
     LessonProgressError,
     LessonStateViolationError,
     LessonValidationError,
+    MaintenanceModeActiveError,
     MandatoryNotificationOptOutError,
     MaxPointsExceededError,
     NotificationError,
@@ -141,6 +145,8 @@ from pwd301.services.exceptions import (
     RegradeError,
     RegradeJobNotFoundError,
     ResourceNotFoundError,
+    RestoreForbiddenError,
+    RestoreVerificationFailedError,
     ScoreReleasePolicyError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
@@ -249,12 +255,14 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     # 403 Forbidden
     ForbiddenError: ("FORBIDDEN", 403),
     AdminActionForbiddenError: ("FORBIDDEN", 403),
+    RestoreForbiddenError: ("FORBIDDEN", 403),
     ScoreReleasePolicyError: ("FORBIDDEN", 403),
     FileAccessDeniedError: ("FORBIDDEN", 403),
     FileInfectedError: ("FILE_INFECTED", 403),
     FileSecurityQuarantineError: ("FILE_QUARANTINED", 403),
     # 404 Not Found
     ResourceNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    BackupNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     LessonNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     EnrollmentNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     CompletionRuleNotFoundError: ("RESOURCE_NOT_FOUND", 404),
@@ -333,6 +341,9 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     MandatoryNotificationOptOutError: ("VALIDATION_ERROR", 400),
     NotificationError: ("NOTIFICATION_ERROR", 400),
     AuditError: ("AUDIT_ERROR", 400),
+    BackupIntegrityError: ("INTEGRITY_ERROR", 400),
+    RestoreVerificationFailedError: ("VERIFICATION_FAILED", 400),
+    BackupError: ("BACKUP_ERROR", 400),
     # 413 Payload Too Large
     FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
     # 429 Rate Limit Exceeded
@@ -346,6 +357,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AIError: ("AI_ERROR", 500),
     # 503 Service Unavailable
     AIServiceUnavailableError: ("EXTERNAL_SERVICE_UNAVAILABLE", 503),
+    MaintenanceModeActiveError: ("MAINTENANCE_MODE_ACTIVE", 503),
 }
 
 
@@ -576,11 +588,76 @@ def create_app(
     # Logging setup
     _configure_logging(app)
 
-    # Correlation ID middleware
+    # Correlation ID & Maintenance Mode middleware
     @app.before_request
-    def before_request() -> None:
+    def before_request() -> Response | None:
         g.correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
         g.pop("_login_user", None)
+        g.pop("current_user", None)
+        g.pop("jwt_claims", None)
+
+        # Maintenance mode enforcement
+        from pwd301.services.operations_service import is_maintenance_active
+
+        path = request.path
+        # Allow static files, health probes, authentication login/logout, and admin routes
+        bypass_prefixes = (
+            "/static/",
+            "/admin",
+            "/api/admin",
+            "/auth/login",
+            "/api/auth/login",
+        )
+        bypass_exact = (
+            "/health",
+            "/health/deep",
+            "/auth/logout",
+            "/api/auth/logout",
+        )
+
+        if not (path in bypass_exact or any(path.startswith(p) for p in bypass_prefixes)):
+            # Check if actor is an authenticated Admin (via session, current_user, or Bearer token)
+            from pwd301.services.authorization_service import get_authenticated_actor
+
+            try:
+                actor = get_authenticated_actor()
+            except Exception:
+                actor = None
+
+            if not (actor and getattr(actor, "is_admin", False)):
+                is_active, window = is_maintenance_active(session=db.session)
+                if is_active and window is not None:
+                    retry_after = str(window.estimated_duration_minutes * 60)
+                    if _is_api_or_json_request():
+                        resp = jsonify(
+                            {
+                                "error": {
+                                    "code": "MAINTENANCE_MODE_ACTIVE",
+                                    "message": (
+                                        f"System is currently undergoing scheduled maintenance: "
+                                        f"{window.reason}"
+                                    ),
+                                    "estimated_end_at": (
+                                        window.estimated_end_at.isoformat()
+                                        if window.estimated_end_at
+                                        else None
+                                    ),
+                                    "estimated_duration_minutes": window.estimated_duration_minutes,
+                                }
+                            }
+                        )
+                        resp.status_code = 503
+                        resp.headers["Retry-After"] = retry_after
+                        return resp
+                    try:
+                        rendered = render_template("public/maintenance.html", window=window)
+                        resp = make_response(rendered, 503)
+                        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                        resp.headers["Retry-After"] = retry_after
+                        return resp
+                    except Exception:
+                        pass
+        return None
 
     @app.after_request
     def after_request(response: Response) -> Response:

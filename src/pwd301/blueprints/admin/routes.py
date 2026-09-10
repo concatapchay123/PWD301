@@ -23,6 +23,18 @@ from pwd301.services.exceptions import (
     ResourceNotFoundError,
 )
 from pwd301.services.file_service import _serialize_file_asset, quarantine_override
+from pwd301.services.operations_service import (
+    _resolve_backup,
+    check_system_health,
+    create_database_backup,
+    end_maintenance_window,
+    execute_dry_run_restore,
+    is_maintenance_active,
+    list_backups,
+    restore_database_snapshot,
+    start_maintenance_window,
+    verify_backup_integrity,
+)
 from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
 
 
@@ -504,6 +516,168 @@ def admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response
                 "user_id": str(user.public_id),
                 "auth_version": user.auth_version,
                 "message": "All user sessions and tokens have been revoked.",
+            }
+        ),
+        200,
+    )
+
+
+# =====================================================================
+# Operational Health, Maintenance & Backup Engine Endpoints (TASK-026)
+# =====================================================================
+
+
+@admin_bp.route("/health", methods=["GET"])
+@admin_required
+def admin_health() -> tuple[Response, int] | Response:
+    """Comprehensive system operational health evaluation for administrators."""
+    require_authenticated_actor()
+    report = check_system_health(include_details=True, session=db.session)
+    return jsonify(report), 200
+
+
+@admin_bp.route("/backups", methods=["GET"])
+@admin_required
+def admin_list_backups() -> tuple[Response, int] | Response:
+    """List historical database backups ordered by execution timestamp."""
+    actor = require_authenticated_actor()
+    backups = list_backups(actor, session=db.session)
+    return jsonify({"items": backups, "total": len(backups)}), 200
+
+
+@admin_bp.route("/backups", methods=["POST"])
+@admin_required
+def admin_create_backup() -> tuple[Response, int] | Response:
+    """Initiate an on-demand database snapshot with SHA-256 integrity calculation."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    backup_type = payload.get("backup_type", "MANUAL")
+    notes = payload.get("notes")
+
+    backup = create_database_backup(
+        actor=actor,
+        backup_type=backup_type,
+        notes=notes,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "backup": backup.to_dict(),
+                "message": "Database backup snapshot created successfully.",
+            }
+        ),
+        201,
+    )
+
+
+@admin_bp.route("/backups/<backup_id>", methods=["GET"])
+@admin_required
+def admin_get_backup_detail(backup_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed metadata of a specific database backup snapshot."""
+    require_authenticated_actor()
+    backup = _resolve_backup(backup_id, db.session)
+    return jsonify({"backup": backup.to_dict()}), 200
+
+
+@admin_bp.route("/backups/<backup_id>/verify", methods=["POST"])
+@admin_required
+def admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
+    """Execute cryptographic SHA-256 verification and file structure check."""
+    actor = require_authenticated_actor()
+    result = verify_backup_integrity(actor, backup_id, session=db.session)
+    return jsonify(result), 200
+
+
+@admin_bp.route("/backups/<backup_id>/restore/dry-run", methods=["POST"])
+@admin_required
+def admin_dry_run_restore(backup_id: str) -> tuple[Response, int] | Response:
+    """Execute a dry-run restoration drill verifying schema compatibility with zero mutations."""
+    actor = require_authenticated_actor()
+    result = execute_dry_run_restore(actor, backup_id, session=db.session)
+    return jsonify(result), 200
+
+
+@admin_bp.route("/backups/<backup_id>/restore", methods=["POST"])
+@admin_required
+def admin_restore_database(backup_id: str) -> tuple[Response, int] | Response:
+    """Execute controlled database restoration under strict authentication safeguards."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    confirmation_phrase = payload.get("confirmation_phrase") or payload.get("confirmation_token")
+    password = payload.get("password")
+
+    result = restore_database_snapshot(
+        actor=actor,
+        backup_id=backup_id,
+        confirmation_phrase=confirmation_phrase,
+        password=password,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@admin_bp.route("/maintenance/start", methods=["POST"])
+@admin_required
+def admin_start_maintenance() -> tuple[Response, int] | Response:
+    """Activate system maintenance window blocking non-admin traffic with HTTP 503."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason", "Scheduled platform maintenance")
+    duration = int(payload.get("estimated_duration_minutes", 60))
+
+    window = start_maintenance_window(
+        actor=actor,
+        reason=reason,
+        estimated_duration_minutes=duration,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "maintenance_window": window.to_dict(),
+                "message": "Maintenance window successfully activated.",
+            }
+        ),
+        201,
+    )
+
+
+@admin_bp.route("/maintenance/end", methods=["POST"])
+@admin_required
+def admin_end_maintenance() -> tuple[Response, int] | Response:
+    """Conclude active system maintenance window and restore normal platform access."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    window_id = payload.get("window_id")
+
+    window = end_maintenance_window(
+        actor=actor,
+        window_id=window_id,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "maintenance_window": window.to_dict(),
+                "message": "Maintenance window successfully concluded.",
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/maintenance/status", methods=["GET"])
+@admin_required
+def admin_maintenance_status() -> tuple[Response, int] | Response:
+    """Inspect current maintenance window status and parameters."""
+    require_authenticated_actor()
+    is_active, window = is_maintenance_active(session=db.session)
+    return (
+        jsonify(
+            {
+                "is_active": is_active,
+                "maintenance_window": window.to_dict() if window else None,
             }
         ),
         200,

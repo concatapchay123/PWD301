@@ -176,6 +176,14 @@ class User(Base, UserMixin):
         """Check if user has all of the specified roles."""
         return all(self.has_role(code) for code in role_codes)
 
+    def verify_password(self, password: str) -> bool:
+        """Verify raw password against stored password hash."""
+        if not password or not self.password_hash:
+            return False
+        from werkzeug.security import check_password_hash
+
+        return check_password_hash(self.password_hash, password)
+
 
 class AnonymousUser(AnonymousUserMixin):
     """Anonymous user representation for unauthenticated guests.

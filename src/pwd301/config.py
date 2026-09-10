@@ -62,6 +62,7 @@ class BaseConfig:
         os.environ.get("ENROLLMENT_DETAIL_RETENTION_DAYS", "30")
     )
     FILE_RECOVERY_DAYS: int = int(os.environ.get("FILE_RECOVERY_DAYS", "30"))
+    BACKUP_RETENTION_DAYS: int = int(os.environ.get("BACKUP_RETENTION_DAYS", "30"))
     AI_CHAT_INACTIVITY_SECONDS: int = int(os.environ.get("AI_CHAT_INACTIVITY_SECONDS", "300"))
 
     # Gemini & AI configuration

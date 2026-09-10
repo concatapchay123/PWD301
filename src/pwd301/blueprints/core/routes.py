@@ -13,17 +13,31 @@ from pwd301.models.course import Course
 
 @core_bp.route("/health", methods=["GET"])
 def health() -> tuple[Response, int]:
-    """Health check endpoint for container probes and monitoring."""
+    """Lightweight liveness probe confirming web server process is responsive."""
     return (
         jsonify(
             {
                 "status": "ok",
+                "probe": "liveness",
                 "env": current_app.config.get("ENV", "unknown"),
                 "version": pwd301.__version__,
             }
         ),
         200,
     )
+
+
+@core_bp.route("/health/deep", methods=["GET"])
+def health_deep() -> tuple[Response, int]:
+    """Deep readiness probe confirming database connectivity and storage health."""
+    from pwd301.services.operations_service import check_system_health
+
+    report = check_system_health(include_details=False, session=db.session)
+    report["version"] = pwd301.__version__
+    report["env"] = current_app.config.get("ENV", "unknown")
+
+    status_code = 200 if report["status"] in ("HEALTHY", "DEGRADED") else 503
+    return jsonify(report), status_code
 
 
 @core_bp.route("/", methods=["GET"])

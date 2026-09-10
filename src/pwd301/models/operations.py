@@ -11,7 +11,10 @@ Implements canonical schema tables from sql/009_operations.sql:
 
 from __future__ import annotations
 
+import datetime
+import json
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
@@ -25,6 +28,9 @@ from pwd301.models.types import (
     UTCDateTime,
     utc_now,
 )
+
+_BACKUP_UUID_PREFIX = b"\xba\xc0\x00\x00\x00\x00\x00\x00"
+_HEALTH_UUID_PREFIX = b"\x7e\xa1\x00\x00\x00\x00\x00\x00"
 
 
 class BackgroundJob(Base):
@@ -205,6 +211,47 @@ class BackupRun(Base):
 
     started_by = relationship("User", foreign_keys=[started_by_user_id])
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_BACKUP_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID, session: Any = None) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _BACKUP_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize backup metadata adhering strictly to ADR-002 (zero internal PKs)."""
+        return {
+            "backup_id": str(self.public_id),
+            "backup_type": self.backup_type,
+            "status": self.status,
+            "storage_location": self.storage_location,
+            "database_backup_name": self.database_backup_name,
+            "file_manifest_name": self.file_manifest_name,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
+            "restore_tested_at": (
+                self.restore_tested_at.isoformat() if self.restore_tested_at else None
+            ),
+            "last_error": self.last_error,
+            "started_by_user_id": str(self.started_by.public_id) if self.started_by else None,
+        }
+
+
+# Canonical model alias for operations backup engine
+SystemBackup = BackupRun
+
 
 class GradeExport(Base):
     """Export request for course grades mapping to 'grade_exports' table."""
@@ -352,3 +399,177 @@ class SystemHealthSnapshot(Base):
         ),
         sa.Index("ix_system_health_time", "component", "created_at"),
     )
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_HEALTH_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID, session: Any = None) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _HEALTH_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize system health snapshot adhering to ADR-002."""
+        parsed_details = None
+        if self.details_json:
+            try:
+                parsed_details = json.loads(self.details_json)
+            except Exception:
+                parsed_details = self.details_json
+        return {
+            "snapshot_id": str(self.public_id),
+            "component": self.component,
+            "status": self.status,
+            "latency_ms": self.latency_ms,
+            "details": parsed_details,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+_MAINT_UUID_PREFIX = b"\xca\xfe\x00\x00\x00\x00\x00\x00"
+
+
+class MaintenanceWindow:
+    """System maintenance window representation backed by canonical 'system_alerts' table.
+
+    Does not create an extra database table, preserving the 71 canonical tables architecture.
+    """
+
+    alert: SystemAlert | None
+    public_id: uuid.UUID
+    reason: str
+    status: str
+    started_by_user_id: int | None
+    estimated_duration_minutes: int
+    started_at: datetime.datetime | None
+    estimated_end_at: datetime.datetime | None
+    ended_at: datetime.datetime | None
+    ended_by_user_id: int | None
+    created_at: datetime.datetime | None
+    id: int | None
+
+    def __init__(
+        self,
+        alert: SystemAlert | None = None,
+        *,
+        public_id: uuid.UUID | None = None,
+        reason: str = "",
+        status: str = "ACTIVE",
+        started_by_user_id: int | None = None,
+        estimated_duration_minutes: int = 60,
+        started_at: datetime.datetime | None = None,
+        estimated_end_at: datetime.datetime | None = None,
+        ended_at: datetime.datetime | None = None,
+        ended_by_user_id: int | None = None,
+        created_at: datetime.datetime | None = None,
+    ) -> None:
+        self.alert = alert
+        if alert is not None:
+            data: dict[str, Any] = {}
+            if alert.message:
+                try:
+                    data = json.loads(alert.message)
+                except Exception:
+                    data = {"reason": alert.message}
+            raw_pub = data.get("public_id")
+            if raw_pub:
+                try:
+                    self.public_id = uuid.UUID(str(raw_pub))
+                except Exception:
+                    self.public_id = uuid.UUID(
+                        bytes=_MAINT_UUID_PREFIX + alert.id.to_bytes(8, "big")
+                    )
+            else:
+                self.public_id = uuid.UUID(bytes=_MAINT_UUID_PREFIX + alert.id.to_bytes(8, "big"))
+            self.reason = data.get("reason", alert.message or "")
+            self.status = (
+                "ACTIVE"
+                if alert.status == "OPEN"
+                else ("COMPLETED" if alert.status == "RESOLVED" else "CANCELLED")
+            )
+            self.started_by_user_id = alert.acknowledged_by_user_id or data.get(
+                "started_by_user_id"
+            )
+            self.estimated_duration_minutes = int(data.get("estimated_duration_minutes", 60))
+            self.started_at = alert.acknowledged_at or alert.created_at
+            raw_est = data.get("estimated_end_at")
+            if raw_est:
+                try:
+                    self.estimated_end_at = datetime.datetime.fromisoformat(raw_est)
+                except Exception:
+                    self.estimated_end_at = (
+                        self.started_at
+                        + datetime.timedelta(minutes=self.estimated_duration_minutes)
+                        if self.started_at
+                        else None
+                    )
+            else:
+                self.estimated_end_at = (
+                    self.started_at + datetime.timedelta(minutes=self.estimated_duration_minutes)
+                    if self.started_at
+                    else None
+                )
+            self.ended_at = alert.resolved_at
+            self.ended_by_user_id = data.get("ended_by_user_id")
+            self.created_at = alert.created_at
+            self.id = alert.id
+        else:
+            self.public_id = public_id or uuid.uuid4()
+            self.reason = reason
+            self.status = status
+            self.started_by_user_id = started_by_user_id
+            self.estimated_duration_minutes = estimated_duration_minutes
+            self.started_at = started_at or utc_now()
+            self.estimated_end_at = estimated_end_at or (
+                self.started_at + datetime.timedelta(minutes=estimated_duration_minutes)
+            )
+            self.ended_at = ended_at
+            self.ended_by_user_id = ended_by_user_id
+            self.created_at = created_at or utc_now()
+            self.id = None
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID, session: Any = None) -> int | None:
+        """Resolve internal BIGINT ID from public UUID."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            u_bytes = u.bytes
+            if u_bytes.startswith(_MAINT_UUID_PREFIX):
+                return int.from_bytes(u_bytes[8:], "big")
+            sess = session or db.session
+            alerts = (
+                sess.query(SystemAlert).filter(SystemAlert.alert_type == "MAINTENANCE_WINDOW").all()
+            )
+            for a in alerts:
+                if a.message and str(u) in a.message:
+                    return a.id
+            return None
+        except Exception:
+            return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize maintenance window conforming to ADR-002 Zero PK Leakage."""
+        return {
+            "window_id": str(self.public_id),
+            "reason": self.reason,
+            "status": self.status,
+            "estimated_duration_minutes": self.estimated_duration_minutes,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "estimated_end_at": (
+                self.estimated_end_at.isoformat() if self.estimated_end_at else None
+            ),
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+            "started_by_user_id": None,
+            "ended_by_user_id": None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
