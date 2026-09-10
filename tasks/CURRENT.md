@@ -1,81 +1,89 @@
-# TASK-020 — DOCX/PDF Assessment & Question Import Engine
+# TASK-021 — Notifications & Email Delivery/Retry Engine
 
 **Status:** DONE  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-011, TASK-018, TASK-019  
+**Depends on:** TASK-001, TASK-002, TASK-003, TASK-011, TASK-012, TASK-018, TASK-020  
 
 ---
 
 ## Goal
-Xây dựng và hoàn thiện toàn diện **Động cơ phân tích, đối soát trùng lặp và nhập liệu câu hỏi từ tài liệu DOCX/PDF (DOCX/PDF Assessment Import Engine)** cho giảng viên vào Ngân hàng câu hỏi (Question Bank) của Khóa học:
-1. **Tích hợp chặt chẽ hạ tầng tệp tin an toàn (Fail-Closed File Pipeline)**:
-   - Tệp DOCX/PDF tải lên để nhập câu hỏi bắt buộc phải đi qua quy trình kiểm soát an ninh của `TASK-018` và `TASK-019`: lưu tại thư mục cách ly `quarantine/`, quét sạch mã độc (Heuristic + ClamAV) và chuyển trạng thái `PASS`, `ACTIVE`, `PRESENT`.
-   - Nếu tệp đang ở trạng thái cách ly (`QUARANTINED`, `REJECTED`, `INFECTED`), hệ thống lập tức từ chối xử lý và trả về HTTP 403 `FileSecurityQuarantineError`.
-2. **Động cơ bóc tách văn bản đa định dạng (Pluggable Document Parser)**:
-   - Bóc tách OpenXML DOCX thuần túy bằng thư viện chuẩn `zipfile` và `xml.etree.ElementTree` (không phụ thuộc external service nặng nề).
-   - Bóc tách PDF linh hoạt thông qua `pypdf` với cơ chế token stream fallback khi cấu trúc PDF bị phân mảnh hoặc thiếu font map.
-3. **Động cơ nhận diện mẫu câu hỏi (Pattern Matcher Engine)**:
-   - Nhận diện 5 loại câu hỏi chuẩn: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`, `ESSAY`.
-   - Bóc tách thân câu hỏi (stem), các phương án lựa chọn (A/B/C/D), đáp án đúng (Answer key), mức độ Bloom (`[REMEMBER|UNDERSTAND|APPLY]`), điểm số và lời giải thích.
-   - Tính toán điểm tin cậy (confidence score) và gắn cờ cảnh báo chẩn đoán (`warnings`) khi câu hỏi có tính nhập nhằng hoặc thiếu đáp án.
-4. **Động cơ đối soát trùng lặp (Duplicate Detection Engine)**:
-   - Chuẩn hóa văn bản câu hỏi: chữ thường, loại bỏ số thứ tự ("Câu 1:", "Question 1."), ký tự đặc biệt và khoảng trắng thừa.
-   - Khớp băm chính xác (Exact Hash) qua SHA-256 đối chiếu với Question Bank hiện tại của khóa học và các câu hỏi trong cùng đợt nhập.
-   - Đối soát tương đồng mờ (Fuzzy Similarity) qua `difflib.SequenceMatcher` với ngưỡng tương đồng $\ge 0.85$, tự động tạo các bản ghi `ImportDuplicateCandidate`.
-5. **Quy trình phê duyệt và xác nhận nguyên tử (Review & Atomic Commit Pipeline)**:
-   - Máy trạng thái vòng đời công việc: `QUEUED` -> `PROCESSING` -> `REVIEW_REQUIRED` -> `COMPLETED` / `FAILED` / `CANCELLED`.
-   - Giao diện và API cho phép giảng viên xem trước, chỉnh sửa (PATCH), duyệt (`ACCEPTED`) hoặc từ chối (`REJECTED`) từng câu hỏi.
-   - Cam kết nguyên tử (Atomic Commit): chỉ ghi nhận các câu hỏi `ACCEPTED` vào các thực thể chuẩn `Question`, `QuestionRevision`, `QuestionRevisionChoice`, và `QuestionProvenance(source_type='IMPORT')`.
-6. **Tuân thủ tuyệt đối ADR-002 (Zero PK Leakage)**:
-   - Các API và view trả về public UUIDs, không làm rò rỉ `BIGINT PK/FK` nội bộ hay đường dẫn tệp tin vật lý.
+Triển khai hoàn chỉnh **Động cơ Thông báo Đa kênh & Chuyển phát Email có cơ chế thử lại (Notifications & Email Delivery/Retry Engine)** cho nền tảng PWD301:
+1. **Kiến trúc Outbox bất đồng bộ (Decoupled Outbox Pattern)**:
+   - Tách rời hoàn toàn giao dịch ghi nhận sự kiện (in-app notification) khỏi quá trình kết nối chuyển phát email ngoại vi (SMTP / Mock Mail Client).
+   - Lỗi gửi email không làm ảnh hưởng (rollback) hay gián đoạn giao dịch chính; email được ghi vào hàng đợi `email_deliveries` ở trạng thái `PENDING`.
+2. **Cơ chế Backoff hàm mũ & Thử lại an toàn (Exponential Backoff & Retry Engine)**:
+   - Khoảng thời gian thử lại lũy thừa theo số lần thất bại: delay = 2^(retry_count) * 60 giây.
+   - Thử lại tối đa `max_retries` (mặc định 3 lần); sau đó chuyển trạng thái `FAILED`.
+   - Endpoint quản trị viên cho phép kích hoạt thử lại các email thất bại (`retry_failed_emails`).
+3. **Quản lý Tùy chọn Thông báo & Bất biến An ninh Bắt buộc (Mandatory Security Invariant)**:
+   - Người dùng có thể tùy chỉnh bật/tắt email cho các danh mục thông thường (`COURSE`, `ASSESSMENT`, `SYSTEM`).
+   - Các cảnh báo an ninh bảo mật bắt buộc (`SECURITY_PASSWORD_CHANGED`, `SECURITY_ACCOUNT_SUSPENDED`, `SECURITY_LOGIN_ANOMALY`, `ACCOUNT_SUSPENDED`, `SYSTEM_SECURITY_ALERT`) **không thể bị tắt**.
+   - Mọi hành vi cố tình tắt thông báo an ninh đều bị chặn đứng ở tầng dịch vụ bằng `MandatoryNotificationOptOutError` (HTTP 400).
+4. **Bảo mật tuyệt đối ADR-002 (Zero PK Leakage) & Phòng chống IDOR**:
+   - Mọi API trả về public UUIDs; không làm rò rỉ bất kỳ `BIGINT PK/FK` nội bộ nào trong JSON payloads.
+   - Kiểm tra quyền sở hữu chặt chẽ: người dùng chỉ được xem, đánh dấu đọc, đóng hoặc cấu hình tùy chọn thông báo của chính mình.
+   - Quản trị viên (ADMIN) có quyền phát thông báo toàn hệ thống (`broadcast`) và kích hoạt retry email hàng loạt.
+5. **Đồng bộ Đa giao diện (Session Web UI & REST API)**:
+   - REST API đầy đủ `@jwt_required` tại `/api/notifications/...`.
+   - Giao diện Web Student Jinja2 tại `/student/notifications` với thanh Notification Bell tích hợp badge số lượng tin chưa đọc.
 
 ---
 
 ## Source-of-Truth Documents Consulted
-- `AGENTS.md` (Source-of-truth hierarchy, Fail-closed Invariants, ADR-002 Zero PK Leakage)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/12_DOCX_PDF_IMPORT.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/IMPORT_STATE_MACHINE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/09_FILE_IMPORT_API.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/10_ASSESSMENT_ENGINE.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/algorithms/05_BLUEPRINT_MATERIALIZATION.md`
+- `AGENTS.md` (Source-of-truth hierarchy, Fail-closed Invariants, ADR-002 Zero PK Leakage, Session CSRF)
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/14_NOTIFICATION_AND_EMAIL.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/11_NOTIFICATION_API.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/workflows/11_NOTIFICATION_WORKFLOW.md`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/008_notification_audit.sql`
 - `docs/decisions/ADR-002-database-identifiers.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/09_DATA_DICTIONARY_FILES_IMPORT.md`
+- `frontend-preview/views/student/notifications.html`
 
 ---
 
 ## Deliverables & Changes
 1. **Domain Exceptions (`src/pwd301/services/exceptions.py`)**:
-   - `DocumentImportError`, `DocumentParsingError`, `DocumentImportJobNotFoundError`, `DocumentImportStateViolationError`, `ImportQuestionNotFoundError`.
-2. **Central Application Registration (`src/pwd301/__init__.py`)**:
-   - Centralized exception handlers registered in `DOMAIN_EXCEPTION_HANDLERS`.
-   - Registered `api_import_bp` at `/api/imports` with CSRF exemption for JWT API requests.
-3. **Database Model Synthetic UUIDs (`src/pwd301/models/file_import.py`)**:
-   - Added `public_id` properties with deterministic UUIDv5 mapping for `ImportQuestion` and `ImportDuplicateCandidate` conforming to ADR-002.
-4. **Import Engine Core Service (`src/pwd301/services/import_service.py`)**:
-   - `extract_text_from_docx`: OpenXML DOCX paragraph extraction via stdlib.
-   - `extract_text_from_pdf`: Resilient PDF text extraction with content stream token fallback.
-   - `parse_question_blocks`: Robust pattern matcher supporting 5 question types, Bloom levels, points, explanation, and confidence scoring.
-   - `detect_duplicates`: SHA-256 exact hash + SequenceMatcher fuzzy similarity ($\ge 0.85$).
-   - `create_import_job`: Fail-closed security validation (ACTIVE, PRESENT, PASS scans).
-   - `process_import_job`: Orchestration of parsing, duplicate detection, and transition to `REVIEW_REQUIRED`.
-   - `update_import_question` & `set_import_question_decision`: In-flight review and curation.
-   - `commit_import_job`: Atomic transaction creating canonical `Question`, `QuestionRevision`, and `QuestionProvenance`.
-   - `cancel_import_job`: Cancellation transition.
-5. **REST API & Course Endpoints (`src/pwd301/blueprints/api_import/` & `src/pwd301/blueprints/api_courses/`)**:
-   - `POST /api/imports` & `POST /api/courses/<course_id>/imports`: Create import job.
-   - `GET /api/courses/<course_id>/imports`: List course imports.
-   - `GET /api/imports/<job_id>`: Job details and extracted questions.
-   - `POST /api/imports/<job_id>/process`: Trigger processing.
-   - `PATCH /api/imports/<job_id>/questions/<temp_id>`: Edit question draft.
-   - `POST /api/imports/<job_id>/questions/<temp_id>/decision`: Accept/Reject draft.
-   - `POST /api/imports/<job_id>/commit`: Atomic commit.
-   - `POST /api/imports/<job_id>/cancel`: Cancel job.
-6. **Instructor Web Routes (`src/pwd301/blueprints/instructor/routes.py`)**:
-   - Connected Web session endpoints with CSRF protection under `/instructor/courses/<id>/imports` and `/instructor/imports/<id>/...`.
-7. **Comprehensive Test Suites**:
-   - `tests/unit/test_import_service.py` (8 unit tests)
-   - `tests/security/test_import_idor.py` (8 security and IDOR tests)
-   - `tests/api/test_import_api.py` (9 REST API and web integration tests)
+   - `NotificationError`, `NotificationNotFoundError`, `NotificationPreferenceError`, `MandatoryNotificationOptOutError`, `EmailDeliveryError`, `EmailDeliveryNotFoundError`, `EmailRateLimitExceededError`.
+2. **Model Enhancements & ADR-002 Compliance (`src/pwd301/models/notification_audit.py`)**:
+   - `NotificationEvent`: `public_id` (`event_key`).
+   - `Notification`: `public_id`, `is_read` helper, `to_dict()` che giấu hoàn toàn `BIGINT PK/FK`.
+   - `NotificationPreference`: `to_dict()`.
+   - `EmailDelivery`: `public_id` (`dedupe_key`), `to_dict()`.
+3. **Email Delivery & Retry Service (`src/pwd301/services/email_service.py`)**:
+   - `MockMailClient` & `validate_email_syntax`.
+   - `enqueue_email`: Ghi email vào hàng đợi `email_deliveries` với deduplication và tự động tạo `NotificationEvent` nếu chưa có.
+   - `send_single_email`: Chuyển phát email, tính toán exponential backoff khi lỗi.
+   - `process_email_queue`: Xử lý theo lô các email đến hạn (`next_attempt_at <= now`).
+   - `retry_failed_emails`: Kích hoạt thử lại thủ công bởi Admin.
+4. **Notification Service (`src/pwd301/services/notification_service.py`)**:
+   - `emit_event`: Ghi nhận sự kiện với payload redaction (loại bỏ mật khẩu/tokens).
+   - `determine_event_category`: Phân loại tự động các sự kiện.
+   - `dispatch_notification`: Tạo in-app notification và kích hoạt outbox email nếu danh mục được phép hoặc là sự kiện bảo mật bắt buộc.
+   - `list_user_notifications`: Liệt kê thông báo phân trang, lọc chưa đọc/danh mục.
+   - `get_unread_count`: Đếm số thông báo chưa đọc cho badge.
+   - `mark_notification_as_read`, `mark_all_as_read`, `dismiss_notification`: Thao tác trạng thái an toàn chống IDOR.
+   - `get_user_preferences`, `update_user_preferences`: Quản lý sở thích nhận email; chặn tắt danh mục bảo mật (`MandatoryNotificationOptOutError`).
+   - `broadcast_system_notification`: Phát thông báo toàn hệ thống (Admin only).
+5. **REST API (`src/pwd301/blueprints/api_notifications/`)**:
+   - `GET /api/notifications`
+   - `GET /api/notifications/unread-count`
+   - `PATCH /api/notifications/<id>/read`
+   - `POST /api/notifications/mark-all-read`
+   - `DELETE /api/notifications/<id>/dismiss`
+   - `GET /api/notifications/preferences`
+   - `PUT /api/notifications/preferences`
+   - `POST /api/notifications/broadcast`
+   - `POST /api/notifications/emails/retry-failed`
+6. **Web UI & Session Integration (`src/pwd301/templates/notifications/`, `src/pwd301/templates/base.html`, `src/pwd301/blueprints/student/routes.py`)**:
+   - Template Jinja2 `notifications/index.html` hiển thị bộ lọc, phân trang, hành động đọc/xóa.
+   - Header `base.html` bổ sung notification bell liên kết tới trang thông báo và hiển thị badge.
+   - Route `GET /student/notifications` được bảo vệ bởi session auth.
+7. **Admin Blueprints Integration (`src/pwd301/blueprints/admin/routes.py`)**:
+   - Hỗ trợ `/api/admin/notifications/broadcast` và `/api/admin/emails/retry-failed`.
+8. **Comprehensive Test Suites (32 tests total — 100% PASS)**:
+   - `tests/unit/test_notification_service.py` (10 tests)
+   - `tests/unit/test_email_service.py` (8 tests)
+   - `tests/security/test_notification_idor.py` (7 tests)
+   - `tests/api/test_notification_api.py` (7 tests)
 
 ---
 
@@ -83,8 +91,8 @@ Xây dựng và hoàn thiện toàn diện **Động cơ phân tích, đối so�
 - Gate 1: `python scripts/repo_check.py` — **PASS**
 - Gate 2: `python -m compileall -q src tests scripts` — **PASS**
 - Gate 3: `ruff check src tests scripts` — **PASS** (0 errors)
-- Gate 4: `ruff format --check src tests scripts` — **PASS** (132 files already formatted)
-- Gate 5: `mypy src` — **PASS** (0 issues across 65 source files)
-- Gate 6: TASK-020 test suites — **PASS** (25/25 passed)
-- Gate 7: Full regression pytest — **PASS** (560/560 passed)
+- Gate 4: `ruff format --check src tests scripts` — **PASS** (140 files already formatted)
+- Gate 5: `mypy src` — **PASS** (0 issues across 69 source files)
+- Gate 6: TASK-021 test suites — **PASS** (32/32 passed)
+- Gate 7: Full regression pytest — **PASS** (592/592 passed)
 - Gate 8: `./scripts/verify.ps1` — **PASS**

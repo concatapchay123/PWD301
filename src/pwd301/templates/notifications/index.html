@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Trung tâm Thông báo — PWD301{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h2 class="h4 fw-bold text-slate-900 mb-1">Trung tâm Thông báo</h2>
+      <p class="text-muted small mb-0">Các cập nhật về khóa học, bài thi và hoạt động tài khoản</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <form action="{{ url_for('api_notifications.mark_all_read_api') }}" method="POST" class="d-inline" id="mark-all-read-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">
+          Đánh dấu tất cả đã đọc
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Notification list -->
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-slate-200">
+        <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between border-slate-100">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold text-slate-800">Danh sách thông báo</span>
+            <span class="badge bg-primary rounded-pill">{{ unread_count }} chưa đọc</span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          {% if notifications %}
+          <ul class="list-group list-group-flush">
+            {% for n in notifications %}
+            <li class="list-group-item p-3 d-flex justify-content-between align-items-start {% if not n.read %}bg-slate-50{% endif %}">
+              <div class="pe-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  {% if not n.read %}
+                  <span class="badge-dot bg-primary rounded-circle" style="width: 8px; height: 8px; display: inline-block;"></span>
+                  {% endif %}
+                  <span class="badge bg-secondary text-caption" style="font-size: 10px;">{{ n.category }}</span>
+                  <span class="fw-semibold text-slate-900">{{ n.title }}</span>
+                </div>
+                <p class="text-caption text-slate-600 mb-0" style="font-size: 13px;">{{ n.body }}</p>
+              </div>
+              <div class="text-end text-nowrap">
+                <span class="text-caption text-muted d-block" style="font-size: 11.5px;">{{ n.created_at[:10] if n.created_at else '' }}</span>
+                {% if not n.read %}
+                <form action="/api/notifications/{{ n.id }}/read" method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                  <button type="submit" class="btn btn-link btn-sm text-decoration-none p-0 text-caption" style="font-size: 11px;">Đã đọc</button>
+                </form>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="p-5 text-center text-muted">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-2 text-slate-400">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <p class="mb-0">Bạn không có thông báo nào.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Preferences Sidebar -->
+    <div class="col-lg-4">
+      <div class="card shadow-sm border-slate-200">
+        <div class="card-header bg-white py-3 border-slate-100">
+          <h5 class="sub-title m-0" style="font-size: 14.5px;">Cài đặt nhận thông báo</h5>
+        </div>
+        <div class="card-body">
+          <p class="text-caption text-muted mb-3" style="font-size: 12.5px;">
+            Chọn các kênh thông báo qua email bạn muốn nhận. Lưu ý: Thông báo bảo mật luôn bắt buộc gửi.
+          </p>
+          <div class="list-group list-group-flush">
+            {% for pref in preferences %}
+            <div class="list-group-item px-0 py-2.5 d-flex align-items-center justify-content-between border-slate-100">
+              <div>
+                <div class="fw-medium text-slate-800" style="font-size: 13px;">{{ pref.category }}</div>
+                {% if pref.is_mandatory %}
+                <span class="badge bg-warning text-dark" style="font-size: 10px;">Bảo mật bắt buộc</span>
+                {% else %}
+                <span class="text-muted text-caption" style="font-size: 11px;">Email thông báo</span>
+                {% endif %}
+              </div>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch"
+                  {% if pref.email_enabled %}checked{% endif %}
+                  {% if pref.is_mandatory %}disabled{% endif %}
+                  aria-label="Bật nhận email cho {{ pref.category }}">
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

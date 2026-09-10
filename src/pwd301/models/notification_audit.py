@@ -11,6 +11,7 @@ Implements canonical schema tables from sql/008_notification_audit.sql:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
@@ -75,6 +76,11 @@ class NotificationEvent(Base):
         back_populates="event",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching event_key per ADR-002."""
+        return str(self.event_key)
 
 
 class Notification(Base):
@@ -151,6 +157,24 @@ class Notification(Base):
     event = relationship("NotificationEvent", back_populates="notifications")
     recipient = relationship("User", foreign_keys=[recipient_user_id])
 
+    @property
+    def is_read(self) -> bool:
+        """Return True if notification has been read."""
+        return self.read_at is not None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert notification to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "id": str(self.public_id),
+            "category": self.category,
+            "title": self.title,
+            "body": self.body,
+            "read": self.is_read,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
 
 class NotificationPreference(Base):
     """User notification opt-in preferences mapping to 'notification_preferences'."""
@@ -185,6 +209,14 @@ class NotificationPreference(Base):
     )
 
     user = relationship("User", foreign_keys=[user_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert preference to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "category": self.category,
+            "email_enabled": bool(self.email_enabled),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class EmailDelivery(Base):
@@ -259,6 +291,25 @@ class EmailDelivery(Base):
 
     event = relationship("NotificationEvent", foreign_keys=[notification_event_id])
     recipient = relationship("User", foreign_keys=[recipient_user_id])
+
+    @property
+    def public_id(self) -> str:
+        """Public identifier matching dedupe_key per ADR-002."""
+        return str(self.dedupe_key)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert email delivery to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        return {
+            "id": str(self.public_id),
+            "recipient_email": self.recipient_email_snapshot,
+            "template_code": self.template_code,
+            "status": self.status,
+            "attempt_count": self.attempt_count,
+            "next_attempt_at": self.next_attempt_at.isoformat() if self.next_attempt_at else None,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "last_error": self.last_error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class AuditEvent(Base):

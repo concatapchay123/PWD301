@@ -294,3 +294,46 @@ def get_student_course_completion_route(course_id: str) -> tuple[Response, int] 
         ),
     }
     return jsonify(data), 200
+
+
+@student_bp.route("/notifications", methods=["GET"])
+@student_required
+def notifications_center() -> tuple[Response, int] | Response:
+    """Student Web notifications center page and AJAX endpoint."""
+    from flask import render_template
+
+    from pwd301.services.authorization_service import _is_api_or_json_request
+    from pwd301.services.notification_service import (
+        get_unread_count,
+        get_user_preferences,
+        list_user_notifications,
+    )
+
+    actor = require_authenticated_actor()
+    items, total = list_user_notifications(actor=actor, session=db.session)
+    prefs = get_user_preferences(actor=actor, session=db.session)
+    unread = get_unread_count(actor=actor, session=db.session)
+
+    if _is_api_or_json_request():
+        return (
+            jsonify(
+                {
+                    "items": items,
+                    "total": total,
+                    "unread_count": unread,
+                    "preferences": prefs,
+                }
+            ),
+            200,
+        )
+
+    rendered = render_template(
+        "notifications/index.html",
+        notifications=items,
+        total=total,
+        unread_count=unread,
+        preferences=prefs,
+    )
+    from flask import make_response
+
+    return make_response(rendered)

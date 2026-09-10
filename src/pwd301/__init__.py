@@ -39,6 +39,7 @@ from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_files import api_file_bp
 from pwd301.blueprints.api_import import api_import_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
+from pwd301.blueprints.api_notifications import api_notification_bp
 from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
@@ -84,6 +85,9 @@ from pwd301.services.exceptions import (
     DocumentImportJobNotFoundError,
     DocumentImportStateViolationError,
     DocumentParsingError,
+    EmailDeliveryError,
+    EmailDeliveryNotFoundError,
+    EmailRateLimitExceededError,
     EnrollmentCapacityExceededError,
     EnrollmentError,
     EnrollmentNotFoundError,
@@ -105,7 +109,11 @@ from pwd301.services.exceptions import (
     LessonProgressError,
     LessonStateViolationError,
     LessonValidationError,
+    MandatoryNotificationOptOutError,
     MaxPointsExceededError,
+    NotificationError,
+    NotificationNotFoundError,
+    NotificationPreferenceError,
     PrerequisiteCycleError,
     QuestionBankError,
     QuestionCorrectionError,
@@ -245,6 +253,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     FileAssetNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     DocumentImportJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     ImportQuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    NotificationNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    EmailDeliveryNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     # 409 Conflict & State Violations
     DocumentImportStateViolationError: ("STATE_VIOLATION", 409),
     RegradeError: ("CONFLICT", 409),
@@ -298,11 +308,17 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     FileValidationError: ("VALIDATION_ERROR", 400),
     DocumentParsingError: ("PARSING_ERROR", 400),
     DocumentImportError: ("IMPORT_ERROR", 400),
+    NotificationPreferenceError: ("VALIDATION_ERROR", 400),
+    MandatoryNotificationOptOutError: ("VALIDATION_ERROR", 400),
+    NotificationError: ("NOTIFICATION_ERROR", 400),
     # 413 Payload Too Large
     FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
+    # 429 Rate Limit Exceeded
+    EmailRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
     # 500 Internal Error
     FileStorageError: ("INTERNAL_ERROR", 500),
     FileError: ("INTERNAL_ERROR", 500),
+    EmailDeliveryError: ("EMAIL_DELIVERY_ERROR", 500),
 }
 
 
@@ -564,6 +580,7 @@ def create_app(
     app.register_blueprint(api_attempt_bp)
     app.register_blueprint(api_file_bp)
     app.register_blueprint(api_import_bp)
+    app.register_blueprint(api_notification_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
@@ -581,6 +598,7 @@ def create_app(
     csrf.exempt(api_attempt_bp)
     csrf.exempt(api_file_bp)
     csrf.exempt(api_import_bp)
+    csrf.exempt(api_notification_bp)
 
     # Register CLI commands
     register_cli_commands(app)

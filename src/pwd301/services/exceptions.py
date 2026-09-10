@@ -407,3 +407,31 @@ class DocumentImportStateViolationError(StateViolationError, DocumentImportError
 
 class ImportQuestionNotFoundError(ResourceNotFoundError, DocumentImportError):
     """Raised when a requested ImportQuestion cannot be found within an import job."""
+
+
+class NotificationError(ServiceError):
+    """Base exception for all notification domain errors."""
+
+
+class NotificationNotFoundError(ResourceNotFoundError, NotificationError):
+    """Raised when a requested Notification cannot be found."""
+
+
+class NotificationPreferenceError(ValidationError, NotificationError):
+    """Raised when a notification preference payload or transition is invalid."""
+
+
+class MandatoryNotificationOptOutError(ValidationError, NotificationError):
+    """Raised when an actor attempts to disable mandatory security alerts."""
+
+
+class EmailDeliveryError(ServiceError):
+    """Base exception for all email delivery and queue errors."""
+
+
+class EmailDeliveryNotFoundError(ResourceNotFoundError, EmailDeliveryError):
+    """Raised when a requested EmailDelivery cannot be found."""
+
+
+class EmailRateLimitExceededError(ServiceError):
+    """Raised when outbound email dispatch exceeds the configured rate limit."""

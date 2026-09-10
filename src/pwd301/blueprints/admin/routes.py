@@ -270,3 +270,56 @@ def override_file_quarantine(asset_id: str) -> tuple[Response, int] | Response:
         admin_actor=actor, asset_id=asset_id, reason=reason, session=db.session
     )
     return jsonify(_serialize_file_asset(asset)), 200
+
+
+@admin_bp.route("/notifications/broadcast", methods=["POST"])
+@admin_required
+def admin_broadcast_notifications() -> tuple[Response, int] | Response:
+    """Admin broadcast system notification to all or role-targeted users."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.notification_service import broadcast_system_notification
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    title = data.get("title")
+    body = data.get("body")
+    target_role = data.get("target_role")
+    category = data.get("category", "SYSTEM")
+
+    if not title:
+        raise ValidationError("Field 'title' is required.")
+    if not body:
+        raise ValidationError("Field 'body' is required.")
+
+    count = broadcast_system_notification(
+        actor=actor,
+        title=title,
+        body=body,
+        target_role=target_role,
+        category=category,
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify({"broadcasted_count": count}), 200
+
+
+@admin_bp.route("/emails/retry-failed", methods=["POST"])
+@admin_required
+def admin_retry_failed_emails() -> tuple[Response, int] | Response:
+    """Admin trigger retry of failed email deliveries."""
+    from pwd301.services.email_service import retry_failed_emails
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        max_emails = int(data.get("max_emails", 50))
+    except (ValueError, TypeError):
+        max_emails = 50
+
+    count = retry_failed_emails(
+        actor=actor,
+        max_emails=max_emails,
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify({"retried_count": count}), 200
