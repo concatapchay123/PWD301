@@ -1085,3 +1085,172 @@ def instructor_restore_file(asset_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     asset = restore_file_asset(actor=actor, asset_id=asset_id, session=db.session)
     return jsonify(_serialize_file_asset(asset)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/imports", methods=["POST"])
+@instructor_required
+def instructor_create_course_import(course_id: str) -> tuple[Response, int] | Response:
+    """Start DOCX/PDF import job from Instructor Web portal."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.import_service import (
+        create_import_job,
+        get_import_job_detail,
+        process_import_job,
+    )
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict()
+    file_asset_id = data.get("file_asset_id")
+
+    if (not file_asset_id) and request.files and "file" in request.files:
+        from pwd301.services.file_service import store_file_stream
+
+        upload = request.files["file"]
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course_id,
+            file_stream=upload.stream,
+            filename=upload.filename or "import.docx",
+            content_type=upload.mimetype or request.content_type,
+            asset_type="IMPORT_SOURCE",
+            session=db.session,
+        )
+        file_asset_id = str(asset.public_id)
+
+    if not file_asset_id:
+        raise ValidationError("Field 'file_asset_id' or uploaded 'file' is required.")
+
+    auto_process = data.get("auto_process", True)
+    if isinstance(auto_process, str):
+        auto_process = auto_process.lower() in ("true", "1", "yes")
+
+    job = create_import_job(
+        actor=actor,
+        course_id=course_id,
+        file_asset_id=file_asset_id,
+        session=db.session,
+    )
+
+    if auto_process:
+        job = process_import_job(
+            actor=actor,
+            job_id=job.id,
+            session=db.session,
+        )
+
+    detail = get_import_job_detail(actor, job.id, session=db.session)
+    return jsonify(detail), 202
+
+
+@instructor_bp.route("/courses/<course_id>/imports", methods=["GET"])
+@instructor_required
+def instructor_list_course_imports(course_id: str) -> tuple[Response, int] | Response:
+    """List import jobs for a course in Instructor Web portal."""
+    from pwd301.models.file_import import DocumentImportJob
+    from pwd301.services.import_service import _resolve_course, get_import_job_detail
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    require_course_manager(actor, course.id, session=db.session)
+
+    jobs = (
+        db.session.query(DocumentImportJob)
+        .filter(DocumentImportJob.course_id == course.id)
+        .order_by(DocumentImportJob.created_at.desc())
+        .all()
+    )
+    return (
+        jsonify({"items": [get_import_job_detail(actor, j.id, session=db.session) for j in jobs]}),
+        200,
+    )
+
+
+@instructor_bp.route("/imports/<job_id>", methods=["GET"])
+@instructor_required
+def instructor_get_import_detail(job_id: str) -> tuple[Response, int] | Response:
+    """View details of an import job in Instructor Web portal."""
+    from pwd301.services.import_service import get_import_job_detail
+
+    actor = require_authenticated_actor()
+    detail = get_import_job_detail(actor, job_id, session=db.session)
+    return jsonify(detail), 200
+
+
+@instructor_bp.route("/imports/<job_id>/questions/<temp_id>", methods=["PATCH"])
+@instructor_required
+def instructor_update_import_question(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
+    """Update question draft in Instructor Web portal."""
+    from pwd301.services.import_service import (
+        set_import_question_decision,
+        update_import_question,
+    )
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    decision = data.get("decision") or data.get("action")
+    if decision:
+        set_import_question_decision(
+            actor=actor,
+            job_id=job_id,
+            temp_id=temp_id,
+            decision=str(decision),
+            session=db.session,
+        )
+
+    updated = update_import_question(
+        actor=actor,
+        job_id=job_id,
+        temp_id=temp_id,
+        payload=data,
+        session=db.session,
+    )
+    return jsonify(updated), 200
+
+
+@instructor_bp.route("/imports/<job_id>/questions/<temp_id>/decision", methods=["POST"])
+@instructor_required
+def instructor_set_import_decision(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
+    """Accept or reject question draft in Instructor Web portal."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.import_service import set_import_question_decision
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    decision = data.get("action") or data.get("decision")
+    if not decision:
+        raise ValidationError("Field 'action' or 'decision' is required (ACCEPTED / REJECTED).")
+
+    updated = set_import_question_decision(
+        actor=actor,
+        job_id=job_id,
+        temp_id=temp_id,
+        decision=str(decision),
+        session=db.session,
+    )
+    return jsonify(updated), 200
+
+
+@instructor_bp.route("/imports/<job_id>/commit", methods=["POST"])
+@instructor_required
+def instructor_commit_import(job_id: str) -> tuple[Response, int] | Response:
+    """Commit accepted import questions to Question Bank in Instructor Web portal."""
+    from pwd301.services.import_service import commit_import_job
+
+    actor = require_authenticated_actor()
+    result = commit_import_job(actor, job_id, session=db.session)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/imports/<job_id>/cancel", methods=["POST"])
+@instructor_required
+def instructor_cancel_import(job_id: str) -> tuple[Response, int] | Response:
+    """Cancel import job in Instructor Web portal."""
+    from pwd301.services.import_service import cancel_import_job, get_import_job_detail
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = data.get("reason")
+    job = cancel_import_job(actor, job_id, reason=reason, session=db.session)
+    detail = get_import_job_detail(actor, job.id, session=db.session)
+    return jsonify(detail), 200

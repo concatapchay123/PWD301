@@ -23,7 +23,7 @@ This backlog follows the documented dependency order. IDs are repository executi
 | TASK-017 | Regrading + Score History | TASK-011,TASK-016 | BACKLOG |
 | TASK-018 | File Blob/Asset Storage + Authorization | TASK-005 | BACKLOG |
 | TASK-019 | File Security / Quarantine / Malware Scan | TASK-018 | BACKLOG |
-| TASK-020 | DOCX/PDF Assessment Import | TASK-011,TASK-019 | BACKLOG |
+| TASK-020 | DOCX/PDF Assessment Import | TASK-011,TASK-019 | DONE |
 | TASK-021 | Notifications + Email Delivery/Retry | TASK-005 | BACKLOG |
 | TASK-022 | Audit + Sensitive Admin Actions | TASK-005 | BACKLOG |
 | TASK-023 | Gemini Integration + Backend Rule Recommendation | TASK-005,TASK-009 | BACKLOG |

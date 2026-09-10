@@ -37,6 +37,7 @@ from pwd301.blueprints.api_attempts import api_attempt_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_files import api_file_bp
+from pwd301.blueprints.api_import import api_import_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
@@ -79,6 +80,10 @@ from pwd301.services.exceptions import (
     CourseNotAvailableError,
     CourseStateViolationError,
     CourseValidationError,
+    DocumentImportError,
+    DocumentImportJobNotFoundError,
+    DocumentImportStateViolationError,
+    DocumentParsingError,
     EnrollmentCapacityExceededError,
     EnrollmentError,
     EnrollmentNotFoundError,
@@ -94,6 +99,7 @@ from pwd301.services.exceptions import (
     FileValidationError,
     ForbiddenError,
     GradingError,
+    ImportQuestionNotFoundError,
     LessonNotFoundError,
     LessonPositionConflictError,
     LessonProgressError,
@@ -237,7 +243,10 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     RegradeJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     QuestionCorrectionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     FileAssetNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    DocumentImportJobNotFoundError: ("RESOURCE_NOT_FOUND", 404),
+    ImportQuestionNotFoundError: ("RESOURCE_NOT_FOUND", 404),
     # 409 Conflict & State Violations
+    DocumentImportStateViolationError: ("STATE_VIOLATION", 409),
     RegradeError: ("CONFLICT", 409),
     CourseAlreadyExistsError: ("CONFLICT", 409),
     CourseStateViolationError: ("STATE_VIOLATION", 409),
@@ -287,6 +296,8 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AssessmentClosedError: ("CLOSED", 400),
     AttemptError: ("VALIDATION_ERROR", 400),
     FileValidationError: ("VALIDATION_ERROR", 400),
+    DocumentParsingError: ("PARSING_ERROR", 400),
+    DocumentImportError: ("IMPORT_ERROR", 400),
     # 413 Payload Too Large
     FileSizeLimitExceededError: ("PAYLOAD_TOO_LARGE", 413),
     # 500 Internal Error
@@ -552,6 +563,7 @@ def create_app(
     app.register_blueprint(api_assessment_bp)
     app.register_blueprint(api_attempt_bp)
     app.register_blueprint(api_file_bp)
+    app.register_blueprint(api_import_bp)
 
     # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
     csrf.exempt(api_auth_bp)
@@ -568,6 +580,7 @@ def create_app(
     csrf.exempt(api_assessment_bp)
     csrf.exempt(api_attempt_bp)
     csrf.exempt(api_file_bp)
+    csrf.exempt(api_import_bp)
 
     # Register CLI commands
     register_cli_commands(app)

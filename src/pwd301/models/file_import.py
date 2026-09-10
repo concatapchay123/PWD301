@@ -628,6 +628,11 @@ class ImportQuestion(Base):
     ai_confirmed_by = relationship("User", foreign_keys=[ai_suggestion_confirmed_by])
     approved_question = relationship("Question", foreign_keys=[approved_question_id])
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.import_question.{self.id}")
+
 
 class ImportDuplicateCandidate(Base):
     """Potential duplicates flagged during import mapping to 'import_duplicate_candidates'."""
@@ -708,6 +713,11 @@ class ImportDuplicateCandidate(Base):
     )
     candidate_question = relationship("Question", foreign_keys=[candidate_question_id])
     decided_by = relationship("User", foreign_keys=[decided_by_user_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Synthetic public UUIDv5 identifier conforming to ADR-002."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.import_duplicate_candidate.{self.id}")
 
 
 class ImportQuestionResource(Base):

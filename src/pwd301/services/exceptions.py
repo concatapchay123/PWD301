@@ -387,3 +387,23 @@ class FileSecurityQuarantineError(ForbiddenError, FileError):
 
 class FileInfectedError(FileSecurityQuarantineError):
     """Raised when accessing an infected file asset/blob."""
+
+
+class DocumentImportError(ServiceError):
+    """Base exception for all document import engine errors."""
+
+
+class DocumentParsingError(DocumentImportError):
+    """Raised when parsing a DOCX or PDF document fails or structure is corrupted."""
+
+
+class DocumentImportJobNotFoundError(ResourceNotFoundError, DocumentImportError):
+    """Raised when a requested DocumentImportJob cannot be found."""
+
+
+class DocumentImportStateViolationError(StateViolationError, DocumentImportError):
+    """Raised when an invalid state transition is attempted on a DocumentImportJob."""
+
+
+class ImportQuestionNotFoundError(ResourceNotFoundError, DocumentImportError):
+    """Raised when a requested ImportQuestion cannot be found within an import job."""

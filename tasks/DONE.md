@@ -248,3 +248,27 @@
   - `python -m pytest`: PASS (535/535 passed in 324.76s)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 535/535 passed in 299.47s)
 
+## TASK-020 — DOCX/PDF Assessment & Question Import Engine
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/services/exceptions.py` (Added `DocumentImportError`, `DocumentParsingError`, `DocumentImportJobNotFoundError`, `DocumentImportStateViolationError`, `ImportQuestionNotFoundError`)
+  - `src/pwd301/__init__.py` (Registered exception handlers, registered `api_import_bp`, added CSRF exemption for `/api/imports`)
+  - `src/pwd301/models/file_import.py` (Added synthetic UUID `public_id` properties to `ImportQuestion` and `ImportDuplicateCandidate` conforming to ADR-002)
+  - `src/pwd301/services/import_service.py` (Full implementation of OpenXML DOCX extraction, PDF resilient extraction with fallback, regex pattern matching across all 5 question types, Bloom taxonomy and points tagging, confidence scoring with diagnostic warnings, exact SHA-256 and SequenceMatcher fuzzy duplicate detection, review and atomic transaction commit into Question Bank, cancellation engine, and ADR-002 serialization)
+  - `src/pwd301/blueprints/api_import/` (`__init__.py`, `routes.py`: REST API endpoints for import lifecycle: create, get details, process on-demand, patch question, set decision, commit, and cancel)
+  - `src/pwd301/blueprints/api_courses/routes.py` (`POST /api/courses/<course_id>/imports`, `GET /api/courses/<course_id>/imports`)
+  - `src/pwd301/blueprints/instructor/routes.py` (Web session endpoints with CSRF protection for instructor import workflows)
+  - `tests/unit/test_import_service.py` (8 unit tests for document extraction, pattern matcher, confidence scoring, duplicate detection, lifecycle transitions, and rollback safety)
+  - `tests/security/test_import_idor.py` (8 security and IDOR tests for fail-closed quarantine and malware rejection, cross-course file rejection, instructor authorization, student forbidden, admin platform access, and ADR-002 zero PK leakage)
+  - `tests/api/test_import_api.py` (9 REST API and web integration tests for full end-to-end import lifecycle, idempotency, direct API, process endpoint, and instructor portal)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (Clean compilation)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (132 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 65 source files)
+  - `pytest` TASK-020 test suites: PASS (25/25 passed in 7.29s)
+  - `python -m pytest`: PASS (560/560 passed in 244.60s)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`)
+
+

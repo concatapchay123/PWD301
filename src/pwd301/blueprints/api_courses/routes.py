@@ -46,6 +46,7 @@ from pwd301.services.exceptions import (
     CourseValidationError,
     ForbiddenError,
     ResourceNotFoundError,
+    ValidationError,
 )
 from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.lesson_service import get_course_lessons
@@ -668,3 +669,81 @@ def list_course_files_api(course_id: str) -> tuple[Response, int] | Response:
     status = request.args.get("status", "ACTIVE")
     files = list_course_files(actor=actor, course_id=course_id, status=status, session=db.session)
     return jsonify({"items": [_serialize_file_asset(f) for f in files]}), 200
+
+
+@api_course_bp.route("/<course_id>/imports", methods=["POST"])
+@jwt_required
+def create_course_import_api(course_id: str) -> tuple[Response, int] | Response:
+    """Start DOCX/PDF import job for a course."""
+    from pwd301.services.import_service import (
+        create_import_job,
+        get_import_job_detail,
+        process_import_job,
+    )
+
+    actor = require_authenticated_actor()
+    data = request.get_json(silent=True) or request.form.to_dict()
+    file_asset_id = data.get("file_asset_id")
+
+    # Support direct upload if multipart file provided
+    if (not file_asset_id) and request.files and "file" in request.files:
+        from pwd301.services.file_service import store_file_stream
+
+        upload = request.files["file"]
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course_id,
+            file_stream=upload.stream,
+            filename=upload.filename or "import.docx",
+            content_type=upload.mimetype or request.content_type,
+            asset_type="IMPORT_SOURCE",
+            session=db.session,
+        )
+        file_asset_id = str(asset.public_id)
+
+    if not file_asset_id:
+        raise ValidationError("Field 'file_asset_id' or uploaded 'file' is required.")
+
+    auto_process = data.get("auto_process", True)
+    if isinstance(auto_process, str):
+        auto_process = auto_process.lower() in ("true", "1", "yes")
+
+    job = create_import_job(
+        actor=actor,
+        course_id=course_id,
+        file_asset_id=file_asset_id,
+        session=db.session,
+    )
+
+    if auto_process:
+        job = process_import_job(
+            actor=actor,
+            job_id=job.id,
+            session=db.session,
+        )
+
+    detail = get_import_job_detail(actor, job.id, session=db.session)
+    return jsonify(detail), 202
+
+
+@api_course_bp.route("/<course_id>/imports", methods=["GET"])
+@jwt_required
+def list_course_imports_api(course_id: str) -> tuple[Response, int] | Response:
+    """List document import jobs for a course."""
+    from pwd301.models.file_import import DocumentImportJob
+    from pwd301.services.import_service import _resolve_course, get_import_job_detail
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    require_course_manager(actor, course.id, session=db.session)
+
+    jobs = (
+        db.session.query(DocumentImportJob)
+        .filter(DocumentImportJob.course_id == course.id)
+        .order_by(DocumentImportJob.created_at.desc())
+        .all()
+    )
+    return (
+        jsonify({"items": [get_import_job_detail(actor, j.id, session=db.session) for j in jobs]}),
+        200,
+    )
