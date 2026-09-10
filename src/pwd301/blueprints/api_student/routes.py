@@ -9,6 +9,7 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment
+from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
     require_authenticated_actor,
@@ -97,3 +98,12 @@ def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | 
         ),
     }
     return jsonify(data), 200
+
+
+@api_student_bp.route("/analytics/overview", methods=["GET"])
+@student_required
+def get_student_analytics_overview_api() -> tuple[Response, int] | Response:
+    """Retrieve personalized learning analytics dashboard for student."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    return jsonify(overview), 200

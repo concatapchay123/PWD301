@@ -6,6 +6,12 @@ and domain operations.
 
 from __future__ import annotations
 
+from pwd301.services.analytics_service import (
+    get_admin_system_overview,
+    get_instructor_course_analytics,
+    get_instructor_overview_analytics,
+    get_student_learning_overview,
+)
 from pwd301.services.assessment_service import (
     _serialize_assessment,
     _serialize_assignment,
@@ -515,4 +521,9 @@ __all__ = [
     "regrade_attempt",
     "_serialize_regrade_job",
     "_serialize_regrade_item",
+    # Analytics & Dashboard Engine (TASK-025)
+    "get_admin_system_overview",
+    "get_instructor_overview_analytics",
+    "get_instructor_course_analytics",
+    "get_student_learning_overview",
 ]

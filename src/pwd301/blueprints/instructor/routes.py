@@ -8,6 +8,10 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.services.analytics_service import (
+    get_instructor_course_analytics,
+    get_instructor_overview_analytics,
+)
 from pwd301.services.assessment_service import (
     _serialize_assessment,
     _serialize_assignment,
@@ -110,38 +114,19 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 @instructor_bp.route("/dashboard", methods=["GET"])
 @instructor_required
 def dashboard() -> tuple[Response, int] | Response:
-    """Instructor dashboard displaying courses managed by the actor."""
+    """Instructor dashboard displaying courses managed by the actor with analytics overview."""
     actor = require_authenticated_actor()
+    overview = get_instructor_overview_analytics(actor, session=db.session)
+    return jsonify(overview), 200
 
-    sess = db.session
-    if actor.is_admin:
-        courses = sess.query(Course).filter(Course.deleted_at.is_(None)).all()
-    else:
-        courses = (
-            sess.query(Course)
-            .filter(
-                Course.owner_instructor_id == actor.id,
-                Course.deleted_at.is_(None),
-            )
-            .all()
-        )
 
-    data = {
-        "instructor_id": str(actor.public_id),
-        "instructor_name": actor.display_name,
-        "managed_courses_count": len(courses),
-        "courses": [
-            {
-                "course_id": str(c.public_id),
-                "course_code": c.course_code,
-                "title": c.title,
-                "status": c.status,
-                "created_at": c.created_at.isoformat(),
-            }
-            for c in courses
-        ],
-    }
-    return jsonify(data), 200
+@instructor_bp.route("/courses/<course_id>/analytics", methods=["GET"])
+@instructor_required
+def course_analytics_view(course_id: str) -> tuple[Response, int] | Response:
+    """Course-level learning analytics and performance report."""
+    actor = require_authenticated_actor()
+    analytics = get_instructor_course_analytics(actor, course_id, session=db.session)
+    return jsonify(analytics), 200
 
 
 @instructor_bp.route("/courses/<course_id>/manage", methods=["GET"])

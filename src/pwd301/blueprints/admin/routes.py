@@ -7,7 +7,7 @@ from flask import Response, jsonify, render_template, request
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course
-from pwd301.models.identity import User
+from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
     admin_required,
@@ -41,20 +41,19 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 @admin_bp.route("/dashboard", methods=["GET"])
 @admin_required
 def dashboard() -> tuple[Response, int] | Response:
-    """Administrator dashboard overview."""
+    """Administrator dashboard overview with comprehensive system analytics."""
     actor = require_authenticated_actor()
+    overview = get_admin_system_overview(actor, session=db.session)
+    return jsonify(overview), 200
 
-    sess = db.session
-    total_users = sess.query(User).count()
-    total_courses = sess.query(Course).count()
 
-    data = {
-        "admin_id": str(actor.public_id),
-        "admin_name": actor.display_name,
-        "total_users": total_users,
-        "total_courses": total_courses,
-    }
-    return jsonify(data), 200
+@admin_bp.route("/analytics/overview", methods=["GET"])
+@admin_required
+def admin_analytics_overview() -> tuple[Response, int] | Response:
+    """Administrator system analytics overview endpoint (JWT / Web Session)."""
+    actor = require_authenticated_actor()
+    overview = get_admin_system_overview(actor, session=db.session)
+    return jsonify(overview), 200
 
 
 @admin_bp.route("/users/<user_id>/roles", methods=["POST"])

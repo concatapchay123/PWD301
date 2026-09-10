@@ -9,6 +9,7 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.services.analytics_service import get_instructor_course_analytics
 from pwd301.services.assessment_service import (
     _serialize_assessment,
     create_assessment,
@@ -747,3 +748,12 @@ def list_course_imports_api(course_id: str) -> tuple[Response, int] | Response:
         jsonify({"items": [get_import_job_detail(actor, j.id, session=db.session) for j in jobs]}),
         200,
     )
+
+
+@api_course_bp.route("/<course_id>/analytics", methods=["GET"])
+@jwt_required
+def get_course_analytics_api(course_id: str) -> tuple[Response, int] | Response:
+    """Course-level learning analytics and performance report (REST API)."""
+    actor = require_authenticated_actor()
+    analytics = get_instructor_course_analytics(actor, course_id, session=db.session)
+    return jsonify(analytics), 200

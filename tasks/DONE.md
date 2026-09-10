@@ -363,3 +363,26 @@
   - `python -m pytest`: PASS (652/652 passed in 286.40s, 0 regressions)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 652/652 passed)
 
+## TASK-025 — Dashboards, Learning Analytics & Performance Optimization Engine
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/services/analytics_service.py` (High-performance SQL-level aggregate functions: `get_admin_system_overview`, `get_instructor_overview_analytics`, `get_instructor_course_analytics`, `get_student_learning_overview`; $O(1)$ single query aggregations, zero-division resilience, 4-bucket score distribution, server-authoritative score release enforcement)
+  - `src/pwd301/services/__init__.py` (Exported analytics service functions in imports and `__all__`)
+  - `src/pwd301/blueprints/admin/routes.py` (Updated `GET /admin/dashboard` and added `GET /api/admin/analytics/overview`)
+  - `src/pwd301/blueprints/instructor/routes.py` (Updated `GET /instructor/dashboard` and added `GET /instructor/courses/<course_id>/analytics`)
+  - `src/pwd301/blueprints/api_courses/routes.py` (Added `GET /api/courses/<course_id>/analytics` with `@jwt_required` and instructor authorization)
+  - `src/pwd301/blueprints/student/routes.py` (Updated `GET /student/dashboard` with `get_student_learning_overview`)
+  - `src/pwd301/blueprints/api_student/routes.py` (Added `GET /api/student/analytics/overview` with `@student_required`)
+  - `tests/unit/test_analytics_service.py` (6 unit tests: admin overview, zero-division edge cases, 4-bucket distribution, assessment performance, student upcoming deadlines & score release policy)
+  - `tests/security/test_analytics_idor.py` (6 security and IDOR tests: cross-instructor 403, student access rejection 403, unauthenticated 401, student data isolation, ADR-002 zero internal PK leakage)
+  - `tests/api/test_analytics_api.py` (3 integration tests: admin overview API, instructor course analytics Web/API, student learning overview API)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (159 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 77 source files)
+  - `pytest tests/unit/test_analytics_service.py tests/security/test_analytics_idor.py tests/api/test_analytics_api.py`: PASS (15/15 passed)
+  - `python -m pytest`: PASS (667/667 passed in 293.83s, 0 regressions)
+
+

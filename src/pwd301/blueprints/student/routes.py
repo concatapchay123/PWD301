@@ -9,6 +9,7 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment, Lesson, LessonProgress
+from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
     require_authenticated_actor,
@@ -32,35 +33,10 @@ from pwd301.services.lesson_service import (
 @student_bp.route("/dashboard", methods=["GET"])
 @student_required
 def dashboard() -> tuple[Response, int] | Response:
-    """Student dashboard displaying current enrolled courses."""
+    """Student dashboard displaying learning overview and enrolled courses."""
     actor = require_authenticated_actor()
-
-    sess = db.session
-    enrollments = (
-        sess.query(Enrollment)
-        .filter(
-            Enrollment.student_user_id == actor.id,
-            Enrollment.status == "ACTIVE",
-        )
-        .all()
-    )
-
-    data = {
-        "student_id": str(actor.public_id),
-        "student_name": actor.display_name,
-        "enrolled_courses_count": len(enrollments),
-        "enrollments": [
-            {
-                "enrollment_id": str(e.public_id),
-                "course_id": str(e.course.public_id) if e.course else None,
-                "course_title": e.course.title if e.course else None,
-                "progress_percent": float(e.current_progress_percent),
-                "status": e.status,
-            }
-            for e in enrollments
-        ],
-    }
-    return jsonify(data), 200
+    overview = get_student_learning_overview(actor, session=db.session)
+    return jsonify(overview), 200
 
 
 @student_bp.route("/courses/<course_id>/progress", methods=["GET"])

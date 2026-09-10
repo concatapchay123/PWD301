@@ -1,47 +1,47 @@
-# TASK-024 — RAG Knowledge Lifecycle, Semantic Retrieval & AI Security Fortress
+# TASK-025 — Dashboards, Learning Analytics & Performance Optimization Engine
 
 **Status:** COMPLETED  
 **Assignee:** Principal Software Architect & Lead Fullstack Python/Flask Engineer  
-**Depends on:** TASK-023  
+**Depends on:** TASK-024  
 **Completed Date:** 2026-09-10  
 
 ---
 
 ## Goal
-Implement the **RAG Knowledge Lifecycle, Semantic Retrieval & AI Security Fortress** for PWD301:
-1. **RAG Service & Knowledge Chunking (`src/pwd301/services/rag_service.py`)**:
-   - Adaptive sliding-window token chunking with sentence boundary preservation, SHA-256 content hashing (`text_hash`), and overlap controls.
-   - Lesson content ingestion: strictly published lessons indexed with idempotent re-ingestion and version invalidation (ADR-009 & `KNOWLEDGE_STATE_MACHINE.md`).
-   - Fail-closed course file ingestion: strictly `ACTIVE` files with virus scan result `PASS` and existing storage blobs; unscanned or quarantined files immediately rejected with `FileSecurityQuarantineError`.
-   - Batch course ingestion orchestrating lessons and verified file assets.
-2. **Pre-Retrieval Authorization & Hybrid Retrieval**:
-   - Strict resource-level authorization before vector search: Students require active course enrollment (`Enrollment.status == 'ACTIVE'`); Instructors must manage the course; Admins permitted; Guests/unauthenticated rejected.
-   - Archived and trashed course exclusion: courses in non-published or archived states immediately return zero chunks.
-   - Hybrid lexical-semantic relevance scoring with cosine similarity embeddings.
-3. **SEC-006 AI Security Fortress & Context Boundary Isolation**:
-   - Context boundary isolation: all retrieved context wrapped in `<retrieved_context>` tags as untrusted data.
-   - Grounded synthesis: AI answers cite verifiable evidence `[Ref: <UUID>]` mapping back to specific `KnowledgeChunk` and `KnowledgeDocument`.
-   - Prompt injection defense: adversarial inputs targeting context or model instructions rejected with HTTP 400 `PROMPT_INJECTION_DETECTED`.
-   - End-to-end source tracking into `ai_source_usages` and `ai_requests` with bounded transactions and zero secrets logging.
-4. **ADR-002 Zero Internal PK Leakage**:
-   - 100% public UUID identifiers (`source_id`, `chunk_id`, `usage_id`, `ai_request_id`, `course_id`, `lesson_id`).
-   - Zero internal BIGINT IDs exposed across all API payloads and response models.
-5. **REST API Endpoints (`src/pwd301/blueprints/api_ai/routes.py`)**:
-   - `POST /api/ai/courses/<course_id>/ingest` (Instructor/Admin)
-   - `POST /api/ai/lessons/<lesson_id>/ingest` (Instructor/Admin)
-   - `POST /api/ai/courses/<course_id>/query` (Enrolled Student / Course Instructor / Admin)
-   - `GET /api/ai/courses/<course_id>/sources` (Instructor/Admin)
-   - `DELETE /api/ai/sources/<source_id>` (Instructor/Admin)
+Implement the **Dashboards, Learning Analytics & Performance Optimization Engine** for PWD301:
+1. **Analytics Engine Service (`src/pwd301/services/analytics_service.py`)**:
+   - High-performance database-level aggregations (`func.count`, `func.avg`, `case`, `func.coalesce`, `group_by`) avoiding $N+1$ table scans.
+   - `get_admin_system_overview(actor: User, session: Session) -> dict[str, Any]`: Total counts of users, courses by status, enrollments by status, attempts, completed lessons, and storage/audit metrics.
+   - `get_instructor_overview_analytics(actor: User, session: Session) -> dict[str, Any]`: Instructor-managed courses, total/active students, pending submissions requiring grading, and quick course performance summaries.
+   - `get_instructor_course_analytics(actor: User, course_id: str, session: Session) -> dict[str, Any]`: Course-level deep dive with enrollment statistics, completion rates, average scores, 4-bucket score distribution (`<50%`, `50-69%`, `70-84%`, `85-100%`), and per-assessment performance metrics.
+   - `get_student_learning_overview(actor: User, session: Session) -> dict[str, Any]`: Personal student learning metrics, active/completed enrollments, upcoming assessments with server-authoritative deadlines, and released results.
+   - Zero-division resilience across all 0-student, 0-submission, 0-course states.
+   - Score release policy enforcement (`ScoreReleasePolicyError` rules for hidden/unreleased assessment scores).
+2. **ADR-002 Zero Internal PK Leakage**:
+   - 100% public UUID identifiers (`course_id`, `student_id`, `assessment_id`, `attempt_id`).
+   - Zero internal BIGINT PKs exposed in any responses or queries.
+3. **Security & IDOR Isolation**:
+   - Strict resource-level authorization: Instructor A cannot inspect Instructor B's course analytics (HTTP 403 `FORBIDDEN`).
+   - Student isolation: strictly own personal data visible; student attempts to access instructor/admin analytics rejected with 403 `FORBIDDEN`.
+   - Admin platform-wide oversight.
+   - Fail-closed unauthenticated access (HTTP 401 `UNAUTHORIZED`).
+4. **Endpoints Connected**:
+   - Admin: `GET /admin/dashboard` (Web) & `GET /api/admin/analytics/overview` (REST API)
+   - Instructor: `GET /instructor/dashboard` (Web), `GET /instructor/courses/<course_id>/analytics` (Web/JSON), & `GET /api/courses/<course_id>/analytics` (REST API)
+   - Student: `GET /student/dashboard` (Web) & `GET /api/student/analytics/overview` (REST API)
 
 ---
 
 ## Source-of-Truth Documents Consulted
 - `AGENTS.md` (Operational contract, Fail-closed invariants, Zero PK Leakage, CSRF protection)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/13_AI_GEMINI_RAG.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/security/06_AI_RAG_SECURITY.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/api/10_AI_API.md`
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/architecture/KNOWLEDGE_STATE_MACHINE.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/08_ASSESSMENT_ENGINE.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/09_SCORING_GRADING_FEEDBACK.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/11_REPORTING_LEARNING_ANALYTICS.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/security/01_SECURITY_MODEL.md`
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`
 - `docs/decisions/ADR-002-database-identifiers.md`
-- `docs/decisions/ADR-009-knowledge-indexing-pipeline.md`
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/007_ai_rag.sql`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/002_courses_enrollments.sql`
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/sql/004_attempts_regrades.sql`
+- `frontend-preview/` (`views/dashboard.js`, `views/course_analytics.js`, `components.js`, `app.css`)
+
 
