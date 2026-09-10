@@ -341,3 +341,25 @@
   - `pytest` TASK-023 test suites: PASS (27/27 passed in 8.29s)
   - `python -m pytest`: PASS (641/641 passed in 280.48s, 0 regressions)
   - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 641/641 passed)
+
+## TASK-024 — RAG Knowledge Lifecycle, Semantic Retrieval & AI Security Fortress
+- **Completion date:** 2026-09-10
+- **Important files changed:**
+  - `src/pwd301/models/ai_rag.py` (ADR-002 zero internal PK leakage with deterministic UUID prefixes `0xAA...03` for chunks and `0xAA...04` for usages; enhanced `KnowledgeDocument`, `KnowledgeChunk`, `AISourceUsage`, and `KnowledgeEmbedding` with `public_id`, `resolve_id_from_public_id`, and `to_dict()`; added `KnowledgeSource = KnowledgeDocument` alias)
+  - `src/pwd301/services/exceptions.py` (Domain exceptions for RAG knowledge lifecycle, fail-closed quarantine enforcement, and pre-retrieval access control)
+  - `src/pwd301/services/gemini_service.py` (Added `answer_rag_query` to `GeminiClientBase` and implemented in `MockGeminiClient` with deterministic `[Ref: <UUID>]` citations and in `RealGeminiClient`)
+  - `src/pwd301/services/rag_service.py` (Implemented sliding-window token chunking with sentence preservation and SHA-256 hash; lesson content ingestion with state machine lifecycle and version invalidation; fail-closed course file ingestion rejecting unscanned/quarantined files; pre-retrieval authorization scoping for students/instructors; archived/trashed course exclusion; hybrid lexical-semantic retrieval; SEC-006 context boundary formatting `<retrieved_context>` with prompt injection screening; telemetry tracking in `ai_requests` and `ai_source_usages`)
+  - `src/pwd301/blueprints/api_ai/routes.py` (Added endpoints: `POST /api/ai/courses/<course_id>/ingest`, `POST /api/ai/lessons/<lesson_id>/ingest`, `POST /api/ai/courses/<course_id>/query`, `GET /api/ai/courses/<course_id>/sources`, `DELETE /api/ai/sources/<source_id>`)
+  - `tests/unit/test_rag_service.py` (5 unit tests covering chunking bounds, sentence preservation, SHA-256 hashes, lesson ingestion, fail-closed file quarantine, version invalidation, SEC-006 prompt formatting, citation parsing)
+  - `tests/security/test_ai_security.py` (Added 4 security tests: unenrolled student RAG rejection, archived course exclusion, context boundary untrusted data defusing, ADR-002 zero PK leakage across RAG responses)
+  - `tests/api/test_ai_api.py` (Added 2 integration tests: full course RAG flow with ingestion and query, instructor course permission enforcement)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
+  - `ruff check src tests scripts`: PASS (All checks passed!)
+  - `ruff format --check src tests scripts`: PASS (155 files already formatted)
+  - `mypy src`: PASS (Success: no issues found in 76 source files)
+  - `pytest tests/unit/test_rag_service.py tests/security/test_ai_security.py tests/api/test_ai_api.py`: PASS (21/21 passed in 8.67s)
+  - `python -m pytest`: PASS (652/652 passed in 286.40s, 0 regressions)
+  - `./scripts/verify.ps1`: PASS (`PWD301 verification PASS`, 652/652 passed)
+

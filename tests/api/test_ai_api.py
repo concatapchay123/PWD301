@@ -13,6 +13,7 @@ Validates:
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import timedelta
 
@@ -23,9 +24,11 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.ai_rag import AIConversation
-from pwd301.models.course import Course
+from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
+from pwd301.services.file_service import get_file_storage_root
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -318,3 +321,234 @@ def test_cleanup_conversations_api(
     data = resp_admin.get_json()
     assert "purged_conversations" in data
     assert isinstance(data["purged_conversations"], int)
+
+
+# ---------------------------------------------------------------------------
+# TASK-024 RAG API Integration Tests
+# ---------------------------------------------------------------------------
+
+
+def test_full_course_rag_ingest_and_query_flow(
+    client: FlaskClient,
+    instructor_user: User,
+    student_user: User,
+    test_course: Course,
+) -> None:
+    """Full RAG workflow: Course -> Lesson -> File -> Ingest -> Sources -> Query -> Delete."""
+    sess: Session = db.session
+    headers_instructor = _auth_headers(instructor_user)
+    headers_student = _auth_headers(student_user)
+    course_id = str(test_course.public_id)
+
+    # 1. Create published lesson
+    lesson = Lesson(
+        public_id=uuid.uuid4(),
+        course_id=test_course.id,
+        title="Supervised Learning and Gradient Descent",
+        markdown_content=(
+            "# Supervised Learning\n\n"
+            "Supervised learning algorithms infer a function from labeled training data. "
+            "Gradient descent iteratively optimizes model parameters."
+        ),
+        position=1,
+        status="PUBLISHED",
+    )
+    sess.add(lesson)
+
+    # 2. Create clean FileAsset with physical storage blob
+    file_bytes = b"Convolutional neural networks apply kernel filters over feature maps."
+    f_hash = hashlib.sha256(file_bytes).digest()
+    rel_key = f"blobs/rag/{f_hash.hex()[:16]}.txt"
+    storage_root = get_file_storage_root()
+    p_path = storage_root / rel_key
+    p_path.parent.mkdir(parents=True, exist_ok=True)
+    p_path.write_bytes(file_bytes)
+
+    blob = FileBlob(
+        sha256=f_hash,
+        size_bytes=len(file_bytes),
+        detected_mime_type="text/plain",
+        storage_key=rel_key,
+        status="PRESENT",
+    )
+    sess.add(blob)
+    sess.flush()
+
+    asset = FileAsset(
+        public_id=uuid.uuid4(),
+        course_id=test_course.id,
+        created_by_user_id=instructor_user.id,
+        asset_type="RESOURCE",
+        display_name="Deep Learning Primer",
+        status="ACTIVE",
+    )
+    sess.add(asset)
+    sess.flush()
+
+    rev = FileRevision(
+        file_asset_id=asset.id,
+        revision_no=1,
+        is_current=True,
+        blob_id=blob.id,
+        original_filename="primer.txt",
+        size_bytes=len(file_bytes),
+        status="ACTIVE",
+        uploaded_by_user_id=instructor_user.id,
+    )
+    sess.add(rev)
+    sess.flush()
+
+    scan = FileScanResult(
+        file_revision_id=rev.id,
+        scan_type="MALWARE",
+        engine="ClamAV",
+        engine_version="1.0.0",
+        status="PASS",
+    )
+    sess.add(scan)
+
+    # Enroll student in course
+    sess.add(Enrollment(course_id=test_course.id, student_user_id=student_user.id, status="ACTIVE"))
+    sess.commit()
+
+    # 3. Instructor triggers full course ingest
+    resp_ingest = client.post(
+        f"/api/ai/courses/{course_id}/ingest",
+        headers=headers_instructor,
+    )
+    assert resp_ingest.status_code == 201
+    ingest_data = resp_ingest.get_json()
+    assert ingest_data["status"] == "INGESTED"
+    assert ingest_data["sources_ingested"] >= 2
+    assert ingest_data["chunks_created"] >= 2
+
+    # 4. List course sources
+    resp_sources = client.get(
+        f"/api/ai/courses/{course_id}/sources?include_chunks=true",
+        headers=headers_student,
+    )
+    assert resp_sources.status_code == 200
+    sources_data = resp_sources.get_json()
+    assert sources_data["count"] >= 2
+    first_source = sources_data["sources"][0]
+    assert "source_id" in first_source
+    assert "chunks" in first_source
+    first_source_id = first_source["source_id"]
+
+    # 5. Student queries RAG with relevant question
+    resp_query = client.post(
+        f"/api/ai/courses/{course_id}/query",
+        headers=headers_student,
+        json={
+            "query": "How does gradient descent optimize parameters in supervised learning?",
+            "top_k": 3,
+        },
+    )
+    assert resp_query.status_code == 200
+    q_data = resp_query.get_json()
+    assert "answer" in q_data
+    assert "citations" in q_data
+    assert len(q_data["citations"]) >= 1
+    assert q_data["confidence_score"] > 0
+    citation = q_data["citations"][0]
+    assert "chunk_id" in citation
+    assert "source_id" in citation
+    assert "lesson_title" in citation
+    assert "relevance_score" in citation
+
+    # 6. Instructor deletes first source
+    resp_delete = client.delete(
+        f"/api/ai/sources/{first_source_id}",
+        headers=headers_instructor,
+    )
+    assert resp_delete.status_code == 200
+    assert resp_delete.get_json()["source_id"] == first_source_id
+
+    # 7. Unenrolled query rejected
+    other_student = register_user("other_stu@example.com", "Password@123", "Other Student")
+    other_student = assign_role_to_user(other_student.id, "STUDENT")
+    resp_unauth = client.post(
+        f"/api/ai/courses/{course_id}/query",
+        headers=_auth_headers(other_student),
+        json={"query": "What is gradient descent?"},
+    )
+    assert resp_unauth.status_code == 403
+
+
+def test_instructor_source_management_permissions(
+    client: FlaskClient,
+    instructor_user: User,
+    test_course: Course,
+) -> None:
+    """Instructors cannot alter or delete knowledge sources of courses they do not manage."""
+    sess: Session = db.session
+
+    # Create instructor B and course B
+    instructor_b = register_user("instructor_b@example.com", "Password@123", "Instructor B")
+    instructor_b = assign_role_to_user(instructor_b.id, "INSTRUCTOR")
+
+    course_b = Course(
+        public_id=uuid.uuid4(),
+        course_code="BIO101",
+        course_code_normalized="BIO101",
+        title="Computational Biology",
+        title_normalized="computational biology",
+        category="Biology",
+        difficulty="BEGINNER",
+        status="PUBLISHED",
+        owner_instructor_id=instructor_b.id,
+    )
+    sess.add(course_b)
+
+    # Published lesson for course A (owned by instructor_user)
+    lesson_a = Lesson(
+        public_id=uuid.uuid4(),
+        course_id=test_course.id,
+        title="Intro to AI",
+        markdown_content="AI foundations and algorithms.",
+        position=1,
+        status="PUBLISHED",
+    )
+    sess.add(lesson_a)
+    sess.commit()
+
+    headers_inst_a = _auth_headers(instructor_user)
+    headers_inst_b = _auth_headers(instructor_b)
+    course_a_id = str(test_course.public_id)
+
+    # 1. Instructor A ingests lesson in Course A -> 201 Created
+    resp_ingest_a = client.post(
+        f"/api/ai/lessons/{lesson_a.public_id}/ingest",
+        headers=headers_inst_a,
+    )
+    assert resp_ingest_a.status_code == 201
+    source_a_id = resp_ingest_a.get_json()["source_id"]
+
+    # 2. Instructor B attempts course ingest on Course A -> 403 Forbidden
+    resp_b_ingest_a = client.post(
+        f"/api/ai/courses/{course_a_id}/ingest",
+        headers=headers_inst_b,
+    )
+    assert resp_b_ingest_a.status_code == 403
+    assert resp_b_ingest_a.get_json()["error"]["code"] == "FORBIDDEN"
+
+    # 3. Instructor B attempts lesson ingest on Lesson A -> 403 Forbidden
+    resp_b_lesson = client.post(
+        f"/api/ai/lessons/{lesson_a.public_id}/ingest",
+        headers=headers_inst_b,
+    )
+    assert resp_b_lesson.status_code == 403
+
+    # 4. Instructor B attempts to delete Course A's source -> 403 Forbidden
+    resp_b_delete = client.delete(
+        f"/api/ai/sources/{source_a_id}",
+        headers=headers_inst_b,
+    )
+    assert resp_b_delete.status_code == 403
+
+    # 5. Instructor A successfully deletes Source A -> 200 OK
+    resp_a_delete = client.delete(
+        f"/api/ai/sources/{source_a_id}",
+        headers=headers_inst_a,
+    )
+    assert resp_a_delete.status_code == 200

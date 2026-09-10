@@ -33,6 +33,8 @@ from pwd301.models.types import (
 
 _MSG_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00])
 _DRAFT_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00])
+_CHUNK_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00])
+_USAGE_UUID_PREFIX = bytes([0xAA, 0x10, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00])
 
 
 class AIConversation(Base):
@@ -568,6 +570,62 @@ class KnowledgeDocument(Base):
         viewonly=True,
     )
 
+    @classmethod
+    def resolve_id_from_public_id(
+        cls,
+        pub_id: str | uuid.UUID,
+        session: Any = None,
+    ) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        sess = session or db.session
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            row = sess.query(cls.id).filter(cls.public_id == u).first()
+            if row:
+                return int(row[0])
+        except Exception:
+            pass
+        return None
+
+    @property
+    def file_asset(self) -> Any:
+        """Dynamically resolve associated FileAsset when source_type is FILE."""
+        if self.source_type == "FILE" and self.source_entity_id:
+            from pwd301.models.file_import import FileAsset
+
+            return db.session.get(FileAsset, self.source_entity_id)
+        return None
+
+    def to_dict(
+        self, include_chunks: bool = False, include_embeddings: bool = False
+    ) -> dict[str, Any]:
+        """Convert KnowledgeDocument (KnowledgeSource) to dict conforming strictly to ADR-002."""
+        chunks_list: list[dict[str, Any]] = []
+        if include_chunks and self.current_version:
+            chunks_list = [
+                c.to_dict(include_embeddings=include_embeddings)
+                for c in self.current_version.chunks
+            ]
+
+        return {
+            "source_id": str(self.public_id),
+            "course_id": str(self.course.public_id) if self.course else None,
+            "lesson_id": (
+                str(self.lesson.public_id)
+                if self.lesson and getattr(self.lesson, "public_id", None)
+                else None
+            ),
+            "source_type": self.source_type,
+            "source_entity_id": str(self.source_entity_id)
+            if not self.file_asset
+            else str(self.file_asset.public_id),
+            "status": self.status,
+            "version_no": self.current_version.version_no if self.current_version else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "chunks": chunks_list,
+        }
+
 
 class KnowledgeVersion(Base):
     """Indexed content generation version mapping to 'knowledge_versions' table."""
@@ -705,6 +763,58 @@ class KnowledgeChunk(Base):
 
     knowledge_version = relationship("KnowledgeVersion", back_populates="chunks")
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_CHUNK_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _CHUNK_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    @property
+    def chunk_text(self) -> str:
+        """Extract plain text of this chunk stored in metadata_json."""
+        if self.metadata_json:
+            try:
+                data = json.loads(self.metadata_json)
+                if isinstance(data, dict):
+                    return str(data.get("text", ""))
+            except Exception:
+                pass
+        return ""
+
+    def to_dict(self, include_embeddings: bool = False) -> dict[str, Any]:
+        """Convert chunk to dict conforming strictly to ADR-002 Zero PK Leakage."""
+        data: dict[str, Any] = {
+            "chunk_id": str(self.public_id),
+            "chunk_no": self.chunk_no,
+            "text": self.chunk_text,
+            "token_count": self.token_count,
+            "text_hash": (
+                self.text_hash.hex()
+                if isinstance(self.text_hash, (bytes, bytearray))
+                else str(self.text_hash)
+            ),
+            "vector_key": self.vector_key,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_embeddings:
+            data["embedding"] = {
+                "vector_key": self.vector_key,
+                "dimension": 768,
+            }
+        return data
+
 
 class AISourceUsage(Base):
     """RAG source citation and ranking record mapping to 'ai_source_usages' table."""
@@ -757,3 +867,83 @@ class AISourceUsage(Base):
     ai_request = relationship("AIRequest", foreign_keys=[ai_request_id])
     knowledge_version = relationship("KnowledgeVersion", foreign_keys=[knowledge_version_id])
     knowledge_chunk = relationship("KnowledgeChunk", foreign_keys=[knowledge_chunk_id])
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        if self.id is None:
+            return uuid.uuid4()
+        return uuid.UUID(bytes=_USAGE_UUID_PREFIX + self.id.to_bytes(8, byteorder="big"))
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> int | None:
+        """Resolve internal BIGINT ID from public UUID without exposing raw PK."""
+        try:
+            u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
+            if u.bytes[:8] == _USAGE_UUID_PREFIX:
+                return int.from_bytes(u.bytes[8:], byteorder="big")
+        except Exception:
+            pass
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert AISourceUsage to dict conforming to ADR-002 Zero PK Leakage."""
+        return {
+            "usage_id": str(self.public_id),
+            "request_id": str(self.ai_request.request_id) if self.ai_request else None,
+            "chunk_id": str(self.knowledge_chunk.public_id) if self.knowledge_chunk else None,
+            "rank_no": self.rank_no,
+            "relevance_score": float(self.relevance_score)
+            if self.relevance_score is not None
+            else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# Canonical domain alias per System Specification and TASK-024
+KnowledgeSource = KnowledgeDocument
+
+
+class KnowledgeEmbedding:
+    """Domain representation of a vector embedding for a knowledge chunk (ADR-002 & ADR-009)."""
+
+    def __init__(
+        self,
+        chunk_id: str | uuid.UUID,
+        vector_key: str,
+        embedding: list[float] | None = None,
+        dimension: int = 768,
+        model_name: str = "text-embedding-004",
+        created_at: Any = None,
+    ) -> None:
+        self.chunk_id = str(chunk_id)
+        self.vector_key = vector_key
+        self.embedding = embedding or []
+        self.dimension = dimension
+        self.model_name = model_name
+        self.created_at = created_at or utc_now()
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUID adhering to ADR-002 Zero PK Leakage."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.knowledge_embedding.{self.vector_key}")
+
+    @classmethod
+    def resolve_id_from_public_id(cls, pub_id: str | uuid.UUID) -> str:
+        return str(pub_id)
+
+    def to_dict(self, include_vector: bool = True) -> dict[str, Any]:
+        """Convert KnowledgeEmbedding to dict conforming strictly to ADR-002."""
+        return {
+            "embedding_id": str(self.public_id),
+            "chunk_id": self.chunk_id,
+            "vector_key": self.vector_key,
+            "dimension": self.dimension,
+            "model_name": self.model_name,
+            "vector": self.embedding if include_vector else None,
+            "created_at": (
+                self.created_at.isoformat()
+                if hasattr(self.created_at, "isoformat")
+                else str(self.created_at)
+            ),
+        }

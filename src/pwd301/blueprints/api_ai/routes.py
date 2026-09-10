@@ -23,6 +23,13 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import AIValidationError, ForbiddenError
+from pwd301.services.rag_service import (
+    ask_course_rag,
+    delete_knowledge_source,
+    get_course_knowledge_sources,
+    ingest_course_knowledge,
+    ingest_lesson_content,
+)
 from pwd301.services.recommendation_service import generate_course_recommendations
 
 
@@ -225,3 +232,88 @@ def cleanup_conversations_api() -> tuple[Response, int] | Response:
 
     count = purge_expired_ai_conversations(session=db.session)
     return jsonify({"purged_conversations": count}), 200
+
+
+# ---------------------------------------------------------------------------
+# RAG Knowledge Lifecycle & Semantic Retrieval Endpoints (TASK-024)
+# ---------------------------------------------------------------------------
+
+
+@api_ai_bp.route("/courses/<course_id>/ingest", methods=["POST"])
+def ingest_course_knowledge_api(course_id: str) -> tuple[Response, int] | Response:
+    """Ingest/re-index all published lessons and clean file resources for a course."""
+    actor = require_authenticated_actor()
+    res = ingest_course_knowledge(actor=actor, course_id=course_id, session=db.session)
+    return jsonify(res), 201
+
+
+@api_ai_bp.route("/lessons/<lesson_id>/ingest", methods=["POST"])
+def ingest_lesson_knowledge_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Ingest/re-index a specific lesson into RAG knowledge."""
+    actor = require_authenticated_actor()
+    doc, ver, chunks = ingest_lesson_content(actor=actor, lesson_id=lesson_id, session=db.session)
+    return (
+        jsonify(
+            {
+                "lesson_id": lesson_id,
+                "source_id": str(doc.public_id),
+                "version_no": ver.version_no,
+                "chunks_count": len(chunks),
+            }
+        ),
+        201,
+    )
+
+
+@api_ai_bp.route("/courses/<course_id>/query", methods=["POST"])
+def query_course_rag_api(course_id: str) -> tuple[Response, int] | Response:
+    """Grounded semantic retrieval and question answering over course knowledge."""
+    actor = require_authenticated_actor()
+    data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
+
+    query = data.get("query") or data.get("question") or data.get("message")
+    if not query:
+        raise AIValidationError("Field 'query' is required.")
+
+    try:
+        top_k = int(data.get("top_k", 3))
+        top_k = max(1, min(top_k, 10))
+    except (ValueError, TypeError):
+        top_k = 3
+
+    result = ask_course_rag(
+        actor=actor,
+        course_id=course_id,
+        query=query,
+        top_k=top_k,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@api_ai_bp.route("/courses/<course_id>/sources", methods=["GET"])
+def list_course_sources_api(course_id: str) -> tuple[Response, int] | Response:
+    """List ingested knowledge sources for a course."""
+    actor = require_authenticated_actor()
+    include_chunks = request.args.get("include_chunks", "false").lower() == "true"
+    sources = get_course_knowledge_sources(actor=actor, course_id=course_id, session=db.session)
+    return (
+        jsonify(
+            {
+                "sources": [s.to_dict(include_chunks=include_chunks) for s in sources],
+                "count": len(sources),
+            }
+        ),
+        200,
+    )
+
+
+@api_ai_bp.route("/sources/<source_id>", methods=["DELETE"])
+def delete_source_api(source_id: str) -> tuple[Response, int] | Response:
+    """Delete a knowledge source from the RAG index."""
+    actor = require_authenticated_actor()
+    delete_knowledge_source(actor=actor, source_id=source_id, session=db.session)
+    return (
+        jsonify({"message": "Knowledge source successfully deleted.", "source_id": source_id}),
+        200,
+    )
