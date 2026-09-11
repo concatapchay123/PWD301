@@ -12,12 +12,45 @@
 
   <!-- Core Stylesheets -->
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=1.2.0">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   <div id="app-shell" class="min-vh-100 d-flex flex-column">
-    <!-- Application Topbar -->
+    <!-- 1. Top Demo Perspective Notification Bar -->
+    <aside class="demo-banner" aria-label="Demo Perspective Notice">
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-warning">●</span>
+        <span class="fw-medium">CHẾ ĐỘ XEM:</span>
+        <span id="demo-perspective-badge" class="badge-perspective text-uppercase">
+          {% if current_user is defined and current_user.is_authenticated %}
+            {{ session.get('active_role', 'NGƯỜI DÙNG') }}
+          {% else %}
+            KHÁCH VÃNG LAI
+          {% endif %}
+        </span>
+      </div>
+      <div class="d-flex align-items-center gap-2.5">
+        <span class="d-none d-md-inline text-slate-400 me-1">Đổi nhanh góc nhìn:</span>
+        <a href="{{ url_for('core.index') }}" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none">Khách</a>
+        <span class="text-slate-600">·</span>
+        {% if current_user is defined and current_user.is_authenticated %}
+          <a href="?switch_role=STUDENT" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Chuyển sang góc nhìn Sinh viên">Sinh viên</a>
+          <span class="text-slate-600">·</span>
+          <a href="?switch_role=INSTRUCTOR" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Chuyển sang góc nhìn Giảng viên">Giảng viên</a>
+          <span class="text-slate-600">·</span>
+          <a href="?switch_role=ADMIN" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Chuyển sang góc nhìn Quản trị viên">Quản trị</a>
+        {% else %}
+          <a href="{{ url_for('auth.login', role='STUDENT') }}" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Đăng nhập tài khoản Sinh viên mẫu">Sinh viên</a>
+          <span class="text-slate-600">·</span>
+          <a href="{{ url_for('auth.login', role='INSTRUCTOR') }}" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Đăng nhập tài khoản Giảng viên mẫu">Giảng viên</a>
+          <span class="text-slate-600">·</span>
+          <a href="{{ url_for('auth.login', role='ADMIN') }}" class="btn btn-ghost btn-sm text-white px-2.5 py-1 text-decoration-none" title="Đăng nhập tài khoản Quản trị viên mẫu">Quản trị</a>
+        {% endif %}
+      </div>
+    </aside>
+
+    <!-- 2. Application Topbar -->
     <header class="app-topbar">
       <div class="d-flex align-items-center gap-3">
         {% block mobile_toggle %}
@@ -41,13 +74,32 @@
         </button>
 
         {% if current_user is defined and current_user.is_authenticated %}
-        <!-- Notification Bell Link / Container -->
+        <!-- Notification Bell Dropdown Container -->
         <div class="position-relative" id="topbar-notif-wrapper">
-          <a href="/student/notifications" id="topbar-notif-btn" class="topbar-icon-btn position-relative text-decoration-none text-slate-700" aria-label="Thông báo" title="Thông báo hệ thống">
+          <button id="topbar-notif-btn" class="topbar-icon-btn position-relative" type="button" aria-label="Thông báo" title="Thông báo hệ thống">
             <span id="notif-bell-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
             </span>
-          </a>
+          </button>
+          
+          <!-- Dropdown Popover Box -->
+          <div id="notif-dropdown" class="notif-dropdown d-none shadow-sm" aria-label="Hộp thông báo" style="position: absolute; right: 0; top: 48px; width: 320px; background: var(--white, #fff); border: 1px solid var(--slate-200, #e2e8f0); border-radius: 8px; z-index: 1050;">
+            <div class="notif-dropdown-header p-3 border-bottom d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <span class="fw-bold" style="font-size: 14.5px;">Thông báo</span>
+                <span id="notif-header-badge" class="badge bg-primary-subtle text-primary" style="font-size: 11px;">Mới</span>
+              </div>
+              <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 text-primary" onclick="PWD.appShell.markAllNotificationsRead(event)">Đọc tất cả</button>
+            </div>
+            <div class="notif-dropdown-body p-2" id="notif-list-container" style="max-height: 280px; overflow-y: auto;">
+              <div class="p-3 text-center text-muted small">
+                Chào mừng bạn đến với PWD301 LMS! Mọi cập nhật về khóa học và bài thi sẽ hiển thị tại đây.
+              </div>
+            </div>
+            <div class="notif-dropdown-footer p-2.5 border-top text-center bg-slate-50">
+              <a href="{{ url_for('student.notifications_center') }}" class="small text-decoration-none fw-semibold">Xem tất cả thông báo →</a>
+            </div>
+          </div>
         </div>
 
         <!-- User Avatar & Actions Dropdown (Authenticated) -->
@@ -71,12 +123,9 @@
               <div class="fw-semibold text-slate-900">{{ current_user.display_name or 'Tài khoản' }}</div>
               <div class="text-muted text-caption text-truncate">{{ current_user.email }}</div>
             </li>
-            <li><a class="dropdown-item py-2" href="#profile">Hồ sơ cá nhân</a></li>
-            <li><a class="dropdown-item py-2" href="#settings">Cài đặt tài khoản</a></li>
             
             {% if user_roles is defined and user_roles|length > 1 %}
-            <li><hr class="dropdown-divider"></li>
-            <li class="dropdown-header text-caption text-muted">ĐỔI VAI TRÒ LÀM VIỆC</li>
+            <li class="dropdown-header text-caption text-muted mt-2">ĐỔI VAI TRÒ LÀM VIỆC</li>
             {% for role in user_roles %}
             <li>
               <a class="dropdown-item py-1.5 d-flex align-items-center justify-content-between {% if role == session.get('active_role') %}active fw-semibold{% endif %}" href="?switch_role={{ role }}">
@@ -87,9 +136,9 @@
               </a>
             </li>
             {% endfor %}
+            <li><hr class="dropdown-divider"></li>
             {% endif %}
 
-            <li><hr class="dropdown-divider"></li>
             <li>
               <button class="dropdown-item py-2 d-flex align-items-center gap-2" type="button" data-action="toggle-theme">
                 <span id="theme-label">Chuyển giao diện Tối/Sáng</span>
@@ -114,33 +163,264 @@
       </div>
     </header>
 
-    <!-- Flash Messages Container -->
-    <div class="container-fluid px-4 pt-3">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div class="alert alert-{{ 'danger' if category == 'error' else (category or 'info') }} alert-dismissible fade show" role="alert">
-              {{ message }}
-              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
-            </div>
-          {% endfor %}
-        {% endif %}
-      {% endwith %}
+    <!-- 3. Application Body: Sidebar + Main Workspace -->
+    <div class="app-body-container flex-grow-1 d-flex">
+      <!-- Desktop Sidebar -->
+      <nav class="app-sidebar d-none d-lg-flex flex-column" aria-label="Điều hướng ứng dụng">
+        <div id="sidebar-nav-container" class="overflow-auto flex-grow-1">
+          <ul class="sidebar-nav-list">
+            {% set active_r = session.get('active_role', '') %}
+            {% if active_r == 'STUDENT' or (current_user is defined and current_user.is_authenticated and not active_r) %}
+              <div class="sidebar-section-label">Học tập</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.dashboard') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <span>Tổng quan</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.my_learning') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                  <span>Khóa học của tôi</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('core.index') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <span>Khám phá khóa học</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.assessments_view') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                  <span>Bài kiểm tra</span>
+                </a>
+              </li>
+
+              <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.ai_assistant_view') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+                  <span>Trợ lý AI</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.notifications_center') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                  <span>Thông báo</span>
+                </a>
+              </li>
+            {% elif active_r == 'INSTRUCTOR' %}
+              <div class="sidebar-section-label">Giảng dạy</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('instructor.dashboard') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <span>Tổng quan giảng viên</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('instructor.my_courses') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                  <span>Khóa học của tôi</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('instructor.instructor_grading_overview') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                  <span>Chấm thi tự luận</span>
+                </a>
+              </li>
+            {% elif active_r == 'ADMIN' %}
+              <div class="sidebar-section-label">Quản trị & Vận hành</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.dashboard') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <span>Tổng quan hệ thống</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.admin_users') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                  <span>Quản lý người dùng</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.admin_courses') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                  <span>Duyệt khóa học</span>
+                </a>
+              </li>
+              <div class="sidebar-section-label">Bảo mật & Kiểm toán</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.list_audit_logs') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                  <span>Nhật ký Audit Log</span>
+                </a>
+              </li>
+              <div class="sidebar-section-label">Hạ tầng & Dữ liệu</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.admin_list_backups') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                  <span>Sao lưu & Phục hồi</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.admin_health') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
+                  <span>Sức khỏe dịch vụ</span>
+                </a>
+              </li>
+            {% else %}
+              <div class="sidebar-section-label">Dành cho Khách</div>
+              <li class="sidebar-item">
+                <a href="{{ url_for('core.index') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <span>Khám phá khóa học</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('auth.login') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <span>Đăng nhập</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('auth.register') }}" class="sidebar-link">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                  <span>Đăng ký tài khoản</span>
+                </a>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+        <div class="sidebar-footer">
+          <div class="text-caption text-muted text-center">
+            PWD301 LMS • v1.0.0
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main Content Workspace -->
+      <main class="app-main-workspace flex-grow-1" id="main-content">
+        <!-- Flash Messages Container -->
+        <div class="container-fluid px-0 mb-3">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else (category or 'info') }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        {% block content %}{% endblock %}
+      </main>
     </div>
 
-    <!-- Main Content Workspace -->
-    <main class="app-main-workspace flex-grow-1" id="main-content">
-      {% block content %}{% endblock %}
-    </main>
+    <!-- 4. Mobile Offcanvas Navigation Drawer -->
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="mobile-offcanvas" aria-labelledby="mobile-nav-label" style="max-width: 280px;">
+      <div class="offcanvas-header border-bottom border-slate-200">
+        <div class="d-flex align-items-center gap-2">
+          <div class="topbar-brand-mark">P3</div>
+          <h5 class="offcanvas-title sub-title m-0" id="mobile-nav-label">PWD301 LMS</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Đóng"></button>
+      </div>
+      <div class="offcanvas-body p-0">
+        <ul class="sidebar-nav-list">
+          {% if active_r == 'STUDENT' or (current_user is defined and current_user.is_authenticated and not active_r) %}
+            <div class="sidebar-section-label">Học tập</div>
+            <li class="sidebar-item"><a href="{{ url_for('student.dashboard') }}" class="sidebar-link">Tổng quan</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('student.my_learning') }}" class="sidebar-link">Khóa học của tôi</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('core.index') }}" class="sidebar-link">Khám phá khóa học</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('student.assessments_view') }}" class="sidebar-link">Bài kiểm tra</a></li>
+            <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
+            <li class="sidebar-item"><a href="{{ url_for('student.ai_assistant_view') }}" class="sidebar-link">Trợ lý AI</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('student.notifications_center') }}" class="sidebar-link">Thông báo</a></li>
+          {% elif active_r == 'INSTRUCTOR' %}
+            <div class="sidebar-section-label">Giảng dạy</div>
+            <li class="sidebar-item"><a href="{{ url_for('instructor.dashboard') }}" class="sidebar-link">Tổng quan giảng viên</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('instructor.my_courses') }}" class="sidebar-link">Khóa học của tôi</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('instructor.instructor_grading_overview') }}" class="sidebar-link">Chấm thi tự luận</a></li>
+          {% elif active_r == 'ADMIN' %}
+            <div class="sidebar-section-label">Quản trị & Vận hành</div>
+            <li class="sidebar-item"><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link">Tổng quan hệ thống</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('admin.admin_users') }}" class="sidebar-link">Quản lý người dùng</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('admin.admin_courses') }}" class="sidebar-link">Duyệt khóa học</a></li>
+            <div class="sidebar-section-label">Bảo mật & Kiểm toán</div>
+            <li class="sidebar-item"><a href="{{ url_for('admin.list_audit_logs') }}" class="sidebar-link">Nhật ký Audit Log</a></li>
+            <div class="sidebar-section-label">Hạ tầng & Dữ liệu</div>
+            <li class="sidebar-item"><a href="{{ url_for('admin.admin_list_backups') }}" class="sidebar-link">Sao lưu & Phục hồi</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('admin.admin_health') }}" class="sidebar-link">Sức khỏe dịch vụ</a></li>
+          {% else %}
+            <div class="sidebar-section-label">Dành cho Khách</div>
+            <li class="sidebar-item"><a href="{{ url_for('core.index') }}" class="sidebar-link">Khám phá khóa học</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('auth.login') }}" class="sidebar-link">Đăng nhập</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('auth.register') }}" class="sidebar-link">Đăng ký tài khoản</a></li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
 
-    <!-- Application Footer -->
+    <!-- 5. Floating AI Chatbot Launcher (FAB) & Interactive Chat Window -->
+    <div id="floating-ai-container">
+      <div id="ai-chat-window" class="ai-chat-window d-none shadow" aria-label="Cửa sổ Trợ lý AI">
+        <div class="ai-chat-header d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <div class="ai-avatar-badge">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+              <span class="ai-online-dot"></span>
+            </div>
+            <div>
+              <div class="ai-header-title">Trợ lý AI Học tập</div>
+              <div class="ai-header-status">Bám sát giáo trình PWD301</div>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <a href="{{ url_for('student.ai_assistant_view') if (current_user is defined and current_user.is_authenticated and not current_user.is_anonymous) else '#' }}" class="ai-ctrl-btn" title="Toàn màn hình">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+            </a>
+            <button type="button" class="ai-ctrl-btn" id="ai-chat-close-btn" title="Đóng">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="ai-chat-body" id="ai-floating-messages">
+          <div class="ai-chat-msg ai-msg-bot">
+            <div class="ai-msg-avatar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+            </div>
+            <div class="ai-msg-content">
+              <div>Xin chào! Mình là <strong>Trợ lý AI Học tập</strong> của hệ thống PWD301. Bạn cần giải thích khái niệm nào hay giải đáp câu hỏi nào trong bài học?</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-chat-footer p-2 border-top">
+          <div class="input-group">
+            <input type="text" id="ai-floating-input" class="form-control form-control-sm border-0" placeholder="Nhập câu hỏi học tập...">
+            <button type="button" class="btn btn-primary btn-sm px-3" onclick="PWD.appShell.sendFloatingAIMessage()">Gửi</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="ai-fab-launcher" class="ai-fab-button shadow-lg" type="button" title="Mở Trợ lý AI Học tập" aria-label="Mở Trợ lý AI Học tập">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+      </button>
+    </div>
+
+    <!-- 6. Application Footer -->
     <footer class="app-footer border-top border-slate-200 py-3 bg-white mt-auto">
       <div class="container-fluid px-4 d-flex flex-column flex-sm-row align-items-center justify-content-between gap-2 text-caption text-muted">
         <div>
           &copy; 2026 PWD301 Online Course Management Platform. Bản quyền thuộc về nhà phát triển.
         </div>
         <div class="d-flex align-items-center gap-3">
-          <span>Phiên bản 0.1.0</span>
+          <span>Phiên bản 1.0.0</span>
           <span>&bull;</span>
           <span>Kiến trúc Functional Minimalism</span>
         </div>
@@ -151,6 +431,8 @@
   <!-- Core Scripts -->
   <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/components.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app_shell.js') }}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

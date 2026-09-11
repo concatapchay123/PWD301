@@ -757,7 +757,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             score_release_policy="IMMEDIATE",
             answer_visibility_policy="IMMEDIATE",
             published_at=now - timedelta(days=7),
-            first_attempt_started_at=now - timedelta(days=5),
+            first_attempt_started_at=None,
         )
         session.add(assessment1)
         session.flush()
@@ -809,6 +809,14 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 )
             )
         session.flush()
+
+        # Lock structure by recording first_attempt_started_at once sections & questions are linked
+        assessment1.first_attempt_started_at = now - timedelta(days=5)
+        session.flush()
+    else:
+        if assessment1.first_attempt_started_at is None:
+            assessment1.first_attempt_started_at = now - timedelta(days=5)
+            session.flush()
 
     # 10. Enrollments & Progress for Students
     def get_or_create_enrollment(

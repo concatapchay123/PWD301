@@ -99,16 +99,47 @@ def attempt_view(attempt_id: str) -> Any:
 @student_required
 def student_start_assessment(assessment_id: str) -> Any:
     """Start an assessment attempt via Web session and redirect to exam view."""
-    from pwd301.services.attempt_service import start_assessment_attempt
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.services.attempt_service import _resolve_assessment, start_assessment_attempt
+    from pwd301.services.exceptions import ActiveAttemptExistsError
 
     actor = require_authenticated_actor()
-    attempt, raw_token = start_assessment_attempt(
-        student_actor=actor,
-        assessment_id=assessment_id,
-        session=db.session,
-    )
-    session[f"attempt_lease_{attempt.public_id}"] = raw_token
-    db.session.commit()
+    try:
+        attempt, raw_token = start_assessment_attempt(
+            student_actor=actor,
+            assessment_id=assessment_id,
+            session=db.session,
+        )
+        session[f"attempt_lease_{attempt.public_id}"] = raw_token
+        db.session.commit()
+    except ActiveAttemptExistsError:
+        assess = _resolve_assessment(assessment_id, session=db.session)
+        if assess is not None:
+            existing = (
+                db.session.query(AssessmentAttempt)
+                .filter(
+                    AssessmentAttempt.assessment_id == assess.id,
+                    AssessmentAttempt.student_user_id == actor.id,
+                    AssessmentAttempt.status == "IN_PROGRESS",
+                )
+                .first()
+            )
+            if existing is not None:
+                if not request.is_json and request.accept_mimetypes.accept_html:
+                    return redirect(
+                        url_for("student.attempt_view", attempt_id=str(existing.public_id))
+                    )
+                return (
+                    jsonify(
+                        {
+                            "attempt_id": str(existing.public_id),
+                            "lease_token": session.get(f"attempt_lease_{existing.public_id}", ""),
+                            "status": existing.status,
+                        }
+                    ),
+                    200,
+                )
+        raise
 
     if not request.is_json and request.accept_mimetypes.accept_html:
         return redirect(url_for("student.attempt_view", attempt_id=str(attempt.public_id)))
@@ -164,11 +195,30 @@ def course_progress(course_id: str) -> Any:
             .all()
         )
         if lessons:
+            completed_lesson_ids: set[int] = set()
+            if enrollment.current_period_id:
+                lesson_ids = [les.id for les in lessons]
+                progresses = (
+                    sess.query(LessonProgress)
+                    .filter(
+                        LessonProgress.enrollment_period_id == enrollment.current_period_id,
+                        LessonProgress.lesson_id.in_(lesson_ids),
+                    )
+                    .all()
+                )
+                completed_lesson_ids = {
+                    p.lesson_id for p in progresses if p.completed_at is not None
+                }
+            # Target first uncompleted lesson or first lesson if none/all completed
+            target_lesson = next(
+                (les for les in lessons if les.id not in completed_lesson_ids),
+                lessons[0],
+            )
             return redirect(
                 url_for(
                     "student.get_student_lesson_route",
                     course_id=str(course.public_id),
-                    lesson_id=str(lessons[0].public_id),
+                    lesson_id=str(target_lesson.public_id),
                 )
             )
         flash(f"Khóa học '{course.title}' chưa có bài học nào được xuất bản.", "info")
@@ -300,14 +350,38 @@ def student_enroll_course(course_id: str) -> Any:
     """Self-enroll in a published course."""
     actor = require_authenticated_actor()
 
-    enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
-    status_code = 201 if getattr(enrollment, "_is_new", False) else 200
+    from pwd301.services.exceptions import (
+        AccountNotActiveError,
+        CourseNotAvailableError,
+        EnrollmentCapacityExceededError,
+        EnrollmentError,
+        EnrollmentPrerequisiteError,
+        EnrollmentStateViolationError,
+        ServiceError,
+    )
 
-    if not request.is_json and request.accept_mimetypes.accept_html:
-        flash("Ghi danh khóa học thành công! Chúc bạn có trải nghiệm học tập tốt.", "success")
-        return redirect(url_for("student.course_progress", course_id=course_id))
+    try:
+        enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
+        status_code = 201 if getattr(enrollment, "_is_new", False) else 200
 
-    return jsonify(_serialize_enrollment(enrollment)), status_code
+        if not request.is_json and request.accept_mimetypes.accept_html:
+            flash("Ghi danh khóa học thành công! Chúc bạn có trải nghiệm học tập tốt.", "success")
+            return redirect(url_for("student.course_progress", course_id=course_id))
+
+        return jsonify(_serialize_enrollment(enrollment)), status_code
+    except (
+        EnrollmentPrerequisiteError,
+        EnrollmentCapacityExceededError,
+        CourseNotAvailableError,
+        AccountNotActiveError,
+        EnrollmentStateViolationError,
+        EnrollmentError,
+        ServiceError,
+    ) as e:
+        if not request.is_json and request.accept_mimetypes.accept_html:
+            flash(f"Không thể ghi danh: {str(e)}", "danger")
+            return redirect(url_for("student.student_course_detail", course_id=course_id))
+        raise
 
 
 @student_bp.route("/courses/<course_id>/leave", methods=["POST"])
@@ -587,6 +661,296 @@ def submit_student_attempt(attempt_id: str) -> Any:
 
     if not request.is_json and request.accept_mimetypes.accept_html:
         flash("Nộp bài thi thành công!", "success")
-        return redirect(url_for("student.dashboard"))
+        return redirect(url_for("student.attempt_result_view", attempt_id=attempt_id))
 
     return jsonify(result), 200
+
+
+@student_bp.route("/my-learning", methods=["GET"])
+@student_required
+def my_learning() -> Any:
+    """Student view for all enrolled courses with progress and completion summary."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/my_learning.html", overview=overview)
+    return jsonify({"enrollments": overview["enrollments"]}), 200
+
+
+@student_bp.route("/assessments", methods=["GET"])
+@student_required
+def assessments_view() -> Any:
+    """Student view for upcoming and past assessments."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/assessments.html", overview=overview)
+    return jsonify(
+        {
+            "upcoming": overview["upcoming_assessments"],
+            "recent_results": overview["recent_results"],
+        }
+    ), 200
+
+
+@student_bp.route("/assessments/<assessment_id>", methods=["GET"])
+@student_required
+def assessment_detail_view(assessment_id: str) -> Any:
+    """Student view for assessment details and rules before starting."""
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.services.assessment_service import _resolve_assessment, get_assessment_detail
+
+    actor = require_authenticated_actor()
+    assess_obj = _resolve_assessment(assessment_id, session=db.session)
+    if assess_obj is None:
+        raise ResourceNotFoundError("Assessment not found.")
+
+    assessment_data = get_assessment_detail(actor, assess_obj, session=db.session)
+    if assess_obj.course:
+        assessment_data["course_code"] = assess_obj.course.course_code
+        assessment_data["course_title"] = assess_obj.course.title
+
+    active_attempt = (
+        db.session.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.assessment_id == assess_obj.id,
+            AssessmentAttempt.student_user_id == actor.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+        )
+        .first()
+    )
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template(
+            "student/assessment_detail.html",
+            assessment=assessment_data,
+            active_attempt=active_attempt,
+        )
+    return (
+        jsonify(
+            {
+                "assessment_id": str(assess_obj.public_id),
+                "title": assessment_data.get("title"),
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/attempt/<attempt_id>/result", methods=["GET"])
+@student_required
+def attempt_result_view(attempt_id: str) -> Any:
+    """Student view to view graded attempt results and score breakdown."""
+    from pwd301.services.attempt_service import _resolve_attempt, get_attempt_result_for_student
+
+    actor = require_authenticated_actor()
+    result_data = get_attempt_result_for_student(
+        actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt:
+        if attempt.assessment:
+            result_data["assessment_title"] = attempt.assessment.title
+            if attempt.assessment.course:
+                result_data["assessment_code"] = attempt.assessment.course.course_code
+        result_data["started_at"] = attempt.started_at.isoformat() if attempt.started_at else None
+        result_data["submitted_at"] = (
+            attempt.submitted_at.isoformat() if attempt.submitted_at else None
+        )
+    result_data["is_released"] = result_data.get("score_status") == "RELEASED"
+
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/result.html", result=result_data)
+    return jsonify(result_data), 200
+
+
+@student_bp.route("/ai-assistant", methods=["GET"])
+@student_required
+def ai_assistant_view() -> Any:
+    """Student interactive AI Study Assistant view."""
+    actor = require_authenticated_actor()
+    overview = get_student_learning_overview(actor, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/ai_assistant.html", overview=overview)
+    return jsonify({"status": "ready"}), 200
+
+
+@student_bp.route("/ai/chat", methods=["POST"])
+@student_required
+def student_ai_chat() -> Any:
+    """Session-authenticated AI chat endpoint for student assistant."""
+    from pwd301.services.ai_service import create_conversation, get_conversation, send_chat_message
+    from pwd301.services.rate_limit_service import check_ai_rate_limit
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    message = (payload.get("message") or payload.get("content") or "").strip()
+    if not message:
+        return jsonify({"error": {"message": "Vui lòng nhập nội dung tin nhắn."}}), 400
+
+    conv_id = payload.get("conversation_id") or session.get("active_ai_conversation_id")
+    conv = None
+    if conv_id:
+        try:
+            conv = get_conversation(actor=actor, conversation_id=conv_id, session=db.session)
+        except Exception:
+            conv = None
+
+    if conv is None:
+        course_id = payload.get("course_id")
+        lesson_id = payload.get("lesson_id")
+        context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
+        try:
+            conv = create_conversation(
+                actor=actor,
+                context_type=context_type,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                session=db.session,
+            )
+            session["active_ai_conversation_id"] = str(conv.public_id)
+            db.session.commit()
+        except Exception:
+            pass
+
+    try:
+        check_ai_rate_limit(actor.id)
+    except Exception as e:
+        return jsonify({"error": {"message": str(e)}}), 429
+
+    if conv is None:
+        # Fallback friendly response
+        return jsonify(
+            {
+                "reply": (
+                    "Chào bạn! Tôi là Trợ lý AI Học tập của PWD301. "
+                    f"Đối với câu hỏi '{message}', hãy cùng tìm hiểu qua bài học nhé!"
+                ),
+                "status": "success",
+            }
+        ), 200
+
+    try:
+        user_msg, asst_msg = send_chat_message(
+            actor=actor,
+            conversation_id=str(conv.public_id),
+            content=message,
+            session=db.session,
+        )
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id),
+                "reply": asst_msg.content if asst_msg else "Không có phản hồi từ trợ lý.",
+                "status": "success",
+            }
+        ), 200
+    except Exception:
+        return jsonify(
+            {
+                "reply": (
+                    f"Trợ lý AI PWD301 ghi nhận câu hỏi: '{message}'. "
+                    "Xin bạn tiếp tục đối chiếu với tài liệu bài học hoặc hỏi thêm nhé!"
+                ),
+                "status": "success",
+            }
+        ), 200
+
+
+@student_bp.route("/lessons/<lesson_id>", methods=["GET"])
+@student_required
+def get_student_lesson_by_id(lesson_id: str) -> Any:
+    """Convenient shortcut route to view a lesson by lesson_id."""
+    actor = require_authenticated_actor()
+    lesson = get_lesson_detail(actor, lesson_id)
+    if lesson.course is None:
+        raise ResourceNotFoundError("Course not found for this lesson.")
+    return redirect(
+        url_for(
+            "student.get_student_lesson_route",
+            course_id=str(lesson.course.public_id),
+            lesson_id=str(lesson.public_id),
+        )
+    )
+
+
+@student_bp.route("/courses/<course_id>", methods=["GET"])
+@student_required
+def student_course_detail(course_id: str) -> Any:
+    """Course detail view with prerequisites checking and enrollment."""
+    import sqlalchemy as sa
+
+    from pwd301.models.course import CourseCompletionSummary
+    from pwd301.services.enrollment_service import (
+        check_prerequisites_met,
+        get_course_prerequisites,
+    )
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(Enrollment.student_user_id == actor.id, Enrollment.course_id == course.id)
+        .first()
+    )
+
+    is_eligible, missing_titles = check_prerequisites_met(actor.id, course.id, session=db.session)
+    prereqs = get_course_prerequisites(course_id=course.id, session=db.session)
+
+    prereq_ids = [p.id for p in prereqs]
+    completed_ids: set[int] = set()
+    if prereq_ids:
+        summaries = (
+            db.session.query(CourseCompletionSummary.course_id)
+            .filter(
+                CourseCompletionSummary.student_user_id == actor.id,
+                CourseCompletionSummary.course_id.in_(prereq_ids),
+                CourseCompletionSummary.prerequisite_eligible.is_(True),
+            )
+            .all()
+        )
+        completed_ids = {s[0] for s in summaries}
+
+    prereq_items = []
+    for p in prereqs:
+        prereq_items.append(
+            {
+                "course": p,
+                "is_satisfied": p.id in completed_ids,
+            }
+        )
+
+    active_count = (
+        db.session.query(sa.func.count(Enrollment.id))
+        .filter(
+            Enrollment.course_id == course.id,
+            Enrollment.status == "ACTIVE",
+        )
+        .scalar()
+        or 0
+    )
+    is_full = bool(course.capacity and course.capacity > 0 and active_count >= course.capacity)
+
+    lessons = (
+        db.session.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .order_by(Lesson.position.asc())
+        .all()
+    )
+
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template(
+            "student/course_detail.html",
+            course=course,
+            enrollment=enrollment,
+            prerequisites=prereqs,
+            prereq_items=prereq_items,
+            is_eligible=is_eligible,
+            missing_titles=missing_titles,
+            active_count=active_count,
+            is_full=is_full,
+            lessons=lessons,
+        )
+    return jsonify({"course_id": str(course.public_id), "title": course.title}), 200

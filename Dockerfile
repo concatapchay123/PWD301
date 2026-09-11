@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip wheel --no-cache-dir --wheel-dir /build/wheels -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel \
+    && pip wheel --no-cache-dir --wheel-dir /build/wheels -r requirements.txt setuptools wheel
 
 # ==============================================================================
 # Stage 2: Final runtime stage (minimal footprint, non-root user)

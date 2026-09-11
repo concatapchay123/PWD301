@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Bài kiểm tra & Đánh giá — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+  <header class="page-header mb-4">
+    <h1 class="h3 fw-bold text-slate-900 mb-1">Bài kiểm tra & Đánh giá</h1>
+    <p class="text-caption text-muted mb-0">Danh sách các bài thi trực tuyến, bài tập trắc nghiệm và kết quả đánh giá</p>
+  </header>
+
+  <!-- Section 1: Upcoming / In-Progress Assessments -->
+  <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px;">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0 fw-bold text-slate-900">Bài kiểm tra đang mở</h2>
+      <span class="badge bg-primary-subtle text-primary fw-semibold">{{ overview.upcoming_assessments|length if overview.upcoming_assessments else 0 }} bài thi</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-4">Môn học</th>
+              <th>Tên bài thi</th>
+              <th>Thời lượng</th>
+              <th>Hạn chót</th>
+              <th>Trạng thái</th>
+              <th class="text-end pe-4">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if overview.upcoming_assessments and overview.upcoming_assessments|length > 0 %}
+              {% for a in overview.upcoming_assessments %}
+              <tr>
+                <td class="ps-4">
+                  <span class="badge bg-secondary-subtle text-secondary fw-bold">{{ a.course_code or 'PWD301' }}</span>
+                </td>
+                <td>
+                  <div class="fw-semibold text-slate-900">{{ a.title }}</div>
+                  <div class="text-caption text-muted">{{ a.course_title }}</div>
+                </td>
+                <td>{{ a.time_limit_minutes }} phút</td>
+                <td>{{ a.close_at[:16].replace('T', ' ') if a.close_at else 'Không giới hạn' }}</td>
+                <td>
+                  {% if a.attempt_id %}
+                    <span class="badge bg-info-subtle text-info fw-semibold">Đang làm dở</span>
+                  {% else %}
+                    <span class="badge bg-warning-subtle text-warning fw-semibold">Đang mở</span>
+                  {% endif %}
+                </td>
+                <td class="text-end pe-4">
+                  {% if a.attempt_id %}
+                    <a href="{{ url_for('student.attempt_view', attempt_id=a.attempt_id) }}" class="btn btn-outline-primary btn-sm px-3 fw-semibold">Tiếp tục thi</a>
+                  {% else %}
+                    <a href="{{ url_for('student.assessment_detail_view', assessment_id=a.assessment_id) }}" class="btn btn-primary btn-sm px-3 fw-semibold">Chi tiết & Thi</a>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-5 text-muted">
+                  Hiện không có bài đánh giá nào đang mở.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: Recent Graded Results -->
+  <div class="card bg-white border border-slate-200" style="border-radius: 8px;">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0 fw-bold text-slate-900">Lịch sử Điểm số & Đã hoàn thành</h2>
+      <span class="badge bg-success-subtle text-success fw-semibold">{{ overview.recent_results|length if overview.recent_results else 0 }} kết quả</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-4">Môn học</th>
+              <th>Bài thi</th>
+              <th>Lần thi</th>
+              <th>Điểm đạt được</th>
+              <th>Kết quả</th>
+              <th class="text-end pe-4">Chi tiết</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if overview.recent_results and overview.recent_results|length > 0 %}
+              {% for r in overview.recent_results %}
+              <tr>
+                <td class="ps-4">
+                  <span class="badge bg-secondary-subtle text-secondary fw-bold">{{ r.course_code or 'PWD301' }}</span>
+                </td>
+                <td>
+                  <div class="fw-semibold text-slate-900">{{ r.assessment_title }}</div>
+                  <div class="text-caption text-muted">Chấm ngày {{ r.graded_at[:10] if r.graded_at else '' }}</div>
+                </td>
+                <td>Lần #{{ r.attempt_number }}</td>
+                <td>
+                  <span class="fw-bold text-slate-900">{{ r.raw_score }}</span> / {{ r.max_score }}
+                  <span class="text-caption text-muted">({{ r.percent_score }}%)</span>
+                </td>
+                <td>
+                  {% if r.passed %}
+                    <span class="badge bg-success-subtle text-success fw-semibold">ĐẠT (Passed)</span>
+                  {% else %}
+                    <span class="badge bg-danger-subtle text-danger fw-semibold">CHƯA ĐẠT</span>
+                  {% endif %}
+                </td>
+                <td class="text-end pe-4">
+                  <a href="{{ url_for('student.attempt_result_view', attempt_id=r.attempt_id) }}" class="btn btn-outline-secondary btn-sm px-3">Xem bảng điểm</a>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-5 text-muted">
+                  Chưa có kết quả bài thi nào được công bố.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

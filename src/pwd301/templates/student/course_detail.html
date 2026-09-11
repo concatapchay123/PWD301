@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.title }} — Chi tiết môn học{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 1060px;">
+  <!-- Breadcrumbs -->
+  <nav class="app-breadcrumbs mb-3" aria-label="Breadcrumb">
+    <a href="{{ url_for('student.dashboard') }}">Học tập</a>
+    <span class="crumb-sep">/</span>
+    <a href="{{ url_for('core.index') }}">Khám phá khóa học</a>
+    <span class="crumb-sep">/</span>
+    <span>{{ course.course_code }}</span>
+  </nav>
+
+  <!-- Defensive Warnings for Prerequisites / Capacity -->
+  {% if not (enrollment and enrollment.status == 'ACTIVE') %}
+    {% if not is_eligible %}
+      <div class="alert alert-danger border-0 rounded-2 p-3 mb-4 d-flex align-items-start gap-3 shadow-xs">
+        <span class="text-danger mt-1">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </span>
+        <div class="flex-grow-1">
+          <strong class="d-block mb-1 fs-6">Ghi danh bị chặn do chưa đạt điều kiện tiên quyết:</strong>
+          <div class="small mb-2">
+            Để đăng ký môn học này, bạn cần phải hoàn thành và đạt điểm tổng kết các môn học tiên quyết sau:
+          </div>
+          <ul class="mb-0 ps-3 small">
+            {% for item in prereq_items %}
+              <li class="mb-1">
+                <strong>{{ item.course.course_code }}</strong> — {{ item.course.title }}
+                {% if item.is_satisfied %}
+                  <span class="badge bg-success-subtle text-success ms-2">Đã hoàn thành</span>
+                {% else %}
+                  <span class="badge bg-danger-subtle text-danger ms-2">Chưa hoàn thành</span>
+                  <a href="{{ url_for('student.student_course_detail', course_id=item.course.public_id) }}" class="ms-2 text-decoration-none">Xem môn học →</a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% elif is_full %}
+      <div class="alert alert-warning border-0 rounded-2 p-3 mb-4 d-flex align-items-start gap-3 shadow-xs">
+        <span class="text-warning mt-1">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </span>
+        <div class="flex-grow-1">
+          <strong class="d-block mb-1 fs-6">Lớp học đã đủ chỉ tiêu sinh viên:</strong>
+          <div class="small">
+            Khóa học đã đạt giới hạn tuyển sinh ({{ active_count }}/{{ course.capacity }} sinh viên). Vui lòng liên hệ phòng đào tạo hoặc chờ đợt mở lớp tiếp theo.
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <!-- Hero Course Card -->
+  <div class="card bg-white border border-slate-200 shadow-sm mb-4" style="border-radius: 12px; overflow: hidden;">
+    <div class="p-4 p-md-5 bg-slate-50 border-bottom">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-primary-subtle text-primary fw-bold fs-6">{{ course.course_code }}</span>
+          {% if enrollment and enrollment.status == 'ACTIVE' %}
+            <span class="badge bg-success-subtle text-success fw-semibold">Đã ghi danh</span>
+          {% else %}
+            <span class="badge bg-secondary-subtle text-secondary fw-semibold">Môn học chính quy</span>
+          {% endif %}
+        </div>
+
+        <div>
+          {% if enrollment and enrollment.status == 'ACTIVE' %}
+            <a href="{{ url_for('student.course_progress', course_id=course.public_id) }}" class="btn btn-primary px-4 fw-semibold">
+              Vào lớp học ngay →
+            </a>
+          {% elif not is_eligible %}
+            <button type="button" class="btn btn-secondary px-4 fw-semibold" disabled title="Chưa hoàn thành môn tiên quyết">
+              Chưa đủ điều kiện ghi danh
+            </button>
+          {% elif is_full %}
+            <button type="button" class="btn btn-secondary px-4 fw-semibold" disabled title="Khóa học đã đạt sĩ số tối đa">
+              Đã hết chỗ
+            </button>
+          {% else %}
+            <form method="POST" action="{{ url_for('student.student_enroll_course', course_id=course.public_id) }}" class="d-inline m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+              <button type="submit" class="btn btn-primary px-4 fw-semibold shadow-xs">
+                Ghi danh khóa học ngay →
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+
+      <h1 class="h2 fw-bold text-slate-900 mb-2">{{ course.title }}</h1>
+      <p class="text-muted fs-6 mb-0">
+        Giảng viên phụ trách: <strong>{{ course.owner_instructor.display_name if course.owner_instructor else 'Bộ môn PWD301' }}</strong>
+        • Sĩ số: <strong>{{ active_count }}{% if course.capacity %}/{{ course.capacity }}{% endif %}</strong> sinh viên
+      </p>
+    </div>
+
+    <div class="card-body p-4">
+      <div class="row g-4">
+        <!-- Main Details & Syllabus Column -->
+        <div class="col-lg-8">
+          <div class="mb-4">
+            <h2 class="h6 fw-bold text-slate-900 mb-3 text-uppercase tracking-wider">Mô tả và mục tiêu môn học</h2>
+            <div class="text-slate-800" style="line-height: 1.8;">
+              {{ course.description or 'Khóa học cung cấp kiến thức nền tảng và chuyên sâu về phát triển ứng dụng Web an toàn, hiện đại theo tiêu chuẩn kiến trúc phần mềm.' }}
+            </div>
+          </div>
+
+          <!-- Syllabus Lesson List -->
+          <div>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h2 class="h6 fw-bold text-slate-900 mb-0 text-uppercase tracking-wider">Chương trình đào tạo</h2>
+              <span class="text-caption text-muted">{{ lessons|length if lessons else 0 }} bài học</span>
+            </div>
+
+            {% if lessons and lessons|length > 0 %}
+              <div class="list-group list-group-flush border rounded-2 overflow-hidden">
+                {% for les in lessons %}
+                  <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2.5">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge bg-slate-100 text-slate-600 rounded-pill px-2 py-1" style="font-size: 11px;">#{{ loop.index }}</span>
+                      <span class="fw-medium text-slate-800" style="font-size: 13.5px;">{{ les.title }}</span>
+                    </div>
+                    <span class="text-caption text-muted">{{ les.estimated_duration_minutes or 15 }} phút</span>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="p-4 text-center text-muted bg-light rounded-2 small">
+                Chưa có bài học nào được công bố trong khóa học này.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Right Side Info Box -->
+        <div class="col-lg-4">
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded-2 mb-4">
+            <h3 class="h6 fw-bold text-slate-900 mb-3">Thông tin tổng quan</h3>
+            <dl class="row mb-0 small" style="row-gap: 8px;">
+              <dt class="col-6 text-muted">Mã môn:</dt>
+              <dd class="col-6 text-end fw-semibold text-slate-800 mb-0">{{ course.course_code }}</dd>
+
+              <dt class="col-6 text-muted">Giảng viên:</dt>
+              <dd class="col-6 text-end fw-semibold text-slate-800 mb-0">{{ course.owner_instructor.display_name if course.owner_instructor else 'Bộ môn' }}</dd>
+
+              <dt class="col-6 text-muted">Sĩ số lớp:</dt>
+              <dd class="col-6 text-end fw-semibold text-slate-800 mb-0">
+                {{ active_count }}{% if course.capacity %}/{{ course.capacity }}{% else %} (Không giới hạn){% endif %}
+              </dd>
+
+              <dt class="col-6 text-muted">Số bài học:</dt>
+              <dd class="col-6 text-end fw-semibold text-slate-800 mb-0">{{ lessons|length if lessons else 0 }} bài</dd>
+
+              <dt class="col-6 text-muted">Trạng thái:</dt>
+              <dd class="col-6 text-end mb-0">
+                {% if enrollment and enrollment.status == 'ACTIVE' %}
+                  <span class="badge bg-success-subtle text-success">Đang học</span>
+                {% elif not is_eligible %}
+                  <span class="badge bg-danger-subtle text-danger">Chặn tiên quyết</span>
+                {% elif is_full %}
+                  <span class="badge bg-warning-subtle text-warning">Đã đầy lớp</span>
+                {% else %}
+                  <span class="badge bg-primary-subtle text-primary">Có thể ghi danh</span>
+                {% endif %}
+              </dd>
+            </dl>
+          </div>
+
+          <!-- Prerequisite summary box -->
+          {% if prereq_items and prereq_items|length > 0 %}
+          <div class="p-3 bg-white border border-slate-200 rounded-2">
+            <h3 class="h6 fw-bold text-slate-900 mb-2">Môn học tiên quyết</h3>
+            <ul class="list-unstyled mb-0 small">
+              {% for item in prereq_items %}
+                <li class="d-flex justify-content-between align-items-center py-1.5 border-bottom">
+                  <span>{{ item.course.course_code }}</span>
+                  {% if item.is_satisfied %}
+                    <span class="badge bg-success-subtle text-success">✓ Đạt</span>
+                  {% else %}
+                    <span class="badge bg-danger-subtle text-danger">✕ Chưa đạt</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center pt-4 mt-4 border-top">
+        <a href="{{ url_for('core.index') }}" class="btn btn-outline-secondary px-4">← Danh mục khóa học</a>
+        <div>
+          {% if enrollment and enrollment.status == 'ACTIVE' %}
+            <a href="{{ url_for('student.course_progress', course_id=course.public_id) }}" class="btn btn-primary px-4 fw-semibold">
+              Vào lớp học ngay →
+            </a>
+          {% elif not is_eligible %}
+            <button type="button" class="btn btn-secondary px-4 fw-semibold" disabled>
+              Chưa đủ điều kiện
+            </button>
+          {% elif is_full %}
+            <button type="button" class="btn btn-secondary px-4 fw-semibold" disabled>
+              Đã hết chỗ
+            </button>
+          {% else %}
+            <form method="POST" action="{{ url_for('student.student_enroll_course', course_id=course.public_id) }}" class="d-inline m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+              <button type="submit" class="btn btn-primary px-4 fw-semibold">
+                Ghi danh ngay →
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

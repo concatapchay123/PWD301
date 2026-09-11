@@ -104,10 +104,11 @@
           
           {% if delivery is defined and delivery.questions %}
             {% for q in delivery.questions %}
+            {% set q_idx = loop.index %}
             {% set qid = q.attempt_question_id or q.question_id %}
-            <div class="card border-0 shadow-sm mb-4 question-block" id="question-card-{{ loop.index }}" data-question-id="{{ qid }}" data-ordinal="{{ loop.index }}">
+            <div class="card border-0 shadow-sm mb-4 question-block" id="question-card-{{ q_idx }}" data-question-id="{{ qid }}" data-ordinal="{{ q_idx }}">
               <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-                <span class="fw-bold text-primary">Câu hỏi {{ loop.index }}</span>
+                <span class="fw-bold text-primary">Câu hỏi {{ q_idx }}</span>
                 <span class="badge bg-light text-muted border">{{ q.points }} điểm</span>
               </div>
               <div class="card-body p-4">
@@ -126,7 +127,7 @@
                            name="q_{{ qid }}" 
                            id="choice-{{ qid }}-{{ cval }}" 
                            value="{{ cval }}"
-                           onchange="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')">
+                           onchange="onAnswerChanged('{{ qid }}', '{{ q_idx }}', '{{ q.question_type }}')">
                     <div class="flex-grow-1">
                       <span class="fw-semibold me-2">{{ loop.index | string | replace('1','A') | replace('2','B') | replace('3','C') | replace('4','D') }}.</span>
                       {{ choice.content or choice.content_text }}
@@ -137,12 +138,12 @@
                 {% elif q.question_type == 'SHORT_ANSWER' %}
                 <div>
                   <input type="text" id="text-answer-{{ qid }}" class="form-control py-2 answer-input" placeholder="Nhập câu trả lời ngắn của bạn..." 
-                         oninput="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')">
+                         oninput="onAnswerChanged('{{ qid }}', '{{ q_idx }}', '{{ q.question_type }}')">
                 </div>
                 {% elif q.question_type == 'ESSAY' %}
                 <div>
                   <textarea id="text-answer-{{ qid }}" class="form-control answer-input" rows="6" placeholder="Trình bày chi tiết bài làm tự luận của bạn..." 
-                            oninput="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')"></textarea>
+                            oninput="onAnswerChanged('{{ qid }}', '{{ q_idx }}', '{{ q.question_type }}')"></textarea>
                 </div>
                 {% endif %}
               </div>
@@ -362,7 +363,7 @@
       })
     }).then(res => {
       if (res.ok) {
-        window.location.href = '/student/dashboard';
+        window.location.href = `/student/attempt/${attemptId}/result`;
       } else {
         return res.json().then(data => {
           const msg = (data.error && data.error.message) ? data.error.message : 'Nộp bài thất bại.';

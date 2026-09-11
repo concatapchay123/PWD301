@@ -3,130 +3,266 @@
 {% block title %}Bảng điều khiển Học tập — PWD301 LMS{% endblock %}
 
 {% block content %}
-<div class="container py-4">
-  <!-- Hero Welcome Banner -->
-  <div class="card bg-primary text-white border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); border-radius: var(--radius-lg, 12px);">
-    <div class="card-body p-4 p-md-5">
-      <div class="row align-items-center">
-        <div class="col-lg-8">
-          <h1 class="h3 fw-bold mb-2">Chào mừng trở lại, {{ current_user.display_name or current_user.email }}! 👋</h1>
-          <p class="text-white-50 mb-3 fs-6">Tiếp tục hành trình học tập hôm nay. Theo dõi tiến độ khóa học và hoàn thành các bài đánh giá đúng hạn.</p>
-          {% if overview is defined and overview.active_courses %}
-          <a href="{{ url_for('student.course_progress', course_id=overview.active_courses[0].course_id) }}" class="btn btn-light fw-semibold px-4 py-2" style="color: #1e3a8a;">Tiếp tục học: {{ overview.active_courses[0].course_title }} →</a>
-          {% else %}
-          <a href="{{ url_for('core.index') }}" class="btn btn-light fw-semibold px-4 py-2" style="color: #1e3a8a;">Khám phá khóa học →</a>
-          {% endif %}
-        </div>
+<div class="container-fluid px-0">
+  <!-- 1. Hero Welcome Banner -->
+  <div class="hero-welcome-card mb-4" style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); border-radius: var(--radius-lg, 12px); padding: var(--space-6, 24px) var(--space-7, 32px); color: #fff; box-shadow: 0 4px 20px rgba(37,99,235,0.15);">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div>
+        <h1 class="h3 fw-bold mb-2 text-white">Chào mừng trở lại, {{ current_user.display_name or current_user.email }}! 👋</h1>
+        <p class="text-white-50 mb-0 fs-6" style="max-width: 680px;">Tiếp tục hành trình học tập hôm nay. Theo dõi tiến độ khóa học và hoàn thành các bài đánh giá đúng hạn.</p>
+      </div>
+      <div>
+        {% if overview.active_courses and overview.active_courses|length > 0 %}
+          {% set first_c = overview.active_courses[0] %}
+          <a href="{{ url_for('student.course_progress', course_id=first_c.course_id) }}" class="btn btn-light fw-semibold px-4 py-2 text-nowrap" style="color: #1e3a8a; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            Tiếp tục học: {{ first_c.course_code }} →
+          </a>
+        {% else %}
+          <a href="{{ url_for('core.index') }}" class="btn btn-light fw-semibold px-4 py-2 text-nowrap" style="color: #1e3a8a; border-radius: 8px;">
+            Khám phá khóa học →
+          </a>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- KPI Stat Cards -->
+  <!-- 2. Essential KPI Stat Cards -->
   <div class="row g-4 mb-4">
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm h-100 p-3" style="border-radius: var(--radius-md, 8px);">
+      <div class="card stat-card h-100 p-3 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle p-3 d-flex align-items-center justify-content-center" style="background: #eff6ff; color: #2563eb; width: 48px; height: 48px;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+          <div class="icon-box icon-box-primary d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; border-radius: 8px; background: #eff6ff; color: #2563eb;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
           </div>
           <div>
-            <div class="text-muted small fw-medium">Khóa học đang học</div>
-            <div class="h4 fw-bold mb-0 text-slate-800">{{ overview.enrolled_count if overview is defined else 0 }}</div>
+            <div class="text-caption text-muted fw-medium">Khóa học đang học</div>
+            <div class="h4 fw-bold mb-0 text-slate-900">{{ overview.active_courses_count if overview is defined else 0 }}</div>
+            <div class="text-caption text-muted mt-0.5">Tiến độ TB: {{ overview.overall_average_progress_percent if overview is defined else 0 }}%</div>
           </div>
         </div>
       </div>
     </div>
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm h-100 p-3" style="border-radius: var(--radius-md, 8px);">
+      <div class="card stat-card h-100 p-3 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle p-3 d-flex align-items-center justify-content-center" style="background: #ecfdf5; color: #10b981; width: 48px; height: 48px;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <div class="icon-box icon-box-emerald d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; border-radius: 8px; background: #ecfdf5; color: #10b981;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
           </div>
           <div>
-            <div class="text-muted small fw-medium">Khóa học hoàn thành</div>
-            <div class="h4 fw-bold mb-0 text-slate-800">{{ overview.completed_count if overview is defined else 0 }}</div>
+            <div class="text-caption text-muted fw-medium">Khóa học hoàn thành</div>
+            <div class="h4 fw-bold mb-0 text-slate-900">{{ overview.completed_courses_count if overview is defined else 0 }}</div>
+            <div class="text-caption text-muted mt-0.5">Chứng chỉ đã cấp</div>
           </div>
         </div>
       </div>
     </div>
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm h-100 p-3" style="border-radius: var(--radius-md, 8px);">
+      <div class="card stat-card h-100 p-3 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle p-3 d-flex align-items-center justify-content-center" style="background: #fffbeb; color: #f59e0b; width: 48px; height: 48px;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <div class="icon-box icon-box-amber d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; border-radius: 8px; background: #fffbeb; color: #f59e0b;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
           </div>
           <div>
-            <div class="text-muted small fw-medium">Bài đánh giá cần làm</div>
-            <div class="h4 fw-bold mb-0 text-slate-800">{{ (overview.upcoming_assessments|length) if (overview is defined and overview.upcoming_assessments) else 0 }}</div>
+            <div class="text-caption text-muted fw-medium">Bài đánh giá cần làm</div>
+            <div class="h4 fw-bold mb-0 text-slate-900">{{ (overview.upcoming_assessments|length) if (overview is defined and overview.upcoming_assessments) else 0 }}</div>
+            <div class="text-caption text-muted mt-0.5">Hạn chót theo máy chủ</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Content Sections -->
+  <!-- 3. Main Workspace Grid -->
   <div class="row g-4">
-    <!-- Active Courses -->
+    <!-- Left / Primary Column -->
     <div class="col-lg-8">
-      <div class="card border-0 shadow-sm mb-4" style="border-radius: var(--radius-md, 8px);">
+      <!-- Recent Active Course Card -->
+      <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-          <h2 class="h5 mb-0 fw-bold text-slate-900">Khóa học của tôi</h2>
-          <a href="{{ url_for('core.index') }}" class="small text-decoration-none fw-semibold">Tất cả khóa học →</a>
+          <h2 class="h5 mb-0 fw-bold text-slate-900">Đang học gần đây</h2>
+          <a href="{{ url_for('student.my_learning') }}" class="text-caption text-decoration-none fw-semibold">Tất cả khóa học →</a>
         </div>
         <div class="card-body p-4">
-          {% if overview is defined and overview.active_courses %}
-            {% for course in overview.active_courses %}
-            <div class="p-3 bg-slate-50 border border-slate-200 rounded mb-3">
-              <div class="d-flex justify-content-between align-items-start mb-2">
-                <div>
-                  <span class="badge bg-primary-subtle text-primary fw-bold mb-1">{{ course.course_code }}</span>
-                  <h3 class="h6 mb-1 fw-bold text-slate-800">{{ course.course_title }}</h3>
-                  <div class="text-muted small">Tiến độ: {{ course.progress_percent }}%</div>
-                </div>
-                <a href="{{ url_for('student.course_progress', course_id=course.course_id) }}" class="btn btn-sm btn-primary">Vào học</a>
+          {% if overview.active_courses and overview.active_courses|length > 0 %}
+            {% set active_c = overview.active_courses[0] %}
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <span class="badge bg-primary-subtle text-primary fw-bold mb-1" style="font-size: 12px;">{{ active_c.course_code }}</span>
+                <h3 class="h5 fw-bold text-slate-900 mb-1">{{ active_c.course_title }}</h3>
+                <div class="text-caption text-muted">Giảng viên: {{ active_c.instructor_name }} • {{ active_c.lessons_count }} bài học</div>
               </div>
-              <div class="progress" style="height: 6px;">
-                <div class="progress-bar bg-primary" role="progressbar" style="width: {{ course.progress_percent }}%;" aria-valuenow="{{ course.progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+              <span class="badge bg-info-subtle text-info fw-semibold px-2.5 py-1">Đang học</span>
+            </div>
+
+            <div class="my-3">
+              <div class="d-flex justify-content-between text-caption mb-1">
+                <span class="text-muted">Tiến độ hoàn thành</span>
+                <span class="fw-semibold text-slate-900">{{ active_c.progress_percent }}%</span>
+              </div>
+              <div class="progress" style="height: 8px; border-radius: 9999px; background: #e2e8f0;">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: {{ active_c.progress_percent }}%; border-radius: 9999px;" aria-valuenow="{{ active_c.progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
               </div>
             </div>
-            {% endfor %}
+
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mt-3">
+              <div>
+                <div class="text-caption text-muted">Hành động tiếp theo:</div>
+                <div class="fw-semibold text-slate-800">Tiếp tục đọc bài học và hoàn thành bài tập</div>
+              </div>
+              <a href="{{ url_for('student.course_progress', course_id=active_c.course_id) }}" class="btn btn-primary btn-sm px-4 fw-semibold">Vào học ngay</a>
+            </div>
           {% else %}
             <div class="text-center py-5">
-              <div class="text-muted mb-3">Bạn chưa đăng ký khóa học nào.</div>
-              <a href="{{ url_for('core.index') }}" class="btn btn-primary btn-sm">Khám phá danh mục khóa học</a>
+              <div class="text-muted mb-3">Bạn chưa đăng ký khóa học nào đang hoạt động.</div>
+              <a href="{{ url_for('core.index') }}" class="btn btn-primary btn-sm px-4">Khám phá danh mục khóa học</a>
             </div>
           {% endif %}
         </div>
       </div>
+
+      <!-- Assessments & Exam Deliverables Table -->
+      <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+          <h2 class="h5 mb-0 fw-bold text-slate-900">Bài kiểm tra & Đánh giá</h2>
+          <a href="{{ url_for('student.assessments_view') }}" class="text-caption text-decoration-none fw-semibold">Xem tất cả →</a>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="ps-4">Bài kiểm tra</th>
+                  <th>Thời lượng</th>
+                  <th>Trạng thái</th>
+                  <th class="text-end pe-4">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if overview.upcoming_assessments and overview.upcoming_assessments|length > 0 %}
+                  {% for a in overview.upcoming_assessments %}
+                  <tr>
+                    <td class="ps-4">
+                      <div class="fw-semibold text-slate-900">{{ a.title }}</div>
+                      <div class="text-caption text-muted">
+                        Môn: {{ a.course_code or 'PWD301' }}
+                        {% if a.close_at %} • Hạn chót: {{ a.close_at[:10] }}{% endif %}
+                      </div>
+                    </td>
+                    <td>
+                      <span class="text-slate-800">{{ a.time_limit_minutes }} phút</span>
+                    </td>
+                    <td>
+                      {% if a.attempt_id %}
+                        <span class="badge bg-info-subtle text-info fw-semibold">Đang làm dở</span>
+                      {% else %}
+                        <span class="badge bg-warning-subtle text-warning fw-semibold">Đang mở</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end pe-4">
+                      {% if a.attempt_id %}
+                        <a href="{{ url_for('student.attempt_view', attempt_id=a.attempt_id) }}" class="btn btn-outline-primary btn-sm px-3 fw-semibold">Tiếp tục làm bài</a>
+                      {% else %}
+                        <a href="{{ url_for('student.assessment_detail_view', assessment_id=a.assessment_id) }}" class="btn btn-primary btn-sm px-3 fw-semibold">Làm bài</a>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="4" class="text-center py-4 text-muted small">Hiện không có bài đánh giá nào cần làm.</td>
+                  </tr>
+                {% endif %}
+
+                <!-- Recent Graded Results preview -->
+                {% if overview.recent_results and overview.recent_results|length > 0 %}
+                  {% for res in overview.recent_results[:2] %}
+                  <tr class="table-light-subtle">
+                    <td class="ps-4">
+                      <div class="fw-semibold text-slate-800">{{ res.assessment_title }}</div>
+                      <div class="text-caption text-muted">Môn: {{ res.course_code or 'PWD301' }} • Hoàn thành</div>
+                    </td>
+                    <td>—</td>
+                    <td>
+                      {% if res.passed %}
+                        <span class="badge bg-success-subtle text-success fw-bold">{{ res.raw_score }} / {{ res.max_score }} ({{ res.percent_score }}%)</span>
+                      {% else %}
+                        <span class="badge bg-danger-subtle text-danger fw-bold">{{ res.raw_score }} / {{ res.max_score }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end pe-4">
+                      <a href="{{ url_for('student.attempt_result_view', attempt_id=res.attempt_id) }}" class="btn btn-outline-secondary btn-sm px-3">Xem kết quả</a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Upcoming Assessments -->
+    <!-- Right / Secondary Column -->
     <div class="col-lg-4">
-      <div class="card border-0 shadow-sm mb-4" style="border-radius: var(--radius-md, 8px);">
-        <div class="card-header bg-white border-bottom py-3">
-          <h2 class="h5 mb-0 fw-bold text-slate-900">Bài thi & Đánh giá</h2>
+      <!-- Study Schedule & Deadlines -->
+      <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+          <h2 class="h6 mb-0 fw-bold text-slate-900">Lịch học & Hạn chót</h2>
+          <span class="badge bg-warning-subtle text-warning fw-semibold">Sắp tới</span>
         </div>
-        <div class="card-body p-3">
-          {% if overview is defined and overview.upcoming_assessments %}
-            <div class="list-group list-group-flush">
-              {% for a in overview.upcoming_assessments %}
-              <div class="list-group-item px-0 py-3">
-                <div class="fw-bold text-slate-800 mb-1">{{ a.title }}</div>
-                <div class="text-muted small mb-2">Thời lượng: {{ a.time_limit_minutes }} phút</div>
-                {% if a.attempt_id %}
-                <a href="/student/attempt/{{ a.attempt_id }}" class="btn btn-sm btn-outline-primary w-100">Tiếp tục làm bài</a>
-                {% else %}
-                <form method="POST" action="{{ url_for('student.student_start_assessment', assessment_id=a.assessment_id) }}" class="m-0">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-sm btn-primary w-100">Bắt đầu thi</button>
-                </form>
-                {% endif %}
-              </div>
+        <div class="card-body p-0">
+          <ul class="list-group list-group-flush">
+            {% if overview.upcoming_assessments and overview.upcoming_assessments|length > 0 %}
+              {% for a in overview.upcoming_assessments[:3] %}
+              <li class="list-group-item px-3 py-3 border-bottom">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-semibold text-slate-800" style="font-size: 13.5px;">{{ a.title }}</div>
+                    <div class="text-caption text-muted mt-1">Môn {{ a.course_code }} • Thời gian: {{ a.time_limit_minutes }} phút</div>
+                  </div>
+                  <span class="badge bg-slate-100 text-slate-700 border" style="font-size: 11px;">Thi trực tuyến</span>
+                </div>
+              </li>
               {% endfor %}
-            </div>
-          {% else %}
-            <div class="text-center py-4 text-muted small">Hiện không có bài đánh giá nào đang mở.</div>
-          {% endif %}
+            {% else %}
+              <li class="list-group-item px-3 py-4 text-center text-muted small">
+                Không có lịch thi hay hạn chót khẩn cấp.
+              </li>
+            {% endif %}
+            <li class="list-group-item px-3 py-3">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="fw-semibold text-slate-800" style="font-size: 13.5px;">Lớp học thực hành trực tuyến</div>
+                  <div class="text-caption text-muted mt-1">Hỏi đáp giảng viên & Kiểm thử ứng dụng</div>
+                </div>
+                <span class="badge bg-primary-subtle text-primary" style="font-size: 11px;">Hàng tuần</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Quick AI Study Assistant Card -->
+      <div class="card border-0 mb-4 text-white" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border-radius: 8px;">
+        <div class="card-body p-4">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="text-warning">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+            </span>
+            <h3 class="h6 mb-0 fw-bold text-white">Trợ lý Học tập AI</h3>
+          </div>
+          <p class="text-white-50 small mb-3">Đặt câu hỏi về bài học, giải thích khái niệm Web hoặc chuẩn bị cho bài kiểm tra.</p>
+          <div class="d-flex flex-column gap-2 mb-3">
+            <button type="button" class="btn btn-sm btn-outline-light text-start py-1.5 px-2.5" style="font-size: 12px; border-color: rgba(255,255,255,0.2);" onclick="PWD.appShell.openAIChat('Giải thích cơ chế bảo mật chống CSRF trong Flask-WTF')">
+              💡 Cơ chế chống CSRF hoạt động thế nào?
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-light text-start py-1.5 px-2.5" style="font-size: 12px; border-color: rgba(255,255,255,0.2);" onclick="PWD.appShell.openAIChat('Phân biệt phương thức GET và POST trong HTTP')">
+              💡 Phân biệt GET và POST chuẩn RESTful
+            </button>
+          </div>
+          <button type="button" class="btn btn-light btn-sm w-100 fw-semibold" style="color: #312e81;" onclick="PWD.appShell.openAIChat()">
+            Mở cửa sổ Trợ lý AI →
+          </button>
         </div>
       </div>
     </div>

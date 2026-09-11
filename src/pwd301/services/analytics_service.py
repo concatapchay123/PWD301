@@ -626,12 +626,22 @@ def get_student_learning_overview(
         {
             "enrollment_id": str(e.public_id),
             "course_id": str(e.course.public_id) if e.course else None,
+            "course_code": e.course.course_code if e.course else None,
             "course_title": e.course.title if e.course else None,
+            "instructor_name": (
+                e.course.owner_instructor.display_name
+                if (e.course and e.course.owner_instructor)
+                else "Giảng viên PWD301"
+            ),
             "progress_percent": round(float(e.current_progress_percent or 0.0), 2),
             "status": e.status,
+            "lessons_count": (
+                len([les for les in e.course.lessons if les.deleted_at is None]) if e.course else 0
+            ),
         }
         for e in enrollments
     ]
+    active_courses = [c for c in serialized_enrollments if c["status"] == "ACTIVE"]
 
     # 2. Upcoming Assessments Deadline (Server Timer Synchronization)
     upcoming_assessments_data: list[dict[str, Any]] = []
@@ -645,13 +655,24 @@ def get_student_learning_overview(
                 Assessment.deleted_at.is_(None),
                 or_(Assessment.close_at.is_(None), Assessment.close_at > now),
             )
-            .order_by(Assessment.close_at.asc().nullslast())
+            .order_by(case((Assessment.close_at.is_(None), 1), else_=0), Assessment.close_at.asc())
             .all()
         )
         for a in assessments:
+            active_attempt = (
+                sess.query(AssessmentAttempt)
+                .filter(
+                    AssessmentAttempt.assessment_id == a.id,
+                    AssessmentAttempt.student_user_id == actor.id,
+                    AssessmentAttempt.status == "IN_PROGRESS",
+                )
+                .first()
+            )
+            attempt_id = str(active_attempt.public_id) if active_attempt else None
             upcoming_assessments_data.append(
                 {
                     "assessment_id": str(a.public_id),
+                    "attempt_id": attempt_id,
                     "course_id": str(a.course.public_id) if a.course else None,
                     "course_code": a.course.course_code if a.course else None,
                     "course_title": a.course.title if a.course else None,
@@ -670,7 +691,11 @@ def get_student_learning_overview(
             AssessmentAttempt.student_user_id == actor.id,
             AssessmentAttempt.status == "GRADED",
         )
-        .order_by(AssessmentAttempt.graded_at.desc().nullslast(), AssessmentAttempt.id.desc())
+        .order_by(
+            case((AssessmentAttempt.graded_at.is_(None), 1), else_=0),
+            AssessmentAttempt.graded_at.desc(),
+            AssessmentAttempt.id.desc(),
+        )
         .limit(20)
         .all()
     )
@@ -718,11 +743,14 @@ def get_student_learning_overview(
         "student_id": str(actor.public_id),
         "student_name": actor.display_name,
         "enrolled_courses_count": len(enrollments),
+        "enrolled_count": len(enrollments),
         "active_courses_count": active_courses_count,
         "completed_courses_count": completed_courses_count,
+        "completed_count": completed_courses_count,
         "overall_average_progress_percent": overall_avg_progress,
         "server_time": now.isoformat(),
         "enrollments": serialized_enrollments,
+        "active_courses": active_courses,
         "upcoming_assessments": upcoming_assessments_data,
         "recent_results": recent_results_data,
     }

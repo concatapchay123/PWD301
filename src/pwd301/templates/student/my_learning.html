@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Khóa học của tôi — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+  <header class="page-header mb-4 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+    <div>
+      <h1 class="h3 fw-bold text-slate-900 mb-1">Khóa học của tôi</h1>
+      <p class="text-caption text-muted mb-0">Theo dõi tiến độ học tập và tiếp tục các bài giảng đang tham gia</p>
+    </div>
+    <div>
+      <a href="{{ url_for('core.index') }}" class="btn btn-outline-primary btn-sm px-3">+ Khám phá thêm môn học</a>
+    </div>
+  </header>
+
+  <!-- Filter & Search Controls -->
+  <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px;">
+    <div class="card-body p-3">
+      <div class="row g-3 align-items-center">
+        <div class="col-md-6">
+          <div class="input-group">
+            <span class="input-group-text bg-transparent border-end-0 text-muted">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
+            <input type="text" id="course-search-input" class="form-control border-start-0 ps-0" placeholder="Tìm theo tên hoặc mã khóa học..." oninput="filterCourses()">
+          </div>
+        </div>
+        <div class="col-md-4">
+          <select id="course-status-filter" class="form-select" onchange="filterCourses()">
+            <option value="all">Tất cả trạng thái ({{ overview.enrollments|length if overview.enrollments else 0 }})</option>
+            <option value="ACTIVE">Đang học</option>
+            <option value="COMPLETED">Đã hoàn thành</option>
+          </select>
+        </div>
+        <div class="col-md-2 text-md-end text-muted small">
+          Tổng: <strong>{{ overview.enrollments|length if overview.enrollments else 0 }}</strong> môn
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enrolled Courses Grid -->
+  {% if overview.enrollments and overview.enrollments|length > 0 %}
+    <div class="row g-4" id="enrolled-courses-grid">
+      {% for c in overview.enrollments %}
+      <div class="col-md-6 col-lg-4 course-card-item" data-status="{{ c.status }}" data-query="{{ (c.course_code ~ ' ' ~ c.course_title)|lower }}">
+        <div class="card h-100 bg-white border border-slate-200 shadow-xs" style="border-radius: 8px;">
+          <div class="card-body p-4 d-flex flex-column justify-content-between">
+            <div>
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="badge bg-primary-subtle text-primary fw-bold">{{ c.course_code }}</span>
+                {% if c.status == 'COMPLETED' or c.progress_percent >= 100 %}
+                  <span class="badge bg-success-subtle text-success">✓ Hoàn thành</span>
+                {% else %}
+                  <span class="badge bg-info-subtle text-info">Đang học</span>
+                {% endif %}
+              </div>
+              <h3 class="h5 fw-bold text-slate-900 mb-2">{{ c.course_title }}</h3>
+              <p class="text-caption text-muted mb-3">Giảng viên: {{ c.instructor_name }}</p>
+            </div>
+
+            <div class="mt-3 pt-3 border-top border-slate-100">
+              <div class="d-flex justify-content-between text-caption mb-1">
+                <span class="text-muted">Tiến độ</span>
+                <span class="fw-semibold text-slate-900">{{ c.progress_percent }}%</span>
+              </div>
+              <div class="progress mb-3" style="height: 6px; border-radius: 9999px;">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: {{ c.progress_percent }}%; border-radius: 9999px;" aria-valuenow="{{ c.progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+              </div>
+              <a href="{{ url_for('student.course_progress', course_id=c.course_id) }}" class="btn btn-primary btn-sm w-100 fw-semibold">
+                {% if c.status == 'COMPLETED' or c.progress_percent >= 100 %}
+                  Xem lại bài học
+                {% else %}
+                  Tiếp tục học →
+                {% endif %}
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card bg-white border border-slate-200 py-5 text-center" style="border-radius: 8px;">
+      <div class="card-body">
+        <div class="text-muted mb-3 fs-5">Bạn chưa tham gia khóa học nào.</div>
+        <a href="{{ url_for('core.index') }}" class="btn btn-primary px-4">Khám phá danh mục khóa học ngay</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  function filterCourses() {
+    const q = (document.getElementById('course-search-input')?.value || '').toLowerCase().trim();
+    const status = document.getElementById('course-status-filter')?.value || 'all';
+    document.querySelectorAll('#enrolled-courses-grid .course-card-item').forEach(card => {
+      const itemQuery = card.getAttribute('data-query') || '';
+      const itemStatus = card.getAttribute('data-status') || '';
+      const matchQ = !q || itemQuery.includes(q);
+      const matchS = status === 'all' || itemStatus === status;
+      card.style.display = (matchQ && matchS) ? 'block' : 'none';
+    });
+  }
+</script>
+{% endblock %}

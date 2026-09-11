@@ -62,7 +62,8 @@
         <div class="col-md-6 col-lg-4 fpt-udemy-card-col mb-4 course-card-item" data-category="{{ course.category or '' }}" data-query="{{ (course.title ~ ' ' ~ course.course_code)|lower }}">
           <div class="fpt-udemy-card h-100 bg-white border border-slate-200 rounded-3 overflow-hidden shadow-xs d-flex flex-column">
             <!-- Card Top Banner -->
-            <a href="#course-{{ course.course_code }}" class="fpt-udemy-banner position-relative d-block text-decoration-none overflow-hidden" style="height: 140px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);">
+            {% set course_target_url = url_for('student.student_course_detail', course_id=course.public_id) if (current_user is defined and current_user.is_authenticated) else url_for('auth.login', next=url_for('student.student_course_detail', course_id=course.public_id)) %}
+            <a href="{{ course_target_url }}" class="fpt-udemy-banner position-relative d-block text-decoration-none overflow-hidden" style="height: 140px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);">
               <!-- Geometric SVG overlay -->
               <svg class="w-100 h-100 position-absolute opacity-25" viewBox="0 0 320 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="320" height="160" fill="#00a86b"/>
@@ -83,7 +84,7 @@
 
             <!-- Card Body -->
             <div class="p-3.5 d-flex flex-column flex-grow-1">
-              <a href="#course-{{ course.course_code }}" class="text-decoration-none text-slate-900 mb-1">
+              <a href="{{ course_target_url }}" class="text-decoration-none text-slate-900 mb-1">
                 <h5 class="fw-bold mb-1 line-clamp-2" style="font-size: 15.5px;" title="{{ course.title }}">{{ course.title }}</h5>
               </a>
               
@@ -102,7 +103,7 @@
 
               <div class="mt-auto pt-3 border-top border-slate-100 d-flex align-items-center justify-content-between">
                 <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Đang mở</span>
-                <a href="#course-{{ course.course_code }}" class="btn btn-outline-primary btn-sm px-3">Chi tiết môn học</a>
+                <a href="{{ course_target_url }}" class="btn btn-outline-primary btn-sm px-3">Chi tiết môn học</a>
               </div>
             </div>
           </div>
