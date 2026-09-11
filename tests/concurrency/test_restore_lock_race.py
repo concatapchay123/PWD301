@@ -143,9 +143,10 @@ def test_concurrent_threads_race_for_restore_lock(
 
     # Hold the lock briefly in background to simulate an active restore
     def simulated_long_restore() -> None:
-        _restore_lock.acquire()
-        time.sleep(0.3)
-        _restore_lock.release()
+        with app.app_context():
+            _restore_lock.acquire(session=db.session)
+            time.sleep(0.3)
+            _restore_lock.release()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         f_hold = executor.submit(simulated_long_restore)

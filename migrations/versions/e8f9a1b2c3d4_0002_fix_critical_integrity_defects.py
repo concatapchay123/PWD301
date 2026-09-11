@@ -1,4 +1,4 @@
-﻿"""0002_fix_critical_integrity_defects
+"""0002_fix_critical_integrity_defects
 
 Revision ID: e8f9a1b2c3d4
 Revises: c1d237fd6bf9
@@ -21,10 +21,36 @@ branch_labels = None
 depends_on = None
 
 
+def _safe_drop_constraint(table_name: str, constraint_name: str, type_: str = "foreignkey", **kwargs):
+    bind = op.get_bind()
+    if bind.dialect.name == "mssql":
+        op.execute(sa.text(f"""
+            IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = '{constraint_name}' AND parent_object_id = OBJECT_ID('{table_name}'))
+            BEGIN
+                ALTER TABLE {table_name} DROP CONSTRAINT {constraint_name};
+            END
+            ELSE IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '{constraint_name}' AND parent_object_id = OBJECT_ID('{table_name}'))
+            BEGIN
+                ALTER TABLE {table_name} DROP CONSTRAINT {constraint_name};
+            END
+            ELSE IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = '{constraint_name}' AND parent_object_id = OBJECT_ID('{table_name}'))
+            BEGIN
+                ALTER TABLE {table_name} DROP CONSTRAINT {constraint_name};
+            END
+            ELSE IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = '{constraint_name}' AND object_id = OBJECT_ID('{table_name}'))
+            BEGIN
+                DROP INDEX {constraint_name} ON {table_name};
+            END
+        """))
+    else:
+        with op.batch_alter_table(table_name, schema=None) as batch_op:
+            batch_op.drop_constraint(constraint_name, type_=type_)
+
+
 def upgrade():
     # 1. questions: drop circular FK and current_revision_id column
+    _safe_drop_constraint('questions', 'fk_questions_current_revision_id', type_='foreignkey')
     with op.batch_alter_table('questions', schema=None) as batch_op:
-        batch_op.drop_constraint('fk_questions_current_revision_id', type_='foreignkey')
         batch_op.drop_column('current_revision_id')
 
     # 2. question_revisions: add is_current column and filtered unique index
@@ -39,9 +65,9 @@ def upgrade():
         )
 
     # 3. file_assets: drop check constraint, circular FK, and current_revision_id column
+    _safe_drop_constraint('file_assets', 'ck_file_assets_3', type_='check')
+    _safe_drop_constraint('file_assets', 'fk_file_assets_current_revision_id', type_='foreignkey')
     with op.batch_alter_table('file_assets', schema=None) as batch_op:
-        batch_op.drop_constraint('ck_file_assets_3', type_='check')
-        batch_op.drop_constraint('fk_file_assets_current_revision_id', type_='foreignkey')
         batch_op.drop_column('current_revision_id')
 
     # 4. file_revisions: add is_current column and filtered unique index
@@ -56,8 +82,8 @@ def upgrade():
         )
 
     # 5. knowledge_documents: drop circular FK and current_version_id column
+    _safe_drop_constraint('knowledge_documents', 'fk_knowledge_documents_current_version_id', type_='foreignkey')
     with op.batch_alter_table('knowledge_documents', schema=None) as batch_op:
-        batch_op.drop_constraint('fk_knowledge_documents_current_version_id', type_='foreignkey')
         batch_op.drop_column('current_version_id')
 
     # 6. knowledge_versions: add is_current column and filtered unique index
@@ -81,7 +107,8 @@ def upgrade():
     with op.batch_alter_table('lessons', schema=None) as batch_op:
         batch_op.add_column(sa.Column('change_request_id', sa.BigInteger(), nullable=True))
         batch_op.create_foreign_key('fk_lessons_change_request_id', 'course_change_requests', ['change_request_id'], ['id'], ondelete='SET NULL')
-        batch_op.drop_constraint('uq_lessons_course_id_position_2', type_='unique')
+    _safe_drop_constraint('lessons', 'uq_lessons_course_id_position_2', type_='unique')
+    with op.batch_alter_table('lessons', schema=None) as batch_op:
         batch_op.create_index(
             'uq_lessons_course_position_active',
             ['course_id', 'position'],
@@ -89,7 +116,8 @@ def upgrade():
             mssql_where=sa.text("status IN ('ACTIVE','PUBLISHED')"),
             sqlite_where=sa.text("status IN ('ACTIVE','PUBLISHED')"),
         )
-        batch_op.drop_constraint('ck_lessons_5', type_='check')
+    _safe_drop_constraint('lessons', 'ck_lessons_5', type_='check')
+    with op.batch_alter_table('lessons', schema=None) as batch_op:
         batch_op.create_check_constraint('ck_lessons_5', "status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')")
 
 

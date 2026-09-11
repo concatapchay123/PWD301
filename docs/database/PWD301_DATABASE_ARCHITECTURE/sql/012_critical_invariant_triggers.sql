@@ -254,9 +254,11 @@ GO
 
 CREATE OR ALTER TRIGGER trg_audit_events_append_only
 ON audit_events
-INSTEAD OF UPDATE, DELETE
+AFTER UPDATE, DELETE
 AS
 BEGIN
-    THROW 51012, 'Audit events are append-only. Corrections must be new events.', 1;
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM deleted)
+        THROW 51012, 'Audit events are append-only. Corrections must be new events.', 1;
 END;
 GO

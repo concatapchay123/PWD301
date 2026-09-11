@@ -799,6 +799,11 @@ class DatabaseRestoreLock:
 
     def acquire(self, blocking: bool = False, session: Any = None) -> bool:
         global _is_restore_in_progress
+        if self._held or _is_restore_in_progress:
+            return False
+        if _get_restore_lock_file().is_file():
+            return False
+
         sess = session or (db.session if db else None)
         if sess is not None:
             try:

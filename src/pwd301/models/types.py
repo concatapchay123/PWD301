@@ -97,3 +97,33 @@ def _global_engine_connect(dbapi_connection: Any, connection_record: Any) -> Non
         dbapi_connection.create_function("SYSUTCDATETIME", 0, _sqlite_sysutcdatetime)
         dbapi_connection.create_function("NEWSEQUENTIALID", 0, _sqlite_newid)
         dbapi_connection.create_function("NEWID", 0, _sqlite_newid)
+
+
+@sa.event.listens_for(sa.engine.Engine, "engine_connect")
+def _on_engine_connect(conn: Any) -> None:
+    """Disable insert_returning on MSSQL to prevent SQL Server Error 334 on tables with triggers.
+
+    Ensures that tables with INSTEAD OF or AFTER triggers (such as assessment_sections,
+    audit_events, etc.) use SCOPE_IDENTITY() instead of OUTPUT inserted.id.
+    """
+    if getattr(conn, "dialect", None) is not None and getattr(conn.dialect, "name", "") == "mssql":
+        conn.dialect.insert_returning = False
+
+
+@sa.event.listens_for(sa.orm.Mapper, "after_configured")
+def _setup_rowversion_fetched_value() -> None:
+    """Ensure all row_version columns are marked as server-generated (FetchedValue).
+
+    Prevents SQLAlchemy from explicitly transmitting `None` in INSERT/UPDATE statements,
+    which triggers SQL Server Error 273 (Cannot insert an explicit value into a timestamp column).
+    """
+    from pwd301.extensions import Base
+
+    for mapper in Base.registry.mappers:
+        table = getattr(mapper, "local_table", None)
+        if table is not None and "row_version" in table.c:
+            col = table.c["row_version"]
+            if col.server_default is None:
+                col.server_default = sa.FetchedValue()
+            if col.server_onupdate is None:
+                col.server_onupdate = sa.FetchedValue()

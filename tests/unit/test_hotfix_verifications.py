@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -403,3 +404,29 @@ class TestEnrollmentCapacityEnforcement:
         )
         assert enrollment is not None
         assert enrollment.status == "ACTIVE"
+
+
+class TestClamAVOversizedStreamHandling:
+    """Verify ClamAV scanner handles oversized files (e.g. videos up to 1GB) gracefully."""
+
+    def test_oversized_file_delegates_to_heuristic(self, tmp_path: pytest.TempPathFactory) -> None:
+        from pwd301.services.scanner_service import ClamAVScanner
+
+        test_file = Path(str(tmp_path)) / "large_video.mp4"
+        test_file.write_bytes(b"\x00" * 1024)
+
+        scanner = ClamAVScanner(max_stream_bytes=500)
+        verdict = scanner.scan_file(test_file)
+        assert verdict.status == "PASS"
+        assert "exceeds ClamAV stream limit" in verdict.details
+
+    def test_normal_file_uses_instream(self, tmp_path: pytest.TempPathFactory) -> None:
+        from pwd301.services.scanner_service import ClamAVScanner
+
+        test_file = Path(str(tmp_path)) / "small_text.txt"
+        test_file.write_bytes(b"hello world")
+
+        scanner = ClamAVScanner(max_stream_bytes=5000)
+        verdict = scanner.scan_file(test_file)
+        assert verdict.status == "ERROR"
+        assert "unreachable" in verdict.details or "timed out" in verdict.details

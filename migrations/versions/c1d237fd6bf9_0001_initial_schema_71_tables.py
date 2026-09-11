@@ -1294,6 +1294,7 @@ def upgrade():
 
     op.create_table('attempt_questions',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('public_id', sa.Uuid().with_variant(mssql.UNIQUEIDENTIFIER(), 'mssql'), server_default=sa.text('(NEWSEQUENTIALID())'), nullable=False),
     sa.Column('attempt_id', sa.BigInteger(), nullable=False),
     sa.Column('source_question_id', sa.BigInteger(), nullable=False),
     sa.Column('source_question_revision_id', sa.BigInteger(), nullable=False),
@@ -1314,6 +1315,7 @@ def upgrade():
     sa.ForeignKeyConstraint(['source_question_id'], ['questions.id'], name='fk_attempt_questions_source_question_id'),
     sa.ForeignKeyConstraint(['source_question_revision_id'], ['question_revisions.id'], name='fk_attempt_questions_source_question_revision_id'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('public_id'),
     sa.UniqueConstraint('attempt_id', 'position', name='uq_attempt_questions_attempt_id_position_1'),
     sa.UniqueConstraint('attempt_id', 'source_question_id', name='uq_attempt_questions_attempt_id_source_question_id_2')
     )

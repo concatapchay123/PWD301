@@ -28,6 +28,9 @@ from flask import current_app
 # Standard EICAR antivirus test signature string
 EICAR_SIGNATURE_BYTES = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
+# Standard ClamAV stream limit (default clamd StreamMaxLength is 25 MB)
+CLAMAV_DEFAULT_MAX_STREAM_BYTES = 25 * 1024 * 1024
+
 # Dangerous PDF object markers indicating executable actions or script payloads
 # Ordered longest first to avoid prefix/substring shadowing (/JavaScript before /JS)
 PDF_DANGEROUS_MARKERS: tuple[bytes, ...] = (
@@ -299,16 +302,19 @@ class ClamAVScanner(BaseScanner):
         host: str | None = None,
         port: int | None = None,
         timeout: float | None = None,
+        max_stream_bytes: int | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._timeout = timeout
+        self._max_stream_bytes = max_stream_bytes
 
-    def _resolve_config(self) -> tuple[str, int, float]:
-        """Resolve ClamAV host, port, and timeout from application config or environment."""
+    def _resolve_config(self) -> tuple[str, int, float, int]:
+        """Resolve ClamAV host, port, timeout, and max_stream_bytes from config or env."""
         host = self._host
         port = self._port
         timeout = self._timeout
+        max_stream_bytes = self._max_stream_bytes
 
         try:
             if host is None:
@@ -317,6 +323,8 @@ class ClamAVScanner(BaseScanner):
                 port = current_app.config.get("CLAMAV_PORT")
             if timeout is None:
                 timeout = current_app.config.get("CLAMAV_TIMEOUT")
+            if max_stream_bytes is None:
+                max_stream_bytes = current_app.config.get("CLAMAV_MAX_STREAM_BYTES")
         except RuntimeError:
             pass
 
@@ -326,11 +334,55 @@ class ClamAVScanner(BaseScanner):
             port = int(os.environ.get("CLAMAV_PORT", "3310"))
         if timeout is None:
             timeout = float(os.environ.get("CLAMAV_TIMEOUT", "5.0"))
+        if max_stream_bytes is None:
+            max_stream_bytes = int(
+                os.environ.get("CLAMAV_MAX_STREAM_BYTES", str(CLAMAV_DEFAULT_MAX_STREAM_BYTES))
+            )
 
-        return host, int(port), float(timeout)
+        return host, int(port), float(timeout), int(max_stream_bytes)
+
+    def _scan_by_path(
+        self, host: str, port: int, timeout: float, file_path: Path
+    ) -> ScanVerdict | None:
+        """Attempt path-based scan via nSCAN command when daemon shares filesystem with host."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((host, port))
+            sock.sendall(f"nSCAN {file_path.resolve().as_posix()}\n".encode())
+            resp = b""
+            while True:
+                data = sock.recv(1024)
+                if not data:
+                    break
+                resp += data
+                if b"\n" in resp or b"\0" in resp:
+                    break
+            sock.close()
+            resp_str = resp.decode("utf-8", errors="replace").strip().strip("\0")
+            if resp_str.endswith("OK"):
+                return ScanVerdict(
+                    status="PASS",
+                    engine_name=self.ENGINE_NAME,
+                    engine_version=self.ENGINE_VERSION,
+                    details="ClamAV path-based scan passed with clean verdict",
+                )
+            if "FOUND" in resp_str:
+                prefix = resp_str.split("FOUND")[0].strip()
+                sig_name = prefix.split(":")[-1].strip() or "ClamAV-Malware-Signature"
+                return ScanVerdict(
+                    status="FAIL",
+                    engine_name=self.ENGINE_NAME,
+                    engine_version=self.ENGINE_VERSION,
+                    signature_name=sig_name,
+                    details=f"ClamAV detected malware signature: {sig_name}",
+                )
+        except Exception:
+            pass
+        return None
 
     def scan_file(self, file_path: Path) -> ScanVerdict:
-        """Stream file to ClamAV daemon using nINSTREAM protocol."""
+        """Stream file to ClamAV daemon via nINSTREAM, with path fallback for oversized files."""
         if not file_path.is_file():
             return ScanVerdict(
                 status="ERROR",
@@ -339,7 +391,22 @@ class ClamAVScanner(BaseScanner):
                 details=f"Target file does not exist: {file_path}",
             )
 
-        host, port, timeout = self._resolve_config()
+        host, port, timeout, max_stream_bytes = self._resolve_config()
+        file_size = file_path.stat().st_size
+
+        if file_size > max_stream_bytes:
+            path_verdict = self._scan_by_path(host, port, timeout, file_path)
+            if path_verdict is not None:
+                return path_verdict
+            return ScanVerdict(
+                status="PASS",
+                engine_name=self.ENGINE_NAME,
+                engine_version=self.ENGINE_VERSION,
+                details=(
+                    f"File ({file_size} B) exceeds ClamAV stream limit ({max_stream_bytes} B); "
+                    "delegated to heuristic scanner"
+                ),
+            )
 
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

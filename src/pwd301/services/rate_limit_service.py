@@ -197,7 +197,7 @@ def check_ai_rate_limit(
     limit: int = 20,
     window_seconds: int = 60,
 ) -> None:
-    """Check AI chat request rate limit for an authenticated user.
+    """Check AI chat request rate limit for an authenticated user across all workers.
 
     Raises:
         AIQuotaExceededError: If user exceeds allowed requests within window.
@@ -205,14 +205,17 @@ def check_ai_rate_limit(
     now = time.time()
     key = f"user:{user_id}"
     with _lock:
-        timestamps = _clean_window(_ai_request_timestamps[key], window_seconds, now)
-        if len(timestamps) >= limit:
+        mem_timestamps = _clean_window(_ai_request_timestamps[key], window_seconds, now)
+        _ai_request_timestamps[key] = mem_timestamps
+        file_timestamps = _read_file_timestamps(key, window_seconds, now)
+        all_timestamps = sorted(set(mem_timestamps + file_timestamps))
+        if len(all_timestamps) >= limit:
             raise AIQuotaExceededError(
                 "Rate limit exceeded for AI requests. "
                 "Please wait a moment before sending another message."
             )
-        timestamps.append(now)
-        _ai_request_timestamps[key] = timestamps
+        _ai_request_timestamps[key].append(now)
+        _record_file_timestamp(key, now, window_seconds=window_seconds)
 
 
 def check_email_rate_limit(
@@ -220,7 +223,7 @@ def check_email_rate_limit(
     limit: int = 30,
     window_seconds: int = 60,
 ) -> None:
-    """Check email dispatch rate limit for a recipient address.
+    """Check email dispatch rate limit for a recipient address across all workers.
 
     Raises:
         EmailRateLimitExceededError: If outbound email count exceeds allowed threshold.
@@ -228,13 +231,16 @@ def check_email_rate_limit(
     now = time.time()
     key = f"recipient:{recipient_email.strip().lower()}"
     with _lock:
-        timestamps = _clean_window(_email_dispatch_timestamps[key], window_seconds, now)
-        if len(timestamps) >= limit:
+        mem_timestamps = _clean_window(_email_dispatch_timestamps[key], window_seconds, now)
+        _email_dispatch_timestamps[key] = mem_timestamps
+        file_timestamps = _read_file_timestamps(key, window_seconds, now)
+        all_timestamps = sorted(set(mem_timestamps + file_timestamps))
+        if len(all_timestamps) >= limit:
             raise EmailRateLimitExceededError(
                 f"Outbound email rate limit exceeded for recipient '{recipient_email}'."
             )
-        timestamps.append(now)
-        _email_dispatch_timestamps[key] = timestamps
+        _email_dispatch_timestamps[key].append(now)
+        _record_file_timestamp(key, now, window_seconds=window_seconds)
 
 
 def reset_all_rate_limits() -> None:

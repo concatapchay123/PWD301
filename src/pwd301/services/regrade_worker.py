@@ -663,6 +663,8 @@ def process_regrade_job(
         .filter(
             sa.or_(
                 RegradeItem.status == "PENDING",
+                # Recover items stalled from worker crash/restart:
+                RegradeItem.status == "PROCESSING",
                 sa.and_(
                     RegradeItem.status == "FAILED",
                     RegradeItem.attempt_count < MAX_RETRIES,

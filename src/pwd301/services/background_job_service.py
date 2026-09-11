@@ -23,6 +23,7 @@ import time
 import uuid
 from typing import Any
 
+import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy.orm import Session, scoped_session
 
@@ -150,13 +151,22 @@ def claim_next_background_job(
     """Atomically claim the next eligible queued background job."""
     sess = _resolve_session(session)
     now = utc_now()
-
-    # Query highest priority available job
+    # Query highest priority available job: either freshly QUEUED,
+    # or stalled RUNNING whose lease expired
     q = (
         sess.query(BackgroundJob)
         .filter(
-            BackgroundJob.status == "QUEUED",
-            BackgroundJob.available_at <= now,
+            sa.or_(
+                sa.and_(
+                    BackgroundJob.status == "QUEUED",
+                    BackgroundJob.available_at <= now,
+                ),
+                sa.and_(
+                    BackgroundJob.status == "RUNNING",
+                    BackgroundJob.lease_expires_at.is_not(None),
+                    BackgroundJob.lease_expires_at <= now,
+                ),
+            )
         )
         .order_by(BackgroundJob.priority.asc(), BackgroundJob.available_at.asc())
     )
