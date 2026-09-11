@@ -280,3 +280,58 @@ def test_concurrent_submit_different_keys_race_conflict(
     assert results[0]["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
     assert len(errors) == 1
     assert isinstance(errors[0], SubmissionIdempotencyConflictError)
+
+
+def test_concurrent_submit_five_threads_same_idempotency_key(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """Five concurrent submission requests with the same idempotency key all converge safely."""
+    sess: Session = db.session
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+
+    attempt, lease_token = start_assessment_attempt(enrolled_student, assessment.id, session=sess)
+    attempt_id = attempt.id
+    student_id = enrolled_student.id
+    idempotency_key = uuid.uuid4()
+
+    def worker_submit() -> dict[str, Any]:
+        with app.app_context():
+            worker_sess = db.session
+            actor = worker_sess.query(User).filter(User.id == student_id).one()
+            return submit_assessment_attempt(
+                actor=actor,
+                attempt_id=attempt_id,
+                idempotency_key=idempotency_key,
+                raw_lease_token=lease_token,
+                session=worker_sess,
+            )
+
+    results: list[dict[str, Any]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(worker_submit) for _ in range(5)]
+        for f in futures:
+            results.append(f.result())
+
+    assert len(results) == 5
+    for res in results:
+        assert res["status"] in ("SUBMITTED", "GRADED", "PENDING_GRADING")
+        assert res["submission_idempotency_key"] == str(idempotency_key)
+
+    replays = [r["is_idempotent_replay"] for r in results]
+    assert False in replays
+    assert replays.count(True) >= 1
+
+    sess.expire_all()
+    audits = (
+        sess.query(AuditEvent)
+        .filter(
+            AuditEvent.target_type == "ATTEMPT",
+            AuditEvent.target_id == attempt_id,
+            AuditEvent.action == "ATTEMPT_SUBMITTED",
+        )
+        .all()
+    )
+    assert len(audits) == 1

@@ -10,6 +10,7 @@ Validates:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.assessment import Assessment
+from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course
 from pwd301.models.identity import Role, User
 from pwd301.services.assessment_service import (
@@ -285,3 +287,106 @@ def test_voluntary_release_allows_clean_handover(
         session=db.session,
     )
     assert res["status"] == "IN_PROGRESS"
+
+
+def test_concurrent_threads_lease_takeover_race(tmp_path: Path) -> None:
+    """Tab 1 heartbeat and Tab 2 takeover race: exactly one holds the active valid lease."""
+    import concurrent.futures
+
+    from pwd301 import create_app
+
+    db_file = tmp_path / "lease_race.db"
+    test_app = create_app(
+        "testing",
+        config_override={"SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_file.as_posix()}?timeout=30"},
+    )
+
+    with test_app.app_context():
+        db.create_all()
+        sess = db.session
+
+        for code, name in [
+            ("STUDENT", "Student"),
+            ("INSTRUCTOR", "Instructor"),
+            ("ADMIN", "System Administrator"),
+        ]:
+            if not sess.query(Role).filter_by(code=code).first():
+                sess.add(Role(code=code, name=name))
+        sess.commit()
+
+        inst = assign_role_to_user(
+            register_user("l_inst@example.com", "Password@123", "L Inst").id, "INSTRUCTOR"
+        )
+        adm = assign_role_to_user(
+            register_user("l_adm@example.com", "Password@123", "L Adm").id, "ADMIN"
+        )
+        student = assign_role_to_user(
+            register_user("l_stud@example.com", "Password@123", "L Stud").id, "STUDENT"
+        )
+
+        course = create_course(
+            inst,
+            {"course_code": "LRACE-101", "title": "Lease Race Course"},
+        )
+        change_course_status(inst, course.id, "SUBMITTED_FOR_REVIEW")
+        change_course_status(adm, course.id, "APPROVED")
+        change_course_status(inst, course.id, "PUBLISHED")
+        enroll_student(student, course.id, session=sess)
+        sess.commit()
+
+        assessment = _make_assessment_with_question(inst, course)
+        attempt, tab1_token = start_assessment_attempt(student, assessment.id, session=sess)
+        attempt_id = attempt.id
+        student_id = student.id
+        sess.commit()
+
+        def tab1_renew() -> tuple[str, bool, str | None]:
+            with test_app.app_context():
+                w_sess = db.session
+                actor = w_sess.get(User, student_id)
+                assert actor is not None
+                try:
+                    renew_attempt_lease(
+                        actor=actor,
+                        attempt_id=attempt_id,
+                        raw_lease_token=tab1_token,
+                        session=w_sess,
+                    )
+                    return ("TAB1", True, tab1_token)
+                except Exception as e:
+                    return ("TAB1", False, str(e))
+
+        def tab2_takeover() -> tuple[str, bool, str | None]:
+            with test_app.app_context():
+                w_sess = db.session
+                actor = w_sess.get(User, student_id)
+                assert actor is not None
+                try:
+                    _, tok2 = takeover_attempt_lease(
+                        actor=actor,
+                        attempt_id=attempt_id,
+                        session=w_sess,
+                    )
+                    return ("TAB2", True, tok2)
+                except Exception as e:
+                    return ("TAB2", False, str(e))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(tab1_renew)
+            f2 = executor.submit(tab2_takeover)
+            _ = f1.result()
+            res2 = f2.result()
+
+        sess.expire_all()
+        final_attempt = sess.get(AssessmentAttempt, attempt_id)
+        assert final_attempt is not None
+
+        # Tab 2 takeover must succeed
+        assert res2[1] is True
+        tab2_token = res2[2]
+        assert tab2_token is not None
+
+        # At the end of the race, Tab 2 holds the valid lease
+        assert verify_attempt_lease(final_attempt, tab2_token) is True
+        # Tab 1 token must not be valid
+        assert verify_attempt_lease(final_attempt, tab1_token) is False

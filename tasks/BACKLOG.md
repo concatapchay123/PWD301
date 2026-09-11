@@ -30,8 +30,8 @@ This backlog follows the documented dependency order. IDs are repository executi
 | TASK-024 | RAG Knowledge Lifecycle + AI Security | TASK-019,TASK-023 | DONE |
 | TASK-025 | Dashboards / Analytics / Performance | Core domains | DONE |
 | TASK-026 | Backup / Restore / Operational Health | Foundation + DB | DONE |
-| TASK-027 | Security Hardening + Abuse/Rate-Limit Controls | Core features | BACKLOG |
-| TASK-028 | Full E2E / Concurrency / Retention QA | All relevant features | BACKLOG |
+| TASK-027 | Security Hardening + Abuse/Rate-Limit Controls | Core features | DONE |
+| TASK-028 | Full E2E / Concurrency / Retention QA | All relevant features | DONE |
 | TASK-029 | Docker/Deployment/Demo Readiness | TASK-028 | BACKLOG |
 
 Do not skip dependency checks because an agent can generate code quickly.

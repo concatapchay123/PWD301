@@ -1,6 +1,6 @@
-"""Concurrency and capacity race condition tests for course enrollment."""
-
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -177,3 +177,80 @@ def test_capacity_none_allows_unlimited_enrollments(
         .count()
     )
     assert total_active == 5
+
+
+def test_concurrent_threads_enrollment_capacity_race(tmp_path: Path) -> None:
+    """Five threads race to enroll for the last 1 seat; exactly 1 wins and 4 are rejected."""
+    import concurrent.futures
+
+    from pwd301 import create_app
+
+    db_file = tmp_path / "capacity_race.db"
+    test_app = create_app(
+        "testing",
+        config_override={"SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_file.as_posix()}?timeout=30"},
+    )
+
+    with test_app.app_context():
+        db.create_all()
+        sess = db.session
+
+        for code, name in [
+            ("STUDENT", "Student"),
+            ("INSTRUCTOR", "Instructor"),
+            ("ADMIN", "System Administrator"),
+        ]:
+            if not sess.query(Role).filter_by(code=code).first():
+                sess.add(Role(code=code, name=name))
+        sess.commit()
+
+        inst = assign_role_to_user(
+            register_user("c_inst@example.com", "Password@123", "C Inst").id, "INSTRUCTOR"
+        )
+        adm = assign_role_to_user(
+            register_user("c_adm@example.com", "Password@123", "C Adm").id, "ADMIN"
+        )
+        course = _create_published_course(inst, adm, code="CRACE-1", title="Race 1", capacity=1)
+        course_id = course.id
+
+        students = [
+            register_user(f"rstud_{i}@example.com", "Password@123", f"R Student {i}")
+            for i in range(5)
+        ]
+        student_ids = [s.id for s in students]
+        sess.commit()
+
+        def try_enroll(s_id: int) -> tuple[int, bool, str | None]:
+            with test_app.app_context():
+                w_sess = db.session
+                actor = w_sess.get(User, s_id)
+                assert actor is not None
+                try:
+                    enroll_student(actor=actor, course_id=course_id, session=w_sess)
+                    w_sess.commit()
+                    return (s_id, True, None)
+                except EnrollmentCapacityExceededError as ex:
+                    w_sess.rollback()
+                    return (s_id, False, str(ex))
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(try_enroll, s_id) for s_id in student_ids]
+            for f in futures:
+                results.append(f.result())
+
+        successes = [r for r in results if r[1] is True]
+        failures = [r for r in results if r[1] is False]
+
+        assert len(successes) == 1
+        assert len(failures) == 4
+        for _, _, err in failures:
+            assert "capacity" in str(err).lower()
+
+        sess.expire_all()
+        active_count = (
+            sess.query(Enrollment)
+            .filter(Enrollment.course_id == course_id, Enrollment.status == "ACTIVE")
+            .count()
+        )
+        assert active_count == 1

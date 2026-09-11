@@ -403,5 +403,44 @@
   - `mypy src`: PASS
   - `pytest tests/unit/test_operations_service.py tests/security/test_operations_security.py tests/api/test_operations_api.py`: PASS (25/25 passed)
 
+## TASK-027 — Security Hardening & Abuse / Rate-Limit Controls
+- **Completion date:** 2026-09-11
+- **Important files changed:**
+  - `src/pwd301/services/rate_limit_service.py` (Sliding-window rate limiter, tiered quotas for auth, password reset, public APIs, and AI RAG endpoints)
+  - `src/pwd301/blueprints/auth/routes.py`, `src/pwd301/blueprints/api_auth/routes.py` (Rate limiting enforcement on login, registration, and password reset workflows)
+  - `src/pwd301/blueprints/api_ai/routes.py` (AI query abuse limits)
+  - `src/pwd301/__init__.py` (Centralized 429 TOO_MANY_REQUESTS handler)
+  - `tests/security/test_security_hardening.py` (Brute-force defense, rate-limit headers, IP isolation)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS
+  - `python -m compileall -q src tests scripts`: PASS
+  - `python -m ruff check src tests scripts`: PASS
+  - `python -m ruff format --check src tests scripts`: PASS
+  - `pytest tests/security/test_security_hardening.py`: PASS (15/15 passed)
+  - `python -m pytest`: PASS (728/728 passed)
+
+## TASK-028 — Full E2E, Concurrency & Retention Lifecycle QA
+- **Completion date:** 2026-09-11
+- **Important files changed:**
+  - `src/pwd301/services/retention_service.py` (Algorithm 13 retention engine: `purge_expired_enrollment_details` purging lesson progress & raw attempt answers >30 days after leaving while preserving compact `CourseCompletionSummary`, `prune_trash_entities` deleting unused disposable items and tombstoning historically referenced items with disk file unlinking when `reference_count == 0`, `purge_expired_ai_messages` wiping raw chat content after 5 minutes of inactivity while preserving minimal metadata, audit log absolute append-only immunity, `run_full_retention_cycle` batch coordinator)
+  - `src/pwd301/services/enrollment_service.py` (In-process mutex synchronization alongside database locking for strict enrollment capacity concurrency)
+  - `tests/concurrency/test_attempt_lease_race.py` (Attempt lease takeover race, rapid cascade, clean voluntary release)
+  - `tests/concurrency/test_enrollment_capacity.py` (Capacity boundary, sequential frees, concurrent thread race under capacity limit)
+  - `tests/concurrency/test_submission_idempotency_race.py` (Concurrent submissions with same idempotency key converge, differing keys conflict)
+  - `tests/concurrency/test_restore_lock_race.py` (Concurrent admin restore locks reject subsequent requests)
+  - `tests/e2e/test_student_lifecycle_e2e.py` (Full student lifecycle: registration, email verification, prerequisite enforcement, sequential lesson learning with progress heartbeat, assessment snapshot locking, autosave, idempotent submission, score viewing, completion evaluation, AI course recommendations)
+  - `tests/e2e/test_instructor_lifecycle_e2e.py` (Full instructor lifecycle: course authoring, file upload with virus scanning & fail-closed quarantine, question bank creation, DOCX essay import & provenance, blueprint building, assessment publishing, attempt initialization triggering structural freeze, student submission requiring manual essay grading, instructor grading with score audit history, question correction triggering automatic regrading engine)
+  - `tests/e2e/test_admin_ops_lifecycle_e2e.py` (Full admin operations: course review/approval workflow, role assignment & hierarchy enforcement, user suspension with instant session & JWT revocation, append-only audit trail query with recursive secret redaction, disaster recovery drill with SHA-256 backup, dry-run schema validation, maintenance window activation with HTTP 503 & Retry-After header, controlled database restore)
+  - `tests/e2e/test_retention_lifecycle_e2e.py` (Algorithm 13 verification: 30-day enrollment detail purge preserving `CourseCompletionSummary`, TRASH pruning unlinking physical disk files when >30 days while preserving restorable files, disposable entity deletion vs historical tombstone archiving for courses/assessments/questions, AI chat 5-minute inactivity purge, append-only audit log absolute immunity)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
+  - `python -m ruff check .`: PASS (All checks passed!)
+  - `python -m ruff format --check .`: PASS (176 files already formatted)
+  - `python -m pytest tests/e2e/`: PASS (12/12 passed in 9.13s)
+  - `python -m pytest tests/concurrency/`: PASS (13/13 passed in 16.00s)
+  - `python -m pytest`: PASS (745/745 passed in 489.79s, 0 failures, 100% pass rate)
+
+
 
 
