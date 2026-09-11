@@ -848,9 +848,17 @@ def restore_database_snapshot(
         db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
         backup_file = backup.database_backup_name or "PWD301.bak"
         physical_path = str(_get_backup_root() / backup_file)
+
+        # Commit and close session connection, then dispose the pool to eliminate open handles
+        sess.commit()
+        sess.close()
+        raw_engine.dispose()
+
+        # Connect to master database to execute ALTER DATABASE and RESTORE
+        master_url = raw_engine.url.set(database="master")
+        master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
         try:
-            conn_obj: Any = raw_engine.connect() if hasattr(raw_engine, "connect") else raw_engine
-            with conn_obj.execution_options(isolation_level="AUTOCOMMIT") as conn:
+            with master_engine.connect() as conn:
                 single_user_sql = (
                     f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
                 )
@@ -862,12 +870,13 @@ def restore_database_snapshot(
                 conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
         except Exception as err:
             try:
-                conn_obj = raw_engine.connect() if hasattr(raw_engine, "connect") else raw_engine
-                with conn_obj.execution_options(isolation_level="AUTOCOMMIT") as conn:
+                with master_engine.connect() as conn:
                     conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
             except Exception:
                 pass
             raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
+        finally:
+            master_engine.dispose()
 
     now = utc_now()
     backup.restore_tested_at = now

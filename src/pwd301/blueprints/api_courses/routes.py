@@ -249,7 +249,6 @@ def enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
         )
 
     enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
-    db.session.commit()
     status_code = 201 if getattr(enrollment, "_is_new", False) else 200
     return jsonify(_serialize_enrollment_api(enrollment)), status_code
 
@@ -278,7 +277,6 @@ def leave_course_api(course_id: str) -> tuple[Response, int] | Response:
         reason = str(reason)
 
     enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
-    db.session.commit()
     return jsonify(_serialize_enrollment_api(enrollment)), 200
 
 
@@ -301,7 +299,6 @@ def re_enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
         )
 
     enrollment = re_enroll_student(actor=actor, course_id=course_id, session=db.session)
-    db.session.commit()
     return jsonify(_serialize_enrollment_api(enrollment)), 200
 
 
@@ -330,14 +327,16 @@ def add_course_prerequisite_api(course_id: str) -> tuple[Response, int] | Respon
         prerequisite_course_id=prerequisite_course_id,
         session=db.session,
     )
+    target_course = link.course or _resolve_course(course_id, session=db.session)
+    prereq_course = link.prerequisite_course or _resolve_course(
+        prerequisite_course_id, session=db.session
+    )
     return (
         jsonify(
             {
-                "course_id": str(link.course.public_id) if link.course else str(link.course_id),
+                "course_id": str(target_course.public_id) if target_course else str(course_id),
                 "prerequisite_course_id": (
-                    str(link.prerequisite_course.public_id)
-                    if link.prerequisite_course
-                    else str(link.prerequisite_course_id)
+                    str(prereq_course.public_id) if prereq_course else str(prerequisite_course_id)
                 ),
                 "created_at": link.created_at.isoformat(),
             }
@@ -365,6 +364,7 @@ def remove_course_prerequisite_api(
 
 
 @api_course_bp.route("/<course_id>/enrollments", methods=["GET"])
+@jwt_required
 @instructor_required
 def get_course_enrollments_api(course_id: str) -> tuple[Response, int] | Response:
     """List enrolled students for managed course."""
@@ -415,6 +415,7 @@ def _serialize_completion_rule_api(course: Course, rule: Any) -> dict[str, Any]:
 
 
 @api_course_bp.route("/<course_id>/completion-rules", methods=["GET"])
+@jwt_required
 @instructor_required
 def get_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve completion rule criteria for a managed course (REST API)."""
@@ -440,11 +441,11 @@ def set_course_completion_rules_api(course_id: str) -> tuple[Response, int] | Re
         payload=payload,
         session=db.session,
     )
-    db.session.commit()
     return jsonify(_serialize_completion_rule_api(course, rule)), 200
 
 
 @api_course_bp.route("/<course_id>/progress", methods=["GET"])
+@jwt_required
 def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
     """Read course progress for the caller or an authorized target student.
 
@@ -626,8 +627,6 @@ def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Resp
 @jwt_required
 def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
     """Upload a new FileAsset for a course (JWT required)."""
-    import io
-
     from pwd301.services.exceptions import FileValidationError
     from pwd301.services.file_service import _serialize_file_asset, store_file_stream
 
@@ -640,12 +639,21 @@ def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
         file_stream = upload.stream
         filename = upload.filename or "unnamed_file"
         content_type = upload.mimetype or request.content_type
-    elif request.data:
-        file_stream = io.BytesIO(request.get_data())
-        filename = request.headers.get("X-File-Name") or "unnamed_file"
-        content_type = request.content_type
     else:
-        raise FileValidationError("No file content provided in request.")
+        cl = request.content_length
+        if cl is not None and cl >= 1_000_000_000:
+            from pwd301.services.exceptions import FileSizeLimitExceededError
+
+            raise FileSizeLimitExceededError(
+                "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+            )
+        is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
+        if (cl is not None and cl > 0) or is_chunked:
+            file_stream = request.stream
+            filename = request.headers.get("X-File-Name") or "unnamed_file"
+            content_type = request.content_type
+        else:
+            raise FileValidationError("No file content provided in request.")
 
     asset = store_file_stream(
         actor=actor,
@@ -719,11 +727,11 @@ def create_course_import_api(course_id: str) -> tuple[Response, int] | Response:
     if auto_process:
         job = process_import_job(
             actor=actor,
-            job_id=job.id,
+            job_id=job.public_id,
             session=db.session,
         )
 
-    detail = get_import_job_detail(actor, job.id, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 202
 
 
@@ -745,7 +753,9 @@ def list_course_imports_api(course_id: str) -> tuple[Response, int] | Response:
         .all()
     )
     return (
-        jsonify({"items": [get_import_job_detail(actor, j.id, session=db.session) for j in jobs]}),
+        jsonify(
+            {"items": [get_import_job_detail(actor, j.public_id, session=db.session) for j in jobs]}
+        ),
         200,
     )
 

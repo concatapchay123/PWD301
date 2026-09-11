@@ -7,6 +7,7 @@ from flask import Response, jsonify, render_template, request
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course
+from pwd301.models.identity import User
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -52,11 +53,74 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 
 @admin_bp.route("/dashboard", methods=["GET"])
 @admin_required
-def dashboard() -> tuple[Response, int] | Response:
+def dashboard() -> tuple[Response, int] | Response | str:
     """Administrator dashboard overview with comprehensive system analytics."""
     actor = require_authenticated_actor()
     overview = get_admin_system_overview(actor, session=db.session)
-    return jsonify(overview), 200
+    if _is_api_request():
+        return jsonify(overview), 200
+    return render_template("admin/dashboard.html", overview=overview)
+
+
+@admin_bp.route("/courses", methods=["GET"])
+@admin_required
+def admin_courses() -> tuple[Response, int] | Response | str:
+    """Administrator courses management page."""
+    require_authenticated_actor()
+    sess = db.session
+    courses = (
+        sess.query(Course)
+        .filter(Course.deleted_at.is_(None))
+        .order_by(Course.created_at.desc())
+        .all()
+    )
+    pending_courses = [c for c in courses if c.status == "SUBMITTED_FOR_REVIEW"]
+    if _is_api_request():
+        return (
+            jsonify(
+                {
+                    "courses": [_serialize_course(c) for c in courses],
+                    "pending_count": len(pending_courses),
+                }
+            ),
+            200,
+        )
+    return render_template(
+        "admin/courses.html",
+        courses=courses,
+        pending_courses=pending_courses,
+    )
+
+
+@admin_bp.route("/users", methods=["GET"])
+@admin_required
+def admin_users() -> tuple[Response, int] | Response | str:
+    """Administrator users management page."""
+    require_authenticated_actor()
+    sess = db.session
+    users = sess.query(User).order_by(User.created_at.desc()).all()
+    if _is_api_request():
+        return (
+            jsonify(
+                {
+                    "users": [
+                        {
+                            "user_id": str(u.public_id),
+                            "email": u.email,
+                            "display_name": u.display_name,
+                            "status": u.status,
+                            "roles": sorted(u.role_codes),
+                            "suspended_at": u.suspended_at.isoformat() if u.suspended_at else None,
+                            "created_at": u.created_at.isoformat(),
+                        }
+                        for u in users
+                    ],
+                    "total": len(users),
+                }
+            ),
+            200,
+        )
+    return render_template("admin/users.html", users=users)
 
 
 @admin_bp.route("/analytics/overview", methods=["GET"])
@@ -194,7 +258,6 @@ def review_course(course_id: str) -> tuple[Response, int] | Response:
         new_status=target_status,
         reason=reason,
     )
-    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -214,7 +277,6 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
         new_instructor_id=new_instructor_id,
         reason=reason,
     )
-    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -233,7 +295,6 @@ def publish_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="PUBLISHED",
         reason=reason,
     )
-    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -247,7 +308,6 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
-    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -266,7 +326,6 @@ def restore_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="ARCHIVED",
         reason=reason,
     )
-    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -310,7 +369,6 @@ def admin_broadcast_notifications() -> tuple[Response, int] | Response:
         category=category,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"broadcasted_count": count}), 200
 
 
@@ -332,7 +390,6 @@ def admin_retry_failed_emails() -> tuple[Response, int] | Response:
         max_emails=max_emails,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"retried_count": count}), 200
 
 
@@ -538,11 +595,13 @@ def admin_health() -> tuple[Response, int] | Response:
 
 @admin_bp.route("/backups", methods=["GET"])
 @admin_required
-def admin_list_backups() -> tuple[Response, int] | Response:
+def admin_list_backups() -> tuple[Response, int] | Response | str:
     """List historical database backups ordered by execution timestamp."""
     actor = require_authenticated_actor()
     backups = list_backups(actor, session=db.session)
-    return jsonify({"items": backups, "total": len(backups)}), 200
+    if _is_api_request():
+        return jsonify({"items": backups, "total": len(backups)}), 200
+    return render_template("admin/backups.html", backups=backups)
 
 
 @admin_bp.route("/backups", methods=["POST"])

@@ -16,6 +16,7 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -374,7 +375,14 @@ def store_file_stream(
                 dest_path = dest_dir / hex_hash
 
                 if temp_path.exists():
-                    os.replace(temp_path, dest_path)
+                    if dest_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    else:
+                        try:
+                            os.replace(temp_path, dest_path)
+                        except OSError:
+                            shutil.copy2(temp_path, dest_path)
+                            temp_path.unlink(missing_ok=True)
                 newly_created_dest = dest_path
 
                 storage_key = f"blobs/{ab}/{cd}/{hex_hash}"

@@ -655,7 +655,16 @@ def create_app(
                         resp.headers["Retry-After"] = retry_after
                         return resp
                     except Exception:
-                        pass
+                        resp = make_response(
+                            "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
+                            "<body><h1>503 Service Unavailable</h1>"
+                            "<p>System is currently undergoing scheduled maintenance.</p>"
+                            "</body></html>",
+                            503,
+                        )
+                        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                        resp.headers["Retry-After"] = retry_after
+                        return resp
         return None
 
     @app.after_request

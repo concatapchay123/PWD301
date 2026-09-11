@@ -329,4 +329,9 @@ def retry_failed_emails(
         count += 1
 
     s.flush()
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
     return count

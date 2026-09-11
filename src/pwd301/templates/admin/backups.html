@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Sao lưu & Khôi phục CSDL — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1" style="font-size: 11px;">DISASTER RECOVERY</span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1" style="font-size: 11px;">TASK-026 / SQL SERVER</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-0">Sao lưu & Khôi phục Cơ sở Dữ liệu</h1>
+      <p class="text-muted small mb-0">Quản lý các bản sao lưu vật lý, xác minh tính toàn vẹn SHA-256 và diễn tập khôi phục thảm họa</p>
+    </div>
+    <div class="d-flex gap-2">
+      <form method="POST" action="{{ url_for('admin.admin_create_backup') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="backup_type" value="MANUAL">
+        <button type="submit" class="btn btn-primary btn-sm d-flex align-items-center gap-1.5">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Tạo bản sao lưu ngay
+        </button>
+      </form>
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Bảng điều khiển</a>
+    </div>
+  </div>
+
+  <!-- Non-Negotiable Invariants Alert -->
+  <div class="alert alert-warning border-warning d-flex align-items-start gap-3 mb-4 shadow-sm" role="alert">
+    <div class="text-warning mt-0.5">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    </div>
+    <div class="small">
+      <strong class="d-block mb-1 text-slate-900">Quy tắc An toàn Khôi phục Bất biến (ADR-010 & Invariant Catalog):</strong>
+      Hệ thống <strong>tuyệt đối không bao giờ tự động ghi đè</strong> CSDL đang hoạt động. Mọi thao tác khôi phục trực tiếp bắt buộc phải được Quản trị viên nhập cụm từ xác nhận chính xác <code>CONFIRM_DATABASE_RESTORE</code> kèm xác thực lại mật khẩu Admin tươi. Thao tác khôi phục trên SQL Server sử dụng cơ chế chuyển ngữ cảnh sang <code>master</code> và giải phóng kết nối an toàn.
+    </div>
+  </div>
+
+  <!-- Backups Table Card -->
+  <div class="card shadow-sm border-slate-200">
+    <div class="card-header bg-white py-3 border-slate-100 d-flex justify-content-between align-items-center">
+      <span class="fw-bold text-slate-900">Lịch sử Bản sao lưu ({{ backups|length }})</span>
+      <span class="badge bg-light text-muted border">SHA-256 Checksum</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+        <thead class="table-light text-caption text-muted">
+          <tr>
+            <th class="ps-3" style="width: 220px;">Tên tệp sao lưu</th>
+            <th style="width: 110px;">Loại</th>
+            <th style="width: 110px;">Dung lượng</th>
+            <th style="width: 240px;">Mã băm SHA-256</th>
+            <th style="width: 160px;">Thời điểm tạo</th>
+            <th style="width: 120px;">Trạng thái</th>
+            <th class="text-end pe-3" style="width: 200px;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if backups and backups|length > 0 %}
+            {% for b in backups %}
+            <tr>
+              <td class="ps-3">
+                <div class="fw-semibold font-monospace text-slate-900" style="font-size: 12.5px;">{{ b.database_backup_name }}</div>
+                <div class="text-muted font-monospace text-caption" style="font-size: 10.5px;">{{ b.public_id }}</div>
+              </td>
+              <td>
+                <span class="badge bg-light text-dark border">{{ b.backup_type }}</span>
+              </td>
+              <td class="font-monospace">
+                {{ (b.file_size_bytes / 1024 / 1024)|round(2) }} MB
+              </td>
+              <td>
+                <span class="font-monospace text-muted text-caption" style="font-size: 11px;" title="{{ b.sha256_checksum }}">
+                  {{ (b.sha256_checksum[:16] + '...') if b.sha256_checksum and b.sha256_checksum|length > 16 else (b.sha256_checksum or '—') }}
+                </span>
+              </td>
+              <td class="text-muted small">
+                {{ b.created_at[:19].replace('T', ' ') if b.created_at else '—' }}
+              </td>
+              <td>
+                {% if b.status == 'COMPLETED' %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">HOÀN TẤT</span>
+                {% elif b.status == 'VERIFIED' %}
+                  <span class="badge bg-info-subtle text-info border border-info-subtle">ĐÃ XÁC MINH</span>
+                {% elif b.status == 'RESTORED' %}
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle">ĐÃ KHÔI PHỤC</span>
+                {% else %}
+                  <span class="badge bg-warning-subtle text-warning border border-warning-subtle">{{ b.status }}</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-3">
+                <div class="d-inline-flex gap-1">
+                  <form method="POST" action="{{ url_for('admin.admin_verify_backup', backup_id=b.public_id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-info py-1 px-2" style="font-size: 11.5px;" title="Kiểm tra mã băm SHA-256">Xác minh</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('admin.admin_dry_run_restore', backup_id=b.public_id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary py-1 px-2" style="font-size: 11.5px;" title="Diễn tập khôi phục không ghi đè dữ liệu">Diễn tập</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" class="text-center py-4 text-muted">
+                Chưa có bản sao lưu nào. Hãy nhấn "Tạo bản sao lưu ngay" để thực hiện snapshot đầu tiên.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Quản trị Người dùng & RBAC — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" style="font-size: 11px;">BẢO MẬT & ĐỊNH DANH</span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1" style="font-size: 11px;">AUTH-002 / RBAC</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-0">Quản trị Tài khoản & Phân quyền Vai trò</h1>
+      <p class="text-muted small mb-0">Quản lý phân quyền vai trò (Admin, Instructor, Student), khóa tài khoản vi phạm và thu hồi phiên đăng nhập</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Bảng điều khiển</a>
+    </div>
+  </div>
+
+  <!-- Users Table Card -->
+  <div class="card shadow-sm border-slate-200">
+    <div class="card-header bg-white py-3 border-slate-100 d-flex justify-content-between align-items-center">
+      <span class="fw-bold text-slate-900">Danh sách Người dùng Hệ thống ({{ users|length }})</span>
+      <span class="badge bg-light text-muted border">Bảo mật bất biến</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;">
+        <thead class="table-light text-caption text-muted">
+          <tr>
+            <th class="ps-3" style="width: 220px;">Họ tên & Định danh</th>
+            <th style="width: 200px;">Email</th>
+            <th style="width: 180px;">Vai trò (RBAC)</th>
+            <th style="width: 130px;">Trạng thái</th>
+            <th style="width: 110px;">Phiên bản Auth</th>
+            <th class="text-end pe-3" style="width: 280px;">Thao tác Bảo mật</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td class="ps-3">
+              <div class="fw-semibold text-slate-900">{{ u.display_name or 'Người dùng' }}</div>
+              <div class="text-muted font-monospace text-caption" style="font-size: 10.5px;">{{ u.public_id }}</div>
+            </td>
+            <td>
+              <div class="text-slate-800">{{ u.email }}</div>
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-1">
+                {% for r in u.role_codes %}
+                  {% if r == 'ADMIN' %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">ADMIN</span>
+                  {% elif r == 'INSTRUCTOR' %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">INSTRUCTOR</span>
+                  {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">STUDENT</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </td>
+            <td>
+              {% if u.status == 'ACTIVE' and not u.suspended_at %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">HOẠT ĐỘNG</span>
+              {% else %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">BỊ ĐÌNH CHỈ</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-light text-dark border font-monospace">v{{ u.auth_version }}</span>
+            </td>
+            <td class="text-end pe-3">
+              <div class="d-inline-flex gap-1">
+                {% if u.status == 'ACTIVE' and not u.suspended_at %}
+                <form method="POST" action="{{ url_for('admin.admin_suspend_user', user_id=u.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="reason" value="Đình chỉ bởi Quản trị viên">
+                  <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" style="font-size: 12px;" onclick="return confirm('Bạn có chắc chắn muốn đình chỉ tài khoản này?')">Đình chỉ</button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('admin.admin_unsuspend_user', user_id=u.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="reason" value="Kích hoạt lại bởi Quản trị viên">
+                  <button type="submit" class="btn btn-sm btn-outline-success py-1 px-2" style="font-size: 12px;">Mở khóa</button>
+                </form>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('admin.admin_force_revoke_sessions', user_id=u.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="reason" value="Thu hồi phiên bởi Quản trị viên">
+                  <button type="submit" class="btn btn-sm btn-outline-warning py-1 px-2" style="font-size: 12px;" title="Tăng auth_version, hủy ngay lập tức mọi phiên và JWT token đang hoạt động">Hủy phiên</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -18,6 +18,7 @@ from pwd301.services.authorization_service import (
 from pwd301.services.completion_service import get_course_completion_summary
 from pwd301.services.enrollment_service import get_student_enrollments
 from pwd301.services.exceptions import ResourceNotFoundError
+from pwd301.services.jwt_auth_service import jwt_required
 
 
 def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
@@ -39,6 +40,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
 
 
 @api_student_bp.route("/enrollments", methods=["GET"])
+@jwt_required
 @student_required
 def get_student_enrollments_api() -> tuple[Response, int] | Response:
     """Retrieve enrollments for the authenticated student."""
@@ -50,6 +52,7 @@ def get_student_enrollments_api() -> tuple[Response, int] | Response:
 
 
 @api_student_bp.route("/courses/<course_id>/completion", methods=["GET"])
+@jwt_required
 @student_required
 def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve completion summary for the authenticated student (REST API)."""
@@ -101,6 +104,7 @@ def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | 
 
 
 @api_student_bp.route("/analytics/overview", methods=["GET"])
+@jwt_required
 @student_required
 def get_student_analytics_overview_api() -> tuple[Response, int] | Response:
     """Retrieve personalized learning analytics dashboard for student."""

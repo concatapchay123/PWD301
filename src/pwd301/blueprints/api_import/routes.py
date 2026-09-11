@@ -55,11 +55,11 @@ def create_import_api() -> tuple[Response, int] | Response:
     if auto_process:
         job = process_import_job(
             actor=actor,
-            job_id=job.id,
+            job_id=job.public_id,
             session=db.session,
         )
 
-    detail = get_import_job_detail(actor, job.id, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 202
 
 
@@ -147,5 +147,5 @@ def cancel_import_api(job_id: str) -> tuple[Response, int] | Response:
     data = request.get_json(silent=True) or {}
     reason = data.get("reason")
     job = cancel_import_job(actor, job_id, reason=reason, session=db.session)
-    detail = get_import_job_detail(actor, job.id, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 200

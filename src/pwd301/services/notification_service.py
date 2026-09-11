@@ -347,7 +347,11 @@ def mark_notification_as_read(
 
     if notification.read_at is None:
         notification.read_at = utc_now()
-        s.flush()
+        try:
+            s.commit()
+        except Exception:
+            s.rollback()
+            raise
 
     return notification.to_dict()
 
@@ -376,7 +380,11 @@ def mark_all_as_read(
         notif.read_at = now
         count += 1
 
-    s.flush()
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
     return count
 
 
@@ -403,7 +411,11 @@ def dismiss_notification(
         raise ForbiddenError("You are not authorized to modify this notification.")
 
     s.delete(notification)
-    s.flush()
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
     return {"id": str(pub_id), "status": "dismissed"}
 
 
@@ -501,7 +513,11 @@ def update_user_preferences(
             pref.email_enabled = bool_enabled
             pref.updated_at = now
 
-    s.flush()
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
     return get_user_preferences(actor, session=s)
 
 
@@ -549,5 +565,9 @@ def broadcast_system_notification(
         s.add(notif)
         count += 1
 
-    s.flush()
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
     return count

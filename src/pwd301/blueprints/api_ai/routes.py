@@ -23,6 +23,7 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import AIValidationError, ForbiddenError
+from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.rag_service import (
     ask_course_rag,
     delete_knowledge_source,
@@ -34,6 +35,7 @@ from pwd301.services.recommendation_service import generate_course_recommendatio
 
 
 @api_ai_bp.route("/recommendations", methods=["GET"])
+@jwt_required
 def get_recommendations_api() -> tuple[Response, int] | Response:
     """Retrieve personalized course recommendations adhering to Algorithm 14."""
     actor = require_authenticated_actor()
@@ -50,6 +52,7 @@ def get_recommendations_api() -> tuple[Response, int] | Response:
 
 @api_ai_bp.route("/questions/draft", methods=["POST"])
 @api_ai_bp.route("/questions/generate", methods=["POST"])
+@jwt_required
 def draft_questions_api() -> tuple[Response, int] | Response:
     """Draft structured assessment questions for an instructor course using Gemini."""
     actor = require_authenticated_actor()
@@ -101,6 +104,7 @@ def draft_questions_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/questions/drafts", methods=["GET"])
+@jwt_required
 def list_drafts_api() -> tuple[Response, int] | Response:
     """List generated question drafts for a course."""
     actor = require_authenticated_actor()
@@ -119,6 +123,7 @@ def list_drafts_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/conversations", methods=["POST"])
+@jwt_required
 def create_conversation_api() -> tuple[Response, int] | Response:
     """Initialize a new AI conversation session with 5-minute inactivity deadline."""
     actor = require_authenticated_actor()
@@ -139,6 +144,7 @@ def create_conversation_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/conversations/<conversation_id>", methods=["GET"])
+@jwt_required
 def get_conversation_api(conversation_id: str) -> tuple[Response, int] | Response:
     """Retrieve details and messages of an active AI conversation session."""
     actor = require_authenticated_actor()
@@ -151,6 +157,7 @@ def get_conversation_api(conversation_id: str) -> tuple[Response, int] | Respons
 
 
 @api_ai_bp.route("/conversations/<conversation_id>/messages", methods=["POST"])
+@jwt_required
 def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
     """Send a user chat message, reset 5-minute inactivity timer, and return assistant response."""
     actor = require_authenticated_actor()
@@ -181,6 +188,7 @@ def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/chat", methods=["POST"])
+@jwt_required
 def unified_chat_api() -> tuple[Response, int] | Response:
     """LMS-scoped AI chat endpoint per 10_AI_API.md."""
     actor = require_authenticated_actor()
@@ -224,6 +232,7 @@ def unified_chat_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/conversations/cleanup", methods=["POST"])
+@jwt_required
 def cleanup_conversations_api() -> tuple[Response, int] | Response:
     """Purge raw messages from conversations inactive > 5 minutes (admin or system maintenance)."""
     actor = require_authenticated_actor()
@@ -240,6 +249,7 @@ def cleanup_conversations_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/courses/<course_id>/ingest", methods=["POST"])
+@jwt_required
 def ingest_course_knowledge_api(course_id: str) -> tuple[Response, int] | Response:
     """Ingest/re-index all published lessons and clean file resources for a course."""
     actor = require_authenticated_actor()
@@ -248,6 +258,7 @@ def ingest_course_knowledge_api(course_id: str) -> tuple[Response, int] | Respon
 
 
 @api_ai_bp.route("/lessons/<lesson_id>/ingest", methods=["POST"])
+@jwt_required
 def ingest_lesson_knowledge_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Ingest/re-index a specific lesson into RAG knowledge."""
     actor = require_authenticated_actor()
@@ -266,6 +277,7 @@ def ingest_lesson_knowledge_api(lesson_id: str) -> tuple[Response, int] | Respon
 
 
 @api_ai_bp.route("/courses/<course_id>/query", methods=["POST"])
+@jwt_required
 def query_course_rag_api(course_id: str) -> tuple[Response, int] | Response:
     """Grounded semantic retrieval and question answering over course knowledge."""
     actor = require_authenticated_actor()
@@ -292,6 +304,7 @@ def query_course_rag_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/courses/<course_id>/sources", methods=["GET"])
+@jwt_required
 def list_course_sources_api(course_id: str) -> tuple[Response, int] | Response:
     """List ingested knowledge sources for a course."""
     actor = require_authenticated_actor()
@@ -309,6 +322,7 @@ def list_course_sources_api(course_id: str) -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/sources/<source_id>", methods=["DELETE"])
+@jwt_required
 def delete_source_api(source_id: str) -> tuple[Response, int] | Response:
     """Delete a knowledge source from the RAG index."""
     actor = require_authenticated_actor()

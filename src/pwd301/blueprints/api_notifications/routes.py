@@ -90,7 +90,6 @@ def mark_read_api(notification_id: str) -> tuple[Response, int] | Response:
         notification_id=notification_id,
         session=db.session,
     )
-    db.session.commit()
     return jsonify(result), 200
 
 
@@ -107,7 +106,6 @@ def mark_all_read_api() -> tuple[Response, int] | Response:
         category=category,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"marked_count": count}), 200
 
 
@@ -122,7 +120,6 @@ def dismiss_notification_api(notification_id: str) -> tuple[Response, int] | Res
         notification_id=notification_id,
         session=db.session,
     )
-    db.session.commit()
     return jsonify(result), 200
 
 
@@ -149,7 +146,6 @@ def update_preferences_api() -> tuple[Response, int] | Response:
         preferences_payload=data,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"preferences": updated_prefs}), 200
 
 
@@ -181,7 +177,6 @@ def broadcast_notification_api() -> tuple[Response, int] | Response:
         category=category,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"broadcasted_count": count}), 200
 
 
@@ -205,5 +200,4 @@ def retry_failed_emails_api() -> tuple[Response, int] | Response:
         max_emails=max_emails,
         session=db.session,
     )
-    db.session.commit()
     return jsonify({"retried_count": count}), 200

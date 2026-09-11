@@ -543,7 +543,6 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
         payload=payload,
         session=db.session,
     )
-    db.session.commit()
     return jsonify(_serialize_completion_rule(course, rule)), 200
 
 
@@ -975,7 +974,7 @@ def instructor_grading_overview() -> Any:
     )
     all_pending = []
     for ass in assessments:
-        att_list = list_pending_grading_attempts(actor, ass.id, session=db.session)
+        att_list = list_pending_grading_attempts(actor, ass.public_id, session=db.session)
         for a in att_list:
             a["assessment_title"] = ass.title
         all_pending.extend(att_list)
@@ -1182,11 +1181,11 @@ def instructor_create_course_import(course_id: str) -> tuple[Response, int] | Re
     if auto_process:
         job = process_import_job(
             actor=actor,
-            job_id=job.id,
+            job_id=job.public_id,
             session=db.session,
         )
 
-    detail = get_import_job_detail(actor, job.id, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 202
 
 
@@ -1208,7 +1207,9 @@ def instructor_list_course_imports(course_id: str) -> tuple[Response, int] | Res
         .all()
     )
     return (
-        jsonify({"items": [get_import_job_detail(actor, j.id, session=db.session) for j in jobs]}),
+        jsonify(
+            {"items": [get_import_job_detail(actor, j.public_id, session=db.session) for j in jobs]}
+        ),
         200,
     )
 
@@ -1300,5 +1301,5 @@ def instructor_cancel_import(job_id: str) -> tuple[Response, int] | Response:
     data = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = data.get("reason")
     job = cancel_import_job(actor, job_id, reason=reason, session=db.session)
-    detail = get_import_job_detail(actor, job.id, session=db.session)
+    detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 200

@@ -90,6 +90,12 @@ def get_authenticated_actor() -> User | None:
         return jwt_user
 
     # 3. Web session authentication context
+    # Invariant: Web session cookies must NEVER authenticate requests to CSRF-exempt
+    # API endpoints (/api/*) to prevent Cross-Site Request Forgery (CSRF).
+    # REST API clients must supply Bearer JWT.
+    if has_request_context() and request.path.startswith("/api/"):
+        return None
+
     if (
         current_user
         and current_user.is_authenticated

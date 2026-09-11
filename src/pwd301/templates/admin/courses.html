@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Quản trị Khóa học — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">QUẢN TRỊ NỘI DUNG</span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1" style="font-size: 11px;">COURSE STATE MACHINE</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-0">Quản trị Khóa học & Xét duyệt Giáo trình</h1>
+      <p class="text-muted small mb-0">Kiểm duyệt giáo trình, phê duyệt xuất bản và phân công giảng viên phụ trách</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Bảng điều khiển</a>
+    </div>
+  </div>
+
+  <!-- Pending Approval Triage Hub -->
+  {% if pending_courses and pending_courses|length > 0 %}
+  <div class="card shadow-sm border-warning mb-4">
+    <div class="card-header bg-warning-subtle py-3 border-warning d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-warning"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span class="fw-bold text-slate-900">Hàng đợi Chờ Duyệt (Cần xử lý: {{ pending_courses|length }})</span>
+      </div>
+      <span class="badge bg-warning text-dark">SUBMITTED_FOR_REVIEW</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3" style="width: 120px;">Mã</th>
+              <th>Tên khóa học</th>
+              <th style="width: 200px;">Giảng viên đề xuất</th>
+              <th style="width: 150px;">Ngày nộp duyệt</th>
+              <th class="text-end pe-3" style="width: 220px;">Quyết định</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in pending_courses %}
+            <tr>
+              <td class="ps-3 font-monospace fw-bold text-primary">{{ c.course_code }}</td>
+              <td>
+                <div class="fw-semibold text-slate-900">{{ c.title }}</div>
+                <div class="text-muted text-caption" style="font-size: 11px;">UUID: {{ c.public_id }}</div>
+              </td>
+              <td>
+                <div class="fw-medium text-slate-800">{{ c.owner_instructor.display_name if c.owner_instructor else '—' }}</div>
+                <div class="text-muted text-caption" style="font-size: 11px;">{{ c.owner_instructor.email if c.owner_instructor else '' }}</div>
+              </td>
+              <td class="text-muted small">{{ c.updated_at.strftime('%d/%m/%Y %H:%M') if c.updated_at else '—' }}</td>
+              <td class="text-end pe-3">
+                <div class="d-inline-flex gap-2">
+                  <form method="POST" action="{{ url_for('admin.approve_or_reject_course', course_id=c.public_id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="approve">
+                    <button type="submit" class="btn btn-sm btn-success px-3">Phê duyệt</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('admin.approve_or_reject_course', course_id=c.public_id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="reject">
+                    <button type="submit" class="btn btn-sm btn-outline-danger px-2" onclick="return confirm('Bạn có chắc chắn muốn trả về bản thảo?')">Từ chối</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- All Courses Master List -->
+  <div class="card shadow-sm border-slate-200">
+    <div class="card-header bg-white py-3 border-slate-100 d-flex justify-content-between align-items-center">
+      <span class="fw-bold text-slate-900">Danh sách Tất cả Khóa học ({{ courses|length }})</span>
+      <span class="badge bg-light text-muted border">Toàn bộ trạng thái</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;">
+        <thead class="table-light text-caption text-muted">
+          <tr>
+            <th class="ps-3" style="width: 120px;">Mã</th>
+            <th>Tên khóa học</th>
+            <th style="width: 200px;">Giảng viên sở hữu</th>
+            <th style="width: 140px;">Trạng thái</th>
+            <th style="width: 150px;">Ngày tạo</th>
+            <th class="text-end pe-3" style="width: 180px;">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in courses %}
+          <tr>
+            <td class="ps-3 font-monospace fw-bold text-slate-800">{{ c.course_code }}</td>
+            <td>
+              <div class="fw-semibold text-slate-900">{{ c.title }}</div>
+              <div class="text-muted font-monospace text-caption" style="font-size: 10.5px;">{{ c.public_id }}</div>
+            </td>
+            <td>
+              <div class="text-slate-800">{{ c.owner_instructor.display_name if c.owner_instructor else 'Chưa gán' }}</div>
+              <div class="text-muted text-caption" style="font-size: 11px;">{{ c.owner_instructor.email if c.owner_instructor else '' }}</div>
+            </td>
+            <td>
+              {% if c.status == 'PUBLISHED' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">ĐÃ XUẤT BẢN</span>
+              {% elif c.status == 'APPROVED' %}
+                <span class="badge bg-info-subtle text-info border border-info-subtle">ĐÃ DUYỆT</span>
+              {% elif c.status == 'SUBMITTED_FOR_REVIEW' %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle">CHỜ DUYỆT</span>
+              {% elif c.status == 'ARCHIVED' %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">LƯU TRỮ</span>
+              {% elif c.status == 'TRASH' %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">THÙNG RÁC</span>
+              {% else %}
+                <span class="badge bg-light text-muted border">BẢN THẢO</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '—' }}</td>
+            <td class="text-end pe-3">
+              <div class="d-inline-flex gap-1">
+                {% if c.status == 'APPROVED' %}
+                <form method="POST" action="{{ url_for('admin.publish_course', course_id=c.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-primary py-1 px-2" style="font-size: 12px;">Xuất bản</button>
+                </form>
+                {% endif %}
+
+                {% if c.status != 'TRASH' %}
+                <form method="POST" action="{{ url_for('admin.trash_course_route', course_id=c.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" style="font-size: 12px;" onclick="return confirm('Chuyển khóa học vào thùng rác?')">Xóa</button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('admin.restore_course', course_id=c.public_id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-success py-1 px-2" style="font-size: 12px;">Khôi phục</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

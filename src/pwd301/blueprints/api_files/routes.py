@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from typing import Any
 
 from flask import Response, jsonify, make_response, request, send_file
@@ -14,6 +13,7 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import (
+    FileSizeLimitExceededError,
     FileValidationError,
 )
 from pwd301.services.file_service import (
@@ -95,12 +95,13 @@ def _extract_upload_stream() -> tuple[Any, str, str | None]:
 
     filename = request.headers.get("X-File-Name") or "unnamed_file"
     cl = request.content_length
+    if cl is not None and cl >= 1_000_000_000:
+        raise FileSizeLimitExceededError(
+            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+        )
     is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
     if (cl is not None and cl > 0) or is_chunked:
         return request.stream, filename, request.content_type
-
-    if request.data:
-        return io.BytesIO(request.data), filename, request.content_type
 
     raise FileValidationError("No file content provided in request.")
 
