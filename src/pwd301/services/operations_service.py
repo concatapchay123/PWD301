@@ -43,6 +43,7 @@ from pwd301.services.exceptions import (
     AuditPersistenceError,
     BackupIntegrityError,
     BackupNotFoundError,
+    ConflictError,
     ForbiddenError,
     ResourceNotFoundError,
     RestoreForbiddenError,
@@ -816,94 +817,94 @@ def restore_database_snapshot(
         AuditPersistenceError: If audit logging fails.
     """
     _require_admin(actor)
-    sess = _resolve_session(session)
 
-    # Safeguard 1: Confirmation Phrase
-    phrase = (confirmation_phrase or confirmation_token or "").strip()
-    if phrase != "CONFIRM_DATABASE_RESTORE":
-        raise RestoreForbiddenError(
-            "Live database restore rejected: Confirmation phrase must be exactly "
-            "'CONFIRM_DATABASE_RESTORE'."
-        )
-
-    # Safeguard 2: Admin Password Re-authentication
-    if not password or not actor.verify_password(password):
-        raise RestoreForbiddenError(
-            "Live database restore rejected: Admin password re-authentication failed."
-        )
-
-    # Safeguard 3: Verify target backup integrity
-    verify_result = verify_backup_integrity(actor, backup_id, session=sess)
-    backup = _resolve_backup(backup_id, sess)
-
-    # Safeguard 4: Fail-closed Pre-restore Audit Event
-    try:
-        record_audit_event(
-            actor=actor,
-            action="DATABASE_RESTORE_INITIATED",
-            target_type="BACKUP",
-            target_id=backup.public_id,
-            details={
-                "backup_id": str(backup.public_id),
-                "checksum": verify_result["checksum"],
-                "reason": "Administrative disaster recovery procedure confirmed",
-            },
-            performed_as_admin=True,
-            session=sess,
-        )
-    except Exception as exc:
-        sess.rollback()
-        raise AuditPersistenceError(
-            f"Fail-closed abort: Cannot persist pre-restore audit log ({exc})."
-        ) from exc
-
-    # Execute controlled recovery logic with SQL Server SINGLE_USER isolation
     global _is_restore_in_progress
-    with _restore_lock:
-        _is_restore_in_progress = True
+    if not _restore_lock.acquire(blocking=False):
+        raise ConflictError("Another database restore operation is already in progress.")
+    _is_restore_in_progress = True
+    try:
+        sess = _resolve_session(session)
+
+        # Safeguard 1: Confirmation Phrase
+        phrase = (confirmation_phrase or confirmation_token or "").strip()
+        if phrase != "CONFIRM_DATABASE_RESTORE":
+            raise RestoreForbiddenError(
+                "Live database restore rejected: Confirmation phrase must be exactly "
+                "'CONFIRM_DATABASE_RESTORE'."
+            )
+
+        # Safeguard 2: Admin Password Re-authentication
+        if not password or not actor.verify_password(password):
+            raise RestoreForbiddenError(
+                "Live database restore rejected: Admin password re-authentication failed."
+            )
+
+        # Safeguard 3: Verify target backup integrity
+        verify_result = verify_backup_integrity(actor, backup_id, session=sess)
+        backup = _resolve_backup(backup_id, sess)
+
+        # Safeguard 4: Fail-closed Pre-restore Audit Event
         try:
-            bind = sess.get_bind()
-            if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
-                raw_engine: Any = getattr(bind, "engine", bind)
-                db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
-                backup_file = backup.database_backup_name or "PWD301.bak"
-                physical_path = str(_get_backup_root() / backup_file)
+            record_audit_event(
+                actor=actor,
+                action="DATABASE_RESTORE_INITIATED",
+                target_type="BACKUP",
+                target_id=backup.public_id,
+                details={
+                    "backup_id": str(backup.public_id),
+                    "checksum": verify_result["checksum"],
+                    "reason": "Administrative disaster recovery procedure confirmed",
+                },
+                performed_as_admin=True,
+                session=sess,
+            )
+        except Exception as exc:
+            sess.rollback()
+            raise AuditPersistenceError(
+                f"Fail-closed abort: Cannot persist pre-restore audit log ({exc})."
+            ) from exc
 
-                # Commit and close session connection, then dispose pool to eliminate
-                # open handles
-                sess.commit()
-                sess.close()
-                raw_engine.dispose()
+        # Execute controlled recovery logic with SQL Server SINGLE_USER isolation
+        bind = sess.get_bind()
+        if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
+            raw_engine: Any = getattr(bind, "engine", bind)
+            db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
+            backup_file = backup.database_backup_name or "PWD301.bak"
+            physical_path = str(_get_backup_root() / backup_file)
 
-                # Connect to master database to execute ALTER DATABASE and RESTORE
-                master_url = raw_engine.url.set(database="master")
-                master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
+            # Commit and close session connection, then dispose pool to eliminate
+            # open handles
+            sess.commit()
+            sess.close()
+            raw_engine.dispose()
+
+            # Connect to master database to execute ALTER DATABASE and RESTORE
+            master_url = raw_engine.url.set(database="master")
+            master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
+            try:
+                with master_engine.connect() as conn:
+                    single_user_sql = (
+                        f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+                    )
+                    conn.execute(sa.text(single_user_sql))
+                    restore_sql = (
+                        f"RESTORE DATABASE [{db_name}] FROM DISK = N'{physical_path}' WITH REPLACE;"
+                    )
+                    conn.execute(sa.text(restore_sql))
+                    conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+            except Exception as err:
                 try:
                     with master_engine.connect() as conn:
-                        single_user_sql = (
-                            f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
-                        )
-                        conn.execute(sa.text(single_user_sql))
-                        restore_sql = (
-                            f"RESTORE DATABASE [{db_name}] "
-                            f"FROM DISK = N'{physical_path}' WITH REPLACE;"
-                        )
-                        conn.execute(sa.text(restore_sql))
                         conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
-                except Exception as err:
-                    try:
-                        with master_engine.connect() as conn:
-                            conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
-                    except Exception:
-                        pass
-                    raise RestoreForbiddenError(
-                        f"SQL Server physical restore failed: {err}"
-                    ) from err
-                finally:
-                    master_engine.dispose()
-                    raw_engine.dispose()
-        finally:
-            _is_restore_in_progress = False
+                except Exception:
+                    pass
+                raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
+            finally:
+                master_engine.dispose()
+                raw_engine.dispose()
+    finally:
+        _is_restore_in_progress = False
+        _restore_lock.release()
 
     now = utc_now()
     backup.restore_tested_at = now

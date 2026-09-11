@@ -20,6 +20,11 @@ from pwd301.services.jwt_auth_service import (
     refresh_tokens,
     revoke_token,
 )
+from pwd301.services.rate_limit_service import (
+    clear_login_attempts,
+    is_login_locked,
+    record_failed_login,
+)
 from pwd301.services.user_service import get_user_by_email, verify_password
 
 
@@ -45,8 +50,27 @@ def login_for_token() -> tuple[Response, int]:
             400,
         )
 
+    remote_ip = request.remote_addr or ""
+    is_locked, retry_after = is_login_locked(remote_ip, email)
+    if is_locked:
+        resp = jsonify(
+            {
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": (
+                        f"Too many failed login attempts. "
+                        f"Please try again after {retry_after} seconds."
+                    ),
+                    "correlation_id": getattr(g, "correlation_id", ""),
+                }
+            }
+        )
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp, 429
+
     user = get_user_by_email(email)
     if user is None or not verify_password(user, password):
+        record_failed_login(remote_ip, email)
         return (
             jsonify(
                 {
@@ -59,6 +83,8 @@ def login_for_token() -> tuple[Response, int]:
             ),
             401,
         )
+
+    clear_login_attempts(remote_ip, email)
 
     if not user.is_active:
         return (

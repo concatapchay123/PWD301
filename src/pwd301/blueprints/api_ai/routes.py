@@ -32,6 +32,7 @@ from pwd301.services.rag_service import (
     ingest_course_knowledge,
     ingest_lesson_content,
 )
+from pwd301.services.rate_limit_service import check_ai_rate_limit
 from pwd301.services.recommendation_service import generate_course_recommendations
 
 
@@ -164,6 +165,7 @@ def get_conversation_api(conversation_id: str) -> tuple[Response, int] | Respons
 def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
     """Send a user chat message, reset 5-minute inactivity timer, and return assistant response."""
     actor = require_authenticated_actor()
+    check_ai_rate_limit(actor.id)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     content = data.get("message") or data.get("content")
@@ -195,6 +197,7 @@ def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
 def unified_chat_api() -> tuple[Response, int] | Response:
     """LMS-scoped AI chat endpoint per 10_AI_API.md."""
     actor = require_authenticated_actor()
+    check_ai_rate_limit(actor.id)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     content = data.get("message") or data.get("content")

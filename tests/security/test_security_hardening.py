@@ -31,18 +31,33 @@ from pwd301.services.course_service import (
     change_course_status,
     create_course,
 )
+from pwd301.services.email_service import enqueue_email
 from pwd301.services.enrollment_service import (
     add_course_prerequisite,
+    enroll_student,
 )
+from pwd301.services.exceptions import ConflictError, EmailRateLimitExceededError
+from pwd301.services.file_service import store_file_stream
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.lesson_service import (
     change_lesson_status,
     create_lesson,
 )
 from pwd301.services.operations_service import (
+    _restore_lock,
     is_database_restore_in_progress,
+    restore_database_snapshot,
 )
+from pwd301.services.rate_limit_service import reset_all_rate_limits
 from pwd301.services.user_service import assign_role_to_user, register_user
+
+
+@pytest.fixture(autouse=True)
+def clean_rate_limits() -> None:
+    """Ensure in-memory rate limits are clean before and after every test."""
+    reset_all_rate_limits()
+    yield
+    reset_all_rate_limits()
 
 
 @pytest.fixture
@@ -439,3 +454,229 @@ def test_course_prerequisites_zero_internal_pk_leakage(
         # Verify it matches c2's public_id, NOT c2's internal integer id
         assert item["course_id"] == str(c2.public_id)
         assert item["course_id"] != c2.id
+
+
+# ==============================================================================
+# 9. Admin RBAC Boundary & Non-Admin Rejection (AC-SEC-01)
+# ==============================================================================
+
+
+def test_api_admin_forbidden_for_student_and_instructor(
+    client: FlaskClient, student_user: User, instructor_user: User
+) -> None:
+    """Student and Instructor Bearer tokens are rejected on /api/admin/* with 403 Forbidden."""
+    s_tokens = create_token_pair(student_user)
+    s_headers = {"Authorization": f"Bearer {s_tokens['access_token']}"}
+    resp_s = client.get("/api/admin/users", headers=s_headers)
+    assert resp_s.status_code == 403
+    assert resp_s.get_json()["error"]["code"] == "FORBIDDEN"
+
+    i_tokens = create_token_pair(instructor_user)
+    i_headers = {"Authorization": f"Bearer {i_tokens['access_token']}"}
+    resp_i = client.get("/api/admin/users", headers=i_headers)
+    assert resp_i.status_code == 403
+    assert resp_i.get_json()["error"]["code"] == "FORBIDDEN"
+
+
+# ==============================================================================
+# 10. Security Headers Verification (AC-SEC-06)
+# ==============================================================================
+
+
+def test_security_headers_present_on_all_responses(client: FlaskClient) -> None:
+    """All application responses enforce standard HTTP security headers (AC-SEC-06)."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+    assert resp.headers.get("X-Frame-Options") == "DENY"
+    assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    assert "Content-Security-Policy" in resp.headers
+    assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
+
+
+# ==============================================================================
+# 11. Fail-Closed File Quarantine & Infection Access Defense (AC-SEC-03)
+# ==============================================================================
+
+
+def test_quarantined_and_infected_file_access_blocked(
+    client: FlaskClient,
+    student_user: User,
+    instructor_user: User,
+    test_course: Course,
+) -> None:
+    """Quarantined and infected files are strictly fail-closed (AC-SEC-03: HTTP 403)."""
+    enroll_student(student_user, test_course.id)
+
+    # 1. Quarantined file
+    stream_q = io.BytesIO(b"Quarantined test file content")
+    asset_q = store_file_stream(
+        actor=instructor_user,
+        course_id=test_course.id,
+        file_stream=stream_q,
+        filename="test_quarantine.pdf",
+        content_type="application/pdf",
+        session=db.session,
+    )
+    rev_q = asset_q.current_revision or asset_q.revisions[-1]
+    rev_q.status = "QUARANTINED"
+    db.session.commit()
+
+    tokens = create_token_pair(student_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    resp_q = client.get(f"/api/files/{asset_q.public_id}/download", headers=headers)
+    assert resp_q.status_code == 403
+    assert resp_q.get_json()["error"]["code"] == "FILE_QUARANTINED"
+
+    # 2. Infected file
+    stream_i = io.BytesIO(b"Infected test file content")
+    asset_i = store_file_stream(
+        actor=instructor_user,
+        course_id=test_course.id,
+        file_stream=stream_i,
+        filename="test_infected.pdf",
+        content_type="application/pdf",
+        session=db.session,
+    )
+    rev_i = asset_i.current_revision or asset_i.revisions[-1]
+    rev_i.status = "REJECTED"
+    db.session.commit()
+
+    resp_i = client.get(f"/api/files/{asset_i.public_id}/download", headers=headers)
+    assert resp_i.status_code == 403
+    assert resp_i.get_json()["error"]["code"] == "FILE_INFECTED"
+
+
+# ==============================================================================
+# 12. Brute-Force & Rate Limiting Verification (AC-SEC-07 & Section 3.4)
+# ==============================================================================
+
+
+def test_login_brute_force_lockout_web_ui(client: FlaskClient, student_user: User) -> None:
+    """Web login is locked out after 5 consecutive failed attempts (429 RATE_LIMIT_EXCEEDED)."""
+    environ_base = {"REMOTE_ADDR": "192.168.1.50"}
+    for _ in range(5):
+        resp = client.post(
+            "/auth/login",
+            json={"email": student_user.email, "password": "WrongPassword!"},
+            environ_base=environ_base,
+        )
+        assert resp.status_code == 401
+
+    resp_locked = client.post(
+        "/auth/login",
+        json={"email": student_user.email, "password": "WrongPassword!"},
+        environ_base=environ_base,
+    )
+    assert resp_locked.status_code == 429
+    data = resp_locked.get_json()
+    assert data["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert "Retry-After" in resp_locked.headers
+
+
+def test_login_brute_force_lockout_rest_api(client: FlaskClient, student_user: User) -> None:
+    """REST API /api/auth/login is locked out after 5 consecutive failed attempts (429)."""
+    environ_base = {"REMOTE_ADDR": "192.168.1.51"}
+    for _ in range(5):
+        resp = client.post(
+            "/api/auth/login",
+            json={"email": student_user.email, "password": "WrongPassword!"},
+            environ_base=environ_base,
+        )
+        assert resp.status_code == 401
+
+    resp_locked = client.post(
+        "/api/auth/login",
+        json={"email": student_user.email, "password": "WrongPassword!"},
+        environ_base=environ_base,
+    )
+    assert resp_locked.status_code == 429
+    data = resp_locked.get_json()
+    assert data["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert "Retry-After" in resp_locked.headers
+
+
+def test_login_success_clears_lockout_attempts(client: FlaskClient, student_user: User) -> None:
+    """A successful login clears the failed attempt count for that user/IP."""
+    environ_base = {"REMOTE_ADDR": "192.168.1.52"}
+    for _ in range(3):
+        resp = client.post(
+            "/api/auth/login",
+            json={"email": student_user.email, "password": "WrongPassword!"},
+            environ_base=environ_base,
+        )
+        assert resp.status_code == 401
+
+    resp_ok = client.post(
+        "/api/auth/login",
+        json={"email": student_user.email, "password": "Password@123"},
+        environ_base=environ_base,
+    )
+    assert resp_ok.status_code == 200
+
+    for _ in range(3):
+        resp_after = client.post(
+            "/api/auth/login",
+            json={"email": student_user.email, "password": "WrongPassword!"},
+            environ_base=environ_base,
+        )
+        assert resp_after.status_code == 401
+
+
+def test_ai_chat_rate_limiting_enforcement(client: FlaskClient, student_user: User) -> None:
+    """AI chat requests exceeding quota limit (20 req/min) are rejected with 429."""
+    tokens = create_token_pair(student_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    for i in range(20):
+        resp = client.post(
+            "/api/ai/chat",
+            headers=headers,
+            json={"message": f"Hello {i}"},
+        )
+        assert resp.status_code == 200
+
+    resp_blocked = client.post(
+        "/api/ai/chat",
+        headers=headers,
+        json={"message": "Hello overflow"},
+    )
+    assert resp_blocked.status_code == 429
+    assert resp_blocked.get_json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+
+
+def test_email_dispatch_rate_limiting_enforcement(app: Flask) -> None:
+    """Outbound email enqueue exceeding 30 req/min raises EmailRateLimitExceededError."""
+    target_email = "ratelimit_victim@example.com"
+    for i in range(30):
+        enqueue_email(
+            recipient_email=target_email,
+            subject=f"Notice {i}",
+            body_text=f"Body {i}",
+        )
+
+    with pytest.raises(EmailRateLimitExceededError):
+        enqueue_email(
+            recipient_email=target_email,
+            subject="Notice overflow",
+            body_text="Body overflow",
+        )
+
+
+def test_database_restore_concurrency_lock(admin_user: User) -> None:
+    """Simultaneous database restore attempts are blocked by concurrency lock (AC-SEC-05)."""
+    acquired = _restore_lock.acquire(blocking=False)
+    assert acquired is True
+    try:
+        with pytest.raises(
+            ConflictError, match="Another database restore operation is already in progress"
+        ):
+            restore_database_snapshot(
+                actor=admin_user,
+                backup_id=str(uuid.uuid4()),
+                confirmation_phrase="CONFIRM_DATABASE_RESTORE",
+                password="Password@123",
+            )
+    finally:
+        _restore_lock.release()

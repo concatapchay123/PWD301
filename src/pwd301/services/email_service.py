@@ -124,6 +124,9 @@ def enqueue_email(
     """
     s = session or db.session
     clean_email = validate_email_syntax(recipient_email)
+    from pwd301.services.rate_limit_service import check_email_rate_limit
+
+    check_email_rate_limit(clean_email)
 
     if dedupe_key is None:
         dedupe_key = uuid.uuid4()

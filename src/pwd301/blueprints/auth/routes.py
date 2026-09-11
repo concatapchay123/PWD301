@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from flask import (
     flash,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -18,6 +19,11 @@ from flask_login import current_user, login_user, logout_user
 
 from pwd301.blueprints.auth import auth_bp
 from pwd301.services.exceptions import ServiceError
+from pwd301.services.rate_limit_service import (
+    clear_login_attempts,
+    is_login_locked,
+    record_failed_login,
+)
 from pwd301.services.session_auth_service import (
     create_auth_session,
     revoke_auth_session,
@@ -74,9 +80,32 @@ def login() -> Any:
         remember = bool(request.form.get("remember"))
         next_url = request.args.get("next") or request.form.get("next", "")
 
+    # Rate limiting & lockout check
+    remote_ip = request.remote_addr or ""
+    is_locked, retry_after = is_login_locked(remote_ip, email)
+    if is_locked:
+        msg = f"Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau {retry_after} giây."
+        if _is_json_request():
+            resp = jsonify(
+                {
+                    "error": {
+                        "code": "RATE_LIMIT_EXCEEDED",
+                        "message": msg,
+                    }
+                }
+            )
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(retry_after)
+            return resp
+        flash(msg, "danger")
+        html_resp = make_response(render_template("auth/login.html"), 429)
+        html_resp.headers["Retry-After"] = str(retry_after)
+        return html_resp
+
     # Credential verification
     user = get_user_by_email(email)
     if user is None or not verify_password(user, password):
+        record_failed_login(remote_ip, email)
         if _is_json_request():
             return (
                 jsonify(
@@ -91,6 +120,8 @@ def login() -> Any:
             )
         flash("Email hoặc mật khẩu không chính xác.", "danger")
         return render_template("auth/login.html"), 401
+
+    clear_login_attempts(remote_ip, email)
 
     # Active status verification
     if not user.is_active:
