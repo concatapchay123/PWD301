@@ -15,7 +15,6 @@ from typing import Any
 
 from dotenv import load_dotenv
 from flask import (
-    Blueprint,
     Flask,
     Response,
     g,
@@ -597,7 +596,7 @@ def create_app(
         g.pop("jwt_claims", None)
 
         # Maintenance mode enforcement
-        from pwd301.services.operations_service import is_maintenance_active
+        from pwd301.services.operations_service import is_maintenance_active_cached
 
         path = request.path
         # Allow static files, health probes, authentication login/logout, and admin routes
@@ -625,7 +624,7 @@ def create_app(
                 actor = None
 
             if not (actor and getattr(actor, "is_admin", False)):
-                is_active, window = is_maintenance_active(session=db.session)
+                is_active, window = is_maintenance_active_cached(session=db.session)
                 if is_active and window is not None:
                     retry_after = str(window.estimated_duration_minutes * 60)
                     if _is_api_or_json_request():
@@ -692,10 +691,8 @@ def create_app(
     unversioned_auth = app.blueprints.get("api_auth_unversioned")
     if unversioned_auth:
         csrf.exempt(unversioned_auth)
-    # Distinct marker for api_admin so CSRF exemption does not leak to web session admin_bp
-    api_admin_marker = Blueprint("api_admin", __name__)
-    app.blueprints["api_admin"] = api_admin_marker
-    csrf.exempt(api_admin_marker)
+    # Exempt api_admin blueprint name from CSRF validation without mutating app.blueprints
+    csrf._exempt_blueprints.add("api_admin")
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_question_bp)

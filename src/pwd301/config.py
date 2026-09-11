@@ -71,7 +71,7 @@ class BaseConfig:
     GEMINI_TIMEOUT_SECONDS: int = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "10"))
 
     # Attempt lease and autosave configuration
-    ATTEMPT_LEASE_SECONDS: int = int(os.environ.get("ATTEMPT_LEASE_SECONDS", "30"))
+    ATTEMPT_LEASE_SECONDS: int = int(os.environ.get("ATTEMPT_LEASE_SECONDS", "60"))
     ATTEMPT_HEARTBEAT_SECONDS: int = int(os.environ.get("ATTEMPT_HEARTBEAT_SECONDS", "10"))
     TEXT_AUTOSAVE_DEBOUNCE_MS: int = int(os.environ.get("TEXT_AUTOSAVE_DEBOUNCE_MS", "1500"))
 

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Bảng điều khiển Giảng viên — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Top Title & Action -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+      <span class="badge bg-primary-subtle text-primary fw-bold">GIẢNG VIÊN</span>
+      <h1 class="h3 fw-bold text-slate-900 mb-0">Bảng điều khiển Giảng viên</h1>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('instructor.my_courses') }}" class="btn btn-outline-primary">Quản lý khóa học</a>
+      <a href="/instructor/grading" class="btn btn-primary">Chấm thi tự luận</a>
+    </div>
+  </div>
+
+  <!-- KPI Metrics -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm p-3">
+        <div class="text-muted small fw-medium">Tổng khóa học quản lý</div>
+        <div class="h3 fw-bold text-slate-900 mb-0">{{ overview.total_courses if overview is defined else 0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm p-3">
+        <div class="text-muted small fw-medium">Tổng số học viên</div>
+        <div class="h3 fw-bold text-primary mb-0">{{ overview.total_students if overview is defined else 0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm p-3">
+        <div class="text-muted small fw-medium">Bài thi cần chấm</div>
+        <div class="h3 fw-bold text-warning mb-0">{{ overview.pending_essay_grading_count if overview is defined else 0 }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm p-3">
+        <div class="text-muted small fw-medium">Tỷ lệ hoàn thành TB</div>
+        <div class="h3 fw-bold text-success mb-0">{{ overview.average_completion_rate if overview is defined else '0%' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Managed Courses Section -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0 fw-bold text-slate-900">Danh sách Khóa học</h2>
+      <a href="{{ url_for('instructor.my_courses') }}" class="btn btn-sm btn-outline-primary">+ Thêm khóa học mới</a>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-4">Khóa học</th>
+              <th>Trạng thái</th>
+              <th>Học viên</th>
+              <th>Bài đánh giá</th>
+              <th class="text-end pe-4">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if courses %}
+              {% for c in courses %}
+              <tr>
+                <td class="ps-4">
+                  <div class="fw-bold text-slate-900">{{ c.title }}</div>
+                  <div class="text-muted small">{{ c.course_code }}</div>
+                </td>
+                <td><span class="badge bg-success-subtle text-success">{{ c.status }}</span></td>
+                <td>{{ c.enrollment_count or 0 }}</td>
+                <td>{{ c.assessment_count or 0 }}</td>
+                <td class="text-end pe-4">
+                  <a href="/instructor/courses/{{ c.public_id }}/questions" class="btn btn-sm btn-outline-secondary me-1">Ngân hàng câu hỏi</a>
+                  <a href="{{ url_for('instructor.my_courses') }}" class="btn btn-sm btn-primary">Chỉnh sửa</a>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5" class="text-center py-5 text-muted">Chưa có khóa học nào được chỉ định cho bạn.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

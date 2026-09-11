@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from typing import Any
 
 from flask import Response, jsonify, make_response, request, send_file
 
@@ -82,23 +83,35 @@ def download_file_api(asset_id: str) -> Response:
     return resp
 
 
+def _extract_upload_stream() -> tuple[Any, str, str | None]:
+    """Safely extract upload stream using chunked streaming without loading RAM."""
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        return (
+            upload.stream,
+            upload.filename or "unnamed_file",
+            upload.mimetype or request.content_type,
+        )
+
+    filename = request.headers.get("X-File-Name") or "unnamed_file"
+    cl = request.content_length
+    is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
+    if (cl is not None and cl > 0) or is_chunked:
+        return request.stream, filename, request.content_type
+
+    if request.data:
+        return io.BytesIO(request.data), filename, request.content_type
+
+    raise FileValidationError("No file content provided in request.")
+
+
 @api_file_bp.route("/<asset_id>/revisions", methods=["POST"])
 @jwt_required
 def add_file_revision_api(asset_id: str) -> tuple[Response, int] | Response:
     """Upload a new revision for an existing FileAsset (JWT required)."""
     actor = require_authenticated_actor()
 
-    if request.files and "file" in request.files:
-        upload = request.files["file"]
-        file_stream = upload.stream
-        filename = upload.filename or "unnamed_file"
-        content_type = upload.mimetype or request.content_type
-    elif request.data:
-        file_stream = io.BytesIO(request.get_data())
-        filename = request.headers.get("X-File-Name") or "unnamed_file"
-        content_type = request.content_type
-    else:
-        raise FileValidationError("No file content provided in request.")
+    file_stream, filename, content_type = _extract_upload_stream()
 
     revision = add_file_revision(
         actor=actor,
@@ -150,17 +163,7 @@ def upload_file_generic_api() -> tuple[Response, int] | Response:
     asset_type = request.form.get("asset_type", "RESOURCE")
     title = request.form.get("title")
 
-    if request.files and "file" in request.files:
-        upload = request.files["file"]
-        file_stream = upload.stream
-        filename = upload.filename or "unnamed_file"
-        content_type = upload.mimetype or request.content_type
-    elif request.data:
-        file_stream = io.BytesIO(request.get_data())
-        filename = request.headers.get("X-File-Name") or "unnamed_file"
-        content_type = request.content_type
-    else:
-        raise FileValidationError("No file content provided in request.")
+    file_stream, filename, content_type = _extract_upload_stream()
 
     asset = store_file_stream(
         actor=actor,

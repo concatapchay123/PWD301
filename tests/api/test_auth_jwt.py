@@ -97,7 +97,8 @@ class TestJwtAuthApi:
         )
         assert me_resp.status_code == 200
         data = me_resp.get_json()
-        assert data["user"]["id"] == api_user.id
+        assert data["user"]["public_id"] == str(api_user.public_id)
+        assert "id" not in data["user"]
         assert data["user"]["email"] == "api_student@demo.local"
         assert data["user"]["display_name"] == "API Student"
         assert "STUDENT" in data["user"]["roles"]

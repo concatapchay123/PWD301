@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Ngân hàng câu hỏi — Giảng viên{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <span class="badge bg-primary-subtle text-primary fw-bold">NGÂN HÀNG CÂU HỎI</span>
+      <h1 class="h3 fw-bold text-slate-900 mb-0">Quản lý Ngân hàng câu hỏi</h1>
+      <div class="text-muted small">Khóa học: {{ course.title if course is defined else 'Môn học' }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="/api/import/jobs" class="btn btn-outline-secondary">Nhập đề từ DOCX/PDF</a>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newQuestionModal">+ Thêm câu hỏi mới</button>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0 fw-bold text-slate-900">Danh sách câu hỏi</h2>
+      <span class="badge bg-light text-muted border">{{ questions|length if questions is defined else 0 }} câu hỏi</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-4">STT</th>
+              <th>Nội dung câu hỏi</th>
+              <th>Loại câu</th>
+              <th>Độ khó</th>
+              <th>Trạng thái</th>
+              <th class="text-end pe-4">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if questions %}
+              {% for q in questions %}
+              <tr>
+                <td class="ps-4 fw-semibold">{{ loop.index }}</td>
+                <td style="max-width: 450px;">
+                  <div class="fw-medium text-truncate">{{ q.content_text }}</div>
+                  <div class="text-muted small">Phiên bản hiện tại: v{{ q.current_revision_no or 1 }}</div>
+                </td>
+                <td><span class="badge bg-info-subtle text-info">{{ q.question_type }}</span></td>
+                <td><span class="badge bg-secondary-subtle text-secondary">{{ q.difficulty }}</span></td>
+                <td>
+                  {% if q.is_in_use %}
+                  <span class="badge bg-warning-subtle text-warning">Đang dùng trong đề (Khóa sửa trực tiếp)</span>
+                  {% else %}
+                  <span class="badge bg-success-subtle text-success">Sẵn sàng</span>
+                  {% endif %}
+                </td>
+                <td class="text-end pe-4">
+                  <button class="btn btn-sm btn-outline-primary me-1">Sửa</button>
+                  <button class="btn btn-sm btn-outline-secondary">Lịch sử</button>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-5 text-muted">Chưa có câu hỏi nào trong ngân hàng. Hãy thêm câu hỏi hoặc nhập từ tệp Word/PDF.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

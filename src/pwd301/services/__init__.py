@@ -88,6 +88,15 @@ from pwd301.services.authorization_service import (
     require_student_data_access,
     student_required,
 )
+from pwd301.services.background_job_service import (
+    BackgroundJobError,
+    BackgroundJobNotFoundError,
+    claim_next_background_job,
+    enqueue_background_job,
+    execute_background_job,
+    run_worker_loop,
+    run_worker_once,
+)
 from pwd301.services.completion_service import (
     calculate_course_progress,
     evaluate_course_completion,
@@ -559,4 +568,12 @@ __all__ = [
     "start_maintenance_window",
     "end_maintenance_window",
     "is_maintenance_active",
+    # Background Job & Worker Queue Engine
+    "BackgroundJobError",
+    "BackgroundJobNotFoundError",
+    "enqueue_background_job",
+    "claim_next_background_job",
+    "execute_background_job",
+    "run_worker_once",
+    "run_worker_loop",
 ]

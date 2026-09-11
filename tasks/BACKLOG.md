@@ -19,17 +19,17 @@ This backlog follows the documented dependency order. IDs are repository executi
 | TASK-013 | AssessmentAttempt Snapshot + Server Timer | TASK-012 | DONE |
 | TASK-014 | Attempt Lease + Multi-tab Takeover | TASK-013 | DONE |
 | TASK-015 | Autosave + Offline Reconciliation + Idempotent Submit | TASK-013,TASK-014 | DONE |
-| TASK-016 | Grading + Manual Essay Grading | TASK-015 | READY |
-| TASK-017 | Regrading + Score History | TASK-011,TASK-016 | BACKLOG |
-| TASK-018 | File Blob/Asset Storage + Authorization | TASK-005 | BACKLOG |
-| TASK-019 | File Security / Quarantine / Malware Scan | TASK-018 | BACKLOG |
+| TASK-016 | Grading + Manual Essay Grading | TASK-015 | DONE |
+| TASK-017 | Regrading + Score History | TASK-011,TASK-016 | DONE |
+| TASK-018 | File Blob/Asset Storage + Authorization | TASK-005 | DONE |
+| TASK-019 | File Security / Quarantine / Malware Scan | TASK-018 | DONE |
 | TASK-020 | DOCX/PDF Assessment Import | TASK-011,TASK-019 | DONE |
-| TASK-021 | Notifications + Email Delivery/Retry | TASK-005 | BACKLOG |
-| TASK-022 | Audit + Sensitive Admin Actions | TASK-005 | BACKLOG |
-| TASK-023 | Gemini Integration + Backend Rule Recommendation | TASK-005,TASK-009 | BACKLOG |
-| TASK-024 | RAG Knowledge Lifecycle + AI Security | TASK-019,TASK-023 | BACKLOG |
-| TASK-025 | Dashboards / Analytics / Performance | Core domains | BACKLOG |
-| TASK-026 | Backup / Restore / Operational Health | Foundation + DB | BACKLOG |
+| TASK-021 | Notifications + Email Delivery/Retry | TASK-005 | DONE |
+| TASK-022 | Audit + Sensitive Admin Actions | TASK-005 | DONE |
+| TASK-023 | Gemini Integration + Backend Rule Recommendation | TASK-005,TASK-009 | DONE |
+| TASK-024 | RAG Knowledge Lifecycle + AI Security | TASK-019,TASK-023 | DONE |
+| TASK-025 | Dashboards / Analytics / Performance | Core domains | DONE |
+| TASK-026 | Backup / Restore / Operational Health | Foundation + DB | DONE |
 | TASK-027 | Security Hardening + Abuse/Rate-Limit Controls | Core features | BACKLOG |
 | TASK-028 | Full E2E / Concurrency / Retention QA | All relevant features | BACKLOG |
 | TASK-029 | Docker/Deployment/Demo Readiness | TASK-028 | BACKLOG |

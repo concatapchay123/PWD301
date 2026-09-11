@@ -222,7 +222,6 @@ def get_current_user() -> tuple[Response, int]:
         jsonify(
             {
                 "user": {
-                    "id": user.id,
                     "public_id": str(user.public_id),
                     "email": user.email,
                     "display_name": user.display_name,

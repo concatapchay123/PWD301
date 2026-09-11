@@ -139,7 +139,7 @@ def login() -> Any:
                     "message": "Đăng nhập thành công.",
                     "redirect_url": target_url,
                     "user": {
-                        "id": user.id,
+                        "public_id": str(user.public_id),
                         "email": user.email,
                         "display_name": user.display_name,
                     },
@@ -216,7 +216,7 @@ def register() -> Any:
                 {
                     "status": "ok",
                     "message": "Đăng ký tài khoản thành công!",
-                    "user_id": user.id,
+                    "public_id": str(user.public_id),
                 }
             ),
             201,

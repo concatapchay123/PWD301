@@ -385,4 +385,23 @@
   - `pytest tests/unit/test_analytics_service.py tests/security/test_analytics_idor.py tests/api/test_analytics_api.py`: PASS (15/15 passed)
   - `python -m pytest`: PASS (667/667 passed in 293.83s, 0 regressions)
 
+## TASK-026 — Database Backup, Point-in-Time Recovery & Operational Health Engine
+- **Completion date:** 2026-09-11
+- **Important files changed:**
+  - `src/pwd301/services/operations_service.py` (Health diagnostic engine, multi-tier /health and /health/deep, cached maintenance mode checking with 15s TTL, database backup snapshot creation with SHA-256 manifest, zero-mutation restore dry-run, two-step controlled restore with single-user isolation and rollback on failure, retention pruning)
+  - `src/pwd301/blueprints/admin/routes.py` (Operational endpoints: GET /admin/health, GET /api/admin/health, POST /admin/backups, POST /api/admin/backups, POST /admin/backups/<backup_id>/restore/dry-run, POST /admin/backups/<backup_id>/restore, POST /admin/maintenance/start, POST /admin/maintenance/end, GET /admin/maintenance/status)
+  - `src/pwd301/blueprints/core/routes.py` (Liveness /health probe and deep readiness /health/deep probe)
+  - `src/pwd301/__init__.py` (Maintenance mode interception with 503 MAINTENANCE_MODE_ACTIVE and Retry-After header; thread-safe cached lookup)
+  - `tests/unit/test_operations_service.py` (13 unit tests for health metrics, backup manifest, restore dry-run, two-step restore, maintenance cache TTL)
+  - `tests/security/test_operations_security.py` (7 security tests for RBAC, IDOR, sensitive action confirmation, ADR-002 zero PK leakage)
+  - `tests/api/test_operations_api.py` (5 API integration tests)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS
+  - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
+  - `ruff check src tests scripts`: PASS
+  - `ruff format --check src tests scripts`: PASS
+  - `mypy src`: PASS
+  - `pytest tests/unit/test_operations_service.py tests/security/test_operations_security.py tests/api/test_operations_api.py`: PASS (25/25 passed)
+
+
 

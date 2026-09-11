@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import socket
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -840,7 +841,34 @@ def restore_database_snapshot(
             f"Fail-closed abort: Cannot persist pre-restore audit log ({exc})."
         ) from exc
 
-    # Execute controlled recovery logic
+    # Execute controlled recovery logic with SQL Server SINGLE_USER isolation
+    bind = sess.get_bind()
+    if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
+        raw_engine: Any = getattr(bind, "engine", bind)
+        db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
+        backup_file = backup.database_backup_name or "PWD301.bak"
+        physical_path = str(_get_backup_root() / backup_file)
+        try:
+            conn_obj: Any = raw_engine.connect() if hasattr(raw_engine, "connect") else raw_engine
+            with conn_obj.execution_options(isolation_level="AUTOCOMMIT") as conn:
+                single_user_sql = (
+                    f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+                )
+                conn.execute(sa.text(single_user_sql))
+                restore_sql = (
+                    f"RESTORE DATABASE [{db_name}] FROM DISK = N'{physical_path}' WITH REPLACE;"
+                )
+                conn.execute(sa.text(restore_sql))
+                conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+        except Exception as err:
+            try:
+                conn_obj = raw_engine.connect() if hasattr(raw_engine, "connect") else raw_engine
+                with conn_obj.execution_options(isolation_level="AUTOCOMMIT") as conn:
+                    conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+            except Exception:
+                pass
+            raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
+
     now = utc_now()
     backup.restore_tested_at = now
 
@@ -978,6 +1006,7 @@ def start_maintenance_window(
         raise AuditPersistenceError(f"Fail-closed: audit log failed ({exc}).") from exc
 
     sess.commit()
+    invalidate_maintenance_cache()
     return window
 
 
@@ -1051,7 +1080,22 @@ def end_maintenance_window(
         raise AuditPersistenceError(f"Fail-closed: audit log failed ({exc}).") from exc
 
     sess.commit()
+    invalidate_maintenance_cache()
     return window
+
+
+_maintenance_cache_lock = threading.Lock()
+_maintenance_cache: dict[str, Any] = {
+    "expires_at": 0.0,
+    "result": (False, None),
+}
+
+
+def invalidate_maintenance_cache() -> None:
+    """Invalidate the in-memory maintenance window cache immediately."""
+    with _maintenance_cache_lock:
+        _maintenance_cache["expires_at"] = 0.0
+        _maintenance_cache["result"] = (False, None)
 
 
 def is_maintenance_active(
@@ -1077,3 +1121,24 @@ def is_maintenance_active(
     except Exception:
         pass
     return False, None
+
+
+def is_maintenance_active_cached(
+    session: Session | scoped_session[Any] | None = None,
+    ttl_seconds: float = 15.0,
+) -> tuple[bool, MaintenanceWindow | None]:
+    """Check maintenance window status with thread-safe in-memory caching.
+
+    Avoids executing database queries on every single HTTP request.
+    """
+    now = time.monotonic()
+    with _maintenance_cache_lock:
+        if now < _maintenance_cache["expires_at"]:
+            return _maintenance_cache["result"]
+
+    result = is_maintenance_active(session=session)
+    with _maintenance_cache_lock:
+        _maintenance_cache["expires_at"] = time.monotonic() + ttl_seconds
+        _maintenance_cache["result"] = result
+
+    return result

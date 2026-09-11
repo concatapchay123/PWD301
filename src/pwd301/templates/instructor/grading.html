@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Chấm thi Tự luận — Giảng viên{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <span class="badge bg-warning-subtle text-warning fw-bold">CHẤM THI</span>
+      <h1 class="h3 fw-bold text-slate-900 mb-0">Hàng đợi Chấm bài Tự luận</h1>
+    </div>
+    <span class="badge bg-primary fs-6">{{ pending_attempts|length if pending_attempts is defined else 0 }} bài chờ chấm</span>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3">
+      <h2 class="h5 mb-0 fw-bold text-slate-900">Danh sách bài nộp cần chấm điểm</h2>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-4">Mã bài thi</th>
+              <th>Học viên</th>
+              <th>Thời gian nộp</th>
+              <th>Điểm trắc nghiệm tạm tính</th>
+              <th>Số câu tự luận</th>
+              <th class="text-end pe-4">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if pending_attempts %}
+              {% for att in pending_attempts %}
+              <tr>
+                <td class="ps-4 fw-bold text-slate-900">{{ att.assessment_title or att.assessment_id }}</td>
+                <td>{{ att.student_name or att.student_email }}</td>
+                <td>{{ att.submitted_at or 'Vừa nộp' }}</td>
+                <td><span class="badge bg-secondary">{{ att.objective_score or 0 }} đ</span></td>
+                <td><span class="badge bg-warning text-dark">{{ att.pending_essay_count or 1 }} câu</span></td>
+                <td class="text-end pe-4">
+                  <a href="/instructor/grading/{{ att.attempt_id }}" class="btn btn-sm btn-primary">Vào chấm bài →</a>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="text-center py-5 text-muted">
+                  <div class="mb-2">🎉 Tuyệt vời!</div>
+                  Không có bài thi tự luận nào đang chờ chấm điểm.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

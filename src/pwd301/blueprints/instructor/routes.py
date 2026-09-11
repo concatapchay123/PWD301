@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from flask import Response, jsonify, request
+from flask import Response, jsonify, render_template, request
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
@@ -113,10 +113,18 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 
 @instructor_bp.route("/dashboard", methods=["GET"])
 @instructor_required
-def dashboard() -> tuple[Response, int] | Response:
+def dashboard() -> Any:
     """Instructor dashboard displaying courses managed by the actor with analytics overview."""
     actor = require_authenticated_actor()
     overview = get_instructor_overview_analytics(actor, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        courses = (
+            db.session.query(Course)
+            .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
+            .order_by(Course.created_at.desc())
+            .all()
+        )
+        return render_template("instructor/dashboard.html", overview=overview, courses=courses)
     return jsonify(overview), 200
 
 
@@ -191,6 +199,23 @@ def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] 
         "enrollment_status": enrollment.status if enrollment else None,
     }
     return jsonify(data), 200
+
+
+@instructor_bp.route("/courses", methods=["GET"])
+@instructor_required
+def my_courses() -> Any:
+    """List courses managed by the instructor."""
+    actor = require_authenticated_actor()
+    courses = (
+        db.session.query(Course)
+        .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
+        .order_by(Course.created_at.desc())
+        .all()
+    )
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("instructor/courses.html", courses=courses)
+
+    return jsonify({"courses": [_serialize_course(c) for c in courses]}), 200
 
 
 @instructor_bp.route("/courses", methods=["POST"])
@@ -524,7 +549,7 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
 
 @instructor_bp.route("/courses/<course_id>/questions", methods=["GET"])
 @instructor_required
-def list_course_questions_route(course_id: str) -> tuple[Response, int] | Response:
+def list_course_questions_route(course_id: str) -> Any:
     """List questions for a course in the instructor dashboard."""
     actor = require_authenticated_actor()
 
@@ -546,6 +571,10 @@ def list_course_questions_route(course_id: str) -> tuple[Response, int] | Respon
         per_page=per_page,
         session=db.session,
     )
+
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        course = require_course_manager(actor, course_id, session=db.session)
+        return render_template("instructor/question_bank.html", course=course, questions=items)
 
     data = {
         "items": items,
@@ -924,12 +953,46 @@ def materialize_instructor_blueprint_route(assessment_id: str) -> tuple[Response
     ), 200
 
 
+@instructor_bp.route("/grading", methods=["GET"])
+@instructor_required
+def instructor_grading_overview() -> Any:
+    """Overview of pending grading attempts across courses for the instructor."""
+    actor = require_authenticated_actor()
+    from pwd301.models.assessment import Assessment
+
+    courses = (
+        db.session.query(Course)
+        .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
+        .all()
+    )
+    course_ids = [c.id for c in courses]
+    assessments = (
+        db.session.query(Assessment)
+        .filter(Assessment.course_id.in_(course_ids), Assessment.deleted_at.is_(None))
+        .all()
+        if course_ids
+        else []
+    )
+    all_pending = []
+    for ass in assessments:
+        att_list = list_pending_grading_attempts(actor, ass.id, session=db.session)
+        for a in att_list:
+            a["assessment_title"] = ass.title
+        all_pending.extend(att_list)
+
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("instructor/grading.html", pending_attempts=all_pending)
+    return jsonify({"pending_attempts": all_pending, "total": len(all_pending)}), 200
+
+
 @instructor_bp.route("/assessments/<assessment_id>/grading/pending", methods=["GET"])
 @instructor_required
-def list_instructor_pending_grading_route(assessment_id: str) -> tuple[Response, int] | Response:
+def list_instructor_pending_grading_route(assessment_id: str) -> Any:
     """List attempts for an assessment requiring manual grading."""
     actor = require_authenticated_actor()
     attempts = list_pending_grading_attempts(actor, assessment_id, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("instructor/grading.html", pending_attempts=attempts)
     return jsonify({"attempts": attempts, "total": len(attempts)}), 200
 
 

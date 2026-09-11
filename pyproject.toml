@@ -39,7 +39,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -50,8 +50,13 @@ exclude = "migrations/"
 [[tool.mypy.overrides]]
 module = [
   "flask_login.*",
+  "flask_migrate",
+  "flask_migrate.*",
   "flask_wtf.*",
   "jwt",
+  "defusedxml",
+  "defusedxml.*",
+  "pypdf",
 ]
 ignore_missing_imports = true
 

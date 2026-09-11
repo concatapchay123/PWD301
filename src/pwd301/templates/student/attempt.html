@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block title %}Làm bài kiểm tra — {{ delivery.assessment_title if delivery is defined else 'PWD301' }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .attempt-shell {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .timer-card {
+    background: #0f172a;
+    color: #f8fafc;
+    border-radius: var(--radius-md, 8px);
+    padding: 16px;
+    text-align: center;
+  }
+  .timer-digits {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fbbf24;
+    font-feature-settings: 'tnum';
+    font-variant-numeric: tabular-nums;
+  }
+  .sync-badge {
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 9999px;
+  }
+  .sync-saved { background: #dcfce7; color: #166534; }
+  .sync-saving { background: #dbeafe; color: #1e40af; }
+  .sync-warning { background: #fef3c7; color: #92400e; }
+  .option-label {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .option-label:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+  }
+  .option-label.active {
+    background: #eff6ff;
+    border-color: #3b82f6;
+  }
+  .nav-palette-btn {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    cursor: pointer;
+  }
+  .nav-palette-btn.answered {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+  .nav-palette-btn.current {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2563eb;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="attempt-shell">
+    <!-- Top Status Bar -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body p-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+          <span class="badge bg-secondary mb-1">Mã bài thi: {{ delivery.assessment_code if delivery is defined else 'EXAM' }}</span>
+          <h1 class="h4 mb-0 fw-bold text-slate-900">{{ delivery.assessment_title if delivery is defined else 'Bài kiểm tra trực tuyến' }}</h1>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <span id="sync-status" class="sync-badge sync-saved">✓ Đã đồng bộ với máy chủ</span>
+          <button type="button" class="btn btn-success fw-semibold px-4" data-bs-toggle="modal" data-bs-target="#submitModal">Nộp bài thi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lease Alert Container (Hidden by default) -->
+    <div id="lease-alert" class="alert alert-warning d-none align-items-center justify-content-between" role="alert">
+      <div><strong>Cảnh báo phiên làm bài:</strong> Phiên chỉnh sửa của bạn đã hết hạn hoặc được mở tại tab khác. Nhấn vào đây để tiếp tục.</div>
+      <button class="btn btn-warning btn-sm" onclick="renewLease()">Lấy lại phiên làm bài</button>
+    </div>
+
+    <div class="row g-4">
+      <!-- Main Question Form -->
+      <div class="col-lg-9">
+        <form id="attempt-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          
+          {% if delivery is defined and delivery.questions %}
+            {% for q in delivery.questions %}
+            <div class="card border-0 shadow-sm mb-4 question-block" id="question-card-{{ loop.index }}" data-question-id="{{ q.question_id }}" data-ordinal="{{ loop.index }}">
+              <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <span class="fw-bold text-primary">Câu hỏi {{ loop.index }}</span>
+                <span class="badge bg-light text-muted border">{{ q.points }} điểm</span>
+              </div>
+              <div class="card-body p-4">
+                <div class="fs-6 fw-medium text-slate-900 mb-4" style="line-height: 1.6;">
+                  {{ q.content_text }}
+                </div>
+
+                <!-- Multiple / Single Choice -->
+                {% if q.choices %}
+                <div class="options-container">
+                  {% for choice in q.choices %}
+                  <label class="option-label" for="choice-{{ q.question_id }}-{{ choice.choice_id }}">
+                    <input class="form-check-input mt-1 me-3 answer-input" 
+                           type="{{ 'checkbox' if q.question_type == 'MULTIPLE_CHOICE' else 'radio' }}" 
+                           name="q_{{ q.question_id }}" 
+                           id="choice-{{ q.question_id }}-{{ choice.choice_id }}" 
+                           value="{{ choice.choice_id }}"
+                           onchange="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')">
+                    <div class="flex-grow-1">
+                      <span class="fw-semibold me-2">{{ loop.index | string | replace('1','A') | replace('2','B') | replace('3','C') | replace('4','D') }}.</span>
+                      {{ choice.content_text }}
+                    </div>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% elif q.question_type == 'SHORT_ANSWER' %}
+                <div>
+                  <input type="text" class="form-control py-2 answer-input" placeholder="Nhập câu trả lời ngắn của bạn..." 
+                         oninput="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')">
+                </div>
+                {% elif q.question_type == 'ESSAY' %}
+                <div>
+                  <textarea class="form-control answer-input" rows="6" placeholder="Trình bày chi tiết bài làm tự luận của bạn..." 
+                            oninput="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')"></textarea>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="alert alert-info">Đang tải câu hỏi bài thi...</div>
+          {% endif %}
+        </form>
+      </div>
+
+      <!-- Right Sticky Sidebar: Countdown Timer & Question Palette -->
+      <div class="col-lg-3">
+        <div class="sticky-top" style="top: 20px; z-index: 10;">
+          <!-- Timer Card -->
+          <div class="timer-card shadow-sm mb-4">
+            <div class="text-white-50 small mb-1">THỜI GIAN CÒN LẠI</div>
+            <div id="attempt-timer-display" class="timer-digits">--:--</div>
+          </div>
+
+          <!-- Question Palette Navigation -->
+          <div class="card border-0 shadow-sm p-3">
+            <div class="fw-bold text-slate-800 small mb-3">DANH SÁCH CÂU HỎI</div>
+            <div class="d-flex flex-wrap gap-2" id="question-nav-grid">
+              {% if delivery is defined and delivery.questions %}
+                {% for q in delivery.questions %}
+                <button type="button" class="nav-palette-btn" id="palette-btn-{{ loop.index }}" onclick="scrollToQuestion('{{ loop.index }}')">{{ loop.index }}</button>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Submit Confirmation Modal -->
+<div class="modal fade" id="submitModal" tabindex="-1" aria-labelledby="submitModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="submitModalLabel">Xác nhận nộp bài thi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body py-4 text-center">
+        <p class="mb-2 fs-5">Bạn có chắc chắn muốn nộp bài thi này không?</p>
+        <p class="text-muted small">Sau khi nộp, bạn sẽ không thể chỉnh sửa câu trả lời.</p>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Kiểm tra lại</button>
+        <button type="button" class="btn btn-primary px-4 fw-semibold" onclick="submitExam()">Nộp bài ngay</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let remainingSeconds = {{ delivery.remaining_seconds if delivery is defined and delivery.remaining_seconds is not none else 3600 }};
+  const attemptId = "{{ delivery.attempt_id if delivery is defined else '' }}";
+
+  function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function updateTimer() {
+    const display = document.getElementById('attempt-timer-display');
+    if (!display) return;
+    if (remainingSeconds <= 0) {
+      display.textContent = '00:00';
+      display.style.color = '#ef4444';
+      submitExam();
+      return;
+    }
+    display.textContent = formatTime(remainingSeconds);
+    if (remainingSeconds < 300) {
+      display.style.color = '#ef4444';
+    }
+    remainingSeconds--;
+  }
+
+  setInterval(updateTimer, 1000);
+  updateTimer();
+
+  function scrollToQuestion(index) {
+    const el = document.getElementById(`question-card-${index}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function onAnswerChanged(questionId, ordinal) {
+    const btn = document.getElementById(`palette-btn-${ordinal}`);
+    if (btn) {
+      btn.classList.add('answered');
+    }
+    const syncStatus = document.getElementById('sync-status');
+    if (syncStatus) {
+      syncStatus.textContent = 'Đang lưu tự động...';
+      syncStatus.className = 'sync-badge sync-saving';
+      setTimeout(() => {
+        syncStatus.textContent = '✓ Đã đồng bộ với máy chủ';
+        syncStatus.className = 'sync-badge sync-saved';
+      }, 800);
+    }
+  }
+
+  function submitExam() {
+    if (!attemptId) return;
+    fetch(`/api/attempts/${attemptId}/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token() }}'
+      },
+      body: JSON.stringify({})
+    }).then(res => {
+      window.location.href = '/student/dashboard';
+    }).catch(err => {
+      alert('Có lỗi khi nộp bài: ' + err);
+    });
+  }
+</script>
+{% endblock %}

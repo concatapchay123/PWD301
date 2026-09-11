@@ -22,6 +22,14 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+
+try:
+    import defusedxml.ElementTree as defused_ET
+    from defusedxml.common import DefusedXmlException
+except ImportError:  # pragma: no cover
+    import xml.etree.ElementTree as defused_ET
+
+    DefusedXmlException = ET.ParseError
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -112,7 +120,7 @@ def extract_text_from_docx(file_path: Path) -> list[str]:
                 raise DocumentParsingError("Invalid DOCX format: word/document.xml missing.")
 
             xml_content = zf.read("word/document.xml")
-            root = ET.fromstring(xml_content)
+            root = defused_ET.fromstring(xml_content)
 
             # Traverse body elements preserving order
             body = root.find("w:body", NS_MAP)
@@ -141,8 +149,9 @@ def extract_text_from_docx(file_path: Path) -> list[str]:
                             lines.append(" | ".join(row_texts))
     except zipfile.BadZipFile as err:
         raise DocumentParsingError(f"Corrupted or invalid DOCX archive: {err}") from err
-    except ET.ParseError as err:
-        raise DocumentParsingError(f"Failed to parse DOCX XML structure: {err}") from err
+    except (ET.ParseError, DefusedXmlException) as err:
+        msg = f"Failed to parse DOCX XML structure or entity expansion detected: {err}"
+        raise DocumentParsingError(msg) from err
     except Exception as err:
         raise DocumentParsingError(f"Unexpected error extracting DOCX content: {err}") from err
 
@@ -172,7 +181,7 @@ def extract_text_from_pdf(file_path: Path) -> list[str]:
 
     # Primary strategy: pypdf
     try:
-        import pypdf  # type: ignore[import-not-found]
+        import pypdf
 
         reader = pypdf.PdfReader(str(file_path))
 

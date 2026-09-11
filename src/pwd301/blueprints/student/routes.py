@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Response, jsonify, request
+from flask import Response, jsonify, render_template, request
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
@@ -32,11 +32,30 @@ from pwd301.services.lesson_service import (
 
 @student_bp.route("/dashboard", methods=["GET"])
 @student_required
-def dashboard() -> tuple[Response, int] | Response:
+def dashboard() -> Any:
     """Student dashboard displaying learning overview and enrolled courses."""
     actor = require_authenticated_actor()
     overview = get_student_learning_overview(actor, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/dashboard.html", overview=overview)
     return jsonify(overview), 200
+
+
+@student_bp.route("/attempt/<attempt_id>", methods=["GET"])
+@student_required
+def attempt_view(attempt_id: str) -> Any:
+    """Render the student exam taking view with server timer and question palette."""
+    actor = require_authenticated_actor()
+    from pwd301.services.attempt_service import get_attempt_delivery
+
+    delivery = get_attempt_delivery(
+        student_actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("student/attempt.html", delivery=delivery)
+    return jsonify(delivery)
 
 
 @student_bp.route("/courses/<course_id>/progress", methods=["GET"])
