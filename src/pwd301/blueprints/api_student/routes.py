@@ -30,7 +30,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
-        "current_progress_percent": float(e.current_progress_percent),
+        "current_progress_percent": float(e.current_progress_percent or 0.0),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
         "detail_retention_due_at": (
@@ -97,7 +97,7 @@ def get_student_course_completion_api(course_id: str) -> tuple[Response, int] | 
         "prerequisite_eligible": summary.prerequisite_eligible if summary else False,
         "current_status": enrollment.status if enrollment else None,
         "current_progress_percent": (
-            float(enrollment.current_progress_percent) if enrollment else 0.0
+            float(enrollment.current_progress_percent or 0.0) if enrollment else 0.0
         ),
     }
     return jsonify(data), 200

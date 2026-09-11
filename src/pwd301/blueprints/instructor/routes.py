@@ -39,6 +39,7 @@ from pwd301.services.attempt_service import (
     list_pending_grading_attempts,
 )
 from pwd301.services.authorization_service import (
+    _resolve_course,
     instructor_required,
     require_authenticated_actor,
     require_course_manager,
@@ -195,7 +196,9 @@ def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] 
         "student_id": str(student.public_id),
         "student_name": student.display_name,
         "student_email": student.email,
-        "progress_percent": float(enrollment.current_progress_percent) if enrollment else 0.0,
+        "progress_percent": (
+            float(enrollment.current_progress_percent or 0.0) if enrollment else 0.0
+        ),
         "enrollment_status": enrollment.status if enrollment else None,
     }
     return jsonify(data), 200
@@ -387,7 +390,7 @@ def _serialize_enrolled_student(e: Enrollment) -> dict[str, Any]:
         "student_email": e.student.email if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
-        "current_progress_percent": float(e.current_progress_percent),
+        "current_progress_percent": float(e.current_progress_percent or 0.0),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
     }
@@ -466,14 +469,16 @@ def add_course_prerequisite_route(course_id: str) -> tuple[Response, int] | Resp
         prerequisite_course_id=prerequisite_course_id,
         session=db.session,
     )
+    target_course = link.course or _resolve_course(course_id, session=db.session)
+    prereq_course = link.prerequisite_course or _resolve_course(
+        prerequisite_course_id, session=db.session
+    )
     return (
         jsonify(
             {
-                "course_id": str(link.course.public_id) if link.course else str(link.course_id),
+                "course_id": (str(target_course.public_id) if target_course else str(course_id)),
                 "prerequisite_course_id": (
-                    str(link.prerequisite_course.public_id)
-                    if link.prerequisite_course
-                    else str(link.prerequisite_course_id)
+                    str(prereq_course.public_id) if prereq_course else str(prerequisite_course_id)
                 ),
                 "created_at": link.created_at.isoformat(),
             }

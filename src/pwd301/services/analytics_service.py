@@ -615,7 +615,8 @@ def get_student_learning_overview(
 
     if enrollments:
         overall_avg_progress = round(
-            sum(float(e.current_progress_percent) for e in enrollments) / len(enrollments), 2
+            sum(float(e.current_progress_percent or 0.0) for e in enrollments) / len(enrollments),
+            2,
         )
     else:
         overall_avg_progress = 0.0
@@ -626,7 +627,7 @@ def get_student_learning_overview(
             "enrollment_id": str(e.public_id),
             "course_id": str(e.course.public_id) if e.course else None,
             "course_title": e.course.title if e.course else None,
-            "progress_percent": round(float(e.current_progress_percent), 2),
+            "progress_percent": round(float(e.current_progress_percent or 0.0), 2),
             "status": e.status,
         }
         for e in enrollments

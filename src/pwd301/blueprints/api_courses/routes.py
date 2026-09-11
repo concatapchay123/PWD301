@@ -210,7 +210,7 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
-        "current_progress_percent": float(e.current_progress_percent),
+        "current_progress_percent": float(e.current_progress_percent or 0.0),
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
         "detail_retention_due_at": (
@@ -481,7 +481,7 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
     if enrollment is None:
         raise ResourceNotFoundError("Enrollment record not found for this student.")
 
-    pct = float(enrollment.current_progress_percent)
+    pct = float(enrollment.current_progress_percent or 0.0)
 
     data = {
         "course_id": str(course.public_id),
@@ -627,10 +627,17 @@ def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Resp
 @jwt_required
 def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
     """Upload a new FileAsset for a course (JWT required)."""
-    from pwd301.services.exceptions import FileValidationError
+    from pwd301.services.exceptions import FileSizeLimitExceededError, FileValidationError
     from pwd301.services.file_service import _serialize_file_asset, store_file_stream
 
     actor = require_authenticated_actor()
+
+    cl = request.content_length
+    if cl is not None and cl >= 1_000_000_000:
+        raise FileSizeLimitExceededError(
+            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+        )
+
     asset_type = request.form.get("asset_type", "RESOURCE")
     title = request.form.get("title")
 
@@ -640,13 +647,6 @@ def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
         filename = upload.filename or "unnamed_file"
         content_type = upload.mimetype or request.content_type
     else:
-        cl = request.content_length
-        if cl is not None and cl >= 1_000_000_000:
-            from pwd301.services.exceptions import FileSizeLimitExceededError
-
-            raise FileSizeLimitExceededError(
-                "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
-            )
         is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
         if (cl is not None and cl > 0) or is_chunked:
             file_stream = request.stream

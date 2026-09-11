@@ -20,6 +20,7 @@ from pwd301.services.ai_service import (
     send_chat_message,
 )
 from pwd301.services.authorization_service import (
+    instructor_required,
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import AIValidationError, ForbiddenError
@@ -53,6 +54,7 @@ def get_recommendations_api() -> tuple[Response, int] | Response:
 @api_ai_bp.route("/questions/draft", methods=["POST"])
 @api_ai_bp.route("/questions/generate", methods=["POST"])
 @jwt_required
+@instructor_required
 def draft_questions_api() -> tuple[Response, int] | Response:
     """Draft structured assessment questions for an instructor course using Gemini."""
     actor = require_authenticated_actor()
@@ -105,6 +107,7 @@ def draft_questions_api() -> tuple[Response, int] | Response:
 
 @api_ai_bp.route("/questions/drafts", methods=["GET"])
 @jwt_required
+@instructor_required
 def list_drafts_api() -> tuple[Response, int] | Response:
     """List generated question drafts for a course."""
     actor = require_authenticated_actor()
@@ -250,6 +253,7 @@ def cleanup_conversations_api() -> tuple[Response, int] | Response:
 
 @api_ai_bp.route("/courses/<course_id>/ingest", methods=["POST"])
 @jwt_required
+@instructor_required
 def ingest_course_knowledge_api(course_id: str) -> tuple[Response, int] | Response:
     """Ingest/re-index all published lessons and clean file resources for a course."""
     actor = require_authenticated_actor()
@@ -259,6 +263,7 @@ def ingest_course_knowledge_api(course_id: str) -> tuple[Response, int] | Respon
 
 @api_ai_bp.route("/lessons/<lesson_id>/ingest", methods=["POST"])
 @jwt_required
+@instructor_required
 def ingest_lesson_knowledge_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Ingest/re-index a specific lesson into RAG knowledge."""
     actor = require_authenticated_actor()
@@ -323,6 +328,7 @@ def list_course_sources_api(course_id: str) -> tuple[Response, int] | Response:
 
 @api_ai_bp.route("/sources/<source_id>", methods=["DELETE"])
 @jwt_required
+@instructor_required
 def delete_source_api(source_id: str) -> tuple[Response, int] | Response:
     """Delete a knowledge source from the RAG index."""
     actor = require_authenticated_actor()

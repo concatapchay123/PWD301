@@ -10,9 +10,11 @@ from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.models.course import Lesson, LessonProgress
 from pwd301.services.authorization_service import (
     get_authenticated_actor,
+    instructor_required,
     student_required,
 )
 from pwd301.services.exceptions import ForbiddenError, LessonValidationError
+from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.lesson_service import (
     get_lesson_detail,
     record_lesson_progress,
@@ -51,6 +53,7 @@ def _serialize_progress(p: LessonProgress) -> dict[str, Any]:
 
 
 @api_lesson_bp.route("/<lesson_id>", methods=["GET"])
+@jwt_required
 def get_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Read lesson details with authorization checks.
 
@@ -63,6 +66,7 @@ def get_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
 
 
 @api_lesson_bp.route("/<lesson_id>/progress", methods=["POST"])
+@jwt_required
 @student_required
 def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Record bounded learning progress heartbeat (Algorithm 02)."""
@@ -100,6 +104,7 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
 
 
 @api_lesson_bp.route("/<lesson_id>/activity", methods=["POST"])
+@jwt_required
 @student_required
 def record_activity_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Alias for /progress conforming to 04_COURSE_API.md activity endpoint."""
@@ -107,6 +112,8 @@ def record_activity_api(lesson_id: str) -> tuple[Response, int] | Response:
 
 
 @api_lesson_bp.route("/<lesson_id>/resources", methods=["POST"])
+@jwt_required
+@instructor_required
 def attach_lesson_resource_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Attach a FileAsset to a Lesson as a learning resource (JWT required)."""
     from pwd301.extensions import db
@@ -138,6 +145,8 @@ def attach_lesson_resource_api(lesson_id: str) -> tuple[Response, int] | Respons
 
 
 @api_lesson_bp.route("/<lesson_id>/resources/<resource_id>", methods=["DELETE"])
+@jwt_required
+@instructor_required
 def detach_lesson_resource_api(lesson_id: str, resource_id: str) -> tuple[Response, int] | Response:
     """Detach a learning resource link from a Lesson (JWT required)."""
     from pwd301.extensions import db

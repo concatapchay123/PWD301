@@ -767,6 +767,22 @@ def execute_dry_run_restore(
     }
 
 
+_restore_lock = threading.Lock()
+_is_restore_in_progress: bool = False
+
+
+def is_database_restore_in_progress() -> bool:
+    """Return True if a live database restore is currently executing."""
+    global _is_restore_in_progress
+    return _is_restore_in_progress
+
+
+def set_database_restore_in_progress(val: bool) -> None:
+    """Set the live database restore in-progress flag."""
+    global _is_restore_in_progress
+    _is_restore_in_progress = val
+
+
 def restore_database_snapshot(
     actor: User,
     backup_id: str,
@@ -842,41 +858,52 @@ def restore_database_snapshot(
         ) from exc
 
     # Execute controlled recovery logic with SQL Server SINGLE_USER isolation
-    bind = sess.get_bind()
-    if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
-        raw_engine: Any = getattr(bind, "engine", bind)
-        db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
-        backup_file = backup.database_backup_name or "PWD301.bak"
-        physical_path = str(_get_backup_root() / backup_file)
-
-        # Commit and close session connection, then dispose the pool to eliminate open handles
-        sess.commit()
-        sess.close()
-        raw_engine.dispose()
-
-        # Connect to master database to execute ALTER DATABASE and RESTORE
-        master_url = raw_engine.url.set(database="master")
-        master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
+    global _is_restore_in_progress
+    with _restore_lock:
+        _is_restore_in_progress = True
         try:
-            with master_engine.connect() as conn:
-                single_user_sql = (
-                    f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
-                )
-                conn.execute(sa.text(single_user_sql))
-                restore_sql = (
-                    f"RESTORE DATABASE [{db_name}] FROM DISK = N'{physical_path}' WITH REPLACE;"
-                )
-                conn.execute(sa.text(restore_sql))
-                conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
-        except Exception as err:
-            try:
-                with master_engine.connect() as conn:
-                    conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
-            except Exception:
-                pass
-            raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
+            bind = sess.get_bind()
+            if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
+                raw_engine: Any = getattr(bind, "engine", bind)
+                db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
+                backup_file = backup.database_backup_name or "PWD301.bak"
+                physical_path = str(_get_backup_root() / backup_file)
+
+                # Commit and close session connection, then dispose pool to eliminate
+                # open handles
+                sess.commit()
+                sess.close()
+                raw_engine.dispose()
+
+                # Connect to master database to execute ALTER DATABASE and RESTORE
+                master_url = raw_engine.url.set(database="master")
+                master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
+                try:
+                    with master_engine.connect() as conn:
+                        single_user_sql = (
+                            f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+                        )
+                        conn.execute(sa.text(single_user_sql))
+                        restore_sql = (
+                            f"RESTORE DATABASE [{db_name}] "
+                            f"FROM DISK = N'{physical_path}' WITH REPLACE;"
+                        )
+                        conn.execute(sa.text(restore_sql))
+                        conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+                except Exception as err:
+                    try:
+                        with master_engine.connect() as conn:
+                            conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+                    except Exception:
+                        pass
+                    raise RestoreForbiddenError(
+                        f"SQL Server physical restore failed: {err}"
+                    ) from err
+                finally:
+                    master_engine.dispose()
+                    raw_engine.dispose()
         finally:
-            master_engine.dispose()
+            _is_restore_in_progress = False
 
     now = utc_now()
     backup.restore_tested_at = now
@@ -1140,6 +1167,17 @@ def is_maintenance_active_cached(
 
     Avoids executing database queries on every single HTTP request.
     """
+    if is_database_restore_in_progress():
+        fake_alert = SystemAlert(
+            alert_type="MAINTENANCE_WINDOW",
+            severity="CRITICAL",
+            title="Database Restore In Progress",
+            message="Database restoration in progress. Traffic temporarily suspended.",
+            status="OPEN",
+            created_at=utc_now(),
+        )
+        return True, MaintenanceWindow(fake_alert)
+
     now = time.monotonic()
     with _maintenance_cache_lock:
         if now < _maintenance_cache["expires_at"]:

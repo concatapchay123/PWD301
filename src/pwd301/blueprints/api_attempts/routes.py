@@ -22,7 +22,10 @@ from pwd301.services.attempt_service import (
     sync_offline_answers,
     takeover_attempt_lease,
 )
-from pwd301.services.authorization_service import require_authenticated_actor
+from pwd301.services.authorization_service import (
+    instructor_required,
+    require_authenticated_actor,
+)
 from pwd301.services.exceptions import AttemptValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.regrade_worker import (
@@ -296,6 +299,7 @@ def get_attempt_result_route(attempt_id: str) -> tuple[Response, int] | Response
 
 @api_attempt_bp.route("/api/attempts/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
 @jwt_required
+@instructor_required
 def grade_attempt_question_route(
     attempt_id: str,
     attempt_question_id: str,
@@ -338,6 +342,7 @@ def get_attempt_grade_history_route(attempt_id: str) -> tuple[Response, int] | R
 
 @api_attempt_bp.route("/api/regrade-jobs/<job_id>", methods=["GET"])
 @jwt_required
+@instructor_required
 def get_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
     """Read regrade job status and progress per 08_ATTEMPT_API.md.
 
@@ -350,6 +355,7 @@ def get_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
 
 @api_attempt_bp.route("/api/regrade-jobs/<job_id>/retry", methods=["POST"])
 @jwt_required
+@instructor_required
 def retry_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
     """Retry failed items in a regrade job.
 

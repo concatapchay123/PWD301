@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 from typing import Any
 
 from flask import Response, jsonify, make_response, request, send_file
@@ -78,13 +79,23 @@ def download_file_api(asset_id: str) -> Response:
         )
     )
     resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Content-Disposition"] = f'{disposition}; filename="{clean_filename}"'
+    ascii_fallback = clean_filename.encode("ascii", "ignore").decode("ascii") or "file"
+    encoded_filename = urllib.parse.quote(clean_filename, safe="")
+    resp.headers["Content-Disposition"] = (
+        f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
+    )
     resp.headers["Content-Type"] = blob.detected_mime_type
     return resp
 
 
 def _extract_upload_stream() -> tuple[Any, str, str | None]:
     """Safely extract upload stream using chunked streaming without loading RAM."""
+    cl = request.content_length
+    if cl is not None and cl >= 1_000_000_000:
+        raise FileSizeLimitExceededError(
+            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+        )
+
     if request.files and "file" in request.files:
         upload = request.files["file"]
         return (
@@ -94,11 +105,6 @@ def _extract_upload_stream() -> tuple[Any, str, str | None]:
         )
 
     filename = request.headers.get("X-File-Name") or "unnamed_file"
-    cl = request.content_length
-    if cl is not None and cl >= 1_000_000_000:
-        raise FileSizeLimitExceededError(
-            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
-        )
     is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
     if (cl is not None and cl > 0) or is_chunked:
         return request.stream, filename, request.content_type
@@ -152,6 +158,12 @@ def restore_file_asset_api(asset_id: str) -> tuple[Response, int] | Response:
 def upload_file_generic_api() -> tuple[Response, int] | Response:
     """Upload a new FileAsset via /api/files (JWT required)."""
     actor = require_authenticated_actor()
+
+    cl = request.content_length
+    if cl is not None and cl >= 1_000_000_000:
+        raise FileSizeLimitExceededError(
+            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+        )
 
     course_id = request.form.get("course_id") or request.args.get("course_id")
     if not course_id:

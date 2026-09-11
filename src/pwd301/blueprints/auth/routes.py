@@ -152,7 +152,7 @@ def login() -> Any:
     return redirect(target_url)
 
 
-@auth_bp.route("/logout", methods=["POST", "GET"])
+@auth_bp.route("/logout", methods=["POST"])
 def logout() -> Any:
     """Handle user logout: revokes server-side session and clears client session."""
     raw_session_key = session.get("auth_session_key")

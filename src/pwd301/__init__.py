@@ -32,6 +32,7 @@ from werkzeug.exceptions import HTTPException
 
 import pwd301.models  # noqa: F401
 from pwd301.blueprints.admin import admin_bp
+from pwd301.blueprints.api_admin import api_admin_bp
 from pwd301.blueprints.api_ai import api_ai_bp
 from pwd301.blueprints.api_assessments import api_assessment_bp
 from pwd301.blueprints.api_attempts import api_attempt_bp
@@ -596,7 +597,10 @@ def create_app(
         g.pop("jwt_claims", None)
 
         # Maintenance mode enforcement
-        from pwd301.services.operations_service import is_maintenance_active_cached
+        from pwd301.services.operations_service import (
+            is_database_restore_in_progress,
+            is_maintenance_active_cached,
+        )
 
         path = request.path
         # Allow static files, health probes, authentication login/logout, and admin routes
@@ -615,6 +619,45 @@ def create_app(
         )
 
         if not (path in bypass_exact or any(path.startswith(p) for p in bypass_prefixes)):
+            # Check if database restore is in progress (in-memory fast path, no DB call)
+            if is_database_restore_in_progress():
+                from pwd301.services.authorization_service import get_authenticated_actor
+
+                try:
+                    actor = get_authenticated_actor()
+                except Exception:
+                    actor = None
+
+                if not (actor and getattr(actor, "is_admin", False)):
+                    if _is_api_or_json_request():
+                        resp = jsonify(
+                            {
+                                "error": {
+                                    "code": "MAINTENANCE_MODE_ACTIVE",
+                                    "message": (
+                                        "Database restore is currently in progress. "
+                                        "System is temporarily unavailable."
+                                    ),
+                                    "estimated_end_at": None,
+                                    "estimated_duration_minutes": 5,
+                                }
+                            }
+                        )
+                        resp.status_code = 503
+                        resp.headers["Retry-After"] = "300"
+                        return resp
+                    resp = make_response(
+                        "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
+                        "<body><h1>503 Service Unavailable</h1>"
+                        "<p>Database restore is currently in progress. "
+                        "System is temporarily unavailable.</p>"
+                        "</body></html>",
+                        503,
+                    )
+                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                    resp.headers["Retry-After"] = "300"
+                    return resp
+
             # Check if actor is an authenticated Admin (via session, current_user, or Bearer token)
             from pwd301.services.authorization_service import get_authenticated_actor
 
@@ -624,7 +667,15 @@ def create_app(
                 actor = None
 
             if not (actor and getattr(actor, "is_admin", False)):
-                is_active, window = is_maintenance_active_cached(session=db.session)
+                try:
+                    is_active, window = is_maintenance_active_cached(session=db.session)
+                except Exception as exc:
+                    app.logger.warning(
+                        "Failed to check maintenance status (possible DB disruption): %s",
+                        exc,
+                    )
+                    is_active, window = False, None
+
                 if is_active and window is not None:
                     retry_after = str(window.estimated_duration_minutes * 60)
                     if _is_api_or_json_request():
@@ -683,7 +734,7 @@ def create_app(
     app.register_blueprint(student_bp)
     app.register_blueprint(instructor_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(admin_bp, url_prefix="/api/admin", name="api_admin")
+    app.register_blueprint(api_admin_bp)
     app.register_blueprint(api_course_bp)
     app.register_blueprint(api_lesson_bp)
     app.register_blueprint(api_question_bp)
@@ -700,8 +751,7 @@ def create_app(
     unversioned_auth = app.blueprints.get("api_auth_unversioned")
     if unversioned_auth:
         csrf.exempt(unversioned_auth)
-    # Exempt api_admin blueprint name from CSRF validation without mutating app.blueprints
-    csrf._exempt_blueprints.add("api_admin")
+    csrf.exempt(api_admin_bp)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
     csrf.exempt(api_question_bp)
