@@ -12,6 +12,7 @@ Implements canonical architecture and non-negotiable invariants:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import json
@@ -768,7 +769,94 @@ def execute_dry_run_restore(
     }
 
 
-_restore_lock = threading.Lock()
+class DatabaseRestoreLock:
+    """Distributed application lock manager for database restore operations.
+
+    Uses SQL Server sp_getapplock / sp_releaseapplock (Exclusive, Session-scoped)
+    on MSSQL to serialize restore across workers/containers.
+    Maintains fallback state for non-MSSQL/test environments.
+    """
+
+    def __init__(self) -> None:
+        self._held: bool = False
+        self._active_conn: Any = None
+        self._active_engine: Any = None
+
+    def acquire(self, blocking: bool = False, session: Any = None) -> bool:
+        global _is_restore_in_progress
+        sess = session or (db.session if db else None)
+        if sess is not None:
+            try:
+                bind = sess.get_bind()
+                if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
+                    raw_engine: Any = getattr(bind, "engine", bind)
+                    master_url = raw_engine.url.set(database="master")
+                    engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
+                    conn = engine.connect()
+                    res = conn.execute(
+                        sa.text(
+                            "DECLARE @res INT; "
+                            "EXEC @res = sp_getapplock "
+                            "@Resource = 'PWD301_RESTORE_LOCK', "
+                            "@LockMode = 'Exclusive', "
+                            "@LockOwner = 'Session', "
+                            "@LockTimeout = 0; "
+                            "SELECT @res;"
+                        )
+                    ).scalar()
+                    if res is not None and int(res) < 0:
+                        conn.close()
+                        engine.dispose()
+                        return False
+                    self._held = True
+                    _is_restore_in_progress = True
+                    self._active_conn = conn
+                    self._active_engine = engine
+                    return True
+            except Exception:
+                pass
+
+        if self._held or _is_restore_in_progress:
+            return False
+        self._held = True
+        _is_restore_in_progress = True
+        return True
+
+    def release(self, session: Any = None) -> None:
+        global _is_restore_in_progress
+        self._held = False
+        _is_restore_in_progress = False
+        if self._active_conn is not None:
+            with contextlib.suppress(Exception):
+                self._active_conn.execute(
+                    sa.text(
+                        "EXEC sp_releaseapplock "
+                        "@Resource = 'PWD301_RESTORE_LOCK', "
+                        "@LockOwner = 'Session';"
+                    )
+                )
+            with contextlib.suppress(Exception):
+                self._active_conn.close()
+            self._active_conn = None
+        if self._active_engine is not None:
+            with contextlib.suppress(Exception):
+                self._active_engine.dispose()
+            self._active_engine = None
+
+    def __enter__(self) -> DatabaseRestoreLock:
+        self.acquire(blocking=True)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        self.release()
+
+
+_restore_lock = DatabaseRestoreLock()
 _is_restore_in_progress: bool = False
 
 
@@ -818,13 +906,11 @@ def restore_database_snapshot(
     """
     _require_admin(actor)
 
-    global _is_restore_in_progress
-    if not _restore_lock.acquire(blocking=False):
-        raise ConflictError("Another database restore operation is already in progress.")
-    _is_restore_in_progress = True
-    try:
-        sess = _resolve_session(session)
+    sess = _resolve_session(session)
 
+    if not _restore_lock.acquire(blocking=False, session=sess):
+        raise ConflictError("Another database restore operation is already in progress.")
+    try:
         # Safeguard 1: Confirmation Phrase
         phrase = (confirmation_phrase or confirmation_token or "").strip()
         if phrase != "CONFIRM_DATABASE_RESTORE":
@@ -903,8 +989,7 @@ def restore_database_snapshot(
                 master_engine.dispose()
                 raw_engine.dispose()
     finally:
-        _is_restore_in_progress = False
-        _restore_lock.release()
+        _restore_lock.release(session=sess)
 
     now = utc_now()
     backup.restore_tested_at = now

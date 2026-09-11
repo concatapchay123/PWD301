@@ -596,14 +596,9 @@ def create_app(
         g.pop("current_user", None)
         g.pop("jwt_claims", None)
 
-        # Maintenance mode enforcement
-        from pwd301.services.operations_service import (
-            is_database_restore_in_progress,
-            is_maintenance_active_cached,
-        )
-
         path = request.path
-        # Allow static files, health probes, authentication login/logout, and admin routes
+        # Fast path 1: Allow static files, health probes, authentication login/logout,
+        # and admin routes without touching DB
         bypass_prefixes = (
             "/static/",
             "/admin",
@@ -618,47 +613,17 @@ def create_app(
             "/api/auth/logout",
         )
 
-        if not (path in bypass_exact or any(path.startswith(p) for p in bypass_prefixes)):
-            # Check if database restore is in progress (in-memory fast path, no DB call)
-            if is_database_restore_in_progress():
-                from pwd301.services.authorization_service import get_authenticated_actor
+        if path in bypass_exact or any(path.startswith(p) for p in bypass_prefixes):
+            return None
 
-                try:
-                    actor = get_authenticated_actor()
-                except Exception:
-                    actor = None
+        # Maintenance mode enforcement
+        from pwd301.services.operations_service import (
+            is_database_restore_in_progress,
+            is_maintenance_active_cached,
+        )
 
-                if not (actor and getattr(actor, "is_admin", False)):
-                    if _is_api_or_json_request():
-                        resp = jsonify(
-                            {
-                                "error": {
-                                    "code": "MAINTENANCE_MODE_ACTIVE",
-                                    "message": (
-                                        "Database restore is currently in progress. "
-                                        "System is temporarily unavailable."
-                                    ),
-                                    "estimated_end_at": None,
-                                    "estimated_duration_minutes": 5,
-                                }
-                            }
-                        )
-                        resp.status_code = 503
-                        resp.headers["Retry-After"] = "300"
-                        return resp
-                    resp = make_response(
-                        "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
-                        "<body><h1>503 Service Unavailable</h1>"
-                        "<p>Database restore is currently in progress. "
-                        "System is temporarily unavailable.</p>"
-                        "</body></html>",
-                        503,
-                    )
-                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-                    resp.headers["Retry-After"] = "300"
-                    return resp
-
-            # Check if actor is an authenticated Admin (via session, current_user, or Bearer token)
+        # Fast path 2: Check if database restore is in progress (in-memory fast path, no DB call)
+        if is_database_restore_in_progress():
             from pwd301.services.authorization_service import get_authenticated_actor
 
             try:
@@ -667,55 +632,95 @@ def create_app(
                 actor = None
 
             if not (actor and getattr(actor, "is_admin", False)):
-                try:
-                    is_active, window = is_maintenance_active_cached(session=db.session)
-                except Exception as exc:
-                    app.logger.warning(
-                        "Failed to check maintenance status (possible DB disruption): %s",
-                        exc,
-                    )
-                    is_active, window = False, None
-
-                if is_active and window is not None:
-                    retry_after = str(window.estimated_duration_minutes * 60)
-                    if _is_api_or_json_request():
-                        resp = jsonify(
-                            {
-                                "error": {
-                                    "code": "MAINTENANCE_MODE_ACTIVE",
-                                    "message": (
-                                        f"System is currently undergoing scheduled maintenance: "
-                                        f"{window.reason}"
-                                    ),
-                                    "estimated_end_at": (
-                                        window.estimated_end_at.isoformat()
-                                        if window.estimated_end_at
-                                        else None
-                                    ),
-                                    "estimated_duration_minutes": window.estimated_duration_minutes,
-                                }
+                if _is_api_or_json_request():
+                    resp = jsonify(
+                        {
+                            "error": {
+                                "code": "MAINTENANCE_MODE_ACTIVE",
+                                "message": (
+                                    "Database restore is currently in progress. "
+                                    "System is temporarily unavailable."
+                                ),
+                                "estimated_end_at": None,
+                                "estimated_duration_minutes": 5,
                             }
-                        )
-                        resp.status_code = 503
-                        resp.headers["Retry-After"] = retry_after
-                        return resp
-                    try:
-                        rendered = render_template("public/maintenance.html", window=window)
-                        resp = make_response(rendered, 503)
-                        resp.headers["Content-Type"] = "text/html; charset=utf-8"
-                        resp.headers["Retry-After"] = retry_after
-                        return resp
-                    except Exception:
-                        resp = make_response(
-                            "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
-                            "<body><h1>503 Service Unavailable</h1>"
-                            "<p>System is currently undergoing scheduled maintenance.</p>"
-                            "</body></html>",
-                            503,
-                        )
-                        resp.headers["Content-Type"] = "text/html; charset=utf-8"
-                        resp.headers["Retry-After"] = retry_after
-                        return resp
+                        }
+                    )
+                    resp.status_code = 503
+                    resp.headers["Retry-After"] = "300"
+                    return resp
+                resp = make_response(
+                    "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
+                    "<body><h1>503 Service Unavailable</h1>"
+                    "<p>Database restore is currently in progress. "
+                    "System is temporarily unavailable.</p>"
+                    "</body></html>",
+                    503,
+                )
+                resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                resp.headers["Retry-After"] = "300"
+                return resp
+
+        # Fast path 3: Check maintenance window status with in-memory cache (TTL 15s)
+        # Only query database and parse actor if maintenance mode is actually active!
+        try:
+            is_active, window = is_maintenance_active_cached(session=db.session)
+        except Exception as exc:
+            app.logger.warning(
+                "Failed to check maintenance status (possible DB disruption): %s",
+                exc,
+            )
+            is_active, window = False, None
+
+        if is_active and window is not None:
+            from pwd301.services.authorization_service import get_authenticated_actor
+
+            try:
+                actor = get_authenticated_actor()
+            except Exception:
+                actor = None
+
+            if not (actor and getattr(actor, "is_admin", False)):
+                retry_after = str(window.estimated_duration_minutes * 60)
+                if _is_api_or_json_request():
+                    resp = jsonify(
+                        {
+                            "error": {
+                                "code": "MAINTENANCE_MODE_ACTIVE",
+                                "message": (
+                                    f"System is currently undergoing scheduled maintenance: "
+                                    f"{window.reason}"
+                                ),
+                                "estimated_end_at": (
+                                    window.estimated_end_at.isoformat()
+                                    if window.estimated_end_at
+                                    else None
+                                ),
+                                "estimated_duration_minutes": window.estimated_duration_minutes,
+                            }
+                        }
+                    )
+                    resp.status_code = 503
+                    resp.headers["Retry-After"] = retry_after
+                    return resp
+                try:
+                    rendered = render_template("public/maintenance.html", window=window)
+                    resp = make_response(rendered, 503)
+                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                    resp.headers["Retry-After"] = retry_after
+                    return resp
+                except Exception:
+                    resp = make_response(
+                        "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
+                        "<body><h1>503 Service Unavailable</h1>"
+                        "<p>System is currently undergoing scheduled maintenance.</p>"
+                        "</body></html>",
+                        503,
+                    )
+                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                    resp.headers["Retry-After"] = retry_after
+                    return resp
+
         return None
 
     @app.after_request

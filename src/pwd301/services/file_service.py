@@ -102,6 +102,29 @@ VIDEO_EXTENSIONS: frozenset[str] = frozenset(
 )
 
 
+class LimitingStream:
+    """Wraps an incoming binary stream to enforce an absolute byte ceiling during reading.
+
+    If the accumulated bytes read reach or exceed max_bytes, reading is immediately aborted
+    and FileSizeLimitExceededError is raised (yielding HTTP 413).
+    """
+
+    def __init__(self, stream: Any, max_bytes: int = 1_000_000_000) -> None:
+        self._stream = stream
+        self._max_bytes = max_bytes
+        self._bytes_read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._stream.read(size)
+        if chunk:
+            self._bytes_read += len(chunk)
+            if self._bytes_read >= self._max_bytes:
+                raise FileSizeLimitExceededError(
+                    f"File stream exceeded maximum limit of {self._max_bytes} bytes."
+                )
+        return chunk
+
+
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal and shell injection attacks.
 
@@ -304,13 +327,19 @@ def store_file_stream(
     hasher = hashlib.sha256()
     total_size = 0
     header_bytes = b""
+    max_video_exclusive = current_app.config.get("MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000)
+    stream_to_read: Any = (
+        file_stream
+        if isinstance(file_stream, LimitingStream)
+        else LimitingStream(file_stream, max_bytes=max_video_exclusive)
+    )
     newly_created_dest: Path | None = None
 
     try:
         # Stream into quarantine temp file
         with open(temp_path, "wb") as f_out:
             while True:
-                chunk = file_stream.read(64 * 1024)
+                chunk = stream_to_read.read(64 * 1024)
                 if not chunk:
                     break
                 if not header_bytes:
@@ -318,12 +347,9 @@ def store_file_stream(
                 total_size += len(chunk)
 
                 # Early check during streaming to avoid disk exhaustion
-                max_video_exclusive = current_app.config.get(
-                    "MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000
-                )
                 if total_size >= max_video_exclusive:
                     raise FileSizeLimitExceededError(
-                        f"File size exceeded maximum limit of {max_video_exclusive} bytes."
+                        f"File stream exceeded maximum limit of {max_video_exclusive} bytes."
                     )
 
                 hasher.update(chunk)
@@ -595,21 +621,24 @@ def add_file_revision(
     hasher = hashlib.sha256()
     total_size = 0
     header_bytes = b""
+    max_video_exclusive = current_app.config.get("MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000)
+    stream_to_read: Any = (
+        file_stream
+        if isinstance(file_stream, LimitingStream)
+        else LimitingStream(file_stream, max_bytes=max_video_exclusive)
+    )
     newly_created_dest: Path | None = None
 
     try:
         with open(temp_path, "wb") as f_out:
             while True:
-                chunk = file_stream.read(64 * 1024)
+                chunk = stream_to_read.read(64 * 1024)
                 if not chunk:
                     break
                 if not header_bytes:
                     header_bytes = chunk[:512]
                 total_size += len(chunk)
 
-                max_video_exclusive = current_app.config.get(
-                    "MAX_VIDEO_BYTES_EXCLUSIVE", 1_000_000_000
-                )
                 if total_size >= max_video_exclusive:
                     raise FileSizeLimitExceededError(
                         f"File size exceeded maximum limit of {max_video_exclusive} bytes."

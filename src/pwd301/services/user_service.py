@@ -14,6 +14,8 @@ import json
 import uuid
 from typing import Any
 
+from flask import current_app
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, scoped_session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -675,3 +677,44 @@ def remove_role_from_user(
         raise
 
     return user
+
+
+def _get_token_serializer(salt: str) -> URLSafeTimedSerializer:
+    """Resolve timed serializer using application secret key."""
+    try:
+        secret = current_app.config.get("SECRET_KEY", "pwd301-fallback-secret-key")
+    except RuntimeError:
+        secret = "pwd301-fallback-secret-key"
+    return URLSafeTimedSerializer(secret, salt=salt)
+
+
+def generate_email_verification_token(user_id: int) -> str:
+    """Generate a timed email verification token valid for 24 hours."""
+    serializer = _get_token_serializer(salt="email-verification")
+    return str(serializer.dumps(user_id))
+
+
+def verify_email_verification_token(token: str, max_age: int = 86400) -> int | None:
+    """Verify an email verification token and extract user_id if valid."""
+    serializer = _get_token_serializer(salt="email-verification")
+    try:
+        user_id = serializer.loads(token, max_age=max_age)
+        return int(user_id) if user_id is not None else None
+    except (BadSignature, SignatureExpired, Exception):
+        return None
+
+
+def generate_password_reset_token(user_id: int) -> str:
+    """Generate a timed password reset token valid for 1 hour."""
+    serializer = _get_token_serializer(salt="password-reset")
+    return str(serializer.dumps(user_id))
+
+
+def verify_password_reset_token(token: str, max_age: int = 3600) -> int | None:
+    """Verify a password reset token and extract user_id if valid."""
+    serializer = _get_token_serializer(salt="password-reset")
+    try:
+        user_id = serializer.loads(token, max_age=max_age)
+        return int(user_id) if user_id is not None else None
+    except (BadSignature, SignatureExpired, Exception):
+        return None

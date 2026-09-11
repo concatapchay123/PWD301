@@ -18,6 +18,7 @@ from pwd301.services.exceptions import (
     FileValidationError,
 )
 from pwd301.services.file_service import (
+    LimitingStream,
     _serialize_file_asset,
     add_file_revision,
     get_file_for_download,
@@ -99,7 +100,7 @@ def _extract_upload_stream() -> tuple[Any, str, str | None]:
     if request.files and "file" in request.files:
         upload = request.files["file"]
         return (
-            upload.stream,
+            LimitingStream(upload.stream, max_bytes=1_000_000_000),
             upload.filename or "unnamed_file",
             upload.mimetype or request.content_type,
         )
@@ -107,7 +108,8 @@ def _extract_upload_stream() -> tuple[Any, str, str | None]:
     filename = request.headers.get("X-File-Name") or "unnamed_file"
     is_chunked = request.environ.get("HTTP_TRANSFER_ENCODING", "").lower() == "chunked"
     if (cl is not None and cl > 0) or is_chunked:
-        return request.stream, filename, request.content_type
+        stream = LimitingStream(request.stream, max_bytes=1_000_000_000)
+        return stream, filename, request.content_type
 
     raise FileValidationError("No file content provided in request.")
 

@@ -13,7 +13,6 @@ Implements:
 - Resource-level authorization and IDOR prevention.
 """
 
-import threading
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -69,9 +68,6 @@ VALID_PERIOD_STATUSES = {"ACTIVE", "LEFT", "COMPLETED", "PURGED"}
 
 # Allowed enrollment event types per check constraint ck_enrollment_events_1
 VALID_EVENT_TYPES = {"ENROLLED", "LEFT", "REENROLLED", "COMPLETED", "DETAIL_PURGED"}
-
-# In-process mutex ensuring capacity checks are strictly thread-safe in all environments
-_enrollment_lock = threading.Lock()
 
 
 def _resolve_enrollment(
@@ -283,81 +279,89 @@ def enroll_student(
             f"Cannot enroll student with current enrollment status: {existing_enrollment.status}."
         )
 
-    # 7. Concurrency & Capacity check with row locking and in-process mutex
-    with _enrollment_lock:
-        course_q = sess.query(Course).filter(Course.id == course.id)
-        try:
-            bind = sess.get_bind()
-            if bind is not None and bind.dialect.name == "mssql":
-                course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
-            else:
-                course_q = course_q.with_for_update()
-        except Exception:
+    # 7. Concurrency & Capacity check with database row locking (ADR-002 / SQL Server UPDLOCK)
+    bind = sess.get_bind()
+    dialect_name = getattr(bind.dialect, "name", "") if bind is not None else ""
+
+    if dialect_name == "sqlite":
+        # In SQLite (used in multi-threaded concurrency tests), immediately acquire write lock
+        # via atomic row update to serialize concurrent transactions at the database level
+        sess.execute(
+            sa.update(Course).where(Course.id == course.id).values(updated_at=Course.updated_at)
+        )
+
+    course_q = sess.query(Course).filter(Course.id == course.id)
+    try:
+        if dialect_name == "mssql":
+            course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
+        else:
             course_q = course_q.with_for_update()
-        locked_course = course_q.first()
-        if locked_course is None:
-            raise CourseNotFoundError("Course not found.")
+    except Exception:
+        course_q = course_q.with_for_update()
+    locked_course = course_q.first()
+    if locked_course is None:
+        raise CourseNotFoundError("Course not found.")
 
-        if locked_course.capacity is not None and locked_course.capacity > 0:
-            active_count = (
-                sess.query(sa.func.count(Enrollment.id))
-                .filter(
-                    Enrollment.course_id == locked_course.id,
-                    Enrollment.status == "ACTIVE",
-                )
-                .scalar()
-                or 0
+    if locked_course.capacity is not None and locked_course.capacity > 0:
+        active_count = (
+            sess.query(sa.func.count(Enrollment.id))
+            .filter(
+                Enrollment.course_id == locked_course.id,
+                Enrollment.status == "ACTIVE",
             )
-            if active_count >= locked_course.capacity:
-                raise EnrollmentCapacityExceededError(
-                    f"Course capacity of {locked_course.capacity} has been reached."
-                )
-
-        # 8. Create new Enrollment and EnrollmentPeriod (period_no = 1)
-        now = utc_now()
-        enrollment = Enrollment(
-            student_user_id=target_student.id,
-            course_id=locked_course.id,
-            status="ACTIVE",
-            current_progress_percent=0,
-            enrolled_at=now,
-            created_at=now,
-            updated_at=now,
+            .scalar()
+            or 0
         )
-        sess.add(enrollment)
-        sess.flush()
+        if active_count >= locked_course.capacity:
+            raise EnrollmentCapacityExceededError(
+                f"Course capacity of {locked_course.capacity} has been reached."
+            )
 
-        period = EnrollmentPeriod(
-            enrollment_id=enrollment.id,
-            period_no=1,
-            started_at=now,
-            status="ACTIVE",
-            created_at=now,
-        )
-        sess.add(period)
-        sess.flush()
+    # 8. Create new Enrollment and EnrollmentPeriod (period_no = 1)
+    now = utc_now()
+    enrollment = Enrollment(
+        student_user_id=target_student.id,
+        course_id=locked_course.id,
+        status="ACTIVE",
+        current_progress_percent=0,
+        enrolled_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    sess.add(enrollment)
+    sess.flush()
 
-        enrollment.current_period_id = period.id
+    period = EnrollmentPeriod(
+        enrollment_id=enrollment.id,
+        period_no=1,
+        started_at=now,
+        status="ACTIVE",
+        created_at=now,
+    )
+    sess.add(period)
+    sess.flush()
 
-        # 9. Update first_student_enrolled_at if first enrollment ever
-        if locked_course.first_student_enrolled_at is None:
-            locked_course.first_student_enrolled_at = now
+    enrollment.current_period_id = period.id
 
-        # 10. Record append-only event
-        _record_enrollment_event(
-            sess=sess,
-            enrollment_id=enrollment.id,
-            period_id=period.id,
-            event_type="ENROLLED",
-            actor_user_id=actor.id,
-        )
-        sess.flush()
+    # 9. Update first_student_enrolled_at if first enrollment ever
+    if locked_course.first_student_enrolled_at is None:
+        locked_course.first_student_enrolled_at = now
 
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
+    # 10. Record append-only event
+    _record_enrollment_event(
+        sess=sess,
+        enrollment_id=enrollment.id,
+        period_id=period.id,
+        event_type="ENROLLED",
+        actor_user_id=actor.id,
+    )
+    sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     enrollment._is_new = True
     return enrollment
@@ -539,84 +543,92 @@ def re_enroll_student(
         missing_str = ", ".join(missing_titles)
         raise EnrollmentPrerequisiteError(f"Prerequisite courses not completed: {missing_str}")
 
-    # 6. Concurrency & Capacity check with row locking and in-process mutex
-    with _enrollment_lock:
-        course_q = sess.query(Course).filter(Course.id == course.id)
-        try:
-            bind = sess.get_bind()
-            if bind is not None and bind.dialect.name == "mssql":
-                course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
-            else:
-                course_q = course_q.with_for_update()
-        except Exception:
+    # 6. Concurrency & Capacity check with database row locking (ADR-002 / SQL Server UPDLOCK)
+    bind = sess.get_bind()
+    dialect_name = getattr(bind.dialect, "name", "") if bind is not None else ""
+
+    if dialect_name == "sqlite":
+        # In SQLite (used in multi-threaded concurrency tests), immediately acquire write lock
+        # via atomic row update to serialize concurrent transactions at the database level
+        sess.execute(
+            sa.update(Course).where(Course.id == course.id).values(updated_at=Course.updated_at)
+        )
+
+    course_q = sess.query(Course).filter(Course.id == course.id)
+    try:
+        if dialect_name == "mssql":
+            course_q = course_q.with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)")
+        else:
             course_q = course_q.with_for_update()
-        locked_course = course_q.first()
-        if locked_course is None:
-            raise CourseNotFoundError("Course not found.")
+    except Exception:
+        course_q = course_q.with_for_update()
+    locked_course = course_q.first()
+    if locked_course is None:
+        raise CourseNotFoundError("Course not found.")
 
-        if locked_course.capacity is not None and locked_course.capacity > 0:
-            active_count = (
-                sess.query(sa.func.count(Enrollment.id))
-                .filter(
-                    Enrollment.course_id == locked_course.id,
-                    Enrollment.status == "ACTIVE",
-                )
-                .scalar()
-                or 0
+    if locked_course.capacity is not None and locked_course.capacity > 0:
+        active_count = (
+            sess.query(sa.func.count(Enrollment.id))
+            .filter(
+                Enrollment.course_id == locked_course.id,
+                Enrollment.status == "ACTIVE",
             )
-            if active_count >= locked_course.capacity:
-                raise EnrollmentCapacityExceededError(
-                    f"Course capacity of {locked_course.capacity} has been reached."
-                )
-
-        # 7. Determine next period_no
-        last_period_no = (
-            sess.query(sa.func.max(EnrollmentPeriod.period_no))
-            .filter(EnrollmentPeriod.enrollment_id == enrollment.id)
             .scalar()
             or 0
         )
-        next_period_no = last_period_no + 1
+        if active_count >= locked_course.capacity:
+            raise EnrollmentCapacityExceededError(
+                f"Course capacity of {locked_course.capacity} has been reached."
+            )
 
-        # 8. Create new active EnrollmentPeriod
-        now = utc_now()
-        new_period = EnrollmentPeriod(
-            enrollment_id=enrollment.id,
-            period_no=next_period_no,
-            started_at=now,
-            status="ACTIVE",
-            created_at=now,
-        )
-        sess.add(new_period)
-        sess.flush()
+    # 7. Determine next period_no
+    last_period_no = (
+        sess.query(sa.func.max(EnrollmentPeriod.period_no))
+        .filter(EnrollmentPeriod.enrollment_id == enrollment.id)
+        .scalar()
+        or 0
+    )
+    next_period_no = last_period_no + 1
 
-        # 9. Reactivate Enrollment
-        enrollment.status = "ACTIVE"
-        enrollment.enrolled_at = now
-        enrollment.left_at = None
-        enrollment.detail_retention_due_at = None
-        enrollment.current_period_id = new_period.id
-        enrollment.current_progress_percent = 0
-        enrollment.updated_at = now
+    # 8. Create new active EnrollmentPeriod
+    now = utc_now()
+    new_period = EnrollmentPeriod(
+        enrollment_id=enrollment.id,
+        period_no=next_period_no,
+        started_at=now,
+        status="ACTIVE",
+        created_at=now,
+    )
+    sess.add(new_period)
+    sess.flush()
 
-        if locked_course.first_student_enrolled_at is None:
-            locked_course.first_student_enrolled_at = now
+    # 9. Reactivate Enrollment
+    enrollment.status = "ACTIVE"
+    enrollment.enrolled_at = now
+    enrollment.left_at = None
+    enrollment.detail_retention_due_at = None
+    enrollment.current_period_id = new_period.id
+    enrollment.current_progress_percent = 0
+    enrollment.updated_at = now
 
-        # 10. Record append-only event
-        _record_enrollment_event(
-            sess=sess,
-            enrollment_id=enrollment.id,
-            period_id=new_period.id,
-            event_type="REENROLLED",
-            actor_user_id=actor.id,
-        )
-        sess.flush()
+    if locked_course.first_student_enrolled_at is None:
+        locked_course.first_student_enrolled_at = now
 
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
+    # 10. Record append-only event
+    _record_enrollment_event(
+        sess=sess,
+        enrollment_id=enrollment.id,
+        period_id=new_period.id,
+        event_type="REENROLLED",
+        actor_user_id=actor.id,
+    )
+    sess.flush()
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return enrollment
 
