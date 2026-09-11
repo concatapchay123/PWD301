@@ -84,6 +84,10 @@ DANGEROUS_ARCHIVE_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 
+# Zip bomb safety thresholds for archive inspection
+MAX_ZIP_ENTRIES: int = 1000
+MAX_ZIP_CUMULATIVE_BYTES: int = 100_000_000  # 100 MB decompressed limit
+
 
 @dataclass(frozen=True)
 class ScanVerdict:
@@ -142,44 +146,104 @@ class BuiltinHeuristicScanner(BaseScanner):
             )
 
         try:
-            raw_bytes = file_path.read_bytes()
+            file_size = file_path.stat().st_size
         except OSError as exc:
             return ScanVerdict(
                 status="ERROR",
                 engine_name=self.ENGINE_NAME,
                 engine_version=self.ENGINE_VERSION,
-                details=f"I/O error reading file: {exc}",
+                details=f"I/O error reading file metadata: {exc}",
             )
 
-        # 1. EICAR Test String in plain bytes
-        if EICAR_SIGNATURE_BYTES in raw_bytes:
+        # Read first 64KB for header inspection
+        try:
+            with open(file_path, "rb") as f_hdr:
+                header_bytes = f_hdr.read(65536)
+        except OSError as exc:
             return ScanVerdict(
-                status="FAIL",
+                status="ERROR",
                 engine_name=self.ENGINE_NAME,
                 engine_version=self.ENGINE_VERSION,
-                signature_name="EICAR-Test-Signature",
-                details="Standard EICAR antivirus test signature detected in file content",
+                details=f"I/O error reading file header: {exc}",
             )
 
-        # 1b. Check potential base64 embedded EICAR
-        try:
-            eicar_b64 = base64.b64encode(EICAR_SIGNATURE_BYTES)
-            if eicar_b64[:30] in raw_bytes:
+        eicar_b64 = base64.b64encode(EICAR_SIGNATURE_BYTES)[:30]
+
+        # 1. EICAR Test String detection
+        # If file is <= 50MB, read bytes directly. For large files (>50MB e.g. videos),
+        # stream with overlap buffer to prevent memory exhaustion.
+        if file_size <= 50_000_000:
+            try:
+                raw_bytes = file_path.read_bytes()
+            except OSError as exc:
+                return ScanVerdict(
+                    status="ERROR",
+                    engine_name=self.ENGINE_NAME,
+                    engine_version=self.ENGINE_VERSION,
+                    details=f"I/O error reading file: {exc}",
+                )
+
+            if EICAR_SIGNATURE_BYTES in raw_bytes:
                 return ScanVerdict(
                     status="FAIL",
                     engine_name=self.ENGINE_NAME,
                     engine_version=self.ENGINE_VERSION,
                     signature_name="EICAR-Test-Signature",
-                    details="Base64 encoded EICAR antivirus test signature detected",
+                    details="Standard EICAR antivirus test signature detected in file content",
                 )
-        except Exception:
-            pass
+
+            try:
+                if eicar_b64 in raw_bytes:
+                    return ScanVerdict(
+                        status="FAIL",
+                        engine_name=self.ENGINE_NAME,
+                        engine_version=self.ENGINE_VERSION,
+                        signature_name="EICAR-Test-Signature",
+                        details="Base64 encoded EICAR antivirus test signature detected",
+                    )
+            except Exception:
+                pass
+        else:
+            # Streaming detection for large files (avoids multi-hundred-MB / 1GB RAM allocations)
+            overlap = b""
+            try:
+                with open(file_path, "rb") as f_in:
+                    while True:
+                        chunk = f_in.read(65536)
+                        if not chunk:
+                            break
+                        window = overlap + chunk
+                        if EICAR_SIGNATURE_BYTES in window:
+                            return ScanVerdict(
+                                status="FAIL",
+                                engine_name=self.ENGINE_NAME,
+                                engine_version=self.ENGINE_VERSION,
+                                signature_name="EICAR-Test-Signature",
+                                details="Standard EICAR antivirus test signature detected",
+                            )
+                        if eicar_b64 in window:
+                            return ScanVerdict(
+                                status="FAIL",
+                                engine_name=self.ENGINE_NAME,
+                                engine_version=self.ENGINE_VERSION,
+                                signature_name="EICAR-Test-Signature",
+                                details="Base64 encoded EICAR antivirus test signature detected",
+                            )
+                        overlap = chunk[-128:]
+            except OSError as exc:
+                return ScanVerdict(
+                    status="ERROR",
+                    engine_name=self.ENGINE_NAME,
+                    engine_version=self.ENGINE_VERSION,
+                    details=f"I/O error reading file: {exc}",
+                )
+            raw_bytes = header_bytes
 
         ext = file_path.suffix.lower()
 
         # 2. Header Spoofing: Executable binary header in non-executable file types
         if ext in NON_EXECUTABLE_EXTENSIONS:
-            if raw_bytes.startswith(b"MZ"):
+            if header_bytes.startswith(b"MZ"):
                 return ScanVerdict(
                     status="FAIL",
                     engine_name=self.ENGINE_NAME,
@@ -187,7 +251,7 @@ class BuiltinHeuristicScanner(BaseScanner):
                     signature_name="Executable-Header-Mismatch",
                     details=f"DOS/PE header (MZ) detected in non-executable '{ext}'",
                 )
-            if raw_bytes.startswith(b"\x7fELF"):
+            if header_bytes.startswith(b"\x7fELF"):
                 return ScanVerdict(
                     status="FAIL",
                     engine_name=self.ENGINE_NAME,
@@ -197,7 +261,7 @@ class BuiltinHeuristicScanner(BaseScanner):
                 )
 
         # 3. Deep PDF Heuristic Inspection
-        if raw_bytes.startswith(b"%PDF-") or ext == ".pdf":
+        if header_bytes.startswith(b"%PDF-") or ext == ".pdf":
             for marker in PDF_DANGEROUS_MARKERS:
                 if marker in raw_bytes:
                     marker_name = marker.decode("latin-1", errors="replace")
@@ -209,11 +273,38 @@ class BuiltinHeuristicScanner(BaseScanner):
                         details=f"Suspicious PDF object detected: '{marker_name}'",
                     )
 
-        # 4. Deep OOXML / ZIP Container Inspection
-        if raw_bytes.startswith(b"PK\x03\x04"):
+        # 4. Deep OOXML / ZIP Container Inspection & Zip Bomb Mitigation
+        if header_bytes.startswith(b"PK\x03\x04"):
             try:
                 with zipfile.ZipFile(file_path, "r") as zf:
-                    for member in zf.infolist():
+                    members = zf.infolist()
+                    if len(members) > MAX_ZIP_ENTRIES:
+                        return ScanVerdict(
+                            status="FAIL",
+                            engine_name=self.ENGINE_NAME,
+                            engine_version=self.ENGINE_VERSION,
+                            signature_name="ZIP-Bomb-Excessive-Entries",
+                            details=(
+                                f"Archive contains {len(members)} entries, "
+                                f"exceeding limit of {MAX_ZIP_ENTRIES}."
+                            ),
+                        )
+
+                    total_uncompressed = sum(m.file_size for m in members)
+                    if total_uncompressed > MAX_ZIP_CUMULATIVE_BYTES:
+                        return ScanVerdict(
+                            status="FAIL",
+                            engine_name=self.ENGINE_NAME,
+                            engine_version=self.ENGINE_VERSION,
+                            signature_name="ZIP-Bomb-Excessive-Size",
+                            details=(
+                                f"Archive uncompressed size ({total_uncompressed} bytes) "
+                                f"exceeds limit of {MAX_ZIP_CUMULATIVE_BYTES} bytes."
+                            ),
+                        )
+
+                    cumulative_decompressed = 0
+                    for member in members:
                         m_name = member.filename.lower()
 
                         # Check for macro binary parts
@@ -243,6 +334,19 @@ class BuiltinHeuristicScanner(BaseScanner):
                             continue
 
                         entry_data = zf.read(member)
+                        cumulative_decompressed += len(entry_data)
+                        if cumulative_decompressed > MAX_ZIP_CUMULATIVE_BYTES:
+                            return ScanVerdict(
+                                status="FAIL",
+                                engine_name=self.ENGINE_NAME,
+                                engine_version=self.ENGINE_VERSION,
+                                signature_name="ZIP-Bomb-Excessive-Decompressed-Size",
+                                details=(
+                                    "Cumulative decompressed data exceeded safety threshold "
+                                    "during scan."
+                                ),
+                            )
+
                         if EICAR_SIGNATURE_BYTES in entry_data:
                             return ScanVerdict(
                                 status="FAIL",

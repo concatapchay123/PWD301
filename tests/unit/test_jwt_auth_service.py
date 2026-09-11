@@ -62,7 +62,7 @@ class TestJwtAuthService:
             issuer=JWT_ISSUER,
         )
         assert access_claims["sub"] == str(jwt_user.public_id)
-        assert access_claims["user_id"] == jwt_user.id
+        assert "user_id" not in access_claims
         assert access_claims["auth_version"] == jwt_user.auth_version
         assert access_claims["token_type"] == "ACCESS"
 
@@ -111,7 +111,8 @@ class TestJwtAuthService:
         user, claims = verify_access_token(token_data["access_token"])
 
         assert user.id == jwt_user.id
-        assert claims["user_id"] == jwt_user.id
+        assert "user_id" not in claims
+        assert claims["sub"] == str(jwt_user.public_id)
         assert claims["token_type"] == "ACCESS"
 
     def test_verify_access_token_invalid_signature(self, app: Flask, jwt_user: User) -> None:

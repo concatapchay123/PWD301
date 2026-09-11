@@ -563,7 +563,11 @@ def evaluate_course_completion(
 
     sess.flush()
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return True, summary
 

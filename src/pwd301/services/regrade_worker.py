@@ -76,6 +76,10 @@ MAX_RETRIES: int = 3
 # ============================================================================
 
 
+_SYNTHETIC_JOB_CACHE: dict[uuid.UUID, int] = {}
+_SYNTHETIC_CORRECTION_CACHE: dict[uuid.UUID, int] = {}
+
+
 def _resolve_regrade_job(
     job_id: RegradeJob | int | uuid.UUID | str,
     session: Session | scoped_session[Any],
@@ -95,10 +99,15 @@ def _resolve_regrade_job(
     except ValueError:
         return None
 
-    # Scan jobs to match synthetic UUIDv5
-    for j in session.query(RegradeJob).all():
-        if uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_job.{j.id}") == val_uuid:
-            return j
+    if val_uuid in _SYNTHETIC_JOB_CACHE:
+        return session.get(RegradeJob, _SYNTHETIC_JOB_CACHE[val_uuid])
+
+    # Scan job IDs (lightweight column query) to match synthetic UUIDv5 without full ORM loading
+    for (jid,) in session.query(RegradeJob.id).all():
+        syn = uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_job.{jid}")
+        _SYNTHETIC_JOB_CACHE[syn] = jid
+        if syn == val_uuid:
+            return session.get(RegradeJob, jid)
 
     return None
 
@@ -122,9 +131,16 @@ def _resolve_question_correction(
     except ValueError:
         return None
 
-    for qc in session.query(QuestionCorrection).all():
-        if uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.question_correction.{qc.id}") == val_uuid:
-            return qc
+    if val_uuid in _SYNTHETIC_CORRECTION_CACHE:
+        return session.get(QuestionCorrection, _SYNTHETIC_CORRECTION_CACHE[val_uuid])
+
+    # Scan correction IDs (lightweight column query) to match synthetic UUIDv5
+    # without full ORM loading
+    for (qcid,) in session.query(QuestionCorrection.id).all():
+        syn = uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.question_correction.{qcid}")
+        _SYNTHETIC_CORRECTION_CACHE[syn] = qcid
+        if syn == val_uuid:
+            return session.get(QuestionCorrection, qcid)
 
     return None
 

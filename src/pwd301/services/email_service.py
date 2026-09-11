@@ -175,9 +175,9 @@ def enqueue_email(
     )
     s.add(delivery)
     try:
-        s.flush()
+        with s.begin_nested():
+            s.flush()
     except sa.exc.IntegrityError:
-        s.rollback()
         # Retrieve already persisted row if concurrent insert raced
         fallback = s.query(EmailDelivery).filter_by(dedupe_key=dedupe_key).first()
         if fallback is not None:

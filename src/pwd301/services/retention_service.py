@@ -28,13 +28,20 @@ from __future__ import annotations
 
 import contextlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation, AIMessage
+from pwd301.models.ai_rag import (
+    AIConversation,
+    AIGeneratedQuestionDraft,
+    AIMessage,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeVersion,
+)
 from pwd301.models.assessment import (
     Assessment,
     AssessmentBlueprint,
@@ -416,7 +423,90 @@ def prune_trash_entities(
             crs.restore_until = None
             crs.updated_at = now
         else:
-            # Disposable course with zero history: delete prerequisites and lessons
+            # Disposable course with zero student history: delete all dependent children
+            # in topological order
+            # 1. Lesson resources
+            lesson_ids = [
+                lid[0] for lid in sess.query(Lesson.id).filter(Lesson.course_id == crs.id).all()
+            ]
+            if lesson_ids:
+                sess.query(LessonResource).filter(LessonResource.lesson_id.in_(lesson_ids)).delete(
+                    synchronize_session=False
+                )
+
+            # 2. RAG Knowledge documents, versions, chunks
+            kdoc_ids = [
+                kid[0]
+                for kid in sess.query(KnowledgeDocument.id)
+                .filter(KnowledgeDocument.course_id == crs.id)
+                .all()
+            ]
+            if kdoc_ids:
+                kver_ids = [
+                    kvid[0]
+                    for kvid in sess.query(KnowledgeVersion.id)
+                    .filter(KnowledgeVersion.knowledge_document_id.in_(kdoc_ids))
+                    .all()
+                ]
+                if kver_ids:
+                    sess.query(KnowledgeChunk).filter(
+                        KnowledgeChunk.knowledge_version_id.in_(kver_ids)
+                    ).delete(synchronize_session=False)
+                    sess.query(KnowledgeVersion).filter(KnowledgeVersion.id.in_(kver_ids)).delete(
+                        synchronize_session=False
+                    )
+                sess.query(KnowledgeDocument).filter(KnowledgeDocument.id.in_(kdoc_ids)).delete(
+                    synchronize_session=False
+                )
+
+            # 3. AI conversation messages & question drafts
+            sess.query(AIGeneratedQuestionDraft).filter(
+                AIGeneratedQuestionDraft.course_id == crs.id
+            ).delete(synchronize_session=False)
+            conv_ids = [
+                cid[0]
+                for cid in sess.query(AIConversation.id)
+                .filter(AIConversation.course_id == crs.id)
+                .all()
+            ]
+            if conv_ids:
+                sess.query(AIMessage).filter(AIMessage.conversation_id.in_(conv_ids)).delete(
+                    synchronize_session=False
+                )
+                sess.query(AIConversation).filter(AIConversation.id.in_(conv_ids)).delete(
+                    synchronize_session=False
+                )
+
+            # 4. Assessments without attempts
+            asm_ids = [
+                aid[0]
+                for aid in sess.query(Assessment.id).filter(Assessment.course_id == crs.id).all()
+            ]
+            if asm_ids:
+                sess.query(AssessmentQuestionAssignment).filter(
+                    AssessmentQuestionAssignment.assessment_id.in_(asm_ids)
+                ).delete(synchronize_session=False)
+                bp_ids = [
+                    bpid[0]
+                    for bpid in sess.query(AssessmentBlueprint.id)
+                    .filter(AssessmentBlueprint.assessment_id.in_(asm_ids))
+                    .all()
+                ]
+                if bp_ids:
+                    sess.query(AssessmentBlueprintRule).filter(
+                        AssessmentBlueprintRule.blueprint_id.in_(bp_ids)
+                    ).delete(synchronize_session=False)
+                    sess.query(AssessmentBlueprint).filter(
+                        AssessmentBlueprint.id.in_(bp_ids)
+                    ).delete(synchronize_session=False)
+                sess.query(AssessmentSection).filter(
+                    AssessmentSection.assessment_id.in_(asm_ids)
+                ).delete(synchronize_session=False)
+                sess.query(Assessment).filter(Assessment.id.in_(asm_ids)).delete(
+                    synchronize_session=False
+                )
+
+            # 5. Prerequisites, completion rules, change requests, and lessons
             sess.query(CoursePrerequisite).filter(
                 (CoursePrerequisite.course_id == crs.id)
                 | (CoursePrerequisite.prerequisite_course_id == crs.id)
@@ -494,6 +584,7 @@ def prune_trash_entities(
         counts["questions"] += 1
 
     sess.flush()
+    sess.expire_all()
     return counts
 
 
@@ -514,11 +605,17 @@ def purge_expired_ai_messages(
     """
     sess = session if session is not None else db.session
     now = cutoff_date or utc_now()
+    inactivity_cutoff = now - timedelta(seconds=300)
 
-    # Find conversations where expires_at <= now or status is EXPIRED
+    # Find conversations where expires_at <= now, status is EXPIRED,
+    # or last_activity_at <= inactivity_cutoff (5 minutes)
     expired_convs = (
         sess.query(AIConversation)
-        .filter((AIConversation.expires_at <= now) | (AIConversation.status == "EXPIRED"))
+        .filter(
+            (AIConversation.expires_at <= now)
+            | (AIConversation.status == "EXPIRED")
+            | (AIConversation.last_activity_at <= inactivity_cutoff)
+        )
         .limit(batch_size)
         .all()
     )

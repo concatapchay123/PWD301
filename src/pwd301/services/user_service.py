@@ -214,9 +214,23 @@ def get_user_by_email(
     return sess.query(User).filter(User.email_normalized == norm_email).first()
 
 
-def verify_password(user: User, password: str) -> bool:
-    """Verify a raw password against the user's stored password hash."""
-    if not password or not user.password_hash:
+# Constant-time dummy password hash for side-channel & timing-attack mitigation
+DUMMY_PASSWORD_HASH = generate_password_hash("pwd301-timing-defense-sentinel")
+
+
+def verify_password(user: User | None, password: str) -> bool:
+    """Verify a raw password against user's stored password hash in constant time.
+
+    Mitigates side-channel timing leaks and email enumeration:
+    If user is None or user.password_hash is empty, executes check_password_hash
+    against a precomputed dummy hash, ensuring response time parity regardless
+    of whether the user account exists.
+    """
+    if user is None or not user.password_hash:
+        check_password_hash(DUMMY_PASSWORD_HASH, password or "")
+        return False
+    if not password:
+        check_password_hash(DUMMY_PASSWORD_HASH, "")
         return False
     return check_password_hash(user.password_hash, password)
 
@@ -689,32 +703,58 @@ def _get_token_serializer(salt: str) -> URLSafeTimedSerializer:
 
 
 def generate_email_verification_token(user_id: int) -> str:
-    """Generate a timed email verification token valid for 24 hours."""
-    serializer = _get_token_serializer(salt="email-verification")
-    return str(serializer.dumps(user_id))
+    """Generate a single-use database-backed email verification token valid for 24 hours."""
+    from pwd301.services.auth_token_service import SecurityTokenPurpose, create_security_token
+
+    _, raw_token = create_security_token(user_id, SecurityTokenPurpose.EMAIL_VERIFY)
+    return raw_token
 
 
 def verify_email_verification_token(token: str, max_age: int = 86400) -> int | None:
     """Verify an email verification token and extract user_id if valid."""
-    serializer = _get_token_serializer(salt="email-verification")
+    from pwd301.services.auth_token_service import SecurityTokenPurpose, verify_security_token
+    from pwd301.services.exceptions import InvalidTokenError, ServiceError
+
     try:
-        user_id = serializer.loads(token, max_age=max_age)
-        return int(user_id) if user_id is not None else None
-    except (BadSignature, SignatureExpired, Exception):
-        return None
+        token_record = verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
+        return int(token_record.user_id)
+    except (InvalidTokenError, ServiceError):
+        pass
+
+    if "." in token:
+        serializer = _get_token_serializer(salt="email-verification")
+        try:
+            user_id = serializer.loads(token, max_age=max_age)
+            return int(user_id) if user_id is not None else None
+        except (BadSignature, SignatureExpired, Exception):
+            return None
+    return None
 
 
 def generate_password_reset_token(user_id: int) -> str:
-    """Generate a timed password reset token valid for 1 hour."""
-    serializer = _get_token_serializer(salt="password-reset")
-    return str(serializer.dumps(user_id))
+    """Generate a single-use database-backed password reset token valid for 1 hour."""
+    from pwd301.services.auth_token_service import SecurityTokenPurpose, create_security_token
+
+    _, raw_token = create_security_token(user_id, SecurityTokenPurpose.PASSWORD_RESET)
+    return raw_token
 
 
 def verify_password_reset_token(token: str, max_age: int = 3600) -> int | None:
     """Verify a password reset token and extract user_id if valid."""
-    serializer = _get_token_serializer(salt="password-reset")
+    from pwd301.services.auth_token_service import SecurityTokenPurpose, verify_security_token
+    from pwd301.services.exceptions import InvalidTokenError, ServiceError
+
     try:
-        user_id = serializer.loads(token, max_age=max_age)
-        return int(user_id) if user_id is not None else None
-    except (BadSignature, SignatureExpired, Exception):
-        return None
+        token_record = verify_security_token(token, SecurityTokenPurpose.PASSWORD_RESET)
+        return int(token_record.user_id)
+    except (InvalidTokenError, ServiceError):
+        pass
+
+    if "." in token:
+        serializer = _get_token_serializer(salt="password-reset")
+        try:
+            user_id = serializer.loads(token, max_age=max_age)
+            return int(user_id) if user_id is not None else None
+        except (BadSignature, SignatureExpired, Exception):
+            return None
+    return None

@@ -116,8 +116,52 @@ def extract_text_from_docx(file_path: Path) -> list[str]:
     lines: list[str] = []
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
+            # Defensive inspection against zip bomb and zip-slip attacks
+            entries = zf.infolist()
+            MAX_ZIP_ENTRIES = 1_000
+            if len(entries) > MAX_ZIP_ENTRIES:
+                msg = (
+                    f"DOCX archive contains excessive entries "
+                    f"({len(entries)} > {MAX_ZIP_ENTRIES}). Potential zip bomb."
+                )
+                raise DocumentParsingError(msg)
+
+            MAX_CUMULATIVE_UNCOMPRESSED_SIZE = 50_000_000  # 50 MB
+            total_uncompressed = sum(info.file_size for info in entries)
+            if total_uncompressed > MAX_CUMULATIVE_UNCOMPRESSED_SIZE:
+                msg = (
+                    f"DOCX uncompressed cumulative size ({total_uncompressed} bytes) "
+                    f"exceeds safety limit ({MAX_CUMULATIVE_UNCOMPRESSED_SIZE} bytes)."
+                )
+                raise DocumentParsingError(msg)
+
+            for info in entries:
+                fname = info.filename
+                if ".." in fname or fname.startswith(("/", "\\")):
+                    raise DocumentParsingError(
+                        f"Potentially unsafe path in DOCX archive entry: '{fname}'."
+                    )
+                if info.file_size > 1_000_000:
+                    compressed_size = max(info.compress_size, 1)
+                    ratio = info.file_size / compressed_size
+                    if ratio > 100:
+                        msg = (
+                            f"Suspicious compression ratio ({ratio:.1f}:1) "
+                            f"detected for entry '{fname}'. Potential zip bomb."
+                        )
+                        raise DocumentParsingError(msg)
+
             if "word/document.xml" not in zf.namelist():
                 raise DocumentParsingError("Invalid DOCX format: word/document.xml missing.")
+
+            doc_entry = zf.getinfo("word/document.xml")
+            max_doc_xml_size = 50_000_000
+            if doc_entry.file_size > max_doc_xml_size:
+                msg = (
+                    f"DOCX document.xml exceeds maximum safe uncompressed size "
+                    f"({max_doc_xml_size} bytes)."
+                )
+                raise DocumentParsingError(msg)
 
             xml_content = zf.read("word/document.xml")
             root = defused_ET.fromstring(xml_content)
@@ -875,7 +919,11 @@ def create_import_job(
         review_required_count=0,
     )
     sess.add(job)
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return job
 
 
@@ -902,7 +950,11 @@ def process_import_job(
     job.status = "PROCESSING"
     job.started_at = utc_now()
     job.last_error = None
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     # Resolve physical file path
     blob = job.source_file_asset.current_revision.blob
@@ -913,7 +965,11 @@ def process_import_job(
         job.status = "FAILED"
         job.last_error = "Physical file not found on storage disk."
         job.completed_at = utc_now()
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise DocumentParsingError("Physical document file missing from storage.")
 
     try:
@@ -1012,7 +1068,11 @@ def process_import_job(
         job.status = "FAILED"
         job.last_error = str(err)
         job.completed_at = utc_now()
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         if isinstance(err, (DocumentParsingError, DocumentImportError)):
             raise
         raise DocumentParsingError(f"Failed to process import job: {err}") from err
@@ -1110,7 +1170,11 @@ def update_import_question(
     else:
         iq.review_state = "EDITED"
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return serialize_import_question(iq)
 
 
@@ -1147,7 +1211,11 @@ def set_import_question_decision(
         1 for q in all_q if q.review_state in ("NEEDS_REVIEW", "INVALID")
     )
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return serialize_import_question(iq)
 
 
@@ -1289,7 +1357,11 @@ def cancel_import_job(
     job.status = "CANCELLED"
     job.last_error = reason or "Cancelled by user"
     job.completed_at = utc_now()
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return job
 
 

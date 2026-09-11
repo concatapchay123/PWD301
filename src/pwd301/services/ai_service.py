@@ -11,6 +11,7 @@ Implements:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -201,7 +202,11 @@ def draft_course_questions(
         sess.add(draft_record)
         persisted_drafts.append(draft_record)
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return persisted_drafts
 
 
@@ -296,7 +301,11 @@ def create_conversation(
         status="ACTIVE",
     )
     sess.add(conv)
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return conv
 
 
@@ -329,7 +338,11 @@ def get_conversation(
     # Check 5-minute inactivity rule
     if conv.is_expired and conv.status != "EXPIRED":
         conv.status = "EXPIRED"
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return conv
 
@@ -353,7 +366,11 @@ def send_chat_message(
     if conv.is_expired:
         if conv.status != "EXPIRED":
             conv.status = "EXPIRED"
-            sess.commit()
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
+                raise
         raise AIConversationExpiredError(
             "AI conversation has expired due to 5 minutes of inactivity. "
             "Please start a new session."
@@ -405,9 +422,26 @@ def send_chat_message(
     try:
         reply_text = client.chat_response(messages=history, context=context_str)
     except Exception as exc:
-        telemetry_status = "FAILED"
+        latency_ms = int((time.time() - t_start) * 1000)
         telemetry_error = type(exc).__name__
         logger.error("Gemini chat response failed: %s", exc)
+        sess.rollback()
+        with contextlib.suppress(Exception):
+            record_ai_telemetry(
+                user_id=actor.id,
+                conversation_id=conv.id,
+                route_type="GEMINI",
+                prompt=sanitized_content[:250],
+                status="FAILED",
+                latency_ms=latency_ms,
+                scope_decision="IN_SCOPE",
+                error_code=telemetry_error,
+                session=sess,
+            )
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
         raise
 
     latency_ms = int((time.time() - t_start) * 1000)
@@ -436,7 +470,11 @@ def send_chat_message(
     )
     sess.add(assistant_msg)
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return user_msg, assistant_msg
 
 
@@ -462,5 +500,9 @@ def purge_expired_ai_conversations(
                     sess.delete(msg)
                 count += 1
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return count

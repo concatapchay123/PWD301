@@ -105,5 +105,9 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
             session.add(link)
             summary["admin_roles_assigned"].append(code)
 
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     return summary

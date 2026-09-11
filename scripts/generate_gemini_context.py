@@ -34,6 +34,7 @@ EXCLUDED_DIRS = {
 
 EXCLUDED_FILES = {
     "PROJECT_CONTEXT_FOR_GEMINI.md",
+    "PROJECT_CONTEXT_FOR_GEMINI_AI.md",
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
@@ -307,7 +308,10 @@ def main() -> None:
         final_text += f"\n<!-- Fence balance guard: {tick3} -->\n"
 
     OUTPUT_FILE.write_text(final_text, encoding="utf-8")
+    ai_file = ROOT / "PROJECT_CONTEXT_FOR_GEMINI_AI.md"
+    ai_file.write_text(final_text, encoding="utf-8")
     print(f"Successfully generated: {OUTPUT_FILE}")
+    print(f"Successfully generated: {ai_file}")
     print(f"File size: {OUTPUT_FILE.stat().st_size / (1024 * 1024):.2f} MB")
     print(f"Total lines: {len(final_text.splitlines()):,}")
 

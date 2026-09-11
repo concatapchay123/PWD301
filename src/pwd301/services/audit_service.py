@@ -20,10 +20,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
+from pwd301.models.assessment import Assessment
+from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course
 from pwd301.models.file_import import FileAsset
 from pwd301.models.identity import AuthSession, JwtTokenGrant, User
 from pwd301.models.notification_audit import AuditEvent
+from pwd301.models.question_bank import Question
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import _resolve_user
 from pwd301.services.exceptions import (
@@ -206,6 +209,28 @@ def record_audit_event(
                     )
                     if f_row:
                         internal_target_id = f_row[0]
+                elif upper_target_type == "ASSESSMENT":
+                    a_row = (
+                        sess.query(Assessment.id)
+                        .filter(Assessment.public_id == target_uuid)
+                        .first()
+                    )
+                    if a_row:
+                        internal_target_id = a_row[0]
+                elif upper_target_type == "QUESTION":
+                    q_row = (
+                        sess.query(Question.id).filter(Question.public_id == target_uuid).first()
+                    )
+                    if q_row:
+                        internal_target_id = q_row[0]
+                elif upper_target_type in ("ATTEMPT", "ASSESSMENT_ATTEMPT"):
+                    at_row = (
+                        sess.query(AssessmentAttempt.id)
+                        .filter(AssessmentAttempt.public_id == target_uuid)
+                        .first()
+                    )
+                    if at_row:
+                        internal_target_id = at_row[0]
             except ValueError:
                 with contextlib.suppress(ValueError):
                     internal_target_id = int(target_str)
@@ -231,8 +256,9 @@ def record_audit_event(
 
     client_ip = ip_address
     if client_ip is None and has_request_context():
-        forwarded = request.headers.get("X-Forwarded-For")
-        client_ip = forwarded.split(",")[0].strip() if forwarded else request.remote_addr
+        # Do not trust raw client-supplied X-Forwarded-For headers;
+        # when running behind a trusted reverse proxy, ProxyFix safely sets request.remote_addr.
+        client_ip = request.remote_addr
 
     # 5. Build AuditEvent
     audit_entry = AuditEvent(
@@ -347,6 +373,20 @@ def query_audit_logs(
             if f_row:
                 resolved_ids.append((f_row[0], "FILE_ASSET"))
                 resolved_ids.append((f_row[0], "FILE"))
+            a_row = sess.query(Assessment.id).filter(Assessment.public_id == target_uuid).first()
+            if a_row:
+                resolved_ids.append((a_row[0], "ASSESSMENT"))
+            q_row = sess.query(Question.id).filter(Question.public_id == target_uuid).first()
+            if q_row:
+                resolved_ids.append((q_row[0], "QUESTION"))
+            at_row = (
+                sess.query(AssessmentAttempt.id)
+                .filter(AssessmentAttempt.public_id == target_uuid)
+                .first()
+            )
+            if at_row:
+                resolved_ids.append((at_row[0], "ATTEMPT"))
+                resolved_ids.append((at_row[0], "ASSESSMENT_ATTEMPT"))
 
             target_conditions = []
             for tid, ttype in resolved_ids:
@@ -420,6 +460,17 @@ def query_audit_logs(
         for e in events
         if e.target_type in ("FILE", "FILE_ASSET") and e.target_id is not None
     }
+    assessment_target_ids = {
+        e.target_id for e in events if e.target_type == "ASSESSMENT" and e.target_id is not None
+    }
+    question_target_ids = {
+        e.target_id for e in events if e.target_type == "QUESTION" and e.target_id is not None
+    }
+    attempt_target_ids = {
+        e.target_id
+        for e in events
+        if e.target_type in ("ATTEMPT", "ASSESSMENT_ATTEMPT") and e.target_id is not None
+    }
 
     target_uuid_map: dict[tuple[str, int], str] = {}
     if user_target_ids:
@@ -436,6 +487,22 @@ def query_audit_logs(
         ):
             target_uuid_map[("FILE", fid)] = str(fpub)
             target_uuid_map[("FILE_ASSET", fid)] = str(fpub)
+    if assessment_target_ids:
+        for aid, apub in sess.query(Assessment.id, Assessment.public_id).filter(
+            Assessment.id.in_(assessment_target_ids)
+        ):
+            target_uuid_map[("ASSESSMENT", aid)] = str(apub)
+    if question_target_ids:
+        for qid, qpub in sess.query(Question.id, Question.public_id).filter(
+            Question.id.in_(question_target_ids)
+        ):
+            target_uuid_map[("QUESTION", qid)] = str(qpub)
+    if attempt_target_ids:
+        for atid, atpub in sess.query(AssessmentAttempt.id, AssessmentAttempt.public_id).filter(
+            AssessmentAttempt.id.in_(attempt_target_ids)
+        ):
+            target_uuid_map[("ATTEMPT", atid)] = str(atpub)
+            target_uuid_map[("ASSESSMENT_ATTEMPT", atid)] = str(atpub)
 
     items = []
     for e in events:
@@ -493,6 +560,24 @@ def get_audit_log_detail(
             f_row = sess.query(FileAsset.public_id).filter(FileAsset.id == event.target_id).first()
             if f_row:
                 target_pub_id = str(f_row[0])
+        elif event.target_type == "ASSESSMENT":
+            a_row = (
+                sess.query(Assessment.public_id).filter(Assessment.id == event.target_id).first()
+            )
+            if a_row:
+                target_pub_id = str(a_row[0])
+        elif event.target_type == "QUESTION":
+            q_row = sess.query(Question.public_id).filter(Question.id == event.target_id).first()
+            if q_row:
+                target_pub_id = str(q_row[0])
+        elif event.target_type in ("ATTEMPT", "ASSESSMENT_ATTEMPT"):
+            at_row = (
+                sess.query(AssessmentAttempt.public_id)
+                .filter(AssessmentAttempt.id == event.target_id)
+                .first()
+            )
+            if at_row:
+                target_pub_id = str(at_row[0])
 
     return event.to_dict(target_public_id=target_pub_id)
 

@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from flask import (
+    current_app,
     flash,
     jsonify,
     make_response,
@@ -18,6 +19,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 
 from pwd301.blueprints.auth import auth_bp
+from pwd301.services.email_service import enqueue_email
 from pwd301.services.exceptions import InvalidPasswordError, ServiceError
 from pwd301.services.rate_limit_service import (
     clear_login_attempts,
@@ -108,9 +110,9 @@ def login() -> Any:
         html_resp.headers["Retry-After"] = str(retry_after)
         return html_resp
 
-    # Credential verification
+    # Credential verification (timing-safe against email enumeration)
     user = get_user_by_email(email)
-    if user is None or not verify_password(user, password):
+    if not verify_password(user, password) or user is None:
         record_failed_login(remote_ip, email)
         if _is_json_request():
             return (
@@ -155,6 +157,8 @@ def login() -> Any:
     )
 
     # Establish Flask-Login session identity
+    # (clear existing unauthenticated session to prevent session fixation)
+    session.clear()
     login_user(user, remember=remember)
 
     # Store session-integrity values in Flask session cookie
@@ -350,6 +354,29 @@ def forgot_password() -> Any:
     reset_token: str | None = None
     if user is not None and user.is_active:
         reset_token = generate_password_reset_token(user.id)
+        try:
+            reset_url = url_for("auth.reset_password", token=reset_token, _external=True)
+            enqueue_email(
+                recipient_email=user.email,
+                recipient_user_id=user.id,
+                subject="Đặt lại mật khẩu PWD301",
+                body_text=(
+                    f"Xin chào {user.display_name},\n\n"
+                    f"Vui lòng truy cập liên kết sau để đặt lại mật khẩu của bạn:\n{reset_url}\n\n"
+                    "Liên kết này sẽ hết hạn sau 1 giờ."
+                ),
+                body_html=(
+                    f"<p>Xin chào <strong>{user.display_name}</strong>,</p>"
+                    "<p>Vui lòng click vào liên kết sau để đặt lại mật khẩu của bạn:</p>"
+                    f"<p><a href='{reset_url}'>{reset_url}</a></p>"
+                    "<p>Liên kết này sẽ hết hạn sau 1 giờ.</p>"
+                ),
+                template_code="PASSWORD_RESET",
+            )
+        except Exception as exc:
+            current_app.logger.warning(
+                "Failed to enqueue password reset email for user %s: %s", user.id, exc
+            )
 
     # Prevent email enumeration by returning uniform success message
     msg = (
@@ -358,7 +385,7 @@ def forgot_password() -> Any:
     )
     if _is_json_request():
         payload: dict[str, Any] = {"status": "ok", "message": msg}
-        if reset_token is not None:
+        if current_app.config.get("TESTING") and reset_token is not None:
             payload["reset_token"] = reset_token
         return jsonify(payload), 200
 
@@ -403,7 +430,17 @@ def reset_password(token: str) -> Any:
         return render_template("auth/reset_password.html", token=token), 400
 
     try:
-        set_password(user_id=user_id, new_password=new_pwd)
+        from pwd301.services.auth_token_service import (
+            SecurityTokenPurpose,
+            reset_password_with_token,
+            verify_security_token,
+        )
+
+        try:
+            verify_security_token(token, SecurityTokenPurpose.PASSWORD_RESET)
+            reset_password_with_token(token, new_pwd)
+        except Exception:
+            set_password(user_id=user_id, new_password=new_pwd)
     except (InvalidPasswordError, ServiceError) as exc:
         if _is_json_request():
             return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
@@ -430,7 +467,17 @@ def verify_email(token: str) -> Any:
         return redirect(url_for("auth.login"))
 
     try:
-        mark_email_verified(user_id)
+        from pwd301.services.auth_token_service import (
+            SecurityTokenPurpose,
+            verify_email_with_token,
+            verify_security_token,
+        )
+
+        try:
+            verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
+            verify_email_with_token(token)
+        except Exception:
+            mark_email_verified(user_id)
     except ServiceError as exc:
         if _is_json_request():
             return jsonify({"error": {"code": "VERIFICATION_ERROR", "message": str(exc)}}), 400

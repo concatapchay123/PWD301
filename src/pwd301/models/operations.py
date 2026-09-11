@@ -225,7 +225,7 @@ class BackupRun(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _BACKUP_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 
@@ -414,7 +414,7 @@ class SystemHealthSnapshot(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _HEALTH_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 

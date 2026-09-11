@@ -863,7 +863,11 @@ def trash_file_asset(
     asset.restore_until = now + timedelta(days=30)
     asset.updated_at = now
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return asset
 
 
@@ -887,7 +891,11 @@ def restore_file_asset(
     asset.restore_until = None
     asset.updated_at = now
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return asset
 
 
@@ -1016,9 +1024,11 @@ def get_file_for_download(
     if blob is None or blob.status != "PRESENT":
         raise FileSecurityQuarantineError("Physical storage blob is quarantined or missing.")
 
-    storage_root = get_file_storage_root()
-    physical_path = storage_root / blob.storage_key
-    if not physical_path.exists():
+    storage_root = get_file_storage_root().resolve()
+    physical_path = (storage_root / blob.storage_key).resolve()
+    if not physical_path.is_relative_to(storage_root):
+        raise FileAccessDeniedError("Physical file path escapes designated storage root.")
+    if not physical_path.exists() or not physical_path.is_file():
         raise FileStorageError("Physical file blob not found on disk.")
 
     return asset, blob, physical_path
@@ -1059,7 +1069,11 @@ def attach_resource_to_lesson(
     if existing is not None:
         if label:
             existing.label = label
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         return existing
 
     max_pos = (
@@ -1077,7 +1091,11 @@ def attach_resource_to_lesson(
         is_required=False,
     )
     sess.add(resource)
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return resource
 
@@ -1113,7 +1131,11 @@ def detach_resource_from_lesson(
         raise ResourceNotFoundError("Lesson resource link not found.")
 
     sess.delete(res)
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return True
 
 
@@ -1344,7 +1366,11 @@ def rescan_file_asset(
         if not has_active:
             asset.status = "PENDING"
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return asset
 
 
@@ -1479,7 +1505,11 @@ def quarantine_override(
     )
     sess.add(audit_entry)
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return asset
 
 

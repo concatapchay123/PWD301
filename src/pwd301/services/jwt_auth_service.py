@@ -36,6 +36,7 @@ ACCESS_TOKEN_LIFETIME = datetime.timedelta(minutes=15)
 REFRESH_TOKEN_LIFETIME = datetime.timedelta(days=7)
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "pwd301"
+JWT_CLOCK_SKEW_LEEWAY_SECONDS = 10
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -93,11 +94,10 @@ def create_token_pair(
 
     secret = _get_jwt_secret_key()
 
-    # Access token payload
+    # Access token payload (Zero PK Leakage: only public_id exposed via sub)
     access_payload = {
         "iss": JWT_ISSUER,
         "sub": str(user.public_id),
-        "user_id": user.id,
         "jti": str(access_jti),
         "token_type": "ACCESS",
         "auth_version": user.auth_version,
@@ -106,11 +106,10 @@ def create_token_pair(
         "exp": int(access_exp.timestamp()),
     }
 
-    # Refresh token payload
+    # Refresh token payload (Zero PK Leakage: only public_id exposed via sub)
     refresh_payload = {
         "iss": JWT_ISSUER,
         "sub": str(user.public_id),
-        "user_id": user.id,
         "jti": str(refresh_jti),
         "token_type": "REFRESH",
         "auth_version": user.auth_version,
@@ -197,6 +196,7 @@ def refresh_tokens(
             secret,
             algorithms=[JWT_ALGORITHM],
             issuer=JWT_ISSUER,
+            leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
         )
     except jwt.ExpiredSignatureError as exc:
         raise JwtTokenExpiredError("Refresh token has expired.") from exc
@@ -240,7 +240,8 @@ def refresh_tokens(
             "Refresh token has already been revoked or replayed. Token family invalidated."
         )
 
-    if _ensure_utc(grant.expires_at) <= now:
+    skew_tolerance = datetime.timedelta(seconds=JWT_CLOCK_SKEW_LEEWAY_SECONDS)
+    if _ensure_utc(grant.expires_at) <= now - skew_tolerance:
         raise JwtTokenExpiredError("Refresh token has expired.")
 
     user = sess.get(User, grant.user_id)
@@ -260,10 +261,10 @@ def refresh_tokens(
     grant.revoked_at = now
     grant.replaced_by_jti = new_refresh_jti
 
+    # Zero PK Leakage: only public_id exposed via sub
     new_access_payload = {
         "iss": JWT_ISSUER,
         "sub": str(user.public_id),
-        "user_id": user.id,
         "jti": str(new_access_jti),
         "token_type": "ACCESS",
         "auth_version": user.auth_version,
@@ -275,7 +276,6 @@ def refresh_tokens(
     new_refresh_payload = {
         "iss": JWT_ISSUER,
         "sub": str(user.public_id),
-        "user_id": user.id,
         "jti": str(new_refresh_jti),
         "token_type": "REFRESH",
         "auth_version": user.auth_version,
@@ -364,6 +364,7 @@ def verify_access_token(
             secret,
             algorithms=[JWT_ALGORITHM],
             issuer=JWT_ISSUER,
+            leeway=JWT_CLOCK_SKEW_LEEWAY_SECONDS,
         )
     except jwt.ExpiredSignatureError as exc:
         raise JwtTokenExpiredError("Access token has expired.") from exc
@@ -388,7 +389,8 @@ def verify_access_token(
         raise JwtTokenRevokedError("Access token has been revoked.")
 
     now = utc_now()
-    if _ensure_utc(grant.expires_at) <= now:
+    skew_tolerance = datetime.timedelta(seconds=JWT_CLOCK_SKEW_LEEWAY_SECONDS)
+    if _ensure_utc(grant.expires_at) <= now - skew_tolerance:
         raise JwtTokenExpiredError("Access token has expired.")
 
     user = sess.get(User, grant.user_id)

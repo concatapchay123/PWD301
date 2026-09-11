@@ -27,10 +27,12 @@ api_key.md
 
 # LLM context bundles
 PROJECT_CONTEXT_FOR_GEMINI.md
+PROJECT_CONTEXT_FOR_GEMINI_AI.md
 
 # Flask/runtime local state
 instance/*
 !instance/.gitkeep
+src/instance/
 logs/
 *.log
 

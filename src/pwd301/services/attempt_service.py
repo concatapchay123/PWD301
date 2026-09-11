@@ -14,6 +14,7 @@ Implements business logic and invariants for:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import random
 import secrets
@@ -86,6 +87,9 @@ from pwd301.services.exceptions import (
 # ============================================================================
 # AUDIT & LEASE HELPERS
 # ============================================================================
+
+# Constant-time dummy digest for side-channel timing attack mitigation
+DUMMY_LEASE_HASH = hashlib.sha256(b"pwd301-timing-defense-lease-hash").digest()
 
 
 def _record_attempt_audit(
@@ -756,7 +760,11 @@ def renew_attempt_lease(
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+    expected_hash = (
+        attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, token_hash)
+    if attempt.lease_token_hash is None or not digest_matches:
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     # Validate lease has not expired
@@ -907,7 +915,11 @@ def release_attempt_lease(
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+    expected_hash = (
+        attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, token_hash)
+    if attempt.lease_token_hash is None or not digest_matches:
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     now = utc_now()
@@ -949,11 +961,12 @@ def verify_attempt_lease(
     if not raw_lease_token or not isinstance(raw_lease_token, str):
         return False
 
-    if attempt.lease_token_hash is None:
-        return False
-
     token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-    if attempt.lease_token_hash != token_hash:
+    expected_hash = (
+        attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, token_hash)
+    if attempt.lease_token_hash is None or not digest_matches:
         return False
 
     now = utc_now()
@@ -1155,7 +1168,11 @@ def save_attempt_answer(
             rejection_reason="STALE",
         )
         sess.add(event)
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise StaleAnswerSequenceError(
             f"Stale answer sequence ({client_seq} <= {answer_record.last_client_sequence})."
         )
@@ -1290,7 +1307,11 @@ def sync_offline_answers(
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-    if attempt.lease_token_hash is None or attempt.lease_token_hash != token_hash:
+    expected_hash = (
+        attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, token_hash)
+    if attempt.lease_token_hash is None or not digest_matches:
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     # Validate lease expiration
@@ -1563,7 +1584,11 @@ def submit_assessment_attempt(
     # Validate lease token if provided
     if raw_lease_token is not None and isinstance(raw_lease_token, str):
         token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-        if attempt.lease_token_hash is not None and attempt.lease_token_hash != token_hash:
+        expected_hash = (
+            attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+        )
+        digest_matches = hmac.compare_digest(expected_hash, token_hash)
+        if attempt.lease_token_hash is not None and not digest_matches:
             raise AttemptLeaseConflictError(
                 "Editing lease was lost or taken over by another window."
             )

@@ -788,7 +788,7 @@ def remove_course_prerequisite(
 
 
 def get_course_prerequisites(
-    course_id: int | uuid.UUID | str,
+    course_id: Course | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
 ) -> list[Course]:
     """Retrieve all direct prerequisite courses for a given course."""

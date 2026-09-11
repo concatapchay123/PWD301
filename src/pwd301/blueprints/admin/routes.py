@@ -178,8 +178,8 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 reason=reason,
                 session=sess,
             )
-        sess.commit()
     except InvalidRoleAssignmentError as exc:
+        sess.rollback()
         return (
             jsonify(
                 {

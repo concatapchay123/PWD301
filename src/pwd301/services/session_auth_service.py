@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import hmac
 import secrets
 from typing import Any
 
@@ -29,6 +30,9 @@ from pwd301.services.exceptions import (
 
 # Default session duration: 7 days
 DEFAULT_SESSION_LIFETIME = datetime.timedelta(days=7)
+
+# Constant-time dummy digest for side-channel timing attack mitigation
+DUMMY_SESSION_KEY_HASH = hashlib.sha256(b"pwd301-timing-defense-session-key").digest()
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -156,7 +160,11 @@ def validate_auth_session(
     key_hash = hash_session_key(raw_session_key)
 
     auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    if auth_session is None:
+    expected_hash = (
+        auth_session.session_key_hash if auth_session is not None else DUMMY_SESSION_KEY_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, key_hash)
+    if auth_session is None or not digest_matches:
         return None
 
     if auth_session.revoked_at is not None:
@@ -210,7 +218,11 @@ def verify_auth_session_or_raise(
     key_hash = hash_session_key(raw_session_key)
 
     auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    if auth_session is None:
+    expected_hash = (
+        auth_session.session_key_hash if auth_session is not None else DUMMY_SESSION_KEY_HASH
+    )
+    digest_matches = hmac.compare_digest(expected_hash, key_hash)
+    if auth_session is None or not digest_matches:
         raise InvalidCredentialsError("Invalid or nonexistent session.")
 
     if auth_session.revoked_at is not None:
@@ -256,7 +268,7 @@ def revoke_auth_session(
     key_hash = hash_session_key(raw_session_key)
 
     auth_session = sess.query(AuthSession).filter(AuthSession.session_key_hash == key_hash).first()
-    if auth_session is None:
+    if auth_session is None or not hmac.compare_digest(auth_session.session_key_hash, key_hash):
         return False
 
     if auth_session.revoked_at is not None:

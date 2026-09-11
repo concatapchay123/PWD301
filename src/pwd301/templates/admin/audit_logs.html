@@ -95,7 +95,7 @@
             </td>
             <td>
               <div class="text-truncate text-slate-700" style="max-width: 300px;" title="{{ item.reason or '' }}">
-                {{ item.reason or '<span class="text-muted fst-italic">Không ghi lý do</span>'|safe }}
+                {% if item.reason %}{{ item.reason }}{% else %}<span class="text-muted fst-italic">Không ghi lý do</span>{% endif %}
               </div>
             </td>
             <td>

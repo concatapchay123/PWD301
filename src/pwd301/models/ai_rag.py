@@ -210,7 +210,7 @@ class AIMessage(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _MSG_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 
@@ -449,7 +449,7 @@ class AIGeneratedQuestionDraft(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _DRAFT_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 
@@ -583,7 +583,7 @@ class KnowledgeDocument(Base):
             row = sess.query(cls.id).filter(cls.public_id == u).first()
             if row:
                 return int(row[0])
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 
@@ -777,7 +777,7 @@ class KnowledgeChunk(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _CHUNK_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 
@@ -789,7 +789,7 @@ class KnowledgeChunk(Base):
                 data = json.loads(self.metadata_json)
                 if isinstance(data, dict):
                     return str(data.get("text", ""))
-            except Exception:
+            except (ValueError, TypeError, json.JSONDecodeError):
                 pass
         return ""
 
@@ -882,7 +882,7 @@ class AISourceUsage(Base):
             u = uuid.UUID(str(pub_id)) if not isinstance(pub_id, uuid.UUID) else pub_id
             if u.bytes[:8] == _USAGE_UUID_PREFIX:
                 return int.from_bytes(u.bytes[8:], byteorder="big")
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
         return None
 

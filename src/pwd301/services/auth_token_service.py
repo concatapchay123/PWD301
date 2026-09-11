@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import hmac
 import secrets
 from typing import Any
 
@@ -46,6 +47,9 @@ DEFAULT_EXPIRATION_SECONDS: dict[str, int] = {
     SecurityTokenPurpose.EMAIL_CHANGE: 24 * 3600,  # 24 hours
     SecurityTokenPurpose.PASSWORD_RESET: 1 * 3600,  # 1 hour
 }
+
+# Constant-time dummy digest for side-channel timing attack mitigation
+DUMMY_TOKEN_HASH = hashlib.sha256(b"pwd301-timing-defense-security-token").digest()
 
 
 def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -186,7 +190,9 @@ def verify_security_token(
     token_record = (
         sess.query(UserSecurityToken).filter(UserSecurityToken.token_hash == token_digest).first()
     )
-    if token_record is None:
+    expected_hash = token_record.token_hash if token_record is not None else DUMMY_TOKEN_HASH
+    digest_matches = hmac.compare_digest(expected_hash, token_digest)
+    if token_record is None or not digest_matches:
         raise InvalidTokenError("Security token is invalid or does not exist.")
 
     if token_record.purpose != purpose:
@@ -314,6 +320,12 @@ def reset_password_with_token(
     user.auth_version += 1
     user.updated_at = utc_now()
 
+    from pwd301.services.jwt_auth_service import revoke_all_user_tokens
+    from pwd301.services.session_auth_service import revoke_all_user_sessions
+
+    revoke_all_user_sessions(user.id, session=sess)
+    revoke_all_user_tokens(user.id, session=sess)
+
     try:
         sess.commit()
     except Exception:
@@ -377,6 +389,12 @@ def apply_email_change_with_token(
     user.email_verified_at = utc_now()
     user.auth_version += 1
     user.updated_at = utc_now()
+
+    from pwd301.services.jwt_auth_service import revoke_all_user_tokens
+    from pwd301.services.session_auth_service import revoke_all_user_sessions
+
+    revoke_all_user_sessions(user.id, session=sess)
+    revoke_all_user_tokens(user.id, session=sess)
 
     try:
         sess.commit()

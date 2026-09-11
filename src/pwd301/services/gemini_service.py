@@ -54,6 +54,23 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
     ),
     re.compile(r"you\s+are\s+no\s+longer\s+an?\s+AI", re.IGNORECASE),
     re.compile(r"developer\s+mode\s+(enabled?|activate|on)", re.IGNORECASE),
+    # Vietnamese adversarial instructions & prompt injection patterns
+    re.compile(
+        r"bỏ\s+qua\s+(toàn\s+bộ\s+|tất\s+cả\s+)?(các\s+)?(lệnh|chỉ\s+thị|hướng\s+dẫn|quy\s+tắc)\s+(trước|ở\s+trên|ban\s+đầu)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(tiết\s+lộ|hiển\s+thị|in\s+ra|cho\s+xem)\s+(toàn\s+bộ\s+)?(system\s+prompt|prompt\s+hệ\s+thống|chỉ\s+thị\s+hệ\s+thống)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(in\s+ra|cung\s+cấp|cho\s+biết)\s+(toàn\s+bộ\s+)?(đáp\s+án|câu\s+trả\s+lời|đề\s+thi)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"chế\s+độ\s+(nhà\s+phát\s+triển|bẻ\s+khóa|jailbreak)",
+        re.IGNORECASE,
+    ),
 ]
 
 
@@ -378,13 +395,17 @@ class RealGeminiClient(GeminiClientBase):
     def _call_gemini_api(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Execute HTTP POST to Gemini REST API with comprehensive resilience."""
         req_data = json.dumps(payload).encode("utf-8")
-        url = f"{self.base_url}?key={self.api_key}"
+        url = self.base_url
 
         def _do_http_post() -> bytes:
+            headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            }
             req = urllib.request.Request(
                 url,
                 data=req_data,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:

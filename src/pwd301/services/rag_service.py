@@ -343,7 +343,11 @@ def ingest_lesson_content(
     doc.status = "ACTIVE"
     doc.updated_at = utc_now()
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     logger.info(
         "Successfully ingested lesson '%s' into KnowledgeDocument %s (Version %d, %d chunks).",
         lesson.title,
@@ -572,7 +576,11 @@ def ingest_course_file(
     doc.status = "ACTIVE"
     doc.updated_at = utc_now()
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     logger.info(
         "Successfully ingested file '%s' into KnowledgeDocument %s (%d chunks).",
         asset.display_name,
@@ -939,7 +947,11 @@ def delete_knowledge_source(
             ver.is_current = False
             ver.invalidated_at = now
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     logger.info("Soft-deleted KnowledgeDocument %s and invalidated all versions.", source_id)
     return doc
 
@@ -984,7 +996,11 @@ def deactivate_course_knowledge(
                 ver.invalidated_at = now
         count += 1
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return count
 
 
@@ -1006,11 +1022,15 @@ def _format_context_boundary_blocks(retrieved_items: list[dict[str, Any]]) -> st
         title = item["lesson_title"]
         chunk_no = item["chunk_no"]
         text = item["text"]
+        # Neutralize delimiter collision / tag breaking attempts in untrusted text
+        safe_text = text.replace("</retrieved_context>", "&lt;/retrieved_context&gt;").replace(
+            "<retrieved_context>", "&lt;retrieved_context&gt;"
+        )
 
         block = (
             f"<retrieved_context>\n"
             f"[Ref: {chunk_id}] Source: {source_type} | Title: {title} | Chunk: #{chunk_no}\n"
-            f"Content:\n{text}\n"
+            f"Content:\n{safe_text}\n"
             f"</retrieved_context>"
         )
         blocks.append(block)
@@ -1077,7 +1097,11 @@ def ask_course_rag(
             scope_decision="OUT_OF_SCOPE",
             session=sess,
         )
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         return {
             "answer": (
                 "Based on the available course materials, no relevant information could be found "
@@ -1159,7 +1183,11 @@ def ask_course_rag(
                 }
             )
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     # Confidence calculation based on top score
     top_score = retrieved_items[0]["score"] if retrieved_items else 0.0

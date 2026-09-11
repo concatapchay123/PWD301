@@ -149,47 +149,85 @@ def claim_next_background_job(
     session: Session | scoped_session[Any] | None = None,
 ) -> BackgroundJob | None:
     """Atomically claim the next eligible queued background job."""
-    sess = _resolve_session(session)
-    now = utc_now()
-    # Query highest priority available job: either freshly QUEUED,
-    # or stalled RUNNING whose lease expired
-    q = (
-        sess.query(BackgroundJob)
-        .filter(
-            sa.or_(
-                sa.and_(
-                    BackgroundJob.status == "QUEUED",
-                    BackgroundJob.available_at <= now,
-                ),
-                sa.and_(
-                    BackgroundJob.status == "RUNNING",
-                    BackgroundJob.lease_expires_at.is_not(None),
-                    BackgroundJob.lease_expires_at <= now,
-                ),
-            )
-        )
-        .order_by(BackgroundJob.priority.asc(), BackgroundJob.available_at.asc())
-    )
-    bind = sess.bind
-    if (
-        bind is not None
-        and getattr(bind, "dialect", None) is not None
-        and getattr(bind.dialect, "name", "") != "sqlite"
-    ):
-        q = q.with_for_update()
-    job = q.first()
-
-    if job is None:
-        return None
-
     import datetime
 
-    job.status = "RUNNING"
-    job.claimed_at = now
-    job.lease_expires_at = now + datetime.timedelta(seconds=lease_seconds)
-    job.attempt_count += 1
-    sess.flush()
-    return job
+    sess = _resolve_session(session)
+
+    MAX_CLAIM_ATTEMPTS = 3
+    for _ in range(MAX_CLAIM_ATTEMPTS):
+        now = utc_now()
+        # Query highest priority available job: either freshly QUEUED,
+        # or stalled RUNNING whose lease expired
+        q = (
+            sess.query(BackgroundJob)
+            .filter(
+                sa.or_(
+                    sa.and_(
+                        BackgroundJob.status == "QUEUED",
+                        BackgroundJob.available_at <= now,
+                    ),
+                    sa.and_(
+                        BackgroundJob.status == "RUNNING",
+                        BackgroundJob.lease_expires_at.is_not(None),
+                        BackgroundJob.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(BackgroundJob.priority.asc(), BackgroundJob.available_at.asc())
+        )
+        bind = sess.bind
+        if (
+            bind is not None
+            and getattr(bind, "dialect", None) is not None
+            and getattr(bind.dialect, "name", "") != "sqlite"
+        ):
+            q = q.with_for_update()
+
+        candidate = q.first()
+        if candidate is None:
+            return None
+
+        candidate_id = candidate.id
+        candidate_status = candidate.status
+        candidate_lease = candidate.lease_expires_at
+
+        # Atomic conditional claim update to guarantee exclusive worker lease
+        # (prevents concurrent double-claiming across all database engines)
+        filter_cond = (BackgroundJob.id == candidate_id) & (
+            BackgroundJob.status == candidate_status
+        )
+        if candidate_status == "RUNNING":
+            filter_cond = filter_cond & (BackgroundJob.lease_expires_at == candidate_lease)
+
+        lease_exp = now + datetime.timedelta(seconds=lease_seconds)
+        try:
+            updated = (
+                sess.query(BackgroundJob)
+                .filter(filter_cond)
+                .update(
+                    {
+                        "status": "RUNNING",
+                        "claimed_at": now,
+                        "lease_expires_at": lease_exp,
+                        "attempt_count": BackgroundJob.attempt_count + 1,
+                    },
+                    synchronize_session=False,
+                )
+            )
+            if updated > 0:
+                sess.commit()
+                sess.expire_all()
+                return sess.get(BackgroundJob, candidate_id)
+            else:
+                sess.rollback()
+                # Lost race to another concurrent worker on this candidate;
+                # retry to claim next eligible job
+                continue
+        except Exception:
+            sess.rollback()
+            return None
+
+    return None
 
 
 def execute_background_job(
@@ -251,7 +289,11 @@ def execute_background_job(
         job.status = "SUCCEEDED"
         job.completed_at = now
         job.last_error = None
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         logger.info("BackgroundJob %s (%s) succeeded", job.job_key, job.job_type)
         return True
 
@@ -274,7 +316,10 @@ def execute_background_job(
             # Exponential backoff
             delay = 2 ** min(job.attempt_count, 6) * 10
             job.available_at = now + datetime.timedelta(seconds=delay)
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
         return False
 
 
@@ -292,7 +337,11 @@ def run_worker_once(session: Session | scoped_session[Any] | None = None) -> boo
     job = claim_next_background_job(session=sess)
     if job is None:
         return False
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return execute_background_job(job, session=sess)
 
 

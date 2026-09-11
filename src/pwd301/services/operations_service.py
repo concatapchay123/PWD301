@@ -16,6 +16,7 @@ import contextlib
 import datetime
 import hashlib
 import json
+import logging
 import os
 import shutil
 import socket
@@ -50,6 +51,8 @@ from pwd301.services.exceptions import (
     RestoreForbiddenError,
     ValidationError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _require_admin(actor: Any) -> None:
@@ -549,7 +552,11 @@ def create_database_backup(
         retention_days = 30
     _prune_expired_backups(sess, retention_days=retention_days)
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     return backup_run
 
 
@@ -621,11 +628,22 @@ def verify_backup_integrity(
     backup_path = Path(backup.storage_location)
     if not backup_path.is_file():
         backup.last_error = f"Physical backup file not found at {backup.storage_location}"
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise BackupIntegrityError(f"Backup file missing on disk: {backup.storage_location}")
 
-    file_bytes = backup_path.read_bytes()
-    computed_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    file_size = backup_path.stat().st_size
+    hasher = hashlib.sha256()
+    with open(backup_path, "rb") as bf:
+        while True:
+            chunk = bf.read(65536)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    computed_sha256 = hasher.hexdigest()
 
     # Read manifest if present
     manifest_path = backup_path.parent / (backup_path.name + ".manifest.json")
@@ -641,25 +659,41 @@ def verify_backup_integrity(
         backup.last_error = (
             f"Checksum mismatch: expected {expected_sha256}, calculated {computed_sha256}"
         )
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise BackupIntegrityError(
             "Backup integrity verification failed: SHA-256 checksum mismatch (corrupted file)."
         )
 
     # Verify JSON structure
     try:
-        data = json.loads(file_bytes.decode("utf-8"))
+        data = json.loads(backup_path.read_text(encoding="utf-8"))
         if data.get("metadata", {}).get("format") != "PWD301_SNAPSHOT":
             backup.last_error = "Invalid snapshot header format"
-            sess.commit()
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
+                raise
             raise BackupIntegrityError("Corrupted backup: snapshot format header is invalid.")
     except UnicodeDecodeError as exc:
         backup.last_error = "Corrupted backup: not valid UTF-8 text"
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise BackupIntegrityError("Corrupted backup: file bytes cannot be decoded.") from exc
     except json.JSONDecodeError as exc:
         backup.last_error = f"Corrupted backup: invalid JSON ({exc})"
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
         raise BackupIntegrityError(f"Corrupted backup: invalid JSON format ({exc}).") from exc
 
     # Success: update verified_at
@@ -681,18 +715,23 @@ def verify_backup_integrity(
             session=sess,
         )
     except Exception as exc:
+        sess.rollback()
         raise AuditPersistenceError(
             f"Fail-closed: could not audit backup verification ({exc})."
         ) from exc
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return {
         "backup_id": str(backup.public_id),
         "status": "VERIFIED",
         "verified": True,
         "checksum": computed_sha256,
-        "file_size": len(file_bytes),
+        "file_size": file_size,
         "verified_at": backup.verified_at.isoformat(),
     }
 
@@ -755,7 +794,11 @@ def execute_dry_run_restore(
         sess.rollback()
         raise AuditPersistenceError(f"Fail-closed: audit event failed ({exc}).") from exc
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return {
         "backup_id": str(backup.public_id),
@@ -1001,13 +1044,24 @@ def restore_database_snapshot(
         bind = sess.get_bind()
         if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
             raw_engine: Any = getattr(bind, "engine", bind)
-            db_name = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
+            db_val = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
+            safe_db_name = str(db_val).replace("]", "]]")
             backup_file = backup.database_backup_name or "PWD301.bak"
-            physical_path = str(_get_backup_root() / backup_file)
+
+            backup_root = _get_backup_root().resolve()
+            resolved_path = (backup_root / backup_file).resolve()
+            if not resolved_path.is_relative_to(backup_root):
+                raise RestoreForbiddenError("Path traversal detected in backup filename.")
+
+            safe_physical_path = str(resolved_path).replace("'", "''")
 
             # Commit and close session connection, then dispose pool to eliminate
             # open handles
-            sess.commit()
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
+                raise
             sess.close()
             raw_engine.dispose()
 
@@ -1017,20 +1071,25 @@ def restore_database_snapshot(
             try:
                 with master_engine.connect() as conn:
                     single_user_sql = (
-                        f"ALTER DATABASE [{db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
+                        f"ALTER DATABASE [{safe_db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
                     )
                     conn.execute(sa.text(single_user_sql))
                     restore_sql = (
-                        f"RESTORE DATABASE [{db_name}] FROM DISK = N'{physical_path}' WITH REPLACE;"
+                        f"RESTORE DATABASE [{safe_db_name}] "
+                        f"FROM DISK = N'{safe_physical_path}' WITH REPLACE;"
                     )
                     conn.execute(sa.text(restore_sql))
-                    conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
+                    conn.execute(sa.text(f"ALTER DATABASE [{safe_db_name}] SET MULTI_USER;"))
             except Exception as err:
                 try:
                     with master_engine.connect() as conn:
-                        conn.execute(sa.text(f"ALTER DATABASE [{db_name}] SET MULTI_USER;"))
-                except Exception:
-                    pass
+                        conn.execute(sa.text(f"ALTER DATABASE [{safe_db_name}] SET MULTI_USER;"))
+                except Exception as cleanup_err:
+                    logger.error(
+                        "Failed to reset database [%s] to MULTI_USER after restore failure: %s",
+                        safe_db_name,
+                        cleanup_err,
+                    )
                 raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
             finally:
                 master_engine.dispose()
@@ -1059,7 +1118,11 @@ def restore_database_snapshot(
                 f"Fail-closed abort: Cannot persist post-restore audit log ({exc})."
             ) from exc
 
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
         return {
             "backup_id": str(backup.public_id),
@@ -1128,7 +1191,7 @@ def start_maintenance_window(
             "reason": clean_reason,
             "estimated_duration_minutes": estimated_duration_minutes,
             "estimated_end_at": estimated_end.isoformat(),
-            "started_by_user_id": actor.id,
+            "started_by_user_id": str(actor.public_id),
         }
         active_alert.message = json.dumps(payload)
         active_alert.acknowledged_at = now
@@ -1141,7 +1204,7 @@ def start_maintenance_window(
             "reason": clean_reason,
             "estimated_duration_minutes": estimated_duration_minutes,
             "estimated_end_at": estimated_end.isoformat(),
-            "started_by_user_id": actor.id,
+            "started_by_user_id": str(actor.public_id),
         }
         alert = SystemAlert(
             alert_type="MAINTENANCE_WINDOW",
@@ -1176,7 +1239,11 @@ def start_maintenance_window(
         sess.rollback()
         raise AuditPersistenceError(f"Fail-closed: audit log failed ({exc}).") from exc
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     invalidate_maintenance_cache()
     return window
 
@@ -1250,7 +1317,11 @@ def end_maintenance_window(
         sess.rollback()
         raise AuditPersistenceError(f"Fail-closed: audit log failed ({exc}).") from exc
 
-    sess.commit()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
     invalidate_maintenance_cache()
     return window
 

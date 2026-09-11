@@ -48,7 +48,9 @@ def index() -> Response:
     if best == "text/html" and not request.is_json:
         # Query published courses strictly from the database
         stmt = (
-            sa.select(Course).where(Course.status == "PUBLISHED").order_by(Course.created_at.desc())
+            sa.select(Course)
+            .where(Course.status == "PUBLISHED", Course.deleted_at.is_(None))
+            .order_by(Course.created_at.desc())
         )
         courses = list(db.session.scalars(stmt).all())
         rendered = render_template("public/catalog.html", courses=courses)

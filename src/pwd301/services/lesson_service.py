@@ -263,7 +263,7 @@ def create_lesson(
     if course.status == "PUBLISHED":
         after_payload = json.dumps(
             {
-                "lesson_id": lesson.id,
+                "lesson_id": str(lesson.public_id),
                 "title": lesson.title,
                 "position": lesson.position,
                 "status": lesson.status,
@@ -279,7 +279,11 @@ def create_lesson(
         )
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return lesson
 
@@ -426,7 +430,11 @@ def update_lesson(
         )
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return lesson
 
@@ -517,7 +525,9 @@ def reorder_lessons(
     sess.flush()
 
     # Append-only audit logging
-    order_records = [{"lesson_id": les.id, "position": les.position} for les in resolved_ordered]
+    order_records = [
+        {"lesson_id": str(les.public_id), "position": les.position} for les in resolved_ordered
+    ]
     order_snapshot = json.dumps(order_records)
     _record_lesson_audit_event(
         sess=sess,
@@ -529,7 +539,11 @@ def reorder_lessons(
     )
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return resolved_ordered
 
@@ -606,7 +620,11 @@ def trash_lesson(
     )
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return lesson
 
@@ -673,7 +691,11 @@ def change_lesson_status(
     )
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return lesson
 
@@ -977,7 +999,11 @@ def record_lesson_progress(
     sess.flush()
 
     if session is None:
-        sess.commit()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return progress
 

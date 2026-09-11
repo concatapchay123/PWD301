@@ -304,8 +304,10 @@ def re_enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
 
 @api_course_bp.route("/<course_id>/prerequisites", methods=["GET"])
 def get_course_prerequisites_api(course_id: str) -> tuple[Response, int] | Response:
-    """Read prerequisite courses for a course."""
-    prereqs = get_course_prerequisites(course_id, session=db.session)
+    """Read prerequisite courses for a course adhering to visibility rules."""
+    actor = get_authenticated_actor()
+    course = get_course_detail(actor, course_id, session=db.session)
+    prereqs = get_course_prerequisites(course, session=db.session)
     return jsonify({"prerequisites": [_serialize_prerequisite_api(c) for c in prereqs]}), 200
 
 

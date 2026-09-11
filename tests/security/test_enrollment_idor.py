@@ -284,3 +284,53 @@ def test_admin_has_platform_wide_oversight(
         session=sess,
     )
     assert len(stud_items) == 1
+
+
+def test_draft_course_prerequisites_idor_protection(
+    client: FlaskClient,
+    course_a: Course,
+    course_b: Course,
+    instructor_a: User,
+    instructor_b: User,
+    student_a: User,
+    admin_user: User,
+) -> None:
+    """Verify GET /api/courses/<id>/prerequisites prevents IDOR / leakage on DRAFT courses."""
+    sess = db.session
+    course_a.status = "DRAFT"
+    sess.commit()
+
+    add_course_prerequisite(instructor_a, course_a.id, course_b.id, session=sess)
+    sess.commit()
+
+    # 1. Anonymous visitor -> 403 Forbidden
+    resp_anon = client.get(f"/api/courses/{course_a.public_id}/prerequisites")
+    assert resp_anon.status_code == 403
+
+    # 2. Student -> 403 Forbidden
+    stud_tokens = create_token_pair(student_a)
+    stud_headers = {"Authorization": f"Bearer {stud_tokens['access_token']}"}
+    resp_stud = client.get(f"/api/courses/{course_a.public_id}/prerequisites", headers=stud_headers)
+    assert resp_stud.status_code == 403
+
+    # 3. Non-owner Instructor B -> 403 Forbidden
+    inst_b_tokens = create_token_pair(instructor_b)
+    inst_b_headers = {"Authorization": f"Bearer {inst_b_tokens['access_token']}"}
+    resp_b = client.get(f"/api/courses/{course_a.public_id}/prerequisites", headers=inst_b_headers)
+    assert resp_b.status_code == 403
+
+    # 4. Owner Instructor A -> 200 OK
+    inst_a_tokens = create_token_pair(instructor_a)
+    inst_a_headers = {"Authorization": f"Bearer {inst_a_tokens['access_token']}"}
+    resp_a = client.get(f"/api/courses/{course_a.public_id}/prerequisites", headers=inst_a_headers)
+    assert resp_a.status_code == 200
+    assert len(resp_a.get_json()["prerequisites"]) == 1
+
+    # 5. Platform Admin -> 200 OK
+    admin_tokens = create_token_pair(admin_user)
+    admin_headers = {"Authorization": f"Bearer {admin_tokens['access_token']}"}
+    resp_admin = client.get(
+        f"/api/courses/{course_a.public_id}/prerequisites", headers=admin_headers
+    )
+    assert resp_admin.status_code == 200
+    assert len(resp_admin.get_json()["prerequisites"]) == 1

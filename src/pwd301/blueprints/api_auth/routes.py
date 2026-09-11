@@ -69,7 +69,7 @@ def login_for_token() -> tuple[Response, int]:
         return resp, 429
 
     user = get_user_by_email(email)
-    if user is None or not verify_password(user, password):
+    if not verify_password(user, password) or user is None:
         record_failed_login(remote_ip, email)
         return (
             jsonify(
