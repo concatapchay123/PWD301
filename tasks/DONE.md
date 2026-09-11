@@ -437,10 +437,22 @@
   - `python -m compileall -q src tests scripts`: PASS (0 syntax errors)
   - `python -m ruff check .`: PASS (All checks passed!)
   - `python -m ruff format --check .`: PASS (176 files already formatted)
-  - `python -m pytest tests/e2e/`: PASS (12/12 passed in 9.13s)
-  - `python -m pytest tests/concurrency/`: PASS (13/13 passed in 16.00s)
-  - `python -m pytest`: PASS (745/745 passed in 489.79s, 0 failures, 100% pass rate)
-
-
-
-
+## TASK-029 — Docker, Production Deployment & Demo Readiness
+- **Completion date:** 2026-09-11
+- **Important files changed:**
+  - `Dockerfile` (Multi-stage build on `python:3.12-slim-bookworm`, Microsoft ODBC 18, non-root user `appuser:10001`, volume directories `/app/storage`, `/app/quarantine`, `/app/backups`, `/app/exports`, Gunicorn WSGI)
+  - `docker-compose.yml` (3 isolated services in `pwd301_net`: `web` [Gunicorn 5000], `db` [MSSQL 2022], `clamav` [ClamD 3310], persistent named volumes, healthchecks)
+  - `scripts/docker-entrypoint.sh` & `scripts/wait_for_db.py` (Automated 4-stage bootstrap: wait for DB, auto-create database if missing, run Alembic migrations to head, seed baseline roles & admin, seed demo data if `SEED_DEMO_DATA=true`, exec Gunicorn)
+  - `wsgi.py` (WSGI application entrypoint)
+  - `src/pwd301/config.py` (`ProductionConfig` allows `SESSION_COOKIE_SECURE` env var override while defaulting to `True`)
+  - `src/pwd301/seeds/demo.py` (Comprehensive demonstration dataset seeding engine: 7 accounts [1 Admin, 2 Instructors, 4 Students, `Password123!`], 3 courses [`PUBLISHED`, `DRAFT`, `SUBMITTED_FOR_REVIEW`], prerequisite graph, lessons with rich Markdown & attachments, 5 Bloom taxonomy question types, published midterm exam, attempts [1 graded 20/20, 1 submitted awaiting manual essay evaluation for live instructor grading demo], notifications, append-only audit events, 100% idempotent)
+  - `src/pwd301/cli.py` & `src/pwd301/seeds/__init__.py` (CLI commands `flask seed-demo` and `flask seed demo`)
+  - `docs/10_DEPLOYMENT.md` (Complete architecture diagram, 1-command startup, health probes `/health` & `/health/deep`, demo credentials & presentation scenarios, container test execution)
+  - `tests/integration/test_demo_seed.py` (Integration tests for `seed_demo`, full idempotency, and Flask CLI commands)
+- **Verification commands and results:**
+  - `python scripts/repo_check.py`: PASS (71 CREATE TABLE statements confirmed, markdown fences balanced)
+  - `ruff check src tests`: PASS (0 errors, all checks passed!)
+  - `ruff format --check src tests`: PASS (181 files formatted)
+  - `mypy src`: PASS (Success: no issues found in 83 source files)
+  - `pytest tests/integration/test_demo_seed.py`: PASS (3/3 passed in 3.06s)
+  - `pytest`: PASS (814/814 passed in 389.09s, 0 failures, 100% pass rate)

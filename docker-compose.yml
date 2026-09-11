@@ -1,57 +1,111 @@
-version: '3.8'
-
 services:
+  # ============================================================================
+  # 1. Microsoft SQL Server 2022 Database Engine
+  # ============================================================================
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: pwd301_db
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=${DB_PASSWORD}
+      - MSSQL_SA_PASSWORD=${DB_PASSWORD:-AdminStrongPassw0rd!}
+      - MSSQL_PID=Developer
     ports:
-      - "1433:1433"
+      - "${DB_PORT:-1433}:1433"
     volumes:
       - sqldata:/var/opt/mssql
     healthcheck:
-      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-U", "sa", "-P", "${DB_PASSWORD}", "-Q", "SELECT 1", "-No"]
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\" -C -No || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 15s
+    networks:
+      - pwd301_net
+    restart: unless-stopped
 
+  # ============================================================================
+  # 2. ClamAV Malware Scanning Daemon
+  # ============================================================================
   clamav:
     image: clamav/clamav:latest
     container_name: pwd301_clamav
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav_defs:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 5 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - pwd301_net
     restart: unless-stopped
 
+  # ============================================================================
+  # 3. PWD301 Flask LMS Web Engine (Gunicorn WSGI)
+  # ============================================================================
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: pwd301_web
-    command: flask run --host=0.0.0.0 --port=5000
     ports:
-      - "5000:5000"
-    env_file:
-      - .env
+      - "${PORT:-5000}:5000"
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - PORT=${PORT:-5000}
+      - USE_PROXY_FIX=${USE_PROXY_FIX:-true}
+      - SECRET_KEY=${SECRET_KEY:-c84f88b4886f48f681aefd59d9c24097e3a985cfb8417c88}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae172a3}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
+      - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+      - DB_HOST=db
+      - DB_PORT=1433
+      - DB_USER=${DB_USER:-sa}
+      - DB_PASSWORD=${DB_PASSWORD:-AdminStrongPassw0rd!}
+      - DB_NAME=${DB_NAME:-PWD301}
+      - CLAMAV_HOST=clamav
+      - CLAMAV_PORT=3310
+      - FILE_STORAGE_ROOT=/app/storage
+      - FILE_QUARANTINE_ROOT=/app/quarantine
+      - FILE_BACKUP_ROOT=/app/backups
+      - EXPORT_ROOT=/app/exports
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-true}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+      - GUNICORN_THREADS=${GUNICORN_THREADS:-2}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
     depends_on:
       db:
         condition: service_healthy
       clamav:
         condition: service_started
     volumes:
-      - ./app:/app/app 
-      - private_storage:/app/private_storage 
-
-  worker:
-    build: .
-    container_name: pwd301_worker
-    command: python -m workers.main 
-    env_file:
-      - .env
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./app:/app/app
-      - private_storage:/app/private_storage
+      - storage_data:/app/storage
+      - quarantine_data:/app/quarantine
+      - backup_data:/app/backups
+      - export_data:/app/exports
+    networks:
+      - pwd301_net
+    restart: unless-stopped
 
 volumes:
   sqldata:
-  private_storage:
+    name: pwd301_sqldata
+  clamav_defs:
+    name: pwd301_clamav_defs
+  storage_data:
+    name: pwd301_storage_data
+  quarantine_data:
+    name: pwd301_quarantine_data
+  backup_data:
+    name: pwd301_backup_data
+  export_data:
+    name: pwd301_export_data
+
+networks:
+  pwd301_net:
+    name: pwd301_network
+    driver: bridge

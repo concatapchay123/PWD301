@@ -32,6 +32,6 @@ This backlog follows the documented dependency order. IDs are repository executi
 | TASK-026 | Backup / Restore / Operational Health | Foundation + DB | DONE |
 | TASK-027 | Security Hardening + Abuse/Rate-Limit Controls | Core features | DONE |
 | TASK-028 | Full E2E / Concurrency / Retention QA | All relevant features | DONE |
-| TASK-029 | Docker/Deployment/Demo Readiness | TASK-028 | BACKLOG |
+| TASK-029 | Docker/Deployment/Demo Readiness | TASK-028 | DONE |
 
 Do not skip dependency checks because an agent can generate code quickly.

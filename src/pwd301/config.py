@@ -141,6 +141,14 @@ class ProductionConfig(BaseConfig):
             raise ValueError("In production, JWT_SECRET_KEY must be set to a secure, random value.")
         self.SECRET_KEY = secret
         self.JWT_SECRET_KEY = jwt_secret
+        if "SESSION_COOKIE_SECURE" in os.environ:
+            self.SESSION_COOKIE_SECURE = os.environ.get(
+                "SESSION_COOKIE_SECURE", "true"
+            ).lower() in ("true", "1", "yes")
+        if "REMEMBER_COOKIE_SECURE" in os.environ:
+            self.REMEMBER_COOKIE_SECURE = os.environ.get(
+                "REMEMBER_COOKIE_SECURE", "true"
+            ).lower() in ("true", "1", "yes")
 
 
 config_by_name: dict[str, type[BaseConfig]] = {
