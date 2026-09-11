@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}{{ lesson.title }} — {{ course.title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .lesson-sidebar {
+    background: #fff;
+    border-right: 1px solid #e2e8f0;
+    min-height: calc(100vh - 120px);
+  }
+  .lesson-item-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: #334155;
+    font-size: 13.5px;
+    transition: all 0.15s ease;
+    margin-bottom: 4px;
+  }
+  .lesson-item-link:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+  }
+  .lesson-item-link.active {
+    background: #eff6ff;
+    color: #2563eb;
+    font-weight: 600;
+  }
+  .lesson-content-body {
+    line-height: 1.8;
+    color: #1e293b;
+    font-size: 15.5px;
+  }
+  .lesson-content-body h1, .lesson-content-body h2, .lesson-content-body h3 {
+    color: #0f172a;
+    font-weight: 700;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .lesson-content-body p {
+    margin-bottom: 1.2rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+  <div class="row g-0">
+    <!-- Left Curriculum Sidebar -->
+    <div class="col-lg-3 col-md-4 lesson-sidebar p-3">
+      <div class="mb-3 pb-3 border-bottom">
+        <a href="{{ url_for('student.dashboard') }}" class="text-muted small text-decoration-none d-inline-flex align-items-center gap-1 mb-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          Bảng điều khiển sinh viên
+        </a>
+        <div class="badge bg-primary-subtle text-primary mb-1">{{ course.course_code }}</div>
+        <h2 class="h6 fw-bold text-slate-900 mb-0">{{ course.title }}</h2>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+        <span class="text-caption text-muted fw-semibold">NỘI DUNG KHÓA HỌC</span>
+        <span class="badge bg-light text-muted border">{{ all_lessons|length }} bài học</span>
+      </div>
+
+      <div class="list-unstyled mb-0">
+        {% for l in all_lessons %}
+          {% set is_active = (l.id == lesson.id) %}
+          <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=l.public_id) }}" 
+             class="lesson-item-link {{ 'active' if is_active else '' }}">
+            <span class="badge {{ 'bg-primary' if is_active else 'bg-light text-muted border' }}" style="width: 24px; text-align: center;">{{ l.position }}</span>
+            <span class="text-truncate flex-grow-1">{{ l.title }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Main Lesson Reader -->
+    <div class="col-lg-9 col-md-8 p-4 p-md-5">
+      <div style="max-width: 850px; margin: 0 auto;">
+        <!-- Top Metadata -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2 border-bottom pb-3">
+          <div>
+            <span class="badge bg-secondary-subtle text-secondary me-2">Bài học {{ lesson.position }} / {{ all_lessons|length }}</span>
+            {% if lesson.estimated_duration_minutes %}
+            <span class="text-muted small">Thời lượng: ~{{ lesson.estimated_duration_minutes }} phút</span>
+            {% endif %}
+          </div>
+          <div id="lesson-progress-badge">
+            {% if progress and progress.completed_at %}
+            <span class="badge bg-success-subtle text-success">✓ Đã hoàn thành bài học</span>
+            {% else %}
+            <span class="badge bg-info-subtle text-info">Đang học</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Title -->
+        <h1 class="h2 fw-bold text-slate-900 mb-3">{{ lesson.title }}</h1>
+        {% if lesson.summary %}
+        <p class="lead text-muted mb-4 fs-6" style="line-height: 1.6;">{{ lesson.summary }}</p>
+        {% endif %}
+
+        <!-- Content Body -->
+        <div class="lesson-content-body p-4 bg-white border border-slate-100 rounded shadow-xs mb-5">
+          {% if lesson.markdown_content %}
+            <div style="white-space: pre-wrap;">{{ lesson.markdown_content }}</div>
+          {% else %}
+            <div class="text-muted py-4 text-center">Nội dung chi tiết của bài học đang được cập nhật.</div>
+          {% endif %}
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+          {% set prev_lesson = none %}
+          {% set next_lesson = none %}
+          {% for l in all_lessons %}
+            {% if l.position == lesson.position - 1 %}
+              {% set prev_lesson = l %}
+            {% elif l.position == lesson.position + 1 %}
+              {% set next_lesson = l %}
+            {% endif %}
+          {% endfor %}
+
+          <div>
+            {% if prev_lesson %}
+            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=prev_lesson.public_id) }}" class="btn btn-outline-secondary btn-sm px-3">
+              ← {{ prev_lesson.title }}
+            </a>
+            {% endif %}
+          </div>
+
+          <div>
+            {% if next_lesson %}
+            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=next_lesson.public_id) }}" class="btn btn-primary btn-sm px-4">
+              {{ next_lesson.title }} →
+            </a>
+            {% else %}
+            <a href="{{ url_for('student.dashboard') }}" class="btn btn-success btn-sm px-4">
+              Hoàn thành & Về Tổng quan ✓
+            </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    'use strict';
+    const lessonId = "{{ lesson.public_id }}";
+    const csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+
+    // Record heartbeat progress every 15 seconds
+    let totalSeconds = 0;
+    const interval = setInterval(function () {
+      totalSeconds += 15;
+      fetch(`/student/lessons/${lessonId}/progress`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+          seconds_increment: 15,
+          view_fraction: 1.0
+        })
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data && data.is_completed) {
+          const badge = document.getElementById('lesson-progress-badge');
+          if (badge) {
+            badge.innerHTML = '<span class="badge bg-success-subtle text-success">✓ Đã hoàn thành bài học</span>';
+          }
+        }
+      }).catch(function (err) {
+        console.warn('Progress sync error:', err);
+      });
+    }, 15000);
+
+    window.addEventListener('beforeunload', function () {
+      clearInterval(interval);
+    });
+  })();
+</script>
+{% endblock %}

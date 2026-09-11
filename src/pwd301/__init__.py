@@ -219,16 +219,16 @@ def _format_error_response(
             status_code,
         )
 
-    if status_code == 403:
+    if status_code in (403, 404, 500):
         try:
             rendered = render_template(
-                "errors/403.html",
-                status_code=403,
+                f"errors/{status_code}.html",
+                status_code=status_code,
                 code=code,
                 message=message,
                 correlation_id=correlation_id,
             )
-            response = make_response(rendered, 403)
+            response = make_response(rendered, status_code)
             response.headers["Content-Type"] = "text/html; charset=utf-8"
             return response
         except Exception:
@@ -611,7 +611,7 @@ def create_app(
 
     # Correlation ID & Maintenance Mode middleware
     @app.before_request
-    def before_request() -> Response | None:
+    def before_request() -> Any:
         g.correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
         g.pop("_login_user", None)
         g.pop("current_user", None)

@@ -116,7 +116,10 @@
                 {% if a.attempt_id %}
                 <a href="/student/attempt/{{ a.attempt_id }}" class="btn btn-sm btn-outline-primary w-100">Tiếp tục làm bài</a>
                 {% else %}
-                <button class="btn btn-sm btn-primary w-100" onclick="startAssessment('{{ a.assessment_id }}')">Bắt đầu thi</button>
+                <form method="POST" action="{{ url_for('student.student_start_assessment', assessment_id=a.assessment_id) }}" class="m-0">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-primary w-100">Bắt đầu thi</button>
+                </form>
                 {% endif %}
               </div>
               {% endfor %}

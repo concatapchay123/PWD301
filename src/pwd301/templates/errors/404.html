@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}404 Không tìm thấy trang — PWD301 LMS{% endblock %}
+{% block meta_description %}404 Not Found — Trang bạn yêu cầu không tồn tại trên hệ thống.{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center py-5" style="min-height: 70vh;">
+  <div class="card shadow-sm border border-slate-200 text-center p-4 p-md-5" style="width: 100%; max-width: 520px;">
+    <div class="mb-4">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-warning-subtle text-warning mb-3" style="width: 72px; height: 72px;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <div class="badge bg-warning-subtle text-warning px-2.5 py-1 mb-2 fw-semibold text-uppercase" style="letter-spacing: 0.05em; font-size: 11px;">
+        Mã lỗi: 404 {{ code or 'RESOURCE_NOT_FOUND' }}
+      </div>
+      <h3 class="fw-bold text-slate-900 mb-2">Không tìm thấy trang</h3>
+      <p class="text-slate-600 text-body mb-0">
+        {{ message or 'Đường dẫn bạn yêu cầu không tồn tại hoặc đã bị di chuyển.' }}
+      </p>
+    </div>
+
+    {% if correlation_id %}
+    <div class="p-3 bg-slate-50 border border-slate-200 rounded text-start mb-4">
+      <div class="d-flex justify-content-between text-caption text-muted mb-1">
+        <span>Mã phân tích hệ thống (Correlation ID):</span>
+      </div>
+      <code class="text-break text-slate-800 fw-mono" style="font-size: 12px;">{{ correlation_id }}</code>
+    </div>
+    {% endif %}
+
+    <div class="d-flex flex-column flex-sm-row gap-2 justify-content-center">
+      <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm px-3 py-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Quay lại
+      </a>
+      <a href="{{ url_for('core.index') }}" class="btn btn-primary btn-sm px-4 py-2 fw-semibold">
+        Về trang chủ
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

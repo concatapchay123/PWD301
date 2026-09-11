@@ -40,20 +40,20 @@
               <tr>
                 <td class="ps-4 fw-semibold">{{ loop.index }}</td>
                 <td style="max-width: 450px;">
-                  <div class="fw-medium text-truncate">{{ q.content_text or q.content }}</div>
-                  <div class="text-muted small">Phiên bản hiện tại: v{{ q.current_revision_no or 1 }}</div>
+                  <div class="fw-medium text-truncate">{{ (q.current_revision.content if q.current_revision else q.content) or q.content_text or 'Chưa có nội dung' }}</div>
+                  <div class="text-muted small">Phiên bản hiện tại: v{{ (q.current_revision.revision_no if q.current_revision else q.current_revision_no) or 1 }}</div>
                 </td>
-                <td><span class="badge bg-info-subtle text-info">{{ q.question_type }}</span></td>
+                <td><span class="badge bg-info-subtle text-info">{{ (q.current_revision.question_type if q.current_revision else q.question_type) or 'N/A' }}</span></td>
                 <td><span class="badge bg-secondary-subtle text-secondary">{{ q.difficulty }}</span></td>
                 <td>
-                  {% if q.is_in_use %}
+                  {% if q.usage_count and q.usage_count > 0 %}
                   <span class="badge bg-warning-subtle text-warning">Đang dùng trong đề (Khóa sửa trực tiếp)</span>
                   {% else %}
                   <span class="badge bg-success-subtle text-success">Sẵn sàng</span>
                   {% endif %}
                 </td>
                 <td class="text-end pe-4">
-                  <button class="btn btn-sm btn-outline-primary me-1" onclick="alert('Câu hỏi ID: {{ q.id or q.public_id }} - Phiên bản v{{ q.current_revision_no or 1 }}')">Chi tiết</button>
+                  <button class="btn btn-sm btn-outline-primary me-1" onclick="alert('Câu hỏi UUID: {{ q.public_id }} - Phiên bản v{{ (q.current_revision.revision_no if q.current_revision else q.current_revision_no) or 1 }}')">Chi tiết</button>
                 </td>
               </tr>
               {% endfor %}
@@ -82,13 +82,13 @@
         <div class="modal-body p-4">
           <div class="mb-3">
             <label class="form-label fw-semibold">Nội dung câu hỏi <span class="text-danger">*</span></label>
-            <textarea name="content_text" class="form-control" rows="3" placeholder="Nhập nội dung đề bài..." required></textarea>
+            <textarea name="content" class="form-control" rows="3" placeholder="Nhập nội dung đề bài..." required></textarea>
           </div>
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label fw-semibold">Loại câu hỏi</label>
-              <select name="question_type" class="form-select">
-                <option value="SINGLE_CHOICE">Trắc nghiệm một đáp án (SINGLE_CHOICE)</option>
+              <select name="question_type" id="questionTypeSelect" class="form-select" onchange="toggleChoiceFields(this.value)">
+                <option value="SINGLE_CHOICE" selected>Trắc nghiệm một đáp án (SINGLE_CHOICE)</option>
                 <option value="MULTIPLE_CHOICE">Trắc nghiệm nhiều đáp án (MULTIPLE_CHOICE)</option>
                 <option value="TRUE_FALSE">Đúng / Sai (TRUE_FALSE)</option>
                 <option value="SHORT_ANSWER">Trả lời ngắn (SHORT_ANSWER)</option>
@@ -106,6 +106,49 @@
               </select>
             </div>
           </div>
+
+          <!-- Choice container for SINGLE_CHOICE / MULTIPLE_CHOICE -->
+          <div id="choicesContainer" class="mb-3">
+            <label class="form-label fw-semibold">Các phương án đáp án (Chọn radio làm đáp án đúng) <span class="text-danger">*</span></label>
+            <div class="input-group mb-2">
+              <div class="input-group-text">
+                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="1" checked aria-label="Đáp án A đúng">
+              </div>
+              <span class="input-group-text fw-bold">A</span>
+              <input type="text" name="choice_1" class="form-control" placeholder="Nội dung phương án A..." value="Phương án A">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text">
+                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="2" aria-label="Đáp án B đúng">
+              </div>
+              <span class="input-group-text fw-bold">B</span>
+              <input type="text" name="choice_2" class="form-control" placeholder="Nội dung phương án B..." value="Phương án B">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text">
+                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="3" aria-label="Đáp án C đúng">
+              </div>
+              <span class="input-group-text fw-bold">C</span>
+              <input type="text" name="choice_3" class="form-control" placeholder="Nội dung phương án C (không bắt buộc)...">
+            </div>
+            <div class="input-group mb-2">
+              <div class="input-group-text">
+                <input class="form-check-input mt-0" type="radio" name="correct_choice" value="4" aria-label="Đáp án D đúng">
+              </div>
+              <span class="input-group-text fw-bold">D</span>
+              <input type="text" name="choice_4" class="form-control" placeholder="Nội dung phương án D (không bắt buộc)...">
+            </div>
+          </div>
+
+          <!-- True/False container -->
+          <div id="trueFalseContainer" class="mb-3 d-none">
+            <label class="form-label fw-semibold">Đáp án đúng (TRUE / FALSE)</label>
+            <select name="correct_tf" class="form-select">
+              <option value="TRUE">Đúng (True)</option>
+              <option value="FALSE">Sai (False)</option>
+            </select>
+          </div>
+
           <div class="mb-3">
             <label class="form-label fw-semibold">Điểm mặc định</label>
             <input type="number" name="default_points" class="form-control" value="1.0" step="0.5" min="0.5" max="100">
@@ -119,6 +162,25 @@
     </div>
   </div>
 </div>
+
+<script>
+  function toggleChoiceFields(qType) {
+    const choicesDiv = document.getElementById('choicesContainer');
+    const tfDiv = document.getElementById('trueFalseContainer');
+    if (!choicesDiv || !tfDiv) return;
+
+    if (qType === 'SINGLE_CHOICE' || qType === 'MULTIPLE_CHOICE') {
+      choicesDiv.classList.remove('d-none');
+      tfDiv.classList.add('d-none');
+    } else if (qType === 'TRUE_FALSE') {
+      choicesDiv.classList.add('d-none');
+      tfDiv.classList.remove('d-none');
+    } else {
+      choicesDiv.classList.add('d-none');
+      tfDiv.classList.add('d-none');
+    }
+  }
+</script>
 
 <!-- Modal: Nhập đề từ DOCX/PDF -->
 <div class="modal fade" id="importDocxModal" tabindex="-1" aria-labelledby="importDocxModalLabel" aria-hidden="true">

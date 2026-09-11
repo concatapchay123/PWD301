@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Chấm bài thi: {{ attempt.assessment_title }} — {{ attempt.student_name }}{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 1000px;">
+  <!-- Breadcrumb & Header -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+      <a href="{{ url_for('instructor.instructor_grading_overview') }}" class="text-muted small text-decoration-none d-inline-flex align-items-center gap-1 mb-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        Quay lại Hàng đợi chấm bài
+      </a>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-warning-subtle text-warning fw-bold">CHẤM ĐIỂM BÀI THI</span>
+        <span class="badge bg-secondary-subtle text-secondary">Lần thi #{{ attempt.attempt_number }}</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-0 mt-1">{{ attempt.assessment_title }}</h1>
+    </div>
+    <div class="text-end">
+      <div class="fw-bold text-slate-800">{{ attempt.student_name or 'Học viên' }}</div>
+      <div class="text-muted small">Nộp lúc: {{ attempt.submitted_at or '—' }}</div>
+    </div>
+  </div>
+
+  <!-- Questions Evaluation List -->
+  <div class="d-flex flex-column gap-4">
+    {% for q in attempt.questions %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <div>
+          <span class="fw-bold text-primary">Câu {{ q.position }}:</span>
+          <span class="badge bg-light text-muted border ms-2">{{ q.question_type }}</span>
+        </div>
+        <div>
+          <span class="badge {{ 'bg-success-subtle text-success' if q.grading_status == 'GRADED' else 'bg-warning-subtle text-warning' }}">
+            {{ 'Đã chấm: ' ~ q.awarded_points ~ ' / ' ~ q.points_assigned ~ ' đ' if q.grading_status == 'GRADED' else 'Chờ chấm điểm (' ~ q.points_assigned ~ ' đ)' }}
+          </span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <!-- Question Prompt -->
+        <div class="fs-6 fw-medium text-slate-900 mb-3" style="line-height: 1.6;">
+          {{ q.content }}
+        </div>
+
+        {% if q.question_type == 'ESSAY' %}
+          <!-- Essay Student Answer Card -->
+          <div class="mb-4">
+            <label class="form-label fw-bold text-slate-700 small">BÀI LÀM CỦA THÍ SINH:</label>
+            <div class="p-3 bg-slate-50 border rounded text-slate-800" style="white-space: pre-wrap; min-height: 120px; font-size: 14.5px; line-height: 1.6;">
+              {{ q.student_answer_text or '(Thí sinh không nhập nội dung câu trả lời)' }}
+            </div>
+          </div>
+
+          <!-- Essay Grading Form -->
+          <div class="p-3 bg-light border rounded">
+            <h6 class="fw-bold text-slate-900 mb-3">Đánh giá và Chấm điểm Tự luận:</h6>
+            <form method="POST" action="{{ url_for('instructor.grade_instructor_essay_route', attempt_id=attempt.attempt_id, attempt_question_id=q.attempt_question_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold small">Điểm chấm (Tối đa {{ q.points_assigned }} đ) <span class="text-danger">*</span></label>
+                  <input type="number" name="awarded_points" class="form-control" step="0.25" min="0" max="{{ q.points_assigned }}" value="{{ q.awarded_points }}" required>
+                </div>
+                <div class="col-md-8">
+                  <label class="form-label fw-semibold small">Nhận xét / Phản hồi cho thí sinh</label>
+                  <input type="text" name="reason" class="form-control" placeholder="Ghi chú nhận xét lý do cho điểm..." value="{{ q.manual_reason or '' }}">
+                </div>
+              </div>
+              <div class="mt-3 text-end">
+                <button type="submit" class="btn btn-primary btn-sm px-4">Lưu điểm chấm câu {{ q.position }}</button>
+              </div>
+            </form>
+          </div>
+        {% elif q.choices %}
+          <!-- Multiple / Single Choice Answers Review -->
+          <div class="mb-3">
+            <label class="form-label fw-bold text-slate-700 small">CÁC LỰA CHỌN VÀ ĐÁP ÁN CỦA THÍ SINH:</label>
+            <div class="list-group">
+              {% for c in q.choices %}
+                {% set is_selected = c.choice_key in q.selected_choice_keys %}
+                {% set is_correct = q.correct_info and c.choice_key in (q.correct_info.correct_choice_keys or []) %}
+                <div class="list-group-item d-flex justify-content-between align-items-center {{ 'bg-success-subtle border-success' if is_correct else ('bg-danger-subtle border-danger' if is_selected and not is_correct else '') }}">
+                  <div>
+                    <span class="fw-bold me-2">{{ loop.index }}.</span>
+                    <span>{{ c.content }}</span>
+                  </div>
+                  <div>
+                    {% if is_selected %}
+                      <span class="badge bg-primary">Thí sinh chọn</span>
+                    {% endif %}
+                    {% if is_correct %}
+                      <span class="badge bg-success ms-1">Đáp án đúng</span>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% else %}
+          <!-- Short Answer -->
+          <div class="mb-3">
+            <label class="form-label fw-bold text-slate-700 small">CÂU TRẢ LỜI CỦA THÍ SINH:</label>
+            <div class="p-2 bg-light border rounded">{{ q.student_answer_text or '—' }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

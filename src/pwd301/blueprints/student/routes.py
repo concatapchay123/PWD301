@@ -95,9 +95,39 @@ def attempt_view(attempt_id: str) -> Any:
     return jsonify(delivery)
 
 
+@student_bp.route("/assessments/<assessment_id>/start", methods=["POST"])
+@student_required
+def student_start_assessment(assessment_id: str) -> Any:
+    """Start an assessment attempt via Web session and redirect to exam view."""
+    from pwd301.services.attempt_service import start_assessment_attempt
+
+    actor = require_authenticated_actor()
+    attempt, raw_token = start_assessment_attempt(
+        student_actor=actor,
+        assessment_id=assessment_id,
+        session=db.session,
+    )
+    session[f"attempt_lease_{attempt.public_id}"] = raw_token
+    db.session.commit()
+
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        return redirect(url_for("student.attempt_view", attempt_id=str(attempt.public_id)))
+
+    return (
+        jsonify(
+            {
+                "attempt_id": str(attempt.public_id),
+                "lease_token": raw_token,
+                "status": attempt.status,
+            }
+        ),
+        201,
+    )
+
+
 @student_bp.route("/courses/<course_id>/progress", methods=["GET"])
 @student_required
-def course_progress(course_id: str) -> tuple[Response, int] | Response:
+def course_progress(course_id: str) -> Any:
     """Get the authenticated student's progress in a specific course."""
     actor = require_authenticated_actor()
 
@@ -126,6 +156,24 @@ def course_progress(course_id: str) -> tuple[Response, int] | Response:
         "status": enrollment.status,
         "enrolled_at": enrollment.enrolled_at.isoformat(),
     }
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        lessons = (
+            sess.query(Lesson)
+            .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+            .order_by(Lesson.position.asc())
+            .all()
+        )
+        if lessons:
+            return redirect(
+                url_for(
+                    "student.get_student_lesson_route",
+                    course_id=str(course.public_id),
+                    lesson_id=str(lessons[0].public_id),
+                )
+            )
+        flash(f"Khóa học '{course.title}' chưa có bài học nào được xuất bản.", "info")
+        return redirect(url_for("student.dashboard"))
+
     return jsonify(data), 200
 
 
@@ -151,7 +199,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
 @student_bp.route("/courses/<course_id>/lessons/<lesson_id>", methods=["GET"])
 @student_required
-def get_student_lesson_route(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
+def get_student_lesson_route(course_id: str, lesson_id: str) -> Any:
     """Access lesson content for learning, protected by active enrollment check."""
     actor = require_authenticated_actor()
 
@@ -165,6 +213,22 @@ def get_student_lesson_route(course_id: str, lesson_id: str) -> tuple[Response, 
         raise ResourceNotFoundError("Lesson does not belong to this course.")
 
     progress = get_lesson_progress(actor, lesson_id)
+
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        all_lessons = (
+            sess.query(Lesson)
+            .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+            .order_by(Lesson.position.asc())
+            .all()
+        )
+        return render_template(
+            "student/lesson.html",
+            course=course,
+            lesson=lesson,
+            progress=progress,
+            all_lessons=all_lessons,
+        )
+
     return jsonify(_serialize_student_lesson(lesson, progress)), 200
 
 
@@ -232,12 +296,17 @@ _serialize_enrollment_api = _serialize_enrollment
 
 @student_bp.route("/courses/<course_id>/enroll", methods=["POST"])
 @student_required
-def student_enroll_course(course_id: str) -> tuple[Response, int] | Response:
+def student_enroll_course(course_id: str) -> Any:
     """Self-enroll in a published course."""
     actor = require_authenticated_actor()
 
     enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
     status_code = 201 if getattr(enrollment, "_is_new", False) else 200
+
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Ghi danh khóa học thành công! Chúc bạn có trải nghiệm học tập tốt.", "success")
+        return redirect(url_for("student.course_progress", course_id=course_id))
+
     return jsonify(_serialize_enrollment(enrollment)), status_code
 
 
@@ -373,7 +442,7 @@ def notifications_center() -> tuple[Response, int] | Response:
 
 @student_bp.route("/notifications/<notification_id>/read", methods=["POST"])
 @student_required
-def student_mark_notification_read(notification_id: str) -> tuple[Response, int] | Response:
+def student_mark_notification_read(notification_id: str) -> Any:
     """Mark a notification as read via Web UI or AJAX."""
     from pwd301.services.notification_service import mark_notification_as_read
 
@@ -391,7 +460,7 @@ def student_mark_notification_read(notification_id: str) -> tuple[Response, int]
 
 @student_bp.route("/notifications/mark-all-read", methods=["POST"])
 @student_required
-def student_mark_all_read() -> tuple[Response, int] | Response:
+def student_mark_all_read() -> Any:
     """Mark all unread notifications as read via Web UI or AJAX."""
     from pwd301.services.notification_service import mark_all_as_read
 
@@ -487,7 +556,7 @@ def takeover_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Re
 
 @student_bp.route("/attempt/<attempt_id>/submit", methods=["POST"])
 @student_required
-def submit_student_attempt(attempt_id: str) -> tuple[Response, int] | Response:
+def submit_student_attempt(attempt_id: str) -> Any:
     """Submit assessment attempt via Web UI / AJAX with idempotency and lease release."""
     from pwd301.services.attempt_service import submit_assessment_attempt
 
@@ -521,4 +590,3 @@ def submit_student_attempt(attempt_id: str) -> tuple[Response, int] | Response:
         return redirect(url_for("student.dashboard"))
 
     return jsonify(result), 200
-

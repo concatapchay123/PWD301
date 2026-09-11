@@ -1105,7 +1105,13 @@ def save_attempt_answer(
         raise AttemptValidationError("Attempt question not found in this attempt.")
 
     # 5. Client Sequence check
-    client_seq = int(payload.get("client_sequence", 0))
+    raw_seq = payload.get("client_sequence")
+    if raw_seq is None:
+        raw_seq = payload.get("client_sequence_no", 0)
+    try:
+        client_seq = int(raw_seq)
+    except (ValueError, TypeError):
+        client_seq = 0
     raw_change_id = payload.get("client_change_id") or payload.get("change_id")
     try:
         change_uuid = (

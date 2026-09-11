@@ -25,20 +25,54 @@
             <h2 class="h5 fw-bold text-slate-900 mb-2">{{ c.title }}</h2>
             <p class="text-muted small flex-grow-1">{{ c.description or 'Chưa có mô tả cho khóa học này.' }}</p>
             
-            <div class="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
-              <a href="/instructor/courses/{{ c.public_id }}/questions" class="btn btn-sm btn-outline-primary">Ngân hàng câu hỏi</a>
-              <span class="text-muted small">{{ c.lesson_count or 0 }} bài học</span>
+              <div class="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
+                <a href="/instructor/courses/{{ c.public_id }}/questions" class="btn btn-sm btn-outline-primary">Ngân hàng câu hỏi</a>
+                <span class="text-muted small">{{ (c.lessons|length if c.lessons is defined and c.lessons else (c.lessons_count if c.lessons_count is defined else 0)) }} bài học</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="col-12 text-center py-5">
-        <div class="text-muted mb-3">Bạn chưa quản lý khóa học nào.</div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newCourseModal">+ Tạo khóa học đầu tiên</button>
-      </div>
-    {% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="col-12 text-center py-5">
+          <div class="text-muted mb-3">Bạn chưa quản lý khóa học nào.</div>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newCourseModal">+ Tạo khóa học đầu tiên</button>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Tạo khóa học mới -->
+<div class="modal fade" id="newCourseModal" tabindex="-1" aria-labelledby="newCourseModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <form method="POST" action="{{ url_for('instructor.create_course_route') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold" id="newCourseModalLabel">Tạo khóa học mới</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Mã khóa học <span class="text-danger">*</span></label>
+            <input type="text" name="course_code" class="form-control" placeholder="Ví dụ: PWD301, CS101..." required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Tên khóa học <span class="text-danger">*</span></label>
+            <input type="text" name="title" class="form-control" placeholder="Nhập tên khóa học..." required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Mô tả tóm tắt</label>
+            <textarea name="description" class="form-control" rows="3" placeholder="Giới thiệu tóm tắt mục tiêu khóa học..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-primary">Tạo bản thảo (DRAFT)</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

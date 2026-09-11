@@ -361,7 +361,7 @@ def create_question(
         )
 
     # 4. Extract & Validate Content / Stem
-    content = payload.get("content") or payload.get("stem")
+    content = payload.get("content") or payload.get("content_text") or payload.get("stem")
     if not content or not isinstance(content, str) or not content.strip():
         raise QuestionValidationError("Question content cannot be empty.")
     content = content.strip()

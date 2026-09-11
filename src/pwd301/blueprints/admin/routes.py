@@ -245,7 +245,7 @@ def list_pending_courses() -> tuple[Response, int] | Response:
 
 @admin_bp.route("/courses/<course_id>/review", methods=["POST"])
 @admin_required
-def review_course(course_id: str) -> tuple[Response, int] | Response:
+def review_course(course_id: str) -> Any:
     """Approve or reject a submitted course (Admin only)."""
     actor = require_authenticated_actor()
 
@@ -304,7 +304,7 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/courses/<course_id>/publish", methods=["POST"])
 @admin_required
-def publish_course(course_id: str) -> tuple[Response, int] | Response:
+def publish_course(course_id: str) -> Any:
     """Publish an approved course (Admin only)."""
     actor = require_authenticated_actor()
 
@@ -325,7 +325,7 @@ def publish_course(course_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @admin_required
-def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
+def trash_course_route(course_id: str) -> Any:
     """Soft-delete a course to TRASH (Admin)."""
     actor = require_authenticated_actor()
 
@@ -341,7 +341,7 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/courses/<course_id>/restore", methods=["POST"])
 @admin_required
-def restore_course(course_id: str) -> tuple[Response, int] | Response:
+def restore_course(course_id: str) -> Any:
     """Restore a course from TRASH back to ARCHIVED (Admin only)."""
     actor = require_authenticated_actor()
 
@@ -512,7 +512,7 @@ def get_audit_log_by_id(audit_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/users/<user_id>/suspend", methods=["POST"])
 @admin_required
-def admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
+def admin_suspend_user(user_id: str) -> Any:
     """Suspend a user account with mandatory fail-closed audit log (Admin only)."""
     from pwd301.services.audit_service import suspend_user_account
 
@@ -547,7 +547,7 @@ def admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/users/<user_id>/unsuspend", methods=["POST"])
 @admin_required
-def admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
+def admin_unsuspend_user(user_id: str) -> Any:
     """Reactivate a suspended user account with mandatory fail-closed audit log (Admin only)."""
     from pwd301.services.audit_service import unsuspend_user_account
 
@@ -581,7 +581,7 @@ def admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/users/<user_id>/revoke-sessions", methods=["POST"])
 @admin_required
-def admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response:
+def admin_force_revoke_sessions(user_id: str) -> Any:
     """Force revocation of all active sessions and tokens for a user (Admin only)."""
     from pwd301.services.audit_service import force_revoke_user_sessions
 
@@ -597,7 +597,11 @@ def admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response
     )
 
     if not _is_api_request():
-        flash(f"Toàn bộ phiên đăng nhập của tài khoản {user.email} đã bị thu hồi (auth_version={user.auth_version}).", "info")
+        flash(
+            f"Toàn bộ phiên đăng nhập của tài khoản {user.email} đã bị thu hồi "
+            f"(auth_version={user.auth_version}).",
+            "info",
+        )
         return redirect(url_for("admin.admin_users"))
 
     return (
@@ -639,7 +643,7 @@ def admin_list_backups() -> tuple[Response, int] | Response | str:
 
 @admin_bp.route("/backups", methods=["POST"])
 @admin_required
-def admin_create_backup() -> tuple[Response, int] | Response:
+def admin_create_backup() -> Any:
     """Initiate an on-demand database snapshot with SHA-256 integrity calculation."""
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or {}
@@ -677,7 +681,7 @@ def admin_get_backup_detail(backup_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/backups/<backup_id>/verify", methods=["POST"])
 @admin_required
-def admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
+def admin_verify_backup(backup_id: str) -> Any:
     """Execute cryptographic SHA-256 verification and file structure check."""
     actor = require_authenticated_actor()
     result = verify_backup_integrity(actor, backup_id, session=db.session)
@@ -692,12 +696,16 @@ def admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
 
 @admin_bp.route("/backups/<backup_id>/restore/dry-run", methods=["POST"])
 @admin_required
-def admin_dry_run_restore(backup_id: str) -> tuple[Response, int] | Response:
+def admin_dry_run_restore(backup_id: str) -> Any:
     """Execute a dry-run restoration drill verifying schema compatibility with zero mutations."""
     actor = require_authenticated_actor()
     result = execute_dry_run_restore(actor, backup_id, session=db.session)
     if not _is_api_request():
-        flash("Diễn tập khôi phục (dry-run) thành công. Tương thích cấu trúc 100%, không ghi đè CSDL.", "success")
+        flash(
+            "Diễn tập khôi phục (dry-run) thành công. "
+            "Tương thích cấu trúc 100%, không ghi đè CSDL.",
+            "success",
+        )
         return redirect(url_for("admin.admin_list_backups"))
     return jsonify(result), 200
 

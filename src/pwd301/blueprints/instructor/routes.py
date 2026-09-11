@@ -223,12 +223,17 @@ def my_courses() -> Any:
 
 @instructor_bp.route("/courses", methods=["POST"])
 @instructor_required
-def create_course_route() -> tuple[Response, int] | Response:
+def create_course_route() -> Any:
     """Create a new course in DRAFT status."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     course = create_course(actor, payload)
+
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Khóa học mới đã được tạo thành công dưới dạng Bản thảo (DRAFT).", "success")
+        return redirect(url_for("instructor.my_courses"))
+
     return jsonify(_serialize_course(course)), 201
 
 
@@ -592,11 +597,33 @@ def list_course_questions_route(course_id: str) -> Any:
 
 @instructor_bp.route("/courses/<course_id>/questions", methods=["POST"])
 @instructor_required
-def create_course_question_route(course_id: str) -> tuple[Response, int] | Response:
+def create_course_question_route(course_id: str) -> Any:
     """Create a new question in the instructor question authoring workflow."""
     actor = require_authenticated_actor()
 
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    payload: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict() or {}
+    if not request.is_json and "choices" not in payload:
+        raw_choices = []
+        correct_choice = request.form.get("correct_choice", "1")
+        for i in range(1, 10):
+            c_text = request.form.get(f"choice_{i}")
+            if c_text and c_text.strip():
+                raw_choices.append(
+                    {
+                        "content": c_text.strip(),
+                        "is_correct": str(correct_choice) == str(i),
+                        "position": i,
+                    }
+                )
+        if raw_choices:
+            payload["choices"] = raw_choices
+        elif payload.get("question_type") == "TRUE_FALSE":
+            tf_correct = request.form.get("correct_tf", "TRUE").upper() == "TRUE"
+            payload["choices"] = [
+                {"content": "Đúng (True)", "is_correct": tf_correct, "position": 1},
+                {"content": "Sai (False)", "is_correct": not tf_correct, "position": 2},
+            ]
+
     question = create_question(actor, course_id, payload, session=db.session)
 
     if not request.is_json and request.accept_mimetypes.accept_html:
@@ -1006,10 +1033,12 @@ def list_instructor_pending_grading_route(assessment_id: str) -> Any:
 
 @instructor_bp.route("/attempts/<attempt_id>/grading", methods=["GET"])
 @instructor_required
-def get_instructor_attempt_grading_route(attempt_id: str) -> tuple[Response, int] | Response:
+def get_instructor_attempt_grading_route(attempt_id: str) -> Any:
     """Retrieve detailed attempt answers for grading evaluation."""
     actor = require_authenticated_actor()
     data = get_attempt_grading_detail(actor, attempt_id, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return render_template("instructor/grade_attempt.html", attempt=data)
     return jsonify(data), 200
 
 
@@ -1018,7 +1047,7 @@ def get_instructor_attempt_grading_route(attempt_id: str) -> tuple[Response, int
 def grade_instructor_essay_route(
     attempt_id: str,
     attempt_question_id: str,
-) -> tuple[Response, int] | Response:
+) -> Any:
     """Grade or revise manual score for an essay question."""
     actor = require_authenticated_actor()
     body = request.get_json(silent=True) or request.form.to_dict() or {}
@@ -1037,6 +1066,12 @@ def grade_instructor_essay_route(
         reason=reason,
         session=db.session,
     )
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Đã lưu điểm và nhận xét cho câu hỏi thành công.", "success")
+        return redirect(
+            url_for("instructor.get_instructor_attempt_grading_route", attempt_id=attempt_id)
+        )
+
     return jsonify(result), 200
 
 

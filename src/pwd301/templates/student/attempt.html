@@ -265,7 +265,7 @@
     if (!attemptId) return;
 
     let payload = {
-      client_sequence_no: ++clientSequence,
+      client_sequence: ++clientSequence,
       lease_token: leaseToken,
       lease_epoch: leaseEpoch
     };
