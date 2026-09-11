@@ -27,13 +27,17 @@ from pwd301.services.assessment_service import (
     trigger_assessment_regrade,
     update_assessment,
 )
-from pwd301.services.authorization_service import require_authenticated_actor
+from pwd301.services.authorization_service import (
+    instructor_required,
+    require_authenticated_actor,
+)
 from pwd301.services.exceptions import AssessmentValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 
 
 @api_assessment_bp.route("", methods=["POST"], strict_slashes=False)
 @jwt_required
+@instructor_required
 def create_assessment_route() -> tuple[Response, int] | Response:
     """Create a new Assessment (DRAFT status).
 
@@ -66,6 +70,7 @@ def get_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
 
 @api_assessment_bp.route("/<assessment_id>", methods=["PATCH"])
 @jwt_required
+@instructor_required
 def patch_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Update assessment configuration (fails if timing/structure is locked).
 
@@ -81,6 +86,7 @@ def patch_assessment_route(assessment_id: str) -> tuple[Response, int] | Respons
 
 @api_assessment_bp.route("/<assessment_id>/publish", methods=["POST"])
 @jwt_required
+@instructor_required
 def publish_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Publish assessment (DRAFT -> PUBLISHED). State-idempotent.
 
@@ -95,6 +101,7 @@ def publish_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
 
 @api_assessment_bp.route("/<assessment_id>/cancel", methods=["POST"])
 @jwt_required
+@instructor_required
 def cancel_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Cancel a published assessment.
 
@@ -117,6 +124,7 @@ def cancel_assessment_route(assessment_id: str) -> tuple[Response, int] | Respon
 
 @api_assessment_bp.route("/<assessment_id>/trash", methods=["POST"])
 @jwt_required
+@instructor_required
 def trash_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Move assessment to TRASH (soft-delete with 30-day restore window).
 
@@ -139,6 +147,7 @@ def trash_assessment_route(assessment_id: str) -> tuple[Response, int] | Respons
 
 @api_assessment_bp.route("/<assessment_id>/restore", methods=["POST"])
 @jwt_required
+@instructor_required
 def restore_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Restore assessment from TRASH back to DRAFT within 30 days.
 
@@ -158,6 +167,7 @@ def restore_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
 
 @api_assessment_bp.route("/<assessment_id>/sections", methods=["POST"])
 @jwt_required
+@instructor_required
 def create_section_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Create a new section in the assessment.
 
@@ -173,6 +183,7 @@ def create_section_route(assessment_id: str) -> tuple[Response, int] | Response:
 
 @api_assessment_bp.route("/<assessment_id>/sections/<section_id>", methods=["DELETE"])
 @jwt_required
+@instructor_required
 def delete_section_route(assessment_id: str, section_id: str) -> tuple[Response, int] | Response:
     """Delete a section from the assessment.
 
@@ -187,6 +198,7 @@ def delete_section_route(assessment_id: str, section_id: str) -> tuple[Response,
 
 @api_assessment_bp.route("/<assessment_id>/questions", methods=["POST"])
 @jwt_required
+@instructor_required
 def assign_question_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Assign a fixed question to the assessment.
 
@@ -202,6 +214,7 @@ def assign_question_route(assessment_id: str) -> tuple[Response, int] | Response
 
 @api_assessment_bp.route("/<assessment_id>/questions/<question_id>", methods=["DELETE"])
 @jwt_required
+@instructor_required
 def remove_question_route(assessment_id: str, question_id: str) -> tuple[Response, int] | Response:
     """Remove a fixed question assignment from the assessment.
 
@@ -216,6 +229,7 @@ def remove_question_route(assessment_id: str, question_id: str) -> tuple[Respons
 
 @api_assessment_bp.route("/<assessment_id>/blueprint", methods=["POST"])
 @jwt_required
+@instructor_required
 def configure_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Configure assessment blueprint rules.
 
@@ -231,6 +245,7 @@ def configure_blueprint_route(assessment_id: str) -> tuple[Response, int] | Resp
 
 @api_assessment_bp.route("/<assessment_id>/blueprint/materialize", methods=["POST"])
 @jwt_required
+@instructor_required
 def materialize_blueprint_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Materialize candidate question pool from blueprint rules (Algorithm 05).
 
@@ -250,6 +265,7 @@ def materialize_blueprint_route(assessment_id: str) -> tuple[Response, int] | Re
 
 @api_assessment_bp.route("/<assessment_id>/release-scores", methods=["POST"])
 @jwt_required
+@instructor_required
 def release_scores_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Release scores for an assessment (INSTRUCTOR_RELEASE policy).
 
@@ -262,6 +278,7 @@ def release_scores_route(assessment_id: str) -> tuple[Response, int] | Response:
 
 @api_assessment_bp.route("/<assessment_id>/regrade", methods=["POST"])
 @jwt_required
+@instructor_required
 def regrade_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
     """Trigger assessment regrading per 07_ASSESSMENT_API.md and Algorithm 11.
 

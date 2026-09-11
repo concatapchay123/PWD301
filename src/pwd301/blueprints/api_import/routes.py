@@ -6,7 +6,10 @@ from flask import Response, jsonify, request
 
 from pwd301.blueprints.api_import import api_import_bp
 from pwd301.extensions import db
-from pwd301.services.authorization_service import require_authenticated_actor
+from pwd301.services.authorization_service import (
+    instructor_required,
+    require_authenticated_actor,
+)
 from pwd301.services.exceptions import ValidationError
 from pwd301.services.import_service import (
     cancel_import_job,
@@ -22,6 +25,7 @@ from pwd301.services.jwt_auth_service import jwt_required
 
 @api_import_bp.route("", methods=["POST"])
 @jwt_required
+@instructor_required
 def create_import_api() -> tuple[Response, int] | Response:
     """Start DOCX/PDF import job per 09_FILE_IMPORT_API.md.
 
@@ -65,6 +69,7 @@ def create_import_api() -> tuple[Response, int] | Response:
 
 @api_import_bp.route("/<job_id>", methods=["GET"])
 @jwt_required
+@instructor_required
 def get_import_api(job_id: str) -> tuple[Response, int] | Response:
     """View progress, summary, and extracted questions for an import job."""
     actor = require_authenticated_actor()
@@ -74,6 +79,7 @@ def get_import_api(job_id: str) -> tuple[Response, int] | Response:
 
 @api_import_bp.route("/<job_id>/process", methods=["POST"])
 @jwt_required
+@instructor_required
 def process_import_api(job_id: str) -> tuple[Response, int] | Response:
     """Trigger or re-trigger processing of an import job."""
     actor = require_authenticated_actor()
@@ -84,6 +90,7 @@ def process_import_api(job_id: str) -> tuple[Response, int] | Response:
 
 @api_import_bp.route("/<job_id>/questions/<temp_id>", methods=["PATCH"])
 @jwt_required
+@instructor_required
 def update_question_api(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
     """Review and edit an extracted import question draft."""
     actor = require_authenticated_actor()
@@ -112,6 +119,7 @@ def update_question_api(job_id: str, temp_id: str) -> tuple[Response, int] | Res
 
 @api_import_bp.route("/<job_id>/questions/<temp_id>/decision", methods=["POST"])
 @jwt_required
+@instructor_required
 def set_question_decision_api(job_id: str, temp_id: str) -> tuple[Response, int] | Response:
     """Approve (ACCEPTED) or reject (REJECTED) an extracted question draft."""
     actor = require_authenticated_actor()
@@ -132,6 +140,7 @@ def set_question_decision_api(job_id: str, temp_id: str) -> tuple[Response, int]
 
 @api_import_bp.route("/<job_id>/commit", methods=["POST"])
 @jwt_required
+@instructor_required
 def commit_import_api(job_id: str) -> tuple[Response, int] | Response:
     """Atomically commit all ACCEPTED questions into the Course Question Bank."""
     actor = require_authenticated_actor()
@@ -141,6 +150,7 @@ def commit_import_api(job_id: str) -> tuple[Response, int] | Response:
 
 @api_import_bp.route("/<job_id>/cancel", methods=["POST"])
 @jwt_required
+@instructor_required
 def cancel_import_api(job_id: str) -> tuple[Response, int] | Response:
     """Cancel an in-progress import job."""
     actor = require_authenticated_actor()

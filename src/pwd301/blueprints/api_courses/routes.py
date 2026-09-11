@@ -682,8 +682,11 @@ def list_course_files_api(course_id: str) -> tuple[Response, int] | Response:
 
 @api_course_bp.route("/<course_id>/imports", methods=["POST"])
 @jwt_required
+@instructor_required
 def create_course_import_api(course_id: str) -> tuple[Response, int] | Response:
     """Start DOCX/PDF import job for a course."""
+    from pwd301.services.exceptions import FileSizeLimitExceededError
+    from pwd301.services.file_service import LimitingStream, store_file_stream
     from pwd301.services.import_service import (
         create_import_job,
         get_import_job_detail,
@@ -691,18 +694,23 @@ def create_course_import_api(course_id: str) -> tuple[Response, int] | Response:
     )
 
     actor = require_authenticated_actor()
+    cl = request.content_length
+    if cl is not None and cl >= 1_000_000_000:
+        raise FileSizeLimitExceededError(
+            "File size exceeds maximum allowed limit of 1,000,000,000 bytes."
+        )
+
     data = request.get_json(silent=True) or request.form.to_dict()
     file_asset_id = data.get("file_asset_id")
 
     # Support direct upload if multipart file provided
     if (not file_asset_id) and request.files and "file" in request.files:
-        from pwd301.services.file_service import store_file_stream
-
         upload = request.files["file"]
+        limited_stream = LimitingStream(upload.stream, max_bytes=1_000_000_000)
         asset = store_file_stream(
             actor=actor,
             course_id=course_id,
-            file_stream=upload.stream,
+            file_stream=limited_stream,
             filename=upload.filename or "import.docx",
             content_type=upload.mimetype or request.content_type,
             asset_type="IMPORT_SOURCE",
@@ -737,6 +745,7 @@ def create_course_import_api(course_id: str) -> tuple[Response, int] | Response:
 
 @api_course_bp.route("/<course_id>/imports", methods=["GET"])
 @jwt_required
+@instructor_required
 def list_course_imports_api(course_id: str) -> tuple[Response, int] | Response:
     """List document import jobs for a course."""
     from pwd301.models.file_import import DocumentImportJob

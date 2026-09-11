@@ -297,7 +297,7 @@ def _resolve_file_asset(
 def store_file_stream(
     actor: User,
     course_id: Course | int | uuid.UUID | str,
-    file_stream: IO[bytes] | BinaryIO,
+    file_stream: IO[bytes] | BinaryIO | LimitingStream,
     filename: str,
     content_type: str | None = None,
     asset_type: str = "RESOURCE",
@@ -595,7 +595,7 @@ def store_file_stream(
 def add_file_revision(
     actor: User,
     asset_id: FileAsset | int | uuid.UUID | str,
-    file_stream: IO[bytes] | BinaryIO,
+    file_stream: IO[bytes] | BinaryIO | LimitingStream,
     filename: str,
     content_type: str | None = None,
     session: Session | scoped_session[Any] | None = None,

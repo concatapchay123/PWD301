@@ -2555,7 +2555,9 @@ def get_attempt_grade_history(
     is_admin = actor.is_admin
     is_manager = False
     if attempt.assessment and actor.has_role("INSTRUCTOR"):
-        is_manager = attempt.assessment.course.owner_instructor_id == actor.id
+        from pwd301.services.authorization_service import can_manage_course
+
+        is_manager = can_manage_course(actor, attempt.assessment.course)
 
     if not (is_owner or is_admin or is_manager):
         raise ForbiddenError("You do not have permission to view this attempt grade history.")

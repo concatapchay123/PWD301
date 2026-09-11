@@ -769,12 +769,27 @@ def execute_dry_run_restore(
     }
 
 
+def _get_restore_lock_file() -> Path:
+    """Return the filesystem lock marker path for cross-process restore coordination."""
+    try:
+        if current_app:
+            storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage"))
+            storage_root.mkdir(parents=True, exist_ok=True)
+            return storage_root / ".restore_lock"
+    except Exception:
+        pass
+    fallback = Path("./storage")
+    with contextlib.suppress(Exception):
+        fallback.mkdir(parents=True, exist_ok=True)
+    return fallback / ".restore_lock"
+
+
 class DatabaseRestoreLock:
     """Distributed application lock manager for database restore operations.
 
     Uses SQL Server sp_getapplock / sp_releaseapplock (Exclusive, Session-scoped)
     on MSSQL to serialize restore across workers/containers.
-    Maintains fallback state for non-MSSQL/test environments.
+    Maintains cross-process file marker and in-memory state for non-MSSQL/test environments.
     """
 
     def __init__(self) -> None:
@@ -812,20 +827,34 @@ class DatabaseRestoreLock:
                     _is_restore_in_progress = True
                     self._active_conn = conn
                     self._active_engine = engine
+                    with contextlib.suppress(Exception):
+                        _get_restore_lock_file().write_text(
+                            f"{os.getpid()}:{time.time()}", encoding="utf-8"
+                        )
                     return True
             except Exception:
                 pass
 
         if self._held or _is_restore_in_progress:
             return False
+        # Also check cross-process lock file
+        if _get_restore_lock_file().is_file():
+            return False
+
         self._held = True
         _is_restore_in_progress = True
+        with contextlib.suppress(Exception):
+            _get_restore_lock_file().write_text(f"{os.getpid()}:{time.time()}", encoding="utf-8")
         return True
 
     def release(self, session: Any = None) -> None:
         global _is_restore_in_progress
         self._held = False
         _is_restore_in_progress = False
+        with contextlib.suppress(Exception):
+            lock_file = _get_restore_lock_file()
+            if lock_file.is_file():
+                lock_file.unlink(missing_ok=True)
         if self._active_conn is not None:
             with contextlib.suppress(Exception):
                 self._active_conn.execute(
@@ -861,15 +890,28 @@ _is_restore_in_progress: bool = False
 
 
 def is_database_restore_in_progress() -> bool:
-    """Return True if a live database restore is currently executing."""
+    """Return True if a live database restore is currently executing across any worker process."""
     global _is_restore_in_progress
-    return _is_restore_in_progress
+    if _is_restore_in_progress:
+        return True
+    try:
+        return _get_restore_lock_file().is_file()
+    except Exception:
+        return False
 
 
 def set_database_restore_in_progress(val: bool) -> None:
-    """Set the live database restore in-progress flag."""
+    """Set the live database restore in-progress flag and sync cross-process lock file."""
     global _is_restore_in_progress
     _is_restore_in_progress = val
+    try:
+        lock_file = _get_restore_lock_file()
+        if val:
+            lock_file.write_text(f"{os.getpid()}:{time.time()}", encoding="utf-8")
+        elif lock_file.is_file():
+            lock_file.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def restore_database_snapshot(
@@ -988,40 +1030,42 @@ def restore_database_snapshot(
             finally:
                 master_engine.dispose()
                 raw_engine.dispose()
+
+        now = utc_now()
+        backup.restore_tested_at = now
+
+        # Safeguard 5: Post-restore Audit Event
+        try:
+            record_audit_event(
+                actor=actor,
+                action="DATABASE_RESTORE_COMPLETED",
+                target_type="BACKUP",
+                target_id=backup.public_id,
+                details={
+                    "backup_id": str(backup.public_id),
+                    "completed_at": now.isoformat(),
+                },
+                performed_as_admin=True,
+                session=sess,
+            )
+        except Exception as exc:
+            sess.rollback()
+            raise AuditPersistenceError(
+                f"Fail-closed abort: Cannot persist post-restore audit log ({exc})."
+            ) from exc
+
+        sess.commit()
+
+        return {
+            "backup_id": str(backup.public_id),
+            "status": "RESTORED",
+            "restored_at": now.isoformat(),
+            "message": (
+                "Database restore successfully completed under administrative authorization."
+            ),
+        }
     finally:
         _restore_lock.release(session=sess)
-
-    now = utc_now()
-    backup.restore_tested_at = now
-
-    # Safeguard 5: Post-restore Audit Event
-    try:
-        record_audit_event(
-            actor=actor,
-            action="DATABASE_RESTORE_COMPLETED",
-            target_type="BACKUP",
-            target_id=backup.public_id,
-            details={
-                "backup_id": str(backup.public_id),
-                "completed_at": now.isoformat(),
-            },
-            performed_as_admin=True,
-            session=sess,
-        )
-    except Exception as exc:
-        sess.rollback()
-        raise AuditPersistenceError(
-            f"Fail-closed abort: Cannot persist post-restore audit log ({exc})."
-        ) from exc
-
-    sess.commit()
-
-    return {
-        "backup_id": str(backup.public_id),
-        "status": "RESTORED",
-        "restored_at": now.isoformat(),
-        "message": "Database restore successfully completed under administrative authorization.",
-    }
 
 
 # =====================================================================

@@ -9,6 +9,7 @@ Implements:
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import logging
@@ -33,6 +34,11 @@ from pwd301.services.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bounded worker thread pool for resilient, non-blocking outbound LLM network requests
+_GEMINI_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8, thread_name_prefix="gemini_io"
+)
 
 # Known prompt injection / jailbreak patterns
 _INJECTION_PATTERNS: list[re.Pattern[str]] = [
@@ -372,16 +378,27 @@ class RealGeminiClient(GeminiClientBase):
     def _call_gemini_api(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Execute HTTP POST to Gemini REST API with comprehensive resilience."""
         req_data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.base_url}?key={self.api_key}",
-            data=req_data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
+        url = f"{self.base_url}?key={self.api_key}"
+
+        def _do_http_post() -> bytes:
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                resp_bytes = resp.read()
-                return json.loads(resp_bytes.decode("utf-8"))
+                return resp.read()
+
+        try:
+            future = _GEMINI_EXECUTOR.submit(_do_http_post)
+            resp_bytes = future.result(timeout=self.timeout_seconds + 2)
+            return json.loads(resp_bytes.decode("utf-8"))
+        except concurrent.futures.TimeoutError as exc:
+            logger.error("Gemini API call timed out after %ds: %s", self.timeout_seconds, exc)
+            raise AIServiceUnavailableError(
+                f"Gemini API request timed out after {self.timeout_seconds}s."
+            ) from exc
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
                 logger.warning("Gemini API quota exceeded (HTTP 429).")

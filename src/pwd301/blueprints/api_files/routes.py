@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
-from flask import Response, jsonify, make_response, request, send_file
+from flask import Response, current_app, jsonify, make_response, request, send_file
 
 from pwd301.blueprints.api_files import api_file_bp
 from pwd301.extensions import db
@@ -71,12 +72,34 @@ def download_file_api(asset_id: str) -> Response:
     if disposition not in ("inline", "attachment"):
         disposition = "attachment"
 
+    # Reverse proxy offload (Nginx X-Accel-Redirect) for large video/asset streaming
+    if current_app.config.get("USE_X_ACCEL_REDIRECT", False):
+        accel_prefix = current_app.config.get("ACCEL_REDIRECT_PREFIX", "/internal-storage")
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+        try:
+            rel_path = Path(physical_path).resolve().relative_to(storage_root)
+            accel_path = f"{accel_prefix.rstrip('/')}/{rel_path.as_posix()}"
+            resp = make_response("", 200)
+            resp.headers["X-Accel-Redirect"] = accel_path
+            resp.headers["X-Content-Type-Options"] = "nosniff"
+            ascii_fallback = clean_filename.encode("ascii", "ignore").decode("ascii") or "file"
+            encoded_filename = urllib.parse.quote(clean_filename, safe="")
+            resp.headers["Content-Disposition"] = (
+                f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
+            )
+            resp.headers["Content-Type"] = blob.detected_mime_type
+            return resp
+        except (ValueError, Exception):
+            pass
+
+    # Standard streaming fallback with HTTP range requests (conditional=True)
     resp = make_response(
         send_file(
             physical_path,
             mimetype=blob.detected_mime_type,
             as_attachment=(disposition == "attachment"),
             download_name=clean_filename,
+            conditional=True,
         )
     )
     resp.headers["X-Content-Type-Options"] = "nosniff"

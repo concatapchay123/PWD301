@@ -41,6 +41,18 @@ class BaseConfig:
     REMEMBER_COOKIE_SAMESITE: str = "Lax"
     REMEMBER_COOKIE_SECURE: bool = False
 
+    # Reverse proxy configuration
+    USE_PROXY_FIX: bool = os.environ.get("USE_PROXY_FIX", "true").lower() in ("true", "1", "yes")
+    NUM_PROXIES: int = int(os.environ.get("NUM_PROXIES", "1"))
+
+    # Large file streaming / Reverse proxy offload
+    USE_X_ACCEL_REDIRECT: bool = os.environ.get("USE_X_ACCEL_REDIRECT", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    ACCEL_REDIRECT_PREFIX: str = os.environ.get("ACCEL_REDIRECT_PREFIX", "/internal-storage")
+
     # Storage paths
     FILE_STORAGE_ROOT: Path = Path(os.environ.get("FILE_STORAGE_ROOT", "./storage"))
     FILE_QUARANTINE_ROOT: Path = Path(os.environ.get("FILE_QUARANTINE_ROOT", "./quarantine"))
@@ -98,6 +110,7 @@ class TestingConfig(BaseConfig):
     SECRET_KEY: str = "test-secret-key-pwd301"
     JWT_SECRET_KEY: str = "test-jwt-secret-key-pwd301-minimum-32-bytes!"
     SESSION_COOKIE_SECURE: bool = False
+    USE_PROXY_FIX: bool = False
 
 
 class ProductionConfig(BaseConfig):

@@ -233,14 +233,20 @@ def _format_error_response(
         except Exception:
             pass
 
+    from markupsafe import escape as html_escape
+
+    escaped_code = html_escape(str(code))
+    escaped_msg = html_escape(str(message))
+    escaped_corr = html_escape(str(correlation_id))
+
     html_content = (
         f"<!DOCTYPE html>\n"
         f'<html lang="en">\n'
-        f'<head><meta charset="utf-8"><title>{status_code} {code}</title></head>\n'
+        f'<head><meta charset="utf-8"><title>{status_code} {escaped_code}</title></head>\n'
         f"<body>\n"
-        f"  <h1>{status_code} {code}</h1>\n"
-        f"  <p>{message}</p>\n"
-        f"  <small>Correlation ID: {correlation_id}</small>\n"
+        f"  <h1>{status_code} {escaped_code}</h1>\n"
+        f"  <p>{escaped_msg}</p>\n"
+        f"  <small>Correlation ID: {escaped_corr}</small>\n"
         f"</body>\n"
         f"</html>\n"
     )
@@ -494,6 +500,20 @@ def create_app(
     app.config.from_object(config_obj)
     if config_override:
         app.config.update(config_override)
+
+    # Wrap WSGI app with ProxyFix if running behind reverse proxy
+    if app.config.get("USE_PROXY_FIX", False):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+
+        num_proxies = int(app.config.get("NUM_PROXIES", 1))
+        if num_proxies > 0:
+            app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+                app.wsgi_app,
+                x_for=num_proxies,
+                x_proto=num_proxies,
+                x_host=num_proxies,
+                x_prefix=num_proxies,
+            )
 
     # Initialize extensions
     db.init_app(app)
