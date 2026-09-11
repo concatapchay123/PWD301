@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
@@ -44,15 +45,51 @@ def dashboard() -> Any:
 @student_bp.route("/attempt/<attempt_id>", methods=["GET"])
 @student_required
 def attempt_view(attempt_id: str) -> Any:
-    """Render the student exam taking view with server timer and question palette."""
+    """Render the student exam taking view with server timer, lease token, and question palette."""
     actor = require_authenticated_actor()
-    from pwd301.services.attempt_service import get_attempt_delivery
+    from pwd301.services.attempt_service import (
+        get_attempt_delivery,
+        renew_attempt_lease,
+        takeover_attempt_lease,
+    )
+
+    raw_token = session.get(f"attempt_lease_{attempt_id}")
+    if raw_token:
+        try:
+            renew_attempt_lease(
+                actor=actor,
+                attempt_id=attempt_id,
+                raw_lease_token=raw_token,
+                session=db.session,
+            )
+        except Exception:
+            try:
+                _, raw_token = takeover_attempt_lease(
+                    actor=actor,
+                    attempt_id=attempt_id,
+                    session=db.session,
+                )
+                session[f"attempt_lease_{attempt_id}"] = raw_token
+            except Exception:
+                raw_token = ""
+    else:
+        try:
+            _, raw_token = takeover_attempt_lease(
+                actor=actor,
+                attempt_id=attempt_id,
+                session=db.session,
+            )
+            session[f"attempt_lease_{attempt_id}"] = raw_token
+        except Exception:
+            raw_token = ""
 
     delivery = get_attempt_delivery(
         student_actor=actor,
         attempt_id=attempt_id,
         session=db.session,
     )
+    delivery["lease_token"] = raw_token
+
     if request.accept_mimetypes.accept_html and not request.is_json:
         return render_template("student/attempt.html", delivery=delivery)
     return jsonify(delivery)
@@ -332,3 +369,156 @@ def notifications_center() -> tuple[Response, int] | Response:
     from flask import make_response
 
     return make_response(rendered)
+
+
+@student_bp.route("/notifications/<notification_id>/read", methods=["POST"])
+@student_required
+def student_mark_notification_read(notification_id: str) -> tuple[Response, int] | Response:
+    """Mark a notification as read via Web UI or AJAX."""
+    from pwd301.services.notification_service import mark_notification_as_read
+
+    actor = require_authenticated_actor()
+    result = mark_notification_as_read(
+        actor=actor,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Đã đánh dấu thông báo là đã đọc.", "success")
+        return redirect(url_for("student.notifications_center"))
+    return jsonify(result), 200
+
+
+@student_bp.route("/notifications/mark-all-read", methods=["POST"])
+@student_required
+def student_mark_all_read() -> tuple[Response, int] | Response:
+    """Mark all unread notifications as read via Web UI or AJAX."""
+    from pwd301.services.notification_service import mark_all_as_read
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    category = payload.get("category") or request.args.get("category")
+    count = mark_all_as_read(actor=actor, category=category, session=db.session)
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash(f"Đã đánh dấu {count} thông báo là đã đọc.", "success")
+        return redirect(url_for("student.notifications_center"))
+    return jsonify({"marked_count": count}), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/answers/<attempt_question_id>", methods=["POST", "PUT"])
+@student_required
+def save_student_attempt_answer(
+    attempt_id: str,
+    attempt_question_id: str,
+) -> tuple[Response, int] | Response:
+    """Autosave answer during active student attempt via Web UI / AJAX."""
+    from pwd301.services.attempt_service import save_attempt_answer
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or payload.get("raw_lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+        or ""
+    )
+    result = save_attempt_answer(
+        actor=actor,
+        attempt_id=attempt_id,
+        attempt_question_id=attempt_question_id,
+        payload=payload,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/lease/renew", methods=["POST"])
+@student_required
+def renew_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Response:
+    """Renew editing lease for active exam attempt via Web session."""
+    from pwd301.services.attempt_service import renew_attempt_lease
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+        or ""
+    )
+    result = renew_attempt_lease(
+        actor=actor,
+        attempt_id=attempt_id,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/lease/takeover", methods=["POST"])
+@student_required
+def takeover_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Response:
+    """Take over editing lease for active exam attempt via Web session."""
+    from pwd301.services.attempt_service import takeover_attempt_lease
+
+    actor = require_authenticated_actor()
+    attempt, raw_token = takeover_attempt_lease(
+        actor=actor,
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    session[f"attempt_lease_{attempt_id}"] = raw_token
+    return (
+        jsonify(
+            {
+                "attempt_id": str(attempt.public_id),
+                "status": attempt.status,
+                "lease_token": raw_token,
+                "lease_epoch": attempt.lease_epoch or 1,
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/attempt/<attempt_id>/submit", methods=["POST"])
+@student_required
+def submit_student_attempt(attempt_id: str) -> tuple[Response, int] | Response:
+    """Submit assessment attempt via Web UI / AJAX with idempotency and lease release."""
+    from pwd301.services.attempt_service import submit_assessment_attempt
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    raw_token = (
+        request.headers.get("X-Attempt-Lease-Token")
+        or request.headers.get("X-Lease-Token")
+        or payload.get("lease_token")
+        or session.get(f"attempt_lease_{attempt_id}")
+    )
+    idempotency_key = (
+        request.headers.get("X-Submission-Idempotency-Key")
+        or request.headers.get("X-Idempotency-Key")
+        or payload.get("submission_idempotency_key")
+        or payload.get("idempotency_key")
+        or uuid.uuid4()
+    )
+
+    result = submit_assessment_attempt(
+        actor=actor,
+        attempt_id=attempt_id,
+        idempotency_key=idempotency_key,
+        raw_lease_token=raw_token,
+        session=db.session,
+    )
+    session.pop(f"attempt_lease_{attempt_id}", None)
+
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Nộp bài thi thành công!", "success")
+        return redirect(url_for("student.dashboard"))
+
+    return jsonify(result), 200
+

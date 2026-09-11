@@ -14,9 +14,15 @@
     </div>
     <div class="page-header-actions d-flex align-items-center gap-2 mt-3 mt-md-0">
       {% if current_user is defined and current_user.is_authenticated %}
-        <a href="#dashboard" class="btn btn-primary btn-sm px-3">Bảng điều khiển</a>
+        {% if 'ADMIN' in (current_user.role_codes or []) %}
+          <a href="{{ url_for('admin.dashboard') }}" class="btn btn-primary btn-sm px-3">Bảng điều khiển</a>
+        {% elif 'INSTRUCTOR' in (current_user.role_codes or []) %}
+          <a href="{{ url_for('instructor.dashboard') }}" class="btn btn-primary btn-sm px-3">Bảng điều khiển</a>
+        {% else %}
+          <a href="{{ url_for('student.dashboard') }}" class="btn btn-primary btn-sm px-3">Bảng điều khiển</a>
+        {% endif %}
       {% else %}
-        <a href="#login" class="btn btn-primary btn-sm px-3">Đăng nhập để học</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-sm px-3">Đăng nhập để học</a>
       {% endif %}
     </div>
   </header>
@@ -117,9 +123,15 @@
         Hiện tại chưa có khóa học nào sẵn sàng ở chế độ công khai trong cơ sở dữ liệu. Giảng viên và Quản trị viên sẽ sớm cập nhật và xuất bản các chương trình đào tạo mới.
       </p>
       {% if current_user is defined and current_user.is_authenticated %}
-        <a href="#dashboard" class="btn btn-primary btn-sm px-3.5 py-1.5">Đến Bảng điều khiển của tôi</a>
+        {% if 'ADMIN' in (current_user.role_codes or []) %}
+          <a href="{{ url_for('admin.dashboard') }}" class="btn btn-primary btn-sm px-3.5 py-1.5">Đến Bảng điều khiển của tôi</a>
+        {% elif 'INSTRUCTOR' in (current_user.role_codes or []) %}
+          <a href="{{ url_for('instructor.dashboard') }}" class="btn btn-primary btn-sm px-3.5 py-1.5">Đến Bảng điều khiển của tôi</a>
+        {% else %}
+          <a href="{{ url_for('student.dashboard') }}" class="btn btn-primary btn-sm px-3.5 py-1.5">Đến Bảng điều khiển của tôi</a>
+        {% endif %}
       {% else %}
-        <a href="#login" class="btn btn-primary btn-sm px-3.5 py-1.5">Đăng nhập tài khoản</a>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-sm px-3.5 py-1.5">Đăng nhập tài khoản</a>
       {% endif %}
     </div>
   {% endif %}

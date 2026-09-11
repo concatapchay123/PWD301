@@ -39,7 +39,7 @@
                 <td><span class="badge bg-secondary">{{ att.objective_score or 0 }} đ</span></td>
                 <td><span class="badge bg-warning text-dark">{{ att.pending_essay_count or 1 }} câu</span></td>
                 <td class="text-end pe-4">
-                  <a href="/instructor/grading/{{ att.attempt_id }}" class="btn btn-sm btn-primary">Vào chấm bài →</a>
+                  <a href="{{ url_for('instructor.get_instructor_attempt_grading_route', attempt_id=att.attempt_id) }}" class="btn btn-sm btn-primary">Vào chấm bài →</a>
                 </td>
               </tr>
               {% endfor %}

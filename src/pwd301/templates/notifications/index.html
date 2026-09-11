@@ -10,7 +10,7 @@
       <p class="text-muted small mb-0">Các cập nhật về khóa học, bài thi và hoạt động tài khoản</p>
     </div>
     <div class="d-flex align-items-center gap-2">
-      <form action="{{ url_for('api_notifications.mark_all_read_api') }}" method="POST" class="d-inline" id="mark-all-read-form">
+      <form action="{{ url_for('student.student_mark_all_read') }}" method="POST" class="d-inline" id="mark-all-read-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
         <button type="submit" class="btn btn-outline-secondary btn-sm">
           Đánh dấu tất cả đã đọc
@@ -47,7 +47,7 @@
               <div class="text-end text-nowrap">
                 <span class="text-caption text-muted d-block" style="font-size: 11.5px;">{{ n.created_at[:10] if n.created_at else '' }}</span>
                 {% if not n.read %}
-                <form action="/api/notifications/{{ n.id }}/read" method="POST" class="d-inline">
+                <form action="{{ url_for('student.student_mark_notification_read', notification_id=n.id) }}" method="POST" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
                   <button type="submit" class="btn btn-link btn-sm text-decoration-none p-0 text-caption" style="font-size: 11px;">Đã đọc</button>
                 </form>

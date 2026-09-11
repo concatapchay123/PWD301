@@ -104,43 +104,45 @@
           
           {% if delivery is defined and delivery.questions %}
             {% for q in delivery.questions %}
-            <div class="card border-0 shadow-sm mb-4 question-block" id="question-card-{{ loop.index }}" data-question-id="{{ q.question_id }}" data-ordinal="{{ loop.index }}">
+            {% set qid = q.attempt_question_id or q.question_id %}
+            <div class="card border-0 shadow-sm mb-4 question-block" id="question-card-{{ loop.index }}" data-question-id="{{ qid }}" data-ordinal="{{ loop.index }}">
               <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                 <span class="fw-bold text-primary">Câu hỏi {{ loop.index }}</span>
                 <span class="badge bg-light text-muted border">{{ q.points }} điểm</span>
               </div>
               <div class="card-body p-4">
                 <div class="fs-6 fw-medium text-slate-900 mb-4" style="line-height: 1.6;">
-                  {{ q.content_text }}
+                  {{ q.content or q.content_text }}
                 </div>
 
                 <!-- Multiple / Single Choice -->
                 {% if q.choices %}
-                <div class="options-container">
+                <div class="options-container" id="options-container-{{ qid }}">
                   {% for choice in q.choices %}
-                  <label class="option-label" for="choice-{{ q.question_id }}-{{ choice.choice_id }}">
+                  {% set cval = choice.choice_key or choice.choice_id %}
+                  <label class="option-label" for="choice-{{ qid }}-{{ cval }}">
                     <input class="form-check-input mt-1 me-3 answer-input" 
                            type="{{ 'checkbox' if q.question_type == 'MULTIPLE_CHOICE' else 'radio' }}" 
-                           name="q_{{ q.question_id }}" 
-                           id="choice-{{ q.question_id }}-{{ choice.choice_id }}" 
-                           value="{{ choice.choice_id }}"
-                           onchange="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')">
+                           name="q_{{ qid }}" 
+                           id="choice-{{ qid }}-{{ cval }}" 
+                           value="{{ cval }}"
+                           onchange="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')">
                     <div class="flex-grow-1">
                       <span class="fw-semibold me-2">{{ loop.index | string | replace('1','A') | replace('2','B') | replace('3','C') | replace('4','D') }}.</span>
-                      {{ choice.content_text }}
+                      {{ choice.content or choice.content_text }}
                     </div>
                   </label>
                   {% endfor %}
                 </div>
                 {% elif q.question_type == 'SHORT_ANSWER' %}
                 <div>
-                  <input type="text" class="form-control py-2 answer-input" placeholder="Nhập câu trả lời ngắn của bạn..." 
-                         oninput="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')">
+                  <input type="text" id="text-answer-{{ qid }}" class="form-control py-2 answer-input" placeholder="Nhập câu trả lời ngắn của bạn..." 
+                         oninput="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')">
                 </div>
                 {% elif q.question_type == 'ESSAY' %}
                 <div>
-                  <textarea class="form-control answer-input" rows="6" placeholder="Trình bày chi tiết bài làm tự luận của bạn..." 
-                            oninput="onAnswerChanged('{{ q.question_id }}', '{{ loop.index }}')"></textarea>
+                  <textarea id="text-answer-{{ qid }}" class="form-control answer-input" rows="6" placeholder="Trình bày chi tiết bài làm tự luận của bạn..." 
+                            oninput="onAnswerChanged('{{ qid }}', '{{ loop.index }}', '{{ q.question_type }}')"></textarea>
                 </div>
                 {% endif %}
               </div>
@@ -201,6 +203,11 @@
 <script>
   let remainingSeconds = {{ delivery.remaining_seconds if delivery is defined and delivery.remaining_seconds is not none else 3600 }};
   const attemptId = "{{ delivery.attempt_id if delivery is defined else '' }}";
+  let leaseToken = "{{ delivery.lease_token if delivery is defined and delivery.lease_token else '' }}";
+  let leaseEpoch = {{ delivery.lease_epoch if delivery is defined and delivery.lease_epoch else 1 }};
+  let clientSequence = 0;
+  const csrfToken = "{{ csrf_token() }}";
+  const debounceTimers = {};
 
   function formatTime(secs) {
     const m = Math.floor(secs / 60);
@@ -234,7 +241,7 @@
     }
   }
 
-  function onAnswerChanged(questionId, ordinal) {
+  function onAnswerChanged(questionId, ordinal, questionType) {
     const btn = document.getElementById(`palette-btn-${ordinal}`);
     if (btn) {
       btn.classList.add('answered');
@@ -243,26 +250,135 @@
     if (syncStatus) {
       syncStatus.textContent = 'Đang lưu tự động...';
       syncStatus.className = 'sync-badge sync-saving';
-      setTimeout(() => {
-        syncStatus.textContent = '✓ Đã đồng bộ với máy chủ';
-        syncStatus.className = 'sync-badge sync-saved';
-      }, 800);
     }
+
+    // Debounce autosave: 600ms
+    if (debounceTimers[questionId]) {
+      clearTimeout(debounceTimers[questionId]);
+    }
+    debounceTimers[questionId] = setTimeout(() => {
+      saveAnswerToServer(questionId, questionType, syncStatus);
+    }, 600);
+  }
+
+  function saveAnswerToServer(questionId, questionType, syncStatus) {
+    if (!attemptId) return;
+
+    let payload = {
+      client_sequence_no: ++clientSequence,
+      lease_token: leaseToken,
+      lease_epoch: leaseEpoch
+    };
+
+    if (questionType === 'MULTIPLE_CHOICE') {
+      const checkedBoxes = document.querySelectorAll(`input[name="q_${questionId}"]:checked`);
+      payload.selected_choice_keys = Array.from(checkedBoxes).map(cb => cb.value);
+    } else if (questionType === 'SINGLE_CHOICE') {
+      const checkedRadio = document.querySelector(`input[name="q_${questionId}"]:checked`);
+      payload.selected_choice_keys = checkedRadio ? [checkedRadio.value] : [];
+    } else {
+      const textInput = document.getElementById(`text-answer-${questionId}`);
+      payload.answer_text = textInput ? textInput.value : '';
+    }
+
+    fetch(`/student/attempt/${attemptId}/answers/${questionId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+        'X-Attempt-Lease-Token': leaseToken
+      },
+      body: JSON.stringify(payload)
+    }).then(res => {
+      if (res.ok) {
+        if (syncStatus) {
+          syncStatus.textContent = '✓ Đã đồng bộ với máy chủ';
+          syncStatus.className = 'sync-badge sync-saved';
+        }
+      } else if (res.status === 409) {
+        const leaseAlert = document.getElementById('lease-alert');
+        if (leaseAlert) leaseAlert.classList.remove('d-none');
+        if (syncStatus) {
+          syncStatus.textContent = '⚠ Mất phiên chỉnh sửa';
+          syncStatus.className = 'sync-badge sync-warning';
+        }
+      } else {
+        if (syncStatus) {
+          syncStatus.textContent = '⚠ Lỗi kết nối';
+          syncStatus.className = 'sync-badge sync-warning';
+        }
+      }
+    }).catch(err => {
+      console.warn('Autosave network error:', err);
+      if (syncStatus) {
+        syncStatus.textContent = '⚠ Đang thử lại...';
+        syncStatus.className = 'sync-badge sync-warning';
+      }
+    });
+  }
+
+  function renewLease() {
+    if (!attemptId) return;
+    fetch(`/student/attempt/${attemptId}/lease/takeover`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken
+      }
+    }).then(res => res.json()).then(data => {
+      if (data.lease_token) {
+        leaseToken = data.lease_token;
+        leaseEpoch = data.lease_epoch || (leaseEpoch + 1);
+        const leaseAlert = document.getElementById('lease-alert');
+        if (leaseAlert) leaseAlert.classList.add('d-none');
+        const syncStatus = document.getElementById('sync-status');
+        if (syncStatus) {
+          syncStatus.textContent = '✓ Đã khôi phục phiên';
+          syncStatus.className = 'sync-badge sync-saved';
+        }
+      }
+    }).catch(err => {
+      alert('Không thể khôi phục phiên làm bài: ' + err);
+    });
   }
 
   function submitExam() {
     if (!attemptId) return;
-    fetch(`/api/attempts/${attemptId}/submit`, {
+    const submitBtn = document.querySelector('#submitModal .btn-primary');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Đang nộp bài...';
+    }
+
+    fetch(`/student/attempt/${attemptId}/submit`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}'
+        'X-CSRFToken': csrfToken,
+        'X-Attempt-Lease-Token': leaseToken
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        lease_token: leaseToken
+      })
     }).then(res => {
-      window.location.href = '/student/dashboard';
+      if (res.ok) {
+        window.location.href = '/student/dashboard';
+      } else {
+        return res.json().then(data => {
+          const msg = (data.error && data.error.message) ? data.error.message : 'Nộp bài thất bại.';
+          alert('Lỗi nộp bài: ' + msg);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Nộp bài ngay';
+          }
+        });
+      }
     }).catch(err => {
-      alert('Có lỗi khi nộp bài: ' + err);
+      alert('Có lỗi mạng khi nộp bài: ' + err);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Nộp bài ngay';
+      }
     });
   }
 </script>

@@ -46,6 +46,7 @@
         <div class="form-group mb-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <label class="form-label m-0" for="login-password">Mật khẩu</label>
+            <a href="{{ url_for('auth.forgot_password') }}" class="text-caption text-primary">Quên mật khẩu?</a>
           </div>
           <input type="password" name="password" id="login-password" class="form-control form-control-sm" placeholder="••••••••" required>
         </div>

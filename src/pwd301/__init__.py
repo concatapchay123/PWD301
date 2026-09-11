@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from flask import (
     Flask,
     Response,
+    flash,
     g,
     jsonify,
     make_response,
@@ -617,6 +618,40 @@ def create_app(
         g.pop("jwt_claims", None)
 
         path = request.path
+
+        # Role switching handler for multi-role users (?switch_role=ROLE)
+        switch_role = request.args.get("switch_role")
+        if switch_role and not path.startswith("/api/") and not path.startswith("/static/"):
+            from pwd301.services.authorization_service import get_authenticated_actor
+
+            try:
+                actor = get_authenticated_actor()
+            except Exception:
+                actor = None
+            if actor and switch_role in actor.role_codes:
+                session["active_role"] = switch_role
+                flash(f"Đã chuyển sang vai trò {switch_role}.", "info")
+                if path.startswith("/student/") and switch_role == "INSTRUCTOR":
+                    return redirect(url_for("instructor.dashboard"))
+                if path.startswith("/student/") and switch_role == "ADMIN":
+                    return redirect(url_for("admin.dashboard"))
+                if path.startswith("/instructor/") and switch_role == "STUDENT":
+                    return redirect(url_for("student.dashboard"))
+                if path.startswith("/instructor/") and switch_role == "ADMIN":
+                    return redirect(url_for("admin.dashboard"))
+                if path.startswith("/admin/") and switch_role == "STUDENT":
+                    return redirect(url_for("student.dashboard"))
+                if path.startswith("/admin/") and switch_role == "INSTRUCTOR":
+                    return redirect(url_for("instructor.dashboard"))
+                args = request.args.to_dict()
+                args.pop("switch_role", None)
+                clean_url = request.base_url
+                if args:
+                    from urllib.parse import urlencode
+
+                    clean_url = f"{clean_url}?{urlencode(args)}"
+                return redirect(clean_url)
+
         # Fast path 1: Allow static files, health probes, authentication login/logout,
         # and admin routes without touching DB
         bypass_prefixes = (

@@ -56,12 +56,12 @@
               <td class="text-muted small">{{ c.updated_at.strftime('%d/%m/%Y %H:%M') if c.updated_at else '—' }}</td>
               <td class="text-end pe-3">
                 <div class="d-inline-flex gap-2">
-                  <form method="POST" action="{{ url_for('admin.approve_or_reject_course', course_id=c.public_id) }}" class="d-inline">
+                  <form method="POST" action="{{ url_for('admin.review_course', course_id=c.public_id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="approve">
                     <button type="submit" class="btn btn-sm btn-success px-3">Phê duyệt</button>
                   </form>
-                  <form method="POST" action="{{ url_for('admin.approve_or_reject_course', course_id=c.public_id) }}" class="d-inline">
+                  <form method="POST" action="{{ url_for('admin.review_course', course_id=c.public_id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="reject">
                     <button type="submit" class="btn btn-sm btn-outline-danger px-2" onclick="return confirm('Bạn có chắc chắn muốn trả về bản thảo?')">Từ chối</button>

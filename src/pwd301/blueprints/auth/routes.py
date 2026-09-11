@@ -167,8 +167,19 @@ def login() -> Any:
     if user.roles:
         session["active_role"] = user.roles[0].code
 
+    # Determine role-aware default landing dashboard
+    user_role_codes = {r.code for r in user.roles}
+    if "ADMIN" in user_role_codes:
+        default_landing = url_for("admin.dashboard")
+    elif "INSTRUCTOR" in user_role_codes:
+        default_landing = url_for("instructor.dashboard")
+    elif "STUDENT" in user_role_codes:
+        default_landing = url_for("student.dashboard")
+    else:
+        default_landing = url_for("core.index")
+
     # Safe next_url redirect to prevent open-redirect vulnerabilities
-    target_url = url_for("core.index")
+    target_url = default_landing
     if next_url and _is_safe_redirect_url(next_url):
         target_url = next_url
 

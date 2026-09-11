@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
@@ -598,6 +598,10 @@ def create_course_question_route(course_id: str) -> tuple[Response, int] | Respo
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     question = create_question(actor, course_id, payload, session=db.session)
+
+    if not request.is_json and request.accept_mimetypes.accept_html:
+        flash("Đã thêm câu hỏi mới thành công vào ngân hàng câu hỏi.", "success")
+        return redirect(url_for("instructor.list_course_questions_route", course_id=course_id))
 
     return jsonify(_serialize_question(question)), 201
 

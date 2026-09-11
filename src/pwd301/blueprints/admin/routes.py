@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import Response, jsonify, render_template, request
+from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
@@ -49,6 +49,21 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
     }
+
+
+def _is_api_request() -> bool:
+    """Determine whether the incoming request expects a JSON/API response."""
+    if request.path.startswith("/api/"):
+        return True
+    if request.is_json:
+        return True
+    if (
+        request.accept_mimetypes.accept_html
+        and request.accept_mimetypes["text/html"] > request.accept_mimetypes["application/json"]
+    ):
+        return False
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best == "application/json"
 
 
 @admin_bp.route("/dashboard", methods=["GET"])
@@ -239,6 +254,9 @@ def review_course(course_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
 
     if action not in ("approve", "reject"):
+        if not _is_api_request():
+            flash("Hành động duyệt không hợp lệ (chỉ chấp nhận 'approve' hoặc 'reject').", "danger")
+            return redirect(url_for("admin.admin_courses"))
         return (
             jsonify(
                 {
@@ -258,6 +276,10 @@ def review_course(course_id: str) -> tuple[Response, int] | Response:
         new_status=target_status,
         reason=reason,
     )
+    if not _is_api_request():
+        status_label = "được phê duyệt" if action == "approve" else "bị từ chối (trả về bản thảo)"
+        flash(f"Khóa học '{course.title}' đã {status_label} thành công.", "success")
+        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -295,6 +317,9 @@ def publish_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="PUBLISHED",
         reason=reason,
     )
+    if not _is_api_request():
+        flash(f"Khóa học '{course.title}' đã được xuất bản công khai.", "success")
+        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -308,6 +333,9 @@ def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
+    if not _is_api_request():
+        flash(f"Khóa học '{course.title}' đã được chuyển vào thùng rác.", "warning")
+        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -326,6 +354,9 @@ def restore_course(course_id: str) -> tuple[Response, int] | Response:
         new_status="ARCHIVED",
         reason=reason,
     )
+    if not _is_api_request():
+        flash(f"Khóa học '{course.title}' đã được khôi phục về trạng thái lưu trữ.", "success")
+        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -391,16 +422,6 @@ def admin_retry_failed_emails() -> tuple[Response, int] | Response:
         session=db.session,
     )
     return jsonify({"retried_count": count}), 200
-
-
-def _is_api_request() -> bool:
-    """Determine whether the incoming request expects a JSON/API response."""
-    if request.path.startswith("/api/"):
-        return True
-    if request.is_json:
-        return True
-    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
-    return best == "application/json"
 
 
 @admin_bp.route("/audit-logs", methods=["GET"])
@@ -506,6 +527,10 @@ def admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
         session=db.session,
     )
 
+    if not _is_api_request():
+        flash(f"Tài khoản {user.email} đã bị đình chỉ.", "warning")
+        return redirect(url_for("admin.admin_users"))
+
     return (
         jsonify(
             {
@@ -537,6 +562,10 @@ def admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
         session=db.session,
     )
 
+    if not _is_api_request():
+        flash(f"Tài khoản {user.email} đã được mở khóa/kích hoạt lại thành công.", "success")
+        return redirect(url_for("admin.admin_users"))
+
     return (
         jsonify(
             {
@@ -566,6 +595,10 @@ def admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response
         reason=reason,
         session=db.session,
     )
+
+    if not _is_api_request():
+        flash(f"Toàn bộ phiên đăng nhập của tài khoản {user.email} đã bị thu hồi (auth_version={user.auth_version}).", "info")
+        return redirect(url_for("admin.admin_users"))
 
     return (
         jsonify(
@@ -619,6 +652,9 @@ def admin_create_backup() -> tuple[Response, int] | Response:
         notes=notes,
         session=db.session,
     )
+    if not _is_api_request():
+        flash(f"Bản sao lưu '{backup.database_backup_name}' đã được tạo thành công.", "success")
+        return redirect(url_for("admin.admin_list_backups"))
     return (
         jsonify(
             {
@@ -645,6 +681,12 @@ def admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
     """Execute cryptographic SHA-256 verification and file structure check."""
     actor = require_authenticated_actor()
     result = verify_backup_integrity(actor, backup_id, session=db.session)
+    if not _is_api_request():
+        if result.get("integrity_status") == "VERIFIED":
+            flash("Xác minh tính toàn vẹn SHA-256 thành công. Bản sao lưu hợp lệ.", "success")
+        else:
+            flash(f"Xác minh bản sao lưu: {result.get('integrity_status')}.", "warning")
+        return redirect(url_for("admin.admin_list_backups"))
     return jsonify(result), 200
 
 
@@ -654,6 +696,9 @@ def admin_dry_run_restore(backup_id: str) -> tuple[Response, int] | Response:
     """Execute a dry-run restoration drill verifying schema compatibility with zero mutations."""
     actor = require_authenticated_actor()
     result = execute_dry_run_restore(actor, backup_id, session=db.session)
+    if not _is_api_request():
+        flash("Diễn tập khôi phục (dry-run) thành công. Tương thích cấu trúc 100%, không ghi đè CSDL.", "success")
+        return redirect(url_for("admin.admin_list_backups"))
     return jsonify(result), 200
 
 
