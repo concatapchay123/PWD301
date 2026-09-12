@@ -94,3 +94,36 @@ def test_non_negotiable_invariants_in_config() -> None:
 
     # Enrollment detail retention is 30 days
     assert BaseConfig.ENROLLMENT_DETAIL_RETENTION_DAYS == 30
+
+
+def test_base_and_development_config_refresh_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that BaseConfig and DevelopmentConfig reload dynamic environment settings."""
+    monkeypatch.setenv("SECRET_KEY", "custom-dynamic-secret-key")
+    monkeypatch.setenv("JWT_SECRET_KEY", "custom-dynamic-jwt-secret-min32bytes-ok!")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///instance/custom_dev.db")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+    dev = DevelopmentConfig()
+    assert dev.SECRET_KEY == "custom-dynamic-secret-key"
+    assert dev.JWT_SECRET_KEY == "custom-dynamic-jwt-secret-min32bytes-ok!"
+    assert dev.SQLALCHEMY_DATABASE_URI == "sqlite:///instance/custom_dev.db"
+    assert dev.LOG_LEVEL == "DEBUG"
+
+
+def test_testing_config_isolates_database_from_environment_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify TestingConfig never inherits development/production DATABASE_URL."""
+    monkeypatch.setenv("DATABASE_URL", "mssql+pyodbc://prod_server:1433/PWD301")
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+
+    test_cfg = TestingConfig()
+    # Must remain isolated in-memory SQLite
+    assert test_cfg.SQLALCHEMY_DATABASE_URI == "sqlite:///:memory:"
+
+    # Explicit TEST_DATABASE_URL override works as expected
+    monkeypatch.setenv("TEST_DATABASE_URL", "sqlite:///test_explicit.db")
+    test_cfg_explicit = TestingConfig()
+    assert test_cfg_explicit.SQLALCHEMY_DATABASE_URI == "sqlite:///test_explicit.db"

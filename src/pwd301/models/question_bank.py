@@ -246,6 +246,42 @@ class QuestionRevision(Base):
         order_by="QuestionRevisionAcceptedAnswer.position",
     )
 
+    @property
+    def prompt_markdown(self) -> str:
+        """Alias for content conforming to task description."""
+        return self.content
+
+    @prompt_markdown.setter
+    def prompt_markdown(self, value: str) -> None:
+        self.content = value
+
+    @property
+    def explanation_markdown(self) -> str | None:
+        """Alias for explanation conforming to task description."""
+        return self.explanation
+
+    @explanation_markdown.setter
+    def explanation_markdown(self, value: str | None) -> None:
+        self.explanation = value
+
+    @property
+    def is_exposed(self) -> bool:
+        """Alias for was_student_exposed conforming to task description."""
+        return self.was_student_exposed
+
+    @is_exposed.setter
+    def is_exposed(self, value: bool) -> None:
+        self.was_student_exposed = value
+
+    @property
+    def has_student_answers(self) -> bool:
+        """Alias for was_used_for_grading conforming to task description."""
+        return self.was_used_for_grading
+
+    @has_student_answers.setter
+    def has_student_answers(self, value: bool) -> None:
+        self.was_used_for_grading = value
+
 
 class QuestionRevisionChoice(Base):
     """Multiple choice options for a revision mapping to 'question_revision_choices' table."""
@@ -298,6 +334,32 @@ class QuestionRevisionChoice(Base):
     )
 
     question_revision = relationship("QuestionRevision", back_populates="choices")
+
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Alias for choice_key conforming to ADR-002 and task description."""
+        return self.choice_key
+
+    @property
+    def revision_id(self) -> int:
+        """Alias for question_revision_id conforming to task description."""
+        return self.question_revision_id
+
+    @revision_id.setter
+    def revision_id(self, value: int) -> None:
+        self.question_revision_id = value
+
+    @property
+    def content_markdown(self) -> str:
+        """Alias for content conforming to task description."""
+        return self.content
+
+    @content_markdown.setter
+    def content_markdown(self, value: str) -> None:
+        self.content = value
+
+
+QuestionChoice = QuestionRevisionChoice
 
 
 class QuestionRevisionAcceptedAnswer(Base):

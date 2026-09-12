@@ -26,6 +26,7 @@ from pwd301.services.assessment_service import (
     trash_assessment,
     trigger_assessment_regrade,
     update_assessment,
+    update_question_assignment,
 )
 from pwd301.services.authorization_service import (
     instructor_required,
@@ -225,6 +226,26 @@ def remove_question_route(assessment_id: str, question_id: str) -> tuple[Respons
     remove_question_assignment(actor, assessment_id, question_id, session=db.session)
 
     return jsonify({"message": "Question unassigned successfully."}), 200
+
+
+@api_assessment_bp.route("/<assessment_id>/questions/<question_id>", methods=["PATCH"])
+@jwt_required
+@instructor_required
+def update_question_assignment_route(
+    assessment_id: str, question_id: str
+) -> tuple[Response, int] | Response:
+    """Update assigned question points or configuration (ASSESS-003).
+
+    PATCH /api/assessments/<assessment_id>/questions/<question_id>
+    """
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or {}
+    assignment = update_question_assignment(
+        actor, assessment_id, question_id, payload, session=db.session
+    )
+
+    return jsonify(_serialize_assignment(assignment)), 200
 
 
 @api_assessment_bp.route("/<assessment_id>/blueprint", methods=["POST"])

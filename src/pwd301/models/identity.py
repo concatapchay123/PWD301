@@ -299,6 +299,11 @@ class UserRole(Base):
 
     __table_args__ = (sa.Index("ix_user_roles_role", "role_id", "user_id"),)
 
+    @property
+    def assigned_by(self) -> int | None:
+        """Alias for assigned_by_user_id conforming to task description."""
+        return self.assigned_by_user_id
+
     user = relationship(
         "User",
         foreign_keys=[user_id],

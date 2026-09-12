@@ -470,12 +470,15 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         data={"email": test_users["admin_email"], "password": "AdminPassword123!"},
         follow_redirects=True,
     )
-    admin_download = client.get(f"/admin/instructor-applications/{app_id}/evidence/{saved_filename}")
+    admin_download = client.get(
+        f"/admin/instructor-applications/{app_id}/evidence/{saved_filename}"
+    )
     assert admin_download.status_code == 200
     assert admin_download.data == file_content
     assert "attachment" in admin_download.headers.get("Content-Disposition", "")
 
     # 6. Path traversal attempt -> 404
-    traversal_resp = client.get(f"/admin/instructor-applications/{app_id}/evidence/..%2F..%2Fconfig.py")
+    traversal_resp = client.get(
+        f"/admin/instructor-applications/{app_id}/evidence/..%2F..%2Fconfig.py"
+    )
     assert traversal_resp.status_code in (404, 400)
-

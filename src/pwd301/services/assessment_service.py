@@ -15,6 +15,7 @@ Implements business logic and invariants for:
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -654,16 +655,24 @@ def update_assessment(
             if _normalize_dt(new_open) != _normalize_dt(assessment.open_at):
                 raise AssessmentLockedError("Assessment timing (open_at) is locked after publish.")
 
-        if "time_limit_minutes" in payload:
-            raw_tl = payload.get("time_limit_minutes")
+        if "time_limit_minutes" in payload or "duration_minutes" in payload:
+            raw_tl = (
+                payload.get("time_limit_minutes")
+                if "time_limit_minutes" in payload
+                else payload.get("duration_minutes")
+            )
             new_tl = int(raw_tl) if raw_tl is not None and raw_tl != "" else None
             if new_tl != assessment.time_limit_minutes:
                 raise AssessmentLockedError(
                     "Assessment timing (time_limit_minutes) is locked after publish."
                 )
 
-        if "attempt_limit" in payload:
-            raw_al = payload.get("attempt_limit")
+        if "attempt_limit" in payload or "max_attempts" in payload:
+            raw_al = (
+                payload.get("attempt_limit")
+                if "attempt_limit" in payload
+                else payload.get("max_attempts")
+            )
             new_al = int(raw_al) if raw_al is not None and raw_al != "" else None
             if new_al != assessment.attempt_limit:
                 raise AssessmentLockedError(
@@ -674,7 +683,7 @@ def update_assessment(
             new_close = _parse_iso_datetime(payload.get("close_at"), "close_at")
             cur_close = _normalize_dt(assessment.close_at)
             norm_new_close = _normalize_dt(new_close)
-            if cur_close is not None and norm_new_close is not None and norm_new_close <= cur_close:
+            if cur_close is not None and (norm_new_close is None or norm_new_close <= cur_close):
                 raise AssessmentLockedError("close_at can only be extended forward after publish.")
 
     # Apply updates
@@ -906,6 +915,71 @@ def publish_assessment(
         raise AssessmentStateViolationError(
             f"Cannot publish assessment in status '{assessment.status}'."
         )
+
+    # Blueprint Preflight Verification (Algorithm 05 & ASSESS-004)
+    shortage_report: list[dict[str, Any]] = []
+    assigned_qids = {a.question_id for a in assessment.question_assignments}
+    has_blueprint_rules = False
+    used_qids = set(assigned_qids)
+
+    for bp in assessment.blueprints:
+        if not bp.rules:
+            continue
+        has_blueprint_rules = True
+        for rule in sorted(bp.rules, key=lambda r: r.position):
+            cand_query = (
+                sess.query(Question.id)
+                .join(
+                    QuestionRevision,
+                    sa.and_(
+                        Question.id == QuestionRevision.question_id,
+                        QuestionRevision.is_current.is_(True),
+                    ),
+                )
+                .filter(
+                    Question.course_id == assessment.course_id,
+                    Question.status == "ACTIVE",
+                    Question.deleted_at.is_(None),
+                )
+            )
+            if rule.lesson_id is not None:
+                cand_query = cand_query.filter(Question.lesson_id == rule.lesson_id)
+            if rule.difficulty is not None:
+                cand_query = cand_query.filter(Question.difficulty == rule.difficulty)
+            if rule.question_type is not None:
+                cand_query = cand_query.filter(QuestionRevision.question_type == rule.question_type)
+
+            all_matching_ids = [row[0] for row in cand_query.all()]
+            eligible = [qid for qid in all_matching_ids if qid not in used_qids]
+
+            if len(eligible) < rule.question_count:
+                rule_desc = f"{rule.difficulty or 'ANY'}/{rule.question_type or 'ANY'}"
+                shortage_report.append(
+                    {
+                        "rule_id": str(getattr(rule, "public_id", rule.id)),
+                        "position": rule.position,
+                        "description": rule_desc,
+                        "required": rule.question_count,
+                        "available": len(eligible),
+                    }
+                )
+            used_qids.update(eligible[: rule.question_count])
+
+    if shortage_report:
+        report_details = "; ".join(
+            (
+                f"Rule pos {s['position']} ({s['description']}): "
+                f"required {s['required']}, available {s['available']}"
+            )
+            for s in shortage_report
+        )
+        raise BlueprintValidationError(
+            f"Blueprint question shortage detected. Cannot publish assessment: {report_details}"
+        )
+
+    # Materialize candidate pool if blueprint exists to ensure fresh and synchronized pool
+    if has_blueprint_rules:
+        materialize_blueprint_pool(actor=actor, assessment_id=assessment.id, session=sess)
 
     # Publish Gate: at least 1 question assigned or materialized in pool (AC-05)
     questions_count, total_points = _calculate_assessment_aggregates(assessment, session=sess)
@@ -1364,6 +1438,93 @@ def remove_question_assignment(
     return True
 
 
+def update_question_assignment(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    question_id: Question | int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> AssessmentQuestionAssignment:
+    """Update assigned question points or configuration (ASSESS-003).
+
+    Structure & points freeze invariant:
+    If assessment.first_attempt_started_at is not None, modifying points or structure
+    is strictly forbidden and raises AssessmentLockedError.
+    """
+    sess = session if session is not None else db.session
+
+    assessment = _resolve_assessment(assessment_id, session=sess, include_deleted=False)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    # Structure and points freeze invariant check (ASSESS-003 / AC-06)
+    if assessment.first_attempt_started_at is not None:
+        raise AssessmentLockedError(
+            "Assessment question points cannot be modified after student attempt has started."
+        )
+
+    question = _resolve_question(question_id, session=sess)
+    if question is None:
+        raise QuestionNotFoundError("Question not found.")
+
+    assignment = (
+        sess.query(AssessmentQuestionAssignment)
+        .filter(
+            AssessmentQuestionAssignment.assessment_id == assessment.id,
+            AssessmentQuestionAssignment.question_id == question.id,
+        )
+        .first()
+    )
+    if assignment is None:
+        raise AssessmentValidationError("Question is not assigned to this assessment.")
+
+    if "points" in payload or "points_assigned" in payload:
+        raw_pts = payload["points"] if "points" in payload else payload["points_assigned"]
+        try:
+            pts = Decimal(str(raw_pts)).quantize(Decimal("0.0001"))
+            if pts <= 0:
+                raise AssessmentValidationError("Question points must be greater than 0.")
+        except (ValueError, TypeError, ArithmeticError) as err:
+            raise AssessmentValidationError("Invalid points value.") from err
+        assignment.points = pts
+
+    if "position" in payload and payload["position"] is not None:
+        try:
+            pos = int(payload["position"])
+            if pos <= 0:
+                raise AssessmentValidationError("Position must be greater than 0.")
+            assignment.position = pos
+        except (ValueError, TypeError) as err:
+            raise AssessmentValidationError("Position must be an integer.") from err
+
+    if "section_id" in payload:
+        sec_val = payload["section_id"]
+        if sec_val is None:
+            assignment.section_id = None
+        else:
+            sec = _resolve_section(assessment, sec_val)
+            if sec is None:
+                raise AssessmentSectionNotFoundError("Section not found in assessment.")
+            assignment.section_id = sec.id
+
+    if "is_mandatory" in payload:
+        assignment.is_mandatory = bool(payload["is_mandatory"])
+    if "shuffle_choices_override" in payload:
+        assignment.shuffle_choices_override = payload["shuffle_choices_override"]
+
+    assessment.updated_at = utc_now()
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return assignment
+
+
 # ============================================================================
 # SERVICE FUNCTIONS: BLUEPRINT & ALGORITHM 05 MATERIALIZATION
 # ============================================================================
@@ -1579,7 +1740,11 @@ def materialize_blueprint_pool(
                 f"required {rule.question_count}, found {len(eligible)} eligible."
             )
 
-        chosen = eligible[: rule.question_count]
+        chosen = (
+            secrets.SystemRandom().sample(eligible, rule.question_count)
+            if len(eligible) > rule.question_count
+            else eligible
+        )
         for q in chosen:
             selected_qids.add(q.id)
             new_pool_entries.append((rule, q))

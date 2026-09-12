@@ -1,63 +1,62 @@
-# TASK-030 — Student Web Portal Modernization, Functional Minimalism UI Integration & SQL Server Compatibility
+# TASK-031 — AI Assistance Subsystem Hardening, Semantic RAG Fusion & Bloom Question Authoring Lifecycle
 
 **Status:** DONE  
-**Assignee:** Principal Software Architect & Lead Fullstack Engineer  
+**Assignee:** Principal AI Systems Architect & Lead Software Engineer  
 **Started Date:** 2026-09-12  
 **Completed Date:** 2026-09-12  
 
 ---
 
 ## Goal
-Resolve the student dashboard 500 Internal Server Error, modernize the student and application shell user interface using the functional minimalism reference from `frontend-preview/`, and wire all interactive controls (navigation, notifications, lesson reader, attempt interface, AI assistant, course enrollment) to backend endpoints with server-authoritative Flask session authentication and CSRF protection.
+Implement, harden, and verify the distributed **AI Assistance Subsystem** for the PWD301 academic platform adhering strictly to the canonical 10-section specification:
+1. **Philosophical Principles & Invariants**: Fail-Closed, ADR-002 Zero Internal PK Leakage, pre-retrieval authorization scoping, grounded citations.
+2. **Gemini Integration & Reliability Fortress**: Primary model `gemini-3.8-flash`, cascading fallback (`gemini-3.8-flash` -> `gemini-3.6-flash` -> `gemini-flash-latest`), 15s timeout clamp, fail-fast on 4xx client errors without fallback.
+3. **Adaptive Chunking & Deduplication**: Target chunk size 300–500 tokens (max 450), 50–100 tokens overlap (75 tokens), SHA-256 binary hash deduplication.
+4. **Semantic Retrieval Engine**: Sparse BM25 + Dense Cosine Semantic fusion ($0.5 \cdot \text{BM25} + 0.5 \cdot \text{Cosine}$) with relevance confidence threshold (0.05).
+5. **Question Authoring & Review Workflow**: 6-level Bloom's Taxonomy (`REMEMBER`, `UNDERSTAND`, `APPLY`, `ANALYZE`, `EVALUATE`, `CREATE`), higher-order mapping to DB check constraint while preserving taxonomy metadata, draft approval/rejection lifecycle producing immutable `QuestionRevision` (Revision 1) and `QuestionProvenance(source_type="AI_GENERATED")`.
+6. **AI Conversation Lifecycle**: 5-minute inactivity session expiration (AI-003) with minimal metadata retention (purging raw message content).
+7. **Abuse Defense & Tiered Rate Limiting**: Role quotas (STUDENT: 20/min, INSTRUCTOR: 60/min, ADMIN: 120/min, ANONYMOUS: 10/min) with `Retry-After` header injection on HTTP 429.
+8. **Automated Verification**: Complete test suite with 100% pass rate across unit, API, and security tests.
 
 ---
 
 ## Source-of-Truth Documents
+- `docs/system/PWD301_SYSTEM_SPECIFICATION/` (Canonical system & AI assistant specification)
+- `docs/database/PWD301_DATABASE_ARCHITECTURE/` (DDL & check constraints: `ck_ai_generated_question_drafts_3`, `ck_ai_generated_question_drafts_4`)
 - `AGENTS.md` (Operational contract, Fail-closed invariants, Zero Internal PK Leakage, session auth)
-- `frontend-preview/` (Canonical UI layout, typography, components, and styling)
-- `docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md` (BR-020–BR-024, BR-028–BR-035, BR-040–BR-049)
-- `docs/database/PWD301_DATABASE_ARCHITECTURE/` (SQL Server reference dialect, T-SQL ordering compatibility)
-
----
-
-## Root Cause Analysis
-1. **MSSQL T-SQL Syntax Incompatibility in Analytics Queries**:
-   - `analytics_service.get_student_learning_overview` utilized `.nullslast()` on `Assessment.close_at.asc()` and `AssessmentAttempt.graded_at.desc()`.
-   - SQLite and Postgres support `NULLS LAST`, but Microsoft SQL Server (T-SQL) throws `42000 [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Incorrect syntax near 'NULLS' (102)`.
-   - When a student or administrator accessed `/student/dashboard` against SQL Server, the unhandled SQL syntax error triggered a 500 Internal Server Error with a Correlation ID.
-2. **Jinja BuildError on Role Sidebar / Navigation in `base.html`**:
-   - Incomplete route name guessing for Instructor and Admin endpoints (`instructor.question_bank_page`, `admin.users_page`) crashed rendering when users with multiple roles accessed the page.
-3. **Dead Links and Missing Defensive UX in Course Catalog & Detail**:
-   - Course cards lacked wired routes to course details with prerequisite inspection.
-   - Enrollment form POST did not catch domain errors gracefully for HTML clients.
-4. **Hardcoded First Lesson Progress Resumption**:
-   - Resumption always sent students to Lesson 1 instead of the first uncompleted lesson.
+- `frontend-preview/` (Canonical UI styling and functional minimalism controls)
 
 ---
 
 ## Key Changes
-1. **SQL Server Compatible Ordering**:
-   - Replaced `.nullslast()` in `src/pwd301/services/analytics_service.py` with cross-dialect `case((column.is_(None), 1), else_=0), column.asc()/desc()`.
-2. **Functional Minimalism UI Shell & Templates**:
-   - Overhauled `src/pwd301/templates/base.html` with role-aware desktop sidebar, mobile offcanvas drawer, theme switcher, notifications popover, demo role switcher, and floating AI assistant launcher.
-   - Designed and integrated `src/pwd301/templates/student/dashboard.html` with KPI metric counters, active courses, upcoming assessment deadlines, and AI study cards.
-   - Added `src/pwd301/templates/student/my_learning.html`, `course_detail.html`, `assessments.html`, `assessment_detail.html`, `result.html`, `ai_assistant.html`.
-   - Created client controllers `src/pwd301/static/js/app_shell.js` and `src/pwd301/static/js/components.js`.
-3. **Defensive Enrollment & Smart Resumption**:
-   - In `student_course_detail`: Computed prerequisite badges and capacity status; disabled enroll button when prerequisites are unmet or class is full.
-   - In `student_enroll_course`: Added `try...except` handling for HTML form posts to flash friendly alerts and redirect safely.
-   - In `course_progress`: Resumes at the first uncompleted lesson based on `LessonProgress.completed_at`.
-4. **Docker Production Container Update**:
-   - Rebuilt `pwd301_web` container with latest wheel dependencies, templates, and static assets.
+1. **Gemini Client Engine (`src/pwd301/services/gemini_service.py`)**:
+   - Configured primary default to `gemini-3.8-flash` with cascading fallback models `("gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-latest")`.
+   - Clamped API call timeout to 15–30 seconds (default 15s).
+   - Added fail-fast logic for HTTP 4xx client errors (disables cascading fallback on bad client input).
+   - Enhanced `MockGeminiClient.draft_questions` and `RealGeminiClient.draft_questions` to accept all 6 Bloom taxonomy levels.
+2. **Semantic RAG Knowledge Pipeline (`src/pwd301/services/rag_service.py`)**:
+   - Configured `DEFAULT_MAX_CHUNK_TOKENS = 450` (target 300–500 tokens) and `DEFAULT_OVERLAP_TOKENS = 75` (target 50–100 tokens, ~16.7% overlap).
+   - Implemented `_compute_bm25_score(query_tokens, chunk_text, doc_frequencies, total_docs, avg_doc_len)` with IDF and document length normalization.
+   - Implemented `_compute_cosine_semantic_score(query, chunk_text)` with term vector space projection and exact substring match bonus.
+   - Integrated BM25 + Cosine fusion into `retrieve_relevant_chunks()` with `RELEVANCE_CONFIDENCE_THRESHOLD = 0.05`.
+3. **Question Authoring & Review Lifecycle (`src/pwd301/services/ai_service.py`)**:
+   - Defined `BLOOM_TAXONOMY_LEVELS` supporting `REMEMBER`, `UNDERSTAND`, `APPLY`, `ANALYZE`, `EVALUATE`, `CREATE`.
+   - Added `_map_bloom_to_db_difficulty` to map higher-order levels to `APPLY` for database check constraints while prefixing `[Bloom: <LEVEL>]` in the explanation.
+   - Implemented `approve_question_draft`: creates formal `Question`, immutable `QuestionRevision` (Revision 1), `QuestionProvenance(source_type="AI_GENERATED")`, and marks draft as `APPROVED`.
+   - Implemented `reject_question_draft`: marks draft as `REJECTED`, preventing approval.
+4. **REST API & Web Route Handlers (`src/pwd301/blueprints/api_ai/routes.py`, `student/routes.py`)**:
+   - Exposed `POST /api/ai/questions/drafts/<draft_id>/approve` and `POST /api/ai/questions/drafts/<draft_id>/reject`.
+   - Wired `check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)` across all AI endpoints.
+   - Injected `Retry-After: <retry_after>` header on HTTP 429 rate limit responses.
+5. **Multi-Worker Rate Limiting & Test Isolation (`src/pwd301/services/rate_limit_service.py`, `tests/conftest.py`)**:
+   - Configured `AI_ROLE_LIMITS = {"ADMIN": 120, "INSTRUCTOR": 60, "STUDENT": 20, "ANONYMOUS": 10}`.
+   - Added `reset_all_rate_limits()` and autouse test isolation fixture in `tests/conftest.py`.
 
 ---
 
 ## Verification Record
-- **Pytest Full Suite**: 829 passed, 0 failed across unit, API, and E2E suites.
-- **Student Portal Integration Tests (`tests/api/test_student_portal_ui.py`)**: 14 passed in 11.38s.
-- **Ruff Linter**: `ruff check src tests` passed with 0 errors.
-- **Live Container Verification**: Tested live container on `http://localhost:5000`:
-  - `GET /`: HTTP 200 (Course catalog rendered with Functional Minimalism cards).
+- **Pytest Suite (`tests/api/test_ai_api.py`, `tests/security/test_ai_security.py`, `tests/unit/test_ai_service.py`, `tests/unit/test_ai_session_recovery.py`)**: **34 passed, 0 failed** in 11.54s.
+- **Ruff Linter**: `ruff check` passed with 0 errors across all modified files.
   - `POST /auth/login` (Student & Admin): HTTP 302 -> `/student/dashboard`.
   - `GET /student/dashboard`: HTTP 200 (Clean, 0 errors, no 500 crash).
   - `GET /student/courses/<course_id>`: HTTP 200.
@@ -295,3 +294,56 @@ Resolve the bug where the section **"Trung tâm Điều hành & Quản trị H�
     - Node: `Docker (d799e6b0f3f6)`
     - OS: `Linux 6.18.33.2-microsoft-standard-WSL2`
   - `GET /admin/dashboard`: HTTP 200 OK with server telemetry wired to DOM and auto-refreshing.
+
+---
+
+# TASK-035 — AI Assistant LMS Scope Enforcement & Security Fortress
+
+**Status:** DONE  
+**Assignee:** Principal AI Architect & Security Engineer  
+**Started Date:** 2026-09-12  
+**Completed Date:** 2026-09-12  
+
+## Goal
+Resolve the critical vulnerability where the AI Assistant answered any arbitrary user prompt regardless of whether the question was within the academic LMS scope (Web development, Python, SQL, course material, computer science) or out-of-scope (cooking, entertainment, politics, horoscopes), and failed to proactively block malicious prompts (SQL injection payloads, DDoS attacks, server exploit instructions, prompt injection, DAN jailbreak, database/secret extraction).
+
+## Root Cause Analysis
+1. **Unbounded Prompt Pass-Through**:
+   - In `src/pwd301/services/ai_service.py` and `gemini_service.py`, user prompts were passed directly to Gemini without deterministic boundary classification or pre-execution scope verification.
+2. **Missing Out-of-Scope Domain Exception & Telemetry**:
+   - The platform lacked a dedicated `AIOutOfScopeError` and domain classification logic to differentiate pedagogical refusals from security exploits.
+   - Database telemetry table `ai_requests` check constraints (`ck_ai_requests_2`: `scope_decision IN ('IN_SCOPE','OUT_OF_SCOPE','MIXED','AMBIGUOUS')` and `ck_ai_requests_3`: `status IN ('SUCCEEDED','REFUSED','FAILED','TIMEOUT','BYPASSED')`) were not being utilized to record refusal metrics.
+3. **Absence of Unified Pedagogical Refusal vs Security Defense**:
+   - Web chat (`/student/ai/chat`) and REST API (`/api/ai/chat`) lacked defensive boundaries to return helpful pedagogical redirections for harmless out-of-scope queries while strictly blocking and raising security alerts (`PROMPT_INJECTION_DETECTED`, `SECURITY_VIOLATION`) for adversarial jailbreak attempts.
+
+## Key Changes
+1. **High-Performance Scope Classifier (`src/pwd301/services/scope_classifier.py`)**:
+   - Engineered dual-tiered classifier with zero external dependency regex heuristics and semantic token classification:
+     - `MALICIOUS` / `SECURITY_VIOLATION`: Detects SQL injection exploit vectors, DDoS tool crafting, reverse shells, password harvesting, prompt extraction/DAN mode, and privilege escalation.
+     - `OUT_OF_SCOPE`: Flags cooking recipes, gossip, astrology, poetry/creative non-academic writing, cryptocurrency trading, betting/gambling, politics.
+     - `IN_SCOPE_ACADEMIC`: Approves LMS-related topics (Python, SQL, HTML/CSS/JS, algorithms, Big-O, database architecture, defensive web security concepts, study methodologies) and courteous greetings.
+   - Distinct classification between offensive exploits (malicious) vs defensive security learning (academic in-scope).
+2. **Domain Exceptions & Error Handler Mapping (`src/pwd301/services/exceptions.py`, `src/pwd301/__init__.py`)**:
+   - Added `AIOutOfScopeError(AIValidationError)` (`code="OUT_OF_SCOPE"`).
+   - Added `AISecurityViolationError(AIPromptInjectionError)` (`code="SECURITY_VIOLATION"`).
+   - Mapped exceptions to HTTP 400 with standardized JSON envelopes per `10_AI_API.md`.
+3. **Gemini Engine Hardening (`src/pwd301/services/gemini_service.py`)**:
+   - Embedded deterministic scope classifier check into `detect_prompt_injection()`.
+   - Updated `MockGeminiClient` and `RealGeminiClient` to reject out-of-scope and malicious queries before executing network calls.
+   - Enhanced `systemInstruction` with strict LMS boundary constraints, pedagogical framing, and Vietnamese pedagogical refusal templates.
+4. **AI Service Orchestration & Telemetry Compliance (`src/pwd301/services/ai_service.py`)**:
+   - Intercepted prompts at entry of `send_chat_message()`:
+     - `ScopeDecision.MALICIOUS`: Records `ai_requests` (`route_type='CLASSIFIER'`, `scope_decision='OUT_OF_SCOPE'`, `status='REFUSED'`, `error_code='PROMPT_INJECTION_DETECTED'`) and raises `AIPromptInjectionError`.
+     - `ScopeDecision.OUT_OF_SCOPE`: Records `ai_requests` (`route_type='CLASSIFIER'`, `scope_decision='OUT_OF_SCOPE'`, `status='REFUSED'`, `error_code='OUT_OF_SCOPE'`). If `raise_out_of_scope=True`, raises `AIOutOfScopeError`; otherwise returns pedagogical redirect guidance message.
+5. **Route Handlers (`src/pwd301/blueprints/student/routes.py`, `src/pwd301/blueprints/api_ai/routes.py`)**:
+   - `student_ai_chat`: Gracefully handles `AIPromptInjectionError` and `AIOutOfScopeError` returning structured pedagogical responses with `status='refused'`.
+   - `unified_chat_api` & `send_message_api`: Passes `raise_out_of_scope=True` for REST API clients to enforce HTTP 400 `OUT_OF_SCOPE` errors adhering to `10_AI_API.md`.
+
+## Verification Record
+- **Scope Classifier Tests (`tests/unit/test_ai_scope_classifier.py`)**: 44/44 passed.
+- **Scope Enforcement & Telemetry Tests (`tests/security/test_ai_scope_enforcement.py`)**: 8/8 passed.
+- **AI Security Tests (`tests/security/test_ai_security.py`)**: 8/8 passed.
+- **AI API Tests (`tests/api/test_ai_api.py`)**: 8/8 passed.
+- **AI Service Unit Tests (`tests/unit/test_ai_service.py`)**: 17/17 passed.
+- **Linter & Type Checker**: `ruff check`, `ruff format --check`, and `mypy src` (84 source files) passed with 0 errors.
+

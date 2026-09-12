@@ -257,6 +257,7 @@ def test_admin_dashboard_web_renders_hardware_telemetry(
 ) -> None:
     """Admin dashboard /admin/dashboard renders HTML with real hardware telemetry."""
     import re
+
     login_web_user(client, admin_user)
     resp = client.get("/admin/dashboard")
     assert resp.status_code == 200
@@ -315,4 +316,3 @@ def test_admin_dashboard_resilient_when_telemetry_throws_exception(
     html = resp.get_data(as_text=True)
     assert "Trung tâm Điều hành" in html
     assert "Vi xử lý CPU" in html
-

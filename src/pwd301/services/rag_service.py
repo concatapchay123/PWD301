@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 import uuid
@@ -58,8 +59,8 @@ from pwd301.services.import_service import (
 logger = logging.getLogger(__name__)
 
 # Standard text chunking configuration
-DEFAULT_MAX_CHUNK_TOKENS = 600  # ~2400 chars
-DEFAULT_OVERLAP_TOKENS = 80  # ~320 chars (approx 13% overlap)
+DEFAULT_MAX_CHUNK_TOKENS = 450  # ~1800 chars (target: 300-500 tokens)
+DEFAULT_OVERLAP_TOKENS = 75  # ~300 chars (target: 50-100 tokens, ~16.7% overlap)
 
 
 # ---------------------------------------------------------------------------
@@ -661,52 +662,91 @@ def ingest_course_knowledge(
 # 3. HYBRID SEMANTIC RETRIEVAL ENGINE & PRE-RETRIEVAL AUTHORIZATION
 # ---------------------------------------------------------------------------
 
+RELEVANCE_CONFIDENCE_THRESHOLD = 0.05
 
-def _compute_lexical_score(query_tokens: list[str], chunk_text: str) -> float:
-    """Compute lexical match score combining token frequency and query term coverage."""
+
+def _compute_bm25_score(
+    query_tokens: list[str],
+    chunk_text: str,
+    doc_frequencies: dict[str, int] | None = None,
+    total_docs: int = 1,
+    avg_doc_len: float = 100.0,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> float:
+    """Compute Sparse Lexical BM25 score per System Specification Section 4.2.
+
+    Formula:
+        IDF(t) = ln(1 + (N - n(t) + 0.5) / (n(t) + 0.5))
+        Score = sum( IDF(t) * (f(t,d) * (k1 + 1)) / (f(t,d) + k1 * (1 - b + b * (|d| / avgdl))) )
+    """
     if not query_tokens or not chunk_text:
         return 0.0
 
-    chunk_lower = chunk_text.lower()
-    matches = 0
-    total_tf = 0
-
-    for qt in query_tokens:
-        if qt in chunk_lower:
-            matches += 1
-            count = chunk_lower.count(qt)
-            total_tf += min(count, 5)
-
-    if matches == 0:
+    chunk_words = re.findall(r"\b\w{2,}\b", chunk_text.lower())
+    doc_len = len(chunk_words)
+    if doc_len == 0:
         return 0.0
 
-    coverage = matches / len(query_tokens)
-    tf_factor = 1.0 - (1.0 / (1.0 + 0.2 * total_tf))
-    return round(0.6 * coverage + 0.4 * tf_factor, 6)
+    tf: dict[str, int] = {}
+    for w in chunk_words:
+        tf[w] = tf.get(w, 0) + 1
+
+    score = 0.0
+    for term in query_tokens:
+        term_lower = term.lower()
+        count = tf.get(term_lower, 0)
+        if count == 0:
+            continue
+
+        n_t = doc_frequencies.get(term_lower, 1) if doc_frequencies else 1
+        idf = max(0.1, math.log(1.0 + (total_docs - n_t + 0.5) / (n_t + 0.5)))
+        b_factor = 1.0 - b + b * (doc_len / max(1.0, avg_doc_len))
+        tf_norm = (count * (k1 + 1.0)) / (count + k1 * b_factor)
+        score += idf * tf_norm
+
+    # Normalize score approximately to [0, 1] range based on query token count
+    max_possible = len(query_tokens) * (math.log(1.0 + total_docs) * (k1 + 1.0))
+    normalized = score / max(1.0, max_possible) if max_possible > 0 else 0.0
+    return round(min(1.0, max(0.0, normalized)), 6)
 
 
-def _compute_mock_semantic_score(query: str, chunk_text: str) -> float:
-    """Deterministic semantic similarity for test and offline environments."""
+def _compute_cosine_semantic_score(query: str, chunk_text: str) -> float:
+    """Compute Dense Semantic Cosine Similarity per System Specification Section 4.2."""
     if not query or not chunk_text:
         return 0.0
 
-    def get_terms(s: str) -> set[str]:
-        words = re.findall(r"\b\w{3,}\b", s.lower())
-        return set(words)
-
-    q_terms = get_terms(query)
-    c_terms = get_terms(chunk_text)
-
-    if not q_terms or not c_terms:
+    q_words = re.findall(r"\b\w{2,}\b", query.lower())
+    c_words = re.findall(r"\b\w{2,}\b", chunk_text.lower())
+    if not q_words or not c_words:
         return 0.0
 
-    intersection = len(q_terms.intersection(c_terms))
-    union = len(q_terms.union(c_terms))
-    jaccard = intersection / union if union > 0 else 0.0
+    # Build term frequency vectors in shared vocabulary space
+    all_terms = list(set(q_words + c_words))
+    term_idx = {t: i for i, t in enumerate(all_terms)}
 
-    # Boost when exact query substring is contained in text
-    substring_boost = 0.3 if query.lower().strip() in chunk_text.lower() else 0.0
-    return round(min(1.0, jaccard + substring_boost), 6)
+    v_q = [0.0] * len(all_terms)
+    for w in q_words:
+        v_q[term_idx[w]] += 1.0
+
+    v_c = [0.0] * len(all_terms)
+    for w in c_words:
+        v_c[term_idx[w]] += 1.0
+
+    dot_product = sum(a * b for a, b in zip(v_q, v_c, strict=False))
+    mag_q = math.sqrt(sum(a * a for a in v_q))
+    mag_c = math.sqrt(sum(b * b for b in v_c))
+
+    if mag_q == 0.0 or mag_c == 0.0:
+        return 0.0
+
+    cosine_sim = dot_product / (mag_q * mag_c)
+
+    # Substring bonus if exact query is embedded in chunk
+    if query.lower().strip() in chunk_text.lower():
+        cosine_sim = min(1.0, cosine_sim + 0.25)
+
+    return round(min(1.0, max(0.0, cosine_sim)), 6)
 
 
 def retrieve_relevant_chunks(
@@ -810,7 +850,7 @@ def retrieve_relevant_chunks(
     if not query_tokens:
         query_tokens = raw_tokens
 
-    candidates: list[dict[str, Any]] = []
+    valid_chunks: list[tuple[KnowledgeChunk, KnowledgeDocument, KnowledgeVersion, str]] = []
 
     for doc in docs:
         # Check source validity
@@ -833,31 +873,56 @@ def retrieve_relevant_chunks(
         if not active_version or active_version.status != "ACTIVE" or not active_version.is_current:
             continue
 
-        # Score chunks
+        # Collect valid chunks
         for chunk in active_version.chunks:
             chunk_text = chunk.chunk_text
-            if not chunk_text:
+            if not chunk_text or not chunk_text.strip():
                 continue
+            valid_chunks.append((chunk, doc, active_version, title))
 
-            lex_score = _compute_lexical_score(query_tokens, chunk_text)
-            sem_score = _compute_mock_semantic_score(query_text, chunk_text)
-            combined_score = 0.5 * lex_score + 0.5 * sem_score
+    if not valid_chunks:
+        return []
 
-            if combined_score > 0.01:
-                candidates.append(
-                    {
-                        "chunk": chunk,
-                        "chunk_id": str(chunk.public_id),
-                        "source_id": str(doc.public_id),
-                        "source_type": doc.source_type,
-                        "lesson_title": title,
-                        "chunk_no": chunk.chunk_no,
-                        "text": chunk_text,
-                        "score": round(combined_score, 4),
-                        "version_id": active_version.id,
-                        "doc_id": doc.id,
-                    }
-                )
+    # Compute collection statistics for BM25
+    total_docs = len(valid_chunks)
+    chunk_word_lists = [re.findall(r"\b\w{2,}\b", c[0].chunk_text.lower()) for c in valid_chunks]
+    avg_doc_len = sum(len(wl) for wl in chunk_word_lists) / max(1, total_docs)
+
+    # Calculate document frequencies for query terms
+    doc_frequencies: dict[str, int] = {}
+    for term in query_tokens:
+        term_lower = term.lower()
+        doc_frequencies[term_lower] = sum(1 for wl in chunk_word_lists if term_lower in set(wl))
+
+    # Score chunks with BM25 + Cosine Semantic fusion
+    candidates: list[dict[str, Any]] = []
+    for chunk, doc, active_version, title in valid_chunks:
+        chunk_text = chunk.chunk_text
+        bm25_score = _compute_bm25_score(
+            query_tokens,
+            chunk_text,
+            doc_frequencies=doc_frequencies,
+            total_docs=total_docs,
+            avg_doc_len=avg_doc_len,
+        )
+        sem_score = _compute_cosine_semantic_score(query_text, chunk_text)
+        combined_score = 0.5 * bm25_score + 0.5 * sem_score
+
+        if combined_score >= RELEVANCE_CONFIDENCE_THRESHOLD:
+            candidates.append(
+                {
+                    "chunk": chunk,
+                    "chunk_id": str(chunk.public_id),
+                    "source_id": str(doc.public_id),
+                    "source_type": doc.source_type,
+                    "lesson_title": title,
+                    "chunk_no": chunk.chunk_no,
+                    "text": chunk_text,
+                    "score": round(combined_score, 4),
+                    "version_id": active_version.id,
+                    "doc_id": doc.id,
+                }
+            )
 
     # Sort descending by combined score and take top_k
     candidates.sort(key=lambda x: x["score"], reverse=True)

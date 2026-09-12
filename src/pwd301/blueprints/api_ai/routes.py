@@ -12,11 +12,13 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.api_ai import api_ai_bp
 from pwd301.extensions import db
 from pwd301.services.ai_service import (
+    approve_question_draft,
     create_conversation,
     draft_course_questions,
     get_conversation,
     get_course_drafts,
     purge_expired_ai_conversations,
+    reject_question_draft,
     send_chat_message,
 )
 from pwd301.services.authorization_service import (
@@ -59,6 +61,7 @@ def get_recommendations_api() -> tuple[Response, int] | Response:
 def draft_questions_api() -> tuple[Response, int] | Response:
     """Draft structured assessment questions for an instructor course using Gemini."""
     actor = require_authenticated_actor()
+    check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     course_id = data.get("course_id")
@@ -126,6 +129,54 @@ def list_drafts_api() -> tuple[Response, int] | Response:
     return jsonify({"drafts": [d.to_dict() for d in drafts], "count": len(drafts)}), 200
 
 
+@api_ai_bp.route("/questions/drafts/<draft_id>/approve", methods=["POST"])
+@jwt_required
+@instructor_required
+def approve_draft_api(draft_id: str) -> tuple[Response, int] | Response:
+    """Approve an AI question draft and persist to Question Bank (Revision 1)."""
+    actor = require_authenticated_actor()
+    data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    draft, question = approve_question_draft(
+        actor=actor,
+        draft_id=draft_id,
+        edits=data,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "message": "Question draft successfully approved and added to Question Bank.",
+                "draft": draft.to_dict(),
+                "question_id": str(question.public_id),
+            }
+        ),
+        200,
+    )
+
+
+@api_ai_bp.route("/questions/drafts/<draft_id>/reject", methods=["POST"])
+@jwt_required
+@instructor_required
+def reject_draft_api(draft_id: str) -> tuple[Response, int] | Response:
+    """Reject an AI question draft."""
+    actor = require_authenticated_actor()
+    draft = reject_question_draft(
+        actor=actor,
+        draft_id=draft_id,
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "message": "Question draft rejected.",
+                "draft": draft.to_dict(),
+            }
+        ),
+        200,
+    )
+
+
 @api_ai_bp.route("/conversations", methods=["POST"])
 @jwt_required
 def create_conversation_api() -> tuple[Response, int] | Response:
@@ -165,7 +216,7 @@ def get_conversation_api(conversation_id: str) -> tuple[Response, int] | Respons
 def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
     """Send a user chat message, reset 5-minute inactivity timer, and return assistant response."""
     actor = require_authenticated_actor()
-    check_ai_rate_limit(actor.id)
+    check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     content = data.get("message") or data.get("content")
@@ -176,6 +227,7 @@ def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
         actor=actor,
         conversation_id=conversation_id,
         content=content,
+        raise_out_of_scope=True,
         session=db.session,
     )
     conv = get_conversation(actor=actor, conversation_id=conversation_id, session=db.session)
@@ -197,7 +249,7 @@ def send_message_api(conversation_id: str) -> tuple[Response, int] | Response:
 def unified_chat_api() -> tuple[Response, int] | Response:
     """LMS-scoped AI chat endpoint per 10_AI_API.md."""
     actor = require_authenticated_actor()
-    check_ai_rate_limit(actor.id)
+    check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     content = data.get("message") or data.get("content")
@@ -220,6 +272,7 @@ def unified_chat_api() -> tuple[Response, int] | Response:
         actor=actor,
         conversation_id=conversation_id,
         content=content,
+        raise_out_of_scope=True,
         session=db.session,
     )
     conv = get_conversation(actor=actor, conversation_id=conversation_id, session=db.session)
@@ -289,6 +342,7 @@ def ingest_lesson_knowledge_api(lesson_id: str) -> tuple[Response, int] | Respon
 def query_course_rag_api(course_id: str) -> tuple[Response, int] | Response:
     """Grounded semantic retrieval and question answering over course knowledge."""
     actor = require_authenticated_actor()
+    check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
     data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict()
 
     query = data.get("query") or data.get("question") or data.get("message")

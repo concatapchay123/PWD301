@@ -569,9 +569,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
             disk_total_gb = round(d_usage.total / (1024**3), 1)
             disk_used_gb = round(d_usage.used / (1024**3), 1)
             disk_free_gb = round(d_usage.free / (1024**3), 1)
-            disk_percent = (
-                round((d_usage.used / d_usage.total) * 100, 1) if d_usage.total else 0.0
-            )
+            disk_percent = round((d_usage.used / d_usage.total) * 100, 1) if d_usage.total else 0.0
         except Exception:
             pass
 
@@ -755,9 +753,9 @@ def get_real_system_telemetry() -> dict[str, Any]:
 
     def _format_bytes(b: int) -> str:
         if b >= 1024**3:
-            return f"{b / (1024 ** 3):.2f} GB"
+            return f"{b / (1024**3):.2f} GB"
         if b >= 1024**2:
-            return f"{b / (1024 ** 2):.1f} MB"
+            return f"{b / (1024**2):.1f} MB"
         if b >= 1024:
             return f"{b / 1024:.0f} KB"
         return f"{b} B"
@@ -787,9 +785,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
     else:
         cpu_display_label = f"{cpu_count} vCPU"
 
-    traffic_str = (
-        f"Gửi: {_format_bytes(net_bytes_sent)} • Nhận: {_format_bytes(net_bytes_recv)}"
-    )
+    traffic_str = f"Gửi: {_format_bytes(net_bytes_sent)} • Nhận: {_format_bytes(net_bytes_recv)}"
 
     return {
         "hostname": hostname,

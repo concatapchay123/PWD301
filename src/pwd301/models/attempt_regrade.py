@@ -19,6 +19,7 @@ Implements canonical schema tables from sql/005_attempt_regrade.sql:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
@@ -288,6 +289,51 @@ class AttemptQuestion(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def question_id(self) -> int:
+        """Alias for source_question_id conforming to task description."""
+        return self.source_question_id
+
+    @question_id.setter
+    def question_id(self, value: int) -> None:
+        self.source_question_id = value
+
+    @property
+    def revision_id(self) -> int:
+        """Alias for source_question_revision_id conforming to task description."""
+        return self.source_question_revision_id
+
+    @revision_id.setter
+    def revision_id(self, value: int) -> None:
+        self.source_question_revision_id = value
+
+    @property
+    def assigned_points(self) -> Any:
+        """Alias for points_assigned conforming to task description."""
+        return self.points_assigned
+
+    @assigned_points.setter
+    def assigned_points(self, value: Any) -> None:
+        self.points_assigned = value
+
+    @property
+    def frozen_prompt(self) -> str:
+        """Alias for content_snapshot conforming to task description."""
+        return self.content_snapshot
+
+    @frozen_prompt.setter
+    def frozen_prompt(self, value: str) -> None:
+        self.content_snapshot = value
+
+    @property
+    def frozen_question_type(self) -> str:
+        """Alias for question_type_snapshot conforming to task description."""
+        return self.question_type_snapshot
+
+    @frozen_question_type.setter
+    def frozen_question_type(self, value: str) -> None:
+        self.question_type_snapshot = value
+
 
 class AttemptChoiceSnapshot(Base):
     """Frozen multiple-choice presentation snapshot mapping to 'attempt_choice_snapshots'."""
@@ -340,6 +386,24 @@ class AttemptChoiceSnapshot(Base):
     attempt_question = relationship("AttemptQuestion", back_populates="choice_snapshots")
     source_choice = relationship("QuestionRevisionChoice", foreign_keys=[source_choice_id])
 
+    @property
+    def original_choice_id(self) -> int | None:
+        """Alias for source_choice_id conforming to task description."""
+        return self.source_choice_id
+
+    @original_choice_id.setter
+    def original_choice_id(self, value: int | None) -> None:
+        self.source_choice_id = value
+
+    @property
+    def frozen_content(self) -> str:
+        """Alias for content_snapshot conforming to task description."""
+        return self.content_snapshot
+
+    @frozen_content.setter
+    def frozen_content(self, value: str) -> None:
+        self.content_snapshot = value
+
 
 class AttemptAnswer(Base):
     """Current candidate answer mapping to canonical 'attempt_answers' table."""
@@ -382,6 +446,34 @@ class AttemptAnswer(Base):
         backref="selected_in_answers",
     )
 
+    @property
+    def essay_response(self) -> str | None:
+        """Alias for answer_text conforming to task description."""
+        return self.answer_text
+
+    @essay_response.setter
+    def essay_response(self, value: str | None) -> None:
+        self.answer_text = value
+
+    @property
+    def client_sequence(self) -> int:
+        """Alias for last_client_sequence conforming to task description."""
+        return int(self.last_client_sequence)
+
+    @client_sequence.setter
+    def client_sequence(self, value: int) -> None:
+        self.last_client_sequence = value
+
+    @property
+    def last_saved_at(self) -> Any:
+        """Alias for saved_at conforming to task description."""
+        return self.saved_at
+
+    @property
+    def attempt_id(self) -> int | None:
+        """Helper to retrieve parent attempt_id."""
+        return self.attempt_question.attempt_id if self.attempt_question else None
+
 
 class AttemptAnswerChoice(Base):
     """Junction table mapping selected choices to 'attempt_answer_choices'."""
@@ -404,6 +496,24 @@ class AttemptAnswerChoice(Base):
         ),
         primary_key=True,
     )
+
+    @property
+    def answer_id(self) -> int:
+        """Alias for attempt_answer_id conforming to task description."""
+        return self.attempt_answer_id
+
+    @answer_id.setter
+    def answer_id(self, value: int) -> None:
+        self.attempt_answer_id = value
+
+    @property
+    def choice_snapshot_id(self) -> int:
+        """Alias for attempt_choice_snapshot_id conforming to task description."""
+        return self.attempt_choice_snapshot_id
+
+    @choice_snapshot_id.setter
+    def choice_snapshot_id(self, value: int) -> None:
+        self.attempt_choice_snapshot_id = value
 
 
 class AttemptAnswerEvent(Base):
@@ -766,6 +876,33 @@ class QuestionCorrection(Base):
     actor = relationship("User", foreign_keys=[actor_user_id])
 
     @property
+    def old_revision_id(self) -> int:
+        """Alias for from_revision_id conforming to task description."""
+        return self.from_revision_id
+
+    @old_revision_id.setter
+    def old_revision_id(self, value: int) -> None:
+        self.from_revision_id = value
+
+    @property
+    def new_revision_id(self) -> int:
+        """Alias for to_revision_id conforming to task description."""
+        return self.to_revision_id
+
+    @new_revision_id.setter
+    def new_revision_id(self, value: int) -> None:
+        self.to_revision_id = value
+
+    @property
+    def created_by(self) -> int:
+        """Alias for actor_user_id conforming to task description."""
+        return self.actor_user_id
+
+    @created_by.setter
+    def created_by(self, value: int) -> None:
+        self.actor_user_id = value
+
+    @property
     def public_id(self) -> uuid.UUID:
         """Synthetic public UUIDv5 identifier conforming to ADR-002."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.question_correction.{self.id}")
@@ -849,6 +986,33 @@ class RegradeJob(Base):
     items = relationship("RegradeItem", back_populates="regrade_job", cascade="all, delete-orphan")
 
     @property
+    def correction_id(self) -> int:
+        """Alias for question_correction_id conforming to task description."""
+        return self.question_correction_id
+
+    @correction_id.setter
+    def correction_id(self, value: int) -> None:
+        self.question_correction_id = value
+
+    @property
+    def total_attempts(self) -> int:
+        """Alias for total_items conforming to task description."""
+        return self.total_items
+
+    @total_attempts.setter
+    def total_attempts(self, value: int) -> None:
+        self.total_items = value
+
+    @property
+    def processed_attempts(self) -> int:
+        """Alias for processed_items conforming to task description."""
+        return self.processed_items
+
+    @processed_attempts.setter
+    def processed_attempts(self, value: int) -> None:
+        self.processed_items = value
+
+    @property
     def public_id(self) -> uuid.UUID:
         """Synthetic public UUIDv5 identifier conforming to ADR-002."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.regrade_job.{self.id}")
@@ -907,6 +1071,24 @@ class RegradeItem(Base):
 
     regrade_job = relationship("RegradeJob", foreign_keys=[regrade_job_id], back_populates="items")
     attempt = relationship("AssessmentAttempt", foreign_keys=[attempt_id])
+
+    @property
+    def job_id(self) -> int:
+        """Alias for regrade_job_id conforming to task description."""
+        return self.regrade_job_id
+
+    @job_id.setter
+    def job_id(self, value: int) -> None:
+        self.regrade_job_id = value
+
+    @property
+    def error_message(self) -> str | None:
+        """Alias for last_error conforming to task description."""
+        return self.last_error
+
+    @error_message.setter
+    def error_message(self, value: str | None) -> None:
+        self.last_error = value
 
     @property
     def public_id(self) -> uuid.UUID:

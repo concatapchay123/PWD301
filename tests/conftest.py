@@ -100,3 +100,13 @@ def login_web_user(client: FlaskClient, user: Any) -> str:
         sess["auth_version"] = user.auth_version
         sess["auth_source"] = "SESSION"
     return raw_key
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits_between_tests() -> Generator[None, None, None]:
+    """Reset rate limit counters before and after each test for clean test isolation."""
+    from pwd301.services.rate_limit_service import reset_all_rate_limits
+
+    reset_all_rate_limits()
+    yield
+    reset_all_rate_limits()

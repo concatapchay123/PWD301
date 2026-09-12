@@ -19,11 +19,15 @@ from pwd301.models.ai_rag import (
 )
 from pwd301.models.course import Course
 from pwd301.models.identity import Role, User
+from pwd301.models.question_bank import Question, QuestionProvenance, QuestionRevision
 from pwd301.models.types import utc_now
 from pwd301.services.ai_service import (
+    _map_bloom_to_db_difficulty,
+    approve_question_draft,
     create_conversation,
     draft_course_questions,
     purge_expired_ai_conversations,
+    reject_question_draft,
     send_chat_message,
 )
 from pwd301.services.exceptions import (
@@ -32,6 +36,7 @@ from pwd301.services.exceptions import (
     AIPromptInjectionError,
     AIQuotaExceededError,
     AIServiceUnavailableError,
+    AIValidationError,
     ForbiddenError,
 )
 from pwd301.services.gemini_service import (
@@ -43,6 +48,14 @@ from pwd301.services.gemini_service import (
     record_ai_telemetry,
     sanitize_prompt,
     validate_and_sanitize_prompt,
+)
+from pwd301.services.rag_service import (
+    _compute_bm25_score,
+    _compute_cosine_semantic_score,
+)
+from pwd301.services.rate_limit_service import (
+    AI_ROLE_LIMITS,
+    check_ai_rate_limit,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -327,7 +340,7 @@ def test_conversation_lifecycle_and_expiry(app: Flask, student_user: User) -> No
     assert user_msg.sender == "USER"
     assert asst_msg.sequence_no == 2
     assert asst_msg.sender == "ASSISTANT"
-    assert "PWD301" in asst_msg.content
+    assert "Bạch Tuộc Trợ lý AI" in asst_msg.content
 
     # Simulate 5-min inactivity timeout (respecting ck_ai_conversations_3 expires_at > created_at)
     conv.created_at = utc_now() - timedelta(minutes=10)
@@ -459,3 +472,221 @@ def test_real_gemini_client_fallback_to_next_model() -> None:
         # Verify that gemini-3.6-flash was tried first, then fallback model was called
         assert any("gemini-3.6-flash" in u for u in attempt_urls)
         assert any(client.FALLBACK_MODELS[0] in u for u in attempt_urls)
+
+
+# ---------------------------------------------------------------------------
+# Bloom Taxonomy & Draft Review Lifecycle Tests
+# ---------------------------------------------------------------------------
+
+
+def test_draft_course_questions_bloom_taxonomy(
+    app: Flask,
+    instructor_user: User,
+    sample_course: Course,
+) -> None:
+    """Test drafting questions across Bloom taxonomy levels and check DB compatibility."""
+    sess: Session = db.session
+
+    # 1. Test valid lower-order Bloom levels
+    for level in ("REMEMBER", "UNDERSTAND", "APPLY"):
+        assert _map_bloom_to_db_difficulty(level) == level
+        drafts = draft_course_questions(
+            actor=instructor_user,
+            course_id=str(sample_course.public_id),
+            topic=f"Topic for {level}",
+            difficulty=level,
+            count=1,
+            session=sess,
+        )
+        assert len(drafts) == 1
+        assert drafts[0].difficulty == level
+
+    # 2. Test higher-order Bloom levels mapped to APPLY in DB with annotation
+    for higher_level in ("ANALYZE", "EVALUATE", "CREATE"):
+        assert _map_bloom_to_db_difficulty(higher_level) == "APPLY"
+        drafts = draft_course_questions(
+            actor=instructor_user,
+            course_id=str(sample_course.public_id),
+            topic=f"Advanced {higher_level} Topic",
+            difficulty=higher_level,
+            count=1,
+            session=sess,
+        )
+        assert len(drafts) == 1
+        assert drafts[0].difficulty == "APPLY"
+        assert f"[Bloom: {higher_level}]" in drafts[0].explanation
+
+    # 3. Invalid difficulty raises AIValidationError
+    with pytest.raises(AIValidationError) as exc:
+        draft_course_questions(
+            actor=instructor_user,
+            course_id=str(sample_course.public_id),
+            topic="Invalid Level",
+            difficulty="IMPOSSIBLE_LEVEL",
+            session=sess,
+        )
+    assert "Allowed Bloom taxonomy levels" in str(exc.value)
+
+
+def test_approve_question_draft_success(
+    app: Flask,
+    instructor_user: User,
+    sample_course: Course,
+) -> None:
+    """Instructor approves a draft, creating a formal Question, QuestionRevision, and Provenance."""
+    sess: Session = db.session
+
+    drafts = draft_course_questions(
+        actor=instructor_user,
+        course_id=str(sample_course.public_id),
+        topic="Dynamic Programming",
+        difficulty="APPLY",
+        question_types=["SINGLE_CHOICE"],
+        count=1,
+        session=sess,
+    )
+    draft = drafts[0]
+    assert draft.review_state == "PENDING"
+    assert draft.approved_question_id is None
+
+    # Approve draft
+    approved_draft, question = approve_question_draft(
+        actor=instructor_user,
+        draft_id=str(draft.public_id),
+        session=sess,
+    )
+
+    assert approved_draft.review_state == "APPROVED"
+    assert approved_draft.approved_question_id == question.id
+    assert approved_draft.reviewed_by_user_id == instructor_user.id
+    assert approved_draft.reviewed_at is not None
+
+    # Verify persisted Question Bank entities
+    db_q = sess.query(Question).filter(Question.id == question.id).first()
+    assert db_q is not None
+    assert db_q.course_id == sample_course.id
+    assert db_q.difficulty == "APPLY"
+    assert len(db_q.revisions) == 1
+
+    rev: QuestionRevision = db_q.current_revision
+    assert rev is not None
+    assert rev.revision_no == 1
+    assert rev.is_current is True
+    assert rev.question_type == "SINGLE_CHOICE"
+    prov = sess.query(QuestionProvenance).filter(QuestionProvenance.question_id == db_q.id).first()
+    assert prov is not None
+    assert prov.source_type == "AI_GENERATED"
+    assert prov.ai_model == "gemini-3.8-flash"
+
+    # Second approval attempt must raise AIValidationError
+    with pytest.raises(AIValidationError) as exc:
+        approve_question_draft(
+            actor=instructor_user,
+            draft_id=str(draft.public_id),
+            session=sess,
+        )
+    assert "already been approved" in str(exc.value)
+
+
+def test_reject_question_draft(
+    app: Flask,
+    instructor_user: User,
+    sample_course: Course,
+) -> None:
+    """Instructor rejects a question draft, preventing subsequent approval."""
+    sess: Session = db.session
+
+    drafts = draft_course_questions(
+        actor=instructor_user,
+        course_id=str(sample_course.public_id),
+        topic="Heaps and Priority Queues",
+        difficulty="UNDERSTAND",
+        count=1,
+        session=sess,
+    )
+    draft = drafts[0]
+
+    rejected_draft = reject_question_draft(
+        actor=instructor_user,
+        draft_id=str(draft.public_id),
+        session=sess,
+    )
+    assert rejected_draft.review_state == "REJECTED"
+    assert rejected_draft.reviewed_by_user_id == instructor_user.id
+
+    # Rejecting an already approved draft raises AIValidationError
+    drafts2 = draft_course_questions(
+        actor=instructor_user,
+        course_id=str(sample_course.public_id),
+        topic="Graphs",
+        difficulty="UNDERSTAND",
+        count=1,
+        session=sess,
+    )
+    approved_draft, _ = approve_question_draft(
+        actor=instructor_user,
+        draft_id=str(drafts2[0].public_id),
+        session=sess,
+    )
+    with pytest.raises(AIValidationError) as exc:
+        reject_question_draft(
+            actor=instructor_user,
+            draft_id=str(approved_draft.public_id),
+            session=sess,
+        )
+    assert "already approved" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# RAG Scoring & Rate Limit Unit Tests
+# ---------------------------------------------------------------------------
+
+
+def test_bm25_and_cosine_similarity_computation() -> None:
+    """Test BM25 sparse and Cosine dense similarity algorithms."""
+    chunk_text = (
+        "Flask is a micro web framework written in Python. It is classified as a microframework "
+        "because it does not require particular tools or libraries. "
+        "It has no database abstraction layer."
+    )
+    query_match = "Python micro web framework"
+    query_unrelated = "Quantum physics gravitational wave astrophysics"
+
+    # BM25 testing
+    tokens_match = ["python", "micro", "web", "framework"]
+    score_match = _compute_bm25_score(tokens_match, chunk_text)
+    assert score_match > 0.05
+
+    tokens_unrelated = ["quantum", "astrophysics"]
+    score_unrelated = _compute_bm25_score(tokens_unrelated, chunk_text)
+    assert score_unrelated == 0.0
+
+    # Cosine testing
+    cos_match = _compute_cosine_semantic_score(query_match, chunk_text)
+    assert cos_match > 0.3
+
+    cos_unrelated = _compute_cosine_semantic_score(query_unrelated, chunk_text)
+    assert cos_unrelated == 0.0
+
+
+def test_ai_rate_limit_tiered_quotas_and_retry_after(app: Flask) -> None:
+    """Test sliding-window rate limit tiered quotas and Retry-After calculation."""
+    assert AI_ROLE_LIMITS["STUDENT"] == 20
+    assert AI_ROLE_LIMITS["INSTRUCTOR"] == 60
+    assert AI_ROLE_LIMITS["ADMIN"] == 120
+    assert AI_ROLE_LIMITS["ANONYMOUS"] == 10
+
+    test_user_key = f"unit_test_rate_user_{uuid.uuid4().hex[:8]}"
+
+    # Rapidly exhaust a quota of 2 requests
+    check_ai_rate_limit(test_user_key, limit=2, window_seconds=60)
+    check_ai_rate_limit(test_user_key, limit=2, window_seconds=60)
+
+    # 3rd request must raise AIQuotaExceededError with retry_after > 0
+    with pytest.raises(AIQuotaExceededError) as exc_info:
+        check_ai_rate_limit(test_user_key, limit=2, window_seconds=60)
+
+    err = exc_info.value
+    assert err.code == "RATE_LIMIT_EXCEEDED"
+    assert err.retry_after > 0
+    assert "Rate limit exceeded" in str(err)

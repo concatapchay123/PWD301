@@ -13,10 +13,13 @@ Provides business logic for:
 
 from __future__ import annotations
 
+import datetime
 import json
+import time
 import uuid
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -77,6 +80,9 @@ TEMP_POSITION_OFFSET = 1_000_000
 
 # Base offset for soft-deleted (TRASH) lessons to prevent colliding with active 1..N positions
 TRASH_POSITION_BASE = 10_000_000
+
+# Sliding cache of recent client_event_ids to prevent double-counting on network retries
+_RECENT_CLIENT_EVENT_IDS: dict[str, float] = {}
 
 
 def _record_lesson_audit_event(
@@ -200,6 +206,22 @@ def create_lesson(
 
     published_at = utc_now() if status in ("PUBLISHED", "ACTIVE") else None
 
+    # Validate required_for_periods_starting_at (optional)
+    req_for_periods = data.get("required_for_periods_starting_at")
+    if req_for_periods is not None:
+        if isinstance(req_for_periods, str):
+            try:
+                norm_str = req_for_periods.replace("Z", "+00:00")
+                req_for_periods = datetime.datetime.fromisoformat(norm_str)
+            except ValueError as err:
+                raise LessonValidationError(
+                    "required_for_periods_starting_at must be a valid ISO datetime."
+                ) from err
+        elif not isinstance(req_for_periods, datetime.datetime):
+            raise LessonValidationError(
+                "required_for_periods_starting_at must be a datetime or ISO string."
+            )
+
     # Calculate position and shift if needed
     active_lessons = (
         sess.query(Lesson)
@@ -251,6 +273,7 @@ def create_lesson(
         estimated_duration_minutes=est_duration,
         minimum_completion_seconds=min_completion_seconds,
         viewed_fraction_required=viewed_fraction_required,
+        required_for_periods_starting_at=req_for_periods,
         status=status,
         published_at=published_at,
         created_at=utc_now(),
@@ -405,6 +428,23 @@ def update_lesson(
         if new_status == "PUBLISHED" and lesson.published_at is None:
             lesson.published_at = utc_now()
         lesson.status = new_status
+
+    if "required_for_periods_starting_at" in data:
+        req_for_periods = data["required_for_periods_starting_at"]
+        if req_for_periods is not None:
+            if isinstance(req_for_periods, str):
+                try:
+                    norm_str = req_for_periods.replace("Z", "+00:00")
+                    req_for_periods = datetime.datetime.fromisoformat(norm_str)
+                except ValueError as err:
+                    raise LessonValidationError(
+                        "required_for_periods_starting_at must be a valid ISO datetime."
+                    ) from err
+            elif not isinstance(req_for_periods, datetime.datetime):
+                raise LessonValidationError(
+                    "required_for_periods_starting_at must be a datetime or ISO string."
+                )
+        lesson.required_for_periods_starting_at = req_for_periods
 
     lesson.updated_at = utc_now()
     sess.flush()
@@ -584,6 +624,7 @@ def trash_lesson(
     lesson.deleted_at = now
     lesson.deleted_by_user_id = actor.id
     lesson.status = "TRASH"
+    lesson.restore_until = now + datetime.timedelta(days=30)
     # Move position out of active 1..N range to prevent unique constraint collision
     lesson.position = TRASH_POSITION_BASE + lesson.id
     lesson.updated_at = now
@@ -674,9 +715,29 @@ def change_lesson_status(
 
     old_status = lesson.status
     lesson.status = new_status
+    now = utc_now()
     if new_status == "PUBLISHED" and lesson.published_at is None:
-        lesson.published_at = utc_now()
-    lesson.updated_at = utc_now()
+        lesson.published_at = now
+
+    # Invariant: Restoring from TRASH clears deleted_at, restore_until, and re-integrates position
+    if old_status == "TRASH" and new_status in ("PUBLISHED", "ACTIVE", "DRAFT"):
+        lesson.deleted_at = None
+        lesson.deleted_by_user_id = None
+        lesson.restore_until = None
+        if lesson.position >= TEMP_POSITION_OFFSET:
+            max_pos = (
+                sess.query(sa.func.max(Lesson.position))
+                .filter(
+                    Lesson.course_id == course.id,
+                    Lesson.deleted_at.is_(None),
+                    Lesson.position < TEMP_POSITION_OFFSET,
+                )
+                .scalar()
+                or 0
+            )
+            lesson.position = max_pos + 1
+
+    lesson.updated_at = now
     sess.flush()
 
     # Record AuditEvent when making public or hiding
@@ -698,6 +759,39 @@ def change_lesson_status(
             raise
 
     return lesson
+
+
+def restore_lesson(
+    actor: User,
+    lesson_id: int | uuid.UUID | str,
+    target_status: str = "PUBLISHED",
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> Lesson:
+    """Restore a lesson from TRASH back to PUBLISHED, ACTIVE, or DRAFT."""
+    sess = session if session is not None else db.session
+    lesson = _resolve_lesson(lesson_id, session=sess)
+    if lesson is None:
+        raise LessonNotFoundError("Lesson not found.")
+
+    if lesson.status != "TRASH":
+        raise LessonStateViolationError(
+            f"Cannot restore lesson in '{lesson.status}' status. "
+            "Only TRASH lessons can be restored."
+        )
+
+    if target_status not in ("PUBLISHED", "ACTIVE", "DRAFT"):
+        raise LessonValidationError(
+            f"Invalid restore target status '{target_status}'. Must be PUBLISHED, ACTIVE, or DRAFT."
+        )
+
+    return change_lesson_status(
+        actor=actor,
+        lesson_id=lesson.id,
+        new_status=target_status,
+        reason=reason or "Restored lesson from TRASH",
+        session=sess,
+    )
 
 
 def get_lesson_detail(
@@ -835,6 +929,7 @@ def record_lesson_progress(
     lesson_id: int | uuid.UUID | str,
     seconds_increment: int,
     view_fraction: float,
+    client_event_id: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> LessonProgress:
     """Record learning engagement heartbeat and evaluate monotonic completion (Algorithm 02).
@@ -955,6 +1050,23 @@ def record_lesson_progress(
         )
         sess.add(progress)
         sess.flush()
+
+    # Deduplicate client_event_id to prevent double-counting on network retries (Algorithm 02)
+    if client_event_id is not None:
+        cid_str = str(client_event_id).strip()
+        curr_ts = time.time()
+        if len(_RECENT_CLIENT_EVENT_IDS) > 5000:
+            expired_keys = [k for k, ts in _RECENT_CLIENT_EVENT_IDS.items() if curr_ts - ts > 600]
+            for k in expired_keys:
+                _RECENT_CLIENT_EVENT_IDS.pop(k, None)
+
+        dedup_key = f"{active_period.id}:{lesson.id}:{cid_str}"
+        if dedup_key in _RECENT_CLIENT_EVENT_IDS:
+            # Replay/duplicate event: do not increment seconds, update last_activity_at only
+            progress.last_activity_at = now
+            sess.flush()
+            return progress
+        _RECENT_CLIENT_EVENT_IDS[dedup_key] = curr_ts
 
     # Bounded accumulated active seconds & high-water-mark view fraction
     progress.seconds_spent = (progress.seconds_spent or 0) + sec

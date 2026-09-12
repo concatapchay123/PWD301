@@ -428,7 +428,7 @@
             </div>
             <div>
               <div class="ai-header-title">Trợ lý Bạch Tuộc AI 🐙</div>
-              <div class="ai-header-status">Bám sát giáo trình PWD301</div>
+              <div class="ai-header-status">Sẵn sàng hỗ trợ học tập</div>
             </div>
           </div>
           <div class="d-flex align-items-center gap-1">
@@ -447,14 +447,14 @@
               <img src="{{ url_for('static', filename='img/octopus_mascot.png') }}" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
             </div>
             <div class="ai-msg-content">
-              <div>Xin chào! Mình là <strong>Bạch Tuộc Trợ lý AI</strong> của PWD301 🐙. Bạn có câu hỏi nào về bài học hay cần giải thích khái niệm Web, gỡ rối code không? Hãy hỏi mình nhé!</div>
+              <div>Xin chào! Mình là <strong>Bạch Tuộc Trợ lý AI</strong> 🐙. Bạn cần tìm kiếm khóa học nào, hay cần hướng dẫn cách sử dụng các tính năng trên hệ thống PWD301 không? Hãy hỏi mình nhé!</div>
             </div>
           </div>
         </div>
 
         <div class="ai-chat-footer p-2 border-top">
           <div class="input-group">
-            <input type="text" id="ai-floating-input" class="form-control form-control-sm border-0" placeholder="Hỏi Bạch Tuộc AI về bài học...">
+            <input type="text" id="ai-floating-input" class="form-control form-control-sm border-0" placeholder="Hỏi về hệ thống, khóa học, hướng dẫn sử dụng...">
             <button type="button" class="btn btn-primary btn-sm px-3" onclick="PWD.appShell.sendFloatingAIMessage()">Gửi</button>
           </div>
         </div>
@@ -489,7 +489,7 @@
   <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script src="{{ url_for('static', filename='js/components.js') }}?v=1.3.1"></script>
-  <script src="{{ url_for('static', filename='js/app_shell.js') }}?v=1.3.1"></script>
+  <script src="{{ url_for('static', filename='js/app_shell.js') }}?v=1.3.2"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

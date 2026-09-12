@@ -78,8 +78,25 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
     if not isinstance(payload, dict):
         raise LessonValidationError("Invalid JSON payload.")
 
-    seconds_increment = payload.get("seconds_increment")
-    view_fraction = payload.get("view_fraction")
+    seconds_increment = (
+        payload.get("seconds_increment")
+        if payload.get("seconds_increment") is not None
+        else (
+            payload.get("seconds")
+            if payload.get("seconds") is not None
+            else (
+                payload.get("time_delta")
+                if payload.get("time_delta") is not None
+                else payload.get("time_delta_seconds")
+            )
+        )
+    )
+    view_fraction = (
+        payload.get("view_fraction")
+        if payload.get("view_fraction") is not None
+        else payload.get("observed_view_fraction")
+    )
+    client_event_id = payload.get("client_event_id")
 
     if seconds_increment is None:
         raise LessonValidationError("seconds_increment is required.")
@@ -99,6 +116,7 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
         lesson_id=lesson_id,
         seconds_increment=sec_int,
         view_fraction=vf_float,
+        client_event_id=client_event_id,
     )
     return jsonify(_serialize_progress(progress)), 200
 

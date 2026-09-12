@@ -45,8 +45,6 @@ from pwd301.services.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-
-
 def _ensure_utc(dt: datetime.datetime | None) -> datetime.datetime | None:
     """Ensure datetime has UTC timezone for safe comparison."""
     if dt is None:

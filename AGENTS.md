@@ -152,7 +152,7 @@ Quy tắc này có hiệu lực vĩnh viễn và bắt buộc cho mọi coding a
   - TDD: Luôn viết bài kiểm thử thất bại trước khi viết code sản phẩm (The Iron Law of TDD).
   - Debug bài bản 4 giai đoạn, truy vết tận gốc nguyên nhân (root cause), không phỏng đoán hay vá víu phần ngọn.
   - Lập kế hoạch chi tiết, kiểm thử xác minh trước khi tuyên bố hoàn thành.
-- **Task Observer** (`task-observer` / `one-skill-to-rule-them-all`):
+- **Task Observer** (`task-observer`):
   - Giám sát tiến trình thực hiện nhiệm vụ trong toàn bộ phiên làm việc.
   - Ghi nhận những điểm nghẽn, lỗi lặp lại, chỉ dẫn điều chỉnh từ người dùng và phản hồi sau tác vụ.
   - Duy trì nhật ký quan sát và liên tục cải tiến chất lượng thư viện skill.
@@ -160,6 +160,8 @@ Quy tắc này có hiệu lực vĩnh viễn và bắt buộc cho mọi coding a
   - Giữ tư duy của lập trình viên kỳ cựu tối giản (lazy senior developer): Code tốt nhất là code không cần phải viết.
   - Tuân thủ bậc thang tối giản: YAGNI -> Tái sử dụng code hiện có -> Standard library -> Tính năng gốc của nền tảng (native) -> Thư viện đã cài sẵn -> Giải pháp ngắn gọn nhất.
   - Không tạo abstraction thừa thãi, không sinh boilerplate cho tương lai, chủ động loại bỏ sự cồng kềnh (over-engineering).
+- **Full Output Enforcement** (`full-output-enforcement` / `output-skill`):
+  - Luôn sinh mã nguồn đầy đủ 100%, cấm tuyệt đối viết tắt, cấm dùng placeholder như `// TODO`, `// code cũ giữ nguyên` hoặc cắt xén code khi chỉnh sửa/tạo file.
 
 ## 2. Bắt buộc sử dụng cho các nhiệm vụ liên quan tới Design & UI/UX
 Đối với mọi tác vụ liên quan đến thiết kế, giao diện người dùng, styling CSS/HTML, layout, typography, animation, tái thiết kế (redesign), đánh giá UI/UX critique hoặc audit chất lượng giao diện (a11y, performance, responsive), agent LUÔN LUÔN PHẢI sử dụng:
@@ -173,6 +175,6 @@ Mỗi khi hoàn thành xong 1 công việc, nhiệm vụ hoặc ở cuối mỗi
 `Đã dùng x skill gồm: ...`
 
 Ví dụ:
-`Đã dùng 3 skill gồm: superpowers (test-driven-development), ponytail, task-observer`
+`Đã dùng 4 skill gồm: superpowers (test-driven-development), ponytail, task-observer, full-output-enforcement`
 hoặc
-`Đã dùng 4 skill gồm: superpowers (brainstorming, writing-plans), ponytail, task-observer, impeccable`
+`Đã dùng 5 skill gồm: superpowers (brainstorming, writing-plans), ponytail, task-observer, full-output-enforcement, impeccable`

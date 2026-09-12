@@ -1,4 +1,5 @@
 """Deep verification script testing live container authentication and real hardware telemetry."""
+
 import json
 import re
 import sys
@@ -10,7 +11,9 @@ s = requests.Session()
 
 # 1. Fetch login page
 r_login_page = s.get("http://localhost:5000/auth/login")
-assert r_login_page.status_code == 200, f"Expected 200 on login page, got {r_login_page.status_code}"
+assert r_login_page.status_code == 200, (
+    f"Expected 200 on login page, got {r_login_page.status_code}"
+)
 csrf_match = re.search(r'name="csrf_token" value="([^"]+)"', r_login_page.text)
 csrf_token = csrf_match.group(1) if csrf_match else ""
 
@@ -23,7 +26,9 @@ r_login = s.post(
 print("Login status:", r_login.status_code, "URL:", r_login.url)
 if r_login.status_code != 200:
     print("Login body snippet:", r_login.text[:500])
-assert "/admin" in r_login.url or r_login.status_code == 200, f"Expected redirect to admin, got {r_login.url}"
+assert "/admin" in r_login.url or r_login.status_code == 200, (
+    f"Expected redirect to admin, got {r_login.url}"
+)
 
 
 # 3. GET /admin/telemetry
@@ -39,7 +44,11 @@ assert telem_data["status"] == "HEALTHY"
 assert "Docker" in telem_data["node_label"]
 assert telem_data["cpu"]["cores"] >= 1
 assert len(telem_data["cpu"]["model"]) > 0
-assert "Intel" in telem_data["cpu"]["model"] or "AMD" in telem_data["cpu"]["model"] or "vCPU" in telem_data["cpu"]["model"]
+assert (
+    "Intel" in telem_data["cpu"]["model"]
+    or "AMD" in telem_data["cpu"]["model"]
+    or "vCPU" in telem_data["cpu"]["model"]
+)
 assert telem_data["memory"]["total_gb"] > 0
 assert telem_data["disk"]["total_gb"] > 0
 assert telem_data["network"]["bytes_sent"] >= 0
@@ -52,7 +61,10 @@ assert r_dash.status_code == 200
 html = r_dash.text
 
 # Check rendered HTML
-assert "Trung tâm Điều hành & Quản trị Hệ thống" in html or "Trung tâm Điều hành &amp; Quản trị Hệ thống" in html
+assert (
+    "Trung tâm Điều hành & Quản trị Hệ thống" in html
+    or "Trung tâm Điều hành &amp; Quản trị Hệ thống" in html
+)
 assert "Vi xử lý CPU" in html
 assert "Bộ nhớ RAM" in html
 assert "Lưu trữ Ổ đĩa" in html

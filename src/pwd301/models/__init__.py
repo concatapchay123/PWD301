@@ -101,6 +101,7 @@ from pwd301.models.operations import (
 )
 from pwd301.models.question_bank import (
     Question,
+    QuestionChoice,
     QuestionProvenance,
     QuestionRevision,
     QuestionRevisionAcceptedAnswer,
@@ -133,6 +134,7 @@ __all__ = [
     # Question Bank
     "Question",
     "QuestionRevision",
+    "QuestionChoice",
     "QuestionRevisionChoice",
     "QuestionRevisionAcceptedAnswer",
     "QuestionProvenance",

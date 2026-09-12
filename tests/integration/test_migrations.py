@@ -38,17 +38,26 @@ def test_migration_upgrade_and_downgrade(monkeypatch):
             assert "courses" in tables
             assert "assessments" in tables
             # Exactly 71 domain tables + 1 alembic_version = 72
-            assert len(tables) >= 71
+            assert len(tables) >= 72
+            assert len(tables - {"alembic_version"}) == 71
 
             # Run downgrade to base
             downgrade(directory="migrations", revision="base")
 
-            # Verify domain tables dropped
+            # Verify all domain tables dropped cleanly
             inspector_after = sa.inspect(db.engine)
             tables_after = set(inspector_after.get_table_names())
             assert "users" not in tables_after
             assert "roles" not in tables_after
             assert "courses" not in tables_after
+            assert "assessments" not in tables_after
+            assert len(tables_after - {"alembic_version"}) == 0
+
+            # Verify round-trip re-upgrade to head works cleanly
+            upgrade(directory="migrations")
+            inspector_re = sa.inspect(db.engine)
+            tables_re = set(inspector_re.get_table_names())
+            assert tables_re == tables
 
             # Explicitly dispose engine to release SQLite file lock on Windows
             db.engine.dispose()

@@ -782,9 +782,14 @@ def ai_assistant_view() -> Any:
 @student_bp.route("/ai/chat", methods=["POST"])
 @student_required
 def student_ai_chat() -> Any:
-    """Session-authenticated AI chat endpoint for student assistant."""
     from pwd301.services.ai_service import create_conversation, get_conversation, send_chat_message
-    from pwd301.services.exceptions import AIConversationExpiredError
+    from pwd301.services.exceptions import (
+        AIConversationExpiredError,
+        AIOutOfScopeError,
+        AIPromptInjectionError,
+        AIQuotaExceededError,
+        AISecurityViolationError,
+    )
     from pwd301.services.rate_limit_service import check_ai_rate_limit
 
     actor = require_authenticated_actor()
@@ -828,7 +833,11 @@ def student_ai_chat() -> Any:
             logger.error("Failed creating AI conversation: %s", exc)
 
     try:
-        check_ai_rate_limit(actor.id)
+        check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
+    except AIQuotaExceededError as e:
+        resp = jsonify({"error": {"message": str(e), "code": "RATE_LIMIT_EXCEEDED"}})
+        resp.headers["Retry-After"] = str(getattr(e, "retry_after", 60))
+        return resp, 429
     except Exception as e:
         return jsonify({"error": {"message": str(e)}}), 429
 
@@ -837,23 +846,31 @@ def student_ai_chat() -> Any:
         return jsonify(
             {
                 "reply": (
-                    "Chào bạn! Tôi là Trợ lý Bạch Tuộc AI của PWD301. "
-                    f"Đối với câu hỏi '{message}', bạn hãy hỏi trực tiếp về bài học hoặc kiến thức lập trình Web nhé! 🐙"
+                    "Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙. "
+                    f"Đối với câu hỏi '{message}', "
+                    "bạn hãy hỏi trực tiếp về bài học hoặc kiến thức lập trình Web nhé!"
                 ),
                 "status": "success",
             }
         ), 200
 
     try:
+        is_on_main_page = not bool(conv.course_id or conv.lesson_id or payload.get("course_id"))
+        surface_hint = "MAIN_PAGE" if is_on_main_page else None
         try:
             user_msg, asst_msg = send_chat_message(
                 actor=actor,
                 conversation_id=str(conv.public_id),
                 content=message,
+                raise_out_of_scope=True,
                 session=db.session,
+                surface_hint=surface_hint,
             )
         except AIConversationExpiredError:
-            logger.info("AI conversation %s expired during message dispatch, recreating session.", conv.public_id)
+            logger.info(
+                "AI conversation %s expired during message dispatch, recreating session.",
+                conv.public_id,
+            )
             session.pop("active_ai_conversation_id", None)
             course_id = payload.get("course_id")
             lesson_id = payload.get("lesson_id")
@@ -867,18 +884,49 @@ def student_ai_chat() -> Any:
             )
             session["active_ai_conversation_id"] = str(conv.public_id)
             db.session.commit()
+            is_on_main_page = not bool(conv.course_id or conv.lesson_id or course_id)
+            surface_hint = "MAIN_PAGE" if is_on_main_page else None
             user_msg, asst_msg = send_chat_message(
                 actor=actor,
                 conversation_id=str(conv.public_id),
                 content=message,
+                raise_out_of_scope=True,
                 session=db.session,
+                surface_hint=surface_hint,
             )
 
+        db.session.commit()
+        course_title = conv.course.title if (conv and conv.course) else None
         return jsonify(
             {
                 "conversation_id": str(conv.public_id),
                 "reply": asst_msg.content if asst_msg else "Không có phản hồi từ trợ lý.",
+                "course_title": course_title,
                 "status": "success",
+            }
+        ), 200
+    except (AIPromptInjectionError, AISecurityViolationError) as exc:
+        logger.warning("Student AI chat blocked security violation: %s", exc)
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id) if conv else None,
+                "reply": (
+                    "⚠️ Cảnh báo an ninh: Yêu cầu của bạn đã bị từ chối do vi phạm chính sách "
+                    "an toàn thông tin của hệ thống. Trợ lý AI chỉ phục vụ mục đích học tập và "
+                    "nghiêm cấm mọi hành vi tấn công, khai thác lỗ hổng hoặc phá hoại."
+                ),
+                "status": "refused",
+                "error_code": "SECURITY_VIOLATION",
+            }
+        ), 200
+    except AIOutOfScopeError as exc:
+        logger.info("Student AI chat refused out-of-scope query: %s", exc)
+        return jsonify(
+            {
+                "conversation_id": str(conv.public_id) if conv else None,
+                "reply": exc.message,
+                "status": "refused",
+                "error_code": "OUT_OF_SCOPE",
             }
         ), 200
     except Exception as exc:
@@ -887,9 +935,10 @@ def student_ai_chat() -> Any:
             {
                 "conversation_id": str(conv.public_id) if conv else None,
                 "reply": (
-                    f"Chào bạn! Tôi là Trợ lý Bạch Tuộc AI. Đối với câu hỏi '{message}':\n"
+                    f"Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙. Đối với câu hỏi '{message}':\n"
                     "Hiện tại kết nối AI đang bận hoặc có gián đoạn tạm thời. "
-                    "Bạn có thể xem lại tài liệu bài học, ví dụ mã nguồn hoặc đặt lại câu hỏi sau ít giây nhé! 🐙"
+                    "Bạn có thể xem lại tài liệu bài học, ví dụ mã nguồn hoặc "
+                    "đặt lại câu hỏi sau ít giây nhé!"
                 ),
                 "status": "success",
             }
@@ -1056,8 +1105,10 @@ def become_instructor() -> Any:
 def submit_become_instructor() -> Any:
     """Submit a self-nomination application to become an instructor."""
     from pathlib import Path
+
     from flask import current_app
     from werkzeug.utils import secure_filename
+
     from pwd301.services.exceptions import ValidationError
     from pwd301.services.user_service import submit_instructor_application
 
@@ -1079,7 +1130,10 @@ def submit_become_instructor() -> Any:
                 continue
             ext = Path(f.filename).suffix.lower()
             if ext not in allowed_extensions:
-                msg = f"Định dạng tệp '{f.filename}' không được hỗ trợ. Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel/ZIP."
+                msg = (
+                    f"Định dạng tệp '{f.filename}' không được hỗ trợ. "
+                    "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel/ZIP."
+                )
                 if not _wants_json():
                     flash(msg, "danger")
                     return redirect(url_for("student.become_instructor"))
@@ -1091,11 +1145,13 @@ def submit_become_instructor() -> Any:
             f.save(str(dest_path))
             file_size = dest_path.stat().st_size if dest_path.exists() else 0
 
-            attached_files.append({
-                "original_name": Path(f.filename).name,
-                "saved_filename": saved_filename,
-                "size": file_size,
-            })
+            attached_files.append(
+                {
+                    "original_name": Path(f.filename).name,
+                    "saved_filename": saved_filename,
+                    "size": file_size,
+                }
+            )
 
     if attached_files:
         payload["attached_files"] = attached_files

@@ -169,6 +169,11 @@ class Course(Base):
     )
     enrollments = relationship("Enrollment", back_populates="course")
 
+    @property
+    def owner_id(self) -> int | None:
+        """Alias for owner_instructor_id conforming to task description."""
+        return self.owner_instructor_id
+
     @validates("course_code")
     def _validate_course_code(self, key: str, value: str | None) -> str | None:
         if value is not None:
@@ -498,6 +503,15 @@ class Lesson(Base):
     )
     deleted_by = relationship("User", foreign_keys=[deleted_by_user_id])
 
+    @property
+    def content_markdown(self) -> str:
+        """Alias for markdown_content conforming to task description."""
+        return self.markdown_content
+
+    @content_markdown.setter
+    def content_markdown(self, value: str) -> None:
+        self.markdown_content = value
+
 
 class Enrollment(Base):
     """Student logical enrollment record mapping to 'enrollments' table."""
@@ -604,6 +618,16 @@ class Enrollment(Base):
         foreign_keys=[course_id],
         back_populates="enrollments",
     )
+
+    @property
+    def student_id(self) -> int:
+        """Alias for student_user_id conforming to task description."""
+        return self.student_user_id
+
+    @student_id.setter
+    def student_id(self, value: int) -> None:
+        self.student_user_id = value
+
     periods = relationship(
         "EnrollmentPeriod",
         back_populates="enrollment",
@@ -862,3 +886,17 @@ class CourseCompletionSummary(Base):
     student = relationship("User", foreign_keys=[student_user_id])
     course = relationship("Course", foreign_keys=[course_id])
     source_period = relationship("EnrollmentPeriod", foreign_keys=[source_period_id])
+
+    @property
+    def student_id(self) -> int:
+        """Alias for student_user_id conforming to task description."""
+        return self.student_user_id
+
+    @student_id.setter
+    def student_id(self, value: int) -> None:
+        self.student_user_id = value
+
+    @property
+    def final_score(self) -> Any:
+        """Alias for final_aggregate_score conforming to task description."""
+        return self.final_aggregate_score

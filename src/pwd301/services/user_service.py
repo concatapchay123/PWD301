@@ -475,9 +475,166 @@ VALID_ROLE_COMBINATIONS: tuple[frozenset[str], ...] = (
 )
 
 
-def validate_role_combination(roles: set[str] | list[str] | frozenset[str]) -> bool:
-    """Validate whether a set of roles matches one of the canonical cumulative combinations."""
-    return frozenset(roles) in VALID_ROLE_COMBINATIONS
+def validate_role_combination(
+    roles: set[str] | list[str] | frozenset[str],
+    raise_on_error: bool = False,
+) -> bool:
+    """Validate whether a set of roles matches one of the canonical cumulative combinations.
+
+    Allowed cumulative combinations:
+    - {'STUDENT'}
+    - {'STUDENT', 'INSTRUCTOR'}
+    - {'STUDENT', 'INSTRUCTOR', 'ADMIN'}
+
+    Args:
+        roles: The set or collection of role codes to validate.
+        raise_on_error: If True and the combination is invalid, raises InvalidRoleAssignmentError.
+
+    Returns:
+        True if the combination is valid, False otherwise.
+
+    Raises:
+        InvalidRoleAssignmentError: If raise_on_error is True and combination is invalid.
+    """
+    normalized = {r.strip().upper() for r in roles} if roles else set()
+    is_valid = frozenset(normalized) in VALID_ROLE_COMBINATIONS
+    if not is_valid and raise_on_error:
+        raise InvalidRoleAssignmentError(
+            f"Invalid role combination: {set(roles)}. Allowed cumulative combinations: "
+            f"{{'STUDENT'}}, {{'STUDENT', 'INSTRUCTOR'}}, {{'STUDENT', 'INSTRUCTOR', 'ADMIN'}}."
+        )
+    return is_valid
+
+
+def set_user_roles(
+    user_id: int,
+    role_codes: set[str] | list[str] | frozenset[str],
+    assigned_by_user_id: int | None = None,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> User:
+    """Explicitly assign an exact set of roles to an existing user.
+
+    Invariants enforced:
+    - Never creates a new User; modifies the existing user record in place.
+    - Validates that the role combination strictly satisfies cumulative hierarchy (AUTH-002).
+      Any invalid partial combination (e.g. {'INSTRUCTOR'} without STUDENT, or {'ADMIN'} alone)
+      immediately raises InvalidRoleAssignmentError.
+    - Baseline STUDENT role cannot be omitted.
+    - Records append-only AuditEvent.
+    - Dispatches in-app notification to the user.
+    - Increments user.auth_version by 1.
+
+    Args:
+        user_id: Primary key of target user.
+        role_codes: The exact desired set of role codes.
+        assigned_by_user_id: Optional ID of administrator changing roles.
+        reason: Optional justification for the change.
+        session: Optional SQLAlchemy session.
+
+    Returns:
+        The updated User instance.
+
+    Raises:
+        UserNotFoundError: If user does not exist.
+        InvalidRoleAssignmentError: If role_codes does not match an allowed cumulative set.
+    """
+    sess = session if session is not None else db.session
+    user = sess.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError(f"User with ID {user_id} not found.")
+
+    # Strictly validate cumulative combination
+    validate_role_combination(role_codes, raise_on_error=True)
+    target_roles = {r.strip().upper() for r in role_codes}
+
+    before_roles = sorted(user.role_codes)
+    now = utc_now()
+
+    # Synchronize roles: remove obsolete, add newly assigned
+    for r in list(user.roles):
+        if r.code not in target_roles:
+            user.roles.remove(r)
+
+    for code in sorted(target_roles):
+        if code not in user.role_codes:
+            role_obj = sess.query(Role).filter(Role.code == code).first()
+            if role_obj is None:
+                role_obj = Role(code=code, name=code.capitalize())
+                sess.add(role_obj)
+                sess.flush()
+            user.roles.append(role_obj)
+
+    sess.flush()
+    if assigned_by_user_id is not None or reason is not None:
+        for code in target_roles:
+            role_obj = sess.query(Role).filter(Role.code == code).first()
+            if role_obj is not None:
+                link = (
+                    sess.query(UserRole)
+                    .filter(UserRole.user_id == user.id, UserRole.role_id == role_obj.id)
+                    .first()
+                )
+                if link is not None:
+                    link.assigned_by_user_id = assigned_by_user_id
+                    link.assignment_reason = reason
+
+    after_roles = sorted(target_roles)
+    user.auth_version += 1
+    user.updated_at = now
+
+    # Audit event
+    actor_roles = "SYSTEM"
+    performed_as_admin = False
+    if assigned_by_user_id is not None:
+        assigner = sess.get(User, assigned_by_user_id)
+        if assigner is not None:
+            actor_roles = ",".join(sorted(assigner.role_codes))
+            performed_as_admin = assigner.is_admin
+
+    audit_entry = AuditEvent(
+        actor_user_id=assigned_by_user_id,
+        actor_roles_snapshot=actor_roles,
+        action="USER_ROLES_UPDATED",
+        target_type="USER",
+        target_id=user.id,
+        reason=reason,
+        before_json=json.dumps({"roles": before_roles}),
+        after_json=json.dumps({"roles": after_roles}),
+        performed_as_admin=performed_as_admin,
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    # In-app notification
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        with sess.begin_nested():
+            dispatch_notification(
+                recipient_user=user.id,
+                event_type="ROLE_CHANGED",
+                title="Cập nhật vai trò tài khoản",
+                body=(
+                    f"Các vai trò của bạn đã được cập nhật thành: {', '.join(after_roles)}."
+                    + (f" Lý do: {reason}" if reason else "")
+                ),
+                action_url="/",
+                category="SYSTEM",
+                session=sess,
+            )
+    except Exception:
+        pass
+
+    try:
+        sess.commit()
+        sess.expire_all()
+        sess.refresh(user)
+    except Exception:
+        sess.rollback()
+        raise
+
+    return user
 
 
 def assign_role_to_user(
@@ -587,6 +744,27 @@ def assign_role_to_user(
     )
     sess.add(audit_entry)
 
+    # In-app notification on role change
+    if before_roles != after_roles:
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            with sess.begin_nested():
+                dispatch_notification(
+                    recipient_user=user.id,
+                    event_type="ROLE_CHANGED",
+                    title="Cập nhật vai trò tài khoản",
+                    body=(
+                        f"Các vai trò của bạn đã được cập nhật thành: {', '.join(after_roles)}."
+                        + (f" Lý do: {reason}" if reason else "")
+                    ),
+                    action_url="/",
+                    category="SYSTEM",
+                    session=sess,
+                )
+        except Exception:
+            pass
+
     try:
         sess.commit()
     except Exception:
@@ -683,6 +861,27 @@ def remove_role_from_user(
         created_at=now,
     )
     sess.add(audit_entry)
+
+    # In-app notification on role revocation
+    if before_roles != after_roles:
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            with sess.begin_nested():
+                dispatch_notification(
+                    recipient_user=user.id,
+                    event_type="ROLE_CHANGED",
+                    title="Cập nhật vai trò tài khoản",
+                    body=(
+                        f"Các vai trò của bạn đã được cập nhật thành: {', '.join(after_roles)}."
+                        + (f" Lý do: {reason}" if reason else "")
+                    ),
+                    action_url="/",
+                    category="SYSTEM",
+                    session=sess,
+                )
+        except Exception:
+            pass
 
     try:
         sess.commit()

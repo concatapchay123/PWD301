@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import random
 import secrets
 import time
 import unicodedata
@@ -461,9 +460,9 @@ def start_assessment_attempt(
     if not candidates:
         raise AttemptValidationError("Assessment contains no questions to start an attempt.")
 
-    # Apply question shuffling if configured
+    # Apply question shuffling if configured (Algorithm 04: cryptographically secure random)
     if assessment.shuffle_questions:
-        random.shuffle(candidates)
+        secrets.SystemRandom().shuffle(candidates)
 
     # 12. Freeze presentation snapshots for questions and choices
     for idx, cand in enumerate(candidates, start=1):
@@ -516,7 +515,7 @@ def start_assessment_attempt(
                 attempt_q.choice_shuffle_applied = True
                 # Preserve choices with is_fixed_position=True in their original positions
                 non_fixed = [c for c in choices if not c.is_fixed_position]
-                random.shuffle(non_fixed)
+                secrets.SystemRandom().shuffle(non_fixed)
                 ordered_choices: list[QuestionRevisionChoice] = []
                 nf_iter = iter(non_fixed)
                 for c in choices:
@@ -1207,6 +1206,13 @@ def save_attempt_answer(
         answer_record.saved_at = now
         sess.flush()
 
+    q_target = aq.source_question or (
+        sess.get(Question, aq.source_question_id) if aq.source_question_id else None
+    )
+    if q_target and q_target.first_answered_at is None:
+        q_target.first_answered_at = now
+        sess.flush()
+
     # Handle choices (for single/multiple choice questions)
     selected_choice_keys = (
         payload.get("selected_choice_keys")
@@ -1440,6 +1446,13 @@ def sync_offline_answers(
             answer_record.last_client_sequence = client_seq
             answer_record.last_change_id = change_uuid
             answer_record.saved_at = now
+            sess.flush()
+
+        q_target = aq.source_question or (
+            sess.get(Question, aq.source_question_id) if aq.source_question_id else None
+        )
+        if q_target and q_target.first_answered_at is None:
+            q_target.first_answered_at = now
             sess.flush()
 
         # Choices
@@ -2031,6 +2044,14 @@ def grade_attempt_objective_questions(
             grade.graded_against_revision_id = aq.source_question_revision_id
             grade.graded_at = None if is_essay else now
 
+        rev_target = aq.source_question_revision or (
+            sess.get(QuestionRevision, aq.source_question_revision_id)
+            if aq.source_question_revision_id
+            else None
+        )
+        if rev_target is not None:
+            rev_target.was_used_for_grading = True
+
         sess.flush()
 
         grade_hist = AttemptQuestionGradeHistory(
@@ -2177,6 +2198,14 @@ def grade_essay_question(
         grade.graded_by_user_id = actor.id
         grade.graded_at = now
         grade.manual_reason = reason
+
+    rev_target = aq.source_question_revision or (
+        sess.get(QuestionRevision, aq.source_question_revision_id)
+        if aq.source_question_revision_id
+        else None
+    )
+    if rev_target is not None:
+        rev_target.was_used_for_grading = True
 
     sess.flush()
 

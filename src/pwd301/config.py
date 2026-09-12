@@ -9,6 +9,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Ensure local .env file variables are loaded when config module is loaded
+load_dotenv()
+
 
 class BaseConfig:
     """Base configuration shared across all environments."""
@@ -90,6 +95,60 @@ class BaseConfig:
     # Logging
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
 
+    def __init__(self) -> None:
+        """Synchronize configuration instance with current environment variables."""
+        if "SECRET_KEY" in os.environ:
+            self.SECRET_KEY = os.environ["SECRET_KEY"]
+        if "JWT_SECRET_KEY" in os.environ:
+            self.JWT_SECRET_KEY = os.environ["JWT_SECRET_KEY"]
+        if "DATABASE_URL" in os.environ:
+            self.SQLALCHEMY_DATABASE_URI = os.environ["DATABASE_URL"]
+        if "LOG_LEVEL" in os.environ:
+            self.LOG_LEVEL = os.environ["LOG_LEVEL"]
+        if "FILE_STORAGE_ROOT" in os.environ:
+            self.FILE_STORAGE_ROOT = Path(os.environ["FILE_STORAGE_ROOT"])
+        if "FILE_QUARANTINE_ROOT" in os.environ:
+            self.FILE_QUARANTINE_ROOT = Path(os.environ["FILE_QUARANTINE_ROOT"])
+        if "FILE_BACKUP_ROOT" in os.environ:
+            self.FILE_BACKUP_ROOT = Path(os.environ["FILE_BACKUP_ROOT"])
+        if "EXPORT_ROOT" in os.environ:
+            self.EXPORT_ROOT = Path(os.environ["EXPORT_ROOT"])
+        if "MAX_IMAGE_BYTES" in os.environ:
+            self.MAX_IMAGE_BYTES = int(os.environ["MAX_IMAGE_BYTES"])
+        if "MAX_PDF_BYTES" in os.environ:
+            self.MAX_PDF_BYTES = int(os.environ["MAX_PDF_BYTES"])
+        if "MAX_DOCX_BYTES" in os.environ:
+            self.MAX_DOCX_BYTES = int(os.environ["MAX_DOCX_BYTES"])
+        if "MAX_PPTX_BYTES" in os.environ:
+            self.MAX_PPTX_BYTES = int(os.environ["MAX_PPTX_BYTES"])
+        if "MAX_VIDEO_BYTES_EXCLUSIVE" in os.environ:
+            self.MAX_VIDEO_BYTES_EXCLUSIVE = int(os.environ["MAX_VIDEO_BYTES_EXCLUSIVE"])
+            self.MAX_CONTENT_LENGTH = self.MAX_VIDEO_BYTES_EXCLUSIVE
+        if "MAX_CONTENT_LENGTH" in os.environ:
+            self.MAX_CONTENT_LENGTH = int(os.environ["MAX_CONTENT_LENGTH"])
+        if "ENROLLMENT_DETAIL_RETENTION_DAYS" in os.environ:
+            self.ENROLLMENT_DETAIL_RETENTION_DAYS = int(
+                os.environ["ENROLLMENT_DETAIL_RETENTION_DAYS"]
+            )
+        if "FILE_RECOVERY_DAYS" in os.environ:
+            self.FILE_RECOVERY_DAYS = int(os.environ["FILE_RECOVERY_DAYS"])
+        if "BACKUP_RETENTION_DAYS" in os.environ:
+            self.BACKUP_RETENTION_DAYS = int(os.environ["BACKUP_RETENTION_DAYS"])
+        if "AI_CHAT_INACTIVITY_SECONDS" in os.environ:
+            self.AI_CHAT_INACTIVITY_SECONDS = int(os.environ["AI_CHAT_INACTIVITY_SECONDS"])
+        if "GEMINI_API_KEY" in os.environ:
+            self.GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+        if "GEMINI_MODEL_NAME" in os.environ:
+            self.GEMINI_MODEL_NAME = os.environ["GEMINI_MODEL_NAME"]
+        if "GEMINI_TIMEOUT_SECONDS" in os.environ:
+            self.GEMINI_TIMEOUT_SECONDS = int(os.environ["GEMINI_TIMEOUT_SECONDS"])
+        if "ATTEMPT_LEASE_SECONDS" in os.environ:
+            self.ATTEMPT_LEASE_SECONDS = int(os.environ["ATTEMPT_LEASE_SECONDS"])
+        if "ATTEMPT_HEARTBEAT_SECONDS" in os.environ:
+            self.ATTEMPT_HEARTBEAT_SECONDS = int(os.environ["ATTEMPT_HEARTBEAT_SECONDS"])
+        if "TEXT_AUTOSAVE_DEBOUNCE_MS" in os.environ:
+            self.TEXT_AUTOSAVE_DEBOUNCE_MS = int(os.environ["TEXT_AUTOSAVE_DEBOUNCE_MS"])
+
 
 class DevelopmentConfig(BaseConfig):
     """Development environment configuration."""
@@ -102,6 +161,7 @@ class DevelopmentConfig(BaseConfig):
 class TestingConfig(BaseConfig):
     """Testing environment configuration."""
 
+    __test__: bool = False
     ENV: str = "testing"
     TESTING: bool = True
     DEBUG: bool = False
@@ -111,6 +171,16 @@ class TestingConfig(BaseConfig):
     JWT_SECRET_KEY: str = "test-jwt-secret-key-pwd301-minimum-32-bytes!"
     SESSION_COOKIE_SECURE: bool = False
     USE_PROXY_FIX: bool = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        # In testing, isolate database to TEST_DATABASE_URL or in-memory SQLite
+        self.SQLALCHEMY_DATABASE_URI = os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
+        self.SECRET_KEY = "test-secret-key-pwd301"
+        self.JWT_SECRET_KEY = "test-jwt-secret-key-pwd301-minimum-32-bytes!"
+        self.WTF_CSRF_ENABLED = False
+        self.SESSION_COOKIE_SECURE = False
+        self.USE_PROXY_FIX = False
 
 
 class ProductionConfig(BaseConfig):

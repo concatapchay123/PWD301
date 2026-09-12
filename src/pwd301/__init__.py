@@ -59,8 +59,10 @@ from pwd301.services.exceptions import (
     AIConversationNotFoundError,
     AIDraftNotFoundError,
     AIError,
+    AIOutOfScopeError,
     AIPromptInjectionError,
     AIQuotaExceededError,
+    AISecurityViolationError,
     AIServiceUnavailableError,
     AIValidationError,
     AssessmentClosedError,
@@ -199,24 +201,25 @@ def _format_error_response(
     message: str,
     status_code: int,
     field_errors: dict[str, Any] | None = None,
+    retry_after: int | None = None,
 ) -> Response | tuple[Response, int]:
     """Format an error response adhering to the PWD301 error model."""
     correlation_id = getattr(g, "correlation_id", uuid.uuid4().hex)
 
     if _is_api_or_json_request():
-        return (
-            jsonify(
-                {
-                    "error": {
-                        "code": code,
-                        "message": message,
-                        "field_errors": field_errors or {},
-                        "correlation_id": correlation_id,
-                    }
+        resp = jsonify(
+            {
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "field_errors": field_errors or {},
+                    "correlation_id": correlation_id,
                 }
-            ),
-            status_code,
+            }
         )
+        if status_code == 429:
+            resp.headers["Retry-After"] = str(retry_after if retry_after is not None else 60)
+        return resp, status_code
 
     if status_code in (403, 404, 500):
         try:
@@ -320,7 +323,9 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
     # 400 Bad Request & Validation Errors
     AIValidationError: ("VALIDATION_ERROR", 400),
+    AIOutOfScopeError: ("OUT_OF_SCOPE", 400),
     AIPromptInjectionError: ("PROMPT_INJECTION_DETECTED", 400),
+    AISecurityViolationError: ("SECURITY_VIOLATION", 400),
     MaxPointsExceededError: ("VALIDATION_ERROR", 400),
     GradingError: ("VALIDATION_ERROR", 400),
     CourseValidationError: ("VALIDATION_ERROR", 400),
@@ -437,10 +442,12 @@ def _register_error_handlers(app: Flask) -> None:
 
         def _make_handler(c: str, s: int):
             def handler(error: Exception) -> Response | tuple[Response, int]:
+                ra = getattr(error, "retry_after", None) if s == 429 else None
                 return _format_error_response(
                     code=c,
                     message=str(error),
                     status_code=s,
+                    retry_after=ra,
                 )
 
             return handler

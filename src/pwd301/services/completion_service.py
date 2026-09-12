@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -46,6 +47,17 @@ from pwd301.services.exceptions import (
     ForbiddenError,
     ResourceNotFoundError,
 )
+
+
+def _normalize_dt(val: Any) -> datetime | None:
+    """Ensure a datetime is timezone-aware UTC datetime."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=UTC)
+        return val.astimezone(UTC)
+    return None
 
 
 def _resolve_enrollment(
@@ -299,21 +311,43 @@ def calculate_course_progress(
         sess.flush()
         return 0.0
 
+    period_start = current_period.started_at
+    required_lesson_filter = [
+        Lesson.course_id == enrollment.course_id,
+        Lesson.status == "PUBLISHED",
+        Lesson.deleted_at.is_(None),
+    ]
+    if period_start is not None:
+        required_lesson_filter.append(
+            sa.or_(
+                Lesson.required_for_periods_starting_at.is_(None),
+                Lesson.required_for_periods_starting_at <= period_start,
+            )
+        )
+
+    total_required_lessons = (
+        sess.query(sa.func.count(Lesson.id)).filter(*required_lesson_filter).scalar() or 0
+    )
+
+    if total_required_lessons == 0:
+        enrollment.current_progress_percent = Decimal("100.00")
+        enrollment.updated_at = utc_now()
+        sess.flush()
+        return 100.0
+
     completed_lessons = (
         sess.query(sa.func.count(LessonProgress.id))
         .join(Lesson, Lesson.id == LessonProgress.lesson_id)
         .filter(
             LessonProgress.enrollment_period_id == current_period.id,
             LessonProgress.completed_at.isnot(None),
-            Lesson.course_id == enrollment.course_id,
-            Lesson.status == "PUBLISHED",
-            Lesson.deleted_at.is_(None),
+            *required_lesson_filter,
         )
         .scalar()
         or 0
     )
 
-    raw_pct = (completed_lessons / total_published_lessons) * 100.0
+    raw_pct = (completed_lessons / total_required_lessons) * 100.0
     pct = min(100.0, max(0.0, round(raw_pct, 2)))
 
     enrollment.current_progress_percent = Decimal(str(pct))
@@ -431,13 +465,15 @@ def evaluate_course_completion(
 
         # A lesson is required for this period if required_for_periods_starting_at is None
         # or the period started on/after that threshold (Algorithm 01 & 04_LESSON_AND_PROGRESS.md)
-        period_start = current_period.started_at
-        required_lessons = [
-            les
-            for les in published_lessons
-            if les.required_for_periods_starting_at is None
-            or (period_start is not None and period_start >= les.required_for_periods_starting_at)
-        ]
+        p_start = _normalize_dt(current_period.started_at)
+
+        def _is_lesson_required(les: Lesson) -> bool:
+            if les.required_for_periods_starting_at is None:
+                return True
+            les_req = _normalize_dt(les.required_for_periods_starting_at)
+            return p_start is not None and les_req is not None and p_start >= les_req
+
+        required_lessons = [les for les in published_lessons if _is_lesson_required(les)]
 
         if required_lessons:
             required_ids = [les.id for les in required_lessons]

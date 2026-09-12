@@ -467,6 +467,20 @@ class AIValidationError(ValidationError, AIError):
 class AIPromptInjectionError(AIValidationError):
     """Raised when suspicious prompt injection or instruction override patterns are detected."""
 
+    code: str = "PROMPT_INJECTION_DETECTED"
+
+
+class AISecurityViolationError(AIPromptInjectionError):
+    """Raised when malicious exploit, hacking, or platform sabotage attempts are detected."""
+
+    code: str = "SECURITY_VIOLATION"
+
+
+class AIOutOfScopeError(AIValidationError):
+    """Raised when a user query falls completely outside the academic and LMS domain scope."""
+
+    code: str = "OUT_OF_SCOPE"
+
 
 class AIConversationNotFoundError(ResourceNotFoundError, AIError):
     """Raised when a requested AI conversation cannot be found."""
@@ -478,6 +492,15 @@ class AIConversationExpiredError(StateViolationError, AIError):
 
 class AIQuotaExceededError(AIError):
     """Raised when Gemini API quota or external AI rate limit is exceeded."""
+
+    def __init__(
+        self,
+        message: str = "Rate limit exceeded for AI requests. Please wait before retrying.",
+        retry_after: int = 60,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.code = "RATE_LIMIT_EXCEEDED"
 
 
 class AIServiceUnavailableError(AIError):

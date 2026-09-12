@@ -18,6 +18,8 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
+from pwd301.models.assessment import Assessment
+from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course, Enrollment
 from pwd301.models.identity import Role, User
 from pwd301.services.jwt_auth_service import create_token_pair
@@ -147,10 +149,13 @@ def test_unauthenticated_api_request_rejected(client: FlaskClient) -> None:
 
 
 def test_unauthenticated_web_request_redirects(client: FlaskClient) -> None:
-    """Unauthenticated Web HTML request to protected routes redirects to login."""
+    """Unauthenticated Web HTML request redirects to login with relative next URL."""
     resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
     assert resp.status_code == 302
-    assert "/auth/login" in resp.headers["Location"]
+    location = resp.headers["Location"]
+    assert "/auth/login" in location
+    # Requirement 4.3: next URL must be a valid safe relative URL to pass _is_safe_redirect_url
+    assert "next=/instructor/dashboard" in location
 
 
 # ==============================================================================
@@ -401,3 +406,237 @@ def test_jwt_rest_api_rbac_enforcement(
     )
     assert resp.status_code == 200
     assert resp.get_json()["total_users"] > 0
+
+
+def test_instructor_and_admin_cannot_call_api_to_submit_student_attempt(
+    client: FlaskClient,
+    student_user: User,
+    instructor_a: User,
+    admin_user: User,
+    course_of_instructor_a: Course,
+) -> None:
+    """IDOR TEST: Neither Instructor nor Admin may call the API to submit on behalf of a student."""
+    sess: Session = db.session
+
+    # Create assessment and student attempt
+    assessment = Assessment(
+        course_id=course_of_instructor_a.id,
+        title="Security Test Exam",
+        assessment_type="QUIZ",
+    )
+    sess.add(assessment)
+    sess.flush()
+
+    attempt = AssessmentAttempt(
+        assessment_id=assessment.id,
+        enrollment_period_id=1,
+        student_user_id=student_user.id,
+        attempt_number=1,
+        status="IN_PROGRESS",
+    )
+    sess.add(attempt)
+    sess.commit()
+
+    attempt_uuid = str(attempt.public_id)
+
+    # 1. Instructor attempts to submit student's attempt via REST API -> 403
+    inst_tokens = create_token_pair(instructor_a)
+    inst_headers = {
+        "Authorization": f"Bearer {inst_tokens['access_token']}",
+        "Accept": "application/json",
+    }
+    resp = client.post(
+        f"/api/attempts/{attempt_uuid}/submit",
+        json={"submission_idempotency_key": "11111111-1111-1111-1111-111111111111"},
+        headers=inst_headers,
+    )
+    assert resp.status_code == 403
+    assert resp.get_json()["error"]["code"] == "FORBIDDEN"
+
+    # 2. Admin attempts to submit student's attempt via REST API -> 403
+    admin_tokens = create_token_pair(admin_user)
+    admin_headers = {
+        "Authorization": f"Bearer {admin_tokens['access_token']}",
+        "Accept": "application/json",
+    }
+    resp = client.post(
+        f"/api/attempts/{attempt_uuid}/submit",
+        json={"submission_idempotency_key": "22222222-2222-2222-2222-222222222222"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 403
+    assert resp.get_json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_dual_auth_header_fail_closed_and_no_cookie_fallback(
+    client: FlaskClient,
+    student_user: User,
+) -> None:
+    """If an Authorization header is provided, it must fail-closed and not fall back to cookie."""
+    # Log in student via Web session
+    login_as(client, student_user.email)
+
+    # Valid Web session can view student page
+    resp_ok = client.get("/student/dashboard", headers={"Accept": "application/json"})
+    assert resp_ok.status_code == 200
+
+    # Request with invalid Bearer token must fail-closed (401 Unauthorized), NOT fall back to cookie
+    resp_bad_jwt = client.get(
+        "/student/dashboard",
+        headers={
+            "Authorization": "Bearer invalid_or_expired_jwt_token_here",
+            "Accept": "application/json",
+        },
+    )
+    assert resp_bad_jwt.status_code == 401
+    assert resp_bad_jwt.get_json()["error"]["code"] == "UNAUTHORIZED"
+
+    # Malformed authorization header also fails closed
+    resp_malformed = client.get(
+        "/student/dashboard",
+        headers={
+            "Authorization": "Basic not_bearer_token",
+            "Accept": "application/json",
+        },
+    )
+    assert resp_malformed.status_code == 401
+
+
+def test_web_session_cookie_cannot_access_api_endpoints(
+    client: FlaskClient,
+    student_user: User,
+) -> None:
+    """CSRF invariant: Web session cookies alone must NOT authenticate /api/* endpoints."""
+    login_as(client, student_user.email)
+
+    # Attempt to access API endpoint using only session cookie (no Bearer header)
+    resp = client.get("/api/student/enrollments", headers={"Accept": "application/json"})
+    assert resp.status_code == 401
+    assert resp.get_json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_web_session_cookie_cannot_access_api_bare_route(
+    client: FlaskClient,
+    student_user: User,
+) -> None:
+    """CSRF invariant: Web session cookies alone must NOT authenticate bare /api route."""
+    from pwd301.services.authorization_service import get_authenticated_actor
+
+    login_as(client, student_user.email)
+
+    with client.application.test_request_context("/api", method="GET"):
+        actor = get_authenticated_actor()
+        assert actor is None
+
+
+def test_post_login_redirect_preserves_intended_destination(
+    client: FlaskClient,
+    instructor_a: User,
+) -> None:
+    """Post-login redirect flow must preserve destination when using relative next URL."""
+    # 1. Unauthenticated hit on instructor dashboard
+    resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
+    assert resp.status_code == 302
+    login_url = resp.headers["Location"]
+    assert "next=/instructor/dashboard" in login_url
+
+    # 2. Complete login with next parameter
+    login_resp = client.post(
+        login_url,
+        data={
+            "email": instructor_a.email,
+            "password": "Password@123",
+            "next": "/instructor/dashboard",
+        },
+        follow_redirects=False,
+    )
+    assert login_resp.status_code == 302
+    # Must redirect to the requested target, NOT default landing
+    assert login_resp.headers["Location"] == "/instructor/dashboard"
+
+
+def test_demoted_former_instructor_cannot_access_or_grade_attempts(
+    course_of_instructor_a: Course,
+    instructor_a: User,
+    student_user: User,
+) -> None:
+    """Layer 1 RBAC + Layer 2: Demoted instructor without role cannot view or grade attempts."""
+    from pwd301.services.authorization_service import can_access_attempt, can_grade_attempt
+    from pwd301.services.user_service import remove_role_from_user
+
+    sess: Session = db.session
+    assessment = Assessment(
+        course_id=course_of_instructor_a.id,
+        title="Exam",
+        assessment_type="QUIZ",
+    )
+    sess.add(assessment)
+    sess.flush()
+
+    attempt = AssessmentAttempt(
+        assessment_id=assessment.id,
+        enrollment_period_id=1,
+        student_user_id=student_user.id,
+        attempt_number=1,
+        status="IN_PROGRESS",
+    )
+    sess.add(attempt)
+    sess.commit()
+
+    # While still an instructor, can access and grade
+    assert can_access_attempt(instructor_a, attempt) is True
+    assert can_grade_attempt(instructor_a, attempt) is True
+
+    # Demote instructor_a: remove INSTRUCTOR role
+    remove_role_from_user(instructor_a.id, "INSTRUCTOR")
+    sess.refresh(instructor_a)
+    assert "INSTRUCTOR" not in instructor_a.role_codes
+
+    # Demoted user (despite course.owner_instructor_id == instructor_a.id) must be denied
+    assert can_access_attempt(instructor_a, attempt) is False
+    assert can_grade_attempt(instructor_a, attempt) is False
+
+
+def test_role_changes_dispatch_in_app_notification(
+    student_user: User,
+    admin_user: User,
+) -> None:
+    """Requirement 4.1: assign and remove role must dispatch notifications."""
+    from pwd301.models.notification_audit import Notification
+    from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
+
+    sess: Session = db.session
+    initial_count = sess.query(Notification).filter_by(recipient_user_id=student_user.id).count()
+
+    # Assign INSTRUCTOR role
+    assign_role_to_user(
+        student_user.id,
+        "INSTRUCTOR",
+        assigned_by_user_id=admin_user.id,
+        reason="Promoted to instructor",
+    )
+
+    notifs_after_assign = (
+        sess.query(Notification)
+        .filter_by(recipient_user_id=student_user.id)
+        .order_by(Notification.id.desc())
+        .first()
+    )
+    assert notifs_after_assign is not None
+    assert (
+        sess.query(Notification).filter_by(recipient_user_id=student_user.id).count()
+        == initial_count + 1
+    )
+    assert "INSTRUCTOR" in notifs_after_assign.body
+
+    # Remove INSTRUCTOR role
+    remove_role_from_user(
+        student_user.id,
+        "INSTRUCTOR",
+        removed_by_user_id=admin_user.id,
+        reason="Role revoked",
+    )
+    assert (
+        sess.query(Notification).filter_by(recipient_user_id=student_user.id).count()
+        == initial_count + 2
+    )

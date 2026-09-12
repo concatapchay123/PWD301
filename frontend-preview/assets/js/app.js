@@ -725,21 +725,24 @@
         let citation = 'Bài giảng PWD301 & Tài liệu thực hành';
 
         const lower = text.toLowerCase();
-        if (lower.includes('csrf') || lower.includes('token')) {
-          answer = `Trong Flask-WTF, <strong>CSRF Token</strong> được tạo ngẫu nhiên theo phiên làm việc của người dùng và mã hóa bí mật. Khi submit biểu mẫu (POST), hệ thống sẽ đối chiếu token từ form với token trong session. Nếu không khớp, yêu cầu sẽ bị chặn ngay với mã <code>400 Bad Request</code> để ngăn chặn giả mạo yêu cầu chéo trang.`;
-          citation = 'Bài 4: Xử lý Biểu mẫu với Flask-WTF & Phòng chống CSRF';
-        } else if (lower.includes('get') || lower.includes('post')) {
-          answer = `Phương thức <strong>GET</strong> dùng để truy xuất dữ liệu an toàn (Idempotent), tham số truyền qua URL và có thể cache. Ngược lại, <strong>POST</strong> truyền dữ liệu qua Request Body để tạo mới hoặc cập nhật dữ liệu trên server, bảo mật hơn và không bị lưu trên URL history.`;
-          citation = 'Bài 1: Giao thức HTTP, RESTful API & Quản lý phiên';
-        } else if (lower.includes('blueprint')) {
-          answer = `<strong>Flask Blueprint</strong> cho phép tổ chức ứng dụng quy mô lớn thành các mô đun độc lập (auth, course, assessment,...). Mỗi Blueprint sở hữu router, templates và static assets riêng biệt, giúp code gọn gàng và dễ mở rộng.`;
-          citation = 'Bài 2: Cấu trúc Dự án Flask Quy mô lớn & Jinja2 Templates';
-        } else if (lower.includes('thi') || lower.includes('kiểm tra') || lower.includes('mẹo') || lower.includes('giữa kỳ')) {
-          answer = `Để đạt điểm cao bài kiểm tra giữa kỳ môn PWD301: 1. Ôn kỹ nguyên tắc cờ HttpOnly cho Cookie phiên; 2. Nắm vững mã trạng thái HTTP chuẩn RESTful; 3. Hiểu cách SQLAlchemy xử lý quan hệ Foreign Key. Đề thi gồm 10 câu trắc nghiệm (30 phút).`;
-          citation = 'Đề cương Ôn tập Kiểm tra Giữa kỳ PWD301';
+        if (lower.includes('bán hàng') || lower.includes('lập trình cho') || lower.includes('viết web')) {
+          answer = `Chào bạn! Trợ lý Bạch Tuộc AI là trợ lý học tập và hướng dẫn sử dụng hệ thống PWD301. Hệ thống không hỗ trợ lập trình gia công, xây dựng website thương mại hoặc viết mã nguồn dự án ngoài theo yêu cầu cá nhân. Bạn có thể tham khảo các khóa học Lập trình Web trên hệ thống để tự trang bị kiến thức nhé!`;
+          citation = 'Quy chế Trợ lý Học tập PWD301 & Chính sách Phạm vi AI';
+        } else if (lower.includes('khóa học') || lower.includes('môn học')) {
+          answer = `Hệ thống PWD301 cung cấp nhiều khóa học chuyên sâu từ cơ bản đến nâng cao: Lập trình Web với Python & Flask, Kiến trúc Cơ sở Dữ liệu SQL Server, Thiết kế Giao diện Frontend, và An toàn Thông tin Ứng dụng Web. Bạn có thể truy cập mục <strong>Khóa học</strong> trên thanh điều hướng để xem chi tiết!`;
+          citation = 'Danh mục Khóa học PWD301 Online Course Platform';
+        } else if (lower.includes('đăng ký')) {
+          answer = `Để đăng ký khóa học: 1. Vào trang <strong>Khóa học</strong>; 2. Chọn môn học bạn quan tâm để xem thông tin chi tiết; 3. Nhấn nút <strong>Đăng ký học</strong>. Nếu khóa học có điều kiện tiên quyết, bạn cần hoàn thành môn học trước đó để được xét duyệt.`;
+          citation = 'Hướng dẫn Học viên: Quy trình Đăng ký Môn học';
+        } else if (lower.includes('thi') || lower.includes('kiểm tra') || lower.includes('điểm') || lower.includes('nộp bài')) {
+          answer = `Để làm bài kiểm tra: Bạn vào mục <strong>Bài kiểm tra</strong> trong bảng điều khiển học viên, chọn đề thi được giao và nhấn <strong>Bắt đầu làm bài</strong>. Sau khi hoàn thành, nhấn <strong>Nộp bài</strong> để hệ thống tự động chấm điểm và ghi nhận bảng điểm ngay lập tức.`;
+          citation = 'Quy chế Thi & Đánh giá Kết quả Học tập';
+        } else if (lower.includes('giảng viên') || lower.includes('ứng tuyển') || lower.includes('nộp đơn')) {
+          answer = `Để trở thành Giảng viên trên PWD301: Học viên truy cập trang <strong>Trở thành Giảng viên</strong> từ menu hồ sơ, điền minh chứng chuyên môn (kinh nghiệm giảng dạy, chứng chỉ, hợp đồng/thu nhập) và gửi đơn. Quản trị viên (Admin) sẽ xét duyệt và cấp quyền trong 24-48 giờ.`;
+          citation = 'Quy trình Tự ứng cử & Xét duyệt Giảng viên';
         } else {
-          answer = `Cảm ơn bạn đã hỏi về "<strong>${this.escapeHtml(text)}</strong>". Trong giáo trình môn PWD301, nội dung này được giảng viên giải thích chi tiết trong phần kiến trúc backend và xử lý an toàn ứng dụng web.`;
-          citation = 'Giáo trình PWD301 — Online Course Management Platform';
+          answer = `Chào bạn! Ở trang chính, Trợ lý Bạch Tuộc AI sẵn sàng hỗ trợ giải đáp về hệ thống PWD301, danh mục khóa học và hướng dẫn sử dụng các tính năng nền tảng. Bạn cần hỗ trợ thêm thông tin gì về hệ thống không?`;
+          citation = 'Trung tâm Hỗ trợ Học tập & Hướng dẫn Nền tảng PWD301';
         }
 
         const botMsg = document.createElement('div');

@@ -231,11 +231,12 @@ def test_conversation_lifecycle_and_messaging_api(
 def test_unified_chat_api(
     client: FlaskClient,
     student_user: User,
+    test_course: Course,
 ) -> None:
     """Test POST /api/ai/chat with and without existing conversation_id."""
     headers = _auth_headers(student_user)
 
-    # Chat without conversation_id (auto-creates conversation)
+    # 1. Chat on global context (auto-creates conversation, greeting)
     resp = client.post(
         "/api/ai/chat",
         headers=headers,
@@ -248,14 +249,33 @@ def test_unified_chat_api(
     assert "assistant_message" in data
     conv_id = data["conversation_id"]
 
-    # Chat with existing conversation_id
+    # Chat with existing conversation_id asking about LMS courses / progress
     resp_followup = client.post(
         "/api/ai/chat",
         headers=headers,
-        json={"conversation_id": conv_id, "message": "Give me a summary of python loops."},
+        json={
+            "conversation_id": conv_id,
+            "message": "How do I check my course progress and catalog?",
+        },
     )
     assert resp_followup.status_code == 200
     assert resp_followup.get_json()["conversation_id"] == conv_id
+
+    # 2. Chat with course context (supports academic/programming questions)
+    course_id = str(test_course.public_id)
+    resp_course = client.post(
+        "/api/ai/chat",
+        headers=headers,
+        json={
+            "course_id": course_id,
+            "context_type": "COURSE",
+            "message": "Give me a summary of python loops.",
+        },
+    )
+    assert resp_course.status_code == 200
+    course_data = resp_course.get_json()
+    assert "conversation_id" in course_data
+    assert course_data["assistant_message"]["content"] != ""
 
 
 def test_conversation_inactivity_expiry_in_api(

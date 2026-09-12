@@ -159,24 +159,24 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
             </div>
             <div class="ai-msg-content">
-              Xin chào! 👋 Tôi là <strong>Trợ lý AI Học tập PWD301</strong>. Tôi có thể giải đáp thắc mắc về bài giảng, chuẩn bị kiểm tra giữa kỳ, hoặc phân tích code Flask. Bạn cần hỗ trợ gì hôm nay?
+              Xin chào! 👋 Tôi là <strong>Bạch Tuộc Trợ lý AI 🐙</strong>. Tôi có thể giải đáp thắc mắc về hệ thống PWD301, thông tin khóa học, hoặc hướng dẫn sử dụng các tính năng học tập. Bạn cần hỗ trợ gì hôm nay?
             </div>
           </div>
 
           <div class="ai-quick-prompts">
             <div class="ai-prompts-label">Gợi ý câu hỏi nhanh:</div>
             <div class="d-flex flex-wrap gap-1">
-              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('CSRF Token hoạt động thế nào trong Flask-WTF?')">💡 CSRF Token trong Flask?</button>
-              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Khác biệt cốt lõi giữa HTTP GET và POST?')">💡 GET vs POST?</button>
-              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Cấu trúc chuẩn của một Flask Blueprint?')">💡 Flask Blueprint?</button>
-              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Các điểm mấu chốt để đạt điểm tối đa bài kiểm tra giữa kỳ?')">💡 Mẹo thi giữa kỳ?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Hệ thống PWD301 có những khóa học nào?')">💡 Các khóa học?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Làm sao để đăng ký tham gia một khóa học?')">💡 Đăng ký khóa học?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Cách làm bài kiểm tra và xem bảng điểm?')">💡 Làm bài thi & xem điểm?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.app.selectQuickPrompt('Hướng dẫn nộp đơn ứng tuyển làm Giảng viên?')">💡 Trở thành Giảng viên?</button>
             </div>
           </div>
         </div>
 
         <div class="ai-chat-footer">
           <form id="ai-floating-form" onsubmit="event.preventDefault(); PWD.app.sendFloatingAIMessage();" class="d-flex gap-2">
-            <input type="text" id="ai-floating-input" class="form-control ai-input-field" placeholder="Hỏi Trợ lý AI về môn học..." autocomplete="off">
+            <input type="text" id="ai-floating-input" class="form-control ai-input-field" placeholder="Hỏi về hệ thống, khóa học, hướng dẫn sử dụng..." autocomplete="off">
             <button type="submit" class="btn btn-primary ai-send-btn" title="Gửi câu hỏi" aria-label="Gửi">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>

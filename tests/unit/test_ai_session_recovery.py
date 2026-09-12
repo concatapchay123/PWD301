@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import timedelta
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.ai_rag import AIConversation
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
 from pwd301.services.ai_service import create_conversation
@@ -41,7 +41,9 @@ def setup_roles(app: Flask) -> dict[str, Role]:
 @pytest.fixture
 def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     """Create test student user."""
-    u = register_user(f"student_chat_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Chat Student")
+    u = register_user(
+        f"student_chat_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Chat Student"
+    )
     return assign_role_to_user(u.id, "STUDENT")
 
 
@@ -55,8 +57,10 @@ def _login_web(client: FlaskClient, user: User) -> None:
         sess["auth_source"] = "SESSION"
 
 
-def test_student_ai_chat_auto_renews_expired_session(client: FlaskClient, student_user: User) -> None:
-    """When a student's session conversation has expired (>5 minutes), /student/ai/chat auto-renews without error."""
+def test_student_ai_chat_auto_renews_expired_session(
+    client: FlaskClient, student_user: User
+) -> None:
+    """When a conversation has expired (>5m), /student/ai/chat auto-renews without error."""
     _login_web(client, student_user)
 
     # 1. Create a conversation and artificially expire it past 5 minutes

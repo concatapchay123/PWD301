@@ -417,7 +417,7 @@ def prune_trash_entities(
             .count()
             > 0
         )
-        if has_enrollments or has_summaries:
+        if crs.first_student_enrolled_at is not None or has_enrollments or has_summaries:
             # Preserve minimal Course identity as ARCHIVED historical tombstone
             crs.status = "ARCHIVED"
             crs.restore_until = None

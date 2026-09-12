@@ -13,6 +13,7 @@ Provides business logic for:
 
 from __future__ import annotations
 
+import datetime
 import json
 import uuid
 from decimal import Decimal
@@ -62,9 +63,9 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "DRAFT": {"SUBMITTED_FOR_REVIEW", "TRASH"},
     "SUBMITTED_FOR_REVIEW": {"APPROVED", "DRAFT"},
     "APPROVED": {"PUBLISHED", "DRAFT"},
-    "PUBLISHED": {"ARCHIVED", "SUBMITTED_FOR_REVIEW"},
+    "PUBLISHED": {"ARCHIVED", "SUBMITTED_FOR_REVIEW", "TRASH"},
     "ARCHIVED": {"PUBLISHED", "TRASH"},
-    "TRASH": {"ARCHIVED"},
+    "TRASH": {"ARCHIVED", "DRAFT", "PUBLISHED"},
 }
 
 # Mass-assignment safe writable metadata fields
@@ -563,7 +564,7 @@ def change_course_status(
         # Critical Invariant: Only ADMIN can approve courses
         if not actor.is_admin:
             raise ForbiddenError("Only administrators can approve courses.")
-    elif current_status == "TRASH" and target_status == "ARCHIVED":
+    elif current_status == "TRASH" and target_status in ("ARCHIVED", "DRAFT", "PUBLISHED"):
         # Restoring from trash requires ADMIN privilege
         if not actor.is_admin:
             raise ForbiddenError("Only administrators can restore courses from TRASH.")
@@ -576,12 +577,22 @@ def change_course_status(
     if target_status in ("ARCHIVED", "TRASH"):
         _check_active_prerequisite_dependencies(sess, course.id, course.course_code)
 
+    if current_status == "TRASH" and target_status == "DRAFT" and course.published_at is not None:
+        raise CourseStateViolationError(
+            "Cannot restore a previously published course to DRAFT status."
+        )
+
     before_state = {"status": current_status}
     now = utc_now()
 
     # 4. Apply transition mutations
     course.status = target_status
     course.updated_at = now
+
+    if current_status == "TRASH" and target_status in ("ARCHIVED", "DRAFT", "PUBLISHED"):
+        course.deleted_at = None
+        course.deleted_by_user_id = None
+        course.restore_until = None
 
     if target_status == "APPROVED":
         course.approved_at = now
@@ -592,9 +603,7 @@ def change_course_status(
     elif target_status == "TRASH":
         course.deleted_at = now
         course.deleted_by_user_id = actor.id
-    elif current_status == "TRASH" and target_status == "ARCHIVED":
-        course.deleted_at = None
-        course.deleted_by_user_id = None
+        course.restore_until = now + datetime.timedelta(days=30)
 
     after_state = {"status": target_status}
 

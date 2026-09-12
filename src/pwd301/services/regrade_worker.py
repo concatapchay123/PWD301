@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import unicodedata
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -69,6 +70,26 @@ from pwd301.services.exceptions import (
 )
 
 MAX_RETRIES: int = 3
+
+
+def _normalize_dt(val: Any) -> datetime | None:
+    """Normalize datetime to timezone-aware UTC datetime."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=UTC)
+        return val.astimezone(UTC)
+    if isinstance(val, str):
+        try:
+            clean_str = val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean_str)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
+        except ValueError:
+            return None
+    return None
 
 
 # ============================================================================
@@ -363,12 +384,32 @@ def _evaluate_attempt_item_regrade(
         old_points = grade.awarded_points if grade else Decimal("0.0000")
 
         if corr_type == "CONTENT_OR_CHOICES":
-            # Rule: Content or choice defect awards full points
-            awarded_pts = aq.points_assigned
-            grading_status = "FULL_CREDIT"
-            grading_rule = "CONTENT_FULL_CREDIT"
-            reason_code = "FULL_CREDIT"
-            reason_text = f"Full credit awarded for question correction: {correction.reason}"
+            # Algorithm 11 & REGRADE-002:
+            # If attempt started before correction was effective (started_at < effective_at),
+            # award full credit for the defective question.
+            # If attempt started after correction was effective (started_at >= effective_at),
+            # retain current score.
+            eff_at = correction.effective_at or correction.created_at
+            attempt_started = attempt.started_at
+            eff_at_norm = _normalize_dt(eff_at)
+            att_started_norm = _normalize_dt(attempt_started)
+
+            if (
+                eff_at_norm is not None
+                and att_started_norm is not None
+                and att_started_norm >= eff_at_norm
+            ):
+                awarded_pts = old_points
+                grading_status = grade.grading_status if grade else "AUTO_GRADED"
+                grading_rule = grade.grading_rule if grade else "UNCHANGED"
+                reason_code = "UNCHANGED_POST_CORRECTION"
+                reason_text = "Attempt started after question correction; score retained."
+            else:
+                awarded_pts = aq.points_assigned
+                grading_status = "FULL_CREDIT"
+                grading_rule = "CONTENT_FULL_CREDIT"
+                reason_code = "FULL_CREDIT"
+                reason_text = f"Full credit awarded for question correction: {correction.reason}"
         else:  # ANSWER_ONLY
             q_type = target_rev.question_type if target_rev else aq.question_type_snapshot
             if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
@@ -895,11 +936,32 @@ def regrade_attempt(
         if active_rev is None:
             continue
 
+        grade = (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        old_pts = grade.awarded_points if grade else Decimal("0.0000")
+
         if correction is not None and correction.correction_type == "CONTENT_OR_CHOICES":
-            awarded = aq.points_assigned
-            grading_status = "FULL_CREDIT"
-            grading_rule = "CONTENT_FULL_CREDIT"
-            reason_code = "FULL_CREDIT"
+            eff_at = correction.effective_at or correction.created_at
+            attempt_started = attempt.started_at
+            eff_at_norm = _normalize_dt(eff_at)
+            att_started_norm = _normalize_dt(attempt_started)
+            if (
+                eff_at_norm is not None
+                and att_started_norm is not None
+                and att_started_norm >= eff_at_norm
+            ):
+                awarded = old_pts
+                grading_status = grade.grading_status if grade else "AUTO_GRADED"
+                grading_rule = grade.grading_rule if grade else "UNCHANGED"
+                reason_code = "UNCHANGED_POST_CORRECTION"
+            else:
+                awarded = aq.points_assigned
+                grading_status = "FULL_CREDIT"
+                grading_rule = "CONTENT_FULL_CREDIT"
+                reason_code = "FULL_CREDIT"
         else:
             q_type = active_rev.question_type
             if q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
@@ -950,13 +1012,6 @@ def regrade_attempt(
             grading_status = "AUTO_GRADED"
             grading_rule = "ANSWER_CORRECTION" if question_correction_id else "ORIGINAL"
             reason_code = "AUTO_REGRADE" if question_correction_id else "INITIAL"
-
-        grade = (
-            sess.query(AttemptQuestionGrade)
-            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
-            .first()
-        )
-        old_pts = grade.awarded_points if grade else Decimal("0.0000")
 
         if grade is None:
             grade = AttemptQuestionGrade(

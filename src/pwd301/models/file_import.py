@@ -80,6 +80,29 @@ class FileBlob(Base):
             return self.sha256.hex()
         return str(self.sha256)
 
+    @property
+    def sha256_hash(self) -> str:
+        """Alias for sha256_hex conforming to task description."""
+        return self.sha256_hex
+
+    @property
+    def mime_type(self) -> str:
+        """Alias for detected_mime_type conforming to task description."""
+        return self.detected_mime_type
+
+    @mime_type.setter
+    def mime_type(self, value: str) -> None:
+        self.detected_mime_type = value
+
+    @property
+    def storage_path(self) -> str:
+        """Alias for storage_key conforming to task description."""
+        return self.storage_key
+
+    @storage_path.setter
+    def storage_path(self, value: str) -> None:
+        self.storage_key = value
+
 
 class FileAsset(Base):
     """Logical course-scoped file identity mapping to 'file_assets' table.
@@ -172,6 +195,24 @@ class FileAsset(Base):
         uselist=False,
         viewonly=True,
     )
+
+    @property
+    def filename(self) -> str:
+        """Alias for display_name conforming to task description."""
+        return self.display_name
+
+    @filename.setter
+    def filename(self, value: str) -> None:
+        self.display_name = value
+
+    @property
+    def owner_id(self) -> int:
+        """Alias for created_by_user_id conforming to task description."""
+        return self.created_by_user_id
+
+    @owner_id.setter
+    def owner_id(self, value: int) -> None:
+        self.created_by_user_id = value
 
 
 class FileRevision(Base):
@@ -425,6 +466,24 @@ class QuestionRevisionResource(Base):
     question_revision = relationship("QuestionRevision", foreign_keys=[question_revision_id])
     file_asset = relationship("FileAsset", foreign_keys=[file_asset_id])
 
+    @property
+    def revision_id(self) -> int:
+        """Alias for question_revision_id conforming to task description."""
+        return self.question_revision_id
+
+    @revision_id.setter
+    def revision_id(self, value: int) -> None:
+        self.question_revision_id = value
+
+    @property
+    def asset_id(self) -> int:
+        """Alias for file_asset_id conforming to task description."""
+        return self.file_asset_id
+
+    @asset_id.setter
+    def asset_id(self, value: int) -> None:
+        self.file_asset_id = value
+
 
 class DocumentImportJob(Base):
     """Document parsing workflow job mapping to 'document_import_jobs' table."""
@@ -525,6 +584,24 @@ class DocumentImportJob(Base):
         cascade="all, delete-orphan",
         order_by="ImportQuestion.ordinal",
     )
+
+    @property
+    def created_by(self) -> int:
+        """Alias for requested_by_user_id conforming to task description."""
+        return self.requested_by_user_id
+
+    @created_by.setter
+    def created_by(self, value: int) -> None:
+        self.requested_by_user_id = value
+
+    @property
+    def asset_id(self) -> int:
+        """Alias for source_file_asset_id conforming to task description."""
+        return self.source_file_asset_id
+
+    @asset_id.setter
+    def asset_id(self, value: int) -> None:
+        self.source_file_asset_id = value
 
 
 class ImportQuestion(Base):

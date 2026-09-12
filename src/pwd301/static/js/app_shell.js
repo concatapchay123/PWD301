@@ -316,6 +316,10 @@
         }
 
         const reply = data.reply || (data.error && data.error.message) || 'Cảm ơn câu hỏi của bạn. Hãy cùng xem lại bài học nhé!';
+        const citationSource = data.course_title || data.citations;
+        const citationHtml = citationSource
+          ? `<div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Nguồn: ${escapeHtml(citationSource)}</div>`
+          : '';
         const botMsg = document.createElement('div');
         botMsg.className = 'ai-chat-msg ai-msg-bot';
         botMsg.innerHTML = `
@@ -324,7 +328,7 @@
           </div>
           <div class="ai-msg-content">
             <div style="white-space: pre-wrap; line-height: 1.6;">${escapeHtml(reply)}</div>
-            <div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Trực tiếp từ giáo trình PWD301</div>
+            ${citationHtml}
           </div>
         `;
         msgContainer.appendChild(botMsg);
@@ -341,8 +345,7 @@
             <img src="/static/img/octopus_mascot.png" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
           </div>
           <div class="ai-msg-content">
-            <div>Chào bạn! Trong môn PWD301, bạn có thể tham khảo mục tài liệu và bài giảng của từng bài học để nắm vững khái niệm này nhé.</div>
-            <div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Giáo trình môn học PWD301</div>
+            <div>Chào bạn! Hiện tại kết nối AI đang bận hoặc có gián đoạn tạm thời. Bạn có thể xem lại tài liệu bài học hoặc đặt lại câu hỏi sau ít giây nhé! 🐙</div>
           </div>
         `;
         msgContainer.appendChild(botMsg);

@@ -192,30 +192,71 @@ def clear_login_attempts(
             _clear_file_timestamps(f"email:{clean_email}")
 
 
+# Tiered AI request limits per minute by role per System Specification Section 9
+AI_ROLE_LIMITS: dict[str, int] = {
+    "ADMIN": 120,
+    "INSTRUCTOR": 60,
+    "STUDENT": 20,
+    "ANONYMOUS": 10,
+}
+
+
 def check_ai_rate_limit(
-    user_id: int | str,
-    limit: int = 20,
+    user_or_id: Any,
+    role: str | None = None,
+    client_ip: str | None = None,
+    limit: int | None = None,
     window_seconds: int = 60,
 ) -> None:
-    """Check AI chat request rate limit for an authenticated user across all workers.
+    """Check AI chat request rate limit across all workers with tiered role quotas and IP isolation.
+
+    Role Quotas:
+    - STUDENT: 20 requests / minute
+    - INSTRUCTOR: 60 requests / minute
+    - ADMIN: 120 requests / minute
+    - Anonymous / IP-based: 10 requests / minute
 
     Raises:
-        AIQuotaExceededError: If user exceeds allowed requests within window.
+        AIQuotaExceededError: If request rate exceeds allowed quota with retry_after header info.
     """
     now = time.time()
-    key = f"user:{user_id}"
+
+    # Determine identity and role
+    if hasattr(user_or_id, "id"):
+        user_key = f"user:{user_or_id.id}"
+        resolved_role = role or getattr(user_or_id, "primary_role", None) or "STUDENT"
+    elif isinstance(user_or_id, (int, str)) and str(user_or_id).isdigit():
+        user_key = f"user:{user_or_id}"
+        resolved_role = role or "STUDENT"
+    elif client_ip:
+        user_key = f"ip:{client_ip.strip()}"
+        resolved_role = "ANONYMOUS"
+    else:
+        user_key = f"user:{user_or_id}"
+        resolved_role = role or "STUDENT"
+
+    # Resolve limit
+    if limit is None:
+        limit = AI_ROLE_LIMITS.get(resolved_role.upper(), 20)
+
     with _lock:
-        mem_timestamps = _clean_window(_ai_request_timestamps[key], window_seconds, now)
-        _ai_request_timestamps[key] = mem_timestamps
-        file_timestamps = _read_file_timestamps(key, window_seconds, now)
+        mem_timestamps = _clean_window(_ai_request_timestamps[user_key], window_seconds, now)
+        _ai_request_timestamps[user_key] = mem_timestamps
+        file_timestamps = _read_file_timestamps(user_key, window_seconds, now)
         all_timestamps = sorted(set(mem_timestamps + file_timestamps))
+
         if len(all_timestamps) >= limit:
+            oldest_in_window = all_timestamps[-limit]
+            remaining = int(window_seconds - (now - oldest_in_window)) + 1
+            retry_after = max(1, remaining)
             raise AIQuotaExceededError(
-                "Rate limit exceeded for AI requests. "
-                "Please wait a moment before sending another message."
+                f"Rate limit exceeded for AI requests ({len(all_timestamps)}/{limit} per minute). "
+                f"Please wait {retry_after} seconds before trying again.",
+                retry_after=retry_after,
             )
-        _ai_request_timestamps[key].append(now)
-        _record_file_timestamp(key, now, window_seconds=window_seconds)
+
+        _ai_request_timestamps[user_key].append(now)
+        _record_file_timestamp(user_key, now, window_seconds=window_seconds)
 
 
 def check_email_rate_limit(

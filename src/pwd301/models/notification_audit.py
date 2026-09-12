@@ -163,6 +163,33 @@ class Notification(Base):
         """Return True if notification has been read."""
         return self.read_at is not None
 
+    @property
+    def user_id(self) -> int:
+        """Alias for recipient_user_id conforming to task description."""
+        return self.recipient_user_id
+
+    @user_id.setter
+    def user_id(self, value: int) -> None:
+        self.recipient_user_id = value
+
+    @property
+    def event_id(self) -> int:
+        """Alias for notification_event_id conforming to task description."""
+        return self.notification_event_id
+
+    @event_id.setter
+    def event_id(self, value: int) -> None:
+        self.notification_event_id = value
+
+    @property
+    def message(self) -> str:
+        """Alias for body conforming to task description."""
+        return self.body
+
+    @message.setter
+    def message(self, value: str) -> None:
+        self.body = value
+
     def to_dict(self) -> dict[str, Any]:
         """Convert notification to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
         return {
@@ -369,6 +396,42 @@ class AuditEvent(Base):
     def public_id(self) -> str:
         """Public identifier matching event_id per ADR-002."""
         return str(self.event_id)
+
+    @property
+    def actor_id(self) -> int | None:
+        """Alias for actor_user_id conforming to task description."""
+        return self.actor_user_id
+
+    @actor_id.setter
+    def actor_id(self, value: int | None) -> None:
+        self.actor_user_id = value
+
+    @property
+    def before_state_json(self) -> str | None:
+        """Alias for before_json conforming to task description."""
+        return self.before_json
+
+    @before_state_json.setter
+    def before_state_json(self, value: str | None) -> None:
+        self.before_json = value
+
+    @property
+    def after_state_json(self) -> str | None:
+        """Alias for after_json conforming to task description."""
+        return self.after_json
+
+    @after_state_json.setter
+    def after_state_json(self, value: str | None) -> None:
+        self.after_json = value
+
+    @property
+    def correlation_id(self) -> uuid.UUID | None:
+        """Alias for request_id conforming to task description."""
+        return self.request_id
+
+    @correlation_id.setter
+    def correlation_id(self, value: uuid.UUID | None) -> None:
+        self.request_id = value
 
     def to_dict(self, target_public_id: str | None = None) -> dict[str, Any]:
         """Convert audit event to dictionary strictly conforming to ADR-002 Zero PK Leakage."""

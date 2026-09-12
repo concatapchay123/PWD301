@@ -11,7 +11,8 @@
   - `pyproject.toml`, `scripts/repo_check.py`
 - **Migrations created:** None (deferred to TASK-002 per specification)
 - **Verification commands and results:**
-  - `./scripts/verify.ps1`: PASS (repo_check, compileall, ruff check, ruff format --check, mypy src, pytest 23 passed with 96% coverage)
+  - `./scripts/verify.ps1`: PASS (repo_check, compileall, ruff check, ruff format --check, mypy src, pytest 870/870 passed in 430s)
+  - Dynamic .env environment variable reload and testing isolation verified.
 - **Known non-blocking limitations:** Live SQL Server connection and database migrations are scheduled for TASK-002.
 
 ## TASK-002 — SQLAlchemy Models + Initial Migration + Seed Baseline

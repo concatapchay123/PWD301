@@ -24,20 +24,36 @@ from pwd301.services.authorization_service import (
     can_manage_question,
     can_submit_attempt,
     can_view_course,
+    check_assessment_course_consistency,
+    check_attempt_consistency,
+    check_lesson_course_consistency,
+    check_question_course_consistency,
+    record_admin_intervention,
+    record_admin_student_detail_access,
+    require_assessment_course_consistency,
+    require_attempt_access,
+    require_attempt_consistency,
     require_attempt_submission_owner,
     require_course_manager,
+    require_lesson_course_consistency,
+    require_question_course_consistency,
+    require_question_manager,
     require_student_data_access,
 )
 from pwd301.services.exceptions import (
+    AdminActionForbiddenError,
     ForbiddenError,
     InvalidRoleAssignmentError,
+    QuestionNotFoundError,
     ResourceNotFoundError,
     UserNotFoundError,
+    ValidationError,
 )
 from pwd301.services.user_service import (
     assign_role_to_user,
     register_user,
     remove_role_from_user,
+    set_user_roles,
     validate_role_combination,
 )
 
@@ -208,6 +224,76 @@ def test_validate_role_combinations() -> None:
     assert validate_role_combination({"ADMIN"}) is False
     assert validate_role_combination({"STUDENT", "ADMIN"}) is False
     assert validate_role_combination({"GUEST"}) is False
+
+    # raise_on_error flag
+    with pytest.raises(InvalidRoleAssignmentError, match="Invalid role combination"):
+        validate_role_combination({"INSTRUCTOR"}, raise_on_error=True)
+
+    with pytest.raises(InvalidRoleAssignmentError, match="Invalid role combination"):
+        validate_role_combination({"ADMIN"}, raise_on_error=True)
+
+    with pytest.raises(InvalidRoleAssignmentError, match="Invalid role combination"):
+        validate_role_combination({"STUDENT", "ADMIN"}, raise_on_error=True)
+
+
+def test_set_user_roles_lifecycle(student_user: User, admin_user: User) -> None:
+    """Test set_user_roles enforces cumulative sets, audits, notifies, without new user."""
+    sess: Session = db.session
+    orig_user_id = student_user.id
+    init_auth_version = student_user.auth_version
+
+    # Reject invalid partial combinations
+    with pytest.raises(InvalidRoleAssignmentError):
+        set_user_roles(student_user.id, {"INSTRUCTOR"}, assigned_by_user_id=admin_user.id)
+
+    with pytest.raises(InvalidRoleAssignmentError):
+        set_user_roles(student_user.id, {"ADMIN"}, assigned_by_user_id=admin_user.id)
+
+    with pytest.raises(InvalidRoleAssignmentError):
+        set_user_roles(student_user.id, {"STUDENT", "ADMIN"}, assigned_by_user_id=admin_user.id)
+
+    # Valid upgrade: STUDENT -> STUDENT + INSTRUCTOR
+    updated = set_user_roles(
+        student_user.id,
+        {"STUDENT", "INSTRUCTOR"},
+        assigned_by_user_id=admin_user.id,
+        reason="Direct role set to instructor",
+    )
+    assert updated.id == orig_user_id  # Never creates new user!
+    assert updated.has_role("STUDENT") is True
+    assert updated.has_role("INSTRUCTOR") is True
+    assert updated.has_role("ADMIN") is False
+    assert updated.auth_version > init_auth_version
+
+    # Audit record created
+    audit = (
+        sess.query(AuditEvent)
+        .filter(AuditEvent.target_id == orig_user_id, AuditEvent.action == "USER_ROLES_UPDATED")
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    assert audit is not None
+    assert audit.actor_user_id == admin_user.id
+    assert audit.reason == "Direct role set to instructor"
+    assert audit.performed_as_admin is True
+
+    # Valid upgrade: full suite
+    updated = set_user_roles(
+        student_user.id,
+        {"STUDENT", "INSTRUCTOR", "ADMIN"},
+        assigned_by_user_id=admin_user.id,
+    )
+    assert updated.id == orig_user_id
+    assert updated.has_all_roles("STUDENT", "INSTRUCTOR", "ADMIN") is True
+
+    # Valid downgrade: back to STUDENT
+    updated = set_user_roles(
+        student_user.id,
+        {"STUDENT"},
+        assigned_by_user_id=admin_user.id,
+    )
+    assert updated.id == orig_user_id
+    assert updated.role_codes == {"STUDENT"}
 
 
 def test_assign_and_remove_role_lifecycle(student_user: User, admin_user: User) -> None:
@@ -564,3 +650,209 @@ def test_require_helpers_raise_expected_exceptions(
 
     with pytest.raises(ForbiddenError):
         require_attempt_submission_owner(instructor_user, attempt)
+
+    # 4. require_attempt_access
+    assert require_attempt_access(student_user, attempt) == attempt
+    assert require_attempt_access(instructor_user, attempt) == attempt
+    with pytest.raises(ForbiddenError):
+        require_attempt_access(other_instructor, attempt)
+    with pytest.raises(ResourceNotFoundError):
+        require_attempt_access(student_user, 999999)
+
+    # 5. require_question_manager
+    question = Question(
+        course_id=course_sample.id,
+        creator_user_id=instructor_user.id,
+        difficulty="REMEMBER",
+    )
+    sess.add(question)
+    sess.commit()
+    assert require_question_manager(instructor_user, question) == question
+    with pytest.raises(ForbiddenError):
+        require_question_manager(other_instructor, question)
+    with pytest.raises(ForbiddenError):
+        require_question_manager(student_user, question)
+    with pytest.raises(QuestionNotFoundError):
+        require_question_manager(instructor_user, 999999)
+
+
+# ==============================================================================
+# 8. Parent-Child Consistency Helpers (05_IDOR_PREVENTION.md)
+# ==============================================================================
+
+
+def test_parent_child_consistency_helpers(
+    course_sample: Course,
+    draft_course: Course,
+    instructor_user: User,
+    student_user: User,
+    student_user_2: User,
+) -> None:
+    """Test parent-child consistency and fail-closed assertions (05_IDOR_PREVENTION.md)."""
+    sess: Session = db.session
+
+    # 1. Lesson <-> Course
+    lesson_sample = Lesson(
+        course_id=course_sample.id,
+        title="Sample Lesson",
+        markdown_content="Hello",
+        position=1,
+    )
+    sess.add(lesson_sample)
+
+    # 2. Question <-> Course
+    q_sample = Question(
+        course_id=course_sample.id,
+        creator_user_id=instructor_user.id,
+        difficulty="REMEMBER",
+    )
+    sess.add(q_sample)
+
+    # 3. Assessment <-> Course
+    assess_sample = Assessment(
+        course_id=course_sample.id,
+        title="Sample Assessment",
+        assessment_type="QUIZ",
+    )
+    sess.add(assess_sample)
+    sess.flush()
+
+    # 4. Attempt <-> Assessment & Student
+    attempt_sample = AssessmentAttempt(
+        assessment_id=assess_sample.id,
+        enrollment_period_id=1,
+        student_user_id=student_user.id,
+        attempt_number=1,
+        status="IN_PROGRESS",
+    )
+    sess.add(attempt_sample)
+    sess.commit()
+
+    # Lesson consistency
+    assert check_lesson_course_consistency(lesson_sample, course_sample) is True
+    assert check_lesson_course_consistency(lesson_sample, draft_course) is False
+    assert require_lesson_course_consistency(lesson_sample, course_sample) == (
+        lesson_sample,
+        course_sample,
+    )
+    with pytest.raises(ForbiddenError):
+        require_lesson_course_consistency(lesson_sample, draft_course)
+    with pytest.raises(ResourceNotFoundError):
+        require_lesson_course_consistency(999999, course_sample)
+
+    # Question consistency
+    assert check_question_course_consistency(q_sample, course_sample) is True
+    assert check_question_course_consistency(q_sample, draft_course) is False
+    assert require_question_course_consistency(q_sample, course_sample) == (
+        q_sample,
+        course_sample,
+    )
+    with pytest.raises(ForbiddenError):
+        require_question_course_consistency(q_sample, draft_course)
+    with pytest.raises(QuestionNotFoundError):
+        require_question_course_consistency(999999, course_sample)
+
+    # Assessment consistency
+    assert check_assessment_course_consistency(assess_sample, course_sample) is True
+    assert check_assessment_course_consistency(assess_sample, draft_course) is False
+    assert require_assessment_course_consistency(assess_sample, course_sample) == (
+        assess_sample,
+        course_sample,
+    )
+    with pytest.raises(ForbiddenError):
+        require_assessment_course_consistency(assess_sample, draft_course)
+    with pytest.raises(ResourceNotFoundError):
+        require_assessment_course_consistency(999999, course_sample)
+
+    # Attempt consistency
+    assert check_attempt_consistency(attempt_sample, assess_sample, student_user) is True
+    assert check_attempt_consistency(attempt_sample, assess_sample, student_user_2) is False
+    assert (
+        require_attempt_consistency(attempt_sample, assess_sample, student_user) == attempt_sample
+    )
+    with pytest.raises(ForbiddenError):
+        require_attempt_consistency(attempt_sample, assess_sample, student_user_2)
+    with pytest.raises(ResourceNotFoundError):
+        require_attempt_consistency(999999)
+
+
+# ==============================================================================
+# 9. Admin Permission Rules Enforcement (04_ADMIN_PERMISSION_RULES.md)
+# ==============================================================================
+
+
+def test_admin_permission_rules_enforcement(
+    admin_user: User,
+    instructor_user: User,
+    student_user: User,
+    course_sample: Course,
+) -> None:
+    """Test 04_ADMIN_PERMISSION_RULES: Admin override requires reason, audits, and notifies."""
+    # Non-admin cannot call admin override helper
+    with pytest.raises(AdminActionForbiddenError):
+        record_admin_intervention(
+            admin=instructor_user,
+            owner_instructor_id=instructor_user.id,
+            resource_type="COURSE",
+            resource_id=course_sample.id,
+            action="UPDATE",
+            reason="Instructor edit",
+        )
+
+    # Admin without reason is rejected
+    with pytest.raises(ValidationError):
+        record_admin_intervention(
+            admin=admin_user,
+            owner_instructor_id=instructor_user.id,
+            resource_type="COURSE",
+            resource_id=course_sample.id,
+            action="UPDATE",
+            reason="   ",
+        )
+
+    # Admin with valid reason succeeds, creates AuditEvent
+    audit = record_admin_intervention(
+        admin=admin_user,
+        owner_instructor_id=instructor_user.id,
+        resource_type="COURSE",
+        resource_id=course_sample.id,
+        action="UPDATE",
+        reason="Emergency content policy fix",
+    )
+    assert audit.performed_as_admin is True
+    assert audit.actor_user_id == admin_user.id
+    assert audit.reason == "Emergency content policy fix"
+    assert audit.action == "ADMIN_OVERRIDE_UPDATE"
+
+    # Verify notification was dispatched to instructor
+    from pwd301.models.notification_audit import Notification
+
+    sess = db.session
+    notif = (
+        sess.query(Notification)
+        .filter_by(recipient_user_id=instructor_user.id)
+        .order_by(Notification.id.desc())
+        .first()
+    )
+    assert notif is not None
+    assert "COURSE" in notif.title or "COURSE" in notif.body
+    assert "Emergency content policy fix" in notif.body
+
+    # Admin inspecting student detail requires reason
+    with pytest.raises(ValidationError):
+        record_admin_student_detail_access(
+            admin=admin_user,
+            student_id=student_user.id,
+            course_id=course_sample.id,
+            reason="",
+        )
+
+    audit_student = record_admin_student_detail_access(
+        admin=admin_user,
+        student_id=student_user.id,
+        course_id=course_sample.id,
+        reason="Dispute escalation review",
+    )
+    assert audit_student.performed_as_admin is True
+    assert audit_student.reason == "Dispute escalation review"
+    assert audit_student.target_id == student_user.id

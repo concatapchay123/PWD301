@@ -617,3 +617,21 @@ def test_get_real_system_telemetry_uptime_short_intervals(
         assert telem["uptime"] == "45 giây"
         assert telem["uptime_seconds"] == 45
 
+
+def test_get_real_system_telemetry_uptime_fallback_without_psutil(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify system telemetry uptime calculation functions when psutil is unavailable."""
+    import sys
+
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    # Simulate psutil raising an ImportError or exception during import
+    monkeypatch.setitem(sys.modules, "psutil", None)
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert "uptime" in telem
+        assert isinstance(telem["uptime"], str)
+        assert "uptime_seconds" in telem
+        assert telem["uptime_seconds"] is not None

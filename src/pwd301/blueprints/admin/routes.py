@@ -996,4 +996,3 @@ def admin_download_application_evidence(app_id: int, filename: str) -> Any:
         as_attachment=True,
         download_name=download_name,
     )
-
