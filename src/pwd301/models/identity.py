@@ -151,6 +151,18 @@ class User(Base, UserMixin):
         """Return True if user has STUDENT, INSTRUCTOR, or ADMIN role."""
         return bool(self.role_codes & {"STUDENT", "INSTRUCTOR", "ADMIN"})
 
+    @property
+    def primary_role(self) -> str:
+        """Return the highest canonical role of the user (ADMIN > INSTRUCTOR > STUDENT)."""
+        codes = self.role_codes
+        if "ADMIN" in codes:
+            return "ADMIN"
+        if "INSTRUCTOR" in codes:
+            return "INSTRUCTOR"
+        if "STUDENT" in codes:
+            return "STUDENT"
+        return "STUDENT"
+
     def has_role(self, role_code: str) -> bool:
         """Check if user has a specific role, respecting cumulative hierarchy.
 
@@ -207,6 +219,10 @@ class AnonymousUser(AnonymousUserMixin):
     @property
     def is_student(self) -> bool:
         return False
+
+    @property
+    def primary_role(self) -> str:
+        return ""
 
     def has_role(self, role_code: str) -> bool:
         return False

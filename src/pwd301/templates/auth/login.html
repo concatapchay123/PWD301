@@ -13,38 +13,6 @@
         <p class="text-caption text-muted m-0">Hệ thống Quản lý Khóa học Trực tuyến</p>
       </div>
 
-      <!-- Quick Demo Persona Helper (Functional UX reference) -->
-      <div class="p-3 bg-slate-50 border border-slate-200 rounded mb-4">
-        <div class="text-caption fw-semibold text-slate-700 mb-2">Truy cập nhanh tài khoản mẫu (Mật khẩu: <code>Password123!</code>):</div>
-        <div class="d-grid gap-1">
-          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('student1@pwd301.local', 'Password123!')">
-            <span><strong>Học viên:</strong> student1@pwd301.local</span>
-            <span class="text-muted">→</span>
-          </button>
-          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('instructor1@pwd301.local', 'Password123!')">
-            <span><strong>Giảng viên:</strong> instructor1@pwd301.local</span>
-            <span class="text-muted">→</span>
-          </button>
-          <button type="button" class="btn btn-outline-secondary btn-sm text-start d-flex justify-content-between py-1 px-2" onclick="quickFill('admin@pwd301.local', 'Password123!')">
-            <span><strong>Quản trị viên:</strong> admin@pwd301.local</span>
-            <span class="text-muted">→</span>
-          </button>
-        </div>
-      </div>
-
-      {% set prefill_email = '' %}
-      {% set prefill_pwd = '' %}
-      {% if request.args.get('role') == 'STUDENT' %}
-        {% set prefill_email = 'student1@pwd301.local' %}
-        {% set prefill_pwd = 'Password123!' %}
-      {% elif request.args.get('role') == 'INSTRUCTOR' %}
-        {% set prefill_email = 'instructor1@pwd301.local' %}
-        {% set prefill_pwd = 'Password123!' %}
-      {% elif request.args.get('role') == 'ADMIN' %}
-        {% set prefill_email = 'admin@pwd301.local' %}
-        {% set prefill_pwd = 'Password123!' %}
-      {% endif %}
-
       <form action="{{ url_for('auth.login', next=request.args.get('next')) }}" method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if request.args.get('next') %}
@@ -53,7 +21,7 @@
 
         <div class="form-group mb-3">
           <label class="form-label" for="login-email">Địa chỉ email</label>
-          <input type="email" name="email" id="login-email" class="form-control form-control-sm" placeholder="nhap@email.com" value="{{ prefill_email }}" required autofocus>
+          <input type="email" name="email" id="login-email" class="form-control form-control-sm" placeholder="nhap@email.com" required autofocus>
         </div>
 
         <div class="form-group mb-3">
@@ -61,7 +29,7 @@
             <label class="form-label m-0" for="login-password">Mật khẩu</label>
             <a href="{{ url_for('auth.forgot_password') }}" class="text-caption text-primary">Quên mật khẩu?</a>
           </div>
-          <input type="password" name="password" id="login-password" class="form-control form-control-sm" placeholder="••••••••" value="{{ prefill_pwd }}" required>
+          <input type="password" name="password" id="login-password" class="form-control form-control-sm" placeholder="••••••••" required>
         </div>
 
         <div class="form-check mb-3">
@@ -81,13 +49,4 @@
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-function quickFill(email, pwd) {
-  document.getElementById('login-email').value = email;
-  document.getElementById('login-password').value = pwd;
-}
-</script>
 {% endblock %}

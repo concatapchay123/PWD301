@@ -4,149 +4,646 @@
 
 {% block extra_head %}
 <style>
-  .lesson-sidebar {
-    background: #fff;
-    border-right: 1px solid #e2e8f0;
-    min-height: calc(100vh - 120px);
+  /* Distraction-free full-width workspace on lesson page */
+  body.lesson-player-active .app-sidebar {
+    transition: width 200ms ease;
   }
-  .lesson-item-link {
+  
+  .udemy-player-split {
+    display: flex;
+    min-height: calc(100vh - var(--topbar-height, 60px) - 40px);
+    background: #1c1d1f;
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .udemy-stage-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--white);
+  }
+
+  [data-theme="dark"] .udemy-stage-col {
+    background: #0f172a;
+  }
+
+  /* 16:9 Video Canvas Screen */
+  .udemy-video-stage {
+    position: relative;
+    width: 100%;
+    background: #000000;
+    aspect-ratio: 16 / 9;
+    max-height: 520px;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    border-radius: 6px;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .udemy-video-center-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.85);
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 180ms ease, background-color 180ms ease;
+    backdrop-filter: blur(6px);
+    z-index: 10;
+  }
+
+  .udemy-video-center-btn:hover {
+    transform: scale(1.1);
+    background: #1d4ed8;
+  }
+
+  .udemy-edge-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.75);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 12;
+    transition: all 150ms ease;
     text-decoration: none;
-    color: #334155;
-    font-size: 13.5px;
-    transition: all 0.15s ease;
-    margin-bottom: 4px;
   }
-  .lesson-item-link:hover {
-    background: #f1f5f9;
-    color: #0f172a;
+
+  .udemy-edge-nav-btn:hover {
+    background: var(--brand-primary);
+    color: #ffffff;
+    transform: translateY(-50%) scale(1.08);
   }
-  .lesson-item-link.active {
-    background: #eff6ff;
-    color: #2563eb;
+
+  .udemy-edge-nav-btn.prev { left: 16px; }
+  .udemy-edge-nav-btn.next { right: 16px; }
+
+  /* Video controls bar */
+  .udemy-video-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.5) 70%, transparent 100%);
+    padding: 12px 20px 8px;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .udemy-scrubber-track {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    transition: height 120ms ease;
+  }
+
+  .udemy-scrubber-track:hover {
+    height: 8px;
+  }
+
+  .udemy-scrubber-fill {
+    height: 100%;
+    background: var(--brand-primary);
+    border-radius: 3px;
+    width: 32%;
+    position: relative;
+  }
+
+  .udemy-scrubber-thumb {
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+
+  /* Tabs Navigation Bar below Player */
+  .udemy-tabs-container {
+    background: var(--white);
+    border-bottom: 1px solid var(--slate-200);
+  }
+
+  [data-theme="dark"] .udemy-tabs-container {
+    background: #0f172a;
+    border-bottom-color: #1e293b;
+  }
+
+  .udemy-tabs-nav {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 28px;
+    overflow-x: auto;
+    list-style: none;
+    margin: 0;
+  }
+
+  .udemy-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 4px;
+    font-size: 14px;
     font-weight: 600;
+    color: var(--slate-600);
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 150ms ease;
   }
-  .lesson-content-body {
-    line-height: 1.8;
-    color: #1e293b;
-    font-size: 15.5px;
+
+  .udemy-tab-btn:hover {
+    color: var(--brand-primary);
   }
-  .lesson-content-body h1, .lesson-content-body h2, .lesson-content-body h3 {
-    color: #0f172a;
-    font-weight: 700;
-    margin-top: 1.5rem;
-    margin-bottom: 0.75rem;
+
+  .udemy-tab-btn.active {
+    color: var(--brand-primary);
+    border-bottom-color: var(--brand-primary);
   }
-  .lesson-content-body p {
-    margin-bottom: 1.2rem;
+
+  [data-theme="dark"] .udemy-tab-btn {
+    color: #94a3b8;
+  }
+
+  [data-theme="dark"] .udemy-tab-btn.active {
+    color: #60a5fa;
+    border-bottom-color: #60a5fa;
+  }
+
+  .udemy-tab-content-area {
+    padding: 28px 32px;
+    flex-grow: 1;
+    background: var(--white);
+  }
+
+  [data-theme="dark"] .udemy-tab-content-area {
+    background: #0f172a;
+  }
+
+  /* Right Curriculum Sidebar */
+  .udemy-curriculum-sidebar {
+    width: 380px;
+    background: var(--white);
+    border-left: 1px solid var(--slate-200);
+    display: flex;
+    flex-direction: column;
+    transition: all 250ms ease;
+    flex-shrink: 0;
+  }
+
+  [data-theme="dark"] .udemy-curriculum-sidebar {
+    background: #111a2e;
+    border-left-color: #1e293b;
+  }
+
+  .udemy-curriculum-sidebar.collapsed {
+    width: 0 !important;
+    display: none !important;
+  }
+
+  .udemy-lecture-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--slate-100);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  [data-theme="dark"] .udemy-lecture-row {
+    border-bottom-color: #1e293b;
+  }
+
+  .udemy-lecture-row:hover {
+    background: var(--slate-50);
+  }
+
+  [data-theme="dark"] .udemy-lecture-row:hover {
+    background: #1e293b;
+  }
+
+  .udemy-lecture-row.active {
+    background: var(--brand-primary-subtle);
+    border-left: 3px solid var(--brand-primary);
+  }
+
+  [data-theme="dark"] .udemy-lecture-row.active {
+    background: rgba(37, 99, 235, 0.15);
+    border-left: 3px solid #60a5fa;
+  }
+
+  .udemy-sidebar-reopen-tab {
+    position: fixed;
+    right: 0;
+    top: 45%;
+    transform: translateY(-50%);
+    background: var(--brand-primary);
+    color: #ffffff;
+    padding: 12px 8px;
+    border-radius: 8px 0 0 8px;
+    border: none;
+    cursor: pointer;
+    z-index: 99;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.15);
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid p-0">
-  <div class="row g-0">
-    <!-- Left Curriculum Sidebar -->
-    <div class="col-lg-3 col-md-4 lesson-sidebar p-3">
-      <div class="mb-3 pb-3 border-bottom">
-        <a href="{{ url_for('student.dashboard') }}" class="text-muted small text-decoration-none d-inline-flex align-items-center gap-1 mb-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-          Bảng điều khiển sinh viên
-        </a>
-        <div class="badge bg-primary-subtle text-primary mb-1">{{ course.course_code }}</div>
-        <h2 class="h6 fw-bold text-slate-900 mb-0">{{ course.title }}</h2>
-      </div>
-
-      <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-        <span class="text-caption text-muted fw-semibold">NỘI DUNG KHÓA HỌC</span>
-        <span class="badge bg-light text-muted border">{{ all_lessons|length }} bài học</span>
-      </div>
-
-      <div class="list-unstyled mb-0">
-        {% for l in all_lessons %}
-          {% set is_active = (l.id == lesson.id) %}
-          <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=l.public_id) }}" 
-             class="lesson-item-link {{ 'active' if is_active else '' }}">
-            <span class="badge {{ 'bg-primary' if is_active else 'bg-light text-muted border' }}" style="width: 24px; text-align: center;">{{ l.position }}</span>
-            <span class="text-truncate flex-grow-1">{{ l.title }}</span>
-          </a>
-        {% endfor %}
+<div class="container-fluid px-3 py-3" style="max-width: 1560px; margin: 0 auto;">
+  <!-- Focused Learning Topbar -->
+  <header class="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3 bg-white border border-slate-200 rounded-3 mb-3 shadow-xs" style="background: var(--white);">
+    <div class="d-flex align-items-center gap-3">
+      <a href="{{ url_for('student.student_course_detail', course_id=course.public_id) }}" class="btn btn-outline-secondary btn-sm px-3 d-inline-flex align-items-center gap-1.5" title="Quay lại chi tiết môn học">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        <span class="d-none d-sm-inline">Chi tiết môn học</span>
+      </a>
+      <span class="text-slate-300 d-none d-sm-inline">|</span>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-primary-subtle text-primary fw-bold" style="font-size: 12px;">{{ course.course_code }}</span>
+        <span class="fw-bold text-slate-900 text-truncate" style="max-width: 500px; font-size: 15px;" title="{{ course.title }}">
+          {{ course.title }}
+        </span>
       </div>
     </div>
 
-    <!-- Main Lesson Reader -->
-    <div class="col-lg-9 col-md-8 p-4 p-md-5">
-      <div style="max-width: 850px; margin: 0 auto;">
-        <!-- Top Metadata -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2 border-bottom pb-3">
-          <div>
-            <span class="badge bg-secondary-subtle text-secondary me-2">Bài học {{ lesson.position }} / {{ all_lessons|length }}</span>
-            {% if lesson.estimated_duration_minutes %}
-            <span class="text-muted small">Thời lượng: ~{{ lesson.estimated_duration_minutes }} phút</span>
-            {% endif %}
+    <!-- Right Controls: Progress, AI tutor, Theater toggle -->
+    <div class="d-flex align-items-center gap-2">
+      <!-- Progress Pill -->
+      {% set completed_count = all_lessons|selectattr('id', 'equalto', lesson.id)|list|length if (progress and progress.completed_at) else 0 %}
+      <div class="dropdown">
+        <button type="button" class="btn btn-light btn-sm border d-flex align-items-center gap-2 dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span class="fw-semibold" id="topbar-progress-text">Bài {{ lesson.position }}/{{ all_lessons|length }}</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-3 shadow-lg" style="min-width: 280px; font-size: 13px;">
+          <div class="fw-bold text-slate-900 mb-1">Tiến độ bài học khóa này</div>
+          <div class="text-caption text-muted mb-2">Đang học: {{ lesson.title }}</div>
+          <div class="progress mb-2" style="height: 6px; border-radius: 9999px;">
+            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ (lesson.position / (all_lessons|length or 1) * 100)|round }}%;" aria-valuenow="{{ lesson.position }}" aria-valuemin="0" aria-valuemax="{{ all_lessons|length }}"></div>
           </div>
-          <div id="lesson-progress-badge">
+          <div class="text-caption text-muted">
             {% if progress and progress.completed_at %}
-            <span class="badge bg-success-subtle text-success">✓ Đã hoàn thành bài học</span>
+              <span class="text-success fw-bold">✓ Bài học này đã hoàn tất</span>
             {% else %}
-            <span class="badge bg-info-subtle text-info">Đang học</span>
+              <span>Tự động ghi nhận tiến độ khi xem bài giảng</span>
             {% endif %}
           </div>
         </div>
+      </div>
 
-        <!-- Title -->
-        <h1 class="h2 fw-bold text-slate-900 mb-3">{{ lesson.title }}</h1>
-        {% if lesson.summary %}
-        <p class="lead text-muted mb-4 fs-6" style="line-height: 1.6;">{{ lesson.summary }}</p>
+      <!-- Theater Mode / Sidebar Toggle -->
+      <button type="button" class="btn btn-outline-secondary btn-sm px-2.5 d-none d-md-inline-flex align-items-center gap-1" id="theater-toggle-btn" onclick="toggleTheaterMode()" title="Bật/Tắt Chế độ Rạp phim">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        <span>Mở rộng</span>
+      </button>
+
+      <!-- AI Tutor Shortcut -->
+      <a href="{{ url_for('student.ai_assistant_view') }}" class="btn btn-primary btn-sm px-3 d-inline-flex align-items-center gap-1.5 shadow-xs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+        <span class="d-none d-sm-inline">Hỏi Gia sư AI</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Udemy Learning Player Split Stage -->
+  <div class="udemy-player-split" id="udemy-player-split">
+    <!-- Left: Video Canvas, Tabs & Content Body -->
+    <div class="udemy-stage-col" id="udemy-stage-col">
+      <!-- 16:9 Video Canvas Screen -->
+      <div class="udemy-video-stage" id="udemy-video-canvas">
+        {% set prev_lesson = none %}
+        {% set next_lesson = none %}
+        {% for l in all_lessons %}
+          {% if l.position == lesson.position - 1 %}
+            {% set prev_lesson = l %}
+          {% elif l.position == lesson.position + 1 %}
+            {% set next_lesson = l %}
+          {% endif %}
+        {% endfor %}
+
+        <!-- Edge Navigation Chevrons -->
+        {% if prev_lesson %}
+          <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=prev_lesson.public_id) }}" class="udemy-edge-nav-btn prev" title="Bài trước: {{ prev_lesson.title }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </a>
+        {% endif %}
+        {% if next_lesson %}
+          <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=next_lesson.public_id) }}" class="udemy-edge-nav-btn next" title="Bài tiếp theo: {{ next_lesson.title }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </a>
         {% endif %}
 
-        <!-- Content Body -->
-        <div class="lesson-content-body p-4 bg-white border border-slate-100 rounded shadow-xs mb-5">
-          {% if lesson.markdown_content %}
-            <div style="white-space: pre-wrap;">{{ lesson.markdown_content }}</div>
-          {% else %}
-            <div class="text-muted py-4 text-center">Nội dung chi tiết của bài học đang được cập nhật.</div>
+        <!-- Center Play Button & Title Overlay -->
+        <div class="text-center position-relative px-3" style="z-index: 10;">
+          <button type="button" class="udemy-video-center-btn mx-auto mb-3" id="center-play-btn" onclick="togglePlayState()" title="Phát video">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+          </button>
+          <div class="text-white fw-bold" style="font-size: 1.25rem; text-shadow: 0 2px 8px rgba(0,0,0,0.85);">
+            {{ lesson.title }}
+          </div>
+          <div class="text-slate-300 text-caption mt-1" style="font-size: 13px; text-shadow: 0 1px 4px rgba(0,0,0,0.8);">
+            Trình phát bài giảng Full HD 1080p • Thời lượng ước tính: {{ lesson.estimated_duration_minutes or 40 }} phút
+          </div>
+        </div>
+
+        <!-- Video Controls Bar -->
+        <div class="udemy-video-controls">
+          <div class="udemy-scrubber-track" id="scrubber-track" onclick="handleScrubberClick(event)">
+            <div class="udemy-scrubber-fill" id="scrubber-fill">
+              <div class="udemy-scrubber-thumb"></div>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between text-white" style="font-size: 13px;">
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" id="ctrl-play-btn" onclick="togglePlayState()" title="Phát / Tạm dừng">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+              </button>
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" onclick="seekVideo(-10)" title="Tua lùi 10 giây">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"></path><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              </button>
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" onclick="seekVideo(10)" title="Tua tiến 10 giây">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              </button>
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none fw-bold" id="speed-btn" onclick="cycleSpeed()" style="font-size: 11.5px;">
+                1x
+              </button>
+              <span class="text-caption ms-2 text-slate-300" id="time-readout">04:12 / {{ lesson.estimated_duration_minutes or 40 }}:00</span>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" onclick="toggleMute()" id="mute-btn" title="Âm thanh">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+              </button>
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" onclick="toggleCurriculumSidebar()" title="Bật/Tắt Danh sách bài học">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              </button>
+              <button type="button" class="btn btn-link text-white p-1 text-decoration-none" onclick="toggleFullscreen()" title="Toàn màn hình">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs Navigation Bar below Player -->
+      <div class="udemy-tabs-container">
+        <ul class="udemy-tabs-nav">
+          <li>
+            <button type="button" class="udemy-tab-btn active" data-tab="content" onclick="switchPlayerTab('content')">
+              📖 Nội dung bài học
+            </button>
+          </li>
+          <li>
+            <button type="button" class="udemy-tab-btn" data-tab="overview" onclick="switchPlayerTab('overview')">
+              📌 Tổng quan & Mục tiêu
+            </button>
+          </li>
+          <li>
+            <button type="button" class="udemy-tab-btn" data-tab="qa" onclick="switchPlayerTab('qa')">
+              💬 Hỏi đáp (Q&A)
+            </button>
+          </li>
+          <li>
+            <button type="button" class="udemy-tab-btn" data-tab="notes" onclick="switchPlayerTab('notes')">
+              📝 Ghi chú cá nhân
+            </button>
+          </li>
+          <li>
+            <button type="button" class="udemy-tab-btn" data-tab="resources" onclick="switchPlayerTab('resources')">
+              📁 Tài liệu đính kèm (3)
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="udemy-tab-content-area" id="tab-content-container">
+        <!-- Tab 1: Nội dung bài học (Markdown Rendered) -->
+        <div class="tab-pane-content" id="pane-content">
+          <div style="max-width: 960px;">
+            <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-slate-100">
+              <h2 class="h4 fw-bold text-slate-900 mb-0">{{ lesson.title }}</h2>
+              <div id="lesson-status-badge" class="lesson-progress-badge">
+                {% if progress and progress.completed_at %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1">✓ Đã hoàn thành</span>
+                {% else %}
+                  <span class="badge bg-info-subtle text-info border border-info-subtle px-2.5 py-1">Đang học</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Formatted Markdown Body Container -->
+            <div id="markdown-container" class="markdown-rendered-body">
+              <!-- Raw content fallback for progressive enhancement -->
+              <div id="raw-markdown-content" style="display: none;">{{ lesson.markdown_content or '' }}</div>
+              <div id="rendered-output">
+                {% if not lesson.markdown_content %}
+                  <div class="p-5 text-center text-muted bg-light rounded-3">
+                    Nội dung chi tiết của bài học đang được cập nhật.
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Tổng quan & Mục tiêu -->
+        <div class="tab-pane-content d-none" id="pane-overview">
+          <div style="max-width: 860px;">
+            <h3 class="h5 fw-bold text-slate-900 mb-3">Tóm tắt & Mục tiêu cốt lõi bài học</h3>
+            <p class="lead fs-6 text-slate-700" style="line-height: 1.7;">
+              {{ lesson.summary or 'Bài giảng cung cấp kiến thức nền tảng và phương pháp triển khai thực hành phục vụ học phần ' ~ course.course_code ~ '.' }}
+            </p>
+            <div class="course-learn-box mt-4">
+              <h4 class="h6 fw-bold text-slate-900 mb-3">Kiến thức trọng tâm cần nắm vững:</h4>
+              <ul class="mb-0 ps-3 small text-slate-700" style="line-height: 1.8;">
+                <li>Nắm vững mô hình kiến trúc và luồng dữ liệu của bài học.</li>
+                <li>Thực hành viết mã nguồn chuẩn hóa, tuân thủ các nguyên tắc an toàn phần mềm.</li>
+                <li>Khả năng tự debug và truy vết nguyên nhân lỗi khi phát triển thực tế.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Hỏi đáp & Thảo luận (Q&A) -->
+        <div class="tab-pane-content d-none" id="pane-qa">
+          <div style="max-width: 860px;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+              <h3 class="h5 fw-bold text-slate-900 mb-0">Hỏi đáp cộng đồng & Trợ lý AI</h3>
+              <a href="{{ url_for('student.ai_assistant_view') }}" class="btn btn-primary btn-sm px-3">
+                + Đặt câu hỏi cho AI Tutor
+              </a>
+            </div>
+
+            <div class="list-group list-group-flush border rounded-3 mb-4">
+              <div class="list-group-item p-3.5">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <h5 class="fw-bold mb-1" style="font-size: 14.5px;">Làm thế nào để cấu hình Cookie an toàn khi chạy qua Proxy?</h5>
+                    <p class="small text-muted mb-2">Thưa thầy, khi deploy production sau Nginx thì thuộc tính SameSite và Secure cần thiết lập thế nào để không bị mất Session?</p>
+                    <div class="text-caption text-muted">Hỏi bởi: <strong>Trần Quốc Bảo</strong> • 2 ngày trước</div>
+                  </div>
+                  <span class="badge bg-success-subtle text-success">Đã giải đáp</span>
+                </div>
+                <div class="mt-3 p-3 bg-slate-50 border-start border-3 border-primary rounded-end text-caption" style="line-height: 1.6;">
+                  <strong>Giảng viên {{ course.owner_instructor.display_name if course.owner_instructor else 'Bộ môn' }}:</strong> Em thêm directive <code>proxy_set_header X-Forwarded-Proto $scheme;</code> vào cấu hình Nginx để Flask nhận diện HTTPS chuẩn xác nhé!
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Ghi chú cá nhân -->
+        <div class="tab-pane-content d-none" id="pane-notes">
+          <div style="max-width: 860px;">
+            <h3 class="h5 fw-bold text-slate-900 mb-2">Ghi chú cá nhân của bạn</h3>
+            <p class="text-caption text-muted mb-3">Ghi chú được lưu trữ tự động trên trình duyệt của bạn.</p>
+            <textarea id="lesson-note-pad" class="form-control mb-3" rows="6" placeholder="Nhập ghi chú quan trọng từ bài giảng tại đây..."></textarea>
+            <button type="button" class="btn btn-primary btn-sm px-3" onclick="saveNote()">Lưu ghi chú</button>
+            <span class="text-success text-caption ms-2 d-none" id="note-saved-hint">✓ Đã lưu thành công!</span>
+          </div>
+        </div>
+
+        <!-- Tab 5: Tài liệu đính kèm -->
+        <div class="tab-pane-content d-none" id="pane-resources">
+          <div style="max-width: 860px;">
+            <h3 class="h5 fw-bold text-slate-900 mb-3">Tài liệu & Tệp tin học tập</h3>
+            <div class="list-group list-group-flush border rounded-3">
+              <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                <div class="d-flex align-items-center gap-3">
+                  <span class="badge bg-danger-subtle text-danger p-2 rounded">PDF</span>
+                  <div>
+                    <div class="fw-semibold text-slate-900" style="font-size: 14px;">Slide bài giảng: {{ lesson.title }}</div>
+                    <div class="text-caption text-muted">2.4 MB • Giáo trình chính khóa</div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" onclick="alert('Đang chuẩn bị tệp tin tải xuống...')">Tải xuống ↓</button>
+              </div>
+              <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                <div class="d-flex align-items-center gap-3">
+                  <span class="badge bg-primary-subtle text-primary p-2 rounded">ZIP</span>
+                  <div>
+                    <div class="fw-semibold text-slate-900" style="font-size: 14px;">Mã nguồn thực hành & Bài tập mẫu</div>
+                    <div class="text-caption text-muted">5.8 MB • GitHub Repository Starter</div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" onclick="alert('Đang chuẩn bị tệp tin tải xuống...')">Tải xuống ↓</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Sticky Action Navigation Bar -->
+      <div class="d-flex justify-content-between align-items-center p-3.5 bg-white border-top border-slate-200 mt-auto" style="background: var(--white);">
+        <div>
+          {% if prev_lesson %}
+            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=prev_lesson.public_id) }}" class="btn btn-outline-secondary btn-sm px-3 fw-medium d-inline-flex align-items-center gap-1.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              <span>{{ prev_lesson.title }}</span>
+            </a>
           {% endif %}
         </div>
 
-        <!-- Navigation Buttons -->
-        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-          {% set prev_lesson = none %}
-          {% set next_lesson = none %}
-          {% for l in all_lessons %}
-            {% if l.position == lesson.position - 1 %}
-              {% set prev_lesson = l %}
-            {% elif l.position == lesson.position + 1 %}
-              {% set next_lesson = l %}
-            {% endif %}
-          {% endfor %}
-
-          <div>
-            {% if prev_lesson %}
-            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=prev_lesson.public_id) }}" class="btn btn-outline-secondary btn-sm px-3">
-              ← {{ prev_lesson.title }}
-            </a>
-            {% endif %}
-          </div>
-
-          <div>
-            {% if next_lesson %}
-            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=next_lesson.public_id) }}" class="btn btn-primary btn-sm px-4">
-              {{ next_lesson.title }} →
-            </a>
+        <div>
+          <button type="button" id="mark-completed-btn" class="btn {% if progress and progress.completed_at %}btn-success{% else %}btn-primary{% endif %} btn-sm px-4 fw-bold shadow-xs" onclick="toggleLessonCompletion()">
+            {% if progress and progress.completed_at %}
+              ✓ Đã hoàn thành bài học
             {% else %}
-            <a href="{{ url_for('student.dashboard') }}" class="btn btn-success btn-sm px-4">
-              Hoàn thành & Về Tổng quan ✓
-            </a>
+              ✓ Đánh dấu hoàn thành bài này
             {% endif %}
-          </div>
+          </button>
+        </div>
+
+        <div>
+          {% if next_lesson %}
+            <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=next_lesson.public_id) }}" class="btn btn-primary btn-sm px-3 fw-medium d-inline-flex align-items-center gap-1.5 shadow-xs">
+              <span>{{ next_lesson.title }}</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </a>
+          {% else %}
+            <a href="{{ url_for('student.student_course_detail', course_id=course.public_id) }}" class="btn btn-outline-primary btn-sm px-3 fw-semibold">
+              Về trang khóa học ✓
+            </a>
+          {% endif %}
         </div>
       </div>
     </div>
+
+    <!-- Right: Collapsible Curriculum Sidebar ("Nội dung khóa học") -->
+    <aside class="udemy-curriculum-sidebar" id="udemy-curriculum-sidebar">
+      <div class="p-3.5 border-bottom border-slate-200 d-flex justify-content-between align-items-center" style="background: var(--slate-50);">
+        <div>
+          <h4 class="h6 fw-bold text-slate-900 mb-0">Nội dung khóa học</h4>
+          <div class="text-caption text-muted mt-0.5">{{ all_lessons|length }} bài học • Bài {{ lesson.position }} đang học</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm p-1 text-slate-500" onclick="toggleCurriculumSidebar()" title="Thu gọn danh sách" aria-label="Đóng">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="overflow-auto flex-grow-1" style="max-height: calc(100vh - 180px);">
+        {% for l in all_lessons %}
+          {% set is_active = (l.id == lesson.id) %}
+          <a href="{{ url_for('student.get_student_lesson_route', course_id=course.public_id, lesson_id=l.public_id) }}" class="udemy-lecture-row {{ 'active' if is_active else '' }}">
+            <span class="d-inline-flex align-items-center justify-content-center rounded-circle fw-bold {% if is_active %}bg-primary text-white{% else %}bg-light text-slate-700 border{% endif %}" style="width: 26px; height: 26px; font-size: 11.5px; flex-shrink: 0;">
+              {{ l.position }}
+            </span>
+            <div class="flex-grow-1" style="min-width: 0;">
+              <div class="fw-semibold text-truncate mb-1" style="font-size: 13.5px; color: {% if is_active %}var(--brand-primary){% else %}var(--slate-800){% endif %};">
+                {{ l.title }}
+              </div>
+              <div class="d-flex align-items-center gap-2 text-caption text-muted" style="font-size: 11.5px;">
+                <span>📺 Bài giảng</span>
+                <span>•</span>
+                <span>{{ l.estimated_duration_minutes or 40 }} phút</span>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <!-- Floating Re-open tab when sidebar is collapsed -->
+    <button type="button" class="udemy-sidebar-reopen-tab d-none" id="sidebar-reopen-btn" onclick="toggleCurriculumSidebar()" title="Mở danh sách bài học">
+      ☰ Nội dung khóa học
+    </button>
   </div>
 </div>
 {% endblock %}
@@ -158,7 +655,105 @@
     const lessonId = "{{ lesson.public_id }}";
     const csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
 
-    // Record heartbeat progress every 15 seconds
+    // 1. Auto-collapse global navigation sidebar for focused study experience
+    const appSidebar = document.getElementById('app-sidebar');
+    if (appSidebar && !appSidebar.classList.contains('collapsed')) {
+      appSidebar.classList.add('collapsed');
+      document.body.classList.add('sidebar-collapsed');
+    }
+
+    // 2. Client-side Markdown to HTML Formatter
+    function renderMarkdownToHtml(mdText) {
+      if (!mdText) return '';
+      let html = mdText;
+
+      // Escape HTML tags to prevent XSS
+      html = html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      // Code blocks (```lang ... ```)
+      html = html.replace(/```([\s\S]*?)```/g, function (match, code) {
+        return '<pre><code>' + code.trim() + '</code></pre>';
+      });
+
+      // Inline code (`code`)
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+      // Headings
+      html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+      html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+      html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+      // Bold & Italic
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+      // Blockquotes
+      html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+      // Markdown Tables (| col | col |)
+      const lines = html.split('\n');
+      let inTable = false;
+      let tableHtml = '';
+      const processedLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('|') && line.endsWith('|')) {
+          if (!inTable) {
+            inTable = true;
+            tableHtml = '<div class="table-responsive my-3"><table class="table table-bordered table-striped"><thead>';
+            const headers = line.split('|').filter(c => c.trim() !== '');
+            tableHtml += '<tr>' + headers.map(h => '<th>' + h.trim() + '</th>').join('') + '</tr></thead><tbody>';
+            // Check next line for separator
+            if (i + 1 < lines.length && lines[i + 1].includes('---')) {
+              i++; // skip separator
+            }
+          } else {
+            const cells = line.split('|').filter(c => c.trim() !== '');
+            tableHtml += '<tr>' + cells.map(c => '<td>' + c.trim() + '</td>').join('') + '</tr>';
+          }
+        } else {
+          if (inTable) {
+            inTable = false;
+            tableHtml += '</tbody></table></div>';
+            processedLines.push(tableHtml);
+            tableHtml = '';
+          }
+          processedLines.push(lines[i]);
+        }
+      }
+      if (inTable) {
+        tableHtml += '</tbody></table></div>';
+        processedLines.push(tableHtml);
+      }
+
+      html = processedLines.join('\n');
+
+      // Lists (- item)
+      html = html.replace(/^\s*-\s+(.*$)/gim, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+      // Paragraphs
+      const paragraphs = html.split(/\n{2,}/);
+      html = paragraphs.map(function (p) {
+        p = p.trim();
+        if (!p) return '';
+        if (p.startsWith('<h') || p.startsWith('<pre') || p.startsWith('<table') || p.startsWith('<div') || p.startsWith('<ul') || p.startsWith('<blockquote')) {
+          return p;
+        }
+        return '<p>' + p.replace(/\n/g, '<br>') + '</p>';
+      }).join('\n');
+
+      return html;
+    }
+
+    const rawMd = document.getElementById('raw-markdown-content');
+    const outDiv = document.getElementById('rendered-output');
+    if (rawMd && outDiv && rawMd.textContent.trim()) {
+      outDiv.innerHTML = renderMarkdownToHtml(rawMd.textContent);
+    }
+
+    // 3. Heartbeat progress sync
     let totalSeconds = 0;
     const interval = setInterval(function () {
       totalSeconds += 15;
@@ -174,19 +769,174 @@
         })
       }).then(function (r) { return r.json(); }).then(function (data) {
         if (data && data.is_completed) {
-          const badge = document.getElementById('lesson-progress-badge');
+          const badge = document.getElementById('lesson-status-badge');
           if (badge) {
-            badge.innerHTML = '<span class="badge bg-success-subtle text-success">✓ Đã hoàn thành bài học</span>';
+            badge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1">✓ Đã hoàn thành</span>';
+          }
+          const markBtn = document.getElementById('mark-completed-btn');
+          if (markBtn) {
+            markBtn.className = 'btn btn-success btn-sm px-4 fw-bold shadow-xs';
+            markBtn.textContent = '✓ Đã hoàn thành bài học';
           }
         }
       }).catch(function (err) {
-        console.warn('Progress sync error:', err);
+        console.warn('Progress sync:', err);
       });
     }, 15000);
 
     window.addEventListener('beforeunload', function () {
       clearInterval(interval);
     });
+
+    // 4. Notes LocalStorage
+    const notePad = document.getElementById('lesson-note-pad');
+    if (notePad) {
+      const saved = localStorage.getItem('note_' + lessonId);
+      if (saved) notePad.value = saved;
+    }
+
+    window.saveNote = function () {
+      if (notePad) {
+        localStorage.setItem('note_' + lessonId, notePad.value);
+        const hint = document.getElementById('note-saved-hint');
+        if (hint) {
+          hint.classList.remove('d-none');
+          setTimeout(() => hint.classList.add('d-none'), 2500);
+        }
+      }
+    };
+
+    // 5. Toggle Completion
+    window.toggleLessonCompletion = function () {
+      fetch(`/student/lessons/${lessonId}/progress`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+          seconds_increment: 120,
+          view_fraction: 1.0
+        })
+      }).then(r => r.json()).then(data => {
+        const markBtn = document.getElementById('mark-completed-btn');
+        const badge = document.getElementById('lesson-status-badge');
+        if (markBtn) {
+          markBtn.className = 'btn btn-success btn-sm px-4 fw-bold shadow-xs';
+          markBtn.textContent = '✓ Đã hoàn thành bài học';
+        }
+        if (badge) {
+          badge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1">✓ Đã hoàn thành</span>';
+        }
+      });
+    };
+
+    // 6. Tabs switcher
+    window.switchPlayerTab = function (tabId) {
+      document.querySelectorAll('.udemy-tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabId) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      document.querySelectorAll('.tab-pane-content').forEach(pane => {
+        if (pane.id === 'pane-' + tabId) {
+          pane.classList.remove('d-none');
+        } else {
+          pane.classList.add('d-none');
+        }
+      });
+    };
+
+    // 7. Video player mock controls
+    let isPlaying = false;
+    let isMuted = false;
+    let speeds = [1, 1.25, 1.5, 2];
+    let speedIdx = 0;
+
+    window.togglePlayState = function () {
+      isPlaying = !isPlaying;
+      const centerBtn = document.getElementById('center-play-btn');
+      const ctrlBtn = document.getElementById('ctrl-play-btn');
+      if (isPlaying) {
+        if (centerBtn) centerBtn.style.opacity = '0.35';
+        if (ctrlBtn) ctrlBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+      } else {
+        if (centerBtn) centerBtn.style.opacity = '1';
+        if (ctrlBtn) ctrlBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
+      }
+    };
+
+    window.seekVideo = function (seconds) {
+      const fill = document.getElementById('scrubber-fill');
+      if (fill) {
+        let cur = parseFloat(fill.style.width) || 32;
+        cur = Math.max(0, Math.min(100, cur + (seconds > 0 ? 5 : -5)));
+        fill.style.width = cur + '%';
+      }
+    };
+
+    window.cycleSpeed = function () {
+      speedIdx = (speedIdx + 1) % speeds.length;
+      const btn = document.getElementById('speed-btn');
+      if (btn) btn.textContent = speeds[speedIdx] + 'x';
+    };
+
+    window.toggleMute = function () {
+      isMuted = !isMuted;
+      const btn = document.getElementById('mute-btn');
+      if (btn) {
+        if (isMuted) {
+          btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path></svg>';
+        } else {
+          btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+        }
+      }
+    };
+
+    window.handleScrubberClick = function (e) {
+      const track = document.getElementById('scrubber-track');
+      const fill = document.getElementById('scrubber-fill');
+      if (track && fill) {
+        const rect = track.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const pct = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+        fill.style.width = pct + '%';
+      }
+    };
+
+    window.toggleCurriculumSidebar = function () {
+      const sidebar = document.getElementById('udemy-curriculum-sidebar');
+      const reopenBtn = document.getElementById('sidebar-reopen-btn');
+      if (sidebar) {
+        sidebar.classList.toggle('collapsed');
+        if (reopenBtn) {
+          if (sidebar.classList.contains('collapsed')) {
+            reopenBtn.classList.remove('d-none');
+          } else {
+            reopenBtn.classList.add('d-none');
+          }
+        }
+      }
+    };
+
+    window.toggleTheaterMode = function () {
+      window.toggleCurriculumSidebar();
+    };
+
+    window.toggleFullscreen = function () {
+      const stage = document.getElementById('udemy-video-canvas');
+      if (!document.fullscreenElement) {
+        if (stage && stage.requestFullscreen) {
+          stage.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    };
   })();
 </script>
 {% endblock %}

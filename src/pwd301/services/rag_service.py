@@ -265,7 +265,7 @@ def ingest_lesson_content(
             sess.query(KnowledgeVersion)
             .filter(
                 KnowledgeVersion.knowledge_document_id == doc.id,
-                KnowledgeVersion.is_current.is_(True),
+                KnowledgeVersion.is_current == True,
                 KnowledgeVersion.status == "ACTIVE",
             )
             .first()
@@ -497,7 +497,7 @@ def ingest_course_file(
             sess.query(KnowledgeVersion)
             .filter(
                 KnowledgeVersion.knowledge_document_id == doc.id,
-                KnowledgeVersion.is_current.is_(True),
+                KnowledgeVersion.is_current == True,
                 KnowledgeVersion.status == "ACTIVE",
             )
             .first()

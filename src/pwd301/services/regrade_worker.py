@@ -880,7 +880,7 @@ def regrade_attempt(
                 sess.query(QuestionRevision)
                 .filter(
                     QuestionRevision.question_id == aq.source_question_id,
-                    QuestionRevision.is_current.is_(True),
+                    QuestionRevision.is_current == True,
                 )
                 .first()
             )

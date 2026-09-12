@@ -219,7 +219,7 @@ def purge_expired_enrollment_details(
             sess.query(AssessmentAttempt)
             .filter(
                 AssessmentAttempt.enrollment_period_id == period.id,
-                AssessmentAttempt.is_detail_purged.is_(False),
+                AssessmentAttempt.is_detail_purged == False,
             )
             .all()
         )

@@ -164,16 +164,16 @@ def login() -> Any:
     # Store session-integrity values in Flask session cookie
     session["auth_session_key"] = raw_session_key
     session["auth_version"] = user.auth_version
-    if user.roles:
-        session["active_role"] = user.roles[0].code
 
-    # Determine role-aware default landing dashboard
-    user_role_codes = {r.code for r in user.roles}
-    if "ADMIN" in user_role_codes:
+    # Determine role-aware default landing dashboard and active role
+    primary_role = user.primary_role
+    session["active_role"] = primary_role
+
+    if primary_role == "ADMIN":
         default_landing = url_for("admin.dashboard")
-    elif "INSTRUCTOR" in user_role_codes:
+    elif primary_role == "INSTRUCTOR":
         default_landing = url_for("instructor.dashboard")
-    elif "STUDENT" in user_role_codes:
+    elif primary_role == "STUDENT":
         default_landing = url_for("student.dashboard")
     else:
         default_landing = url_for("core.index")
@@ -202,6 +202,105 @@ def login() -> Any:
 
     flash("Đăng nhập thành công!", "success")
     return redirect(target_url)
+
+
+@auth_bp.route("/switch-role", methods=["POST"])
+def switch_role() -> Any:
+    """Switch the current active role for multi-role authenticated users."""
+    if not current_user.is_authenticated:
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "UNAUTHORIZED",
+                            "message": "Authentication required to switch role.",
+                        }
+                    }
+                ),
+                401,
+            )
+        return redirect(url_for("auth.login"))
+
+    # Student cannot switch roles
+    if not (current_user.is_admin or current_user.is_instructor):
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": "Tài khoản học viên không thể chuyển đổi vai trò.",
+                        }
+                    }
+                ),
+                403,
+            )
+        flash("Tài khoản học viên không thể chuyển đổi vai trò.", "danger")
+        return redirect(request.referrer or url_for("student.dashboard")), 403
+
+    target_role = ""
+    if request.is_json:
+        target_role = str((request.get_json() or {}).get("role", "")).strip().upper()
+    else:
+        target_role = request.form.get("role", "").strip().upper()
+
+    # Allowed target roles:
+    # Admin can switch between ADMIN, INSTRUCTOR, STUDENT
+    # Instructor can switch between INSTRUCTOR, STUDENT
+    if current_user.is_admin:
+        allowed_roles = {"ADMIN", "INSTRUCTOR", "STUDENT"}
+    elif current_user.is_instructor:
+        allowed_roles = {"INSTRUCTOR", "STUDENT"}
+    else:
+        allowed_roles = set()
+
+    if target_role not in allowed_roles:
+        if _is_json_request():
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": (
+                                f"Tài khoản không có quyền hoạt động với vai trò {target_role}."
+                            ),
+                        }
+                    }
+                ),
+                403,
+            )
+        flash(f"Bạn không có quyền chuyển sang vai trò {target_role}.", "danger")
+        return redirect(request.referrer or url_for("student.dashboard")), 403
+
+    session["active_role"] = target_role
+    role_labels = {
+        "ADMIN": "Quản trị viên (Admin)",
+        "INSTRUCTOR": "Giảng viên (Instructor)",
+        "STUDENT": "Học viên (Student)",
+    }
+    flash(f"Đã chuyển sang vai trò {role_labels.get(target_role, target_role)}.", "success")
+
+    if target_role == "ADMIN":
+        dest_url = url_for("admin.dashboard")
+    elif target_role == "INSTRUCTOR":
+        dest_url = url_for("instructor.dashboard")
+    else:
+        dest_url = url_for("student.dashboard")
+
+    if _is_json_request():
+        return (
+            jsonify(
+                {
+                    "status": "ok",
+                    "active_role": target_role,
+                    "redirect_url": dest_url,
+                }
+            ),
+            200,
+        )
+
+    return redirect(dest_url)
 
 
 @auth_bp.route("/logout", methods=["POST"])

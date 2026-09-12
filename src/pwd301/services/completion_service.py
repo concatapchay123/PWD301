@@ -468,7 +468,7 @@ def evaluate_course_completion(
             sess.query(Assessment)
             .filter(
                 Assessment.course_id == enrollment.course_id,
-                Assessment.is_required_for_completion.is_(True),
+                Assessment.is_required_for_completion == True,
                 Assessment.status == "PUBLISHED",
                 Assessment.deleted_at.is_(None),
             )
@@ -482,7 +482,7 @@ def evaluate_course_completion(
                     AssessmentAttempt.assessment_id == req_ass.id,
                     AssessmentAttempt.student_user_id == enrollment.student_user_id,
                     AssessmentAttempt.status == "GRADED",
-                    AssessmentResult.passed.is_(True),
+                    AssessmentResult.passed == True,
                 )
                 .first()
             )

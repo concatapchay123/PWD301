@@ -193,43 +193,93 @@
       `;
     },
 
-    // Toast feedback notification - Displayed at top with slide-down animation
-    showToast(message, type = 'info') {
-      const container = document.getElementById('toast-container');
-      if (!container) return;
+    // Toast feedback notification - Displayed at top-right with slide-in from right animation
+    showToast(message, type = 'info', duration = 4000) {
+      let container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.setAttribute('aria-live', 'polite');
+        container.setAttribute('aria-atomic', 'true');
+        document.body.appendChild(container);
+      }
 
       const toast = document.createElement('div');
-      toast.className = `app-toast toast-${type}`;
+      const normalizedType = (type === 'error' ? 'danger' : (type || 'info'));
+      toast.className = `app-toast toast-${normalizedType}`;
+      toast.setAttribute('role', 'alert');
+      toast.setAttribute('data-auto-dismiss', duration);
       
       let icon = icons.alertCircle;
-      if (type === 'success') icon = icons.checkCircle;
-      if (type === 'danger') icon = icons.alertTriangle;
+      if (normalizedType === 'success') icon = icons.checkCircle;
+      if (normalizedType === 'danger') icon = icons.alertTriangle;
+      if (normalizedType === 'warning') icon = icons.alertTriangle;
 
       toast.innerHTML = `
         <span class="toast-icon">${icon}</span>
         <span class="toast-message">${message}</span>
-        <button type="button" class="toast-close-btn" aria-label="Đóng" onclick="this.parentElement.remove()">${icons.x}</button>
+        <button type="button" class="toast-close-btn" aria-label="Đóng">${icons.x}</button>
+        <div class="toast-progress" style="animation-duration: ${duration}ms;"></div>
       `;
 
       container.prepend(toast);
+      this.bindToastEvents(toast, duration);
+    },
 
-      const dismissTimeout = setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(-12px)';
-        toast.style.transition = 'all 200ms ease';
-        setTimeout(() => toast.remove(), 200);
-      }, 3500);
+    // Bind auto-dismiss, hover pause/resume, and close interaction
+    bindToastEvents(toast, duration = 4000) {
+      if (!toast || toast._hasToastEvents) return;
+      toast._hasToastEvents = true;
+
+      let remaining = duration;
+      let startTime = Date.now();
+      let timerId = null;
+
+      const dismiss = () => {
+        if (toast._isDismissing) return;
+        toast._isDismissing = true;
+        toast.classList.add('toast-hiding');
+        setTimeout(() => {
+          try { toast.remove(); } catch (e) {}
+        }, 260);
+      };
+
+      const startTimer = () => {
+        startTime = Date.now();
+        timerId = setTimeout(dismiss, remaining);
+      };
+
+      const pauseTimer = () => {
+        clearTimeout(timerId);
+        remaining -= (Date.now() - startTime);
+        if (remaining < 800) remaining = 800;
+      };
+
+      startTimer();
+
+      toast.addEventListener('mouseenter', pauseTimer);
+      toast.addEventListener('mouseleave', startTimer);
 
       const closeBtn = toast.querySelector('.toast-close-btn');
       if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-          clearTimeout(dismissTimeout);
-          toast.style.opacity = '0';
-          toast.style.transform = 'translateY(-12px)';
-          toast.style.transition = 'all 150ms ease';
-          setTimeout(() => toast.remove(), 150);
+        closeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearTimeout(timerId);
+          dismiss();
         });
       }
+    },
+
+    // Initialize all existing server-rendered toasts on the page
+    initToasts() {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toasts = container.querySelectorAll('.app-toast');
+      toasts.forEach((toast) => {
+        const duration = parseInt(toast.getAttribute('data-auto-dismiss') || '4000', 10);
+        this.bindToastEvents(toast, duration);
+      });
     },
 
     // FPT SVG Geometric Patterns (Matching FPT LMS Image 1)
@@ -649,4 +699,10 @@
   };
 
   window.PWD.components = components;
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => components.initToasts());
+  } else {
+    components.initToasts();
+  }
 })();

@@ -165,29 +165,6 @@
                 </ul>
               </div>
             </div>
-
-            <!-- Trợ lý học tập AI (Liên kết kích hoạt Chatbot hình tròn) -->
-            <div class="card">
-              <div class="card-header d-flex align-items-center justify-content-between">
-                <div class="d-flex align-items-center gap-2">
-                  <div class="icon-box icon-box-primary" style="width: 30px; height: 30px; border-radius: 6px;">${cmp.icon('sparkles')}</div>
-                  <h5 class="sub-title m-0">Trợ lý học tập AI</h5>
-                </div>
-                <span class="badge badge-success" style="font-size: 11px;">24/7 Online</span>
-              </div>
-              <div class="card-body">
-                <p class="text-caption text-muted mb-3">Hỏi đáp kiến thức, gỡ rối code Flask và hướng dẫn làm bài kiểm tra bám sát giáo trình.</p>
-                <div class="d-grid gap-2">
-                  <button type="button" class="btn btn-primary btn-sm d-flex align-items-center justify-content-center gap-2" onclick="PWD.app.openAIChat()">
-                    <span>${cmp.icon('sparkles')}</span>
-                    <span>Bật Chatbot AI ngay</span>
-                  </button>
-                  <a href="#/student/ai-assistant" class="btn btn-secondary btn-sm text-center">
-                    Mở giao diện đầy đủ →
-                  </a>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       `;

@@ -138,3 +138,41 @@ F. Verification actually run and results
 G. Remaining risks/next step only when necessary
 
 Do not hide unrun checks or unresolved blockers.
+
+
+## 10. Mandatory Agent Skills & Completion Reporting
+
+
+Quy tắc này có hiệu lực vĩnh viễn và bắt buộc cho mọi coding agent (Antigravity, Codex, và các agent khác) trong mọi phiên làm việc:
+
+## 1. Bắt buộc sử dụng cho việc Code và Công việc thường ngày
+Đối với mọi tác vụ lập trình, phân tích, lên kế hoạch, viết code, sửa lỗi (debug), tái cấu trúc (refactor), kiểm thử, rà soát mã nguồn (code review) và công việc thường nhật, agent LUÔN LUÔN PHẢI đồng thời áp dụng các skill sau:
+- **Superpowers** (`superpowers`, `brainstorming`, `writing-plans`, `executing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion`, `dispatching-parallel-agents`, `subagent-driven-development`, `requesting-code-review`, `receiving-code-review`, `using-git-worktrees`, `finishing-a-development-branch`, `writing-skills`, `using-superpowers`):
+  - Áp dụng kỷ luật kỹ thuật phần mềm nghiêm ngặt.
+  - TDD: Luôn viết bài kiểm thử thất bại trước khi viết code sản phẩm (The Iron Law of TDD).
+  - Debug bài bản 4 giai đoạn, truy vết tận gốc nguyên nhân (root cause), không phỏng đoán hay vá víu phần ngọn.
+  - Lập kế hoạch chi tiết, kiểm thử xác minh trước khi tuyên bố hoàn thành.
+- **Task Observer** (`task-observer` / `one-skill-to-rule-them-all`):
+  - Giám sát tiến trình thực hiện nhiệm vụ trong toàn bộ phiên làm việc.
+  - Ghi nhận những điểm nghẽn, lỗi lặp lại, chỉ dẫn điều chỉnh từ người dùng và phản hồi sau tác vụ.
+  - Duy trì nhật ký quan sát và liên tục cải tiến chất lượng thư viện skill.
+- **Trọn bộ skill Ponytail** (`ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`, `ponytail-review`):
+  - Giữ tư duy của lập trình viên kỳ cựu tối giản (lazy senior developer): Code tốt nhất là code không cần phải viết.
+  - Tuân thủ bậc thang tối giản: YAGNI -> Tái sử dụng code hiện có -> Standard library -> Tính năng gốc của nền tảng (native) -> Thư viện đã cài sẵn -> Giải pháp ngắn gọn nhất.
+  - Không tạo abstraction thừa thãi, không sinh boilerplate cho tương lai, chủ động loại bỏ sự cồng kềnh (over-engineering).
+
+## 2. Bắt buộc sử dụng cho các nhiệm vụ liên quan tới Design & UI/UX
+Đối với mọi tác vụ liên quan đến thiết kế, giao diện người dùng, styling CSS/HTML, layout, typography, animation, tái thiết kế (redesign), đánh giá UI/UX critique hoặc audit chất lượng giao diện (a11y, performance, responsive), agent LUÔN LUÔN PHẢI sử dụng:
+- **Impeccable** (`impeccable` cùng các lệnh thành phần `shape`, `init`, `document`, `extract`, `critique`, `audit`, `polish`, `bolder`, `quieter`, `distill`, `harden`, `onboard`, `animate`, `colorize`, `typeset`, `layout`, `delight`):
+  - Hướng tới tiêu chuẩn thiết kế đẳng cấp sản phẩm thương mại cao cấp (out-of-distribution craft).
+  - Khảo sát ngữ cảnh sản phẩm (PRODUCT.md, DESIGN.md), tuân thủ design system và tokens.
+  - Kiểm tra thực tế trên trình duyệt, không đoán mò giao diện.
+
+## 3. QUY TẮC BÁO CÁO BẮT BUỘC KHI HOÀN THÀNH (STRICT MANDATORY)
+Mỗi khi hoàn thành xong 1 công việc, nhiệm vụ hoặc ở cuối mỗi lượt phản hồi giải quyết yêu cầu, agent **BẮT BUỘC LUÔN LUÔN PHẢI CÓ 1 DÒNG BÁO CÁO CUỐI CÙNG** nêu rõ đã dùng những skill nào để hoàn thành công việc này theo đúng cú pháp:
+`Đã dùng x skill gồm: ...`
+
+Ví dụ:
+`Đã dùng 3 skill gồm: superpowers (test-driven-development), ponytail, task-observer`
+hoặc
+`Đã dùng 4 skill gồm: superpowers (brainstorming, writing-plans), ponytail, task-observer, impeccable`

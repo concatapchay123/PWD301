@@ -3,39 +3,61 @@
 {% block title %}Khóa học của tôi — PWD301 LMS{% endblock %}
 
 {% block content %}
-<div class="container-fluid px-0">
-  <header class="page-header mb-4 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3">
+<div class="container-fluid px-4 py-4" style="max-width: 1400px; margin: 0 auto;">
+  <!-- Header -->
+  <header class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4 pb-3 border-bottom border-slate-200">
     <div>
-      <h1 class="h3 fw-bold text-slate-900 mb-1">Khóa học của tôi</h1>
-      <p class="text-caption text-muted mb-0">Theo dõi tiến độ học tập và tiếp tục các bài giảng đang tham gia</p>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-primary-subtle text-primary fw-bold px-2.5 py-1 text-uppercase" style="font-size: 11px; letter-spacing: 0.5px;">Cổng học viên</span>
+        <span class="text-caption text-muted">• Tiến độ cá nhân</span>
+      </div>
+      <h1 class="h2 fw-bold text-slate-900 mb-1" style="letter-spacing: -0.02em;">Khóa học của tôi</h1>
+      <p class="text-muted mb-0" style="font-size: 14px;">Theo dõi tiến độ học tập, bài giảng gần nhất và tiếp tục chương trình đào tạo</p>
     </div>
     <div>
-      <a href="{{ url_for('core.index') }}" class="btn btn-outline-primary btn-sm px-3">+ Khám phá thêm môn học</a>
+      <a href="{{ url_for('core.index') }}" class="btn btn-outline-primary btn-sm px-3.5 fw-semibold d-inline-flex align-items-center gap-2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        <span>+ Khám phá thêm môn học</span>
+      </a>
     </div>
   </header>
 
-  <!-- Filter & Search Controls -->
-  <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px;">
-    <div class="card-body p-3">
+  <!-- Filter & Tab Controls -->
+  <div class="card mb-4 bg-white border border-slate-200 shadow-xs" style="border-radius: 12px;">
+    <div class="card-body p-3 p-md-3.5">
       <div class="row g-3 align-items-center">
-        <div class="col-md-6">
+        <!-- Search bar -->
+        <div class="col-lg-6 col-md-6">
           <div class="input-group">
-            <span class="input-group-text bg-transparent border-end-0 text-muted">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span class="input-group-text bg-transparent border-end-0 text-slate-400">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </span>
-            <input type="text" id="course-search-input" class="form-control border-start-0 ps-0" placeholder="Tìm theo tên hoặc mã khóa học..." oninput="filterCourses()">
+            <input type="text" id="course-search-input" class="form-control border-start-0 ps-0 text-slate-800" placeholder="Tìm kiếm theo tên môn học hoặc mã môn..." oninput="filterCourses()" style="font-size: 14px;">
           </div>
         </div>
-        <div class="col-md-4">
-          <select id="course-status-filter" class="form-select" onchange="filterCourses()">
+
+        <!-- Filter Status Select -->
+        <div class="col-lg-4 col-md-4">
+          <select id="course-status-filter" class="form-select border-slate-200" onchange="filterCourses()" style="font-size: 14px;">
             <option value="all">Tất cả trạng thái ({{ overview.enrollments|length if overview.enrollments else 0 }})</option>
-            <option value="ACTIVE">Đang học</option>
+            <option value="ACTIVE">Đang theo học</option>
             <option value="COMPLETED">Đã hoàn thành</option>
           </select>
         </div>
-        <div class="col-md-2 text-md-end text-muted small">
-          Tổng: <strong>{{ overview.enrollments|length if overview.enrollments else 0 }}</strong> môn
+
+        <div class="col-lg-2 col-md-2 text-md-end d-none d-md-block">
+          <span class="text-caption text-muted">
+            Tổng số: <strong class="text-slate-900 fs-6" id="total-count-label">{{ overview.enrollments|length if overview.enrollments else 0 }}</strong> môn
+          </span>
         </div>
+      </div>
+
+      <!-- Quick status filter buttons -->
+      <div class="d-flex align-items-center gap-2 mt-3 pt-2.5 border-top border-slate-100 flex-wrap" id="status-pills">
+        <span class="text-caption text-muted me-1 fw-medium" style="font-size: 12px;">Lọc trạng thái:</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0.5 px-2.5 rounded-pill active" data-status="all" onclick="selectStatusFilter('all', this)" style="font-size: 12px;">Tất cả môn ({{ overview.enrollments|length if overview.enrollments else 0 }})</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0.5 px-2.5 rounded-pill" data-status="ACTIVE" onclick="selectStatusFilter('ACTIVE', this)" style="font-size: 12px;">Đang theo học</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0.5 px-2.5 rounded-pill" data-status="COMPLETED" onclick="selectStatusFilter('COMPLETED', this)" style="font-size: 12px;">Đã hoàn thành</button>
       </div>
     </div>
   </div>
@@ -44,64 +66,160 @@
   {% if overview.enrollments and overview.enrollments|length > 0 %}
     <div class="row g-4" id="enrolled-courses-grid">
       {% for c in overview.enrollments %}
-      <div class="col-md-6 col-lg-4 course-card-item" data-status="{{ c.status }}" data-query="{{ (c.course_code ~ ' ' ~ c.course_title)|lower }}">
-        <div class="card h-100 bg-white border border-slate-200 shadow-xs" style="border-radius: 8px;">
-          <div class="card-body p-4 d-flex flex-column justify-content-between">
-            <div>
-              <div class="d-flex justify-content-between align-items-start mb-2">
-                <span class="badge bg-primary-subtle text-primary fw-bold">{{ c.course_code }}</span>
-                {% if c.status == 'COMPLETED' or c.progress_percent >= 100 %}
-                  <span class="badge bg-success-subtle text-success">✓ Hoàn thành</span>
-                {% else %}
-                  <span class="badge bg-info-subtle text-info">Đang học</span>
-                {% endif %}
-              </div>
-              <h3 class="h5 fw-bold text-slate-900 mb-2">{{ c.course_title }}</h3>
-              <p class="text-caption text-muted mb-3">Giảng viên: {{ c.instructor_name }}</p>
-            </div>
+        {% set is_done = (c.status == 'COMPLETED' or c.progress_percent >= 100) %}
+        {% set c_title_lower = (c.course_title or '')|lower %}
+        {% set c_code_upper = (c.course_code or '')|upper %}
+        {% if 'CS301' in c_code_upper or 'trí tuệ' in c_title_lower or 'ai' in c_title_lower or 'máy học' in c_title_lower %}
+          {% set mesh_class = 'thumb-mesh-ai' %}
+          {% set watermark_type = 'cpu' %}
+        {% elif 'WEB' in c_code_upper or 'web' in c_title_lower or 'frontend' in c_title_lower %}
+          {% set mesh_class = 'thumb-mesh-web' %}
+          {% set watermark_type = 'globe' %}
+        {% elif 'CS101' in c_code_upper or 'khoa học' in c_title_lower or 'python' in c_title_lower %}
+          {% set mesh_class = 'thumb-mesh-cs' %}
+          {% set watermark_type = 'terminal' %}
+        {% elif 'DATA' in c_code_upper or 'dữ liệu' in c_title_lower or 'sql' in c_title_lower %}
+          {% set mesh_class = 'thumb-mesh-data' %}
+          {% set watermark_type = 'database' %}
+        {% else %}
+          {% set mesh_class = 'thumb-mesh-default' %}
+          {% set watermark_type = 'book-open' %}
+        {% endif %}
 
-            <div class="mt-3 pt-3 border-top border-slate-100">
-              <div class="d-flex justify-content-between text-caption mb-1">
-                <span class="text-muted">Tiến độ</span>
-                <span class="fw-semibold text-slate-900">{{ c.progress_percent }}%</span>
-              </div>
-              <div class="progress mb-3" style="height: 6px; border-radius: 9999px;">
-                <div class="progress-bar bg-primary" role="progressbar" style="width: {{ c.progress_percent }}%; border-radius: 9999px;" aria-valuenow="{{ c.progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
-              </div>
-              <a href="{{ url_for('student.course_progress', course_id=c.course_id) }}" class="btn btn-primary btn-sm w-100 fw-semibold">
-                {% if c.status == 'COMPLETED' or c.progress_percent >= 100 %}
-                  Xem lại bài học
+        <div class="col-md-6 col-lg-4 course-card-item mb-4" data-status="{{ c.status }}" data-query="{{ (c.course_code ~ ' ' ~ c.course_title ~ ' ' ~ (c.instructor_name or ''))|lower }}">
+          <div class="course-card-minimal">
+            <!-- Compact Aesthetic Thumbnail Cover -->
+            <a href="{{ url_for('student.course_progress', course_id=c.course_id) }}" class="course-card-thumb {{ mesh_class }}" aria-label="{{ c.course_title }}">
+              <div class="thumb-glow"></div>
+              
+              <div class="thumb-watermark">
+                {% if watermark_type == 'cpu' %}
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                {% elif watermark_type == 'globe' %}
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                {% elif watermark_type == 'terminal' %}
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                {% elif watermark_type == 'database' %}
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
                 {% else %}
-                  Tiếp tục học →
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
                 {% endif %}
+              </div>
+
+              <!-- Status Badge (Single Frosted Badge) -->
+              <div class="frosted-badge">
+                {% if is_done %}
+                  <span style="color: #34d399;">✓ Hoàn thành</span>
+                {% else %}
+                  <span>Đang học</span>
+                {% endif %}
+              </div>
+            </a>
+
+            <!-- Card Body -->
+            <div class="course-card-minimal-body">
+              <!-- Top Meta Line: Course Code + Instructor -->
+              <div class="course-meta-top">
+                <span class="course-code-tag">{{ c.course_code }}</span>
+                <span class="text-muted" style="font-size: 11px; opacity: 0.5;">•</span>
+                <span class="course-instructor-text">
+                  {{ c.instructor_name or 'Bộ môn PWD301' }}
+                </span>
+              </div>
+
+              <!-- Course Title -->
+              <a href="{{ url_for('student.course_progress', course_id=c.course_id) }}" class="text-decoration-none">
+                <h3 class="course-card-title" title="{{ c.course_title }}">
+                  {{ c.course_title }}
+                </h3>
               </a>
+
+              <!-- Progress bar & metrics -->
+              <div class="mt-auto pt-2">
+                <div class="d-flex justify-content-between text-caption mb-1.5" style="font-size: 12px;">
+                  <span class="text-muted">Tiến độ bài học</span>
+                  <span class="fw-bold text-slate-900">{{ c.progress_percent }}%</span>
+                </div>
+                <div class="progress mb-3" style="height: 6px; border-radius: 9999px; background: rgba(226, 232, 240, 0.6);">
+                  <div class="progress-bar {% if is_done %}bg-success{% else %}bg-primary{% endif %}" role="progressbar" style="width: {{ c.progress_percent }}%; border-radius: 9999px;" aria-valuenow="{{ c.progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+
+                <div class="d-flex align-items-center gap-2">
+                  <a href="{{ url_for('student.course_progress', course_id=c.course_id) }}" class="btn {% if is_done %}btn-outline-primary{% else %}btn-primary{% endif %} btn-sm flex-grow-1 py-1.5 fw-semibold shadow-xs" style="border-radius: 8px;">
+                    {% if is_done %}
+                      Xem lại bài giảng
+                    {% else %}
+                      Tiếp tục học ngay →
+                    {% endif %}
+                  </a>
+                  <a href="{{ url_for('student.student_course_detail', course_id=c.course_id) }}" class="btn btn-outline-secondary btn-sm p-1.5" style="border-radius: 8px;" title="Xem đề cương môn học">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       {% endfor %}
     </div>
   {% else %}
-    <div class="card bg-white border border-slate-200 py-5 text-center" style="border-radius: 8px;">
-      <div class="card-body">
-        <div class="text-muted mb-3 fs-5">Bạn chưa tham gia khóa học nào.</div>
-        <a href="{{ url_for('core.index') }}" class="btn btn-primary px-4">Khám phá danh mục khóa học ngay</a>
+    <!-- Clean Empty State -->
+    <div class="card bg-white border border-slate-200 py-5 my-4 text-center shadow-xs" style="border-radius: 14px;">
+      <div class="card-body p-4 p-md-5">
+        <div class="d-inline-flex p-3 rounded-circle bg-primary-subtle text-primary mb-3">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+        </div>
+        <h3 class="fs-5 fw-bold text-slate-900 mb-2">Bạn chưa tham gia khóa học nào</h3>
+        <p class="text-muted small mx-auto mb-4" style="max-width: 460px; line-height: 1.6;">
+          Hãy khám phá danh mục khóa học của PWD301 LMS để đăng ký các chương trình đào tạo chính quy và bắt đầu hành trình học tập.
+        </p>
+        <a href="{{ url_for('core.index') }}" class="btn btn-primary px-4 py-2 fw-semibold shadow-xs">
+          Khám phá danh mục khóa học ngay →
+        </a>
       </div>
     </div>
   {% endif %}
 </div>
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
   function filterCourses() {
     const q = (document.getElementById('course-search-input')?.value || '').toLowerCase().trim();
     const status = document.getElementById('course-status-filter')?.value || 'all';
+    let visibleCount = 0;
+
     document.querySelectorAll('#enrolled-courses-grid .course-card-item').forEach(card => {
       const itemQuery = card.getAttribute('data-query') || '';
       const itemStatus = card.getAttribute('data-status') || '';
       const matchQ = !q || itemQuery.includes(q);
-      const matchS = status === 'all' || itemStatus === status;
-      card.style.display = (matchQ && matchS) ? 'block' : 'none';
+      const matchS = (status === 'all') || (itemStatus === status);
+
+      if (matchQ && matchS) {
+        card.style.display = '';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
     });
+
+    const countLabel = document.getElementById('total-count-label');
+    if (countLabel) countLabel.textContent = visibleCount;
+  }
+
+  function selectStatusFilter(statusVal, btnEl) {
+    document.querySelectorAll('#status-pills button').forEach(b => {
+      b.classList.remove('active', 'btn-primary');
+      b.classList.add('btn-outline-secondary');
+    });
+    btnEl.classList.add('active', 'btn-primary');
+    btnEl.classList.remove('btn-outline-secondary');
+
+    const filterSelect = document.getElementById('course-status-filter');
+    if (filterSelect) {
+      filterSelect.value = statusVal;
+    }
+    filterCourses();
   }
 </script>
 {% endblock %}

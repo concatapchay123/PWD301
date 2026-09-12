@@ -24,9 +24,81 @@
 
   const appShell = {
     init() {
+      this.initSidebarToggle();
       this.syncActiveSidebarLink();
       this.initNotificationBell();
       this.initAIChat();
+    },
+
+    // 0. Sidebar Collapse / Expand Toggle
+    initSidebarToggle() {
+      const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
+      const footerToggleBtn = document.getElementById('sidebar-collapse-btn');
+
+      if (topbarToggleBtn) {
+        topbarToggleBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.toggleSidebar();
+        });
+      }
+
+      if (footerToggleBtn) {
+        footerToggleBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.toggleSidebar();
+        });
+      }
+
+      // Keyboard shortcut: Ctrl + B (or Cmd + B on Mac)
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+          const target = e.target;
+          const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+          if (!isInput) {
+            e.preventDefault();
+            this.toggleSidebar();
+          }
+        }
+      });
+
+      // Initialize Bootstrap Tooltips for sidebar links in collapsed state
+      if (typeof window.bootstrap !== 'undefined' && window.bootstrap.Tooltip) {
+        document.querySelectorAll('.sidebar-link[title]').forEach(el => {
+          try {
+            new window.bootstrap.Tooltip(el, {
+              placement: 'right',
+              trigger: 'hover',
+              fallbackPlacements: ['bottom']
+            });
+          } catch (err) {}
+        });
+      }
+    },
+
+    toggleSidebar() {
+      const isCurrentlyCollapsed = document.documentElement.classList.contains('sidebar-collapsed');
+      const nextState = !isCurrentlyCollapsed;
+
+      if (nextState) {
+        document.documentElement.classList.add('sidebar-collapsed');
+        document.body.classList.add('sidebar-collapsed');
+        try {
+          localStorage.setItem('pwd301_sidebar_collapsed', 'true');
+        } catch (e) {}
+      } else {
+        document.documentElement.classList.remove('sidebar-collapsed');
+        document.body.classList.remove('sidebar-collapsed');
+        try {
+          localStorage.setItem('pwd301_sidebar_collapsed', 'false');
+        } catch (e) {}
+      }
+
+      const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
+      if (topbarToggleBtn) {
+        topbarToggleBtn.setAttribute('aria-expanded', String(!nextState));
+        topbarToggleBtn.setAttribute('title', nextState ? 'Mở rộng menu (Ctrl+B)' : 'Thu gọn menu (Ctrl+B)');
+        topbarToggleBtn.setAttribute('aria-label', nextState ? 'Mở rộng menu' : 'Thu gọn menu');
+      }
     },
 
     // 1. Highlight current sidebar link based on current path
@@ -174,7 +246,7 @@
       typingIndicator.className = 'ai-chat-msg ai-msg-bot';
       typingIndicator.innerHTML = `
         <div class="ai-msg-avatar">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+          <img src="/static/img/octopus_mascot.png" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
         </div>
         <div class="ai-msg-content">
           <div class="ai-typing-indicator">
@@ -206,11 +278,11 @@
         botMsg.className = 'ai-chat-msg ai-msg-bot';
         botMsg.innerHTML = `
           <div class="ai-msg-avatar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+            <img src="/static/img/octopus_mascot.png" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
           </div>
           <div class="ai-msg-content">
             <div>${escapeHtml(reply)}</div>
-            <div class="ai-citation-badge mt-2">📖 <strong>Nguồn:</strong> Giáo trình trực tuyến PWD301</div>
+            <div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Trực tiếp từ giáo trình PWD301</div>
           </div>
         `;
         msgContainer.appendChild(botMsg);
@@ -224,11 +296,11 @@
         botMsg.className = 'ai-chat-msg ai-msg-bot';
         botMsg.innerHTML = `
           <div class="ai-msg-avatar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
+            <img src="/static/img/octopus_mascot.png" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
           </div>
           <div class="ai-msg-content">
             <div>Chào bạn! Trong môn PWD301, bạn có thể tham khảo mục tài liệu và bài giảng của từng bài học để nắm vững khái niệm này nhé.</div>
-            <div class="ai-citation-badge mt-2">📖 <strong>Nguồn:</strong> Giáo trình môn học PWD301</div>
+            <div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Giáo trình môn học PWD301</div>
           </div>
         `;
         msgContainer.appendChild(botMsg);

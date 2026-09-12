@@ -1,0 +1,719 @@
+{% extends "base.html" %}
+
+{% block title %}Quản lý khóa học: {{ course.title }} — Giảng viên{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Breadcrumb navigation -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('instructor.my_courses') }}" class="text-decoration-none">Khóa học của tôi</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ course.course_code }}</li>
+    </ol>
+  </nav>
+
+  <!-- Course Header & Workflow Actions Banner -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-4">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3">
+        <div>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge bg-primary-subtle text-primary fw-bold fs-6">{{ course.course_code }}</span>
+            {% if course.status == 'DRAFT' %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fs-6">Bản thảo (DRAFT)</span>
+            {% elif course.status == 'SUBMITTED_FOR_REVIEW' %}
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle fs-6">Đang chờ Admin duyệt (SUBMITTED)</span>
+            {% elif course.status == 'APPROVED' %}
+              <span class="badge bg-info-subtle text-info border border-info-subtle fs-6">Đã được duyệt (APPROVED)</span>
+            {% elif course.status == 'PUBLISHED' %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle fs-6">Đang mở (PUBLISHED)</span>
+            {% elif course.status == 'ARCHIVED' %}
+              <span class="badge bg-dark-subtle text-muted fs-6">Lưu trữ (ARCHIVED)</span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary fs-6">{{ course.status }}</span>
+            {% endif %}
+          </div>
+          {% set clean_title = course.title %}
+          {% if clean_title.startswith(course.course_code ~ ': ') %}
+            {% set clean_title = clean_title[course.course_code|length + 2:] %}
+          {% elif clean_title.startswith(course.course_code ~ ' - ') %}
+            {% set clean_title = clean_title[course.course_code|length + 3:] %}
+          {% endif %}
+          <h1 class="h3 fw-bold text-slate-900 mb-1">{{ clean_title }}</h1>
+          <p class="text-muted small mb-0">{{ course.description or 'Chưa có mô tả cho khóa học này.' }}</p>
+        </div>
+
+        <!-- Workflow actions -->
+        <div class="d-flex flex-wrap gap-2">
+          <a href="/instructor/courses/{{ course.public_id }}/questions" class="btn btn-outline-secondary d-flex align-items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M2.5 3.5a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1zm2-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1zM0 13a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 16 13V6a1.5 1.5 0 0 0-1.5-1.5h-13A1.5 1.5 0 0 0 0 6zm1.5.5A.5.5 0 0 1 1 13V6a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5z"/>
+            </svg>
+            Ngân hàng câu hỏi ({{ questions_count }})
+          </a>
+
+          {% if course.status == 'DRAFT' %}
+            <form method="POST" action="/instructor/courses/{{ course.public_id }}/submit" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-primary d-flex align-items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"/>
+                </svg>
+                Gửi Admin xét duyệt xuất bản
+              </button>
+            </form>
+          {% elif course.status == 'SUBMITTED_FOR_REVIEW' %}
+            <form method="POST" action="/instructor/courses/{{ course.public_id }}/cancel-submit" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-warning d-flex align-items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/>
+                  <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/>
+                </svg>
+                Hủy gửi duyệt
+              </button>
+            </form>
+          {% elif course.status == 'APPROVED' %}
+            <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-success d-flex align-items-center gap-2 fw-bold">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M3.05 3.05a7 7 0 0 0 0 9.9.5.5 0 0 1-.707.707 8 8 0 0 1 0-11.314.5.5 0 0 1 .707.707m2.122 2.122a4 4 0 0 0 0 5.656.5.5 0 1 1-.708.708 5 5 0 0 1 0-7.072.5.5 0 0 1 .708.708m5.656-.708a.5.5 0 0 1 .708 0 5 5 0 0 1 0 7.072.5.5 0 1 1-.708-.708 4 4 0 0 0 0-5.656.5.5 0 0 1 0-.708m2.122-2.12a.5.5 0 0 1 .707 0 8 8 0 0 1 0 11.313.5.5 0 0 1-.707-.707 7 7 0 0 0 0-9.9.5.5 0 0 1 0-.707zM10 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/>
+                </svg>
+                Xuất bản khóa học ngay
+              </button>
+            </form>
+          {% elif course.status == 'PUBLISHED' %}
+            <span class="badge bg-success-subtle text-success p-2 d-flex align-items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+              </svg>
+              Khóa học đang hoạt động
+            </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Management Tabs Navigation -->
+  <ul class="nav nav-tabs mb-4 border-bottom" id="courseManageTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <a class="nav-link fw-semibold {% if active_tab == 'lessons' or not active_tab %}active{% endif %}" href="?tab=lessons">
+        <i class="bi bi-journal-text me-2"></i>Bài giảng & Giáo trình ({{ lessons|length }})
+      </a>
+    </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link fw-semibold {% if active_tab == 'materials' %}active{% endif %}" href="?tab=materials">
+        <i class="bi bi-paperclip me-2"></i>Tài liệu & Tệp tin ({{ file_assets|length }})
+      </a>
+    </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link fw-semibold {% if active_tab == 'assessments' %}active{% endif %}" href="?tab=assessments">
+        <i class="bi bi-check2-circle me-2"></i>Đề thi & Kiểm tra ({{ assessments|length }})
+      </a>
+    </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link fw-semibold {% if active_tab == 'questions' %}active{% endif %}" href="?tab=questions">
+        <i class="bi bi-collection me-2"></i>Ngân hàng câu hỏi ({{ questions_count }})
+      </a>
+    </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link fw-semibold {% if active_tab == 'settings' %}active{% endif %}" href="?tab=settings">
+        <i class="bi bi-gear me-2"></i>Cài đặt & Xuất bản
+      </a>
+    </li>
+  </ul>
+
+  <!-- Tab Content Sections -->
+  <div class="tab-content">
+    <!-- TAB 1: BÀI GIẢNG (LESSONS) -->
+    {% if active_tab == 'lessons' or not active_tab %}
+    <div class="tab-pane fade show active">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Danh sách bài giảng</h2>
+          <p class="text-muted small mb-0">Quản lý các tiết học, nội dung bài giảng markdown và thời lượng của khóa học.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newLessonModal">
+          + Thêm bài giảng mới
+        </button>
+      </div>
+
+      {% if lessons %}
+      <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 60px;">#</th>
+                <th>Tên bài học</th>
+                <th>Tóm tắt nội dung</th>
+                <th>Thời lượng</th>
+                <th>Trạng thái</th>
+                <th class="text-end">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for les in lessons %}
+              <tr>
+                <td class="fw-bold text-muted">{{ les.position }}</td>
+                <td>
+                  <div class="fw-bold text-slate-900">{{ les.title }}</div>
+                  <small class="text-muted">ID: {{ les.public_id }}</small>
+                </td>
+                <td class="text-muted small" style="max-width: 320px;">
+                  {{ les.summary or 'Chưa có mô tả tóm tắt.' }}
+                </td>
+                <td>
+                  <span class="badge bg-light text-dark border">{{ les.estimated_duration_minutes or 15 }} phút</span>
+                </td>
+                <td>
+                  {% if les.status == 'PUBLISHED' %}
+                    <span class="badge bg-success-subtle text-success">Xuất bản</span>
+                  {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary">{{ les.status }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <div class="d-flex justify-content-end gap-2">
+                    <a href="/student/courses/{{ course.public_id }}/lessons/{{ les.public_id }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Xem trước giao diện học viên">
+                      Xem
+                    </a>
+                    <form method="POST" action="/instructor/courses/{{ course.public_id }}/lessons/{{ les.public_id }}/delete" onsubmit="return confirm('Bạn có chắc chắn muốn xóa bài học này?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Xóa bài học">
+                        Xóa
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm text-center py-5">
+        <div class="card-body">
+          <div class="text-muted mb-3">Khóa học này chưa có bài giảng nào.</div>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newLessonModal">+ Thêm bài giảng đầu tiên</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Modal Tạo bài giảng mới -->
+    <div class="modal fade" id="newLessonModal" tabindex="-1" aria-labelledby="newLessonModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+          <form method="POST" action="/instructor/courses/{{ course.public_id }}/lessons">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-header">
+              <h5 class="modal-title fw-bold" id="newLessonModalLabel">Thêm bài giảng mới</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Tiêu đề bài giảng <span class="text-danger">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="Ví dụ: Bài 1 - Giới thiệu kiến trúc hệ thống..." required>
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Thời lượng ước tính (phút)</label>
+                  <input type="number" name="estimated_duration_minutes" class="form-control" value="30" min="1" max="600">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Thứ tự hiển thị (Position)</label>
+                  <input type="number" name="position" class="form-control" value="{{ (lessons|length) + 1 }}" min="1">
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Tóm tắt ngắn</label>
+                <textarea name="summary" class="form-control" rows="2" placeholder="Tóm tắt mục tiêu chính của bài học..."></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Nội dung bài học (Hỗ trợ Markdown) <span class="text-danger">*</span></label>
+                <textarea name="markdown_content" class="form-control font-monospace" rows="8" placeholder="# Mục tiêu bài học&#10;&#10;Nội dung chi tiết giảng dạy..." required></textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+              <button type="submit" class="btn btn-primary">Lưu bài giảng</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 2: TÀI LIỆU & TỆP TIN (MATERIALS) -->
+    {% if active_tab == 'materials' %}
+    <div class="tab-pane fade show active">
+      <div class="row g-4 mb-4">
+        <!-- Form upload file -->
+        <div class="col-lg-5">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white py-3 border-bottom">
+              <h2 class="h6 fw-bold text-slate-900 mb-0">Tải lên tài liệu mới</h2>
+            </div>
+            <div class="card-body p-4">
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}/files" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Chọn tệp tin <span class="text-danger">*</span></label>
+                  <input type="file" name="file" class="form-control" required>
+                  <div class="form-text small text-muted mt-1">
+                    Định dạng: PDF, DOCX, PPTX, MP4, PNG, JPG, ZIP... Video tối đa &lt; 1 GB.
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Gắn vào bài giảng (Tùy chọn)</label>
+                  <select name="lesson_id" class="form-select">
+                    <option value="">-- Tài liệu chung toàn khóa học --</option>
+                    {% for les in lessons %}
+                      <option value="{{ les.public_id }}">{{ les.position }}. {{ les.title }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="alert alert-info py-2 px-3 small mb-3 border-0 bg-info-subtle text-info-emphasis">
+                  <i class="bi bi-shield-check me-1"></i>
+                  <strong>Bảo mật:</strong> Toàn bộ tệp tin được hệ thống ClamAV kiểm tra tự động trước khi cho phép học viên truy cập.
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">
+                  <i class="bi bi-upload me-2"></i>Tải lên tài liệu
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Files summary and rules -->
+        <div class="col-lg-7">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white py-3 border-bottom">
+              <h2 class="h6 fw-bold text-slate-900 mb-0">Chính sách lưu trữ & Bảo mật tệp tin</h2>
+            </div>
+            <div class="card-body p-4">
+              <ul class="list-unstyled mb-0 d-flex flex-column gap-3 small">
+                <li class="d-flex align-items-start gap-2">
+                  <span class="badge bg-success-subtle text-success p-1 rounded-circle"><i class="bi bi-check"></i></span>
+                  <div><strong>Quét mã độc ClamAV tự động:</strong> Cơ chế fail-closed ngăn chặn tệp tin chưa quét hoặc nghi ngờ lây nhiễm phát tán tới học viên.</div>
+                </li>
+                <li class="d-flex align-items-start gap-2">
+                  <span class="badge bg-success-subtle text-success p-1 rounded-circle"><i class="bi bi-check"></i></span>
+                  <div><strong>Giới hạn dung lượng video:</strong> Tuân thủ nghiêm ngặt dung lượng video &lt; 1 GB. Tệp tài liệu &lt; 50 MB.</div>
+                </li>
+                <li class="d-flex align-items-start gap-2">
+                  <span class="badge bg-success-subtle text-success p-1 rounded-circle"><i class="bi bi-check"></i></span>
+                  <div><strong>Bảo vệ quyền riêng tư:</strong> Đường dẫn lưu trữ vật lý được mã hóa và ẩn danh, tải về qua xác thực phiên làm việc.</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Uploaded files table -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+          <h3 class="h6 fw-bold text-slate-900 mb-0">Danh sách tài liệu đã tải lên ({{ file_assets|length }})</h3>
+        </div>
+        {% if file_assets %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Tên tệp tin</th>
+                <th>Dung lượng</th>
+                <th>Loại tệp</th>
+                <th>Quét Virus (ClamAV)</th>
+                <th>Ngày tải lên</th>
+                <th class="text-end">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for fa in file_assets %}
+              <tr>
+                <td>
+                  <div class="fw-bold text-slate-900">{{ fa.original_file_name or fa.file_name }}</div>
+                  <small class="text-muted">UUID: {{ fa.public_id }}</small>
+                </td>
+                <td>
+                  {% if fa.file_size_bytes %}
+                    {{ (fa.file_size_bytes / 1024 / 1024) | round(2) }} MB
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td><span class="badge bg-light text-dark border">{{ fa.mime_type or 'file' }}</span></td>
+                <td>
+                  {% if fa.virus_scan_status == 'CLEAN' %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">CLEAN (Đã quét an toàn)</span>
+                  {% elif fa.virus_scan_status == 'INFECTED' %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">INFECTED (Đã cách ly)</span>
+                  {% else %}
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle">{{ fa.virus_scan_status or 'PENDING' }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted small">{{ fa.created_at.strftime('%d/%m/%Y %H:%M') if fa.created_at else '—' }}</td>
+                <td class="text-end">
+                  <a href="/instructor/courses/{{ course.public_id }}/files/{{ fa.public_id }}/download" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-download me-1"></i>Tải về
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+          Chưa có tệp tin hoặc tài liệu nào được tải lên cho khóa học này.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 3: ĐỀ THI & BÀI KIỂM TRA (ASSESSMENTS) -->
+    {% if active_tab == 'assessments' %}
+    <div class="tab-pane fade show active">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Danh sách Đề thi & Bài kiểm tra</h2>
+          <p class="text-muted small mb-0">Thiết lập các bài thi trắc nghiệm, bài kiểm tra định kỳ và đánh giá cuối khóa.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newAssessmentModal">
+          + Tạo đề thi mới
+        </button>
+      </div>
+
+      {% if assessments %}
+      <div class="card border-0 shadow-sm dropdown-visible">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Tên bài kiểm tra</th>
+                <th>Phân loại</th>
+                <th>Thời lượng</th>
+                <th>Điểm sàn</th>
+                <th>Lượt thi</th>
+                <th>Trạng thái</th>
+                <th class="text-end">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for asm in assessments %}
+              <tr>
+                <td>
+                  <a href="/instructor/assessments/{{ asm.public_id }}" class="fw-bold text-slate-900 text-decoration-none hover-primary">
+                    {{ asm.title }}
+                  </a>
+                  <div class="text-muted small">UUID: {{ asm.public_id }}</div>
+                </td>
+                <td>
+                  {% if asm.assessment_type == 'FINAL' %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Cuối kỳ (Final)</span>
+                  {% elif asm.assessment_type == 'MIDTERM' %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Giữa kỳ (Midterm)</span>
+                  {% elif asm.assessment_type == 'QUIZ' %}
+                    <span class="badge bg-info-subtle text-info border border-info-subtle">Quiz ngắn</span>
+                  {% elif asm.assessment_type == 'PRACTICE' %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">Luyện tập</span>
+                  {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary">{{ asm.assessment_type }}</span>
+                  {% endif %}
+                </td>
+                <td>{{ asm.time_limit_minutes or 'Không giới hạn' }}{% if asm.time_limit_minutes %} phút{% endif %}</td>
+                <td>{{ asm.passing_percent or asm.passing_score or 50 }}%</td>
+                <td>{{ asm.attempt_limit or 'Không giới hạn' }}{% if asm.attempt_limit %} lượt{% endif %}</td>
+                <td>
+                  {% if asm.status == 'PUBLISHED' %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      Đã xuất bản
+                    </span>
+                  {% elif asm.status == 'DRAFT' %}
+                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Bản thảo</span>
+                  {% elif asm.status == 'CANCELLED' %}
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Đã hủy</span>
+                  {% else %}
+                    <span class="badge bg-dark-subtle text-muted">{{ asm.status }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <div class="d-inline-flex align-items-center gap-2">
+                    <a href="/instructor/assessments/{{ asm.public_id }}" class="btn btn-sm btn-primary">
+                      Thiết lập / Soạn đề
+                    </a>
+                    {% if asm.status == 'DRAFT' %}
+                      <form method="POST" action="/instructor/assessments/{{ asm.public_id }}/publish" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn xuất bản bài thi này? Sau khi xuất bản, khung giờ và thời lượng sẽ bị khóa (Timing Lock).');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-success" title="Xuất bản đề thi">Xuất bản</button>
+                      </form>
+                      <form method="POST" action="/instructor/assessments/{{ asm.public_id }}/trash" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn xóa bài thi này vào thùng rác?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Xóa vào thùng rác">Xóa</button>
+                      </form>
+                    {% elif asm.status == 'PUBLISHED' %}
+                      <form method="POST" action="/instructor/assessments/{{ asm.public_id }}/cancel" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn hủy đợt thi này? Sinh viên sẽ không thể tiếp tục vào thi.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Hủy đợt thi">Hủy</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm text-center py-5">
+        <div class="card-body">
+          <div class="text-muted mb-3">Chưa có bài kiểm tra hoặc đề thi nào cho khóa học này.</div>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAssessmentModal">+ Tạo đề thi đầu tiên</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Modal Tạo đề thi mới -->
+    <div class="modal fade" id="newAssessmentModal" tabindex="-1" aria-labelledby="newAssessmentModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+          <form method="POST" action="/instructor/courses/{{ course.public_id }}/assessments">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-header">
+              <div class="d-flex align-items-center gap-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <h5 class="modal-title fw-bold m-0" id="newAssessmentModalLabel">Tạo đề thi / Bài kiểm tra mới</h5>
+              </div>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Tên bài thi <span class="text-danger">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="Ví dụ: Kiểm tra tiến độ Giữa kỳ..." required maxlength="200">
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Phân loại đánh giá <span class="text-danger">*</span></label>
+                  <select name="assessment_type" class="form-select" required>
+                    <option value="MIDTERM" selected>Kiểm tra giữa kỳ (Midterm)</option>
+                    <option value="QUIZ">Kiểm tra ngắn (Quiz)</option>
+                    <option value="FINAL">Thi kết thúc học phần (Final Exam)</option>
+                    <option value="PRACTICE">Bài tập luyện tập (Practice)</option>
+                    <option value="PLACEMENT">Đánh giá xếp lớp (Placement)</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Chính sách công bố điểm</label>
+                  <select name="score_release_policy" class="form-select">
+                    <option value="IMMEDIATE" selected>Công bố ngay sau khi nộp (Immediate)</option>
+                    <option value="AFTER_CLOSE">Chỉ công bố sau hạn đóng bài thi</option>
+                    <option value="INSTRUCTOR_RELEASE">Giảng viên phê duyệt phát hành</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">Thời gian làm bài (Phút) <span class="text-danger">*</span></label>
+                  <input type="number" name="time_limit_minutes" class="form-control" value="45" min="1" max="600" required>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">Điểm đạt chuẩn (%)</label>
+                  <input type="number" step="0.5" name="passing_percent" class="form-control" value="50" min="0" max="100">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">Số lượt thi tối đa</label>
+                  <input type="number" name="attempt_limit" class="form-control" value="1" min="1" max="50">
+                </div>
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Thời điểm mở đề thi (Tùy chọn)</label>
+                  <input type="datetime-local" name="open_at" class="form-control">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">Thời điểm đóng đề thi (Tùy chọn)</label>
+                  <input type="datetime-local" name="close_at" class="form-control">
+                </div>
+              </div>
+              <div class="mb-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="shuffle_questions" id="shuffleQuestions" value="true">
+                  <label class="form-check-label fw-semibold" for="shuffleQuestions">Tự động xáo trộn thứ tự câu hỏi & phương án khi phát đề</label>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Mô tả hoặc hướng dẫn làm bài</label>
+                <textarea name="description" class="form-control" rows="3" placeholder="Quy định, nhắc nhở trước khi học viên nhấn làm bài..."></textarea>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+              <button type="submit" class="btn btn-primary">Tạo đề thi</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 4: NGÂN HÀNG CÂU HỎI (QUESTIONS) -->
+    {% if active_tab == 'questions' %}
+    <div class="tab-pane fade show active">
+      <div class="card border-0 shadow-sm p-4 mb-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+          <div>
+            <span class="badge bg-primary-subtle text-primary fw-bold mb-2">NGÂN HÀNG DỮ LIỆU</span>
+            <h2 class="h4 fw-bold text-slate-900 mb-1">Ngân hàng câu hỏi của khóa học</h2>
+            <p class="text-muted small mb-0">Hiện có <strong class="text-primary fs-6">{{ questions_count }}</strong> câu hỏi đang sẵn sàng trong kho dữ liệu.</p>
+          </div>
+          <a href="/instructor/courses/{{ course.public_id }}/questions" class="btn btn-primary d-flex align-items-center gap-2 px-4 py-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M2.5 3.5a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1zm2-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1zM0 13a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 16 13V6a1.5 1.5 0 0 0-1.5-1.5h-13A1.5 1.5 0 0 0 0 6zm1.5.5A.5.5 0 0 1 1 13V6a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5z"/>
+            </svg>
+            Mở trình quản lý Ngân hàng câu hỏi
+          </a>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100 p-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-primary-subtle text-primary p-2 rounded-3"><i class="bi bi-ui-checks"></i></span>
+                <h3 class="h6 fw-bold mb-0">Đa dạng dạng câu hỏi</h3>
+              </div>
+              <p class="text-muted small mb-0">Hỗ trợ trắc nghiệm đơn, trắc nghiệm nhiều đáp án, đúng/sai, điền khuyết, ghép nối và tự luận có hướng dẫn chấm.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100 p-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-success-subtle text-success p-2 rounded-3"><i class="bi bi-clock-history"></i></span>
+                <h3 class="h6 fw-bold mb-0">Lưu vết phiên bản</h3>
+              </div>
+              <p class="text-muted small mb-0">Mỗi lần sửa câu hỏi đều tạo QuestionRevision riêng biệt, đảm bảo các bài thi cũ không bị ảnh hưởng điểm số.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100 p-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-warning-subtle text-warning p-2 rounded-3"><i class="bi bi-cpu"></i></span>
+                <h3 class="h6 fw-bold mb-0">RAG & AI Generator</h3>
+              </div>
+              <p class="text-muted small mb-0">Tự động sinh câu hỏi từ tài liệu bài giảng đã tải lên bằng mô hình AI tích hợp.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 5: CÀI ĐẶT & XUẤT BẢN (SETTINGS) -->
+    {% if active_tab == 'settings' %}
+    <div class="tab-pane fade show active">
+      <div class="row g-4">
+        <div class="col-lg-7">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3 border-bottom">
+              <h2 class="h6 fw-bold text-slate-900 mb-0">Thông tin khóa học</h2>
+            </div>
+            <div class="card-body p-4">
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="row g-3 mb-3">
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Mã khóa học</label>
+                    <input type="text" class="form-control bg-light" value="{{ course.course_code }}" readonly>
+                  </div>
+                  <div class="col-md-8">
+                    <label class="form-label fw-semibold">Tên khóa học <span class="text-danger">*</span></label>
+                    <input type="text" name="title" class="form-control" value="{{ course.title }}" required>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">Mô tả khóa học</label>
+                  <textarea name="description" class="form-control" rows="4">{{ course.description or '' }}</textarea>
+                </div>
+
+                <div class="row g-3 mb-4">
+                  <div class="col-md-6">
+                    <label class="form-label fw-semibold">Danh mục (Category)</label>
+                    <input type="text" name="category" class="form-control" value="{{ course.category or 'Công nghệ thông tin' }}">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label fw-semibold">Số lượng học viên tối đa</label>
+                    <input type="number" name="max_enrollments" class="form-control" value="{{ course.max_enrollments or 100 }}" min="1">
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+              <h2 class="h6 fw-bold text-slate-900 mb-0">Quy trình xuất bản khóa học</h2>
+            </div>
+            <div class="card-body p-4">
+              <div class="timeline small">
+                <div class="d-flex align-items-start gap-3 mb-3">
+                  <div class="badge rounded-pill {% if course.status == 'DRAFT' %}bg-primary{% else %}bg-success{% endif %} p-2">1</div>
+                  <div>
+                    <strong class="d-block">Bản thảo (DRAFT)</strong>
+                    <span class="text-muted">Giảng viên thiết lập bài giảng, tài liệu và ngân hàng câu hỏi.</span>
+                  </div>
+                </div>
+                <div class="d-flex align-items-start gap-3 mb-3">
+                  <div class="badge rounded-pill {% if course.status == 'SUBMITTED_FOR_REVIEW' %}bg-warning{% elif course.status in ['APPROVED', 'PUBLISHED'] %}bg-success{% else %}bg-light text-dark{% endif %} p-2">2</div>
+                  <div>
+                    <strong class="d-block">Chờ xét duyệt (SUBMITTED_FOR_REVIEW)</strong>
+                    <span class="text-muted">Gửi yêu cầu tới Quản trị viên (Admin) để kiểm duyệt giáo trình và chất lượng nội dung.</span>
+                  </div>
+                </div>
+                <div class="d-flex align-items-start gap-3 mb-3">
+                  <div class="badge rounded-pill {% if course.status == 'APPROVED' %}bg-info{% elif course.status == 'PUBLISHED' %}bg-success{% else %}bg-light text-dark{% endif %} p-2">3</div>
+                  <div>
+                    <strong class="d-block">Được phê duyệt (APPROVED)</strong>
+                    <span class="text-muted">Admin đã phê duyệt. Giảng viên sẵn sàng bấm nút phát hành chính thức.</span>
+                  </div>
+                </div>
+                <div class="d-flex align-items-start gap-3">
+                  <div class="badge rounded-pill {% if course.status == 'PUBLISHED' %}bg-success{% else %}bg-light text-dark{% endif %} p-2">4</div>
+                  <div>
+                    <strong class="d-block">Xuất bản (PUBLISHED)</strong>
+                    <span class="text-muted">Khóa học hiển thị cho toàn bộ sinh viên tham gia học tập.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 from flask import (
     Flask,
     Response,
-    flash,
     g,
     jsonify,
     make_response,
@@ -619,51 +618,32 @@ def create_app(
 
         path = request.path
 
-        # Role switching handler for multi-role users (?switch_role=ROLE)
-        switch_role = request.args.get("switch_role")
-        if switch_role and not path.startswith("/api/") and not path.startswith("/static/"):
-            from pwd301.services.authorization_service import get_authenticated_actor
+        # Static assets and health probes fast path
+        if path.startswith("/static/") or path in ("/health", "/health/deep"):
+            return None
 
-            try:
-                actor = get_authenticated_actor()
-            except Exception:
-                actor = None
-            if actor and switch_role in actor.role_codes:
-                session["active_role"] = switch_role
-                flash(f"Đã chuyển sang vai trò {switch_role}.", "info")
-                if path.startswith("/student/") and switch_role == "INSTRUCTOR":
-                    return redirect(url_for("instructor.dashboard"))
-                if path.startswith("/student/") and switch_role == "ADMIN":
-                    return redirect(url_for("admin.dashboard"))
-                if path.startswith("/instructor/") and switch_role == "STUDENT":
-                    return redirect(url_for("student.dashboard"))
-                if path.startswith("/instructor/") and switch_role == "ADMIN":
-                    return redirect(url_for("admin.dashboard"))
-                if path.startswith("/admin/") and switch_role == "STUDENT":
-                    return redirect(url_for("student.dashboard"))
-                if path.startswith("/admin/") and switch_role == "INSTRUCTOR":
-                    return redirect(url_for("instructor.dashboard"))
-                args = request.args.to_dict()
-                args.pop("switch_role", None)
-                clean_url = request.base_url
-                if args:
-                    from urllib.parse import urlencode
+        # Auto-synchronize active_role for authenticated web sessions on portal navigation
+        if current_user and current_user.is_authenticated:
+            if path.startswith("/admin") and not path.startswith("/api/admin"):
+                if current_user.has_role("ADMIN"):
+                    session["active_role"] = "ADMIN"
+            elif path.startswith("/instructor") and not path.startswith("/api/instructor"):
+                if current_user.has_role("INSTRUCTOR") and session.get("active_role") != "ADMIN":
+                    session["active_role"] = "INSTRUCTOR"
+            elif path.startswith("/student") and not path.startswith("/api/student"):
+                if not session.get("active_role"):
+                    session["active_role"] = "STUDENT"
+            elif not session.get("active_role"):
+                session["active_role"] = current_user.primary_role
 
-                    clean_url = f"{clean_url}?{urlencode(args)}"
-                return redirect(clean_url)
-
-        # Fast path 1: Allow static files, health probes, authentication login/logout,
-        # and admin routes without touching DB
+        # Fast path 1: Allow admin routes and auth login/logout without touching DB
         bypass_prefixes = (
-            "/static/",
             "/admin",
             "/api/admin",
             "/auth/login",
             "/api/auth/login",
         )
         bypass_exact = (
-            "/health",
-            "/health/deep",
             "/auth/logout",
             "/api/auth/logout",
         )

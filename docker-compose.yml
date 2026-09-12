@@ -69,6 +69,8 @@ services:
       - DB_NAME=${DB_NAME:-PWD301}
       - CLAMAV_HOST=clamav
       - CLAMAV_PORT=3310
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-AQ.Ab8RN6J-YUJc79fI2pTxdWdFxg7i2sVdnCtcbOdGkyJ7WDXxUw}
+      - GEMINI_MODEL_NAME=${GEMINI_MODEL_NAME:-gemini-3.6-flash}
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
@@ -83,6 +85,7 @@ services:
       clamav:
         condition: service_started
     volumes:
+      - ./src:/app/src
       - storage_data:/app/storage
       - quarantine_data:/app/quarantine
       - backup_data:/app/backups

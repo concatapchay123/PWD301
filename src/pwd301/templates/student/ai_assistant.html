@@ -11,9 +11,9 @@
     <span>Trợ lý AI Học tập</span>
   </nav>
 
-  <div class="card bg-white border border-slate-200 shadow-sm" style="border-radius: 12px; height: calc(100vh - 230px); min-height: 520px; display: flex; flex-direction: column;">
+  <div class="card border border-slate-200 shadow-sm" style="border-radius: 12px; height: calc(100vh - 230px); min-height: 520px; display: flex; flex-direction: column; background: var(--white);">
     <!-- Chat Header -->
-    <div class="card-header bg-white border-bottom p-3 d-flex justify-content-between align-items-center">
+    <div class="card-header border-bottom p-3 d-flex justify-content-between align-items-center" style="background: var(--white); border-color: var(--slate-200) !important;">
       <div class="d-flex align-items-center gap-3">
         <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle" style="width: 42px; height: 42px;">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
@@ -32,29 +32,29 @@
     </div>
 
     <!-- Quick Starter Prompts Pill Bar -->
-    <div class="p-3 bg-slate-50 border-bottom d-flex gap-2 overflow-auto" style="white-space: nowrap;">
+    <div class="p-3 border-bottom d-flex gap-2 overflow-auto" style="white-space: nowrap; background: var(--slate-100); border-color: var(--slate-200) !important;">
       <span class="text-caption text-muted align-self-center me-1">Gợi ý câu hỏi:</span>
-      <button type="button" class="btn btn-light btn-sm border text-slate-700 py-1 px-3" onclick="sendCustomPrompt('Giải thích cơ chế bảo vệ CSRF Token trong biểu mẫu web Flask-WTF?')">
+      <button type="button" class="btn btn-sm border py-1 px-3" style="background: var(--white); color: var(--slate-800); border-color: var(--slate-200) !important;" onclick="sendCustomPrompt('Giải thích cơ chế bảo vệ CSRF Token trong biểu mẫu web Flask-WTF?')">
         💡 Cơ chế CSRF Token
       </button>
-      <button type="button" class="btn btn-light btn-sm border text-slate-700 py-1 px-3" onclick="sendCustomPrompt('Phân biệt Session Authentication và JWT Authentication trong PWD301?')">
+      <button type="button" class="btn btn-sm border py-1 px-3" style="background: var(--white); color: var(--slate-800); border-color: var(--slate-200) !important;" onclick="sendCustomPrompt('Phân biệt Session Authentication và JWT Authentication trong PWD301?')">
         💡 Session vs JWT
       </button>
-      <button type="button" class="btn btn-light btn-sm border text-slate-700 py-1 px-3" onclick="sendCustomPrompt('Tại sao Invariant 13 & 14 yêu cầu khóa cấu hình thời gian và câu hỏi bài thi?')">
+      <button type="button" class="btn btn-sm border py-1 px-3" style="background: var(--white); color: var(--slate-800); border-color: var(--slate-200) !important;" onclick="sendCustomPrompt('Tại sao Invariant 13 & 14 yêu cầu khóa cấu hình thời gian và câu hỏi bài thi?')">
         💡 Quy chế khóa đề thi
       </button>
     </div>
 
     <!-- Chat Messages Scroll Area -->
-    <div class="card-body p-4 flex-grow-1 overflow-auto" id="main-ai-chat-messages" style="background: #f8fafc;">
+    <div class="card-body p-4 flex-grow-1 overflow-auto" id="main-ai-chat-messages" style="background: var(--slate-50);">
       <!-- Welcome Message -->
       <div class="d-flex gap-3 mb-4">
         <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white flex-shrink-0" style="width: 38px; height: 38px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
         </div>
-        <div class="bg-white p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px;">
+        <div class="p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px; background: var(--white); color: var(--slate-800);">
           <div class="fw-semibold text-primary small mb-1">Trợ lý AI PWD301</div>
-          <div class="text-slate-800" style="line-height: 1.7;">
+          <div class="text-slate-800" style="line-height: 1.7; color: var(--slate-800) !important;">
             Xin chào <strong>{{ current_user.display_name or 'Học viên' }}</strong>! Mình là Trợ lý AI đồng hành cùng bạn trong môn học PWD301. Bạn có thể hỏi bất kỳ câu hỏi nào về kiến thức bài giảng, cơ chế bảo mật hoặc cách chuẩn bị tốt cho các bài kiểm tra trắc nghiệm & tự luận nhé.
           </div>
         </div>
@@ -62,10 +62,10 @@
     </div>
 
     <!-- Chat Input Box -->
-    <div class="card-footer bg-white border-top p-3">
+    <div class="card-footer border-top p-3" style="background: var(--white); border-color: var(--slate-200) !important;">
       <form id="main-ai-form" onsubmit="handleMainAISubmit(event)" class="m-0">
         <div class="input-group">
-          <input type="text" id="main-ai-input" class="form-control py-2 px-3" placeholder="Nhập câu hỏi bạn muốn hỏi Trợ lý AI..." autocomplete="off">
+          <input type="text" id="main-ai-input" class="form-control py-2 px-3" style="background: var(--slate-50); color: var(--slate-900); border-color: var(--slate-200);" placeholder="Nhập câu hỏi bạn muốn hỏi Trợ lý AI..." autocomplete="off">
           <button type="submit" class="btn btn-primary px-4 fw-semibold d-flex align-items-center gap-2" id="main-ai-send-btn">
             <span>Gửi câu hỏi</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -132,7 +132,7 @@
       <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white flex-shrink-0" style="width: 38px; height: 38px;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
       </div>
-      <div class="bg-white p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px;">
+      <div class="p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px; background: var(--white); color: var(--slate-800);">
         <div class="text-muted small">Đang suy nghĩ câu trả lời...</div>
       </div>
     `;
@@ -162,10 +162,10 @@
         <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white flex-shrink-0" style="width: 38px; height: 38px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
         </div>
-        <div class="bg-white p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px;">
+        <div class="p-3 rounded-3 border border-slate-200 shadow-xs" style="max-width: 780px; background: var(--white); color: var(--slate-800);">
           <div class="fw-semibold text-primary small mb-1">Trợ lý AI PWD301</div>
-          <div class="text-slate-800" style="line-height: 1.7; white-space: pre-wrap;">${escapeHtml(reply)}</div>
-          <div class="mt-2 pt-2 border-top border-slate-100 text-muted small">📖 Nguồn: Giáo trình PWD301 — Online Course Management Platform</div>
+          <div style="line-height: 1.7; white-space: pre-wrap; color: var(--slate-800);">${escapeHtml(reply)}</div>
+          <div class="mt-2 pt-2 border-top border-slate-200 text-muted small">📖 Nguồn: Giáo trình PWD301 — Online Course Management Platform</div>
         </div>
       `;
       container.appendChild(botRow);

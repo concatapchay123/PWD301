@@ -62,6 +62,12 @@ from pwd301.services.exceptions import (
 from pwd301.services.question_bank_service import _serialize_question
 
 ALLOWED_ASSESSMENT_TYPES = {"PRACTICE", "QUIZ", "MIDTERM", "FINAL", "PLACEMENT"}
+ASSESSMENT_TYPE_ALIASES = {
+    "EXAM": "MIDTERM",
+    "FINAL_EXAM": "FINAL",
+    "PRACTICE_QUIZ": "PRACTICE",
+    "ASSIGNMENT": "PRACTICE",
+}
 ALLOWED_SCORING_POLICIES = {"FIRST", "LATEST", "HIGHEST", "AVERAGE"}
 ALLOWED_SCORE_RELEASE_POLICIES = {"IMMEDIATE", "AFTER_CLOSE", "INSTRUCTOR_RELEASE"}
 ALLOWED_ANSWER_VISIBILITY_POLICIES = {
@@ -448,6 +454,14 @@ def _validate_assessment_timings_and_limits(
     if time_limit_minutes is not None and time_limit_minutes <= 0:
         raise AssessmentValidationError("time_limit_minutes must be greater than 0.")
 
+    if norm_open is not None and norm_close is not None and time_limit_minutes is not None:
+        window_minutes = (norm_close - norm_open).total_seconds() / 60.0
+        if time_limit_minutes > window_minutes:
+            raise AssessmentValidationError(
+                f"time_limit_minutes ({time_limit_minutes}) cannot exceed the open/close "
+                f"window duration ({int(window_minutes)} minutes)."
+            )
+
     if attempt_limit is not None and attempt_limit <= 0:
         raise AssessmentValidationError("attempt_limit must be greater than 0.")
 
@@ -482,6 +496,7 @@ def create_assessment(
         raise AssessmentValidationError("Assessment title must not exceed 200 characters.")
 
     raw_type = str(payload.get("assessment_type", "")).strip().upper()
+    raw_type = ASSESSMENT_TYPE_ALIASES.get(raw_type, raw_type)
     if raw_type not in ALLOWED_ASSESSMENT_TYPES:
         types_str = ", ".join(sorted(ALLOWED_ASSESSMENT_TYPES))
         raise AssessmentValidationError(
@@ -520,7 +535,13 @@ def create_assessment(
             raise AssessmentValidationError(f"Field '{key}' must be an integer.") from err
 
     time_limit_minutes = _parse_int_opt("time_limit_minutes")
+    if time_limit_minutes is None:
+        time_limit_minutes = _parse_int_opt("duration_minutes")
+
     attempt_limit = _parse_int_opt("attempt_limit")
+    if attempt_limit is None:
+        attempt_limit = _parse_int_opt("max_attempts")
+
     random_question_count = _parse_int_opt("random_question_count")
 
     passing_percent: Decimal | None = None
@@ -544,6 +565,9 @@ def create_assessment(
         random_question_count=random_question_count,
     )
 
+    is_rand = payload.get("is_randomized")
+    is_rand_bool = is_rand is True or str(is_rand).lower() in ("true", "1", "yes")
+
     assessment = Assessment(
         course_id=course.id,
         creator_user_id=actor.id,
@@ -558,8 +582,8 @@ def create_assessment(
         scoring_policy=scoring_policy,
         passing_percent=passing_percent,
         is_required_for_completion=bool(payload.get("is_required_for_completion", False)),
-        shuffle_questions=bool(payload.get("shuffle_questions", False)),
-        shuffle_choices=bool(payload.get("shuffle_choices", False)),
+        shuffle_questions=bool(payload.get("shuffle_questions", False)) or is_rand_bool,
+        shuffle_choices=bool(payload.get("shuffle_choices", False)) or is_rand_bool,
         score_release_policy=score_release_policy,
         answer_visibility_policy=answer_visibility_policy,
         random_question_count=random_question_count,
@@ -667,6 +691,7 @@ def update_assessment(
 
     if "assessment_type" in payload and assessment.first_attempt_started_at is None:
         raw_type = str(payload["assessment_type"]).strip().upper()
+        raw_type = ASSESSMENT_TYPE_ALIASES.get(raw_type, raw_type)
         if raw_type not in ALLOWED_ASSESSMENT_TYPES:
             raise AssessmentValidationError(f"Invalid assessment_type '{raw_type}'.")
         assessment.assessment_type = raw_type
@@ -695,13 +720,25 @@ def update_assessment(
     if "close_at" in payload:
         assessment.close_at = _parse_iso_datetime(payload.get("close_at"), "close_at")
 
-    if "time_limit_minutes" in payload and not is_published:
-        raw_tl = payload.get("time_limit_minutes")
-        assessment.time_limit_minutes = int(raw_tl) if raw_tl is not None and raw_tl != "" else None
+    if ("time_limit_minutes" in payload or "duration_minutes" in payload) and not is_published:
+        raw_tl = (
+            payload.get("time_limit_minutes")
+            if "time_limit_minutes" in payload
+            else payload.get("duration_minutes")
+        )
+        assessment.time_limit_minutes = (
+            int(raw_tl) if raw_tl is not None and raw_tl != "" else None
+        )
 
-    if "attempt_limit" in payload and not is_published:
-        raw_al = payload.get("attempt_limit")
-        assessment.attempt_limit = int(raw_al) if raw_al is not None and raw_al != "" else None
+    if ("attempt_limit" in payload or "max_attempts" in payload) and not is_published:
+        raw_al = (
+            payload.get("attempt_limit")
+            if "attempt_limit" in payload
+            else payload.get("max_attempts")
+        )
+        assessment.attempt_limit = (
+            int(raw_al) if raw_al is not None and raw_al != "" else None
+        )
 
     if "passing_percent" in payload or "passing_score" in payload:
         raw_pass = (
@@ -719,6 +756,14 @@ def update_assessment(
 
     if "is_required_for_completion" in payload:
         assessment.is_required_for_completion = bool(payload["is_required_for_completion"])
+
+    if "is_randomized" in payload:
+        is_rand_val = (
+            payload["is_randomized"] is True
+            or str(payload["is_randomized"]).lower() in ("true", "1", "yes")
+        )
+        assessment.shuffle_questions = is_rand_val
+        assessment.shuffle_choices = is_rand_val
 
     if "shuffle_questions" in payload:
         assessment.shuffle_questions = bool(payload["shuffle_questions"])

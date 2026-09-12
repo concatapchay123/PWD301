@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
 from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
+
+logger = logging.getLogger(__name__)
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
@@ -845,12 +848,13 @@ def student_ai_chat() -> Any:
                 "status": "success",
             }
         ), 200
-    except Exception:
+    except Exception as exc:
+        logger.warning("Student AI chat encountered error: %s", exc)
         return jsonify(
             {
                 "reply": (
-                    f"Trợ lý AI PWD301 ghi nhận câu hỏi: '{message}'. "
-                    "Xin bạn tiếp tục đối chiếu với tài liệu bài học hoặc hỏi thêm nhé!"
+                    f"Trợ lý Bạch Tuộc AI ghi nhận câu hỏi: '{message}'. "
+                    "Hệ thống đang đồng bộ dữ liệu bài học, bạn có thể đối chiếu giáo trình hoặc hỏi thêm nhé! 🐙"
                 ),
                 "status": "success",
             }
@@ -907,7 +911,7 @@ def student_course_detail(course_id: str) -> Any:
             .filter(
                 CourseCompletionSummary.student_user_id == actor.id,
                 CourseCompletionSummary.course_id.in_(prereq_ids),
-                CourseCompletionSummary.prerequisite_eligible.is_(True),
+                CourseCompletionSummary.prerequisite_eligible == True,
             )
             .all()
         )

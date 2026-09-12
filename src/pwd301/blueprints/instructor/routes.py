@@ -3,16 +3,21 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import sqlalchemy as sa
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
+from pwd301.models.assessment import Assessment
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.file_import import FileAsset, LessonResource
+from pwd301.models.question_bank import Question
 from pwd301.services.analytics_service import (
     get_instructor_course_analytics,
     get_instructor_overview_analytics,
 )
 from pwd301.services.assessment_service import (
+    _resolve_assessment,
     _serialize_assessment,
     _serialize_assignment,
     _serialize_blueprint,
@@ -40,6 +45,7 @@ from pwd301.services.attempt_service import (
 )
 from pwd301.services.authorization_service import (
     _resolve_course,
+    _resolve_lesson,
     instructor_required,
     require_authenticated_actor,
     require_course_manager,
@@ -66,6 +72,10 @@ from pwd301.services.exceptions import (
     AttemptValidationError,
     CourseValidationError,
     LessonValidationError,
+)
+from pwd301.services.file_service import (
+    _serialize_file_asset,
+    store_file_stream,
 )
 from pwd301.services.lesson_service import (
     change_lesson_status,
@@ -136,34 +146,6 @@ def course_analytics_view(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     analytics = get_instructor_course_analytics(actor, course_id, session=db.session)
     return jsonify(analytics), 200
-
-
-@instructor_bp.route("/courses/<course_id>/manage", methods=["GET"])
-@instructor_required
-def manage_course(course_id: str) -> tuple[Response, int] | Response:
-    """Manage course view protected by resource-level ownership check.
-
-    Invariants enforced:
-    - Instructor A accessing Instructor B's course is rejected with 403 Forbidden.
-    - Admin can access any course.
-    """
-    actor = require_authenticated_actor()
-
-    sess = db.session
-    course = require_course_manager(actor, course_id, session=sess)
-
-    data = {
-        "course_id": str(course.public_id),
-        "course_code": course.course_code,
-        "title": course.title,
-        "status": course.status,
-        "owner_instructor_id": (
-            str(course.owner_instructor.public_id) if course.owner_instructor else None
-        ),
-        "lessons_count": len(course.lessons),
-        "enrollments_count": len(course.enrollments),
-    }
-    return jsonify(data), 200
 
 
 @instructor_bp.route("/courses/<course_id>/students/<student_id>", methods=["GET"])
@@ -239,52 +221,195 @@ def create_course_route() -> Any:
 
 @instructor_bp.route("/courses/<course_id>", methods=["GET"])
 @instructor_required
-def get_course_route(course_id: str) -> tuple[Response, int] | Response:
+def get_course_route(course_id: str) -> Any:
     """Get detailed course information for managing."""
     actor = require_authenticated_actor()
-
     course = get_course_detail(actor, course_id)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        return redirect(url_for("instructor.manage_course_hub", course_id=course.public_id))
     return jsonify(_serialize_course(course)), 200
+
+
+@instructor_bp.route("/courses/<course_id>/manage", methods=["GET"])
+@instructor_required
+def manage_course_hub(course_id: str) -> Any:
+    """Dedicated Course Management Hub for Instructors."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    if request.is_json or not request.accept_mimetypes.accept_html:
+        data = {
+            "course_id": str(course.public_id),
+            "course_code": course.course_code,
+            "title": course.title,
+            "status": course.status,
+            "owner_instructor_id": (
+                str(course.owner_instructor.public_id) if course.owner_instructor else None
+            ),
+            "lessons_count": len(course.lessons),
+            "enrollments_count": len(course.enrollments),
+        }
+        return jsonify(data), 200
+
+    # 1. Lessons
+    lessons = (
+        db.session.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .order_by(Lesson.position.asc())
+        .all()
+    )
+
+    # 2. File Assets & Resources
+    file_assets = (
+        db.session.query(FileAsset)
+        .filter(FileAsset.course_id == course.id, FileAsset.deleted_at.is_(None))
+        .order_by(FileAsset.created_at.desc())
+        .all()
+    )
+
+    # 3. Assessments
+    assessments = (
+        db.session.query(Assessment)
+        .filter(Assessment.course_id == course.id, Assessment.deleted_at.is_(None))
+        .order_by(Assessment.created_at.desc())
+        .all()
+    )
+
+    # 4. Question Bank count
+    questions_count = (
+        db.session.query(Question)
+        .filter(
+            Question.course_id == course.id,
+            Question.status != "TRASH",
+            Question.deleted_at.is_(None),
+        )
+        .count()
+    )
+
+    active_tab = request.args.get("tab", "lessons")
+
+    return render_template(
+        "instructor/course_manage.html",
+        course=course,
+        lessons=lessons,
+        file_assets=file_assets,
+        assessments=assessments,
+        questions_count=questions_count,
+        active_tab=active_tab,
+    )
 
 
 @instructor_bp.route("/courses/<course_id>", methods=["PATCH", "PUT"])
 @instructor_required
-def update_course_route(course_id: str) -> tuple[Response, int] | Response:
+def update_course_route(course_id: str) -> Any:
     """Update editable course metadata with mass-assignment defense."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     course = update_course(actor, course_id, payload)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        flash("Cập nhật thông tin khóa học thành công.", "success")
+        return redirect(
+            url_for("instructor.manage_course_hub", course_id=course.public_id, tab="settings")
+        )
     return jsonify(_serialize_course(course)), 200
 
 
 @instructor_bp.route("/courses/<course_id>/submit", methods=["POST"])
 @instructor_bp.route("/courses/<course_id>/publish-request", methods=["POST"])
 @instructor_required
-def submit_course_route(course_id: str) -> tuple[Response, int] | Response:
+def submit_course_route(course_id: str) -> Any:
     """Submit a DRAFT course for admin review."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = payload.get("reason")
-    course = change_course_status(
-        actor,
-        course_id,
-        "SUBMITTED_FOR_REVIEW",
-        reason=reason,
-    )
-    return jsonify(_serialize_course(course)), 200
+    reason = payload.get("reason", "Giảng viên đề xuất phê duyệt giáo trình và xuất bản khóa học.")
+    try:
+        course = change_course_status(
+            actor,
+            course_id,
+            "SUBMITTED_FOR_REVIEW",
+            reason=reason,
+        )
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                "Khóa học đã được gửi tới Quản trị viên để xét duyệt xuất bản thành công.",
+                "success",
+            )
+            return redirect(
+                request.referrer
+                or url_for("instructor.manage_course_hub", course_id=course.public_id)
+            )
+        return jsonify(_serialize_course(course)), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Không thể gửi duyệt: {str(exc)}", "danger")
+            return redirect(request.referrer or url_for("instructor.my_courses"))
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/cancel-submit", methods=["POST"])
+@instructor_required
+def cancel_submit_course_route(course_id: str) -> Any:
+    """Cancel review submission and revert to DRAFT."""
+    actor = require_authenticated_actor()
+    try:
+        course = change_course_status(
+            actor,
+            course_id,
+            "DRAFT",
+            reason="Giảng viên rút lại yêu cầu xét duyệt để chỉnh sửa thêm.",
+        )
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                "Đã rút lại yêu cầu xét duyệt. Khóa học đã quay lại trạng thái Bản thảo (DRAFT).",
+                "info",
+            )
+            return redirect(
+                request.referrer
+                or url_for("instructor.manage_course_hub", course_id=course.public_id)
+            )
+        return jsonify(_serialize_course(course)), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Không thể rút lại yêu cầu: {str(exc)}", "danger")
+            return redirect(request.referrer or url_for("instructor.my_courses"))
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/publish", methods=["POST"])
+@instructor_required
+def publish_course_route(course_id: str) -> Any:
+    """Publish an approved course."""
+    actor = require_authenticated_actor()
+    try:
+        course = change_course_status(actor, course_id, "PUBLISHED")
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Khóa học '{course.title}' đã được xuất bản chính thức thành công!", "success")
+            return redirect(
+                request.referrer
+                or url_for("instructor.manage_course_hub", course_id=course.public_id)
+            )
+        return jsonify(_serialize_course(course)), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Không thể xuất bản: {str(exc)}", "danger")
+            return redirect(request.referrer or url_for("instructor.my_courses"))
+        raise
 
 
 @instructor_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @instructor_required
-def trash_course_route(course_id: str) -> tuple[Response, int] | Response:
+def trash_course_route(course_id: str) -> Any:
     """Soft-delete a course to TRASH."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
     course = trash_course(actor, course_id, reason=reason)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        flash(f"Khóa học '{course.title}' đã được chuyển vào thùng rác.", "warning")
+        return redirect(url_for("instructor.my_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -308,13 +433,166 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
 
 @instructor_bp.route("/courses/<course_id>/lessons", methods=["POST"])
 @instructor_required
-def create_lesson_route(course_id: str) -> tuple[Response, int] | Response:
+def create_lesson_route(course_id: str) -> Any:
     """Create a new lesson in a managed course."""
     actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    lesson = create_lesson(actor, course_id, payload)
-    return jsonify(_serialize_lesson(lesson)), 201
+    if not payload.get("estimated_duration_minutes"):
+        payload.pop("estimated_duration_minutes", None)
+    if not payload.get("summary"):
+        payload.pop("summary", None)
+
+    try:
+        lesson = create_lesson(actor, course.id, payload)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Bài giảng '{lesson.title}' đã được thêm thành công vào khóa học!", "success")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="lessons")
+            )
+        return jsonify(_serialize_lesson(lesson)), 201
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi tạo bài giảng: {str(exc)}", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="lessons")
+            )
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/lessons/<lesson_id>/delete", methods=["POST"])
+@instructor_required
+def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
+    """Soft-delete a lesson from the course management hub."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+    try:
+        trash_lesson(actor, lesson_id)
+        flash("Bài giảng đã được xóa thành công.", "info")
+    except Exception as exc:
+        flash(f"Lỗi xóa bài giảng: {str(exc)}", "danger")
+    return redirect(
+        url_for("instructor.manage_course_hub", course_id=course.public_id, tab="lessons")
+    )
+
+
+@instructor_bp.route("/courses/<course_id>/files", methods=["POST"])
+@instructor_required
+def upload_course_file_route(course_id: str) -> Any:
+    """Upload a file asset for a course or lesson with virus scanning."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    if "file" not in request.files:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash("Vui lòng chọn một tệp tin để tải lên.", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="materials")
+            )
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "No file uploaded."}}), 400
+
+    file_obj = request.files["file"]
+    if not file_obj or not file_obj.filename:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash("Tệp tin được chọn không hợp lệ hoặc không có tên.", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="materials")
+            )
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "Invalid filename."}}), 400
+
+    title = request.form.get("title") or file_obj.filename
+    lesson_id_str = request.form.get("lesson_id")
+
+    try:
+        asset = store_file_stream(
+            actor=actor,
+            course_id=course.id,
+            file_stream=file_obj.stream,
+            filename=file_obj.filename,
+            content_type=file_obj.content_type,
+            asset_type="RESOURCE",
+            title=title,
+            session=db.session,
+        )
+
+        # If bound to a lesson, link it via LessonResource
+        if lesson_id_str and str(lesson_id_str).strip():
+            lesson = _resolve_lesson(lesson_id_str, session=db.session)
+            if lesson and lesson.course_id == course.id:
+                max_pos = (
+                    db.session.query(sa.func.coalesce(sa.func.max(LessonResource.position), 0))
+                    .filter(LessonResource.lesson_id == lesson.id)
+                    .scalar()
+                    or 0
+                )
+                res = LessonResource(
+                    lesson_id=lesson.id,
+                    file_asset_id=asset.id,
+                    label=title or asset.display_name,
+                    position=max_pos + 1,
+                    is_required=False,
+                )
+                db.session.add(res)
+                db.session.commit()
+
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                f"Tải lên tệp '{asset.display_name}' thành công và đã vượt qua kiểm tra an toàn!",
+                "success",
+            )
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="materials")
+            )
+
+        return jsonify(_serialize_file_asset(asset)), 201
+
+    except Exception as exc:
+        db.session.rollback()
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi tải lên tệp: {str(exc)}", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course.public_id, tab="materials")
+            )
+        raise
+
+
+@instructor_bp.route("/courses/<course_id>/files/<asset_id>/download", methods=["GET"])
+@instructor_required
+def download_course_file_route(course_id: str, asset_id: str) -> Any:
+    """Download a course file asset."""
+    actor = require_authenticated_actor()
+    require_course_manager(actor, course_id, session=db.session)
+    return redirect(url_for("api_files.download_file_api", asset_id=asset_id))
+
+
+@instructor_bp.route("/courses/<course_id>/assessments", methods=["POST"])
+@instructor_required
+def create_course_assessment_route(course_id: str) -> Any:
+    """Create a new assessment for a course."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    try:
+        asm = create_assessment(actor, course.id, payload, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Đã tạo bài kiểm tra '{asm.title}' thành công!", "success")
+            return redirect(
+                url_for(
+                    "instructor.manage_course_hub", course_id=course.public_id, tab="assessments"
+                )
+            )
+        return jsonify(_serialize_assessment(asm)), 201
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi tạo bài kiểm tra: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.manage_course_hub", course_id=course.public_id, tab="assessments"
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/lessons/<lesson_id>", methods=["GET"])
@@ -811,103 +1089,215 @@ def list_instructor_course_assessments_route(course_id: str) -> tuple[Response, 
     return jsonify(data), 200
 
 
-@instructor_bp.route("/courses/<course_id>/assessments", methods=["POST"])
-@instructor_required
-def create_instructor_course_assessment_route(course_id: str) -> tuple[Response, int] | Response:
-    """Create a new Assessment for a course in instructor view."""
-    actor = require_authenticated_actor()
-
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    assessment = create_assessment(actor, course_id, payload, session=db.session)
-
-    return jsonify(_serialize_assessment(assessment, full=False)), 201
-
-
 @instructor_bp.route("/assessments/<assessment_id>", methods=["GET"])
 @instructor_required
-def get_instructor_assessment_detail_route(assessment_id: str) -> tuple[Response, int] | Response:
-    """Retrieve detailed assessment configuration."""
+def get_instructor_assessment_detail_route(assessment_id: str) -> Any:
+    """Retrieve detailed assessment configuration or render assessment builder page."""
     actor = require_authenticated_actor()
 
     data = get_assessment_detail(actor, assessment_id, session=db.session)
+    if request.accept_mimetypes.accept_html and not request.is_json:
+        asm_obj = _resolve_assessment(assessment_id, session=db.session)
+        course = db.session.query(Course).filter(Course.id == asm_obj.course_id).first()
+        available_questions = (
+            db.session.query(Question)
+            .filter(Question.course_id == course.id, Question.status == "ACTIVE")
+            .order_by(Question.created_at.desc())
+            .all()
+        )
+        return render_template(
+            "instructor/assessment_builder.html",
+            assessment=data,
+            asm_obj=asm_obj,
+            course=course,
+            available_questions=available_questions,
+        )
     return jsonify(data), 200
 
 
-@instructor_bp.route("/assessments/<assessment_id>", methods=["PATCH", "PUT"])
+@instructor_bp.route("/assessments/<assessment_id>", methods=["PATCH", "PUT", "POST"])
 @instructor_required
-def update_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+def update_instructor_assessment_route(assessment_id: str) -> Any:
     """Update assessment configuration."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    assessment = update_assessment(actor, assessment_id, payload, session=db.session)
-
-    return jsonify(_serialize_assessment(assessment, full=False)), 200
+    try:
+        assessment = update_assessment(actor, assessment_id, payload, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Đã lưu thông số bài thi '{assessment.title}' thành công!", "success")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify(_serialize_assessment(assessment, full=False)), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi cập nhật bài thi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/publish", methods=["POST"])
 @instructor_required
-def publish_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+def publish_instructor_assessment_route(assessment_id: str) -> Any:
     """Publish assessment (DRAFT -> PUBLISHED)."""
     actor = require_authenticated_actor()
 
-    assessment = publish_assessment(actor, assessment_id, session=db.session)
-
-    return jsonify(_serialize_assessment(assessment, full=False)), 200
+    try:
+        assessment = publish_assessment(actor, assessment_id, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                f"Đã xuất bản bài thi '{assessment.title}' thành công! "
+                "Khung giờ và thời lượng đã được khóa (Timing Lock).",
+                "success",
+            )
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify(_serialize_assessment(assessment, full=False)), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi xuất bản bài thi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/cancel", methods=["POST"])
 @instructor_required
-def cancel_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+def cancel_instructor_assessment_route(assessment_id: str) -> Any:
     """Cancel a published assessment."""
     actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = body.get("reason")
+    reason = body.get("reason", "Giảng viên chủ động hủy đợt thi")
 
-    assessment = cancel_assessment(actor, assessment_id, reason=reason, session=db.session)
-
-    return jsonify(
-        {
-            "message": "Assessment cancelled.",
-            "assessment": _serialize_assessment(assessment, full=False),
-        }
-    ), 200
+    try:
+        assessment = cancel_assessment(actor, assessment_id, reason=reason, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                f"Đã hủy bài thi '{assessment.title}'. Sinh viên không thể tiếp tục vào thi.",
+                "warning",
+            )
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify(
+            {
+                "message": "Assessment cancelled.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi hủy bài thi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/trash", methods=["POST"])
 @instructor_required
-def trash_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+def trash_instructor_assessment_route(assessment_id: str) -> Any:
     """Move assessment to TRASH."""
     actor = require_authenticated_actor()
 
     body = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = body.get("reason")
+    reason = body.get("reason", "Xóa bởi Giảng viên")
 
-    assessment = trash_assessment(actor, assessment_id, reason=reason, session=db.session)
-
-    return jsonify(
-        {
-            "message": "Assessment moved to trash.",
-            "assessment": _serialize_assessment(assessment, full=False),
-        }
-    ), 200
+    try:
+        assessment = trash_assessment(actor, assessment_id, reason=reason, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                f"Đã chuyển bài thi '{assessment.title}' vào thùng rác "
+                "(lưu trữ 30 ngày trước khi thanh lý).",
+                "info",
+            )
+            course = db.session.query(Course).filter(Course.id == assessment.course_id).first()
+            if course:
+                return redirect(
+                    url_for(
+                        "instructor.manage_course_hub",
+                        course_id=course.public_id,
+                        tab="assessments",
+                    )
+                )
+            return redirect(url_for("instructor.my_courses"))
+        return jsonify(
+            {
+                "message": "Assessment moved to trash.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi xóa bài thi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/restore", methods=["POST"])
 @instructor_required
-def restore_instructor_assessment_route(assessment_id: str) -> tuple[Response, int] | Response:
+def restore_instructor_assessment_route(assessment_id: str) -> Any:
     """Restore assessment from TRASH."""
     actor = require_authenticated_actor()
 
-    assessment = restore_assessment(actor, assessment_id, session=db.session)
-
-    return jsonify(
-        {
-            "message": "Assessment restored from trash.",
-            "assessment": _serialize_assessment(assessment, full=False),
-        }
-    ), 200
+    try:
+        assessment = restore_assessment(actor, assessment_id, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(
+                f"Đã khôi phục bài thi '{assessment.title}' từ thùng rác thành công!",
+                "success",
+            )
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify(
+            {
+                "message": "Assessment restored from trash.",
+                "assessment": _serialize_assessment(assessment, full=False),
+            }
+        ), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi khôi phục bài thi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/sections", methods=["POST"])
@@ -937,27 +1327,66 @@ def delete_instructor_section_route(
 
 @instructor_bp.route("/assessments/<assessment_id>/questions", methods=["POST"])
 @instructor_required
-def assign_instructor_question_route(assessment_id: str) -> tuple[Response, int] | Response:
+def assign_instructor_question_route(assessment_id: str) -> Any:
     """Assign a fixed question to assessment."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    assignment = assign_question(actor, assessment_id, payload, session=db.session)
-
-    return jsonify(_serialize_assignment(assignment)), 201
+    try:
+        assignment = assign_question(actor, assessment_id, payload, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash("Đã gán câu hỏi vào đề thi thành công!", "success")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify(_serialize_assignment(assignment)), 201
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi gán câu hỏi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/questions/<question_id>", methods=["DELETE"])
+@instructor_bp.route(
+    "/assessments/<assessment_id>/questions/<question_id>/remove", methods=["POST"]
+)
 @instructor_required
 def remove_instructor_question_route(
     assessment_id: str, question_id: str
-) -> tuple[Response, int] | Response:
+) -> Any:
     """Remove a fixed question from assessment."""
     actor = require_authenticated_actor()
 
-    remove_question_assignment(actor, assessment_id, question_id, session=db.session)
-
-    return jsonify({"message": "Question unassigned successfully."}), 200
+    try:
+        remove_question_assignment(actor, assessment_id, question_id, session=db.session)
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash("Đã gỡ câu hỏi khỏi đề thi.", "info")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        return jsonify({"message": "Question unassigned successfully."}), 200
+    except Exception as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Lỗi gỡ câu hỏi: {str(exc)}", "danger")
+            return redirect(
+                url_for(
+                    "instructor.get_instructor_assessment_detail_route",
+                    assessment_id=assessment_id,
+                )
+            )
+        raise
 
 
 @instructor_bp.route("/assessments/<assessment_id>/blueprint", methods=["POST"])

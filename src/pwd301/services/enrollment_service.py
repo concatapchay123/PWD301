@@ -176,7 +176,7 @@ def check_prerequisites_met(
         .filter(
             CourseCompletionSummary.student_user_id == student_user_id,
             CourseCompletionSummary.course_id.in_(prereq_ids),
-            CourseCompletionSummary.prerequisite_eligible.is_(True),
+            CourseCompletionSummary.prerequisite_eligible == True,
         )
         .all()
     )

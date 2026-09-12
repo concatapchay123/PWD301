@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Cấu hình Đề thi: {{ assessment.title }} — Giảng viên{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Breadcrumb navigation -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('instructor.my_courses') }}" class="text-decoration-none">Khóa học của tôi</a></li>
+      <li class="breadcrumb-item"><a href="/instructor/courses/{{ course.public_id }}/manage?tab=assessments" class="text-decoration-none">{{ course.course_code }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ assessment.title }}</li>
+    </ol>
+  </nav>
+
+  <!-- Assessment Header Banner -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-4">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3">
+        <div>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge bg-primary-subtle text-primary fw-bold fs-6">{{ course.course_code }}</span>
+            {% if assessment.assessment_type == 'FINAL' %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle fs-6">Cuối kỳ (Final Exam)</span>
+            {% elif assessment.assessment_type == 'MIDTERM' %}
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle fs-6">Giữa kỳ (Midterm)</span>
+            {% elif assessment.assessment_type == 'QUIZ' %}
+              <span class="badge bg-info-subtle text-info border border-info-subtle fs-6">Quiz ngắn</span>
+            {% elif assessment.assessment_type == 'PRACTICE' %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle fs-6">Luyện tập (Practice)</span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary fs-6">{{ assessment.assessment_type }}</span>
+            {% endif %}
+
+            {% if assessment.status == 'PUBLISHED' %}
+              <span class="badge bg-success text-white fs-6 d-inline-flex align-items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                ĐÃ XUẤT BẢN (PUBLISHED)
+              </span>
+            {% elif assessment.status == 'DRAFT' %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle fs-6">BẢN THẢO (DRAFT)</span>
+            {% elif assessment.status == 'CANCELLED' %}
+              <span class="badge bg-danger text-white fs-6">ĐÃ HỦY (CANCELLED)</span>
+            {% else %}
+              <span class="badge bg-dark-subtle text-muted fs-6">{{ assessment.status }}</span>
+            {% endif %}
+          </div>
+          <h1 class="h3 fw-bold text-slate-900 mb-1">{{ assessment.title }}</h1>
+          <div class="d-flex flex-wrap align-items-center gap-3 text-muted small mt-2">
+            <span><strong>Mã công khai:</strong> {{ assessment.public_id }}</span>
+            <span>•</span>
+            <span><strong>Số câu hỏi:</strong> {{ assessment.questions|length }} câu</span>
+            <span>•</span>
+            <span><strong>Tổng điểm:</strong> {{ assessment.total_points or 0 }} điểm</span>
+            <span>•</span>
+            <span><strong>Thời lượng:</strong> {{ assessment.time_limit_minutes or 'Không giới hạn' }}{% if assessment.time_limit_minutes %} phút{% endif %}</span>
+            <span>•</span>
+            <span><strong>Điểm chuẩn:</strong> {{ assessment.passing_percent or 50 }}%</span>
+          </div>
+        </div>
+
+        <!-- Workflow actions -->
+        <div class="d-flex flex-wrap gap-2">
+          {% if assessment.status == 'DRAFT' %}
+            <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/publish" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn xuất bản bài thi này? Sau khi xuất bản, khung giờ thi và thời lượng làm bài sẽ bị khóa (Timing Lock - Invariant 13).');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-success d-flex align-items-center gap-2 fw-semibold">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                Xuất bản đề thi
+              </button>
+            </form>
+            <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/trash" class="m-0" onsubmit="return confirm('Chuyển đề thi này vào thùng rác? Dữ liệu được lưu trữ an toàn trong 30 ngày.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-danger d-flex align-items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Xóa bài thi
+              </button>
+            </form>
+          {% elif assessment.status == 'PUBLISHED' %}
+            <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/cancel" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn HỦY bài thi đã phát hành này? Sinh viên sẽ không thể tiếp tục vào thi.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-warning d-flex align-items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Hủy bài thi
+              </button>
+            </form>
+          {% endif %}
+          <a href="/instructor/courses/{{ course.public_id }}/manage?tab=assessments" class="btn btn-outline-secondary">
+            Về danh sách đề thi
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invariant Alert Cards -->
+  {% set timing_locked = (assessment.status == 'PUBLISHED' or assessment.published_at is not none) %}
+  {% set structure_locked = (assessment.first_attempt_started_at is not none) %}
+
+  {% if timing_locked %}
+  <div class="alert alert-warning border-0 shadow-sm d-flex align-items-start gap-3 mb-3 p-3" style="border-radius: var(--radius-lg); background-color: rgba(245, 158, 11, 0.12); border-left: 4px solid #f59e0b !important;">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" class="flex-shrink-0 mt-1"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <div>
+      <div class="fw-bold text-slate-900">Khóa Thời gian đang kích hoạt (Timing Lock — BR-031 / Invariant 13)</div>
+      <div class="small text-muted mt-1">Bài thi đã được xuất bản chính thức. Khung giờ thi (mở/đóng) và thời lượng làm bài bị khóa bất biến để đảm bảo tính công bằng học thuật và ngăn chặn gian lận.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structure_locked %}
+  <div class="alert alert-danger border-0 shadow-sm d-flex align-items-start gap-3 mb-4 p-3" style="border-radius: var(--radius-lg); background-color: rgba(244, 63, 94, 0.12); border-left: 4px solid #f43f5e !important;">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2" class="flex-shrink-0 mt-1"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div>
+      <div class="fw-bold text-danger">Khóa Cấu trúc Toàn diện đang kích hoạt (Structural Freeze — BR-030 / Invariant 14)</div>
+      <div class="small text-muted mt-1">Đã có sinh viên bắt đầu làm bài thi (ghi nhận Snapshot cố định). Hệ thống nghiêm cấm thêm, bớt câu hỏi hoặc thay đổi thang điểm. Nếu phát hiện lỗi câu hỏi, vui lòng dùng quy trình Đính chính câu hỏi (QuestionCorrection) và chạy Engine Chấm lại (Regrading).</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Assessment Builder Nav Tabs -->
+  <ul class="nav nav-tabs mb-4 border-bottom" id="builderTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active fw-semibold" id="tab-questions-link" data-bs-toggle="tab" data-bs-target="#tab-questions" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Nội dung & Câu hỏi ({{ assessment.questions|length }})
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-semibold" id="tab-settings-link" data-bs-toggle="tab" data-bs-target="#tab-settings" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Thông số & Thời lượng
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-semibold" id="tab-regrade-link" data-bs-toggle="tab" data-bs-target="#tab-regrade" type="button" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Chấm lại & Đính chính (Regrading)
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- TAB 1: DANH SÁCH CÂU HỎI (QUESTIONS & ASSIGNMENTS) -->
+    <div class="tab-pane fade show active" id="tab-questions" role="tabpanel">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Các câu hỏi trong đề thi</h2>
+          <p class="text-muted small mb-0">Quản lý các câu hỏi cố định, phân bổ điểm và chốt phiên bản QuestionRevision (ADR-003).</p>
+        </div>
+        {% if not structure_locked %}
+        <button class="btn btn-primary btn-sm d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addQuestionModal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          + Thêm câu hỏi từ Ngân hàng
+        </button>
+        {% endif %}
+      </div>
+
+      {% if assessment.question_assignments %}
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 60px;">#</th>
+                <th>Nội dung câu hỏi</th>
+                <th>Độ khó</th>
+                <th>Điểm phân bổ</th>
+                <th class="text-end">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for q_item in assessment.question_assignments %}
+              <tr>
+                <td class="fw-bold text-muted">{{ loop.index }}</td>
+                <td>
+                  <div class="fw-semibold text-slate-900">{{ q_item.question.current_revision.content if (q_item.question and q_item.question.current_revision) else (q_item.question.learning_objective if q_item.question else 'Câu hỏi đã gán') }}</div>
+                  <div class="text-muted small">
+                    Loại: <span class="badge bg-secondary-subtle text-secondary">{{ q_item.question.current_revision.question_type if (q_item.question and q_item.question.current_revision) else 'N/A' }}</span>
+                    • ID: {{ q_item.question.public_id if q_item.question else q_item.question_id }}
+                  </div>
+                </td>
+                <td>
+                  <span class="badge bg-info-subtle text-info">{{ q_item.question.difficulty if q_item.question else 'STANDARD' }}</span>
+                </td>
+                <td>
+                  <span class="fw-bold text-primary">{{ q_item.points }}</span> điểm
+                </td>
+                <td class="text-end">
+                  {% if not structure_locked %}
+                  <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/questions/{{ q_item.question.public_id if q_item.question else q_item.question_id }}/remove" class="m-0 d-inline" onsubmit="return confirm('Bạn có chắc muốn gỡ câu hỏi này khỏi đề thi?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Gỡ câu hỏi">Gỡ bỏ</button>
+                  </form>
+                  {% else %}
+                  <span class="badge bg-secondary-subtle text-muted" title="Cấu trúc đã bị khóa do có thí sinh bắt đầu">Đã khóa</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm text-center py-5 mb-4">
+        <div class="card-body">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-muted mb-3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+          <div class="text-muted mb-3">Đề thi chưa có câu hỏi nào. Hãy gán câu hỏi từ Ngân hàng câu hỏi của khóa học.</div>
+          {% if not structure_locked %}
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addQuestionModal">+ Thêm câu hỏi đầu tiên</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- TAB 2: THÔNG SỐ & THỜI LƯỢNG (SETTINGS & TIMING) -->
+    <div class="tab-pane fade" id="tab-settings" role="tabpanel">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-transparent py-3 px-4 border-bottom">
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Cấu hình Quy chế & Thời lượng Bài thi</h2>
+        </div>
+        <div class="card-body p-4">
+          <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Tên bài thi <span class="text-danger">*</span></label>
+              <input type="text" name="title" class="form-control" value="{{ assessment.title }}" required maxlength="200">
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Phân loại đánh giá</label>
+                <select name="assessment_type" class="form-select" {% if structure_locked %}disabled{% endif %}>
+                  <option value="MIDTERM" {% if assessment.assessment_type == 'MIDTERM' %}selected{% endif %}>Kiểm tra giữa kỳ (Midterm)</option>
+                  <option value="QUIZ" {% if assessment.assessment_type == 'QUIZ' %}selected{% endif %}>Kiểm tra ngắn (Quiz)</option>
+                  <option value="FINAL" {% if assessment.assessment_type == 'FINAL' %}selected{% endif %}>Thi kết thúc học phần (Final Exam)</option>
+                  <option value="PRACTICE" {% if assessment.assessment_type == 'PRACTICE' %}selected{% endif %}>Bài tập luyện tập (Practice)</option>
+                  <option value="PLACEMENT" {% if assessment.assessment_type == 'PLACEMENT' %}selected{% endif %}>Đánh giá xếp lớp (Placement)</option>
+                </select>
+                {% if structure_locked %}<div class="form-text text-danger">Đã khóa loại bài thi do sinh viên đã bắt đầu làm bài.</div>{% endif %}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Chính sách công bố điểm</label>
+                <select name="score_release_policy" class="form-select">
+                  <option value="IMMEDIATE" {% if assessment.score_release_policy == 'IMMEDIATE' %}selected{% endif %}>Công bố ngay sau khi nộp (Immediate)</option>
+                  <option value="AFTER_CLOSE" {% if assessment.score_release_policy == 'AFTER_CLOSE' %}selected{% endif %}>Chỉ công bố sau hạn đóng bài thi</option>
+                  <option value="INSTRUCTOR_RELEASE" {% if assessment.score_release_policy == 'INSTRUCTOR_RELEASE' %}selected{% endif %}>Giảng viên phê duyệt phát hành thủ công</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Thời gian làm bài (Phút) <span class="text-danger">*</span></label>
+                <input type="number" name="time_limit_minutes" class="form-control" value="{{ assessment.time_limit_minutes or 45 }}" min="1" max="600" {% if timing_locked %}disabled{% endif %} required>
+                {% if timing_locked %}<div class="form-text text-warning">Đã khóa thời lượng do bài thi đã xuất bản.</div>{% endif %}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Điểm đạt chuẩn (%)</label>
+                <input type="number" step="0.5" name="passing_percent" class="form-control" value="{{ assessment.passing_percent or 50 }}" min="0" max="100">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Số lượt thi tối đa</label>
+                <input type="number" name="attempt_limit" class="form-control" value="{{ assessment.attempt_limit or 1 }}" min="1" max="50" {% if timing_locked %}disabled{% endif %}>
+                {% if timing_locked %}<div class="form-text text-warning">Đã khóa số lượt thi sau khi xuất bản.</div>{% endif %}
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Thời điểm mở đề thi (Tùy chọn)</label>
+                <input type="datetime-local" name="open_at" class="form-control" value="{{ assessment.open_at[:16] if assessment.open_at else '' }}" {% if timing_locked %}disabled{% endif %}>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Thời điểm đóng đề thi (Tùy chọn)</label>
+                <input type="datetime-local" name="close_at" class="form-control" value="{{ assessment.close_at[:16] if assessment.close_at else '' }}">
+                <div class="form-text text-muted">Có thể kéo dài thời gian đóng bài thi sau khi xuất bản.</div>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="shuffle_questions" id="editShuffleQuestions" value="true" {% if assessment.shuffle_questions %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="editShuffleQuestions">Tự động xáo trộn thứ tự câu hỏi và phương án khi phát đề</label>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="form-label fw-semibold">Mô tả hoặc hướng dẫn làm bài</label>
+              <textarea name="description" class="form-control" rows="3" placeholder="Quy định, nhắc nhở trước khi học viên nhấn làm bài...">{{ assessment.description or '' }}</textarea>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <button type="submit" class="btn btn-primary px-4">Lưu thay đổi thông số</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: CHẤM LẠI & ĐÍNH CHÍNH (REGRADING & CORRECTIONS) -->
+    <div class="tab-pane fade" id="tab-regrade" role="tabpanel">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-transparent py-3 px-4 border-bottom">
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Cơ chế Chấm lại Tự động (Background Regrading Engine — Algorithm 11)</h2>
+        </div>
+        <div class="card-body p-4">
+          <p class="text-muted">
+            Khi phát hiện câu hỏi trong đề thi có lỗi đáp án sau khi sinh viên đã thi, giảng viên không được sửa trực tiếp đề thi cũ (đang chịu Structural Freeze). Hãy tạo <strong>QuestionCorrection</strong> trong Ngân hàng câu hỏi, sau đó kích hoạt tác vụ Chấm lại tự động dưới đây để cập nhật lại điểm số cho toàn bộ các bài nộp mà vẫn bảo toàn lịch sử chấm điểm (AttemptGradeHistory - ADR-010).
+          </p>
+
+          <div class="p-3 mb-4 bg-slate-100 border border-slate-200 rounded">
+            <h3 class="h6 fw-bold text-slate-800 mb-2">Quy trình Đính chính & Chấm lại an toàn:</h3>
+            <ol class="small text-muted mb-0 ps-3">
+              <li>Vào <strong>Ngân hàng câu hỏi</strong> của khóa học và tạo bản đính chính (Revision mới) cho câu hỏi lỗi.</li>
+              <li>Chọn giải pháp xử lý: Đổi đáp án đúng mới hoặc Hủy câu hỏi (cho điểm tối đa tất cả thí sinh).</li>
+              <li>Quay lại đây và nhấn <strong>Kích hoạt Chấm lại</strong>. Hệ thống chạy tác vụ nền duyệt qua toàn bộ bài nộp và cập nhật điểm số công bằng.</li>
+            </ol>
+          </div>
+
+          <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/regrade" onsubmit="return confirm('Bạn có chắc chắn muốn kích hoạt tác vụ Chấm lại tự động cho toàn bộ các bài thi đã nộp?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Lý do chấm lại (Bắt buộc cho nhật ký Audit)</label>
+              <input type="text" name="reason" class="form-control" placeholder="Ví dụ: Đính chính đáp án câu hỏi số 3 theo thông báo học vụ..." required>
+            </div>
+            <button type="submit" class="btn btn-warning fw-semibold d-inline-flex align-items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Kích hoạt tác vụ Chấm lại tự động (Regrade)
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Gán câu hỏi từ Ngân hàng câu hỏi -->
+<div class="modal fade" id="addQuestionModal" tabindex="-1" aria-labelledby="addQuestionModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="addQuestionModalLabel">Gán câu hỏi từ Ngân hàng câu hỏi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <p class="text-muted small mb-3">
+          Chọn các câu hỏi thuộc cùng khóa học <strong>{{ course.title }}</strong> để thêm vào đề thi. Phiên bản câu hỏi sẽ được đóng băng (QuestionRevision Freeze - ADR-003) tại thời điểm gán.
+        </p>
+
+        {% if available_questions %}
+        <div class="list-group">
+          {% for q in available_questions %}
+          <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+            <div class="flex-grow-1 me-3">
+              <div class="fw-semibold text-slate-900">{{ q.current_revision.content if q.current_revision else (q.learning_objective or 'Câu hỏi') }}</div>
+              <div class="text-muted small mt-1">
+                Loại: <span class="badge bg-secondary-subtle text-secondary">{{ q.current_revision.question_type if q.current_revision else 'N/A' }}</span>
+                • Bloom: <span class="badge bg-info-subtle text-info">{{ q.difficulty or 'REMEMBER' }}</span>
+              </div>
+            </div>
+            <form method="POST" action="/instructor/assessments/{{ assessment.public_id }}/questions" class="m-0 d-flex align-items-center gap-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="question_id" value="{{ q.public_id }}">
+              <input type="number" step="0.5" name="points" value="{{ q.default_points or 1.0 }}" min="0.5" max="100" class="form-control form-control-sm" style="width: 75px;" title="Điểm phân bổ cho câu này">
+              <button type="submit" class="btn btn-sm btn-primary text-nowrap">+ Gán vào đề</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          Ngân hàng câu hỏi của khóa học này chưa có câu hỏi hoạt động nào.
+          <div class="mt-2">
+            <a href="/instructor/courses/{{ course.public_id }}/questions" class="btn btn-outline-primary btn-sm">Mở Ngân hàng câu hỏi</a>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

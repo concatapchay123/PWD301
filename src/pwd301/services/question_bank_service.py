@@ -696,7 +696,7 @@ def list_course_questions(
             QuestionRevision,
             sa.and_(
                 Question.id == QuestionRevision.question_id,
-                QuestionRevision.is_current.is_(True),
+                QuestionRevision.is_current == True,
             ),
         )
         .filter(Question.course_id == course.id)
@@ -977,8 +977,8 @@ def is_question_in_use(
         .filter(
             QuestionRevision.question_id == question.id,
             sa.or_(
-                QuestionRevision.was_student_exposed.is_(True),
-                QuestionRevision.was_used_for_grading.is_(True),
+                QuestionRevision.was_student_exposed == True,
+                QuestionRevision.was_used_for_grading == True,
             ),
         )
         .first()
@@ -1270,7 +1270,7 @@ def create_question_revision(
     # Demote current revision(s)
     sess.query(QuestionRevision).filter(
         QuestionRevision.question_id == question.id,
-        QuestionRevision.is_current.is_(True),
+        QuestionRevision.is_current == True,
     ).update({"is_current": False})
 
     new_revision_no = latest_rev.revision_no + 1

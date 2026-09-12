@@ -50,7 +50,24 @@ class TestStudentPortalViews:
         assert "Python" in html
         assert "Bảng điều khiển Học tập" in html
         assert "app-sidebar" in html
-        assert "demo-banner" in html
+        assert "app-topbar" in html
+        assert "demo-banner" not in html
+
+    def test_sidebar_sticky_and_collapse_controls(
+        self, client: FlaskClient, demo_env: dict[str, Any]
+    ) -> None:
+        """Sidebar contains topbar toggle button, footer collapse button, and nav tooltip labels."""
+        login_web_user(client, demo_env["student1"])
+        resp = client.get("/student/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "sidebar-toggle-btn" in html
+        assert "sidebar-collapse-btn" in html
+        assert 'title="Tổng quan"' in html
+        assert 'data-nav-label="Tổng quan"' in html
+        assert 'data-nav-label="Khóa học của tôi"' in html
+        assert 'data-nav-label="Bài kiểm tra"' in html
+        assert "sidebar-collapsed" in html
 
     def test_student_my_learning_page(self, client: FlaskClient, demo_env: dict[str, Any]) -> None:
         """My learning page renders with list of enrolled courses."""
@@ -283,3 +300,37 @@ class TestStudentPortalViews:
         # Passing score badge/text should contain %
         assert "Điểm đạt tối thiểu" in html
         assert "%" in html
+
+    def test_octopus_mascot_ai_launcher_and_dashboard_cleanup(
+        self, client: FlaskClient, demo_env: dict[str, Any]
+    ) -> None:
+        """Verify octopus mascot launcher in base shell and quick card removed from dashboard."""
+        student1 = demo_env["student1"]
+        login_web_user(client, student1)
+
+        resp = client.get("/student/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+
+        # 1. Old quick card on dashboard must be removed
+        assert "Mở cửa sổ Trợ lý AI →" not in html
+        assert "Cơ chế chống CSRF hoạt động thế nào?" not in html
+
+        # 2. Circular octopus mascot launcher must be present in application shell
+        assert "ai-fab-launcher" in html
+        assert "octopus_mascot.png" in html
+        assert "Trợ lý Bạch Tuộc AI" in html
+        assert "ai-online-badge" in html
+        assert "ai-chat-window" in html
+
+        # 3. Test sending a message to /student/ai/chat
+        chat_resp = client.post(
+            "/student/ai/chat",
+            json={"message": "Giải thích nhanh về HTTP GET"},
+            headers={"Accept": "application/json"},
+        )
+        assert chat_resp.status_code == 200
+        chat_data = chat_resp.get_json()
+        assert chat_data.get("status") == "success"
+        assert "reply" in chat_data
+        assert len(chat_data["reply"]) > 0

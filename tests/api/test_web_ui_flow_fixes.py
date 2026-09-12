@@ -160,6 +160,8 @@ class TestLoginAndRoleSwitching:
         )
         assert resp.status_code == 302
         assert resp.headers["Location"] == "/student/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "STUDENT"
 
         # Instructor login -> /instructor/dashboard
         resp = client.post(
@@ -169,6 +171,8 @@ class TestLoginAndRoleSwitching:
         )
         assert resp.status_code == 302
         assert resp.headers["Location"] == "/instructor/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "INSTRUCTOR"
 
         # Admin login -> /admin/dashboard
         resp = client.post(
@@ -178,27 +182,205 @@ class TestLoginAndRoleSwitching:
         )
         assert resp.status_code == 302
         assert resp.headers["Location"] == "/admin/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "ADMIN"
 
-    def test_role_switch_hook(self, client: FlaskClient, baseline_setup: dict[str, Any]) -> None:
-        """Multi-role user can switch active role via ?switch_role=."""
+    def test_role_switch_query_param_disabled_for_security(
+        self, client: FlaskClient, baseline_setup: dict[str, Any]
+    ) -> None:
+        """Query parameter ?switch_role= must be ignored to prevent unauthorized role tampering."""
         multi_user = baseline_setup["multi_user"]
         login_web_user(client, multi_user)
 
-        # Start on student dashboard, switch to INSTRUCTOR
+        # Attempting to switch role via query param does NOT redirect or mutate session
         resp = client.get("/student/dashboard?switch_role=INSTRUCTOR", follow_redirects=False)
+        assert resp.status_code == 200
+
+        with client.session_transaction() as sess:
+            # Active role is not escalated to INSTRUCTOR via query parameter
+            assert sess.get("active_role") != "INSTRUCTOR"
+
+    def test_admin_and_instructor_sidebar_and_topbar_rendering(
+        self, client: FlaskClient, baseline_setup: dict[str, Any]
+    ) -> None:
+        """Admin and instructor dashboards render respective role sidebars and topbar titles."""
+        # Admin login
+        client.post(
+            "/auth/login",
+            data={"email": "admin@pwd301.local", "password": "Admin@123456"},
+            follow_redirects=True,
+        )
+        resp = client.get("/admin/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "Quản trị & Vận hành" in html
+        assert "Quản lý người dùng" in html
+        assert "QUẢN TRỊ VIÊN" in html
+
+        # Instructor login
+        client.post(
+            "/auth/login",
+            data={"email": "instructor.test@pwd301.local", "password": "Password@123"},
+            follow_redirects=True,
+        )
+        resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "Giảng dạy" in html
+        assert "Chấm thi tự luận" in html
+        assert "GIẢNG VIÊN" in html
+
+    def test_role_switch_post_flow(
+        self, client: FlaskClient, baseline_setup: dict[str, Any]
+    ) -> None:
+        """Multi-role users can switch role via POST; unauthorized roles are rejected."""
+        # Admin login
+        client.post(
+            "/auth/login",
+            data={"email": "admin@pwd301.local", "password": "Admin@123456"},
+            follow_redirects=True,
+        )
+
+        # Admin switches to INSTRUCTOR
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "INSTRUCTOR"},
+            follow_redirects=False,
+        )
         assert resp.status_code == 302
         assert resp.headers["Location"] == "/instructor/dashboard"
-
         with client.session_transaction() as sess:
             assert sess.get("active_role") == "INSTRUCTOR"
 
-        # On instructor dashboard, switch to STUDENT
-        resp = client.get("/instructor/dashboard?switch_role=STUDENT", follow_redirects=False)
+        # Admin switches to STUDENT
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "STUDENT"},
+            follow_redirects=False,
+        )
         assert resp.status_code == 302
         assert resp.headers["Location"] == "/student/dashboard"
-
         with client.session_transaction() as sess:
             assert sess.get("active_role") == "STUDENT"
+
+        # Admin switches back to ADMIN
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "ADMIN"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "/admin/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "ADMIN"
+
+        # Verify admin dropdown HTML shows all 3 role switch options
+        resp = client.get("/admin/dashboard")
+        assert resp.status_code == 200
+        admin_html = resp.data.decode("utf-8")
+        assert "VAI TRÒ (CHUYỂN ĐỔI)" in admin_html
+        assert "Quản trị viên (Admin)" in admin_html
+        assert "Giảng viên (Instructor)" in admin_html
+        assert "Học viên (Student)" in admin_html
+
+        # Instructor login
+        client.post(
+            "/auth/login",
+            data={"email": "instructor.test@pwd301.local", "password": "Password@123"},
+            follow_redirects=True,
+        )
+        # Verify instructor dropdown HTML shows Instructor and Student, but NOT Admin
+        resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        inst_html = resp.data.decode("utf-8")
+        assert "VAI TRÒ (CHUYỂN ĐỔI)" in inst_html
+        assert "Giảng viên (Instructor)" in inst_html
+        assert "Học viên (Student)" in inst_html
+        assert "Quản trị viên (Admin)" not in inst_html
+
+        # Instructor switches to STUDENT
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "STUDENT"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "/student/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "STUDENT"
+
+        # Instructor switches back to INSTRUCTOR
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "INSTRUCTOR"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "/instructor/dashboard"
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "INSTRUCTOR"
+
+        # Instructor attempts unauthorized escalation to ADMIN
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "ADMIN"},
+            follow_redirects=False,
+        )
+        assert resp.status_code in (403, 302)
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "INSTRUCTOR"
+
+        # Student login
+        client.post(
+            "/auth/login",
+            data={"email": "student.test@pwd301.local", "password": "Password@123"},
+            follow_redirects=True,
+        )
+        # Verify student dropdown HTML does NOT have role switcher
+        resp = client.get("/student/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        student_html = resp.data.decode("utf-8")
+        assert "VAI TRÒ (CHUYỂN ĐỔI)" not in student_html
+
+        # Student cannot switch to any role
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "ADMIN"},
+            follow_redirects=False,
+        )
+        assert resp.status_code in (403, 302)
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "STUDENT"
+
+        resp = client.post(
+            "/auth/switch-role",
+            data={"role": "INSTRUCTOR"},
+            follow_redirects=False,
+        )
+        assert resp.status_code in (403, 302)
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "STUDENT"
+
+    def test_auto_sync_active_role_on_portal_navigation(
+        self, client: FlaskClient, baseline_setup: dict[str, Any]
+    ) -> None:
+        """Navigating to /admin/... or /instructor/... automatically synchronizes active_role."""
+        admin = baseline_setup["admin"]
+        login_web_user(client, admin)
+
+        # Force active_role in session to STUDENT
+        with client.session_transaction() as sess:
+            sess["active_role"] = "STUDENT"
+
+        # Admin visits /admin/dashboard
+        resp = client.get("/admin/dashboard", headers={"Accept": "text/html"})
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "Quản trị & Vận hành" in html
+        assert "QUẢN TRỊ VIÊN" in html
+
+        with client.session_transaction() as sess:
+            assert sess.get("active_role") == "ADMIN"
 
 
 class TestWebNotificationsFlow:

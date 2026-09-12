@@ -17,6 +17,7 @@
 
     init() {
       this.initTheme();
+      this.initSidebarState();
       this.initNotifications();
       this.initAIChat();
       this.registerAllRoutes();
@@ -24,6 +25,49 @@
       this.updatePerspectiveUI();
       this.router.init('router-outlet');
       this.bindEvents();
+    }
+
+    initSidebarState() {
+      try {
+        if (localStorage.getItem('pwd301_sidebar_collapsed') === 'true') {
+          document.documentElement.classList.add('sidebar-collapsed');
+          document.body.classList.add('sidebar-collapsed');
+        }
+      } catch (e) {}
+    }
+
+    toggleSidebar() {
+      const isCollapsed = document.documentElement.classList.contains('sidebar-collapsed');
+      const nextState = !isCollapsed;
+      if (nextState) {
+        document.documentElement.classList.add('sidebar-collapsed');
+        document.body.classList.add('sidebar-collapsed');
+        try { localStorage.setItem('pwd301_sidebar_collapsed', 'true'); } catch (e) {}
+      } else {
+        document.documentElement.classList.remove('sidebar-collapsed');
+        document.body.classList.remove('sidebar-collapsed');
+        try { localStorage.setItem('pwd301_sidebar_collapsed', 'false'); } catch (e) {}
+      }
+      const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
+      if (topbarToggleBtn) {
+        topbarToggleBtn.setAttribute('aria-expanded', String(!nextState));
+        topbarToggleBtn.setAttribute('title', nextState ? 'Mở rộng menu (Ctrl+B)' : 'Thu gọn menu (Ctrl+B)');
+        topbarToggleBtn.setAttribute('aria-label', nextState ? 'Mở rộng menu' : 'Thu gọn menu');
+      }
+    }
+
+    bindEvents() {
+      // Keyboard shortcut: Ctrl + B (or Cmd + B on Mac)
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+          const target = e.target;
+          const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+          if (!isInput) {
+            e.preventDefault();
+            this.toggleSidebar();
+          }
+        }
+      });
     }
 
     switchPerspective(role) {
@@ -97,44 +141,44 @@
         navHtml = `
           <div class="sidebar-section-label">Học tập</div>
           <li class="sidebar-item">
-            <a href="#/student/dashboard" class="sidebar-link">
+            <a href="#/student/dashboard" class="sidebar-link" title="Tổng quan" data-nav-label="Tổng quan">
               ${cmp.icon('activity')} <span>Tổng quan</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/my-learning" class="sidebar-link">
+            <a href="#/student/my-learning" class="sidebar-link" title="Khóa học của tôi" data-nav-label="Khóa học của tôi">
               ${cmp.icon('book')} <span>Khóa học của tôi</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/catalog" class="sidebar-link">
+            <a href="#/student/catalog" class="sidebar-link" title="Khám phá khóa học" data-nav-label="Khám phá khóa học">
               ${cmp.icon('search')} <span>Khám phá khóa học</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/assessments" class="sidebar-link">
+            <a href="#/student/assessments" class="sidebar-link" title="Bài kiểm tra" data-nav-label="Bài kiểm tra">
               ${cmp.icon('clock')} <span>Bài kiểm tra</span>
             </a>
           </li>
 
           <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
           <li class="sidebar-item">
-            <a href="#/student/ai-assistant" class="sidebar-link">
+            <a href="#/student/ai-assistant" class="sidebar-link" title="Trợ lý AI" data-nav-label="Trợ lý AI">
               ${cmp.icon('sparkles')} <span>Trợ lý AI</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/recommendations" class="sidebar-link">
+            <a href="#/student/recommendations" class="sidebar-link" title="Gợi ý học tập" data-nav-label="Gợi ý học tập">
               ${cmp.icon('graduation')} <span>Gợi ý học tập</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/notifications" class="sidebar-link">
+            <a href="#/student/notifications" class="sidebar-link" title="Thông báo" data-nav-label="Thông báo">
               ${cmp.icon('bell')} <span>Thông báo</span>
             </a>
           </li>
           <li class="sidebar-item">
-            <a href="#/student/profile" class="sidebar-link">
+            <a href="#/student/profile" class="sidebar-link" title="Hồ sơ cá nhân" data-nav-label="Hồ sơ cá nhân">
               ${cmp.icon('settings')} <span>Hồ sơ cá nhân</span>
             </a>
           </li>
