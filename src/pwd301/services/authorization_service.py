@@ -48,8 +48,11 @@ def _is_api_or_json_request() -> bool:
         return True
     if request.is_json:
         return True
-    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
-    return best == "application/json"
+    if request.args.get("format") == "json":
+        return True
+    if request.accept_mimetypes.accept_html:
+        return request.accept_mimetypes["application/json"] > request.accept_mimetypes["text/html"]
+    return request.accept_mimetypes.accept_json
 
 
 def get_authenticated_actor() -> User | None:

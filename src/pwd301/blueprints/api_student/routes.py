@@ -111,3 +111,99 @@ def get_student_analytics_overview_api() -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     overview = get_student_learning_overview(actor, session=db.session)
     return jsonify(overview), 200
+
+
+@api_student_bp.route("/instructor-application", methods=["GET"])
+@jwt_required
+@student_required
+def get_instructor_application_api() -> tuple[Response, int] | Response:
+    """Retrieve current user's instructor nomination application status (JWT required)."""
+    from pwd301.services.user_service import get_user_active_application
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+    return (
+        jsonify(
+            {
+                "is_already_instructor": actor.is_instructor,
+                "application": (
+                    {
+                        "id": app_record.id,
+                        "status": app_record.status,
+                        "status_label": app_record.status_label_vi,
+                        "details": app_record.parsed_details,
+                        "review_reason": app_record.review_reason,
+                        "created_at": app_record.created_at.isoformat(),
+                        "reviewed_at": app_record.reviewed_at.isoformat()
+                        if app_record.reviewed_at
+                        else None,
+                    }
+                    if app_record
+                    else None
+                ),
+            }
+        ),
+        200,
+    )
+
+
+@api_student_bp.route("/instructor-application", methods=["POST"])
+@jwt_required
+@student_required
+def submit_instructor_application_api() -> tuple[Response, int] | Response:
+    """Submit an application to become an instructor (JWT required)."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.user_service import submit_instructor_application
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        app_record = submit_instructor_application(
+            user_id=actor.id,
+            application_data=payload,
+            session=db.session,
+        )
+    except ValidationError as exc:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    return (
+        jsonify(
+            {
+                "message": "Đơn đăng ký đã được gửi thành công.",
+                "application_id": app_record.id,
+                "status": app_record.status,
+            }
+        ),
+        201,
+    )
+
+
+@api_student_bp.route("/instructor-application/cancel", methods=["POST"])
+@jwt_required
+@student_required
+def cancel_instructor_application_api() -> tuple[Response, int] | Response:
+    """Cancel a pending instructor application (JWT required)."""
+    from pwd301.services.exceptions import ResourceNotFoundError, ValidationError
+    from pwd301.services.user_service import (
+        cancel_instructor_application,
+        get_user_active_application,
+    )
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+    if app_record is None or app_record.status != "PENDING":
+        return jsonify(
+            {"error": {"code": "NOT_FOUND", "message": "Không có đơn đang chờ xét duyệt."}}
+        ), 404
+
+    try:
+        cancelled = cancel_instructor_application(
+            user_id=actor.id,
+            application_id=app_record.id,
+            session=db.session,
+        )
+    except (ValidationError, ResourceNotFoundError) as exc:
+        return jsonify({"error": {"code": "ERROR", "message": str(exc)}}), 400
+
+    return jsonify({"message": "Đã hủy đơn đăng ký.", "status": cancelled.status}), 200

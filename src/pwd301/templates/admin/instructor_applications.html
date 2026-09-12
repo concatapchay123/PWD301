@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block title %}Duyệt Đơn Đề cử Giảng viên — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" style="font-size: 11px;">QUẢN TRỊ VAI TRÒ</span>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">AUTH-002 / INSTRUCTOR WORKFLOW</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-1">Duyệt Đơn Đề cử & Tuyển chọn Giảng viên</h1>
+      <p class="text-muted small mb-0">Thẩm định hồ sơ năng lực, minh chứng giảng dạy và phê duyệt thăng cấp tài khoản từ Học viên lên Giảng viên (Instructor).</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Bảng điều khiển</a>
+    </div>
+  </div>
+
+  <!-- Flash Messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show shadow-sm mb-4" role="alert">
+          <div class="d-flex align-items-center gap-2">
+            <span>{{ message }}</span>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- KPI Metric Overview -->
+  <div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-slate-200 p-3">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="text-caption text-muted fw-bold">CHỜ XÉT DUYỆT</span>
+          <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Cần xử lý</span>
+        </div>
+        <div class="h3 fw-bold text-slate-900 mb-0">{{ pending_count }}</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-slate-200 p-3">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="text-caption text-muted fw-bold">ĐÃ PHÊ DUYỆT</span>
+          <span class="badge bg-success-subtle text-success border border-success-subtle">Đã cấp quyền</span>
+        </div>
+        <div class="h3 fw-bold text-slate-900 mb-0">{{ approved_count }}</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-slate-200 p-3">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="text-caption text-muted fw-bold">ĐÃ TỪ CHỐI</span>
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Hồ sơ chưa đạt</span>
+        </div>
+        <div class="h3 fw-bold text-slate-900 mb-0">{{ rejected_count }}</div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-slate-200 p-3">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="text-caption text-muted fw-bold">TỔNG HỒ SƠ</span>
+          <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Lịch sử</span>
+        </div>
+        <div class="h3 fw-bold text-slate-900 mb-0">{{ pending_count + approved_count + rejected_count }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Tabs & Applications List Card -->
+  <div class="card shadow-sm border-slate-200">
+    <div class="card-header bg-white py-3 border-slate-100">
+      <ul class="nav nav-pills card-header-pills" style="font-size: 13.5px;">
+        <li class="nav-item">
+          <a class="nav-link py-1.5 px-3 {% if current_status == 'PENDING' %}active fw-semibold{% endif %}"
+             href="{{ url_for('admin.admin_instructor_applications', status='PENDING') }}">
+            Chờ duyệt ({{ pending_count }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link py-1.5 px-3 {% if current_status == 'APPROVED' %}active fw-semibold{% endif %}"
+             href="{{ url_for('admin.admin_instructor_applications', status='APPROVED') }}">
+            Đã duyệt ({{ approved_count }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link py-1.5 px-3 {% if current_status == 'REJECTED' %}active fw-semibold{% endif %}"
+             href="{{ url_for('admin.admin_instructor_applications', status='REJECTED') }}">
+            Đã từ chối ({{ rejected_count }})
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link py-1.5 px-3 {% if current_status == 'ALL' %}active fw-semibold{% endif %}"
+             href="{{ url_for('admin.admin_instructor_applications', status='ALL') }}">
+            Tất cả hồ sơ
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" style="font-size: 13.5px;">
+        <thead class="table-light text-caption text-muted">
+          <tr>
+            <th class="ps-3" style="width: 220px;">Ứng viên</th>
+            <th style="width: 230px;">Cơ sở công tác & Email</th>
+            <th style="width: 200px;">Chuyên môn & Kinh nghiệm</th>
+            <th style="width: 140px;">Trạng thái</th>
+            <th style="width: 150px;">Thời gian nộp</th>
+            <th class="text-end pe-3" style="width: 220px;">Thao tác Thẩm định</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if applications %}
+            {% for a in applications %}
+            {% set d = a.parsed_details %}
+            <tr>
+              <td class="ps-3">
+                <div class="fw-semibold text-slate-900">{{ a.applicant.display_name if a.applicant else 'Người dùng' }}</div>
+                <div class="text-muted text-caption">{{ a.applicant.email if a.applicant else 'N/A' }}</div>
+                <span class="badge bg-light text-muted border font-monospace" style="font-size: 10px;">#{{ a.id }}</span>
+              </td>
+              <td>
+                <div class="fw-semibold text-slate-800">{{ d.institution_name or 'Chưa cung cấp' }}</div>
+                {% if d.institution_email %}
+                  <div class="text-primary font-monospace small">{{ d.institution_email }}</div>
+                {% endif %}
+                {% if d.phone_number %}
+                  <div class="text-muted text-caption">SĐT: {{ d.phone_number }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <div class="text-slate-900">{{ d.specialization or 'Chưa phân loại' }}</div>
+                <div class="text-muted small">{{ d.experience_years or 0 }} năm kinh nghiệm</div>
+              </td>
+              <td>
+                <span class="badge {{ a.status_badge_class }} border">{{ a.status_label_vi }}</span>
+                {% if a.reviewed_at %}
+                  <div class="text-muted text-caption mt-0.5">Duyệt: {{ a.reviewed_at.strftime('%d/%m/%Y') }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <div class="text-slate-800">{{ a.created_at.strftime('%H:%M, %d/%m/%Y') if a.created_at else '' }}</div>
+              </td>
+              <td class="text-end pe-3">
+                <div class="d-inline-flex gap-1">
+                  <!-- Xem chi tiết Button -->
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2" style="font-size: 12px;"
+                          data-bs-toggle="modal" data-bs-target="#appDetailModal{{ a.id }}">
+                    Chi tiết
+                  </button>
+
+                  {% if a.status == 'PENDING' %}
+                    <!-- Quick Review Button -->
+                    <button type="button" class="btn btn-sm btn-primary py-1 px-2" style="font-size: 12px;"
+                            data-bs-toggle="modal" data-bs-target="#appReviewModal{{ a.id }}">
+                      Xét duyệt
+                    </button>
+                  {% endif %}
+                </div>
+
+                <!-- Modal Chi tiết hồ sơ -->
+                <div class="modal fade text-start" id="appDetailModal{{ a.id }}" tabindex="-1" aria-labelledby="appDetailModalLabel{{ a.id }}" aria-hidden="true">
+                  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                    <div class="modal-content">
+                      <div class="modal-header py-3">
+                        <div>
+                          <h5 class="modal-title h6 fw-bold mb-0" id="appDetailModalLabel{{ a.id }}">
+                            Hồ sơ đề cử Giảng viên #{{ a.id }} — {{ a.applicant.display_name if a.applicant else '' }}
+                          </h5>
+                          <span class="badge {{ a.status_badge_class }} mt-1">{{ a.status_label_vi }}</span>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body p-4" style="font-size: 13.5px;">
+                        <div class="row g-3 mb-3">
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Ứng viên</label>
+                            <div class="fw-semibold text-slate-900">{{ a.applicant.display_name }} ({{ a.applicant.email }})</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Thời gian nộp</label>
+                            <div class="text-slate-900">{{ a.created_at.strftime('%H:%M, %d/%m/%Y') if a.created_at else 'N/A' }}</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Cơ sở giáo dục / Tổ chức công tác</label>
+                            <div class="fw-semibold text-slate-900">{{ d.institution_name or 'N/A' }}</div>
+                            <div class="text-muted small">{{ d.faculty_department or '' }}</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Email giáo dục xác thực</label>
+                            <div class="font-monospace text-primary">{{ d.institution_email or 'Không có' }}</div>
+                            {% if d.phone_number %}<div class="text-muted small">SĐT: {{ d.phone_number }}</div>{% endif %}
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Lĩnh vực chuyên môn</label>
+                            <div class="fw-semibold text-slate-900">{{ d.specialization or 'N/A' }}</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="text-caption text-muted fw-bold">Kinh nghiệm công tác / giảng dạy</label>
+                            <div class="text-slate-900">{{ d.experience_years or 0 }} năm</div>
+                          </div>
+
+                          <div class="col-12">
+                            <div class="p-3 bg-light rounded border">
+                              <label class="text-caption text-muted fw-bold d-block mb-1">Bằng chứng giảng dạy & Chứng chỉ chuyên môn</label>
+                              <div class="text-slate-800">{{ d.teaching_evidence or 'Không có mô tả' }}</div>
+                            </div>
+                          </div>
+
+                          {% if d.salary_proof %}
+                          <div class="col-md-6">
+                            <div class="p-3 bg-light rounded border h-100">
+                              <label class="text-caption text-muted fw-bold d-block mb-1">Minh chứng thù lao / Bảng lương</label>
+                              <div class="text-slate-800">{{ d.salary_proof }}</div>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if d.current_schedule %}
+                          <div class="col-md-6">
+                            <div class="p-3 bg-light rounded border h-100">
+                              <label class="text-caption text-muted fw-bold d-block mb-1">Thời khóa biểu giảng dạy hiện tại</label>
+                              <div class="text-slate-800">{{ d.current_schedule }}</div>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if d.employment_contract %}
+                          <div class="col-12">
+                            <div class="p-3 bg-light rounded border">
+                              <label class="text-caption text-muted fw-bold d-block mb-1">Hợp đồng làm việc / Quyết định bổ nhiệm</label>
+                              <div class="text-slate-800">{{ d.employment_contract }}</div>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if d.evidence_urls %}
+                          <div class="col-12">
+                            <div class="p-3 bg-light rounded border border-primary-subtle">
+                              <label class="text-caption text-primary fw-bold d-block mb-1">Liên kết thư mục hồ sơ minh chứng (Drive / Cloud)</label>
+                              <a href="{{ d.evidence_urls }}" target="_blank" rel="noopener noreferrer" class="fw-semibold text-primary text-break">
+                                {{ d.evidence_urls }} ↗ (Mở tài liệu)
+                              </a>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if d.attached_files %}
+                          <div class="col-12">
+                            <div class="p-3 bg-white rounded border border-info-subtle">
+                              <label class="text-caption text-info-emphasis fw-bold d-block mb-2">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                                Tệp tin hồ sơ minh chứng đính kèm ({{ d.attached_files | length }} tệp)
+                              </label>
+                              <div class="d-flex flex-column gap-2">
+                                {% for f in d.attached_files %}
+                                <div class="d-flex align-items-center justify-content-between p-2 rounded bg-light border border-slate-200">
+                                  <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary flex-shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                    <span class="text-truncate fw-medium text-slate-800" title="{{ f.original_name }}">{{ f.original_name }}</span>
+                                    {% if f.size %}
+                                    <span class="text-muted small flex-shrink-0">({{ (f.size / 1024)|round(1) }} KB)</span>
+                                    {% endif %}
+                                  </div>
+                                  <a href="{{ url_for('admin.admin_download_application_evidence', app_id=a.id, filename=f.saved_filename) }}"
+                                     class="btn btn-sm btn-outline-primary py-0 px-2 flex-shrink-0 d-inline-flex align-items-center gap-1"
+                                     style="font-size: 11.5px;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Tải về
+                                  </a>
+                                </div>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if d.statement_of_purpose %}
+                          <div class="col-12">
+                            <div class="p-3 bg-light rounded border">
+                              <label class="text-caption text-muted fw-bold d-block mb-1">Động lực & Cam kết giảng dạy</label>
+                              <div class="text-slate-800 fst-italic">"{{ d.statement_of_purpose }}"</div>
+                            </div>
+                          </div>
+                          {% endif %}
+
+                          {% if a.review_reason %}
+                          <div class="col-12">
+                            <div class="p-3 rounded border {% if a.status == 'APPROVED' %}bg-success-subtle border-success-subtle text-success{% else %}bg-danger-subtle border-danger-subtle text-danger{% endif %}">
+                              <label class="text-caption fw-bold d-block mb-1">Ý kiến thẩm định của Quản trị viên ({{ a.reviewed_by.display_name if a.reviewed_by else 'Admin' }})</label>
+                              <div>{{ a.review_reason }}</div>
+                            </div>
+                          </div>
+                          {% endif %}
+                        </div>
+                      </div>
+                      <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                        {% if a.status == 'PENDING' %}
+                          <button type="button" class="btn btn-primary btn-sm" data-bs-dismiss="modal" data-bs-toggle="modal" data-bs-target="#appReviewModal{{ a.id }}">
+                            Thẩm định & Xét duyệt →
+                          </button>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {% if a.status == 'PENDING' %}
+                <!-- Modal Xét duyệt hồ sơ (Approve / Reject) -->
+                <div class="modal fade text-start" id="appReviewModal{{ a.id }}" tabindex="-1" aria-labelledby="appReviewModalLabel{{ a.id }}" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <div class="modal-header py-3">
+                        <h5 class="modal-title h6 fw-bold mb-0" id="appReviewModalLabel{{ a.id }}">
+                          Xét duyệt Đơn đề cử Giảng viên #{{ a.id }}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body p-4" style="font-size: 13.5px;">
+                        <p class="text-slate-800 mb-2">
+                          Ứng viên: <strong>{{ a.applicant.display_name }}</strong> ({{ a.applicant.email }})<br>
+                          Cơ sở: <strong>{{ d.institution_name or 'N/A' }}</strong> — Chuyên môn: <strong>{{ d.specialization or 'N/A' }}</strong>
+                        </p>
+
+                        <div class="alert alert-info py-2 px-3 small mb-3">
+                          Quy chuẩn <strong>AUTH-002</strong>: Khi phê duyệt, người dùng sẽ được thăng cấp lên vai trò <strong>GIẢNG VIÊN (INSTRUCTOR)</strong>, tự động kế thừa quyền Học viên và tăng <code>auth_version</code>.
+                        </div>
+
+                        <!-- Form Duyệt (Approve) -->
+                        <form method="POST" action="{{ url_for('admin.admin_review_instructor_application', app_id=a.id) }}" class="mb-3">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="hidden" name="action" value="approve">
+                          <div class="mb-2">
+                            <label class="form-label fw-semibold small text-slate-800">Ghi chú phê duyệt (Tùy chọn):</label>
+                            <input type="text" class="form-control form-control-sm" name="reason" placeholder="Ví dụ: Hồ sơ đầy đủ chứng chỉ sư phạm và hợp đồng giảng dạy.">
+                          </div>
+                          <button type="submit" class="btn btn-success btn-sm w-100 fw-semibold" onclick="return confirm('Bạn có chắc chắn muốn PHÊ DUYỆT ứng viên này làm Giảng viên?')">
+                            ✓ Phê duyệt & Cấp quyền Giảng viên
+                          </button>
+                        </form>
+
+                        <hr class="my-3">
+
+                        <!-- Form Từ chối (Reject) -->
+                        <form method="POST" action="{{ url_for('admin.admin_review_instructor_application', app_id=a.id) }}">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <input type="hidden" name="action" value="reject">
+                          <div class="mb-2">
+                            <label class="form-label fw-semibold small text-slate-800 text-danger">Lý do từ chối (Bắt buộc): <span class="text-danger">*</span></label>
+                            <textarea class="form-control form-control-sm" name="reason" rows="2" required placeholder="Nêu rõ lý do chưa đạt, tài liệu còn thiếu để ứng viên hoàn thiện lại..."></textarea>
+                          </div>
+                          <button type="submit" class="btn btn-outline-danger btn-sm w-100" onclick="return confirm('Bạn có chắc chắn muốn TỪ CHỐI đơn đề cử này?')">
+                            ✕ Từ chối đơn đề cử
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="6" class="text-center py-5 text-muted">
+                <div class="mb-2">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><circle cx="12" cy="14" r="2"></circle></svg>
+                </div>
+                <div>Hiện không có đơn đề cử giảng viên nào trong danh mục này.</div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

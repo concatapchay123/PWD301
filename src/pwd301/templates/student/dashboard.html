@@ -242,6 +242,24 @@
         </div>
       </div>
 
+      <!-- Become Instructor Invitation Card -->
+      {% if not current_user.is_instructor %}
+      <div class="card mb-4 border-0 shadow-sm" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #fff; border-radius: 8px;">
+        <div class="card-body p-3.5">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="badge bg-primary text-white" style="font-size: 10px;">CƠ HỘI ĐÀO TẠO</span>
+          </div>
+          <h3 class="h6 fw-bold text-white mb-1.5">Bạn muốn trở thành Giảng viên?</h3>
+          <p class="small text-slate-300 mb-3" style="font-size: 12.5px; line-height: 1.5;">
+            Nếu bạn có chuyên môn và kinh nghiệm giảng dạy, hãy đề cử hồ sơ của bạn để thăng cấp lên Giảng viên trên nền tảng PWD301.
+          </p>
+          <a href="{{ url_for('student.become_instructor') }}" class="btn btn-light btn-sm w-100 fw-semibold text-slate-900" style="font-size: 12.5px;">
+            Đăng ký Giảng viên ngay →
+          </a>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>

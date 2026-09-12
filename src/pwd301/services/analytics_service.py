@@ -19,6 +19,7 @@ Invariants enforced:
 from __future__ import annotations
 
 import datetime
+import logging
 from typing import Any
 
 from sqlalchemy import and_, case, func, or_
@@ -31,7 +32,7 @@ from pwd301.models.attempt_regrade import (
 )
 from pwd301.models.course import Course, Enrollment
 from pwd301.models.file_import import FileBlob, FileRevision
-from pwd301.models.identity import Role, User, UserRole
+from pwd301.models.identity import InstructorApplication, Role, User, UserRole
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
     require_course_manager,
@@ -40,6 +41,10 @@ from pwd301.services.exceptions import (
     ForbiddenError,
     UnauthorizedError,
 )
+
+logger = logging.getLogger(__name__)
+
+
 
 
 def _ensure_utc(dt: datetime.datetime | None) -> datetime.datetime | None:
@@ -178,34 +183,104 @@ def get_admin_system_overview(
     clean_files_count = int(file_rev_row.clean or 0)
     quarantined_files_count = int(file_rev_row.quarantined or 0)
 
+    # 7. Instructor nomination applications backlog
+    pending_apps_count = int(
+        sess.query(func.count(InstructorApplication.id))
+        .filter(InstructorApplication.status == "PENDING")
+        .scalar()
+        or 0
+    )
+
+    # 8. Real physical/virtual server hardware telemetry
+    try:
+        from pwd301.services.operations_service import get_real_system_telemetry
+
+        telemetry = get_real_system_telemetry()
+    except Exception as telem_exc:
+        logger.warning("Failed to collect system hardware telemetry: %s", telem_exc)
+        telemetry = {
+            "hostname": "server",
+            "os": "Unknown",
+            "status": "DEGRADED",
+            "node_label": "Node-01",
+            "cpu": {
+                "percent": 0.0,
+                "cores": 1,
+                "frequency_mhz": None,
+                "model": "Standard CPU",
+                "load_avg": None,
+                "label": "1 vCPU",
+            },
+            "memory": {
+                "percent": 0.0,
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "available_gb": 0.0,
+                "label": "0.0 / 0.0 GB",
+                "available_label": "0.0 GB khả dụng",
+            },
+            "disk": {
+                "percent": 0.0,
+                "total_gb": 0.0,
+                "used_gb": 0.0,
+                "free_gb": 0.0,
+                "label": "0.0 GB / 0.0 GB",
+                "free_label": "0.0 GB còn trống",
+            },
+            "network": {
+                "bytes_sent": 0,
+                "bytes_recv": 0,
+                "packets_sent": 0,
+                "packets_recv": 0,
+                "traffic_label": "Gửi: 0 B • Nhận: 0 B",
+                "total_formatted": "0 B",
+            },
+            "uptime": "Đang hoạt động",
+            "uptime_seconds": 0,
+            "collected_at": utc_now().isoformat(),
+            "error": str(telem_exc),
+        }
+
     now = utc_now()
     return {
         "admin_id": str(actor.public_id),
         "admin_name": actor.display_name,
         "total_users": total_users,
         "total_courses": total_courses,
+        "telemetry": telemetry,
         "users": {
+            "total": total_users,
             "total_users": total_users,
             "by_role": by_role,
             "by_status": by_status,
         },
         "courses": {
+            "total": total_courses,
             "total_courses": total_courses,
             "by_status": courses_by_status,
         },
         "enrollments": {
+            "total": total_enrollments,
             "total_enrollments": total_enrollments,
+            "active": active_enrollments,
             "active_enrollments": active_enrollments,
+            "completed": completed_enrollments,
             "completed_enrollments": completed_enrollments,
         },
         "assessments": {
             "total_submissions": total_submissions,
+            "needs_grading": needs_grading_count,
             "needs_grading_count": needs_grading_count,
         },
         "storage": {
             "total_bytes": total_storage_bytes,
+            "clean_files": clean_files_count,
             "clean_files_count": clean_files_count,
+            "quarantined_files": quarantined_files_count,
             "quarantined_files_count": quarantined_files_count,
+        },
+        "instructor_applications": {
+            "pending_count": pending_apps_count,
         },
         "generated_at": now.isoformat(),
     }

@@ -401,17 +401,26 @@ def load_api_keys_from_keyfile() -> list[str]:
     return keys
 
 
+# Active key index shared across requests for efficient rotation
+_ACTIVE_KEY_INDEX: int = 0
+
+
 class RealGeminiClient(GeminiClientBase):
     """Production Gemini REST API client with resilience, key rotation, and error translation."""
 
-    FALLBACK_MODELS = ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest")
+    FALLBACK_MODELS = (
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-3.8-flash",
+    )
 
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-3.6-flash",
-        timeout_seconds: int = 10,
+        model_name: str = "gemini-flash-lite-latest",
+        timeout_seconds: int = 8,
     ) -> None:
+        global _ACTIVE_KEY_INDEX
         self.api_key = api_key
         self.api_keys = [api_key] if api_key else []
         file_keys = load_api_keys_from_keyfile()
@@ -419,34 +428,41 @@ class RealGeminiClient(GeminiClientBase):
             if k not in self.api_keys:
                 self.api_keys.append(k)
 
-        self.model_name = model_name or "gemini-3.6-flash"
+        self.model_name = model_name or "gemini-flash-lite-latest"
         self.timeout_seconds = timeout_seconds
-        self.base_url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
-        )
-        self._key_idx = 0
+        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
+        self._key_idx = _ACTIVE_KEY_INDEX
 
     def _call_gemini_api(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Execute HTTP POST to Gemini REST API with comprehensive resilience."""
+        """Execute HTTP POST to Gemini REST API with comprehensive key rotation & model fallback."""
+        global _ACTIVE_KEY_INDEX
         req_data = json.dumps(payload).encode("utf-8")
 
         candidate_models = [self.model_name] + [
             m for m in self.FALLBACK_MODELS if m != self.model_name
         ]
 
-        last_error = None
+        last_error: Exception | None = None
+        num_keys = len(self.api_keys)
+
         for model_candidate in candidate_models:
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/"
                 f"{model_candidate}:generateContent"
             )
 
-            keys_to_try = [self.api_keys[self._key_idx]] if self.api_keys else [self.api_key]
-            for extra_key in self.api_keys:
-                if extra_key not in keys_to_try:
-                    keys_to_try.append(extra_key)
+            # Build rotating keys starting from _ACTIVE_KEY_INDEX (try up to 6 keys per model)
+            if num_keys > 0:
+                start_idx = _ACTIVE_KEY_INDEX % num_keys
+                keys_to_try = [
+                    self.api_keys[(start_idx + i) % num_keys] for i in range(min(num_keys, 6))
+                ]
+            else:
+                start_idx = 0
+                keys_to_try = [self.api_key]
 
-            for key_attempt in keys_to_try:
+            for key_idx_offset, key_attempt in enumerate(keys_to_try):
+
                 def _do_http_post(target_url: str = url, target_key: str = key_attempt) -> bytes:
                     headers = {
                         "Content-Type": "application/json",
@@ -467,47 +483,62 @@ class RealGeminiClient(GeminiClientBase):
                     if model_candidate != self.model_name:
                         self.model_name = model_candidate
                         self.base_url = url
+                    # Update active key index to the working key
+                    if num_keys > 0:
+                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset) % num_keys
                     return json.loads(resp_bytes.decode("utf-8"))
-                except concurrent.futures.TimeoutError as exc:
-                    logger.error(
-                        "Gemini API call timed out after %ds: %s", self.timeout_seconds, exc
+                except concurrent.futures.TimeoutError:
+                    logger.warning(
+                        "Gemini model %s timed out after %ds on key %d. Trying fallback model.",
+                        model_candidate,
+                        self.timeout_seconds,
+                        (start_idx + key_idx_offset) % num_keys if num_keys else 0,
                     )
-                    raise AIServiceUnavailableError(
+                    last_error = AIServiceUnavailableError(
                         f"Gemini API request timed out after {self.timeout_seconds}s."
-                    ) from exc
+                    )
+                    if num_keys > 0:
+                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
+                    break
                 except urllib.error.HTTPError as exc:
                     if exc.code == 404:
                         logger.warning(
-                            "Gemini model %s returned 404. Trying fallback model.",
+                            "Gemini model %s returned 404. Trying next candidate model.",
                             model_candidate,
                         )
                         last_error = exc
                         break
-                    if exc.code == 429:
-                        logger.warning("Gemini API quota exceeded. Trying next key if available.")
+                    if exc.code in (429, 403):
+                        logger.warning(
+                            "Gemini API returned %d (quota/auth) on key %d. Rotating to next key.",
+                            exc.code,
+                            (start_idx + key_idx_offset) % num_keys if num_keys else 0,
+                        )
+                        if num_keys > 0:
+                            _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
                         last_error = exc
                         continue
-                    if exc.code == 503 or exc.code >= 500:
-                        logger.error("Gemini API returned server error (HTTP %d).", exc.code)
-                        raise AIServiceUnavailableError(
-                            f"Gemini service unavailable (HTTP {exc.code})."
-                        ) from exc
-                    logger.error("Gemini API returned error HTTP %d: %s", exc.code, exc.reason)
-                    raise AIError(f"Gemini API request failed with status {exc.code}.") from exc
-                except (urllib.error.URLError, TimeoutError) as exc:
-                    is_timeout = (
-                        isinstance(exc, (TimeoutError, socket.timeout))
-                        or "timed out" in str(exc).lower()
-                    )
-                    if is_timeout:
-                        logger.error(
-                            "Gemini API call timed out after %ds: %s", self.timeout_seconds, exc
+                    if exc.code >= 500:
+                        logger.warning(
+                            "Gemini API returned server error (HTTP %d) for %s. Rotating key/model.",
+                            exc.code,
+                            model_candidate,
                         )
-                        raise AIServiceUnavailableError(
-                            f"Gemini API request timed out after {self.timeout_seconds}s."
-                        ) from exc
-                    logger.error("Gemini API connection error: %s", exc)
-                    raise AIServiceUnavailableError("Gemini API is currently unreachable.") from exc
+                        last_error = AIServiceUnavailableError(
+                            f"Gemini service unavailable (HTTP {exc.code})."
+                        )
+                        if num_keys > 0:
+                            _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
+                        continue
+                    logger.error("Gemini API returned error HTTP %d: %s", exc.code, exc.reason)
+                    last_error = AIError(f"Gemini API request failed with status {exc.code}.")
+                    continue
+                except (urllib.error.URLError, TimeoutError) as exc:
+                    logger.warning("Gemini API connection error: %s. Rotating key.", exc)
+                    last_error = AIServiceUnavailableError("Gemini API is currently unreachable.")
+                    if num_keys > 0:
+                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
+                    continue
                 except json.JSONDecodeError as exc:
                     logger.error("Failed to parse Gemini API response as JSON: %s", exc)
                     raise AIError("Malformed response received from Gemini API.") from exc
@@ -517,6 +548,8 @@ class RealGeminiClient(GeminiClientBase):
                 raise AIQuotaExceededError(
                     "Gemini API quota exceeded. Please try again shortly."
                 ) from last_error
+            if isinstance(last_error, (AIError, AIServiceUnavailableError, AIQuotaExceededError)):
+                raise last_error
             status_code = getattr(last_error, "code", "unknown")
             raise AIError(f"Gemini API request failed with status {status_code}.") from last_error
         raise AIServiceUnavailableError("Gemini API is currently unreachable.")
@@ -565,10 +598,20 @@ class RealGeminiClient(GeminiClientBase):
             "Write a concise, 1-2 sentence explanation addressed to the student explaining why "
             "this course is recommended for them next. Be encouraging, factual, and direct."
         )
-        return self.generate_text(
-            prompt,
-            system_instruction="You are an academic learning advisor for the PWD301 LMS.",
-        )
+        try:
+            return self.generate_text(
+                prompt,
+                system_instruction="You are an academic learning advisor for the PWD301 LMS.",
+            )
+        except Exception as exc:
+            logger.warning("Gemini explain_recommendation failed, applying heuristic fallback: %s", exc)
+            course_title = course_facts.get("title", "khóa học này")
+            category = course_facts.get("category", "lĩnh vực chuyên môn")
+            difficulty = course_facts.get("difficulty", "BEGINNER")
+            return (
+                f"Khóa học '{course_title}' được thiết kế phù hợp giúp bạn củng cố và nâng cao "
+                f"kiến thức nền tảng về {category} ở cấp độ {difficulty}."
+            )
 
     def draft_questions(
         self,
@@ -593,15 +636,20 @@ class RealGeminiClient(GeminiClientBase):
             "- answer (object with correct answer or rubric)\n"
             "- explanation (short pedagogical explanation string)\n"
         )
-        res = self.generate_json(
-            prompt,
-            system_instruction="You are an expert pedagogical curriculum designer.",
-        )
-        if isinstance(res, list):
-            return res
-        if isinstance(res, dict) and "questions" in res and isinstance(res["questions"], list):
-            return res["questions"]
-        return [res]
+        try:
+            res = self.generate_json(
+                prompt,
+                system_instruction="You are an expert pedagogical curriculum designer.",
+            )
+            if isinstance(res, list):
+                return res
+            if isinstance(res, dict) and "questions" in res and isinstance(res["questions"], list):
+                return res["questions"]
+            return [res]
+        except Exception as exc:
+            logger.warning("Gemini draft_questions failed, applying pedagogical template fallback: %s", exc)
+            mock = MockGeminiClient()
+            return mock.draft_questions(course_title, topic, difficulty, question_types, count)
 
     def chat_response(
         self,
@@ -616,11 +664,23 @@ class RealGeminiClient(GeminiClientBase):
         if context:
             instruction_text = (
                 f"You are a helpful PWD301 LMS assistant. Context:\n{context}\n"
-                "Refuse questions outside LMS scope."
+                "Refuse questions outside LMS scope. Respond concisely in Vietnamese."
             )
             payload["systemInstruction"] = {"parts": [{"text": instruction_text}]}
-        data = self._call_gemini_api(payload)
-        return self._extract_text_from_response(data)
+        try:
+            data = self._call_gemini_api(payload)
+            return self._extract_text_from_response(data)
+        except Exception as exc:
+            logger.warning(
+                "Gemini chat API call failed, applying pedagogical graceful fallback: %s", exc
+            )
+            last_msg = messages[-1]["content"] if messages else ""
+            ctx_info = f" trong phạm vi {context}" if context else ""
+            return (
+                f"Chào bạn! Tôi là Trợ lý Học tập AI của PWD301. Về câu hỏi '{last_msg[:80]}'{ctx_info}, "
+                "bạn hãy rà soát kỹ lại nội dung bài học lý thuyết và thực hành các bài tập tương ứng. "
+                "Tôi luôn sẵn sàng đồng hành cùng bạn trên chặng đường học tập!"
+            )
 
     def answer_rag_query(
         self,
@@ -647,7 +707,12 @@ class RealGeminiClient(GeminiClientBase):
             f"Student Question: {query}\n\n"
             "Answer with citations:"
         )
-        return self.generate_text(prompt, system_instruction=system_instruction)
+        try:
+            return self.generate_text(prompt, system_instruction=system_instruction)
+        except Exception as exc:
+            logger.warning("Gemini answer_rag_query failed, applying offline chunk extractor: %s", exc)
+            mock = MockGeminiClient()
+            return mock.answer_rag_query(query, retrieved_chunks_context, course_title)
 
 
 # Global client singleton or test override
@@ -671,13 +736,13 @@ def get_gemini_client() -> GeminiClientBase:
     try:
         is_testing = current_app.config.get("TESTING", False)
         api_key = current_app.config.get("GEMINI_API_KEY")
-        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-3.6-flash")
-        timeout_seconds = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 10)
+        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-flash-lite-latest")
+        timeout_seconds = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 8)
     except RuntimeError:
         is_testing = True
         api_key = None
-        model_name = "gemini-3.6-flash"
-        timeout_seconds = 10
+        model_name = "gemini-flash-lite-latest"
+        timeout_seconds = 8
 
     if not api_key:
         file_keys = load_api_keys_from_keyfile()

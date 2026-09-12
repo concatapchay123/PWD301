@@ -502,3 +502,118 @@ def test_backup_retention_pruning(app: Flask, admin_user: User) -> None:
 
         # File is unlinked
         assert not Path(old_backup.storage_location).is_file()
+
+
+# =====================================================================
+# 7. Real Hardware Telemetry Tests
+# =====================================================================
+
+
+def test_get_real_system_telemetry_live(app: Flask) -> None:
+    """Verify live system telemetry returns real hardware metrics and non-empty data."""
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert isinstance(telem, dict)
+        assert "hostname" in telem and len(telem["hostname"]) > 0
+        assert "os" in telem and len(telem["os"]) > 0
+        assert "node_label" in telem and len(telem["node_label"]) > 0
+        assert "cpu" in telem and isinstance(telem["cpu"], dict)
+        assert telem["cpu"]["cores"] >= 1
+        assert "model" in telem["cpu"] and len(telem["cpu"]["model"]) > 0
+        assert "label" in telem["cpu"] and len(telem["cpu"]["label"]) > 0
+        assert 0.0 <= telem["cpu"]["percent"] <= 100.0
+        assert "memory" in telem and isinstance(telem["memory"], dict)
+        assert telem["memory"]["total_gb"] > 0
+        assert 0.0 <= telem["memory"]["percent"] <= 100.0
+        assert "disk" in telem and isinstance(telem["disk"], dict)
+        assert telem["disk"]["total_gb"] > 0
+        assert 0.0 <= telem["disk"]["percent"] <= 100.0
+        assert "network" in telem and isinstance(telem["network"], dict)
+        assert telem["network"]["bytes_sent"] >= 0
+        assert telem["network"]["bytes_recv"] >= 0
+        assert "uptime" in telem and len(telem["uptime"]) > 0
+
+
+def test_get_real_system_telemetry_fallback_without_psutil(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify system telemetry falls back to stdlib gracefully when psutil is unavailable."""
+    import sys
+
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    monkeypatch.setitem(sys.modules, "psutil", None)
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert isinstance(telem, dict)
+        assert "hostname" in telem and len(telem["hostname"]) > 0
+        assert "os" in telem and len(telem["os"]) > 0
+        assert "node_label" in telem and len(telem["node_label"]) > 0
+        assert "cpu" in telem and telem["cpu"]["cores"] >= 1
+        assert "model" in telem["cpu"] and len(telem["cpu"]["model"]) > 0
+        assert "label" in telem["cpu"] and len(telem["cpu"]["label"]) > 0
+        assert "memory" in telem and isinstance(telem["memory"], dict)
+        assert "disk" in telem and isinstance(telem["disk"], dict)
+        assert "uptime" in telem
+
+
+def test_get_real_system_telemetry_cgroup_memory_limit(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify cgroup memory quota correctly clamps ram_total_gb and computes usage."""
+    import builtins
+    import io
+    import os
+    import sys
+    from typing import Any
+
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    mock_files = {
+        "/sys/fs/cgroup/memory.max": "2147483648",  # 2 GB limit
+        "/sys/fs/cgroup/memory.current": "536870912",  # 512 MB used
+    }
+
+    orig_exists = os.path.exists
+    monkeypatch.setattr(os.path, "exists", lambda p: p in mock_files or orig_exists(p))
+
+    orig_open = builtins.open
+
+    def mock_open(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if str(path) in mock_files:
+            return io.StringIO(mock_files[str(path)])
+        return orig_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", mock_open)
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert telem["memory"]["total_gb"] == 2.0
+        assert telem["memory"]["used_gb"] == 0.5
+        assert telem["memory"]["available_gb"] == 1.5
+        assert telem["memory"]["percent"] == 25.0
+
+
+def test_get_real_system_telemetry_uptime_short_intervals(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify uptime formatting handles sub-minute intervals cleanly."""
+    import time
+
+    import psutil
+
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    now = time.time()
+    monkeypatch.setattr(psutil, "boot_time", lambda: now - 45)
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert telem["uptime"] == "45 giây"
+        assert telem["uptime_seconds"] == 45
+

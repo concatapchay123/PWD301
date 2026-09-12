@@ -8,8 +8,6 @@ from typing import Any
 
 from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
 
-logger = logging.getLogger(__name__)
-
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment, Lesson, LessonProgress
@@ -32,6 +30,8 @@ from pwd301.services.lesson_service import (
     get_lesson_progress,
     record_lesson_progress,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @student_bp.route("/dashboard", methods=["GET"])
@@ -784,6 +784,7 @@ def ai_assistant_view() -> Any:
 def student_ai_chat() -> Any:
     """Session-authenticated AI chat endpoint for student assistant."""
     from pwd301.services.ai_service import create_conversation, get_conversation, send_chat_message
+    from pwd301.services.exceptions import AIConversationExpiredError
     from pwd301.services.rate_limit_service import check_ai_rate_limit
 
     actor = require_authenticated_actor()
@@ -797,8 +798,17 @@ def student_ai_chat() -> Any:
     if conv_id:
         try:
             conv = get_conversation(actor=actor, conversation_id=conv_id, session=db.session)
+            if conv and (conv.is_expired or conv.status == "EXPIRED"):
+                logger.info(
+                    "Active AI conversation %s expired for actor %s, auto-renewing session.",
+                    conv_id,
+                    actor.id,
+                )
+                conv = None
+                session.pop("active_ai_conversation_id", None)
         except Exception:
             conv = None
+            session.pop("active_ai_conversation_id", None)
 
     if conv is None:
         course_id = payload.get("course_id")
@@ -814,8 +824,8 @@ def student_ai_chat() -> Any:
             )
             session["active_ai_conversation_id"] = str(conv.public_id)
             db.session.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Failed creating AI conversation: %s", exc)
 
     try:
         check_ai_rate_limit(actor.id)
@@ -827,20 +837,43 @@ def student_ai_chat() -> Any:
         return jsonify(
             {
                 "reply": (
-                    "Chào bạn! Tôi là Trợ lý AI Học tập của PWD301. "
-                    f"Đối với câu hỏi '{message}', hãy cùng tìm hiểu qua bài học nhé!"
+                    "Chào bạn! Tôi là Trợ lý Bạch Tuộc AI của PWD301. "
+                    f"Đối với câu hỏi '{message}', bạn hãy hỏi trực tiếp về bài học hoặc kiến thức lập trình Web nhé! 🐙"
                 ),
                 "status": "success",
             }
         ), 200
 
     try:
-        user_msg, asst_msg = send_chat_message(
-            actor=actor,
-            conversation_id=str(conv.public_id),
-            content=message,
-            session=db.session,
-        )
+        try:
+            user_msg, asst_msg = send_chat_message(
+                actor=actor,
+                conversation_id=str(conv.public_id),
+                content=message,
+                session=db.session,
+            )
+        except AIConversationExpiredError:
+            logger.info("AI conversation %s expired during message dispatch, recreating session.", conv.public_id)
+            session.pop("active_ai_conversation_id", None)
+            course_id = payload.get("course_id")
+            lesson_id = payload.get("lesson_id")
+            context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
+            conv = create_conversation(
+                actor=actor,
+                context_type=context_type,
+                course_id=course_id,
+                lesson_id=lesson_id,
+                session=db.session,
+            )
+            session["active_ai_conversation_id"] = str(conv.public_id)
+            db.session.commit()
+            user_msg, asst_msg = send_chat_message(
+                actor=actor,
+                conversation_id=str(conv.public_id),
+                content=message,
+                session=db.session,
+            )
+
         return jsonify(
             {
                 "conversation_id": str(conv.public_id),
@@ -852,9 +885,11 @@ def student_ai_chat() -> Any:
         logger.warning("Student AI chat encountered error: %s", exc)
         return jsonify(
             {
+                "conversation_id": str(conv.public_id) if conv else None,
                 "reply": (
-                    f"Trợ lý Bạch Tuộc AI ghi nhận câu hỏi: '{message}'. "
-                    "Hệ thống đang đồng bộ dữ liệu bài học, bạn có thể đối chiếu giáo trình hoặc hỏi thêm nhé! 🐙"
+                    f"Chào bạn! Tôi là Trợ lý Bạch Tuộc AI. Đối với câu hỏi '{message}':\n"
+                    "Hiện tại kết nối AI đang bận hoặc có gián đoạn tạm thời. "
+                    "Bạn có thể xem lại tài liệu bài học, ví dụ mã nguồn hoặc đặt lại câu hỏi sau ít giây nhé! 🐙"
                 ),
                 "status": "success",
             }
@@ -958,3 +993,179 @@ def student_course_detail(course_id: str) -> Any:
             lessons=lessons,
         )
     return jsonify({"course_id": str(course.public_id), "title": course.title}), 200
+
+
+# ==============================================================================
+# Instructor Application / Self-Nomination Portal
+# ==============================================================================
+
+
+def _wants_json() -> bool:
+    """Check if the client specifically requested a JSON response."""
+    if request.is_json:
+        return True
+    if request.path.startswith("/api/"):
+        return True
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept and "text/html" not in accept
+
+
+@student_bp.route("/become-instructor", methods=["GET"])
+@student_required
+def become_instructor() -> Any:
+    """Page or API to view instructor nomination status or apply."""
+    from pwd301.services.user_service import get_user_active_application
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+
+    if not _wants_json():
+        return render_template(
+            "student/become_instructor.html",
+            application=app_record,
+            is_already_instructor=actor.is_instructor,
+        )
+
+    return (
+        jsonify(
+            {
+                "is_already_instructor": actor.is_instructor,
+                "application": (
+                    {
+                        "id": app_record.id,
+                        "status": app_record.status,
+                        "status_label": app_record.status_label_vi,
+                        "details": app_record.parsed_details,
+                        "review_reason": app_record.review_reason,
+                        "created_at": app_record.created_at.isoformat(),
+                        "reviewed_at": (
+                            app_record.reviewed_at.isoformat() if app_record.reviewed_at else None
+                        ),
+                    }
+                    if app_record
+                    else None
+                ),
+            }
+        ),
+        200,
+    )
+
+
+@student_bp.route("/become-instructor", methods=["POST"])
+@student_required
+def submit_become_instructor() -> Any:
+    """Submit a self-nomination application to become an instructor."""
+    from pathlib import Path
+    from flask import current_app
+    from werkzeug.utils import secure_filename
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.user_service import submit_instructor_application
+
+    actor = require_authenticated_actor()
+    raw_payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload: dict[str, Any] = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+
+    # Xử lý các tệp tin minh chứng đính kèm nếu có
+    attached_files = []
+    if "evidence_files" in request.files:
+        files = request.files.getlist("evidence_files")
+        allowed_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".zip", ".doc"}
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage"))
+        user_storage = storage_root / "instructor_applications" / str(actor.id)
+        user_storage.mkdir(parents=True, exist_ok=True)
+
+        for f in files:
+            if not f or not f.filename or not f.filename.strip():
+                continue
+            ext = Path(f.filename).suffix.lower()
+            if ext not in allowed_extensions:
+                msg = f"Định dạng tệp '{f.filename}' không được hỗ trợ. Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel/ZIP."
+                if not _wants_json():
+                    flash(msg, "danger")
+                    return redirect(url_for("student.become_instructor"))
+                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": msg}}), 400
+
+            safe_stem = secure_filename(Path(f.filename).stem) or "evidence"
+            saved_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
+            dest_path = user_storage / saved_filename
+            f.save(str(dest_path))
+            file_size = dest_path.stat().st_size if dest_path.exists() else 0
+
+            attached_files.append({
+                "original_name": Path(f.filename).name,
+                "saved_filename": saved_filename,
+                "size": file_size,
+            })
+
+    if attached_files:
+        payload["attached_files"] = attached_files
+
+    try:
+        app_record = submit_instructor_application(
+            user_id=actor.id,
+            application_data=payload,
+            session=db.session,
+        )
+    except ValidationError as exc:
+        if not _wants_json():
+            flash(str(exc), "danger")
+            return redirect(url_for("student.become_instructor"))
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    if not _wants_json():
+        flash(
+            "Hồ sơ đề cử giảng viên của bạn đã được gửi thành công! "
+            "Quản trị viên sẽ sớm thẩm định và phản hồi.",
+            "success",
+        )
+        return redirect(url_for("student.become_instructor"))
+
+    return (
+        jsonify(
+            {
+                "message": "Đơn đăng ký đã được gửi thành công.",
+                "application_id": app_record.id,
+                "status": app_record.status,
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.route("/become-instructor/cancel", methods=["POST"])
+@student_required
+def cancel_become_instructor() -> Any:
+    """Cancel a pending instructor application."""
+    from pwd301.services.exceptions import ResourceNotFoundError, ValidationError
+    from pwd301.services.user_service import (
+        cancel_instructor_application,
+        get_user_active_application,
+    )
+
+    actor = require_authenticated_actor()
+    app_record = get_user_active_application(actor.id, session=db.session)
+    if app_record is None or app_record.status != "PENDING":
+        if not _wants_json():
+            flash("Không tìm thấy đơn đăng ký đang chờ xét duyệt để hủy.", "warning")
+            return redirect(url_for("student.become_instructor"))
+        return jsonify(
+            {"error": {"code": "NOT_FOUND", "message": "Không có đơn đang chờ xét duyệt."}}
+        ), 404
+
+    try:
+        cancelled = cancel_instructor_application(
+            user_id=actor.id,
+            application_id=app_record.id,
+            session=db.session,
+        )
+    except (ValidationError, ResourceNotFoundError) as exc:
+        if not _wants_json():
+            flash(str(exc), "danger")
+            return redirect(url_for("student.become_instructor"))
+        return jsonify({"error": {"code": "ERROR", "message": str(exc)}}), 400
+
+    if not _wants_json():
+        flash("Bạn đã hủy đơn đăng ký thành công.", "info")
+        return redirect(url_for("student.become_instructor"))
+
+    return jsonify({"message": "Đã hủy đơn đăng ký.", "status": cancelled.status}), 200

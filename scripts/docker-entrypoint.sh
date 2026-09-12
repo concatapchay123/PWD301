@@ -29,10 +29,18 @@ echo "=================================================="
 echo "PWD301 Initialization Complete. Starting application..."
 echo "=================================================="
 
+# Determine reload flag for development
+RELOAD_FLAG=""
+if [ "${APP_ENV}" = "development" ] || [ "${FLASK_DEBUG}" = "1" ] || [ "${FLASK_DEBUG}" = "true" ]; then
+    echo "Development environment detected. Enabling Gunicorn auto-reload (--reload)..."
+    RELOAD_FLAG="--reload"
+fi
+
 # Execute default Gunicorn server if no command or just 'gunicorn' is passed
 if [ "$#" -eq 0 ] || { [ "$1" = "gunicorn" ] && [ "$#" -eq 1 ]; }; then
     echo "Starting Gunicorn WSGI Server on port ${PORT:-5000} (workers=${GUNICORN_WORKERS:-4}, threads=${GUNICORN_THREADS:-2}, timeout=${GUNICORN_TIMEOUT:-120}s)..."
     exec gunicorn \
+        ${RELOAD_FLAG} \
         --bind "0.0.0.0:${PORT:-5000}" \
         --workers "${GUNICORN_WORKERS:-4}" \
         --threads "${GUNICORN_THREADS:-2}" \

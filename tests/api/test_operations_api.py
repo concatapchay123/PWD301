@@ -127,6 +127,14 @@ def test_admin_health_endpoints(client: FlaskClient, admin_user: User) -> None:
     login_web_user(client, admin_user)
     resp_web = client.get("/admin/health")
     assert resp_web.status_code == 200
+    assert resp_web.content_type.startswith("text/html")
+    assert "Trung tâm Giám sát Sức khỏe" in resp_web.get_data(as_text=True)
+
+    # Web format=json explicit request
+    resp_web_json = client.get("/admin/health?format=json")
+    assert resp_web_json.status_code == 200
+    assert resp_web_json.content_type == "application/json"
+    assert "components" in resp_web_json.get_json()
 
 
 # =====================================================================

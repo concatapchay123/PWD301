@@ -67,7 +67,6 @@
             <span class="topbar-brand-text">PWD301 LMS</span>
           </a>
 
-          <!-- Desktop Sidebar Toggle Button (TikTok-Style: Right-aligned next to brand) -->
           <button id="sidebar-toggle-btn" class="sidebar-toggle-btn d-none d-lg-inline-flex align-items-center justify-content-center" type="button" aria-label="Đóng / Mở thanh menu" title="Thu gọn menu (Ctrl+B)">
             <svg class="sidebar-icon-expanded" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
@@ -170,6 +169,15 @@
               </li>
             {% endfor %}
             {% endif %}
+            {% if current_user.is_authenticated and not current_user.is_instructor and not current_user.is_admin %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a href="{{ url_for('student.become_instructor') }}" class="dropdown-item py-2 d-flex align-items-center gap-2 text-primary fw-semibold">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                <span>Đề cử làm Giảng viên →</span>
+              </a>
+            </li>
+            {% endif %}
             <li><hr class="dropdown-divider"></li>
             <li>
               <button class="dropdown-item py-2 d-flex align-items-center gap-2" type="button" data-action="toggle-theme">
@@ -254,6 +262,12 @@
                   <span>Thông báo</span>
                 </a>
               </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('student.become_instructor') }}" class="sidebar-link" title="Đề cử Giảng viên" data-nav-label="Đề cử Giảng viên">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                  <span>Đề cử Giảng viên</span>
+                </a>
+              </li>
             {% elif active_r == 'INSTRUCTOR' %}
               <div class="sidebar-section-label">Giảng dạy</div>
               <li class="sidebar-item">
@@ -292,6 +306,12 @@
                 <a href="{{ url_for('admin.admin_courses') }}" class="sidebar-link" title="Duyệt khóa học" data-nav-label="Duyệt khóa học">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                   <span>Duyệt khóa học</span>
+                </a>
+              </li>
+              <li class="sidebar-item">
+                <a href="{{ url_for('admin.admin_instructor_applications') }}" class="sidebar-link" title="Duyệt giảng viên" data-nav-label="Duyệt giảng viên">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline></svg>
+                  <span>Duyệt giảng viên</span>
                 </a>
               </li>
               <div class="sidebar-section-label">Bảo mật & Kiểm toán</div>
@@ -370,6 +390,7 @@
             <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
             <li class="sidebar-item"><a href="{{ url_for('student.ai_assistant_view') }}" class="sidebar-link">Trợ lý AI</a></li>
             <li class="sidebar-item"><a href="{{ url_for('student.notifications_center') }}" class="sidebar-link">Thông báo</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('student.become_instructor') }}" class="sidebar-link">Đề cử Giảng viên</a></li>
           {% elif active_r == 'INSTRUCTOR' %}
             <div class="sidebar-section-label">Giảng dạy</div>
             <li class="sidebar-item"><a href="{{ url_for('instructor.dashboard') }}" class="sidebar-link">Tổng quan giảng viên</a></li>
@@ -380,6 +401,7 @@
             <li class="sidebar-item"><a href="{{ url_for('admin.dashboard') }}" class="sidebar-link">Tổng quan hệ thống</a></li>
             <li class="sidebar-item"><a href="{{ url_for('admin.admin_users') }}" class="sidebar-link">Quản lý người dùng</a></li>
             <li class="sidebar-item"><a href="{{ url_for('admin.admin_courses') }}" class="sidebar-link">Duyệt khóa học</a></li>
+            <li class="sidebar-item"><a href="{{ url_for('admin.admin_instructor_applications') }}" class="sidebar-link">Duyệt giảng viên</a></li>
             <div class="sidebar-section-label">Bảo mật & Kiểm toán</div>
             <li class="sidebar-item"><a href="{{ url_for('admin.list_audit_logs') }}" class="sidebar-link">Nhật ký Audit Log</a></li>
             <div class="sidebar-section-label">Hạ tầng & Dữ liệu</div>
@@ -467,7 +489,7 @@
   <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script src="{{ url_for('static', filename='js/components.js') }}?v=1.3.1"></script>
-  <script src="{{ url_for('static', filename='js/app_shell.js') }}?v=1.3.0"></script>
+  <script src="{{ url_for('static', filename='js/app_shell.js') }}?v=1.3.1"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

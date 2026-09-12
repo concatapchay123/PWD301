@@ -4,21 +4,21 @@ Verifies:
 - Flash messages render inside floating `#toast-container` as `.app-toast` elements.
 - The obsolete static inline alert banner in `#main-content` is eliminated.
 - `#toast-container` exists on every page for client-side JavaScript `showToast` calls.
-- Correct toast classes (`toast-success`, `toast-danger`, `toast-warning`, `toast-info`) and progress bars are rendered.
+- Correct toast classes (`toast-success`, `toast-danger`, `toast-warning`, `toast-info`)
+  and progress bars are rendered.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
 import pytest
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.identity import User
 from pwd301.seeds.baseline import seed_baseline
+from pwd301.services.course_service import create_course
 from pwd301.services.user_service import assign_role_to_user, register_user
-from pwd301.services.course_service import change_course_status, create_course
 from tests.conftest import login_web_user
 
 
@@ -106,9 +106,7 @@ def test_instructor_submit_review_renders_slide_down_toast(
     assert '<div class="alert alert-success alert-dismissible fade show" role="alert">' not in html
 
 
-def test_login_success_renders_toast(
-    client: FlaskClient, toast_test_env: dict[str, Any]
-) -> None:
+def test_login_success_renders_toast(client: FlaskClient, toast_test_env: dict[str, Any]) -> None:
     """Login success flashes message as toast notification."""
     student = toast_test_env["student"]
     resp = client.post(

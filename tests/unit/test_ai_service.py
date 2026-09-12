@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import unittest.mock
 import uuid
 from datetime import timedelta
@@ -429,3 +430,32 @@ def test_draft_course_questions_forbidden_non_manager(
             course_id=str(sample_course.public_id),
             topic="Operating Systems",
         )
+
+
+def test_real_gemini_client_fallback_to_next_model() -> None:
+    """When primary model times out or returns 503, RealGeminiClient falls back to next model."""
+    client = RealGeminiClient(
+        api_key="fake-test-key", model_name="gemini-3.6-flash", timeout_seconds=2
+    )
+    client.api_keys = ["fake-test-key"]
+
+    attempt_urls = []
+
+    def fake_urlopen(req, timeout=None):
+        attempt_urls.append(req.full_url)
+        if "gemini-3.6-flash" in req.full_url:
+            raise TimeoutError("Simulated timeout on gemini-3.6-flash")
+        # Return success for fallback model
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"candidates": [{"content": {"parts": [{"text": "Hello from fallback model"}]}}]}
+        ).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
+
+    with unittest.mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = client.generate_text("Hi")
+        assert result == "Hello from fallback model"
+        # Verify that gemini-3.6-flash was tried first, then fallback model was called
+        assert any("gemini-3.6-flash" in u for u in attempt_urls)
+        assert any(client.FALLBACK_MODELS[0] in u for u in attempt_urls)

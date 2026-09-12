@@ -57,13 +57,11 @@ def _is_api_request() -> bool:
         return True
     if request.is_json:
         return True
-    if (
-        request.accept_mimetypes.accept_html
-        and request.accept_mimetypes["text/html"] > request.accept_mimetypes["application/json"]
-    ):
-        return False
-    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
-    return best == "application/json"
+    if request.args.get("format") == "json":
+        return True
+    if request.accept_mimetypes.accept_html:
+        return request.accept_mimetypes["application/json"] > request.accept_mimetypes["text/html"]
+    return request.accept_mimetypes.accept_json
 
 
 @admin_bp.route("/dashboard", methods=["GET"])
@@ -623,11 +621,26 @@ def admin_force_revoke_sessions(user_id: str) -> Any:
 
 @admin_bp.route("/health", methods=["GET"])
 @admin_required
-def admin_health() -> tuple[Response, int] | Response:
+def admin_health() -> tuple[Response, int] | Response | str:
     """Comprehensive system operational health evaluation for administrators."""
     require_authenticated_actor()
     report = check_system_health(include_details=True, session=db.session)
-    return jsonify(report), 200
+    if _is_api_request():
+        return jsonify(report), 200
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    telemetry = get_real_system_telemetry()
+    return render_template("admin/health.html", report=report, telemetry=telemetry)
+
+
+@admin_bp.route("/telemetry", methods=["GET"])
+@admin_required
+def admin_telemetry() -> tuple[Response, int]:
+    """Real-time physical server hardware telemetry endpoint for administrators."""
+    require_authenticated_actor()
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    return jsonify(get_real_system_telemetry()), 200
 
 
 @admin_bp.route("/backups", methods=["GET"])
@@ -794,3 +807,193 @@ def admin_maintenance_status() -> tuple[Response, int] | Response:
         ),
         200,
     )
+
+
+# ==============================================================================
+# Instructor Applications Management & Review
+# ==============================================================================
+
+
+@admin_bp.route("/instructor-applications", methods=["GET"])
+@admin_required
+def admin_instructor_applications() -> tuple[Response, int] | Response | str:
+    """Administrator instructor applications review queue."""
+    from pwd301.models.identity import InstructorApplication
+    from pwd301.services.user_service import list_instructor_applications
+
+    require_authenticated_actor()
+    sess = db.session
+
+    status_filter = request.args.get("status", "PENDING").strip().upper()
+    if status_filter not in ("PENDING", "APPROVED", "REJECTED", "CANCELLED", "ALL"):
+        status_filter = "PENDING"
+
+    applications = list_instructor_applications(status=status_filter, session=sess)
+    all_apps = sess.query(InstructorApplication).all()
+    pending_count = sum(1 for a in all_apps if a.status == "PENDING")
+    approved_count = sum(1 for a in all_apps if a.status == "APPROVED")
+    rejected_count = sum(1 for a in all_apps if a.status == "REJECTED")
+
+    if _is_api_request():
+        return (
+            jsonify(
+                {
+                    "total": len(applications),
+                    "pending_count": pending_count,
+                    "applications": [
+                        {
+                            "id": a.id,
+                            "applicant_user_id": a.applicant_user_id,
+                            "applicant_name": a.applicant.display_name if a.applicant else "N/A",
+                            "applicant_email": a.applicant.email if a.applicant else "N/A",
+                            "status": a.status,
+                            "status_label": a.status_label_vi,
+                            "details": a.parsed_details,
+                            "reviewed_by": a.reviewed_by.display_name if a.reviewed_by else None,
+                            "review_reason": a.review_reason,
+                            "created_at": a.created_at.isoformat(),
+                            "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+                        }
+                        for a in applications
+                    ],
+                }
+            ),
+            200,
+        )
+
+    return render_template(
+        "admin/instructor_applications.html",
+        applications=applications,
+        current_status=status_filter,
+        pending_count=pending_count,
+        approved_count=approved_count,
+        rejected_count=rejected_count,
+    )
+
+
+@admin_bp.route("/instructor-applications/<int:app_id>", methods=["GET"])
+@admin_required
+def admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | Response:
+    """Get detailed view of a single instructor application."""
+    from pwd301.services.user_service import get_instructor_application
+
+    require_authenticated_actor()
+    app_record = get_instructor_application(app_id, session=db.session)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Đơn đăng ký #{app_id} không tồn tại.")
+
+    return (
+        jsonify(
+            {
+                "id": app_record.id,
+                "applicant_user_id": app_record.applicant_user_id,
+                "applicant_name": app_record.applicant.display_name
+                if app_record.applicant
+                else "N/A",
+                "applicant_email": app_record.applicant.email if app_record.applicant else "N/A",
+                "status": app_record.status,
+                "status_label": app_record.status_label_vi,
+                "details": app_record.parsed_details,
+                "reviewed_by": app_record.reviewed_by.display_name
+                if app_record.reviewed_by
+                else None,
+                "review_reason": app_record.review_reason,
+                "created_at": app_record.created_at.isoformat(),
+                "reviewed_at": app_record.reviewed_at.isoformat()
+                if app_record.reviewed_at
+                else None,
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/instructor-applications/<int:app_id>/review", methods=["POST"])
+@admin_required
+def admin_review_instructor_application(app_id: int) -> Any:
+    """Approve or reject an instructor application (Admin only)."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.user_service import review_instructor_application
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = str(payload.get("action", "")).strip().lower()
+    reason = str(payload.get("reason", "")).strip()
+
+    try:
+        app_record = review_instructor_application(
+            application_id=app_id,
+            admin_user_id=actor.id,
+            action=action,
+            reason=reason,
+            session=db.session,
+        )
+    except (ValidationError, ResourceNotFoundError) as exc:
+        if not _is_api_request():
+            flash(str(exc), "danger")
+            return redirect(url_for("admin.admin_instructor_applications"))
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    msg = (
+        f"Đã phê duyệt đơn #{app_id} thành công! "
+        "Người dùng đã được cấp quyền Giảng viên (Instructor)."
+        if action == "approve"
+        else f"Đã từ chối đơn #{app_id}. Thông báo phản hồi đã được gửi đến học viên."
+    )
+
+    if not _is_api_request():
+        flash(msg, "success" if action == "approve" else "warning")
+        return redirect(url_for("admin.admin_instructor_applications"))
+
+    return (
+        jsonify(
+            {
+                "message": msg,
+                "application_id": app_record.id,
+                "status": app_record.status,
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/instructor-applications/<int:app_id>/evidence/<filename>", methods=["GET"])
+@admin_required
+def admin_download_application_evidence(app_id: int, filename: str) -> Any:
+    """Download attached evidence file for an instructor application."""
+    from pathlib import Path
+
+    from flask import current_app, send_file
+    from werkzeug.utils import secure_filename
+
+    from pwd301.services.user_service import get_instructor_application
+
+    require_authenticated_actor()
+    app_record = get_instructor_application(app_id, session=db.session)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Đơn đăng ký #{app_id} không tồn tại.")
+
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        raise ResourceNotFoundError("Tên tệp tin không hợp lệ.")
+
+    # Tìm original_name từ metadata
+    details = app_record.parsed_details
+    attached_files = details.get("attached_files", [])
+    matched_meta = next((f for f in attached_files if f.get("saved_filename") == safe_name), None)
+    download_name = matched_meta.get("original_name", safe_name) if matched_meta else safe_name
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    app_dir = storage_root / "instructor_applications" / str(app_record.applicant_user_id)
+    file_path = (app_dir / safe_name).resolve()
+
+    # Chống Path Traversal và kiểm tra tồn tại
+    if not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
+        raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
+
+    return send_file(
+        str(file_path),
+        as_attachment=True,
+        download_name=download_name,
+    )
+

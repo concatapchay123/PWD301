@@ -368,13 +368,15 @@ h1, h2, h3, h4, h5, h6 {
 .topbar-brand-wrapper {
   display: flex;
   align-items: center;
+  position: relative;
 }
 
 @media (min-width: 992px) {
   .topbar-left-zone {
-    width: calc(var(--sidebar-width) - var(--space-4));
+    width: calc(var(--sidebar-width) - var(--space-4) * 2);
+    margin-left: 0;
     flex-shrink: 0;
-    transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1), margin-left 240ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .topbar-brand-wrapper {
@@ -382,13 +384,15 @@ h1, h2, h3, h4, h5, h6 {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-right: var(--space-2);
+    padding-right: 0;
   }
 
   .sidebar-collapsed .topbar-left-zone,
   html.sidebar-collapsed .topbar-left-zone {
-    width: calc(var(--sidebar-collapsed-width, 72px) - var(--space-4));
+    width: var(--sidebar-collapsed-width, 72px);
+    margin-left: calc(-1 * var(--space-4));
     justify-content: center;
+    align-items: center;
   }
 
   .sidebar-collapsed .topbar-brand-text,
@@ -396,22 +400,112 @@ h1, h2, h3, h4, h5, h6 {
     display: none !important;
   }
 
-  .sidebar-collapsed .topbar-brand-wrapper,
-  html.sidebar-collapsed .topbar-brand-wrapper {
-    padding-right: 0;
-    justify-content: center;
+  .sidebar-collapsed .topbar-brand,
+  html.sidebar-collapsed .topbar-brand {
+    gap: 0;
   }
 
+  .sidebar-collapsed .topbar-brand-wrapper,
+  html.sidebar-collapsed .topbar-brand-wrapper {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto;
+    padding-right: 0;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+  }
+
+  /* In collapsed state: Logo mark [P3] is centered, and fades out on hover */
+  .sidebar-collapsed .topbar-brand .topbar-brand-mark,
+  html.sidebar-collapsed .topbar-brand .topbar-brand-mark {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 38px;
+    height: 38px;
+    opacity: 1;
+    transform: scale(1);
+    transition: opacity 160ms cubic-bezier(0.4, 0, 0.2, 1), transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* In collapsed state: Toggle button [ ◨ ] is placed over the logo mark, hidden until hover */
   .sidebar-collapsed .topbar-brand-wrapper .sidebar-toggle-btn,
   html.sidebar-collapsed .topbar-brand-wrapper .sidebar-toggle-btn {
-    display: none !important;
+    display: inline-flex !important;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
+    opacity: 0;
+    transform: scale(0.85);
+    pointer-events: none;
+    transition: opacity 160ms cubic-bezier(0.4, 0, 0.2, 1), transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 20;
+  }
+
+  /* When hovered over the brand wrapper in collapsed state: Swap logo for toggle button! */
+  .sidebar-collapsed .topbar-brand-wrapper:hover .topbar-brand .topbar-brand-mark,
+  html.sidebar-collapsed .topbar-brand-wrapper:hover .topbar-brand .topbar-brand-mark {
+    opacity: 0;
+    transform: scale(0.85);
+    pointer-events: none;
+  }
+
+  .sidebar-collapsed .topbar-brand-wrapper:hover .sidebar-toggle-btn,
+  html.sidebar-collapsed .topbar-brand-wrapper:hover .sidebar-toggle-btn {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+    background-color: var(--slate-100);
+    color: var(--slate-900);
+    border-color: var(--slate-200);
+  }
+
+  [data-theme="dark"].sidebar-collapsed .topbar-brand-wrapper:hover .sidebar-toggle-btn,
+  [data-theme="dark"] html.sidebar-collapsed .topbar-brand-wrapper:hover .sidebar-toggle-btn {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  /* TikTok-style Floating Tooltip on Hover */
+  .sidebar-collapsed .topbar-brand-wrapper:hover::after,
+  html.sidebar-collapsed .topbar-brand-wrapper:hover::after {
+    content: "Mở rộng menu (Ctrl+B)";
+    position: absolute;
+    left: calc(100% + 14px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: #0f172a;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 6px;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    z-index: 1060;
+    animation: tooltipSlideIn 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-theme="dark"].sidebar-collapsed .topbar-brand-wrapper:hover::after,
+  [data-theme="dark"] html.sidebar-collapsed .topbar-brand-wrapper:hover::after {
+    background: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
   }
 }
 
 .topbar-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   text-decoration: none;
   color: var(--brand-primary);
   font-weight: 700;
@@ -578,7 +672,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .sidebar-nav-list {
   list-style: none;
-  padding: var(--space-5) var(--space-4);
+  padding: var(--space-4) var(--space-4);
   margin: 0;
   transition: padding 240ms ease;
 }
@@ -589,8 +683,8 @@ h1, h2, h3, h4, h5, h6 {
   text-transform: uppercase;
   letter-spacing: 0.75px;
   color: var(--slate-400);
-  margin-top: var(--space-5);
-  padding: 0 var(--space-4) var(--space-2) var(--space-4);
+  margin-top: var(--space-4);
+  padding: 0 0 var(--space-2) 10px;
   transition: all 200ms ease;
   white-space: nowrap;
   overflow: hidden;
@@ -607,14 +701,14 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
+  gap: 12px;
+  padding: 0 12px 0 0;
   color: var(--slate-600);
   text-decoration: none;
   border-radius: var(--radius-md);
   font-size: var(--font-body);
   font-weight: 500;
-  transition: background-color 150ms ease, color 150ms ease, padding 200ms ease;
+  transition: background-color 150ms ease, color 150ms ease;
   height: 44px;
   position: relative;
   white-space: nowrap;
@@ -632,6 +726,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sidebar-link svg {
+  width: 18px;
+  height: 18px;
+  padding: 0 10px;
+  box-sizing: content-box;
   flex-shrink: 0;
   color: var(--slate-400);
   transition: color 150ms ease;
@@ -692,13 +790,7 @@ html.sidebar-collapsed .app-sidebar {
 
 .sidebar-collapsed .sidebar-header,
 html.sidebar-collapsed .sidebar-header {
-  display: flex !important;
-  padding: 10px var(--space-2);
-  justify-content: center !important;
-  border-bottom: 1px solid var(--slate-200);
-  min-height: 48px;
-  align-items: center;
-  flex-shrink: 0;
+  display: none !important;
 }
 
 .sidebar-collapsed .sidebar-header-label,
@@ -708,7 +800,7 @@ html.sidebar-collapsed .sidebar-header-label {
 
 .sidebar-collapsed .sidebar-nav-list,
 html.sidebar-collapsed .sidebar-nav-list {
-  padding: var(--space-4) var(--space-2);
+  padding: var(--space-3) 0;
 }
 
 .sidebar-collapsed .sidebar-section-label,
@@ -725,6 +817,7 @@ html.sidebar-collapsed .sidebar-section-label {
 html.sidebar-collapsed .sidebar-link {
   padding: 0;
   justify-content: center;
+  align-items: center;
   width: 44px;
   height: 44px;
   margin: 0 auto 6px auto;
@@ -738,6 +831,8 @@ html.sidebar-collapsed .sidebar-link span {
 .sidebar-collapsed .sidebar-link svg,
 html.sidebar-collapsed .sidebar-link svg {
   margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .sidebar-collapsed .sidebar-footer,

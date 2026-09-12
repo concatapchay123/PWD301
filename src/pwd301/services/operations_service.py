@@ -54,6 +54,14 @@ from pwd301.services.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    import psutil
+
+    # Prime psutil CPU percent calculation so subsequent calls with interval=None return immediately
+    psutil.cpu_percent(interval=None)
+except Exception:
+    pass
+
 
 def _require_admin(actor: Any) -> None:
     """Validate that the provided actor is an active authenticated administrator."""
@@ -379,6 +387,451 @@ def check_system_health(
         )
 
     return report
+
+
+def get_real_system_telemetry() -> dict[str, Any]:
+    """Retrieve actual physical/virtual host hardware telemetry metrics.
+
+    Collects:
+    - CPU utilization, logical core count, frequency, processor model, load average.
+    - Virtual RAM memory utilization (total, used, available, percentage).
+    - Disk partition storage utilization for current drive / storage root.
+    - Network interface throughput and packet metrics.
+    - Hostname, operating system distribution, platform info, and uptime.
+
+    Resilient fail-safe architecture: Uses psutil if installed, gracefully
+    falling back to Python standard library (platform, shutil, socket, os, ctypes, /proc).
+    """
+    import os
+    import platform
+    import shutil
+    import socket
+    import sys
+    import time
+
+    hostname = socket.gethostname()
+    os_name = f"{platform.system()} {platform.release()}"
+    cpu_count = os.cpu_count() or 1
+
+    # Detect containerized environment vs bare-metal/VM host
+    is_container = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+    node_label = f"Docker ({hostname[:12]})" if is_container else f"Host ({hostname})"
+
+    # Human-readable CPU processor model resolution
+    cpu_model = ""
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            k = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+            )
+            cpu_model = str(winreg.QueryValueEx(k, "ProcessorNameString")[0]).strip()
+        except Exception:
+            cpu_model = platform.processor() or ""
+    elif sys.platform.startswith("linux"):
+        try:
+            with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if "model name" in line:
+                        cpu_model = line.split(":", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+    if not cpu_model:
+        cpu_model = platform.processor() or f"{cpu_count} vCPU"
+
+    # CPU load average (available on Linux / macOS natively)
+    load_avg_str = None
+    getloadavg_fn = getattr(os, "getloadavg", None)
+    if callable(getloadavg_fn):
+        try:
+            l1, l5, l15 = getloadavg_fn()
+            load_avg_str = f"{l1:.2f}, {l5:.2f}, {l15:.2f}"
+        except OSError:
+            pass
+
+    has_psutil = False
+    cpu_percent = 0.0
+    cpu_freq_mhz = None
+    ram_total_gb = 0.0
+    ram_used_gb = 0.0
+    ram_avail_gb = 0.0
+    ram_percent = 0.0
+    disk_total_gb = 0.0
+    disk_used_gb = 0.0
+    disk_free_gb = 0.0
+    disk_percent = 0.0
+    net_bytes_sent = 0
+    net_bytes_recv = 0
+    net_packets_sent = 0
+    net_packets_recv = 0
+    uptime_seconds = None
+
+    try:
+        import psutil
+
+        has_psutil = True
+        cpu_percent = float(psutil.cpu_percent(interval=None))
+        # If interval is None returned 0.0 on first invocation, sample briefly with 0.02s
+        if cpu_percent <= 0.0:
+            cpu_percent = float(psutil.cpu_percent(interval=0.02))
+
+        freq = psutil.cpu_freq()
+        if freq and freq.current:
+            cpu_freq_mhz = round(freq.current, 1)
+
+        mem = psutil.virtual_memory()
+        ram_total_gb = round(mem.total / (1024**3), 1)
+        ram_used_gb = round(mem.used / (1024**3), 1)
+        ram_avail_gb = round(mem.available / (1024**3), 1)
+        ram_percent = round(mem.percent, 1)
+
+        drive = os.path.splitdrive(os.getcwd())[0] or "/"
+        disk = psutil.disk_usage(drive)
+        disk_total_gb = round(disk.total / (1024**3), 1)
+        disk_used_gb = round(disk.used / (1024**3), 1)
+        disk_free_gb = round(disk.free / (1024**3), 1)
+        disk_percent = round(disk.percent, 1)
+
+        net_io = psutil.net_io_counters()
+        if net_io:
+            net_bytes_sent = net_io.bytes_sent
+            net_bytes_recv = net_io.bytes_recv
+            net_packets_sent = net_io.packets_sent
+            net_packets_recv = net_io.packets_recv
+
+        boot_time = psutil.boot_time()
+        uptime_seconds = int(time.time() - boot_time)
+
+    except Exception as exc:
+        logger.warning("psutil telemetry collection warning: %s", exc)
+
+    # -----------------------------------------------------------------
+    # Container cgroup resource limit clamping (cgroups v1 & v2)
+    # -----------------------------------------------------------------
+    if sys.platform.startswith("linux"):
+        try:
+            cg_mem_limit: int | None = None
+            cg_mem_usage: int | None = None
+
+            # Cgroups v2
+            v2_max = "/sys/fs/cgroup/memory.max"
+            v2_cur = "/sys/fs/cgroup/memory.current"
+            if os.path.exists(v2_max) and os.path.exists(v2_cur):
+                with open(v2_max, encoding="utf-8", errors="ignore") as f:
+                    val = f.read().strip()
+                    if val.isdigit() and int(val) > 0:
+                        cg_mem_limit = int(val)
+                if cg_mem_limit is not None:
+                    with open(v2_cur, encoding="utf-8", errors="ignore") as f:
+                        c_val = f.read().strip()
+                        if c_val.isdigit():
+                            cg_mem_usage = int(c_val)
+
+            # Cgroups v1 fallback
+            if cg_mem_limit is None:
+                v1_limit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+                v1_usage = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+                if os.path.exists(v1_limit) and os.path.exists(v1_usage):
+                    with open(v1_limit, encoding="utf-8", errors="ignore") as f:
+                        val = f.read().strip()
+                        if val.isdigit() and int(val) < (1024**5):
+                            cg_mem_limit = int(val)
+                    if cg_mem_limit is not None:
+                        with open(v1_usage, encoding="utf-8", errors="ignore") as f:
+                            c_val = f.read().strip()
+                            if c_val.isdigit():
+                                cg_mem_usage = int(c_val)
+
+            if cg_mem_limit and cg_mem_usage is not None:
+                cg_tot_gb = round(cg_mem_limit / (1024**3), 1)
+                cg_used_gb = round(cg_mem_usage / (1024**3), 1)
+                cg_avail_gb = max(0.0, round((cg_mem_limit - cg_mem_usage) / (1024**3), 1))
+                if ram_total_gb == 0.0 or cg_tot_gb < ram_total_gb:
+                    ram_total_gb = cg_tot_gb
+                    ram_used_gb = cg_used_gb
+                    ram_avail_gb = cg_avail_gb
+                    ram_percent = (
+                        round((cg_mem_usage / cg_mem_limit) * 100, 1) if cg_mem_limit else 0.0
+                    )
+        except Exception:
+            pass
+
+    # -----------------------------------------------------------------
+    # Robust zero-dependency stdlib fallbacks (Linux /proc & Win32 APIs)
+    # -----------------------------------------------------------------
+    if not has_psutil or ram_total_gb == 0.0:
+        try:
+            drive = os.path.splitdrive(os.getcwd())[0] or "/"
+            d_usage = shutil.disk_usage(drive)
+            disk_total_gb = round(d_usage.total / (1024**3), 1)
+            disk_used_gb = round(d_usage.used / (1024**3), 1)
+            disk_free_gb = round(d_usage.free / (1024**3), 1)
+            disk_percent = (
+                round((d_usage.used / d_usage.total) * 100, 1) if d_usage.total else 0.0
+            )
+        except Exception:
+            pass
+
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong),
+                        ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                stat = MEMORYSTATUSEX()
+                stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                    ram_percent = float(stat.dwMemoryLoad)
+                    ram_total_gb = round(stat.ullTotalPhys / (1024**3), 1)
+                    ram_avail_gb = round(stat.ullAvailPhys / (1024**3), 1)
+                    ram_used_gb = round(ram_total_gb - ram_avail_gb, 1)
+            except Exception:
+                pass
+        elif sys.platform.startswith("linux"):
+            try:
+                mem_dict: dict[str, int] = {}
+                with open("/proc/meminfo", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            raw_val = parts[1].strip().split()[0]
+                            if raw_val.isdigit():
+                                mem_dict[parts[0].strip()] = int(raw_val)
+                if "MemTotal" in mem_dict:
+                    tot_kb = mem_dict["MemTotal"]
+                    cache_buf = mem_dict.get("Buffers", 0) + mem_dict.get("Cached", 0)
+                    avail_kb = mem_dict.get(
+                        "MemAvailable",
+                        mem_dict.get("MemFree", 0) + cache_buf,
+                    )
+                    used_kb = max(0, tot_kb - avail_kb)
+                    ram_total_gb = round(tot_kb / (1024**2), 1)
+                    ram_avail_gb = round(avail_kb / (1024**2), 1)
+                    ram_used_gb = round(used_kb / (1024**2), 1)
+                    ram_percent = round((used_kb / tot_kb) * 100, 1) if tot_kb else 0.0
+            except Exception:
+                pass
+
+    if not uptime_seconds:
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                uptime_seconds = int(ctypes.windll.kernel32.GetTickCount64() / 1000)
+            except Exception:
+                pass
+        elif sys.platform.startswith("linux"):
+            try:
+                with open("/proc/uptime", encoding="utf-8", errors="ignore") as f:
+                    uptime_seconds = int(float(f.read().split()[0]))
+            except Exception:
+                pass
+
+    # Fallback network I/O
+    if not net_bytes_sent:
+        if sys.platform.startswith("linux"):
+            try:
+                with open("/proc/net/dev", encoding="utf-8", errors="ignore") as f:
+                    for dev_line in f.readlines()[2:]:
+                        fields = dev_line.split()
+                        if len(fields) >= 10 and not fields[0].startswith("lo:"):
+                            net_bytes_recv += int(fields[1])
+                            net_packets_recv += int(fields[2])
+                            net_bytes_sent += int(fields[9])
+                            net_packets_sent += int(fields[10])
+            except Exception:
+                pass
+        elif sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class MIB_IFROW(ctypes.Structure):
+                    _fields_ = [
+                        ("wszName", wintypes.WCHAR * 256),
+                        ("dwIndex", wintypes.DWORD),
+                        ("dwType", wintypes.DWORD),
+                        ("dwMtu", wintypes.DWORD),
+                        ("dwSpeed", wintypes.DWORD),
+                        ("dwPhysAddrLen", wintypes.DWORD),
+                        ("bPhysAddr", ctypes.c_ubyte * 8),
+                        ("dwAdminStatus", wintypes.DWORD),
+                        ("dwOperStatus", wintypes.DWORD),
+                        ("dwLastChange", wintypes.DWORD),
+                        ("dwInOctets", wintypes.DWORD),
+                        ("dwInUcastPkts", wintypes.DWORD),
+                        ("dwInNUcastPkts", wintypes.DWORD),
+                        ("dwInDiscards", wintypes.DWORD),
+                        ("dwInErrors", wintypes.DWORD),
+                        ("dwInUnknownProtos", wintypes.DWORD),
+                        ("dwOutOctets", wintypes.DWORD),
+                        ("dwOutUcastPkts", wintypes.DWORD),
+                        ("dwOutNUcastPkts", wintypes.DWORD),
+                        ("dwOutDiscards", wintypes.DWORD),
+                        ("dwOutErrors", wintypes.DWORD),
+                        ("dwOutQLen", wintypes.DWORD),
+                        ("dwDescrLen", wintypes.DWORD),
+                        ("bDescr", ctypes.c_char * 256),
+                    ]
+
+                iphlpapi = ctypes.windll.iphlpapi
+                table_size = wintypes.ULONG(0)
+                iphlpapi.GetIfTable(None, ctypes.byref(table_size), False)
+                if table_size.value > 0:
+                    buf = (ctypes.c_ubyte * table_size.value)()
+                    if iphlpapi.GetIfTable(buf, ctypes.byref(table_size), False) == 0:
+                        num_entries = wintypes.DWORD.from_buffer_copy(bytes(buf[:4])).value
+                        offset = 4
+                        row_size = ctypes.sizeof(MIB_IFROW)
+                        for _ in range(num_entries):
+                            row = MIB_IFROW.from_buffer_copy(bytes(buf[offset : offset + row_size]))
+                            if row.dwType != 24:  # MIB_IF_TYPE_LOOPBACK = 24
+                                net_bytes_recv += int(row.dwInOctets)
+                                net_bytes_sent += int(row.dwOutOctets)
+                                net_packets_recv += int(row.dwInUcastPkts + row.dwInNUcastPkts)
+                                net_packets_sent += int(row.dwOutUcastPkts + row.dwOutNUcastPkts)
+                            offset += row_size
+            except Exception:
+                pass
+
+    # CPU percentage normalization / fallback
+    if cpu_percent <= 0.0:
+        if load_avg_str:
+            try:
+                l1 = float(load_avg_str.split(",")[0])
+                cpu_percent = round(min(100.0, max(0.0, (l1 / cpu_count) * 100.0)), 1)
+            except Exception:
+                pass
+        elif sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class FILETIME(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLowDateTime", wintypes.DWORD),
+                        ("dwHighDateTime", wintypes.DWORD),
+                    ]
+
+                def _ft_to_int(ft: Any) -> int:
+                    return int((ft.dwHighDateTime << 32) | ft.dwLowDateTime)
+
+                i1, k1, u1 = FILETIME(), FILETIME(), FILETIME()
+                i2, k2, u2 = FILETIME(), FILETIME(), FILETIME()
+                kernel32 = ctypes.windll.kernel32
+                if kernel32.GetSystemTimes(ctypes.byref(i1), ctypes.byref(k1), ctypes.byref(u1)):
+                    time.sleep(0.02)
+                    if kernel32.GetSystemTimes(
+                        ctypes.byref(i2), ctypes.byref(k2), ctypes.byref(u2)
+                    ):
+                        idle_delta = _ft_to_int(i2) - _ft_to_int(i1)
+                        kernel_delta = _ft_to_int(k2) - _ft_to_int(k1)
+                        user_delta = _ft_to_int(u2) - _ft_to_int(u1)
+                        total_sys = kernel_delta + user_delta
+                        if total_sys > 0:
+                            cpu_percent = round(
+                                max(
+                                    0.0,
+                                    min(100.0, ((total_sys - idle_delta) / total_sys) * 100.0),
+                                ),
+                                1,
+                            )
+            except Exception:
+                pass
+
+    def _format_bytes(b: int) -> str:
+        if b >= 1024**3:
+            return f"{b / (1024 ** 3):.2f} GB"
+        if b >= 1024**2:
+            return f"{b / (1024 ** 2):.1f} MB"
+        if b >= 1024:
+            return f"{b / 1024:.0f} KB"
+        return f"{b} B"
+
+    uptime_str = "Đang hoạt động"
+    if uptime_seconds is not None:
+        if uptime_seconds <= 0:
+            uptime_str = "Vừa khởi động"
+        elif uptime_seconds < 60:
+            uptime_str = f"{uptime_seconds} giây"
+        else:
+            days = uptime_seconds // 86400
+            hours = (uptime_seconds % 86400) // 3600
+            minutes = (uptime_seconds % 3600) // 60
+            if days > 0:
+                uptime_str = f"{days} ngày {hours} giờ"
+            elif hours > 0:
+                uptime_str = f"{hours} giờ {minutes} phút"
+            else:
+                uptime_str = f"{minutes} phút"
+
+    # Friendly CPU label
+    if cpu_model and cpu_model != f"{cpu_count} vCPU":
+        cpu_display_label = f"{cpu_count} vCPU • {cpu_model}"
+    elif cpu_freq_mhz:
+        cpu_display_label = f"{cpu_count} vCPU @ {cpu_freq_mhz / 1000:.1f} GHz"
+    else:
+        cpu_display_label = f"{cpu_count} vCPU"
+
+    traffic_str = (
+        f"Gửi: {_format_bytes(net_bytes_sent)} • Nhận: {_format_bytes(net_bytes_recv)}"
+    )
+
+    return {
+        "hostname": hostname,
+        "os": os_name,
+        "status": "HEALTHY",
+        "node_label": node_label,
+        "cpu": {
+            "percent": cpu_percent,
+            "cores": cpu_count,
+            "frequency_mhz": cpu_freq_mhz,
+            "model": cpu_model,
+            "load_avg": load_avg_str,
+            "label": cpu_display_label,
+        },
+        "memory": {
+            "percent": ram_percent,
+            "total_gb": ram_total_gb,
+            "used_gb": ram_used_gb,
+            "available_gb": ram_avail_gb,
+            "label": f"{ram_used_gb} / {ram_total_gb} GB",
+            "available_label": f"{ram_avail_gb} GB khả dụng",
+        },
+        "disk": {
+            "percent": disk_percent,
+            "total_gb": disk_total_gb,
+            "used_gb": disk_used_gb,
+            "free_gb": disk_free_gb,
+            "label": f"{disk_used_gb} GB / {disk_total_gb} GB",
+            "free_label": f"{disk_free_gb} GB còn trống",
+        },
+        "network": {
+            "bytes_sent": net_bytes_sent,
+            "bytes_recv": net_bytes_recv,
+            "packets_sent": net_packets_sent,
+            "packets_recv": net_packets_recv,
+            "traffic_label": traffic_str,
+            "total_formatted": _format_bytes(net_bytes_sent + net_bytes_recv),
+        },
+        "uptime": uptime_str,
+        "uptime_seconds": uptime_seconds,
+        "collected_at": utc_now().isoformat(),
+    }
 
 
 # =====================================================================

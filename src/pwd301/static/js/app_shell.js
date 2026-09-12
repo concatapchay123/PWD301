@@ -34,32 +34,55 @@
     initSidebarToggle() {
       const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
       const footerToggleBtn = document.getElementById('sidebar-collapse-btn');
+      const brandWrapper = document.querySelector('.topbar-brand-wrapper');
 
-      if (topbarToggleBtn) {
+      if (topbarToggleBtn && !topbarToggleBtn._boundToggle) {
+        topbarToggleBtn._boundToggle = true;
         topbarToggleBtn.addEventListener('click', (e) => {
           e.preventDefault();
-          this.toggleSidebar();
+          e.stopPropagation();
+          this.toggleSidebar(e);
         });
       }
 
-      if (footerToggleBtn) {
+      if (footerToggleBtn && !footerToggleBtn._boundToggle) {
+        footerToggleBtn._boundToggle = true;
         footerToggleBtn.addEventListener('click', (e) => {
           e.preventDefault();
-          this.toggleSidebar();
+          e.stopPropagation();
+          this.toggleSidebar(e);
+        });
+      }
+
+      if (brandWrapper && !brandWrapper._boundToggle) {
+        brandWrapper._boundToggle = true;
+        brandWrapper.addEventListener('click', (e) => {
+          // If the click originated from or inside the toggle button, do nothing (handled by button)
+          if (e.target.closest('#sidebar-toggle-btn')) {
+            return;
+          }
+          if (document.documentElement.classList.contains('sidebar-collapsed')) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleSidebar(e);
+          }
         });
       }
 
       // Keyboard shortcut: Ctrl + B (or Cmd + B on Mac)
-      document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
-          const target = e.target;
-          const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-          if (!isInput) {
-            e.preventDefault();
-            this.toggleSidebar();
+      if (!this._boundKeyboard) {
+        this._boundKeyboard = true;
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+            const target = e.target;
+            const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+            if (!isInput) {
+              e.preventDefault();
+              this.toggleSidebar(e);
+            }
           }
-        }
-      });
+        });
+      }
 
       // Initialize Bootstrap Tooltips for sidebar links in collapsed state
       if (typeof window.bootstrap !== 'undefined' && window.bootstrap.Tooltip) {
@@ -75,7 +98,17 @@
       }
     },
 
-    toggleSidebar() {
+    _lastToggleTime: 0,
+    toggleSidebar(e) {
+      const now = Date.now();
+      if (now - (this._lastToggleTime || 0) < 200) {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        return;
+      }
+      this._lastToggleTime = now;
+      if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
       const isCurrentlyCollapsed = document.documentElement.classList.contains('sidebar-collapsed');
       const nextState = !isCurrentlyCollapsed;
 
@@ -84,13 +117,13 @@
         document.body.classList.add('sidebar-collapsed');
         try {
           localStorage.setItem('pwd301_sidebar_collapsed', 'true');
-        } catch (e) {}
+        } catch (err) {}
       } else {
         document.documentElement.classList.remove('sidebar-collapsed');
         document.body.classList.remove('sidebar-collapsed');
         try {
           localStorage.setItem('pwd301_sidebar_collapsed', 'false');
-        } catch (e) {}
+        } catch (err) {}
       }
 
       const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
@@ -260,18 +293,27 @@
       msgContainer.scrollTop = msgContainer.scrollHeight;
 
       // 3. Request AI response from backend
+      const payload = { message: text };
+      if (this._activeConversationId) {
+        payload.conversation_id = this._activeConversationId;
+      }
+
       fetch('/student/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCsrfToken()
         },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify(payload)
       })
       .then(res => res.json())
       .then(data => {
         const ind = document.getElementById('ai-typing-indicator');
         if (ind) ind.remove();
+
+        if (data.conversation_id) {
+          this._activeConversationId = data.conversation_id;
+        }
 
         const reply = data.reply || (data.error && data.error.message) || 'Cảm ơn câu hỏi của bạn. Hãy cùng xem lại bài học nhé!';
         const botMsg = document.createElement('div');
@@ -281,7 +323,7 @@
             <img src="/static/img/octopus_mascot.png" alt="Bạch Tuộc AI" class="rounded-circle" width="30" height="30">
           </div>
           <div class="ai-msg-content">
-            <div>${escapeHtml(reply)}</div>
+            <div style="white-space: pre-wrap; line-height: 1.6;">${escapeHtml(reply)}</div>
             <div class="ai-citation-badge mt-2">🐙 <strong>Trợ lý Bạch Tuộc AI:</strong> Trực tiếp từ giáo trình PWD301</div>
           </div>
         `;
@@ -311,7 +353,11 @@
 
   window.PWD.appShell = appShell;
 
-  document.addEventListener('DOMContentLoaded', () => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      appShell.init();
+    });
+  } else {
     appShell.init();
-  });
+  }
 })();

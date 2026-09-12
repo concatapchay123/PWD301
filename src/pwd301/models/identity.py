@@ -13,7 +13,9 @@ Implements canonical schema tables from sql/001_identity.sql:
 
 from __future__ import annotations
 
+import json
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from flask_login import AnonymousUserMixin, UserMixin
@@ -495,6 +497,41 @@ class InstructorApplication(Base):
         backref="instructor_applications",
     )
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+
+    @property
+    def parsed_details(self) -> dict[str, Any]:
+        """Parse structured application information from JSON note, fallback to raw dict."""
+        if not self.application_note:
+            return {}
+        try:
+            val = json.loads(self.application_note)
+            if isinstance(val, dict):
+                return val
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return {"raw_note": self.application_note}
+
+    @property
+    def status_label_vi(self) -> str:
+        """Return Vietnamese user-friendly status label."""
+        labels = {
+            "PENDING": "Chờ duyệt",
+            "APPROVED": "Đã duyệt",
+            "REJECTED": "Đã từ chối",
+            "CANCELLED": "Đã hủy",
+        }
+        return labels.get(self.status, self.status)
+
+    @property
+    def status_badge_class(self) -> str:
+        """Return CSS class for badge styling."""
+        classes = {
+            "PENDING": "badge-warning bg-amber-subtle text-amber-800",
+            "APPROVED": "badge-success bg-emerald-subtle text-emerald-800",
+            "REJECTED": "badge-danger bg-rose-subtle text-rose-800",
+            "CANCELLED": "badge-secondary bg-slate-subtle text-slate-700",
+        }
+        return classes.get(self.status, "badge-secondary")
 
 
 class SecurityEvent(Base):

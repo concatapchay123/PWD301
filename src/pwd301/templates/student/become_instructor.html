@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}Đăng ký trở thành Giảng viên — PWD301 LMS{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+  <!-- Page Header -->
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">HỢP TÁC ĐÀO TẠO</span>
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1" style="font-size: 11px;">INSTRUCTOR ONBOARDING</span>
+      </div>
+      <h1 class="h4 fw-bold text-slate-900 mb-1">Đề cử & Đăng ký trở thành Giảng viên</h1>
+      <p class="text-muted small mb-0">Chia sẻ tri thức, xây dựng khóa học chất lượng cao và đồng hành cùng cộng đồng người học trên nền tảng PWD301 LMS.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Về Bảng điều khiển</a>
+    </div>
+  </div>
+
+  <!-- Flash Messages Alert Box -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show shadow-sm mb-4" role="alert">
+          <div class="d-flex align-items-center gap-2">
+            {% if category == 'success' %}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            {% else %}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            {% endif %}
+            <span>{{ message }}</span>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if is_already_instructor %}
+    <!-- Case 1: User is already an Instructor or Admin -->
+    <div class="card shadow-sm border-0 mb-4" style="background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);">
+      <div class="card-body p-4 p-md-5 text-center">
+        <div class="d-inline-flex p-3 rounded-circle bg-white shadow-sm mb-3 text-primary">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+            <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+          </svg>
+        </div>
+        <h2 class="h4 fw-bold text-slate-900 mb-2">Bạn hiện đã có quyền Giảng viên (Instructor)!</h2>
+        <p class="text-muted mx-auto mb-4" style="max-width: 580px; font-size: 14.5px;">
+          Tài khoản của bạn đã được kích hoạt đầy đủ các đặc quyền giảng dạy: tạo và quản lý khóa học, biên soạn ngân hàng câu hỏi, thiết lập bài kiểm tra và chấm bài thi tự luận.
+        </p>
+        <div class="d-flex flex-wrap justify-content-center gap-2">
+          <a href="{{ url_for('instructor.dashboard') }}" class="btn btn-primary px-4 py-2">Đi tới Bảng điều khiển Giảng viên →</a>
+          <a href="{{ url_for('instructor.my_courses') }}" class="btn btn-outline-primary px-4 py-2">Quản lý Khóa học của tôi</a>
+        </div>
+      </div>
+    </div>
+
+  {% elif application and application.status == 'PENDING' %}
+    <!-- Case 2: Application is PENDING review -->
+    <div class="card shadow-sm border-warning-subtle mb-4">
+      <div class="card-header bg-amber-subtle py-3 d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-warning text-dark px-2 py-1">CHỜ DUYỆT</span>
+          <span class="fw-bold text-slate-900" style="font-size: 14.5px;">Hồ sơ đề cử đang được Quản trị viên thẩm định</span>
+        </div>
+        <span class="text-caption text-muted">Mã hồ sơ: #{{ application.id }}</span>
+      </div>
+      <div class="card-body p-4">
+        <div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert" style="font-size: 13.5px;">
+          <svg class="flex-shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div>
+            <strong>Hồ sơ của bạn đã được ghi nhận vào hệ thống</strong> lúc {{ application.created_at.strftime('%H:%M, %d/%m/%Y') if application.created_at else 'gần đây' }}.
+            Ban Quản trị sẽ đối soát các minh chứng giảng dạy, email giáo dục và lịch công tác của bạn. Kết quả sẽ được phản hồi qua thông báo hệ thống.
+          </div>
+        </div>
+
+        <h5 class="fw-bold text-slate-900 mb-3" style="font-size: 15px;">Thông tin hồ sơ đã nộp</h5>
+        {% set d = application.parsed_details %}
+        <div class="row g-3 mb-4" style="font-size: 13.5px;">
+          <div class="col-md-6">
+            <div class="p-3 bg-light rounded border border-slate-200 h-100">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Cơ sở giáo dục / Tổ chức công tác</div>
+              <div class="fw-semibold text-slate-900">{{ d.institution_name or 'Chưa cung cấp' }}</div>
+              {% if d.faculty_department %}
+                <div class="text-muted small mt-1">{{ d.faculty_department }}</div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 bg-light rounded border border-slate-200 h-100">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Email giáo dục / Công tác xác thực</div>
+              <div class="fw-semibold text-primary font-monospace">{{ d.institution_email or 'Không có' }}</div>
+              {% if d.phone_number %}
+                <div class="text-muted small mt-1">SĐT: {{ d.phone_number }}</div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 bg-light rounded border border-slate-200 h-100">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Lĩnh vực chuyên môn & Kinh nghiệm</div>
+              <div class="fw-semibold text-slate-900">{{ d.specialization or 'Chưa phân loại' }}</div>
+              <div class="text-muted small mt-1">Kinh nghiệm: <strong>{{ d.experience_years or 0 }} năm</strong></div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 bg-light rounded border border-slate-200 h-100">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Thời khóa biểu / Lịch giảng dạy</div>
+              <div class="text-slate-800">{{ d.current_schedule or 'Chưa cập nhật' }}</div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="p-3 bg-light rounded border border-slate-200">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Bằng chứng giảng dạy & Hợp đồng</div>
+              <div class="text-slate-800 mb-2">{{ d.teaching_evidence or 'Không có thông tin' }}</div>
+              {% if d.employment_contract %}
+                <div class="small text-muted mb-1"><strong>Hợp đồng / Quyết định:</strong> {{ d.employment_contract }}</div>
+              {% endif %}
+              {% if d.salary_proof %}
+                <div class="small text-muted mb-1"><strong>Minh chứng thù lao/thu nhập:</strong> {{ d.salary_proof }}</div>
+              {% endif %}
+              {% if d.evidence_urls %}
+                <div class="mt-2 pt-2 border-top border-slate-200">
+                  <span class="small fw-semibold text-slate-700">Liên kết tài liệu minh chứng: </span>
+                  <a href="{{ d.evidence_urls }}" target="_blank" rel="noopener noreferrer" class="small text-primary text-break text-decoration-none">
+                    {{ d.evidence_urls }} ↗
+                  </a>
+                </div>
+              {% endif %}
+              {% if d.attached_files %}
+                <div class="mt-2 pt-2 border-top border-slate-200">
+                  <span class="small fw-semibold text-slate-700 d-block mb-1">Tệp tin đính kèm đã nộp:</span>
+                  <div class="d-flex flex-wrap gap-2">
+                    {% for f in d.attached_files %}
+                      <span class="badge bg-white text-slate-800 border p-1.5 d-inline-flex align-items-center gap-1">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <span>{{ f.name if f is mapping else f }}</span>
+                        {% if f is mapping and f.size %}<span class="text-muted small">({{ (f.size / 1024)|round(1) }} KB)</span>{% endif %}
+                      </span>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if d.statement_of_purpose %}
+          <div class="col-12">
+            <div class="p-3 bg-light rounded border border-slate-200">
+              <div class="text-caption text-muted fw-bold text-uppercase mb-1">Động lực & Định hướng đóng góp</div>
+              <div class="text-slate-800 fst-italic">"{{ d.statement_of_purpose }}"</div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+          <span class="text-muted small">Nếu bạn cần thay đổi hoặc bổ sung tài liệu mới, bạn có thể hủy đơn này và gửi lại đơn mới.</span>
+          <form method="POST" action="{{ url_for('student.cancel_become_instructor') }}" class="m-0" onsubmit="return confirm('Bạn có chắc chắn muốn hủy đơn đề cử giảng viên này không?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Hủy đơn đăng ký</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  {% else %}
+    <!-- Case 3: Rejected previous application (Notice banner) + Fresh Application Form -->
+    {% if application and application.status == 'REJECTED' %}
+      <div class="card shadow-sm border-danger-subtle mb-4">
+        <div class="card-header bg-rose-subtle py-2.5 d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-danger text-white">ĐÃ TỪ CHỐI</span>
+            <span class="fw-bold text-slate-900" style="font-size: 13.5px;">Phản hồi từ Ban Quản trị hệ thống</span>
+          </div>
+          <span class="text-caption text-muted">Đơn nộp ngày: {{ application.created_at.strftime('%d/%m/%Y') if application.created_at else '' }}</span>
+        </div>
+        <div class="card-body p-3" style="font-size: 13.5px;">
+          <p class="text-slate-700 mb-2">Đơn đăng ký trước đó của bạn chưa được duyệt với lý do sau:</p>
+          <div class="p-3 bg-white border rounded text-danger border-danger-subtle fw-semibold mb-2">
+            {{ application.review_reason or 'Hồ sơ chưa đáp ứng đầy đủ yêu cầu minh chứng chuyên môn.' }}
+          </div>
+          <div class="text-muted small">
+            Vui lòng rà soát lại các giấy tờ, minh chứng và điền lại biểu mẫu bên dưới để Ban Quản trị xem xét lại hồ sơ của bạn.
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Application Form Container -->
+    <div class="card shadow-sm border-slate-200">
+      <div class="card-header bg-white py-3 border-slate-100">
+        <div class="d-flex align-items-center justify-content-between">
+          <h2 class="h5 fw-bold text-slate-900 mb-0">Biểu mẫu Hồ sơ Đề cử Giảng viên</h2>
+          <span class="badge bg-light text-muted border">Yêu cầu minh chứng trung thực</span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('student.become_instructor') }}" id="instructor-nomination-form" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <!-- PHẦN 1: THÔNG TIN ĐỊNH DANH & CƠ SỞ CÔNG TÁC -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom border-slate-200">
+              <span class="badge bg-primary text-white rounded-pill px-2">1</span>
+              <h3 class="h6 fw-bold text-slate-900 mb-0">Thông tin Cơ sở Giáo dục & Lĩnh vực Chuyên môn</h3>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="institution_name" class="form-label fw-semibold small text-slate-800">
+                  Cơ sở giáo dục / Doanh nghiệp đang công tác <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="institution_name" name="institution_name" required
+                       placeholder="Ví dụ: Đại học Bách Khoa TP.HCM, Học viện Công nghệ..."
+                       value="{{ request.form.get('institution_name', '') }}">
+                <div class="form-text small">Tên trường đại học, cao đẳng, trung tâm đào tạo hoặc doanh nghiệp bạn đang giảng dạy/công tác.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="institution_email" class="form-label fw-semibold small text-slate-800">
+                  Tài khoản / Email giáo dục cơ sở (.edu, .edu.vn)
+                </label>
+                <input type="email" class="form-control" id="institution_email" name="institution_email"
+                       placeholder="Ví dụ: giangvien@hcmut.edu.vn hoặc lecturer@fpt.edu.vn"
+                       value="{{ request.form.get('institution_email', '') }}">
+                <div class="form-text small">Email công tác chính thức giúp đẩy nhanh quá trình thẩm định danh tính.</div>
+              </div>
+
+              <div class="col-md-5">
+                <label for="faculty_department" class="form-label fw-semibold small text-slate-800">
+                  Khoa / Bộ môn / Vị trí chuyên môn hiện tại
+                </label>
+                <input type="text" class="form-control" id="faculty_department" name="faculty_department"
+                       placeholder="Ví dụ: Khoa CNTT, Bộ môn Kỹ thuật Phần mềm..."
+                       value="{{ request.form.get('faculty_department', '') }}">
+              </div>
+
+              <div class="col-md-5">
+                <label for="specialization" class="form-label fw-semibold small text-slate-800">
+                  Lĩnh vực giảng dạy chính <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="specialization" name="specialization" required
+                       placeholder="Ví dụ: Lập trình Web Frontend, Backend Python, Trí tuệ Nhân tạo..."
+                       value="{{ request.form.get('specialization', '') }}">
+              </div>
+
+              <div class="col-md-2">
+                <label for="experience_years" class="form-label fw-semibold small text-slate-800">
+                  Số năm kinh nghiệm
+                </label>
+                <input type="number" class="form-control" id="experience_years" name="experience_years" min="0" max="50"
+                       placeholder="0" value="{{ request.form.get('experience_years', '1') }}">
+              </div>
+
+              <div class="col-md-6">
+                <label for="phone_number" class="form-label fw-semibold small text-slate-800">
+                  Số điện thoại liên hệ xác minh
+                </label>
+                <input type="tel" class="form-control" id="phone_number" name="phone_number"
+                       placeholder="Ví dụ: 0912345678"
+                       value="{{ request.form.get('phone_number', '') }}">
+              </div>
+            </div>
+          </div>
+
+          <!-- PHẦN 2: HỒ SƠ MINH CHỨNG & CHỨNG THỰC CÔNG TÁC -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom border-slate-200">
+              <span class="badge bg-primary text-white rounded-pill px-2">2</span>
+              <h3 class="h6 fw-bold text-slate-900 mb-0">Hồ sơ Minh chứng Năng lực & Quá trình Giảng dạy</h3>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-12">
+                <label for="teaching_evidence" class="form-label fw-semibold small text-slate-800">
+                  Bằng chứng giảng dạy & Chứng chỉ chuyên môn <span class="text-danger">*</span>
+                </label>
+                <textarea class="form-control" id="teaching_evidence" name="teaching_evidence" rows="3" required
+                          placeholder="Mô tả bằng cấp chuyên môn (Cử nhân, Thạc sĩ, Tiến sĩ), chứng chỉ nghiệp vụ sư phạm, các học phần đã giảng dạy, hoặc liên kết video bài giảng mẫu...">{{ request.form.get('teaching_evidence', '') }}</textarea>
+                <div class="form-text small">Cung cấp số hiệu chứng chỉ sư phạm, đơn vị cấp hoặc tóm tắt kinh nghiệm đứng lớp.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="salary_proof" class="form-label fw-semibold small text-slate-800">
+                  Bảng lương / Minh chứng thu nhập thù lao giảng dạy
+                </label>
+                <textarea class="form-control" id="salary_proof" name="salary_proof" rows="2"
+                          placeholder="Thông tin sao kê thù lao giảng dạy, quyết định bậc lương giảng viên hoặc xác nhận thu nhập công tác...">{{ request.form.get('salary_proof', '') }}</textarea>
+                <div class="form-text small">Chứng minh bạn đang có quan hệ công tác giảng dạy thực tế tại cơ sở.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="current_schedule" class="form-label fw-semibold small text-slate-800">
+                  Thời khóa biểu đi dạy hiện tại
+                </label>
+                <textarea class="form-control" id="current_schedule" name="current_schedule" rows="2"
+                          placeholder="Ví dụ: Thứ 2, Thứ 4 ca sáng tại Giảng đường B2; Thứ 7 hướng dẫn đồ án tốt nghiệp...">{{ request.form.get('current_schedule', '') }}</textarea>
+                <div class="form-text small">Giúp Ban Quản trị thẩm định thời gian biểu và tính khả dụng của giảng viên.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="employment_contract" class="form-label fw-semibold small text-slate-800">
+                  Hợp đồng làm việc / Quyết định bổ nhiệm giảng viên
+                </label>
+                <input type="text" class="form-control" id="employment_contract" name="employment_contract"
+                       placeholder="Ví dụ: Hợp đồng giảng viên số 128/HD-DHQG có hiệu lực 2024-2027"
+                       value="{{ request.form.get('employment_contract', '') }}">
+                <div class="form-text small">Số hợp đồng lao động, quyết định công tác hoặc mã số cán bộ giảng viên.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="evidence_files" class="form-label fw-semibold small text-slate-800">
+                  Tải lên tệp tin Hồ sơ minh chứng (PDF, Ảnh, Word...)
+                </label>
+                <input type="file" class="form-control" id="evidence_files" name="evidence_files" multiple accept=".pdf,.png,.jpg,.jpeg,.docx,.doc,.xlsx,.zip">
+                <div class="form-text small">Đính kèm các bản scan chứng chỉ sư phạm, hợp đồng giảng dạy, bảng lương/sao kê (tối đa 20MB/file).</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="evidence_urls" class="form-label fw-semibold small text-slate-800">
+                  Liên kết hồ sơ trực tuyến (Google Drive / OneDrive / Dropbox)
+                </label>
+                <input type="url" class="form-control" id="evidence_urls" name="evidence_urls"
+                       placeholder="https://drive.google.com/drive/folders/..."
+                       value="{{ request.form.get('evidence_urls', '') }}">
+                <div class="form-text small">Đường dẫn thư mục chứa video bài giảng mẫu hoặc tài liệu trực tuyến (hãy mở quyền truy cập).</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PHẦN 3: ĐỘNG LỰC & CAM KẾT ĐÀO TẠO -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom border-slate-200">
+              <span class="badge bg-primary text-white rounded-pill px-2">3</span>
+              <h3 class="h6 fw-bold text-slate-900 mb-0">Định hướng & Cam kết Giảng dạy</h3>
+            </div>
+
+            <div class="mb-3">
+              <label for="statement_of_purpose" class="form-label fw-semibold small text-slate-800">
+                Động lực & Kế hoạch đóng góp nội dung đào tạo
+              </label>
+              <textarea class="form-control" id="statement_of_purpose" name="statement_of_purpose" rows="3"
+                        placeholder="Chia sẻ lý do bạn muốn giảng dạy trên PWD301 LMS, dự định xây dựng khóa học nào và cam kết chất lượng...">{{ request.form.get('statement_of_purpose', '') }}</textarea>
+            </div>
+
+            <div class="form-check p-3 bg-light rounded border border-slate-200">
+              <input class="form-check-input ms-0 me-2" type="checkbox" id="terms_consent" required>
+              <label class="form-check-label small text-slate-800" for="terms_consent">
+                Tôi cam đoan mọi thông tin và tài liệu minh chứng cung cấp trên đây là hoàn toàn xác thực và chịu trách nhiệm trước quy chế của nền tảng đào tạo PWD301 LMS.
+              </label>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="d-flex justify-content-end gap-2 pt-3 border-top">
+            <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary px-3">Hủy bỏ</a>
+            <button type="submit" class="btn btn-primary px-4 fw-semibold">
+              Gửi hồ sơ đề cử Giảng viên →
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

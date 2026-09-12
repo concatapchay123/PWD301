@@ -726,9 +726,7 @@ def update_assessment(
             if "time_limit_minutes" in payload
             else payload.get("duration_minutes")
         )
-        assessment.time_limit_minutes = (
-            int(raw_tl) if raw_tl is not None and raw_tl != "" else None
-        )
+        assessment.time_limit_minutes = int(raw_tl) if raw_tl is not None and raw_tl != "" else None
 
     if ("attempt_limit" in payload or "max_attempts" in payload) and not is_published:
         raw_al = (
@@ -736,9 +734,7 @@ def update_assessment(
             if "attempt_limit" in payload
             else payload.get("max_attempts")
         )
-        assessment.attempt_limit = (
-            int(raw_al) if raw_al is not None and raw_al != "" else None
-        )
+        assessment.attempt_limit = int(raw_al) if raw_al is not None and raw_al != "" else None
 
     if "passing_percent" in payload or "passing_score" in payload:
         raw_pass = (
@@ -758,9 +754,10 @@ def update_assessment(
         assessment.is_required_for_completion = bool(payload["is_required_for_completion"])
 
     if "is_randomized" in payload:
-        is_rand_val = (
-            payload["is_randomized"] is True
-            or str(payload["is_randomized"]).lower() in ("true", "1", "yes")
+        is_rand_val = payload["is_randomized"] is True or str(payload["is_randomized"]).lower() in (
+            "true",
+            "1",
+            "yes",
         )
         assessment.shuffle_questions = is_rand_val
         assessment.shuffle_choices = is_rand_val

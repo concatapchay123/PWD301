@@ -13,6 +13,7 @@
       this.store = window.PWD.store;
       this.router = window.PWD.router;
       this.components = window.PWD.components;
+      this._lastToggleTime = 0;
     }
 
     init() {
@@ -36,17 +37,26 @@
       } catch (e) {}
     }
 
-    toggleSidebar() {
+    toggleSidebar(e) {
+      const now = Date.now();
+      if (now - (this._lastToggleTime || 0) < 200) {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        return;
+      }
+      this._lastToggleTime = now;
+      if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
       const isCollapsed = document.documentElement.classList.contains('sidebar-collapsed');
       const nextState = !isCollapsed;
       if (nextState) {
         document.documentElement.classList.add('sidebar-collapsed');
         document.body.classList.add('sidebar-collapsed');
-        try { localStorage.setItem('pwd301_sidebar_collapsed', 'true'); } catch (e) {}
+        try { localStorage.setItem('pwd301_sidebar_collapsed', 'true'); } catch (err) {}
       } else {
         document.documentElement.classList.remove('sidebar-collapsed');
         document.body.classList.remove('sidebar-collapsed');
-        try { localStorage.setItem('pwd301_sidebar_collapsed', 'false'); } catch (e) {}
+        try { localStorage.setItem('pwd301_sidebar_collapsed', 'false'); } catch (err) {}
       }
       const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
       if (topbarToggleBtn) {
@@ -57,17 +67,55 @@
     }
 
     bindEvents() {
-      // Keyboard shortcut: Ctrl + B (or Cmd + B on Mac)
-      document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
-          const target = e.target;
-          const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-          if (!isInput) {
-            e.preventDefault();
-            this.toggleSidebar();
+      // Perspective dropdown change
+      const select = document.getElementById('perspective-select');
+      if (select) {
+        select.addEventListener('change', (e) => {
+          this.switchPerspective(e.target.value);
+        });
+      }
+
+      // Allow clicking topbar brand wrapper in collapsed state to expand sidebar (TikTok style)
+      const brandWrapper = document.querySelector('.topbar-brand-wrapper');
+      if (brandWrapper && !brandWrapper._boundToggle) {
+        brandWrapper._boundToggle = true;
+        brandWrapper.addEventListener('click', (e) => {
+          if (e.target.closest('#sidebar-toggle-btn')) {
+            return;
           }
-        }
-      });
+          if (document.documentElement.classList.contains('sidebar-collapsed')) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleSidebar(e);
+          }
+        });
+      }
+
+      // Sidebar toggle button click listener
+      const topbarToggleBtn = document.getElementById('sidebar-toggle-btn');
+      if (topbarToggleBtn && !topbarToggleBtn._boundToggle) {
+        topbarToggleBtn._boundToggle = true;
+        topbarToggleBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.toggleSidebar(e);
+        });
+      }
+
+      // Keyboard shortcut: Ctrl + B (or Cmd + B on Mac)
+      if (!this._boundKeyboard) {
+        this._boundKeyboard = true;
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+            const target = e.target;
+            const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+            if (!isInput) {
+              e.preventDefault();
+              this.toggleSidebar(e);
+            }
+          }
+        });
+      }
     }
 
     switchPerspective(role) {
@@ -399,15 +447,6 @@
       this.router.register('/admin/profile', () => v.admin.profile());
     }
 
-    bindEvents() {
-      // Perspective dropdown change
-      const select = document.getElementById('perspective-select');
-      if (select) {
-        select.addEventListener('change', (e) => {
-          this.switchPerspective(e.target.value);
-        });
-      }
-    }
 
     // ==========================================
     // THEME MANAGEMENT (Dark / Light Mode)
@@ -729,7 +768,11 @@
 
   window.PWD.app = new AppController();
 
-  document.addEventListener('DOMContentLoaded', () => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      window.PWD.app.init();
+    });
+  } else {
     window.PWD.app.init();
-  });
+  }
 })();

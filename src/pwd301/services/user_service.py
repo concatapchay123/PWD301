@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, scoped_session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from pwd301.extensions import db
-from pwd301.models.identity import Role, User, UserRole
+from pwd301.models.identity import InstructorApplication, Role, User, UserRole
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
 from pwd301.services.exceptions import (
@@ -29,8 +29,10 @@ from pwd301.services.exceptions import (
     InvalidEmailError,
     InvalidPasswordError,
     InvalidRoleAssignmentError,
+    ResourceNotFoundError,
     UserAlreadyExistsError,
     UserNotFoundError,
+    ValidationError,
 )
 from pwd301.services.jwt_auth_service import revoke_all_user_tokens
 from pwd301.services.session_auth_service import revoke_all_user_sessions
@@ -758,3 +760,334 @@ def verify_password_reset_token(token: str, max_age: int = 3600) -> int | None:
         except (BadSignature, SignatureExpired, Exception):
             return None
     return None
+
+
+# ==============================================================================
+# Instructor Application & Role Nomination Workflow
+# ==============================================================================
+
+
+def submit_instructor_application(
+    user_id: int,
+    application_data: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> InstructorApplication:
+    """Submit an application for a student to become an instructor.
+
+    Enforces:
+    - Target user must exist and be active.
+    - User cannot already possess INSTRUCTOR or ADMIN roles.
+    - User cannot have a currently PENDING application.
+    - Application data is validated and serialized to JSON into application_note (<= 2000 chars).
+    - Status is initialized to PENDING.
+    - An append-only AuditEvent is recorded.
+    """
+    sess = session if session is not None else db.session
+    user = sess.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError(f"User with ID {user_id} not found.")
+
+    if user.is_instructor or user.is_admin:
+        raise ValidationError("Bạn đã có quyền Giảng viên hoặc Quản trị viên trong hệ thống.")
+
+    # Check for active pending application
+    existing_pending = (
+        sess.query(InstructorApplication)
+        .filter(
+            InstructorApplication.applicant_user_id == user.id,
+            InstructorApplication.status == "PENDING",
+        )
+        .first()
+    )
+    if existing_pending is not None:
+        raise ValidationError(
+            "Bạn đang có một đơn đăng ký đang chờ xét duyệt. Vui lòng đợi quản trị viên "
+            "xử lý hoặc hủy đơn cũ trước khi gửi đơn mới."
+        )
+
+    # Basic validations on required fields
+    institution_name = str(application_data.get("institution_name", "")).strip()
+    specialization = str(application_data.get("specialization", "")).strip()
+    if not institution_name:
+        raise ValidationError("Vui lòng cung cấp tên cơ sở giáo dục hoặc tổ chức công tác.")
+    if not specialization:
+        raise ValidationError("Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy.")
+
+    # Experience years
+    try:
+        exp_years = int(application_data.get("experience_years", 0))
+    except (ValueError, TypeError):
+        exp_years = 0
+
+    attached_files = application_data.get("attached_files", [])
+    clean_data: dict[str, Any] = {
+        "institution_name": institution_name,
+        "institution_email": str(application_data.get("institution_email", "")).strip(),
+        "faculty_department": str(application_data.get("faculty_department", "")).strip(),
+        "specialization": specialization,
+        "experience_years": exp_years,
+        "phone_number": str(application_data.get("phone_number", "")).strip(),
+        "teaching_evidence": str(application_data.get("teaching_evidence", "")).strip(),
+        "salary_proof": str(application_data.get("salary_proof", "")).strip(),
+        "current_schedule": str(application_data.get("current_schedule", "")).strip(),
+        "employment_contract": str(application_data.get("employment_contract", "")).strip(),
+        "evidence_urls": str(application_data.get("evidence_urls", "")).strip(),
+        "statement_of_purpose": str(application_data.get("statement_of_purpose", "")).strip(),
+        "attached_files": attached_files if isinstance(attached_files, list) else [],
+    }
+
+    # Ensure JSON fits in 2000 chars
+    note_json = json.dumps(clean_data, ensure_ascii=False)
+    if len(note_json) > 2000:
+        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:200]
+        clean_data["teaching_evidence"] = str(clean_data["teaching_evidence"])[:200]
+        clean_data["salary_proof"] = str(clean_data["salary_proof"])[:150]
+        clean_data["current_schedule"] = str(clean_data["current_schedule"])[:150]
+        clean_data["employment_contract"] = str(clean_data["employment_contract"])[:150]
+        clean_data["evidence_urls"] = str(clean_data["evidence_urls"])[:200]
+        note_json = json.dumps(clean_data, ensure_ascii=False)[:2000]
+
+    now = utc_now()
+    app_record = InstructorApplication(
+        applicant_user_id=user.id,
+        status="PENDING",
+        application_note=note_json,
+        created_at=now,
+    )
+    sess.add(app_record)
+    sess.flush()
+
+    audit_entry = AuditEvent(
+        actor_user_id=user.id,
+        actor_roles_snapshot=",".join(sorted(user.role_codes)),
+        action="INSTRUCTOR_APPLICATION_SUBMITTED",
+        target_type="INSTRUCTOR_APPLICATION",
+        target_id=app_record.id,
+        reason=f"Đề cử trở thành Giảng viên ({institution_name} - {specialization})",
+        after_json=json.dumps({"status": "PENDING", "institution": institution_name}),
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return app_record
+
+
+def cancel_instructor_application(
+    user_id: int,
+    application_id: int,
+    session: Session | scoped_session[Any] | None = None,
+) -> InstructorApplication:
+    """Allow an applicant to cancel their own PENDING application."""
+    sess = session if session is not None else db.session
+    app_record = sess.get(InstructorApplication, application_id)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Đơn đăng ký #{application_id} không tồn tại.")
+
+    if app_record.applicant_user_id != user_id:
+        raise ValidationError("Bạn không có quyền thao tác trên đơn đăng ký này.")
+
+    if app_record.status != "PENDING":
+        raise ValidationError(
+            f"Chỉ có thể hủy đơn khi ở trạng thái Chờ duyệt "
+            f"(trạng thái hiện tại: {app_record.status})."
+        )
+
+    now = utc_now()
+    app_record.status = "CANCELLED"
+
+    audit_entry = AuditEvent(
+        actor_user_id=user_id,
+        actor_roles_snapshot="STUDENT",
+        action="INSTRUCTOR_APPLICATION_CANCELLED",
+        target_type="INSTRUCTOR_APPLICATION",
+        target_id=app_record.id,
+        reason="Học viên chủ động hủy đơn đăng ký",
+        after_json=json.dumps({"status": "CANCELLED"}),
+        created_at=now,
+    )
+    sess.add(audit_entry)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return app_record
+
+
+def get_user_active_application(
+    user_id: int,
+    session: Session | scoped_session[Any] | None = None,
+) -> InstructorApplication | None:
+    """Retrieve the latest instructor application for a user."""
+    sess = session if session is not None else db.session
+    return (
+        sess.query(InstructorApplication)
+        .filter(InstructorApplication.applicant_user_id == user_id)
+        .order_by(InstructorApplication.created_at.desc())
+        .first()
+    )
+
+
+def get_instructor_application(
+    application_id: int,
+    session: Session | scoped_session[Any] | None = None,
+) -> InstructorApplication | None:
+    """Retrieve an instructor application by primary key."""
+    sess = session if session is not None else db.session
+    return sess.get(InstructorApplication, application_id)
+
+
+def list_instructor_applications(
+    status: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[InstructorApplication]:
+    """List instructor applications with optional status filter, ordered by latest created_at."""
+    sess = session if session is not None else db.session
+    query = sess.query(InstructorApplication)
+    if status and status.upper() != "ALL":
+        query = query.filter(InstructorApplication.status == status.upper())
+    return query.order_by(InstructorApplication.created_at.desc()).all()
+
+
+def review_instructor_application(
+    application_id: int,
+    admin_user_id: int,
+    action: str,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> InstructorApplication:
+    """Review an instructor application (approve or reject) by an administrator."""
+    sess = session if session is not None else db.session
+    admin = sess.get(User, admin_user_id)
+    if admin is None or not admin.is_admin:
+        raise ValidationError(
+            "Chỉ Quản trị viên (Admin) mới có quyền xét duyệt đơn đăng ký giảng viên."
+        )
+
+    clean_action = str(action).strip().lower()
+    if clean_action not in ("approve", "reject"):
+        raise ValidationError("Hành động xét duyệt phải là 'approve' hoặc 'reject'.")
+
+    app_record = sess.get(InstructorApplication, application_id)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Đơn đăng ký #{application_id} không tồn tại.")
+
+    if app_record.status != "PENDING":
+        raise ValidationError(
+            f"Đơn đăng ký #{application_id} không ở trạng thái Chờ duyệt "
+            f"(trạng thái hiện tại: {app_record.status})."
+        )
+
+    now = utc_now()
+    clean_reason = (reason or "").strip()
+
+    if clean_action == "approve":
+        # Assign INSTRUCTOR role adhering to AUTH-002 cumulative hierarchy
+        assign_role_to_user(
+            user_id=app_record.applicant_user_id,
+            role_code="INSTRUCTOR",
+            assigned_by_user_id=admin.id,
+            reason=(
+                f"Phê duyệt đơn đăng ký giảng viên #{app_record.id}: "
+                f"{clean_reason or 'Đạt yêu cầu chuyên môn'}"
+            ),
+            session=sess,
+        )
+        app_record.status = "APPROVED"
+        app_record.reviewed_by_user_id = admin.id
+        app_record.reviewed_at = now
+        app_record.review_reason = clean_reason or "Đơn đăng ký được phê duyệt thành công."
+
+        # Send in-app notification to applicant
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=app_record.applicant_user_id,
+                event_type="ROLE_CHANGED",
+                title="Đơn đăng ký Giảng viên đã được phê duyệt!",
+                body=(
+                    f"Chúc mừng bạn! Quản trị viên đã phê duyệt đơn đăng ký giảng viên "
+                    f"của bạn. Quyền Giảng viên (Instructor) đã được kích hoạt trên "
+                    f"tài khoản. {clean_reason}"
+                ),
+                action_url="/instructor/dashboard",
+                category="SYSTEM",
+                session=sess,
+            )
+        except Exception:
+            pass
+
+        audit_entry = AuditEvent(
+            actor_user_id=admin.id,
+            actor_roles_snapshot=",".join(sorted(admin.role_codes)),
+            action="INSTRUCTOR_APPLICATION_APPROVED",
+            target_type="INSTRUCTOR_APPLICATION",
+            target_id=app_record.id,
+            reason=clean_reason or "Phê duyệt đơn đăng ký giảng viên",
+            before_json=json.dumps({"status": "PENDING"}),
+            after_json=json.dumps({"status": "APPROVED", "granted_role": "INSTRUCTOR"}),
+            performed_as_admin=True,
+            created_at=now,
+        )
+        sess.add(audit_entry)
+
+    else:  # reject
+        if not clean_reason:
+            raise ValidationError(
+                "Vui lòng cung cấp lý do từ chối đơn đăng ký để thông báo cho ứng viên."
+            )
+
+        app_record.status = "REJECTED"
+        app_record.reviewed_by_user_id = admin.id
+        app_record.reviewed_at = now
+        app_record.review_reason = clean_reason
+
+        # Send in-app notification to applicant
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=app_record.applicant_user_id,
+                event_type="ROLE_CHANGED",
+                title="Thông báo kết quả xét duyệt đơn Giảng viên",
+                body=(
+                    f"Đơn đăng ký trở thành Giảng viên của bạn chưa được chấp thuận. "
+                    f"Lý do: {clean_reason}. Bạn có thể cập nhật thông tin và nộp lại hồ sơ sau."
+                ),
+                action_url="/student/become-instructor",
+                category="SYSTEM",
+                session=sess,
+            )
+        except Exception:
+            pass
+
+        audit_entry = AuditEvent(
+            actor_user_id=admin.id,
+            actor_roles_snapshot=",".join(sorted(admin.role_codes)),
+            action="INSTRUCTOR_APPLICATION_REJECTED",
+            target_type="INSTRUCTOR_APPLICATION",
+            target_id=app_record.id,
+            reason=clean_reason,
+            before_json=json.dumps({"status": "PENDING"}),
+            after_json=json.dumps({"status": "REJECTED", "reason": clean_reason}),
+            performed_as_admin=True,
+            created_at=now,
+        )
+        sess.add(audit_entry)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return app_record

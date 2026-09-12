@@ -584,6 +584,17 @@ def api_admin_health() -> tuple[Response, int] | Response:
     return jsonify(report), 200
 
 
+@api_admin_bp.route("/telemetry", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_telemetry() -> tuple[Response, int] | Response:
+    """Retrieve live physical server hardware telemetry for administrators."""
+    require_authenticated_actor()
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    return jsonify(get_real_system_telemetry()), 200
+
+
 @api_admin_bp.route("/backups", methods=["GET"])
 @jwt_required
 @admin_required
@@ -735,6 +746,134 @@ def api_admin_maintenance_status() -> tuple[Response, int] | Response:
             {
                 "is_active": is_active,
                 "maintenance_window": window.to_dict() if window else None,
+            }
+        ),
+        200,
+    )
+
+
+# ==============================================================================
+# Instructor Applications Admin API
+# ==============================================================================
+
+
+@api_admin_bp.route("/instructor-applications", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_instructor_applications() -> tuple[Response, int] | Response:
+    """List instructor applications (Admin JWT required)."""
+    from pwd301.models.identity import InstructorApplication
+    from pwd301.services.user_service import list_instructor_applications
+
+    require_authenticated_actor()
+    sess = db.session
+
+    status_filter = request.args.get("status", "PENDING").strip().upper()
+    if status_filter not in ("PENDING", "APPROVED", "REJECTED", "CANCELLED", "ALL"):
+        status_filter = "PENDING"
+
+    applications = list_instructor_applications(status=status_filter, session=sess)
+    all_apps = sess.query(InstructorApplication).all()
+    pending_count = sum(1 for a in all_apps if a.status == "PENDING")
+
+    return (
+        jsonify(
+            {
+                "total": len(applications),
+                "pending_count": pending_count,
+                "applications": [
+                    {
+                        "id": a.id,
+                        "applicant_user_id": a.applicant_user_id,
+                        "applicant_name": a.applicant.display_name if a.applicant else "N/A",
+                        "applicant_email": a.applicant.email if a.applicant else "N/A",
+                        "status": a.status,
+                        "status_label": a.status_label_vi,
+                        "details": a.parsed_details,
+                        "reviewed_by": a.reviewed_by.display_name if a.reviewed_by else None,
+                        "review_reason": a.review_reason,
+                        "created_at": a.created_at.isoformat(),
+                        "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+                    }
+                    for a in applications
+                ],
+            }
+        ),
+        200,
+    )
+
+
+@api_admin_bp.route("/instructor-applications/<int:app_id>", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | Response:
+    """Get single instructor application details (Admin JWT required)."""
+    from pwd301.services.user_service import get_instructor_application
+
+    require_authenticated_actor()
+    app_record = get_instructor_application(app_id, session=db.session)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Instructor application #{app_id} not found.")
+
+    return (
+        jsonify(
+            {
+                "id": app_record.id,
+                "applicant_user_id": app_record.applicant_user_id,
+                "applicant_name": app_record.applicant.display_name
+                if app_record.applicant
+                else "N/A",
+                "applicant_email": app_record.applicant.email if app_record.applicant else "N/A",
+                "status": app_record.status,
+                "status_label": app_record.status_label_vi,
+                "details": app_record.parsed_details,
+                "reviewed_by": app_record.reviewed_by.display_name
+                if app_record.reviewed_by
+                else None,
+                "review_reason": app_record.review_reason,
+                "created_at": app_record.created_at.isoformat(),
+                "reviewed_at": app_record.reviewed_at.isoformat()
+                if app_record.reviewed_at
+                else None,
+            }
+        ),
+        200,
+    )
+
+
+@api_admin_bp.route("/instructor-applications/<int:app_id>/review", methods=["POST"])
+@jwt_required
+@admin_required
+def api_admin_review_instructor_application(app_id: int) -> tuple[Response, int] | Response:
+    """Approve or reject instructor application (Admin JWT required)."""
+    from pwd301.services.user_service import review_instructor_application
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action", "")).strip().lower()
+    reason = str(payload.get("reason", "")).strip()
+
+    try:
+        app_record = review_instructor_application(
+            application_id=app_id,
+            admin_user_id=actor.id,
+            action=action,
+            reason=reason,
+            session=db.session,
+        )
+    except (ValidationError, ResourceNotFoundError) as exc:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    return (
+        jsonify(
+            {
+                "message": (
+                    f"Đã phê duyệt đơn #{app_id} thành công."
+                    if action == "approve"
+                    else f"Đã từ chối đơn #{app_id}."
+                ),
+                "application_id": app_record.id,
+                "status": app_record.status,
             }
         ),
         200,

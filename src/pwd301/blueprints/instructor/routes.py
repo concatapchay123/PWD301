@@ -72,6 +72,7 @@ from pwd301.services.exceptions import (
     AttemptValidationError,
     CourseValidationError,
     LessonValidationError,
+    ResourceNotFoundError,
 )
 from pwd301.services.file_service import (
     _serialize_file_asset,
@@ -1098,7 +1099,11 @@ def get_instructor_assessment_detail_route(assessment_id: str) -> Any:
     data = get_assessment_detail(actor, assessment_id, session=db.session)
     if request.accept_mimetypes.accept_html and not request.is_json:
         asm_obj = _resolve_assessment(assessment_id, session=db.session)
+        if asm_obj is None:
+            raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
         course = db.session.query(Course).filter(Course.id == asm_obj.course_id).first()
+        if course is None:
+            raise ResourceNotFoundError("Associated course not found.")
         available_questions = (
             db.session.query(Question)
             .filter(Question.course_id == course.id, Question.status == "ACTIVE")
@@ -1360,9 +1365,7 @@ def assign_instructor_question_route(assessment_id: str) -> Any:
     "/assessments/<assessment_id>/questions/<question_id>/remove", methods=["POST"]
 )
 @instructor_required
-def remove_instructor_question_route(
-    assessment_id: str, question_id: str
-) -> Any:
+def remove_instructor_question_route(assessment_id: str, question_id: str) -> Any:
     """Remove a fixed question from assessment."""
     actor = require_authenticated_actor()
 

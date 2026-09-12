@@ -215,3 +215,104 @@ def test_student_analytics_overview_api(
     assert "upcoming_assessments" in data
     assert "recent_results" in data
     assert "enrollments" in data
+
+
+def test_admin_telemetry_endpoints(
+    client: FlaskClient,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Test GET /admin/telemetry and GET /api/admin/telemetry return real hardware metrics."""
+    # 1. Admin Web session to /admin/telemetry
+    login_web_user(client, admin_user)
+    resp_web = client.get("/admin/telemetry")
+    assert resp_web.status_code == 200
+    web_data = resp_web.get_json()
+    assert isinstance(web_data, dict)
+    assert "cpu" in web_data and "memory" in web_data and "disk" in web_data
+    assert web_data["cpu"]["cores"] >= 1
+    assert "model" in web_data["cpu"]
+    assert web_data["memory"]["total_gb"] > 0
+    assert web_data["disk"]["total_gb"] > 0
+    assert "node_label" in web_data
+
+    # 2. Admin Bearer JWT to /api/admin/telemetry
+    tokens = create_token_pair(admin_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp_api = client.get("/api/admin/telemetry", headers=headers)
+    assert resp_api.status_code == 200
+    api_data = resp_api.get_json()
+    assert api_data["hostname"] == web_data["hostname"]
+    assert api_data["cpu"]["cores"] == web_data["cpu"]["cores"]
+
+    # 3. Student forbidden on telemetry
+    login_web_user(client, student_user)
+    resp_forbidden = client.get("/admin/telemetry")
+    assert resp_forbidden.status_code == 403
+
+
+def test_admin_dashboard_web_renders_hardware_telemetry(
+    client: FlaskClient,
+    admin_user: User,
+) -> None:
+    """Admin dashboard /admin/dashboard renders HTML with real hardware telemetry."""
+    import re
+    login_web_user(client, admin_user)
+    resp = client.get("/admin/dashboard")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert (
+        "Trung tâm Điều hành &amp; Quản trị Hệ thống" in html
+        or "Trung tâm Điều hành & Quản trị Hệ thống" in html
+    )
+    assert "Vi xử lý CPU" in html
+    assert "Bộ nhớ RAM" in html
+    assert "Lưu trữ Ổ đĩa" in html
+    assert "Lưu lượng Mạng" in html
+    assert "btn-refresh-telemetry" in html
+    assert "refreshServerTelemetry" in html
+
+    # Deep verification: Assert DOM elements contain real hardware values, not nulls
+    cores_match = re.search(r'id="telem-cpu-cores"[^>]*>(\d+)\s*Cores<', html)
+    assert cores_match and int(cores_match.group(1)) >= 1
+
+    ram_match = re.search(r'id="telem-ram-label"[^>]*>([^<]+)<', html)
+    assert ram_match and "GB" in ram_match.group(1)
+    assert ram_match.group(1) != "0 / 0 GB"
+
+    disk_match = re.search(r'id="telem-disk-label"[^>]*>([^<]+)<', html)
+    assert disk_match and "GB" in disk_match.group(1)
+
+    node_match = re.search(r'id="telem-node-label"[^>]*>([^<]+)<', html)
+    assert node_match and (
+        "Docker" in node_match.group(1)
+        or "Host" in node_match.group(1)
+        or "Node" in node_match.group(1)
+    )
+
+
+def test_admin_dashboard_resilient_when_telemetry_throws_exception(
+    client: FlaskClient,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify admin dashboard degrades safely without HTTP 500 when telemetry fails."""
+    import pwd301.services.operations_service
+
+    def _failing_telemetry() -> None:
+        raise RuntimeError("Hardware telemetry probe hardware sensor bus failure.")
+
+    monkeypatch.setattr(
+        pwd301.services.operations_service,
+        "get_real_system_telemetry",
+        _failing_telemetry,
+    )
+
+    login_web_user(client, admin_user)
+    resp = client.get("/admin/dashboard")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Trung tâm Điều hành" in html
+    assert "Vi xử lý CPU" in html
+

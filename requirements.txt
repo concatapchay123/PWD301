@@ -13,6 +13,7 @@ PyJWT>=2.8,<3
 defusedxml>=0.7.1,<1
 pypdf>=5.0.0,<7
 gunicorn>=22.0.0,<24
+psutil>=6.0.0,<8
 
 # Intentionally deferred until the relevant task confirms the implementation library:
 # - Gemini SDK

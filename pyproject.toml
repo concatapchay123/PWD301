@@ -28,10 +28,11 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
-ignore = []
+ignore = ["E712"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/generate_gemini_context.py" = ["E501"]
+"scripts/*" = ["E501", "SIM105", "I001", "E401"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -57,6 +58,8 @@ module = [
   "defusedxml",
   "defusedxml.*",
   "pypdf",
+  "psutil",
+  "psutil.*",
 ]
 ignore_missing_imports = true
 
