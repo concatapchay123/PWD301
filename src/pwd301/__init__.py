@@ -562,6 +562,14 @@ def create_app(
 
             return can_manage_course(actor, course)
 
+        from pwd301.services.i18n_service import (
+            STANDARD_TIMEZONES,
+            format_tz_datetime,
+            get_current_locale,
+            get_current_timezone,
+            t,
+        )
+
         roles_list = sorted(actor.role_codes) if actor else []
 
         return {
@@ -572,7 +580,21 @@ def create_app(
             "is_student": is_student,
             "can_manage_course": check_can_manage_course,
             "user_roles": roles_list,
+            "_": t,
+            "t": t,
+            "current_lang": get_current_locale(),
+            "current_timezone": get_current_timezone(),
+            "supported_timezones": STANDARD_TIMEZONES,
+            "format_tz_datetime": format_tz_datetime,
         }
+
+    from pwd301.services.i18n_service import format_tz_datetime, get_current_timezone
+
+    @app.template_filter("tz_datetime")
+    def tz_datetime_filter(val: Any, tz_str: str | None = None) -> str:
+        if tz_str is None:
+            tz_str = get_current_timezone()
+        return format_tz_datetime(val, tz_str)
 
     @login_manager.user_loader
     def load_user(user_id: str) -> Any:

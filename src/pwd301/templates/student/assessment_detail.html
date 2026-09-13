@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}{{ assessment.title }} — Chi tiết bài thi{% endblock %}
+{% block title %}{{ assessment.title }} — {{ _('assessment.detail') if _('assessment.detail') != 'assessment.detail' else 'Chi tiết bài thi' }}{% endblock %}
 
 {% block content %}
 <div class="container py-4" style="max-width: 860px;">
   <!-- Breadcrumbs -->
   <nav class="app-breadcrumbs mb-3" aria-label="Breadcrumb">
-    <a href="{{ url_for('student.dashboard') }}">Học tập</a>
+    <a href="{{ url_for('student.dashboard') }}">{{ _('nav.my_learning') }}</a>
     <span class="crumb-sep">/</span>
-    <a href="{{ url_for('student.assessments_view') }}">Bài kiểm tra</a>
+    <a href="{{ url_for('student.assessments_view') }}">{{ _('nav.assessments') }}</a>
     <span class="crumb-sep">/</span>
     <span>{{ assessment.title }}</span>
   </nav>
@@ -17,7 +17,17 @@
     <div class="card-header bg-white border-bottom p-4">
       <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
         <span class="badge bg-primary-subtle text-primary fw-bold" style="font-size: 13px;">{{ assessment.course_code or (assessment.course.course_code if assessment.course else 'PWD301') }}</span>
-        <span class="badge bg-light text-muted border">Trực tuyến</span>
+        <span class="badge bg-light text-muted border">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          {{ _('common.status') }}: 
+          {% if is_closed %}
+            <span class="text-danger fw-bold">{{ _('assessment.exam_closed') }}</span>
+          {% elif not is_open %}
+            <span class="text-warning fw-bold">{{ _('assessment.not_open_yet') }}</span>
+          {% else %}
+            <span class="text-success fw-bold">Đang mở</span>
+          {% endif %}
+        </span>
       </div>
       <h1 class="h3 fw-bold text-slate-900 mb-2">{{ assessment.title }}</h1>
       <p class="text-muted mb-0">{{ assessment.description or 'Bài kiểm tra kiến thức chuyên đề bám sát nội dung đào tạo PWD301.' }}</p>
@@ -25,42 +35,114 @@
 
     <div class="card-body p-4">
       <h2 class="h6 fw-bold text-slate-900 mb-3 text-uppercase tracking-wider">Thông tin quy chế thi</h2>
+      
+      <!-- Key Parameters Grid -->
       <div class="row g-3 mb-4">
-        <div class="col-sm-6">
+        <div class="col-sm-6 col-md-3">
           <div class="p-3 bg-slate-50 border border-slate-200 rounded">
-            <div class="text-caption text-muted mb-1">Thời gian làm bài</div>
+            <div class="text-caption text-muted mb-1">{{ _('assessment.time_limit') }}</div>
             <div class="h5 fw-bold text-slate-900 mb-0">{{ assessment.time_limit_minutes }} phút</div>
           </div>
         </div>
-        <div class="col-sm-6">
+        <div class="col-sm-6 col-md-3">
           <div class="p-3 bg-slate-50 border border-slate-200 rounded">
-            <div class="text-caption text-muted mb-1">Điểm đạt tối thiểu</div>
+            <div class="text-caption text-muted mb-1">{{ _('assessment.passing_score') }}</div>
             <div class="h5 fw-bold text-slate-900 mb-0">{{ assessment.passing_percent or assessment.pass_score_percentage or 50 }}%</div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded">
+            <div class="text-caption text-muted mb-1">{{ _('assessment.opens_at') }}</div>
+            {% if assessment.open_at %}
+              <div class="fw-bold text-slate-900" style="font-size: 13.5px;">{{ assessment.open_at | tz_datetime }}</div>
+              <div class="text-muted" style="font-size: 11px;">UTC: {{ assessment.open_at[:16].replace('T', ' ') }}</div>
+            {% else %}
+              <div class="fw-bold text-slate-900 mb-0">{{ _('common.unlimited') }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded">
+            <div class="text-caption text-muted mb-1">{{ _('assessment.closes_at') }}</div>
+            {% if assessment.close_at %}
+              <div class="fw-bold text-slate-900" style="font-size: 13.5px;">{{ assessment.close_at | tz_datetime }}</div>
+              <div class="text-muted" style="font-size: 11px;">UTC: {{ assessment.close_at[:16].replace('T', ' ') }}</div>
+            {% else %}
+              <div class="fw-bold text-slate-900 mb-0">{{ _('common.unlimited') }}</div>
+            {% endif %}
           </div>
         </div>
       </div>
 
+      <!-- Anti-cheat / Timezone Synchronized Notice -->
       <div class="alert alert-info border-0 rounded-2 p-3 mb-4">
-        <h3 class="h6 fw-bold mb-2">Lưu ý quan trọng khi làm bài:</h3>
-        <ul class="mb-0 ps-3 small" style="line-height: 1.8;">
-          <li>Hệ thống lưu tự động các câu trả lời sau mỗi thao tác.</li>
-          <li>Đồng hồ đếm ngược được đồng bộ theo thời gian máy chủ. Khi hết giờ, bài làm sẽ tự động được nộp.</li>
-          <li>Chỉ được làm bài trên một thiết bị/tab tại một thời điểm để đảm bảo tính toàn vẹn phiên làm việc.</li>
-        </ul>
+        <div class="d-flex align-items-start gap-2">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-info flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <div>
+            <div class="fw-bold mb-1">{{ _('assessment.synchronized_notice') }}</div>
+            <ul class="mb-0 ps-3 small" style="line-height: 1.8;">
+              <li>{{ _('assessment.anti_cheat_notice') }}</li>
+              <li>Hệ thống tự động lưu trữ câu trả lời (Autosave) sau mỗi thao tác.</li>
+              <li>Chỉ được làm bài trên một thiết bị/tab tại một thời điểm để đảm bảo tính toàn vẹn phiên làm việc.</li>
+            </ul>
+          </div>
+        </div>
       </div>
 
+      <!-- EXAM WAITING ROOM (If not yet open) -->
+      {% if not is_open and not is_closed %}
+      <div class="card border border-warning-subtle bg-warning-subtle bg-opacity-10 p-4 mb-4 rounded-3 text-center shadow-xs" id="waiting-room-card">
+        <div class="badge bg-warning-subtle text-warning fw-bold text-uppercase px-3 py-1.5 mb-2" style="letter-spacing: 0.5px;">
+          ⏳ {{ _('assessment.waiting_room') }}
+        </div>
+        <h2 class="h5 fw-bold text-slate-900 mb-1">{{ _('assessment.live_countdown') }}</h2>
+        <p class="text-muted small mb-3">Múi giờ của bạn: <strong>{{ current_timezone }}</strong> • Giờ mở bài thi: <strong>{{ assessment.open_at | tz_datetime }}</strong></p>
+        
+        <div class="d-flex justify-content-center align-items-center gap-2 my-2">
+          <div id="waiting-countdown-display" class="display-5 fw-bold text-primary font-monospace tracking-wide">
+            --:--:--
+          </div>
+        </div>
+        <div class="small text-muted mt-2" id="waiting-status-hint">
+          {{ _('assessment.starts_automatically') }}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- EXAM CLOSED BANNER (If closed) -->
+      {% if is_closed %}
+      <div class="alert alert-danger border-0 rounded-2 p-3 mb-4 text-center">
+        <h2 class="h6 fw-bold mb-1">⛔ {{ _('assessment.exam_closed') }}</h2>
+        <p class="mb-0 small text-danger-emphasis">
+          Hạn chót nộp bài thi đã qua vào lúc <strong>{{ assessment.close_at | tz_datetime if assessment.close_at else '' }}</strong>. Bạn không thể bắt đầu lần thi mới.
+        </p>
+      </div>
+      {% endif %}
+
+      <!-- Action Footer -->
       <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-        <a href="{{ url_for('student.assessments_view') }}" class="btn btn-outline-secondary px-4">← Quay lại danh sách</a>
+        <a href="{{ url_for('student.assessments_view') }}" class="btn btn-outline-secondary px-4">← {{ _('common.back') }}</a>
 
         {% if active_attempt %}
           <a href="{{ url_for('student.attempt_view', attempt_id=active_attempt.public_id) }}" class="btn btn-success px-4 py-2 fw-semibold">
-            Tiếp tục làm bài đang dở →
+            {{ _('assessment.continue_exam') }}
           </a>
-        {% else %}
-          <form method="POST" action="{{ url_for('student.student_start_assessment', assessment_id=(assessment.assessment_id or assessment.public_id)) }}" class="m-0">
+        {% elif is_closed %}
+          <button type="button" class="btn btn-secondary px-5 py-2 fw-semibold" disabled>
+            {{ _('assessment.exam_closed') }}
+          </button>
+        {% elif not is_open %}
+          <form method="POST" action="{{ url_for('student.student_start_assessment', assessment_id=(assessment.assessment_id or assessment.public_id)) }}" class="m-0" id="start-exam-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-            <button type="submit" class="btn btn-primary px-5 py-2 fw-semibold shadow-xs">
-              Bắt đầu làm bài thi →
+            <button type="submit" id="start-exam-btn" class="btn btn-secondary px-5 py-2 fw-semibold shadow-xs" disabled title="{{ _('assessment.not_open_yet') }}">
+              🔒 Chưa đến giờ mở đề thi
+            </button>
+          </form>
+        {% else %}
+          <form method="POST" action="{{ url_for('student.student_start_assessment', assessment_id=(assessment.assessment_id or assessment.public_id)) }}" class="m-0" id="start-exam-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <button type="submit" id="start-exam-btn" class="btn btn-primary px-5 py-2 fw-semibold shadow-xs">
+              {{ _('assessment.start_exam') }}
             </button>
           </form>
         {% endif %}
@@ -68,4 +150,46 @@
     </div>
   </div>
 </div>
+
+<script>
+  (function() {
+    let secondsLeft = {{ seconds_until_open if seconds_until_open is defined else 0 }};
+    const countdownEl = document.getElementById('waiting-countdown-display');
+    const startBtn = document.getElementById('start-exam-btn');
+    const hintEl = document.getElementById('waiting-status-hint');
+    const waitingCard = document.getElementById('waiting-room-card');
+
+    if (secondsLeft > 0 && countdownEl) {
+      function formatCountdown(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+
+      function tick() {
+        if (secondsLeft <= 0) {
+          countdownEl.textContent = '00:00:00';
+          countdownEl.className = 'display-5 fw-bold text-success font-monospace';
+          if (hintEl) {
+            hintEl.innerHTML = '<span class="badge bg-success-subtle text-success fs-6 fw-bold">✓ Đã đến giờ thi! Chúc bạn làm bài tốt.</span>';
+          }
+          if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.className = 'btn btn-primary px-5 py-2 fw-semibold shadow-xs';
+            startBtn.innerHTML = '{{ _("assessment.start_exam") }}';
+            startBtn.removeAttribute('title');
+          }
+          return;
+        }
+
+        countdownEl.textContent = formatCountdown(secondsLeft);
+        secondsLeft--;
+        setTimeout(tick, 1000);
+      }
+
+      tick();
+    }
+  })();
+</script>
 {% endblock %}

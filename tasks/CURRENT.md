@@ -1,3 +1,27 @@
+# TASK-032 — GMT Timezone Synchronization (Anti-Cheat Real-Time Window) & Bilingual Support (VI/EN)
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Fullstack Engineer  
+**Started Date:** 2026-09-13  
+**Completed Date:** 2026-09-13  
+
+---
+
+## Goal
+1. **GMT Timezone Synchronization & Anti-Cheat Exam Window**:
+   - Prevent cross-timezone access desynchronization and exam cheating (e.g. instructor in GMT+1 schedules at 12:00, all students across the globe take the exam simultaneously, matching IELTS exam protocols).
+   - SQL Server strictly stores UTC (`DATETIME2(3)`). The server clock is the sole authority for opening/closing windows.
+   - Instructors author assessment windows with arbitrary timezone offsets; naive inputs are converted to UTC on save with live server-equivalent preview.
+   - Real-time online Exam Waiting Room with countdown timer synchronized to server UTC; auto-unlocks "Bắt đầu làm bài" button when countdown reaches zero.
+   - Browser client auto-detection via `Intl.DateTimeFormat` combined with Topbar timezone selector, persisted in session and cookies.
+2. **Bilingual Localization (VI / EN)**:
+   - Lightweight, zero-dependency `i18n_service` following Ponytail minimal architecture (no heavy Babel/pytz).
+   - Topbar language toggle (`🇻🇳 Tiếng Việt` / `🇬🇧 English`) stored in `session['lang']` and `pwd301_lang` cookie.
+   - Jinja2 helper `_('key')` / `t('key')` and filter `| tz_datetime` registered globally across the application.
+   - Localization applied across Topbar, Student/Instructor/Admin sidebars, user dropdown, waiting room, and assessment tables.
+
+---
+
 # TASK-031 — AI Assistance Subsystem Hardening, Semantic RAG Fusion & Bloom Question Authoring Lifecycle
 
 **Status:** DONE  

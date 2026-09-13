@@ -600,3 +600,81 @@ def verify_email(token: str) -> Any:
 
     flash(msg, "success")
     return redirect(url_for("auth.login"))
+
+
+@auth_bp.route("/set-language", methods=["POST"])
+def set_language() -> Any:
+    """Set the active language ('vi' or 'en') in session and cookie."""
+    new_lang = ""
+    if request.is_json:
+        new_lang = str((request.get_json() or {}).get("lang", "")).strip().lower()
+    else:
+        new_lang = request.form.get("lang", "").strip().lower()
+
+    if new_lang not in ("vi", "en"):
+        new_lang = "vi"
+
+    session["lang"] = new_lang
+
+    target_url = request.referrer or url_for("core.index")
+    if not _is_safe_redirect_url(target_url):
+        target_url = url_for("core.index")
+
+    if _is_json_request():
+        resp = make_response(jsonify({"status": "ok", "lang": new_lang}))
+    else:
+        resp = make_response(redirect(target_url))
+
+    resp.set_cookie(
+        "pwd301_lang",
+        new_lang,
+        max_age=30 * 86400,
+        httponly=False,
+        samesite="Lax",
+    )
+    return resp
+
+
+@auth_bp.route("/set-timezone", methods=["POST"])
+def set_timezone() -> Any:
+    """Set the active timezone offset in session and cookie."""
+    new_tz = ""
+    if request.is_json:
+        new_tz = str((request.get_json() or {}).get("timezone", "")).strip()
+    else:
+        new_tz = request.form.get("timezone", "").strip()
+
+    from pwd301.services.i18n_service import format_tz_offset_label, parse_tz_offset
+
+    offset_seconds = parse_tz_offset(new_tz)
+    sign = "+" if offset_seconds >= 0 else "-"
+    abs_sec = abs(offset_seconds)
+    standard_offset_str = f"{sign}{abs_sec // 3600:02d}:{(abs_sec % 3600) // 60:02d}"
+
+    session["user_timezone"] = standard_offset_str
+
+    target_url = request.referrer or url_for("core.index")
+    if not _is_safe_redirect_url(target_url):
+        target_url = url_for("core.index")
+
+    if _is_json_request():
+        resp = make_response(
+            jsonify(
+                {
+                    "status": "ok",
+                    "timezone": standard_offset_str,
+                    "label": format_tz_offset_label(offset_seconds),
+                }
+            )
+        )
+    else:
+        resp = make_response(redirect(target_url))
+
+    resp.set_cookie(
+        "pwd301_timezone",
+        standard_offset_str,
+        max_age=30 * 86400,
+        httponly=False,
+        samesite="Lax",
+    )
+    return resp

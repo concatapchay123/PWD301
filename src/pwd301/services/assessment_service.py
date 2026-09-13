@@ -405,20 +405,33 @@ def _serialize_assessment(
 # ============================================================================
 
 
-def _parse_iso_datetime(val: Any, field_name: str) -> datetime | None:
-    """Safely parse an ISO-8601 datetime string to a timezone-aware UTC datetime."""
+def _parse_iso_datetime(
+    val: Any,
+    field_name: str,
+    tz_offset_str: str | None = None,
+) -> datetime | None:
+    """Safely parse an ISO-8601 datetime string to a timezone-aware UTC datetime.
+
+    If dt is naive (e.g. from HTML datetime-local input) and tz_offset_str is provided,
+    the offset is applied to convert the local wall-clock time to absolute UTC.
+    """
     if val is None or val == "":
         return None
+    from pwd301.services.i18n_service import parse_tz_offset
+
+    offset_sec = parse_tz_offset(tz_offset_str) if tz_offset_str else 0
     if isinstance(val, datetime):
         if val.tzinfo is None:
-            return val.replace(tzinfo=UTC)
+            utc_dt = val - timedelta(seconds=offset_sec)
+            return utc_dt.replace(tzinfo=UTC)
         return val.astimezone(UTC)
     if isinstance(val, str):
         try:
             clean_str = val.replace("Z", "+00:00")
             dt = datetime.fromisoformat(clean_str)
             if dt.tzinfo is None:
-                return dt.replace(tzinfo=UTC)
+                utc_dt = dt - timedelta(seconds=offset_sec)
+                return utc_dt.replace(tzinfo=UTC)
             return dt.astimezone(UTC)
         except ValueError as err:
             raise AssessmentValidationError(
@@ -523,8 +536,9 @@ def create_assessment(
             f"Invalid answer_visibility_policy '{answer_visibility_policy}'."
         )
 
-    open_at = _parse_iso_datetime(payload.get("open_at"), "open_at")
-    close_at = _parse_iso_datetime(payload.get("close_at"), "close_at")
+    tz_offset_str = payload.get("timezone_offset") or payload.get("author_timezone")
+    open_at = _parse_iso_datetime(payload.get("open_at"), "open_at", tz_offset_str=tz_offset_str)
+    close_at = _parse_iso_datetime(payload.get("close_at"), "close_at", tz_offset_str=tz_offset_str)
 
     def _parse_int_opt(key: str) -> int | None:
         val = payload.get(key)
@@ -649,9 +663,14 @@ def update_assessment(
 
     # 2. Timing Freeze Invariant check (ASSESS-001)
     is_published = assessment.status == "PUBLISHED" or assessment.published_at is not None
+    tz_offset_str = payload.get("timezone_offset") or payload.get("author_timezone")
     if is_published:
         if "open_at" in payload:
-            new_open = _parse_iso_datetime(payload.get("open_at"), "open_at")
+            new_open = _parse_iso_datetime(
+                payload.get("open_at"),
+                "open_at",
+                tz_offset_str=tz_offset_str,
+            )
             if _normalize_dt(new_open) != _normalize_dt(assessment.open_at):
                 raise AssessmentLockedError("Assessment timing (open_at) is locked after publish.")
 
@@ -724,10 +743,18 @@ def update_assessment(
         assessment.answer_visibility_policy = avp
 
     if "open_at" in payload and not is_published:
-        assessment.open_at = _parse_iso_datetime(payload.get("open_at"), "open_at")
+        assessment.open_at = _parse_iso_datetime(
+            payload.get("open_at"),
+            "open_at",
+            tz_offset_str=tz_offset_str,
+        )
 
     if "close_at" in payload:
-        assessment.close_at = _parse_iso_datetime(payload.get("close_at"), "close_at")
+        assessment.close_at = _parse_iso_datetime(
+            payload.get("close_at"),
+            "close_at",
+            tz_offset_str=tz_offset_str,
+        )
 
     if ("time_limit_minutes" in payload or "duration_minutes" in payload) and not is_published:
         raw_tl = (

@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Bài kiểm tra & Đánh giá — PWD301 LMS{% endblock %}
+{% block title %}{{ _('assessment.title') | safe }} — PWD301 LMS{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-0">
   <header class="page-header mb-4">
-    <h1 class="h3 fw-bold text-slate-900 mb-1">Bài kiểm tra & Đánh giá</h1>
+    <h1 class="h3 fw-bold text-slate-900 mb-1">{{ _('assessment.title') | safe }}</h1>
     <p class="text-caption text-muted mb-0">Danh sách các bài thi trực tuyến, bài tập trắc nghiệm và kết quả đánh giá</p>
   </header>
 
   <!-- Section 1: Upcoming / In-Progress Assessments -->
   <div class="card mb-4 bg-white border border-slate-200" style="border-radius: 8px;">
     <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0 fw-bold text-slate-900">Bài kiểm tra đang mở</h2>
+      <h2 class="h5 mb-0 fw-bold text-slate-900">{{ _('assessment.upcoming') }}</h2>
       <span class="badge bg-primary-subtle text-primary fw-semibold">{{ overview.upcoming_assessments|length if overview.upcoming_assessments else 0 }} bài thi</span>
     </div>
     <div class="card-body p-0">
@@ -20,12 +20,12 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th class="ps-4">Môn học</th>
+              <th class="ps-4">{{ _('nav.courses') }}</th>
               <th>Tên bài thi</th>
-              <th>Thời lượng</th>
-              <th>Hạn chót</th>
-              <th>Trạng thái</th>
-              <th class="text-end pe-4">Thao tác</th>
+              <th>{{ _('assessment.time_limit') }}</th>
+              <th>{{ _('assessment.closes_at') }} (Múi giờ của bạn)</th>
+              <th>{{ _('common.status') }}</th>
+              <th class="text-end pe-4">{{ _('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -40,7 +40,14 @@
                   <div class="text-caption text-muted">{{ a.course_title }}</div>
                 </td>
                 <td>{{ a.time_limit_minutes }} phút</td>
-                <td>{{ a.close_at[:16].replace('T', ' ') if a.close_at else 'Không giới hạn' }}</td>
+                <td>
+                  {% if a.close_at %}
+                    <div class="fw-semibold text-slate-800" style="font-size: 13px;">{{ a.close_at | tz_datetime }}</div>
+                    <div class="text-caption text-muted" style="font-size: 11px;">UTC: {{ a.close_at[:16].replace('T', ' ') }}</div>
+                  {% else %}
+                    <span class="text-muted">{{ _('common.unlimited') }}</span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if a.attempt_id %}
                     <span class="badge bg-info-subtle text-info fw-semibold">Đang làm dở</span>
@@ -73,7 +80,7 @@
   <!-- Section 2: Recent Graded Results -->
   <div class="card bg-white border border-slate-200" style="border-radius: 8px;">
     <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0 fw-bold text-slate-900">Lịch sử Điểm số & Đã hoàn thành</h2>
+      <h2 class="h5 mb-0 fw-bold text-slate-900">{{ _('assessment.results_history') }}</h2>
       <span class="badge bg-success-subtle text-success fw-semibold">{{ overview.recent_results|length if overview.recent_results else 0 }} kết quả</span>
     </div>
     <div class="card-body p-0">
@@ -81,12 +88,12 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th class="ps-4">Môn học</th>
+              <th class="ps-4">{{ _('nav.courses') }}</th>
               <th>Bài thi</th>
               <th>Lần thi</th>
               <th>Điểm đạt được</th>
               <th>Kết quả</th>
-              <th class="text-end pe-4">Chi tiết</th>
+              <th class="text-end pe-4">{{ _('common.detail') }}</th>
             </tr>
           </thead>
           <tbody>

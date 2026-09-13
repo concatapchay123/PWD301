@@ -28,9 +28,66 @@
       this.syncActiveSidebarLink();
       this.initNotificationBell();
       this.initAIChat();
+      this.initTimezoneAutoDetect();
       if (window.PWDMotion && typeof window.PWDMotion.init === 'function') {
         window.PWDMotion.init();
       }
+    },
+
+    // Timezone Auto-detection
+    initTimezoneAutoDetect() {
+      try {
+        if (!sessionStorage.getItem('pwd301_tz_detected')) {
+          const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (detectedZone) {
+            sessionStorage.setItem('pwd301_tz_detected', 'true');
+            if (!document.cookie.includes('pwd301_timezone=')) {
+              fetch('/auth/set-timezone', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ timezone: detectedZone })
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Timezone auto-detect error:', err);
+      }
+    },
+
+    // Language Switching
+    switchLanguage(lang) {
+      fetch('/auth/set-language', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ lang: lang })
+      }).then(() => {
+        window.location.reload();
+      }).catch(() => {
+        window.location.reload();
+      });
+    },
+
+    // Timezone Switching
+    switchTimezone(tz) {
+      fetch('/auth/set-timezone', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ timezone: tz })
+      }).then(() => {
+        window.location.reload();
+      }).catch(() => {
+        window.location.reload();
+      });
     },
 
     // 0. Sidebar Collapse / Expand Toggle

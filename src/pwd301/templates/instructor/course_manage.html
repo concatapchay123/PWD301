@@ -566,12 +566,23 @@
                 </div>
               </div>
               <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                  <label class="form-label fw-semibold">Thời điểm mở đề thi (Tùy chọn)</label>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1 text-primary"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    {{ _('assessment.timezone') }}
+                  </label>
+                  <select name="timezone_offset" class="form-select">
+                    {% for tz in supported_timezones %}
+                      <option value="{{ tz.value }}" {% if tz.value == current_timezone %}selected{% endif %}>{{ tz.label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">{{ _('assessment.opens_at') }} (Local)</label>
                   <input type="datetime-local" name="open_at" class="form-control">
                 </div>
-                <div class="col-md-6">
-                  <label class="form-label fw-semibold">Thời điểm đóng đề thi (Tùy chọn)</label>
+                <div class="col-md-4">
+                  <label class="form-label fw-semibold">{{ _('assessment.closes_at') }} (Local)</label>
                   <input type="datetime-local" name="close_at" class="form-control">
                 </div>
               </div>

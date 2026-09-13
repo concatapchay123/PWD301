@@ -722,11 +722,32 @@ def assessment_detail_view(assessment_id: str) -> Any:
         )
         .first()
     )
+    from pwd301.models.types import utc_now
+    from pwd301.services.assessment_service import _normalize_dt
+
+    now_utc = utc_now()
+    open_at_dt = _normalize_dt(assess_obj.open_at)
+    close_at_dt = _normalize_dt(assess_obj.close_at)
+
+    is_open = True
+    seconds_until_open = 0
+    if open_at_dt and now_utc < open_at_dt:
+        is_open = False
+        seconds_until_open = max(0, int((open_at_dt - now_utc).total_seconds()))
+
+    is_closed = False
+    if close_at_dt and now_utc >= close_at_dt:
+        is_closed = True
+
     if request.accept_mimetypes.accept_html and not request.is_json:
         return render_template(
             "student/assessment_detail.html",
             assessment=assessment_data,
             active_attempt=active_attempt,
+            is_open=is_open,
+            is_closed=is_closed,
+            seconds_until_open=seconds_until_open,
+            server_now_iso=now_utc.isoformat(),
         )
     return (
         jsonify(
