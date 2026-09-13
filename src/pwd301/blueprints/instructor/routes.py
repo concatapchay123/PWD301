@@ -324,13 +324,19 @@ def manage_course_hub(course_id: str) -> Any:
     )
 
 
-@instructor_bp.route("/courses/<course_id>", methods=["PATCH", "PUT"])
+@instructor_bp.route("/courses/<course_id>", methods=["POST", "PATCH", "PUT"])
 @instructor_required
 def update_course_route(course_id: str) -> Any:
     """Update editable course metadata with mass-assignment defense."""
     actor = require_authenticated_actor()
 
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or request.form.to_dict() or {})
+    if "max_enrollments" in payload and "capacity" not in payload:
+        payload["capacity"] = payload.pop("max_enrollments")
+    for key in ("capacity", "storage_quota_bytes", "thumbnail_file_asset_id"):
+        if payload.get(key) == "":
+            payload[key] = None
+
     try:
         course = update_course(actor, course_id, payload)
     except (
@@ -427,10 +433,86 @@ def cancel_submit_course_route(course_id: str) -> Any:
 @instructor_bp.route("/courses/<course_id>/publish", methods=["POST"])
 @instructor_required
 def publish_course_route(course_id: str) -> Any:
-    """Publish an approved course."""
+    """Publish an approved course (or direct publish if actor is Admin)."""
     actor = require_authenticated_actor()
     try:
-        course = change_course_status(actor, course_id, "PUBLISHED")
+        course_obj = _resolve_course(course_id)
+        if course_obj is None:
+            raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+        if course_obj.status == "DRAFT":
+            if actor.is_admin:
+                change_course_status(
+                    actor, course_id, "SUBMITTED_FOR_REVIEW", reason="Admin xuất bản trực tiếp"
+                )
+                change_course_status(actor, course_id, "APPROVED", reason="Admin duyệt trực tiếp")
+                course = change_course_status(
+                    actor, course_id, "PUBLISHED", reason="Admin xuất bản trực tiếp"
+                )
+            else:
+                if request.accept_mimetypes.accept_html and not request.is_json:
+                    flash(
+                        "Khóa học đang ở trạng thái Bản thảo (DRAFT). "
+                        "Bạn cần bấm 'Gửi Admin xét duyệt' trước khi xuất bản.",
+                        "warning",
+                    )
+                    return redirect(
+                        request.referrer
+                        or url_for(
+                            "instructor.manage_course_hub",
+                            course_id=course_obj.public_id,
+                            tab="settings",
+                        )
+                    )
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "COURSE_STATE_VIOLATION",
+                                "message": (
+                                    "Khóa học đang ở trạng thái DRAFT. "
+                                    "Cần gửi duyệt trước khi xuất bản."
+                                ),
+                            }
+                        }
+                    ),
+                    409,
+                )
+        elif course_obj.status == "SUBMITTED_FOR_REVIEW":
+            if actor.is_admin:
+                change_course_status(actor, course_id, "APPROVED", reason="Admin duyệt trực tiếp")
+                course = change_course_status(
+                    actor, course_id, "PUBLISHED", reason="Admin xuất bản trực tiếp"
+                )
+            else:
+                if request.accept_mimetypes.accept_html and not request.is_json:
+                    flash(
+                        "Khóa học đang chờ Quản trị viên (Admin) xét duyệt. "
+                        "Vui lòng chờ phê duyệt để xuất bản.",
+                        "info",
+                    )
+                    return redirect(
+                        request.referrer
+                        or url_for(
+                            "instructor.manage_course_hub",
+                            course_id=course_obj.public_id,
+                            tab="settings",
+                        )
+                    )
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "COURSE_STATE_VIOLATION",
+                                "message": "Khóa học đang chờ Admin xét duyệt.",
+                            }
+                        }
+                    ),
+                    409,
+                )
+        else:
+            course = change_course_status(actor, course_id, "PUBLISHED")
+
         if request.accept_mimetypes.accept_html and not request.is_json:
             flash(f"Khóa học '{course.title}' đã được xuất bản chính thức thành công!", "success")
             return redirect(

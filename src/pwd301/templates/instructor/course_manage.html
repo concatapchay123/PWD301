@@ -53,26 +53,53 @@
           </a>
 
           {% if course.status == 'DRAFT' %}
-            <form method="POST" action="/instructor/courses/{{ course.public_id }}/submit" class="m-0">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-primary d-flex align-items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"/>
-                </svg>
-                Gửi Admin xét duyệt xuất bản
-              </button>
-            </form>
+            <div class="d-flex align-items-center gap-2">
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}/submit" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary d-flex align-items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"/>
+                  </svg>
+                  Gửi Admin xét duyệt xuất bản
+                </button>
+              </form>
+              {% if current_user.is_admin %}
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-success d-flex align-items-center gap-2 fw-semibold" title="Xuất bản trực tiếp (Quyền Quản trị viên)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M10 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/>
+                    <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m0 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1"/>
+                  </svg>
+                  Xuất bản ngay (Admin)
+                </button>
+              </form>
+              {% endif %}
+            </div>
           {% elif course.status == 'SUBMITTED_FOR_REVIEW' %}
-            <form method="POST" action="/instructor/courses/{{ course.public_id }}/cancel-submit" class="m-0">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit" class="btn btn-outline-warning d-flex align-items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/>
-                  <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/>
-                </svg>
-                Hủy gửi duyệt
-              </button>
-            </form>
+            <div class="d-flex align-items-center gap-2">
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}/cancel-submit" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-warning d-flex align-items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/>
+                    <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/>
+                  </svg>
+                  Hủy gửi duyệt
+                </button>
+              </form>
+              {% if current_user.is_admin %}
+              <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-success d-flex align-items-center gap-2 fw-bold">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M10 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0"/>
+                  </svg>
+                  Duyệt & Xuất bản ngay (Admin)
+                </button>
+              </form>
+              {% endif %}
+            </div>
           {% elif course.status == 'APPROVED' %}
             <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -655,14 +682,22 @@
                   <textarea name="description" class="form-control" rows="4">{{ course.description or '' }}</textarea>
                 </div>
 
-                <div class="row g-3 mb-4">
-                  <div class="col-md-6">
+                <div class="row g-3 mb-3">
+                  <div class="col-md-4">
                     <label class="form-label fw-semibold">Danh mục (Category)</label>
                     <input type="text" name="category" class="form-control" value="{{ course.category or 'Công nghệ thông tin' }}">
                   </div>
-                  <div class="col-md-6">
-                    <label class="form-label fw-semibold">Số lượng học viên tối đa</label>
-                    <input type="number" name="max_enrollments" class="form-control" value="{{ course.max_enrollments or 100 }}" min="1">
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Độ khó (Difficulty)</label>
+                    <select name="difficulty" class="form-select">
+                      <option value="BEGINNER" {% if course.difficulty == 'BEGINNER' or not course.difficulty %}selected{% endif %}>Cơ bản (Beginner)</option>
+                      <option value="INTERMEDIATE" {% if course.difficulty == 'INTERMEDIATE' %}selected{% endif %}>Trung cấp (Intermediate)</option>
+                      <option value="ADVANCED" {% if course.difficulty == 'ADVANCED' %}selected{% endif %}>Nâng cao (Advanced)</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label fw-semibold">Sĩ số tối đa (Capacity)</label>
+                    <input type="number" name="capacity" class="form-control" value="{{ course.capacity or 50 }}" min="1">
                   </div>
                 </div>
 
@@ -700,7 +735,7 @@
                     <span class="text-muted">Admin đã phê duyệt. Giảng viên sẵn sàng bấm nút phát hành chính thức.</span>
                   </div>
                 </div>
-                <div class="d-flex align-items-start gap-3">
+                <div class="d-flex align-items-start gap-3 mb-3">
                   <div class="badge rounded-pill {% if course.status == 'PUBLISHED' %}bg-success{% else %}bg-light text-dark{% endif %} p-2">4</div>
                   <div>
                     <strong class="d-block">Xuất bản (PUBLISHED)</strong>
@@ -708,6 +743,67 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Actionable Workflow Box -->
+              {% if course.status == 'DRAFT' %}
+              <div class="p-3 bg-light rounded-3 border mt-2">
+                <div class="fw-semibold text-dark mb-1">Thao tác xuất bản:</div>
+                <p class="text-muted small mb-3">Khóa học hiện đang ở trạng thái Bản thảo. Hãy gửi tới Quản trị viên để được phê duyệt xuất bản.</p>
+                <div class="d-flex flex-wrap gap-2">
+                  <form method="POST" action="/instructor/courses/{{ course.public_id }}/submit" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary btn-sm px-3 fw-semibold">
+                      Gửi Admin xét duyệt
+                    </button>
+                  </form>
+                  {% if current_user.is_admin %}
+                  <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-success btn-sm px-3 fw-bold" title="Xuất bản trực tiếp bằng quyền Quản trị viên">
+                      Xuất bản ngay (Admin)
+                    </button>
+                  </form>
+                  {% endif %}
+                </div>
+              </div>
+              {% elif course.status == 'SUBMITTED_FOR_REVIEW' %}
+              <div class="p-3 bg-warning-subtle rounded-3 border border-warning-subtle mt-2">
+                <div class="fw-semibold text-warning-emphasis mb-1">Đang chờ xét duyệt:</div>
+                <p class="text-muted small mb-3">Hồ sơ khóa học đã được gửi tới Ban quản trị. Giảng viên có thể rút lại yêu cầu nếu muốn chỉnh sửa thêm.</p>
+                <div class="d-flex flex-wrap gap-2">
+                  <form method="POST" action="/instructor/courses/{{ course.public_id }}/cancel-submit" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm px-3">
+                      Hủy gửi duyệt
+                    </button>
+                  </form>
+                  {% if current_user.is_admin %}
+                  <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-success btn-sm px-3 fw-bold">
+                      Duyệt & Xuất bản ngay (Admin)
+                    </button>
+                  </form>
+                  {% endif %}
+                </div>
+              </div>
+              {% elif course.status == 'APPROVED' %}
+              <div class="p-3 bg-success-subtle rounded-3 border border-success-subtle mt-2">
+                <div class="fw-semibold text-success mb-1">Đã được phê duyệt!</div>
+                <p class="text-muted small mb-3">Ban quản trị đã thông qua giáo trình. Bạn có thể bấm nút dưới đây để phát hành khóa học cho sinh viên.</p>
+                <form method="POST" action="/instructor/courses/{{ course.public_id }}/publish" class="m-0">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-success btn-sm px-4 fw-bold">
+                    Xuất bản khóa học ngay
+                  </button>
+                </form>
+              </div>
+              {% elif course.status == 'PUBLISHED' %}
+              <div class="p-3 bg-success-subtle rounded-3 border border-success-subtle mt-2 d-flex align-items-center gap-2 text-success fw-bold">
+                <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
+                <span>Khóa học đã xuất bản & đang hoạt động</span>
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>

@@ -179,3 +179,113 @@ def test_instructor_web_create_course_db_integrity_error_graceful_flash(
     html = resp.get_data(as_text=True)
     assert "500 INTERNAL_ERROR" not in html
     assert "trùng lặp" in html or "already exists" in html or "Không thể tạo" in html
+
+
+def test_post_course_settings_update_route_success(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+) -> None:
+    """POST /instructor/courses/<course_id> must NOT return 405.
+    Must update metadata and redirect gracefully.
+    """
+    sess: Session = db.session
+    course = create_course(
+        instructor_user,
+        {"course_code": "UPD-101", "title": "Before Update Course"},
+        session=sess,
+    )
+    sess.commit()
+
+    login_web_user(client, instructor_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    resp = client.post(
+        f"/instructor/courses/{course.public_id}",
+        data={
+            "title": "After Update Course Title",
+            "description": "Updated course description",
+            "category": "Trí tuệ nhân tạo",
+            "capacity": "45",
+        },
+        headers={"Accept": "text/html"},
+        follow_redirects=True,
+    )
+
+    # Must be 200 after redirect, NOT 405 Method Not Allowed!
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "405 METHOD_NOT_ALLOWED" not in html
+    assert "Cập nhật thông tin khóa học thành công" in html
+
+    sess.refresh(course)
+    assert course.title == "After Update Course Title"
+    assert course.category == "Trí tuệ nhân tạo"
+    assert course.capacity == 45
+
+
+def test_instructor_publish_draft_course_warning(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+) -> None:
+    """Instructor calling publish on DRAFT course gets graceful warning flash, not crash."""
+    sess: Session = db.session
+    course = create_course(
+        instructor_user,
+        {"course_code": "PUB-DRAFT-101", "title": "Draft Course For Publish Test"},
+        session=sess,
+    )
+    sess.commit()
+
+    login_web_user(client, instructor_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    resp = client.post(
+        f"/instructor/courses/{course.public_id}/publish",
+        headers={"Accept": "text/html"},
+        follow_redirects=True,
+    )
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "405 METHOD_NOT_ALLOWED" not in html
+    assert "500 INTERNAL_ERROR" not in html
+    assert "cần" in html or "Bản thảo" in html or "xét duyệt" in html
+
+
+def test_admin_publish_draft_course_direct_success(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+    setup_roles: dict[str, Role],
+) -> None:
+    """Admin publishing a course can directly advance and publish."""
+    sess: Session = db.session
+    # Give instructor_user the ADMIN role as well
+    assign_role_to_user(instructor_user.id, "ADMIN")
+    course = create_course(
+        instructor_user,
+        {"course_code": "ADMIN-PUB-101", "title": "Admin Direct Publish Course"},
+        session=sess,
+    )
+    sess.commit()
+
+    login_web_user(client, instructor_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    resp = client.post(
+        f"/instructor/courses/{course.public_id}/publish",
+        headers={"Accept": "text/html"},
+        follow_redirects=True,
+    )
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "đã được xuất bản chính thức thành công" in html
+
+    sess.refresh(course)
+    assert course.status == "PUBLISHED"

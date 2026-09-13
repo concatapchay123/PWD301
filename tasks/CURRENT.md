@@ -490,3 +490,61 @@ Resolve the critical `500 INTERNAL_ERROR` bug preventing instructors from creati
   - Created course `AI401` ("Trí Tuệ Nhân Tạo & Deep Learning Thực Chiến") with category "Trí tuệ nhân tạo", difficulty "Nâng cao", capacity 60: successfully created, badge rendered, card added to grid.
   - Re-created course "Khóa Học Làm Người" (HUM101): successfully created, proving soft-delete filtered index resolution.
   - Zero 500 errors observed.
+
+---
+
+# TASK-038 — Course Settings Form 405 Method Not Allowed Resolution & Publishing Workflow Direct Actions
+
+**Status:** DONE  
+**Assignee:** Principal Fullstack & Systems Architect  
+**Started Date:** 2026-09-13  
+**Completed Date:** 2026-09-13  
+
+## Goal
+Resolve the `405 METHOD_NOT_ALLOWED` error encountered when instructors/admins update course settings or trigger publishing operations from `http://localhost:5000/instructor/courses/<course_id>/manage?tab=settings`. Enable seamless end-to-end course publishing transitions (`DRAFT -> SUBMITTED_FOR_REVIEW -> APPROVED -> PUBLISHED`) with Admin fast-track support and informative guidance for draft courses.
+
+## Root Cause Analysis
+1. **HTTP Method Mismatch on Course Update Route**:
+   - `update_course_route` in `src/pwd301/blueprints/instructor/routes.py` had `@instructor_bp.route("/courses/<course_id>", methods=["PATCH", "PUT"])`, omitting `"POST"`.
+   - The settings tab form in `src/pwd301/templates/instructor/course_manage.html` submitted via standard browser HTML `<form method="POST" action="/instructor/courses/{{ course.public_id }}">`.
+   - Submitting the form sent `POST /instructor/courses/<course_id>`, which Flask immediately rejected with `405 METHOD_NOT_ALLOWED`.
+2. **Missing Form Field Mapping for Capacity**:
+   - The settings form had `name="max_enrollments"` whereas the domain model and service layer expect `capacity`.
+   - Empty input strings (e.g. `""` for optional numeric fields) caused value conversion issues.
+3. **Workflow Friction in Course Publishing**:
+   - The "Quy trình xuất bản khóa học" card in the settings tab only displayed informative text, lacking direct action buttons to trigger review submission or publishing.
+   - Calling `/publish` on a `DRAFT` course raised state machine violations instead of providing clear guidance or Admin fast-track execution.
+
+## Key Changes
+1. **Web Route Layer (`src/pwd301/blueprints/instructor/routes.py`)**:
+   - Updated `update_course_route` decorator to `@instructor_bp.route("/courses/<course_id>", methods=["POST", "PATCH", "PUT"])`.
+   - Added automatic field mapping from `max_enrollments` to `capacity` and normalized empty string values to `None`.
+   - Enhanced `publish_course_route`:
+     - If actor has `ADMIN` privileges and course is in `DRAFT` or `SUBMITTED_FOR_REVIEW`: automatically executes valid audit-logged state machine transitions (`DRAFT -> SUBMITTED_FOR_REVIEW -> APPROVED -> PUBLISHED`) without error.
+     - If actor is an instructor and course is `DRAFT`: returns a user-friendly flash warning ("Khóa học đang ở trạng thái Bản thảo. Bạn cần bấm 'Gửi Admin xét duyệt' trước khi xuất bản.") and redirects cleanly to the course hub without crashing.
+2. **Templates & UI (`src/pwd301/templates/instructor/course_manage.html` & `courses.html`)**:
+   - Aligned settings form fields with `capacity` and added `difficulty` selection (`BEGINNER`, `INTERMEDIATE`, `ADVANCED`).
+   - Added an interactive "Thao tác xuất bản" workflow action box directly inside the "Quy trình xuất bản khóa học" timeline card:
+     - `DRAFT`: Primary button "Gửi Admin xét duyệt" + Admin quick-publish button.
+     - `SUBMITTED_FOR_REVIEW`: Button "Hủy gửi duyệt" + Admin approve & publish button.
+     - `APPROVED`: Button "Xuất bản khóa học ngay".
+     - `PUBLISHED`: Status banner "Khóa học đã xuất bản & đang hoạt động".
+   - Added Admin quick-publish actions in the courses list (`courses.html`) dropdown menu.
+
+## Verification Record
+- **Pytest Suite (`tests/api/test_instructor_course_web_flow.py`)**:
+  - `test_post_course_settings_update_route_success`: PASS (reproduced 405 before fix, passed 200 after fix).
+  - `test_instructor_publish_draft_course_warning`: PASS (clean warning flash, no 405/500).
+  - `test_admin_publish_draft_course_direct_success`: PASS (transitions to PUBLISHED cleanly).
+  - Total instructor test suite: **15 passed, 0 failed** in 6.30s.
+- **Static Analysis & Formatting**:
+  - `.\.venv\Scripts\ruff.exe check src tests`: PASS (0 errors).
+  - `.\.venv\Scripts\ruff.exe format --check src tests`: PASS (194 files already formatted).
+  - `.\.venv\Scripts\mypy.exe src`: PASS (0 errors in 84 source files).
+  - `python scripts/repo_check.py`: PASS.
+- **Live Docker & Chrome DevTools Verification (`http://localhost:5000`)**:
+  - Navigated to `manage?tab=settings` of course `HUM101` (`c30f8478-5c1b-4fe8-84c9-1c641e8fe561`).
+  - Clicked "Lưu thay đổi": Saved successfully, returned toast "Cập nhật thông tin khóa học thành công", zero 405 errors.
+  - Clicked "Xuất bản ngay (Admin)": Successfully published course, updated badge to `HUM101 Đang mở (PUBLISHED)`.
+  - Checked `/instructor/courses` grid: Course card renders with green `Đang mở` badge and full functional controls.
+
