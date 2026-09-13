@@ -628,7 +628,11 @@
 
       const isHidden = win.classList.contains('d-none');
       if (isHidden) {
-        win.classList.remove('d-none');
+        if (window.PWD.motion && typeof window.PWD.motion.openAIChat === 'function') {
+          window.PWD.motion.openAIChat(win);
+        } else {
+          win.classList.remove('d-none');
+        }
         if (launcher) launcher.classList.add('active');
         if (icon && this.components) icon.innerHTML = this.components.icon('x');
 
@@ -637,7 +641,11 @@
           if (input) input.focus();
         }, 150);
       } else {
-        win.classList.add('d-none');
+        if (window.PWD.motion && typeof window.PWD.motion.closeAIChat === 'function') {
+          window.PWD.motion.closeAIChat(win);
+        } else {
+          win.classList.add('d-none');
+        }
         if (launcher) launcher.classList.remove('active');
         if (icon && this.components) icon.innerHTML = this.components.icon('sparkles');
       }
@@ -649,7 +657,11 @@
       const icon = document.getElementById('ai-fab-icon');
       if (!win) return;
 
-      win.classList.remove('d-none');
+      if (window.PWD.motion && typeof window.PWD.motion.openAIChat === 'function') {
+        window.PWD.motion.openAIChat(win);
+      } else {
+        win.classList.remove('d-none');
+      }
       if (launcher) launcher.classList.add('active');
       if (icon && this.components) icon.innerHTML = this.components.icon('x');
 
@@ -667,7 +679,11 @@
       const win = document.getElementById('ai-chat-window');
       const launcher = document.getElementById('ai-fab-launcher');
       const icon = document.getElementById('ai-fab-icon');
-      if (win) win.classList.add('d-none');
+      if (window.PWD.motion && typeof window.PWD.motion.closeAIChat === 'function') {
+        window.PWD.motion.closeAIChat(win);
+      } else if (win) {
+        win.classList.add('d-none');
+      }
       if (launcher) launcher.classList.remove('active');
       if (icon && this.components) icon.innerHTML = this.components.icon('sparkles');
     }

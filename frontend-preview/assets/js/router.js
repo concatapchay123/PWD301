@@ -104,6 +104,13 @@
           if (window.PWD.activeViewInit && typeof window.PWD.activeViewInit === 'function') {
             window.PWD.activeViewInit(params);
           }
+
+          // Trigger GSAP motion entrance and interactions for newly rendered view
+          if (window.PWD.motion) {
+            window.PWD.motion.animatePageEntrance();
+            window.PWD.motion.initScrollTriggers();
+            window.PWD.motion.bindMicroInteractions(this.outlet);
+          }
         } catch (err) {
           console.error('Error rendering view for route:', hash, err);
           this.outlet.innerHTML = window.PWD.components.emptyState(

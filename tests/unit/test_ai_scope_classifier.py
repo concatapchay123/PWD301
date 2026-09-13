@@ -173,9 +173,7 @@ def test_coding_requests_refused_on_global_main_page(coding_on_main_page: str) -
 )
 def test_system_and_course_guidance_accepted_on_global_page(lms_guidance_query: str) -> None:
     """On main page, LMS system, courses, and platform usage questions are accepted."""
-    result = classify_query_scope(
-        lms_guidance_query, context="Context: GLOBAL, Surface: MAIN_PAGE"
-    )
+    result = classify_query_scope(lms_guidance_query, context="Context: GLOBAL, Surface: MAIN_PAGE")
     assert result.is_in_scope is True
     assert result.is_malicious is False
     assert result.category == "IN_SCOPE_LMS_GUIDANCE"
@@ -209,17 +207,13 @@ def test_hybrid_classifier_fast_path_bypasses_ai() -> None:
     mock_client = MagicMock()
 
     # 1. Malicious query -> fast blocked, 0 AI calls
-    res_attack = classify_query_scope_hybrid(
-        "DROP TABLE users; -- hack admin", client=mock_client
-    )
+    res_attack = classify_query_scope_hybrid("DROP TABLE users; -- hack admin", client=mock_client)
     assert res_attack.is_in_scope is False
     assert res_attack.is_malicious is True
     mock_client.classify_intent.assert_not_called()
 
     # 2. Recipe query -> fast blocked, 0 AI calls
-    res_cooking = classify_query_scope_hybrid(
-        "hướng dẫn nấu phở bò ngon", client=mock_client
-    )
+    res_cooking = classify_query_scope_hybrid("hướng dẫn nấu phở bò ngon", client=mock_client)
     assert res_cooking.is_in_scope is False
     assert res_cooking.category == "OUT_OF_SCOPE_TOPIC"
     mock_client.classify_intent.assert_not_called()
@@ -306,6 +300,3 @@ def test_real_gemini_client_classify_intent_decisions() -> None:
     res_ok = client.classify_intent("Giải thích cơ chế Promise trong JavaScript")
     assert res_ok.is_in_scope is True
     assert res_ok.category == "IN_SCOPE_AI_VERIFIED"
-
-
-

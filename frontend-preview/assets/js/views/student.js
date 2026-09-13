@@ -22,7 +22,7 @@
         ${cmp.heroWelcome(
           'Chào mừng trở lại, Minh Anh! 👋',
           'Tiếp tục hành trình học tập hôm nay. Bạn có 1 bài tập sắp đến hạn và 1 bài kiểm tra đang mở.',
-          activeCourse ? `<a href="#/student/lesson/les_4" class="btn btn-light fw-semibold px-3 py-2" style="color: #1e3a8a; border-radius: var(--radius-md); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">Tiếp tục học: Bài 4 →</a>` : ''
+          activeCourse ? `<a href="#/student/lesson/les_4" class="btn btn-light fw-semibold px-3 py-2" style="color: var(--brand-primary); border-radius: var(--radius-md); box-shadow: 0 4px 14px rgba(0,0,0,0.12);">Tiếp tục học: Bài 4 →</a>` : ''
         )}
 
         <!-- Essential KPI Cards with vibrant accent colors -->

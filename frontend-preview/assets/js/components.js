@@ -223,6 +223,9 @@
       `;
 
       container.prepend(toast);
+      if (window.PWD && window.PWD.motion && typeof window.PWD.motion.animateToastIn === 'function') {
+        window.PWD.motion.animateToastIn(toast);
+      }
       this.bindToastEvents(toast, duration);
     },
 
@@ -239,9 +242,15 @@
         if (toast._isDismissing) return;
         toast._isDismissing = true;
         toast.classList.add('toast-hiding');
-        setTimeout(() => {
-          try { toast.remove(); } catch (e) {}
-        }, 260);
+        if (window.PWD && window.PWD.motion && typeof window.PWD.motion.animateToastOut === 'function') {
+          window.PWD.motion.animateToastOut(toast, () => {
+            try { toast.remove(); } catch (e) {}
+          });
+        } else {
+          setTimeout(() => {
+            try { toast.remove(); } catch (e) {}
+          }, 260);
+        }
       };
 
       const startTimer = () => {

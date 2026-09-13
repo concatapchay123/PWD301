@@ -28,6 +28,9 @@
       this.syncActiveSidebarLink();
       this.initNotificationBell();
       this.initAIChat();
+      if (window.PWDMotion && typeof window.PWDMotion.init === 'function') {
+        window.PWDMotion.init();
+      }
     },
 
     // 0. Sidebar Collapse / Expand Toggle
@@ -215,12 +218,20 @@
       if (!win) return;
       const isHidden = win.classList.contains('d-none');
       if (isHidden) {
-        win.classList.remove('d-none');
+        if (window.PWDMotion && typeof window.PWDMotion.openAIChat === 'function') {
+          window.PWDMotion.openAIChat(win);
+        } else {
+          win.classList.remove('d-none');
+        }
         if (launcher) launcher.classList.add('active');
         const input = document.getElementById('ai-floating-input');
         if (input) setTimeout(() => input.focus(), 150);
       } else {
-        win.classList.add('d-none');
+        if (window.PWDMotion && typeof window.PWDMotion.closeAIChat === 'function') {
+          window.PWDMotion.closeAIChat(win);
+        } else {
+          win.classList.add('d-none');
+        }
         if (launcher) launcher.classList.remove('active');
       }
     },
@@ -229,7 +240,11 @@
       const win = document.getElementById('ai-chat-window');
       const launcher = document.getElementById('ai-fab-launcher');
       if (!win) return;
-      win.classList.remove('d-none');
+      if (window.PWDMotion && typeof window.PWDMotion.openAIChat === 'function') {
+        window.PWDMotion.openAIChat(win);
+      } else {
+        win.classList.remove('d-none');
+      }
       if (launcher) launcher.classList.add('active');
       if (starterQuestion) {
         this.selectQuickPrompt(starterQuestion);
@@ -242,7 +257,11 @@
     closeAIChat() {
       const win = document.getElementById('ai-chat-window');
       const launcher = document.getElementById('ai-fab-launcher');
-      if (win) win.classList.add('d-none');
+      if (window.PWDMotion && typeof window.PWDMotion.closeAIChat === 'function') {
+        window.PWDMotion.closeAIChat(win);
+      } else if (win) {
+        win.classList.add('d-none');
+      }
       if (launcher) launcher.classList.remove('active');
     },
 

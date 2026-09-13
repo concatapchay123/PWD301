@@ -119,7 +119,7 @@
                         <div class="telemetry-icon-box cpu">${cmp.icon('cpu')}</div>
                         <span class="telemetry-card-title">Vi xử lý CPU</span>
                       </div>
-                      <span class="telemetry-pill-badge" style="color: #2563eb; background: rgba(37,99,235,0.08);">
+                      <span class="telemetry-pill-badge" style="color: var(--brand-primary); background: rgba(99,102,241,0.12);">
                         ${tel.cpu.temp}
                       </span>
                     </div>
@@ -239,7 +239,7 @@
                         ` : `
                           <span style="color: #0284c7;">↓ ${dlVal}</span>
                           <span class="text-slate-400 mx-1" style="font-weight: 300;">/</span>
-                          <span style="color: #2563eb;">↑ ${ulVal}</span>
+                          <span style="color: var(--brand-primary);">↑ ${ulVal}</span>
                           <span style="font-size: 11px; font-weight: normal; color: var(--slate-500); margin-left: 2px;">Mbps</span>
                         `}
                       </div>
@@ -300,7 +300,7 @@
                                 <div class="fw-bold text-slate-900" style="font-size: 13.5px;">${app.name}</div>
                                 <div class="text-caption text-muted">${app.email} • ${app.department}</div>
                                 <div class="mt-1">
-                                  <span class="badge" style="background: rgba(37,99,235,0.1); color: #2563eb; font-size: 11px;">
+                                  <span class="badge" style="background: rgba(99,102,241,0.12); color: var(--brand-primary); font-size: 11px;">
                                     Chuyên môn: ${app.expertise}
                                   </span>
                                 </div>
@@ -533,7 +533,7 @@
                     </div>
                     <div class="d-flex align-items-center gap-3 text-caption">
                       <span class="d-flex align-items-center gap-1">
-                        <span style="display:inline-block; width:10px; height:10px; background:#2563eb; border-radius:2px;"></span>
+                        <span style="display:inline-block; width:10px; height:10px; background:#6366f1; border-radius:2px;"></span>
                         Ghi danh mới
                       </span>
                       <span class="d-flex align-items-center gap-1">
@@ -547,8 +547,8 @@
                   <svg class="chart-svg-container" viewBox="0 0 700 200" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <defs>
                       <linearGradient id="enrollBarGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="#3b82f6"/>
-                        <stop offset="100%" stop-color="#1d4ed8"/>
+                        <stop offset="0%" stop-color="#818cf8"/>
+                        <stop offset="100%" stop-color="#4f46e5"/>
                       </linearGradient>
                       <linearGradient id="lessonsAreaGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
@@ -573,32 +573,32 @@
                     <!-- Week 1 -->
                     <rect x="75" y="105" width="28" height="60" rx="4" fill="url(#enrollBarGrad)" opacity="0.9"/>
                     <text x="89" y="184" text-anchor="middle" fill="var(--slate-500)" font-size="11.5">Tuần 1</text>
-                    <text x="89" y="98" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">42</text>
+                    <text x="89" y="98" text-anchor="middle" fill="#6366f1" font-size="11" font-weight="600">42</text>
 
                     <!-- Week 2 -->
                     <rect x="175" y="85" width="28" height="80" rx="4" fill="url(#enrollBarGrad)" opacity="0.9"/>
                     <text x="189" y="184" text-anchor="middle" fill="var(--slate-500)" font-size="11.5">Tuần 2</text>
-                    <text x="189" y="78" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">65</text>
+                    <text x="189" y="78" text-anchor="middle" fill="#6366f1" font-size="11" font-weight="600">65</text>
 
                     <!-- Week 3 -->
                     <rect x="275" y="95" width="28" height="70" rx="4" fill="url(#enrollBarGrad)" opacity="0.9"/>
                     <text x="289" y="184" text-anchor="middle" fill="var(--slate-500)" font-size="11.5">Tuần 3</text>
-                    <text x="289" y="88" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">58</text>
+                    <text x="289" y="88" text-anchor="middle" fill="#6366f1" font-size="11" font-weight="600">58</text>
 
                     <!-- Week 4 -->
                     <rect x="375" y="65" width="28" height="100" rx="4" fill="url(#enrollBarGrad)" opacity="0.9"/>
                     <text x="389" y="184" text-anchor="middle" fill="var(--slate-500)" font-size="11.5">Tuần 4</text>
-                    <text x="389" y="58" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">84</text>
+                    <text x="389" y="58" text-anchor="middle" fill="#6366f1" font-size="11" font-weight="600">84</text>
 
                     <!-- Week 5 -->
                     <rect x="475" y="75" width="28" height="90" rx="4" fill="url(#enrollBarGrad)" opacity="0.9"/>
                     <text x="489" y="184" text-anchor="middle" fill="var(--slate-500)" font-size="11.5">Tuần 5</text>
-                    <text x="489" y="68" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">72</text>
+                    <text x="489" y="68" text-anchor="middle" fill="#6366f1" font-size="11" font-weight="600">72</text>
 
                     <!-- Week 6 (Current) -->
                     <rect x="575" y="45" width="28" height="120" rx="4" fill="url(#enrollBarGrad)" opacity="0.95"/>
                     <text x="589" y="184" text-anchor="middle" fill="var(--slate-800)" font-weight="600" font-size="11.5">Hiện tại</text>
-                    <text x="589" y="38" text-anchor="middle" fill="#2563eb" font-size="12" font-weight="700">112</text>
+                    <text x="589" y="38" text-anchor="middle" fill="#6366f1" font-size="12" font-weight="700">112</text>
 
                     <!-- Spline Line: Completed Lesson Sessions -->
                     <path d="M 89 125 C 139 95, 139 90, 189 75 C 239 60, 239 80, 289 65 C 339 50, 339 40, 389 35 C 439 30, 439 45, 489 40 C 539 35, 539 25, 589 22" 
@@ -639,7 +639,7 @@
                       <strong class="text-slate-900">42% <span class="text-muted fw-normal">(538 SV)</span></strong>
                     </div>
                     <div class="discipline-track">
-                      <div class="discipline-bar" style="width: 42%; background: #2563eb;"></div>
+                      <div class="discipline-bar" style="width: 42%; background: var(--brand-primary);"></div>
                     </div>
                   </div>
 
@@ -725,7 +725,7 @@
                           <tr>
                             <td>
                               <div class="d-flex align-items-center gap-2">
-                                <span class="badge font-monospace" style="background: rgba(37,99,235,0.1); color: #2563eb; font-weight: 700;">
+                                <span class="badge font-monospace" style="background: rgba(99,102,241,0.12); color: var(--brand-primary); font-weight: 700;">
                                   ${c.code}
                                 </span>
                                 <span class="fw-semibold text-slate-900" style="font-size: 13px;" title="${c.title}">
@@ -778,7 +778,7 @@
                 <div class="admin-timeline-list">
                   <!-- Event 1: Role Update -->
                   <div class="admin-timeline-item">
-                    <div class="timeline-icon-dot" style="background: rgba(37,99,235,0.1); color: #2563eb;">
+                    <div class="timeline-icon-dot" style="background: rgba(99,102,241,0.12); color: var(--brand-primary);">
                       ${cmp.icon('user')}
                     </div>
                     <div class="timeline-content-box">

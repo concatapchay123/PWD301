@@ -347,3 +347,77 @@ Resolve the critical vulnerability where the AI Assistant answered any arbitrary
 - **AI Service Unit Tests (`tests/unit/test_ai_service.py`)**: 17/17 passed.
 - **Linter & Type Checker**: `ruff check`, `ruff format --check`, and `mypy src` (84 source files) passed with 0 errors.
 
+---
+
+# TASK-036 — Session-Persistent Web Entrance Motion & Defensive UI Flicker Elimination
+
+**Status:** DONE  
+**Assignee:** Principal Frontend Architect & UI/UX Design Systems Engineer  
+**Started Date:** 2026-09-13  
+**Completed Date:** 2026-09-13  
+
+## Goal
+Resolve the UI defect where navigation back and forth across routes, views, tabs, or components caused the entire user interface (topbar, sidebar, page headers, metric cards, main cards, tables) to repeatedly flash (`autoAlpha: 0`) and pop/rise up (`y: 20 -> 0`). Enforce the strict product design requirement that the entrance motion occurs strictly ONCE upon initial entrance to the web platform in a user session, with all subsequent navigations and component interactions rendering clean, instant, and flicker-free.
+
+## Root Cause Analysis
+1. **Unconditional Re-Execution on Page Load & View Routing**:
+   - `PWDMotion.animatePageEntrance()` in `src/pwd301/static/js/motion.js` and `frontend-preview/assets/js/motion.js` created a GSAP timeline that animated `.app-topbar`, `.app-sidebar .sidebar-item`, `.page-header`, `.hero-welcome-card`, `.metric-card`, and `.app-main-workspace .card` from `autoAlpha: 0, y: 20`.
+   - In Flask multi-page navigation (`base.html`), every page change reloaded `motion.js` and re-triggered `PWDMotion.init()` -> `animatePageEntrance()`, causing elements to flash invisible and float up on every click.
+   - In `frontend-preview/assets/js/router.js`, `router.handleRouting()` explicitly called `animatePageEntrance()` on every `hashchange`, repeatedly triggering the entrance timeline on every view switch.
+2. **Missing Initialization Idempotency Guard**:
+   - `PWDMotion.init()` was called both by `motion.js` on `DOMContentLoaded` and by `app_shell.js`, executing `animatePageEntrance()` twice concurrently on initial load.
+3. **ScrollTrigger Batch Reveal Flicker**:
+   - `initScrollTriggers()` used `ScrollTrigger.batch` on `.syllabus-row, .course-card, .app-table tbody tr` with `{ autoAlpha: 0, y: 16 }`, hiding and popping up table rows and course cards during scroll and view switches.
+
+## Key Changes
+1. **Session-Persistent Entrance State Tracking (`src/pwd301/static/js/motion.js`, `frontend-preview/assets/js/motion.js`)**:
+   - Added `ENTRANCE_STORAGE_KEY = 'pwd301_initial_entrance_done'`.
+   - Added `hasEntered()`: checks `sessionStorage.getItem(ENTRANCE_STORAGE_KEY) === 'true'` with in-memory `_entranceCompleted` fallback.
+   - Added `markEntered()`: persists entrance state to `sessionStorage` and in-memory flag.
+   - Added `resetEntrance()`: clears the session key for testing and re-entrance scenarios.
+2. **Strict Single-Entrance Execution & Clean Subsequent Display (`animatePageEntrance()`)**:
+   - If `this.hasEntered() || prefersReduced`: skips timeline creation and immediately invokes `window.gsap.set(entranceTargets, { autoAlpha: 1, x: 0, y: 0, scale: 1, clearProps: 'transform,opacity,visibility' })` ensuring instant, un-animated, flicker-free rendering.
+   - If not yet entered: marks entrance immediately and plays timeline once. On timeline `onComplete`, clears inline transform/opacity properties via `clearProps` so native CSS layout and hover states remain clean.
+3. **Idempotent Initialization Guard (`init()`)**:
+   - Added `if (this.initialized) return;` at the beginning of `PWDMotion.init()`, preventing redundant duplicate timeline triggers from multiple callers.
+4. **ScrollTrigger Batch Reveal Optimization (`initScrollTriggers()`)**:
+   - When `this.hasEntered()` is true, immediately clears inline properties and returns without registering redundant batch triggers.
+5. **Head Pre-Paint Theme & Sidebar Restoration (`base.html`, `frontend-preview/index.html`)**:
+   - Injected synchronous inline JavaScript in `<head>` before stylesheets, restoring `data-theme`, `data-bs-theme`, and `sidebar-collapsed` prior to first paint.
+   - Completely eliminated the white flash (FOUC) when navigating pages in Dark Mode.
+6. **Full Retention of Rich Hover Micro-Interactions (`motion.js`, `app.css`)**:
+   - Overrode `.tab-pane.fade { transition: none !important; }` in CSS to make tab switching instant and flicker-free.
+   - Preserved and verified all rich hover micro-interactions across graphic areas:
+     - Card floating elevation (`y: -5`) and smooth 3D tilt (`rotationX`, `rotationY`) on mouseenter / mousemove.
+     - Button elastic press feedback (`scale: 0.95 -> 1, back.out(2)`).
+     - Table rows luminous hover transition (`x: 5`).
+     - Ambient floating and interactive rotation for the AI octopus mascot launcher.
+7. **Cache-Busting Version Bump**:
+   - Incremented script query strings to `motion.js?v=2.3.0`, `theme.js?v=2.2.0`, and CSS to `app.css?v=1.3.2` / `app.css?v=1.2.0`.
+
+## Verification Record
+- **Live Chrome DevTools E2E Verification (`http://localhost:5000`)**:
+  - Initial visit: `hasEntered()` is recorded as `true`, `sessionStorage` updated to `'true'`.
+  - Page Transitions (Navigation between `/student/dashboard` -> `/student/my-learning` -> `/admin/instructor-applications` in Dark Mode):
+    - Zero white flash (FOUC eliminated via head pre-paint script).
+    - Zero graphic entrance re-loading on subsequent navigations (`isTopbarTweening: false`, `isFirstCardTweening: false`, `cardTransform: "none"`, `cardOpacity: "1"`).
+  - Hover & Graphical Micro-Interactions:
+    - Card hover verified: `cardHoverTweensActive: 3` (`y: -5`, `rotationX`, `rotationY` active on mouseenter / mousemove).
+    - Button click verified: `btnTweenCount: 2` (elastic press feedback active).
+    - Table row hover verified: `rowTweenCount: 1` (`x: 5` slide hover active).
+  - Tab switching on `/admin/instructor-applications` (`Chờ duyệt`, `Đã duyệt`, `Đã từ chối`, `Tất cả hồ sơ`):
+    - Completely clean, instant, zero fade delay or flickering.
+- **Frontend Preview Prototype Verification (`file:///E:/PWD301/frontend-preview/index.html`)**:
+  - Pre-paint `<head>` script active.
+  - Hover on prototype cards verified: `prototypeCardHoverTweens: 3` (`y`, `rotationX`, `rotationY`).
+  - Rapid route transitions across `#/student/my-learning`, `#/instructor/dashboard`, `#/instructor/courses`:
+    - Zero graphic entrance re-loading on subsequent routes, instant clean view renders.
+- **Repository Checks**:
+  - `python scripts/repo_check.py`: PASS.
+  - `.\.venv\Scripts\ruff.exe check src tests scripts`: PASS (0 errors).
+  - `.\.venv\Scripts\ruff.exe format --check src tests scripts`: PASS (200 files formatted).
+  - `python -m compileall -q src tests scripts`: PASS (0 errors).
+  - `tests/api/test_web_ui_flow_fixes.py` & `tests/api/test_student_portal_ui.py`: 37/37 passed (100%) in 24.86s.
+
+
+

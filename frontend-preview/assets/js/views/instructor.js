@@ -20,7 +20,7 @@
         ${cmp.heroWelcome(
           'Chào mừng trở lại, Thầy Nam! 👨‍🏫',
           'Quản lý giảng dạy, chấm điểm tự luận và thiết lập kỳ thi chuẩn đầu ra môn học PWD301.',
-          `<a href="#/instructor/course-editor/new" class="btn btn-light fw-semibold px-3 py-2" style="color: #1e3a8a; border-radius: var(--radius-md); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">+ Tạo khóa học mới</a>`
+          `<a href="#/instructor/course-editor/new" class="btn btn-light fw-semibold px-3 py-2" style="color: var(--brand-primary); border-radius: var(--radius-md); box-shadow: 0 4px 14px rgba(0,0,0,0.12);">+ Tạo khóa học mới</a>`
         )}
 
         <div class="row g-4 mb-4">

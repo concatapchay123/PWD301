@@ -2,6 +2,21 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
+  <script>
+    /* Immediate pre-paint theme & sidebar restoration to eliminate FOUC white flash & layout shifts */
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem('pwd301_theme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = savedTheme || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        if (localStorage.getItem('pwd301_sidebar_collapsed') === 'true') {
+          document.documentElement.classList.add('sidebar-collapsed');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PWD301 — Online Course Management Platform</title>
   <meta name="description" content="Hệ thống Quản lý Khóa học Trực tuyến PWD301 — Frontend Prototype Demo">
@@ -9,7 +24,7 @@
   <!-- Core Stylesheets -->
   <link rel="icon" href="data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3e%3crect width='32' height='32' rx='6' fill='%231e3a8a'/%3e%3ctext x='16' y='22' font-family='sans-serif' font-size='18' font-weight='bold' fill='white' text-anchor='middle'%3eP3%3c/text%3e%3c/svg%3e">
   <link rel="stylesheet" href="assets/vendor/bootstrap.min.css">
-  <link rel="stylesheet" href="assets/css/app.css?v=1.1.0">
+  <link rel="stylesheet" href="assets/css/app.css?v=1.2.0">
 </head>
 <body>
   <div id="app-shell">
@@ -201,13 +216,16 @@
 
   <!-- Scripts -->
   <script src="assets/vendor/bootstrap.bundle.min.js"></script>
-  <script src="assets/js/components.js?v=1.1.0"></script>
-  <script src="assets/js/store.js?v=1.1.0"></script>
-  <script src="assets/js/router.js?v=1.1.0"></script>
-  <script src="assets/js/views/public.js?v=1.1.0"></script>
-  <script src="assets/js/views/student.js?v=1.1.0"></script>
-  <script src="assets/js/views/instructor.js?v=1.1.0"></script>
-  <script src="assets/js/views/admin.js?v=1.1.0"></script>
-  <script src="assets/js/app.js?v=1.1.0"></script>
+  <script src="assets/vendor/gsap.min.js"></script>
+  <script src="assets/vendor/ScrollTrigger.min.js"></script>
+  <script src="assets/js/motion.js?v=2.3.0"></script>
+  <script src="assets/js/components.js?v=2.0.0"></script>
+  <script src="assets/js/store.js?v=2.0.0"></script>
+  <script src="assets/js/router.js?v=2.0.0"></script>
+  <script src="assets/js/views/public.js?v=2.0.0"></script>
+  <script src="assets/js/views/student.js?v=2.0.0"></script>
+  <script src="assets/js/views/instructor.js?v=2.0.0"></script>
+  <script src="assets/js/views/admin.js?v=2.0.0"></script>
+  <script src="assets/js/app.js?v=2.0.0"></script>
 </body>
 </html>

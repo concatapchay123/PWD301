@@ -688,14 +688,22 @@ def classify_query_scope(text: str, context: str | None = None) -> ScopeResult:
                 error_code="OUT_OF_SCOPE",
             )
 
-        if has_lms_guidance_kw:
+        has_academic_concept_kw = any(
+            (
+                bool(re.search(rf"\b{re.escape(kw)}\b", lower_query, re.IGNORECASE))
+                if len(kw) <= 4
+                else (kw in lower_query)
+            )
+            for kw in _IN_SCOPE_KEYWORDS
+        )
+        if has_lms_guidance_kw or (has_academic_concept_kw and not is_code_generation_request):
             return ScopeResult(
                 is_in_scope=True,
                 is_malicious=False,
-                category="IN_SCOPE_LMS_GUIDANCE",
+                category=("IN_SCOPE_LMS_GUIDANCE" if has_lms_guidance_kw else "IN_SCOPE_ACADEMIC"),
                 reason=(
-                    "Nội dung hỏi về hệ thống PWD301, danh mục khóa học hoặc hướng dẫn "
-                    "sử dụng nền tảng."
+                    "Nội dung hỏi về hệ thống PWD301, danh mục khóa học hoặc "
+                    "khái niệm học tập trong chương trình đào tạo."
                 ),
                 refusal_message="",
                 error_code=None,
@@ -850,4 +858,3 @@ def classify_query_scope_hybrid(
             return ai_res
 
     return rule_res
-

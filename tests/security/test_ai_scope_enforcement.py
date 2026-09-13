@@ -351,4 +351,3 @@ def test_hybrid_ai_guardrail_blocks_ai_abuse(
     )
     assert resp_api.status_code == 400
     assert resp_api.get_json()["error"]["code"] == "OUT_OF_SCOPE"
-
