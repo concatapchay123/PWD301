@@ -69,3 +69,6 @@ _archives/
 *.temp
 *.swp
 *.swo
+
+# Agent worktrees
+.worktrees/
