@@ -4030,12 +4030,39 @@ textarea.form-control {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              height 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              max-height 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s ease;
+}
+
+.ai-chat-window.ai-expanded {
+  width: 760px;
+  max-width: calc(100vw - 48px);
+  height: 740px;
+  max-height: calc(100vh - 120px);
+  box-shadow: 0 28px 64px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+@media (max-width: 768px) {
+  .ai-chat-window.ai-expanded {
+    width: calc(100vw - 24px);
+    right: 12px;
+    bottom: 84px;
+    height: calc(100vh - 100px);
+    max-height: calc(100vh - 100px);
+  }
 }
 
 [data-theme="dark"] .ai-chat-window {
   background: rgba(17, 24, 39, 0.94);
   border-color: rgba(99, 102, 241, 0.22);
   box-shadow: 0 24px 56px rgba(0, 0, 0, 0.75);
+}
+
+[data-theme="dark"] .ai-chat-window.ai-expanded {
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
 .ai-chat-header {
@@ -4166,7 +4193,11 @@ textarea.form-control {
 }
 
 .ai-msg-user .ai-msg-avatar {
-  background: var(--slate-700);
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+  font-weight: 700;
+  font-size: 12px;
 }
 
 .ai-msg-content {

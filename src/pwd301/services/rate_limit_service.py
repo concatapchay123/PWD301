@@ -240,6 +240,9 @@ def check_ai_rate_limit(
         limit = AI_ROLE_LIMITS.get(resolved_role.upper(), 20)
 
     with _lock:
+        last_ts = _ai_request_timestamps[user_key][-1] if _ai_request_timestamps[user_key] else 0.0
+        now = max(time.time(), last_ts + 1e-4)
+
         mem_timestamps = _clean_window(_ai_request_timestamps[user_key], window_seconds, now)
         _ai_request_timestamps[user_key] = mem_timestamps
         file_timestamps = _read_file_timestamps(user_key, window_seconds, now)

@@ -201,6 +201,10 @@
       if (closeBtn) {
         closeBtn.addEventListener('click', () => this.closeAIChat());
       }
+      const expandBtn = document.getElementById('ai-chat-expand-btn');
+      if (expandBtn) {
+        expandBtn.addEventListener('click', () => this.toggleExpandAIChat());
+      }
       const input = document.getElementById('ai-floating-input');
       if (input) {
         input.addEventListener('keydown', (e) => {
@@ -209,6 +213,33 @@
             this.sendFloatingAIMessage();
           }
         });
+      }
+    },
+
+    toggleExpandAIChat() {
+      const win = document.getElementById('ai-chat-window');
+      const btn = document.getElementById('ai-chat-expand-btn');
+      const expandIcon = document.getElementById('ai-expand-icon');
+      const compressIcon = document.getElementById('ai-compress-icon');
+      if (!win) return;
+
+      const isExpanded = win.classList.toggle('ai-expanded');
+      if (btn) {
+        btn.setAttribute('title', isExpanded ? 'Thu nhỏ' : 'Phóng to');
+        btn.setAttribute('aria-label', isExpanded ? 'Thu nhỏ giao diện' : 'Phóng to giao diện');
+      }
+      if (expandIcon && compressIcon) {
+        if (isExpanded) {
+          expandIcon.classList.add('d-none');
+          compressIcon.classList.remove('d-none');
+        } else {
+          expandIcon.classList.remove('d-none');
+          compressIcon.classList.add('d-none');
+        }
+      }
+      const msgContainer = document.getElementById('ai-floating-messages');
+      if (msgContainer) {
+        msgContainer.scrollTop = msgContainer.scrollHeight;
       }
     },
 
@@ -281,11 +312,23 @@
       const msgContainer = document.getElementById('ai-floating-messages');
       if (!msgContainer) return;
 
-      // 1. Append user message
+      // 1. Append user message with real user avatar
+      const win = document.getElementById('ai-chat-window');
+      const userAvatar = win?.dataset?.userAvatar || window.PWD?.currentUser?.avatarUrl || '';
+      const userInitials = win?.dataset?.userInitials || window.PWD?.currentUser?.initials || 'US';
+      const userName = win?.dataset?.userName || window.PWD?.currentUser?.name || 'Bạn';
+
+      let avatarInner;
+      if (userAvatar) {
+        avatarInner = `<img src="${escapeHtml(userAvatar)}" alt="${escapeHtml(userName)}">`;
+      } else {
+        avatarInner = escapeHtml(userInitials);
+      }
+
       const userMsg = document.createElement('div');
       userMsg.className = 'ai-chat-msg ai-msg-user';
       userMsg.innerHTML = `
-        <div class="ai-msg-avatar">HV</div>
+        <div class="ai-msg-avatar" title="${escapeHtml(userName)}">${avatarInner}</div>
         <div class="ai-msg-content">${escapeHtml(text)}</div>
       `;
       msgContainer.appendChild(userMsg);

@@ -696,6 +696,33 @@
       }
     }
 
+    toggleExpandAIChat() {
+      const win = document.getElementById('ai-chat-window');
+      const btn = document.getElementById('ai-chat-expand-btn');
+      const expandIcon = document.getElementById('ai-expand-icon');
+      const compressIcon = document.getElementById('ai-compress-icon');
+      if (!win) return;
+
+      const isExpanded = win.classList.toggle('ai-expanded');
+      if (btn) {
+        btn.setAttribute('title', isExpanded ? 'Thu nhỏ' : 'Phóng to');
+        btn.setAttribute('aria-label', isExpanded ? 'Thu nhỏ giao diện' : 'Phóng to giao diện');
+      }
+      if (expandIcon && compressIcon) {
+        if (isExpanded) {
+          expandIcon.classList.add('d-none');
+          compressIcon.classList.remove('d-none');
+        } else {
+          expandIcon.classList.remove('d-none');
+          compressIcon.classList.add('d-none');
+        }
+      }
+      const msgContainer = document.getElementById('ai-floating-messages');
+      if (msgContainer) {
+        msgContainer.scrollTop = msgContainer.scrollHeight;
+      }
+    }
+
     sendFloatingAIMessage() {
       const input = document.getElementById('ai-floating-input');
       const text = (input?.value || '').trim();
@@ -704,11 +731,14 @@
       const msgContainer = document.getElementById('ai-floating-messages');
       if (!msgContainer) return;
 
+      const user = this.store.getState().currentUser;
+      const avatarText = user ? (user.avatar || user.name?.substring(0, 2).toUpperCase() || 'US') : 'US';
+
       // 1. Append user message
       const userMsg = document.createElement('div');
       userMsg.className = 'ai-chat-msg ai-msg-user';
       userMsg.innerHTML = `
-        <div class="ai-msg-avatar">MA</div>
+        <div class="ai-msg-avatar" title="${this.escapeHtml(user?.name || 'Người dùng')}">${this.escapeHtml(avatarText)}</div>
         <div class="ai-msg-content">${this.escapeHtml(text)}</div>
       `;
       msgContainer.appendChild(userMsg);

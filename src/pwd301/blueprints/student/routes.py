@@ -771,12 +771,11 @@ def attempt_result_view(attempt_id: str) -> Any:
 @student_bp.route("/ai-assistant", methods=["GET"])
 @student_required
 def ai_assistant_view() -> Any:
-    """Student interactive AI Study Assistant view."""
-    actor = require_authenticated_actor()
-    overview = get_student_learning_overview(actor, session=db.session)
+    """Redirect to student dashboard with floating AI assistant."""
+    require_authenticated_actor()
     if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/ai_assistant.html", overview=overview)
-    return jsonify({"status": "ready"}), 200
+        return redirect(url_for("student.dashboard"))
+    return jsonify({"status": "deprecated", "message": "Use floating AI assistant", "redirect_url": url_for("student.dashboard")}), 200
 
 
 @student_bp.route("/ai/chat", methods=["POST"])

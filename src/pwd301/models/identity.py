@@ -198,6 +198,13 @@ class User(Base, UserMixin):
 
         return check_password_hash(self.password_hash, password)
 
+    @property
+    def avatar_url(self) -> str | None:
+        """Return direct download URL for user's uploaded avatar asset if present."""
+        if self.avatar_file_asset_id:
+            return f"/api/v1/files/{self.avatar_file_asset_id}/download?disposition=inline"
+        return None
+
 
 class AnonymousUser(AnonymousUserMixin):
     """Anonymous user representation for unauthenticated guests.
@@ -205,6 +212,10 @@ class AnonymousUser(AnonymousUserMixin):
     Implements safe authorization check methods that consistently return False,
     preventing AttributeError in templates or decorators.
     """
+
+    @property
+    def avatar_url(self) -> str | None:
+        return None
 
     @property
     def role_codes(self) -> set[str]:

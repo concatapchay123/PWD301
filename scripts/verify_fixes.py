@@ -122,14 +122,13 @@ def run_checks():
         assert data.get("status") == "ok"
         print(f"Student login success as {data['user']['display_name']}")
 
-    # Check student AI assistant
+    # Check student AI assistant floating widget and redirect
     r = student_session.get(f"{BASE_URL}/student/ai-assistant")
-    print(f"GET /student/ai-assistant: {r.status_code}")
+    print(f"GET /student/ai-assistant: {r.status_code}, URL: {r.url}")
     assert r.status_code == 200
-    assert (
-        "var(--white)" in r.text or "var(--slate-50)" in r.text or "chat-interface-card" in r.text
-    )
-    print("PASS: Student AI Assistant uses dark mode tokens.")
+    assert "ai-chat-window" in r.text
+    assert "ai-chat-expand-btn" in r.text
+    print("PASS: Student AI Assistant uses floating window with expand button.")
 
     print("\nALL INTEGRATION CHECKS PASSED SUCCESSFULLY!")
 

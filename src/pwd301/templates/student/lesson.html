@@ -333,10 +333,10 @@
       </button>
 
       <!-- AI Tutor Shortcut -->
-      <a href="{{ url_for('student.ai_assistant_view') }}" class="btn btn-primary btn-sm px-3 d-inline-flex align-items-center gap-1.5 shadow-xs">
+      <button type="button" onclick="PWD.appShell.openAIChat('Chào gia sư AI, tôi có câu hỏi về bài học này...')" class="btn btn-primary btn-sm px-3 d-inline-flex align-items-center gap-1.5 shadow-xs">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
         <span class="d-none d-sm-inline">Hỏi Gia sư AI</span>
-      </a>
+      </button>
     </div>
   </header>
 
@@ -506,9 +506,9 @@
           <div style="max-width: 860px;">
             <div class="d-flex justify-content-between align-items-center mb-4">
               <h3 class="h5 fw-bold text-slate-900 mb-0">Hỏi đáp cộng đồng & Trợ lý AI</h3>
-              <a href="{{ url_for('student.ai_assistant_view') }}" class="btn btn-primary btn-sm px-3">
+              <button type="button" onclick="PWD.appShell.openAIChat()" class="btn btn-primary btn-sm px-3">
                 + Đặt câu hỏi cho AI Tutor
-              </a>
+              </button>
             </div>
 
             <div class="list-group list-group-flush border rounded-3 mb-4">

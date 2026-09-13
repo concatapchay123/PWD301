@@ -124,9 +124,13 @@
         <!-- User Avatar & Actions Dropdown (Authenticated) -->
         <div class="dropdown">
           <button class="btn btn-ghost p-1 d-flex align-items-center gap-2" type="button" id="userMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
-            <div class="topbar-brand-mark" style="width: 36px; height: 36px; font-size: 13px;">
-              {{ current_user.display_name[:2].upper() if current_user.display_name else 'US' }}
-            </div>
+            {% if current_user.avatar_url %}
+              <img src="{{ current_user.avatar_url }}" alt="{{ current_user.display_name }}" class="rounded-circle" style="width: 36px; height: 36px; object-fit: cover;">
+            {% else %}
+              <div class="topbar-brand-mark" style="width: 36px; height: 36px; font-size: 13px;">
+                {{ current_user.display_name[:2].upper() if current_user.display_name else 'US' }}
+              </div>
+            {% endif %}
             <div class="text-start d-none d-md-block line-height-sm">
               <div class="fw-semibold text-slate-800 text-truncate" style="max-width: 140px; font-size: 13px;">
                 {{ current_user.display_name or current_user.email }}
@@ -258,7 +262,7 @@
 
               <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
               <li class="sidebar-item">
-                <a href="{{ url_for('student.ai_assistant_view') }}" class="sidebar-link" title="Trợ lý AI" data-nav-label="Trợ lý AI">
+                <a href="javascript:void(0)" onclick="PWD.appShell.openAIChat()" class="sidebar-link" title="Trợ lý AI" data-nav-label="Trợ lý AI">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885L20 10.8l-4.756 3.662L16.824 20 12 16.326 7.176 20l1.58-5.538L4 10.8l6.088-1.915L12 3z"></path></svg>
                   <span>Trợ lý AI</span>
                 </a>
@@ -395,7 +399,7 @@
             <li class="sidebar-item"><a href="{{ url_for('core.index') }}" class="sidebar-link">Khám phá khóa học</a></li>
             <li class="sidebar-item"><a href="{{ url_for('student.assessments_view') }}" class="sidebar-link">Bài kiểm tra</a></li>
             <div class="sidebar-section-label">Hỗ trợ & Tiện ích</div>
-            <li class="sidebar-item"><a href="{{ url_for('student.ai_assistant_view') }}" class="sidebar-link">Trợ lý AI</a></li>
+            <li class="sidebar-item"><a href="javascript:void(0)" onclick="PWD.appShell.openAIChat()" class="sidebar-link">Trợ lý AI</a></li>
             <li class="sidebar-item"><a href="{{ url_for('student.notifications_center') }}" class="sidebar-link">Thông báo</a></li>
             <li class="sidebar-item"><a href="{{ url_for('student.become_instructor') }}" class="sidebar-link">Đề cử Giảng viên</a></li>
           {% elif active_r == 'INSTRUCTOR' %}
@@ -426,7 +430,10 @@
 
     <!-- 5. Floating AI Chatbot Launcher (FAB) & Interactive Chat Window -->
     <div id="floating-ai-container">
-      <div id="ai-chat-window" class="ai-chat-window d-none shadow" aria-label="Cửa sổ Trợ lý AI">
+      <div id="ai-chat-window" class="ai-chat-window d-none shadow" aria-label="Cửa sổ Trợ lý AI"
+           data-user-avatar="{{ current_user.avatar_url if (current_user is defined and current_user.is_authenticated and current_user.avatar_url) else '' }}"
+           data-user-initials="{{ current_user.display_name[:2].upper() if (current_user is defined and current_user.is_authenticated and current_user.display_name) else 'US' }}"
+           data-user-name="{{ current_user.display_name if (current_user is defined and current_user.is_authenticated and current_user.display_name) else 'Bạn' }}">
         <div class="ai-chat-header d-flex justify-content-between align-items-center">
           <div class="d-flex align-items-center gap-2">
             <div class="ai-avatar-badge position-relative">
@@ -439,10 +446,11 @@
             </div>
           </div>
           <div class="d-flex align-items-center gap-1">
-            <a href="{{ url_for('student.ai_assistant_view') if (current_user is defined and current_user.is_authenticated and not current_user.is_anonymous) else '#' }}" class="ai-ctrl-btn" title="Toàn màn hình">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
-            </a>
-            <button type="button" class="ai-ctrl-btn" id="ai-chat-close-btn" title="Đóng">
+            <button type="button" class="ai-ctrl-btn" id="ai-chat-expand-btn" title="Phóng to" aria-label="Phóng to giao diện" onclick="PWD.appShell.toggleExpandAIChat()">
+              <svg id="ai-expand-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+              <svg id="ai-compress-icon" class="d-none" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+            </button>
+            <button type="button" class="ai-ctrl-btn" id="ai-chat-close-btn" title="Đóng" aria-label="Đóng cửa sổ">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
           </div>
@@ -455,6 +463,16 @@
             </div>
             <div class="ai-msg-content">
               <div>Xin chào! Mình là <strong>Bạch Tuộc Trợ lý AI</strong> 🐙. Bạn cần tìm kiếm khóa học nào, hay cần hướng dẫn cách sử dụng các tính năng trên hệ thống PWD301 không? Hãy hỏi mình nhé!</div>
+            </div>
+          </div>
+
+          <div class="ai-quick-prompts mt-2">
+            <div class="ai-prompts-label">Gợi ý câu hỏi nhanh:</div>
+            <div class="d-flex flex-wrap gap-1">
+              <button type="button" class="ai-chip-btn" onclick="PWD.appShell.selectQuickPrompt('Hệ thống PWD301 có những khóa học nào?')">💡 Các khóa học?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.appShell.selectQuickPrompt('Cơ chế bảo mật CSRF Token hoạt động thế nào?')">💡 CSRF Token?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.appShell.selectQuickPrompt('Sự khác biệt giữa Session Cookie và JWT Token?')">💡 Session vs JWT?</button>
+              <button type="button" class="ai-chip-btn" onclick="PWD.appShell.selectQuickPrompt('Quy chế khóa đề thi và chống gian lận?')">💡 Quy chế thi?</button>
             </div>
           </div>
         </div>

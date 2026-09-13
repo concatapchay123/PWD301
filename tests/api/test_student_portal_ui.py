@@ -154,12 +154,11 @@ class TestStudentPortalViews:
         assert resp.status_code in (200, 302)
 
     def test_student_ai_assistant_page(self, client: FlaskClient, demo_env: dict[str, Any]) -> None:
-        """AI assistant workspace page renders 200."""
+        """Dedicated AI assistant full page redirects to dashboard with floating AI assistant."""
         login_web_user(client, demo_env["student1"])
         resp = client.get("/student/ai-assistant", headers={"Accept": "text/html"})
-        assert resp.status_code == 200
-        html = resp.data.decode("utf-8")
-        assert "Trợ lý AI Học tập" in html
+        assert resp.status_code == 302
+        assert "/student/dashboard" in resp.headers.get("Location", "")
 
     def test_student_ai_chat_endpoint(self, client: FlaskClient, demo_env: dict[str, Any]) -> None:
         """Session-authenticated AI chat endpoint returns response."""
@@ -316,12 +315,17 @@ class TestStudentPortalViews:
         assert "Mở cửa sổ Trợ lý AI →" not in html
         assert "Cơ chế chống CSRF hoạt động thế nào?" not in html
 
-        # 2. Circular octopus mascot launcher must be present in application shell
+        # 2. Circular octopus mascot launcher and expand UI must be present in application shell
         assert "ai-fab-launcher" in html
         assert "octopus_mascot.png" in html
         assert "Trợ lý Bạch Tuộc AI" in html
         assert "ai-online-badge" in html
         assert "ai-chat-window" in html
+        assert "ai-chat-expand-btn" in html
+        assert "ai-expand-icon" in html
+        assert "ai-compress-icon" in html
+        assert "data-user-initials" in html
+        assert "data-user-name" in html
 
         # 3. Test sending a message to /student/ai/chat
         chat_resp = client.post(
