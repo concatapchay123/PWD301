@@ -419,5 +419,74 @@ Resolve the UI defect where navigation back and forth across routes, views, tabs
   - `python -m compileall -q src tests scripts`: PASS (0 errors).
   - `tests/api/test_web_ui_flow_fixes.py` & `tests/api/test_student_portal_ui.py`: 37/37 passed (100%) in 24.86s.
 
+---
 
+# TASK-037 — Instructor Course Creation Web Flow Hardening, Filtered Unique Constraints & Graceful Error Handling
 
+**Status:** DONE  
+**Assignee:** Principal Fullstack & Database Architect  
+**Started Date:** 2026-09-13  
+**Completed Date:** 2026-09-13  
+
+## Goal
+Resolve the critical `500 INTERNAL_ERROR` bug preventing instructors from creating courses at `POST /instructor/courses`. Reconcile database constraints with the canonical Database Architecture (`002_course_learning.sql`) to support soft-delete friendly filtered unique indexes (`WHERE deleted_at IS NULL`), implement robust exception handling in the web route and service layers, and upgrade the course creation modal with professional academic fields (`category`, `difficulty`, `capacity`) aligned with `frontend-preview/`.
+
+## Root Cause Analysis
+1. **Unconditional Database Constraints Conflicting with Soft-Deletes**:
+   - Initial Alembic migration `0001` declared `sa.UniqueConstraint` on `(course_code_normalized)` and `(title_normalized)` on table `courses`, generating auto-named SQL Server unique constraints (e.g., `UQ__courses__A0CC57B6FB74DC88`).
+   - Canonical architecture `002_course_learning.sql` explicitly requires filtered unique indexes:
+     `CREATE UNIQUE NONCLUSTERED INDEX ux_courses_course_code_active ON courses(course_code_normalized) WHERE deleted_at IS NULL;` and `ux_courses_title_active ON courses(title_normalized) WHERE deleted_at IS NULL;`.
+   - Because a previous course (ID 10002, "Khóa học làm người", code HUM101) was in soft-deleted state (`lifecycle_state = 'TRASH'`, `deleted_at IS NOT NULL`), creating a course with the same title or code triggered a database constraint violation.
+2. **Missing Route-Level Exception Handling in Web Blueprint**:
+   - `create_course_route` in `src/pwd301/blueprints/instructor/routes.py` called `create_course(...)` without a `try...except` block.
+   - Any validation error, state violation, or database integrity error bubbled unhandled to Flask's global 500 error handler, displaying a generic crash screen to instructors.
+3. **Missing Category, Difficulty & Capacity Fields in Creation Modal**:
+   - The instructor courses view modal only included title, course code, and summary, missing key academic attributes present in the canonical UI prototype (`frontend-preview/`).
+
+## Key Changes
+1. **Database Migration (`migrations/versions/a1b2c3d4e5f7_0004_fix_courses_unique_filtered_indexes.py`)**:
+   - Created dynamic T-SQL inspection to locate and drop any unconditional unique constraints on `courses` columns `course_code_normalized` and `title_normalized`.
+   - Dropped legacy unconditional unique indexes if present.
+   - Created canonical filtered unique indexes `ux_courses_course_code_active` and `ux_courses_title_active` with `WHERE deleted_at IS NULL`.
+   - Upgraded SQL Server via `flask db upgrade` to revision `a1b2c3d4e5f7`.
+2. **Container Configuration (`docker-compose.yml`)**:
+   - Added `./migrations:/app/migrations` volume mount to `pwd301_web` container to ensure immediate migration visibility.
+3. **Service Layer Hardening (`src/pwd301/services/course_service.py`)**:
+   - Wrapped `sess.flush()` and `sess.commit()` inside `create_course` and `update_course` in a `try...except sa.exc.IntegrityError` block.
+   - Converts SQL Server unique constraint violations into domain-level `CourseAlreadyExistsError` with descriptive error messages.
+4. **Web Blueprint Resilience (`src/pwd301/blueprints/instructor/routes.py`)**:
+   - Wrapped `create_course_route` and `update_course_route` in comprehensive exception handlers catching:
+     - `CourseValidationError`: flashes warning with validation requirements.
+     - `CourseAlreadyExistsError`: flashes error notifying user of duplicate code or active title.
+     - `CourseStateViolationError` & `ForbiddenError`: flashes permission or lifecycle notice.
+     - `sa.exc.IntegrityError`: catches unexpected DB constraints gracefully.
+   - Automatically returns redirect to `/instructor/courses` with flash message for web forms, or structured JSON for AJAX callers.
+5. **UI Creation Modal Upgrade (`src/pwd301/templates/instructor/courses.html`)**:
+   - Added `category` select dropdown (Computer Science, Artificial Intelligence, Cybersecurity, Software Engineering, etc.).
+   - Added `difficulty` radio group (`BEGINNER`, `INTERMEDIATE`, `ADVANCED`).
+   - Added `capacity` number input (default 50 students).
+   - Preserved dark-mode and light-mode tokens and cohesive card styling.
+6. **Automated TDD Test Suite (`tests/api/test_instructor_course_web_flow.py`)**:
+   - `test_create_course_reusing_soft_deleted_title`: verifies reusing code/title of soft-deleted courses succeeds.
+   - `test_instructor_web_create_course_success`: verifies full form submission with category, difficulty, capacity.
+   - `test_instructor_web_create_course_duplicate_active_title_graceful_flash`: verifies duplicate active title flashes warning without 500 error.
+   - `test_instructor_web_create_course_db_integrity_error_graceful_flash`: verifies DB integrity exceptions result in clean flash messages.
+
+## Verification Record
+- **Pytest Verification**:
+  - `tests/api/test_instructor_course_web_flow.py`: 4 passed in 2.12s.
+  - `tests/api/test_instructor_application_web_flow.py`: 8 passed in 5.20s.
+  - Total: 12 passed, 0 failed.
+- **Static Analysis & Formatting**:
+  - `.\.venv\Scripts\ruff.exe check src tests migrations`: All checks passed (0 errors).
+  - `.\.venv\Scripts\ruff.exe format --check src tests migrations`: 195 files formatted cleanly.
+  - `.\.venv\Scripts\mypy.exe src`: Success: no issues found in 84 source files.
+  - `python scripts/repo_check.py`: All checks PASSED.
+- **Docker Container & MS SQL Server Verification**:
+  - `docker exec pwd301_web flask db current`: Current revision is `a1b2c3d4e5f7 (head)`.
+  - Filtered indexes verified directly in SQL Server sys catalogs.
+- **Live Browser & DevTools Verification (`http://localhost:5000`)**:
+  - Instructor login (`instructor1@pwd301.local`): HTTP 302 -> `/instructor/courses`.
+  - Created course `AI401` ("Trí Tuệ Nhân Tạo & Deep Learning Thực Chiến") with category "Trí tuệ nhân tạo", difficulty "Nâng cao", capacity 60: successfully created, badge rendered, card added to grid.
+  - Re-created course "Khóa Học Làm Người" (HUM101): successfully created, proving soft-delete filtered index resolution.
+  - Zero 500 errors observed.

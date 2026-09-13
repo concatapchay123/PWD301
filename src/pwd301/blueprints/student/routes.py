@@ -775,7 +775,16 @@ def ai_assistant_view() -> Any:
     require_authenticated_actor()
     if request.accept_mimetypes.accept_html and not request.is_json:
         return redirect(url_for("student.dashboard"))
-    return jsonify({"status": "deprecated", "message": "Use floating AI assistant", "redirect_url": url_for("student.dashboard")}), 200
+    return (
+        jsonify(
+            {
+                "status": "deprecated",
+                "message": "Use floating AI assistant",
+                "redirect_url": url_for("student.dashboard"),
+            }
+        ),
+        200,
+    )
 
 
 @student_bp.route("/ai/chat", methods=["POST"])

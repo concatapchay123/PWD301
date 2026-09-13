@@ -70,7 +70,10 @@ from pwd301.services.enrollment_service import (
 )
 from pwd301.services.exceptions import (
     AttemptValidationError,
+    CourseAlreadyExistsError,
+    CourseStateViolationError,
     CourseValidationError,
+    ForbiddenError,
     LessonValidationError,
     ResourceNotFoundError,
 )
@@ -211,7 +214,28 @@ def create_course_route() -> Any:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    course = create_course(actor, payload)
+    try:
+        course = create_course(actor, payload)
+    except (CourseValidationError, CourseAlreadyExistsError, ForbiddenError) as exc:
+        if not request.is_json and request.accept_mimetypes.accept_html:
+            flash(f"Không thể tạo khóa học: {str(exc)}", "danger")
+            return redirect(url_for("instructor.my_courses"))
+        raise
+    except sa.exc.IntegrityError as exc:
+        db.session.rollback()
+        if not request.is_json and request.accept_mimetypes.accept_html:
+            flash(
+                "Không thể tạo khóa học do trùng lặp mã khóa học hoặc tên khóa học đã tồn tại.",
+                "danger",
+            )
+            return redirect(url_for("instructor.my_courses"))
+        raise CourseAlreadyExistsError("Course code or title violates unique constraint.") from exc
+    except Exception as exc:
+        db.session.rollback()
+        if not request.is_json and request.accept_mimetypes.accept_html:
+            flash(f"Đã xảy ra lỗi khi tạo khóa học: {str(exc)}", "danger")
+            return redirect(url_for("instructor.my_courses"))
+        raise
 
     if not request.is_json and request.accept_mimetypes.accept_html:
         flash("Khóa học mới đã được tạo thành công dưới dạng Bản thảo (DRAFT).", "success")
@@ -307,7 +331,29 @@ def update_course_route(course_id: str) -> Any:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    course = update_course(actor, course_id, payload)
+    try:
+        course = update_course(actor, course_id, payload)
+    except (
+        CourseValidationError,
+        CourseAlreadyExistsError,
+        ForbiddenError,
+        CourseStateViolationError,
+    ) as exc:
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Không thể cập nhật khóa học: {str(exc)}", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course_id, tab="settings")
+            )
+        raise
+    except Exception as exc:
+        db.session.rollback()
+        if request.accept_mimetypes.accept_html and not request.is_json:
+            flash(f"Đã xảy ra lỗi khi cập nhật: {str(exc)}", "danger")
+            return redirect(
+                url_for("instructor.manage_course_hub", course_id=course_id, tab="settings")
+            )
+        raise
+
     if request.accept_mimetypes.accept_html and not request.is_json:
         flash("Cập nhật thông tin khóa học thành công.", "success")
         return redirect(

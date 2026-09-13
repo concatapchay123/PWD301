@@ -159,13 +159,40 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body p-4">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Mã khóa học <span class="text-danger">*</span></label>
-            <input type="text" name="course_code" class="form-control" placeholder="Ví dụ: PWD301, CS101..." required>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Mã khóa học <span class="text-danger">*</span></label>
+              <input type="text" name="course_code" class="form-control" placeholder="Ví dụ: PWD301, CS101..." required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Phân loại chuyên môn</label>
+              <select name="category" class="form-select">
+                <option value="Phát triển Web" selected>Phát triển Web</option>
+                <option value="Frontend">Frontend</option>
+                <option value="Backend">Backend</option>
+                <option value="Dữ liệu">Dữ liệu & AI</option>
+                <option value="Bảo mật">Bảo mật</option>
+                <option value="Hệ thống">Hệ thống & Mạng</option>
+              </select>
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Tên khóa học <span class="text-danger">*</span></label>
             <input type="text" name="title" class="form-control" placeholder="Nhập tên khóa học..." required>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Cấp độ / Độ khó</label>
+              <select name="difficulty" class="form-select">
+                <option value="BEGINNER" selected>Cơ bản (BEGINNER)</option>
+                <option value="INTERMEDIATE">Trung cấp (INTERMEDIATE)</option>
+                <option value="ADVANCED">Nâng cao (ADVANCED)</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Sĩ số tối đa (Capacity)</label>
+              <input type="number" name="capacity" class="form-control" placeholder="Mặc định: 50" min="1" max="1000">
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Mô tả tóm tắt</label>

@@ -275,7 +275,12 @@ def create_course(
         updated_at=now,
     )
     sess.add(course)
-    sess.flush()
+    try:
+        sess.flush()
+    except sa.exc.IntegrityError as exc:
+        raise CourseAlreadyExistsError(
+            f"A course with code '{course_code}' or title '{title}' already exists."
+        ) from exc
 
     # Create default course completion rule per 05_DATA_DICTIONARY_COURSE.md
     completion_rule = CourseCompletionRule(
@@ -457,6 +462,11 @@ def update_course(
 
     try:
         sess.commit()
+    except sa.exc.IntegrityError as exc:
+        sess.rollback()
+        raise CourseAlreadyExistsError(
+            "Course title conflicts with an existing active course."
+        ) from exc
     except Exception:
         sess.rollback()
         raise
