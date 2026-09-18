@@ -1,0 +1,722 @@
+<!DOCTYPE html><html class="scroll-smooth" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PWD301 — Lập trình Web Python | Cổng Đào tạo Học thuật CNTT</title>
+<!-- Fonts & Google Icons -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "error-container": "#ffdad6",
+            "success-emerald": "#059669",
+            "on-secondary-fixed": "#07006c",
+            "on-tertiary-fixed": "#001d31",
+            "tertiary": "#004c76",
+            "tertiary-fixed-dim": "#93ccff",
+            "on-error": "#ffffff",
+            "outline-variant": "#c7c4d8",
+            "text-muted": "#64748B",
+            "text-primary": "#0F172A",
+            "secondary-fixed": "#e1e0ff",
+            "inverse-on-surface": "#eef0ff",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "on-surface-variant": "#464555",
+            "on-primary-fixed": "#0f0069",
+            "info-sky": "#0284C7",
+            "on-primary": "#ffffff",
+            "surface-card": "#FFFFFF",
+            "secondary-fixed-dim": "#c0c1ff",
+            "secondary": "#4648d4",
+            "error": "#ba1a1a",
+            "on-error-container": "#93000a",
+            "warning-amber": "#D97706",
+            "inverse-primary": "#c3c0ff",
+            "surface-container-lowest": "#ffffff",
+            "on-primary-container": "#dad7ff",
+            "inverse-surface": "#283044",
+            "danger-rose": "#E11D48",
+            "primary-fixed": "#e2dfff",
+            "primary-container": "#4f46e5",
+            "surface-container-highest": "#dae2fd",
+            "surface-tint": "#4d44e3",
+            "primary": "#3525cd",
+            "tertiary-container": "#00659a",
+            "on-tertiary": "#ffffff",
+            "background": "#faf8ff",
+            "on-tertiary-fixed-variant": "#004b73",
+            "border-subtle": "#E2E8F0",
+            "text-secondary": "#1E293B",
+            "outline": "#777587",
+            "tertiary-fixed": "#cce5ff",
+            "secondary-container": "#6063ee",
+            "on-primary-fixed-variant": "#3323cc",
+            "surface-container-low": "#f2f3ff",
+            "surface-bright": "#faf8ff",
+            "surface-dim": "#d2d9f4",
+            "surface-container": "#eaedff",
+            "on-secondary": "#ffffff",
+            "on-surface": "#131b2e",
+            "surface": "#faf8ff",
+            "on-tertiary-container": "#bedfff",
+            "surface-variant": "#dae2fd",
+            "surface-container-high": "#e2e7ff",
+            "on-secondary-container": "#fffbff",
+            "on-background": "#131b2e",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-canvas": "#F8FAFC"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "2rem",
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "margin-mobile": "1rem",
+            "gutter-mobile": "1rem",
+            "gutter": "1.5rem",
+            "space-lg": "1.5rem",
+            "space-xs": "0.25rem"
+          },
+          "fontFamily": {
+            "caption": ["Inter", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "body-sm": ["Inter", "sans-serif"],
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body class="bg-surface-canvas text-text-primary antialiased font-body-md selection:bg-primary-container selection:text-white">
+<!-- 1. PUBLIC TOPBAR & IMMUTABLE BRAND ANCHOR -->
+<div class="relative flex h-auto w-full flex-col bg-[#f9f8fb] group/design-root overflow-x-hidden border-b border-border-subtle" style="font-family: &quot;Plus Jakarta Sans&quot;, &quot;Noto Sans&quot;, sans-serif;">
+<div class="layout-container flex h-full grow flex-col">
+<div class="px-6 lg:px-24 flex flex-1 justify-center py-3">
+<div class="layout-content-container flex flex-col max-w-[1240px] flex-1">
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e8e8f3] px-4 lg:px-6 py-3">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-[#0f0e1b]">
+<div class="size-6 text-primary flex items-center justify-center">
+<img class="w-6 h-6 object-contain" data-alt="Official modern emblem badge of PWD301 Computer Science Engineering Portal in deep indigo and navy shades on a clean high-key white background, minimalist tech institutional logo design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjQ4fZcWGjM-iWjd9jVasfoLP0WaymRvYsmjguRl0cXaLAjpB0UagA-yuicHfMbDDnswxn1bDegtUyf0rTHLa-KUDt8Irf4QGTxifr_fFeWt-7JP8rG_XfBn4RCRlIBsQOKlDLQLdlN-NF92NKdS7TKirEsuuYMichGS436HLmZfJDGrfhHRu2VNmbtPdskhoVTslDHGq0anHyyFP3MxaO4uwZrgmnsAyCAgz5RFBUroOy5ihgksVoRw">
+</div>
+<h2 class="text-[#0f0e1b] text-lg font-bold leading-tight tracking-[-0.015em]">PWD301 Portal</h2>
+</div>
+<nav class="hidden md:flex items-center gap-7">
+<a class="text-primary font-bold text-sm leading-normal border-b-2 border-primary py-1" href="#">Khám phá khóa học</a>
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Ngành đào tạo CNTT</a>
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Chuẩn đầu ra kiểm định</a>
+</nav>
+</div>
+<div class="flex flex-1 justify-end items-center gap-4 lg:gap-6">
+<label class="hidden sm:flex flex-col min-w-40 !h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-[#545095] flex border-none bg-[#e8e8f3] items-center justify-center pl-4 rounded-l-lg border-r-0" data-icon="MagnifyingGlass" data-size="24px" data-weight="regular">
+<svg fill="currentColor" height="20px" viewBox="0 0 256 256" width="20px" xmlns="http://www.w3.org/2000/svg">
+<path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path>
+</svg>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-[#0f0e1b] focus:outline-0 focus:ring-0 border-none bg-[#e8e8f3] focus:border-none h-full placeholder:text-[#545095] px-3 rounded-l-none border-l-0 text-sm font-normal leading-normal" placeholder="Tìm kiếm môn học, module..." value="">
+</div>
+</label>
+<div class="flex gap-2">
+<button class="flex min-w-[90px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#4e46e5] hover:bg-primary transition text-white text-sm font-bold leading-normal tracking-[0.015em] shadow-sm">
+<span class="truncate">Đăng ký tài khoản</span>
+</button>
+<button class="flex min-w-[80px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#e8e8f3] hover:bg-surface-container transition text-[#0f0e1b] text-sm font-bold leading-normal tracking-[0.015em]">
+<span class="truncate">Đăng nhập</span>
+</button>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-9 ring-2 ring-outline-variant/30" data-alt="Clean minimalist avatar portrait placeholder of an academic user with neutral tones and soft studio light against an indigo-tinged white backdrop." style="background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuDmP1SXjyLKqNHgr2h27WLM7OoGOVnblFU-6vsDZQfEXHpdJgLfN7Z24nUO1bussK7d5Q0QaJ-WCM62vx2hIvia6qQcMKfTjzQHXX8nUO1oA8vh2nmIKrlJa0RtWvOr-9I_G8YLw6tOFR9ihIzmmDBG2pIGT2zUZkRJapkj3VrAZQmzVha8mH40tEEeS_Cz-iw7ORdIqzaIAJoeF6lYB4H_vDnz43LUBx5Psa68Rj3N8rK67Pj7DjMecw&quot;);"></div>
+</div>
+</header>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. BREADCRUMBS & TWO-STEP NAVIGATION BAR -->
+<div class="bg-white border-b border-border-subtle">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+<nav aria-label="Breadcrumb" class="flex items-center space-x-2 text-sm text-text-muted">
+<a class="hover:text-primary transition-colors flex items-center gap-1 font-medium" href="#">
+<span class="material-symbols-outlined text-[18px]">home</span>
+          Trang chủ
+        </a>
+<span class="text-slate-300">/</span>
+<a class="hover:text-primary transition-colors font-medium" href="#">Danh mục khóa học</a>
+<span class="text-slate-300">/</span>
+<a class="hover:text-primary transition-colors font-medium" href="#">Công nghệ phần mềm</a>
+<span class="text-slate-300">/</span>
+<span class="text-text-primary font-semibold truncate max-w-xs md:max-w-md">PWD301 — Lập trình Web Python</span>
+</nav>
+<!-- Two-Step Indicator -->
+<div class="inline-flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full border border-surface-container text-xs font-semibold">
+<span class="inline-flex items-center justify-center size-5 rounded-full bg-primary text-white text-[11px]">1</span>
+<span class="text-text-primary font-bold">Bước 1: Hồ sơ công khai</span>
+<span class="text-slate-400">→</span>
+<span class="inline-flex items-center justify-center size-5 rounded-full bg-white border border-slate-300 text-text-muted text-[11px]">2</span>
+<span class="text-text-muted">Bước 2: Không gian học tập (SSO)</span>
+</div>
+</div>
+</div>
+<!-- 3. FULL-PAGE HERO & COURSE DOSSIER -->
+<section class="bg-gradient-to-b from-white via-surface-container-low/40 to-surface-canvas border-b border-border-subtle py-8 lg:py-12">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+<div class="lg:col-span-8 space-y-4">
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-bold uppercase tracking-wider">MÃ KHÓA: PWD301</span>
+<span class="px-3 py-1 bg-success-emerald/10 text-success-emerald rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+<span class="size-1.5 rounded-full bg-success-emerald animate-pulse"></span>
+              TRẠNG THÁI: PUBLISHED
+            </span>
+<span class="px-3 py-1 bg-surface-container-highest text-secondary rounded-full text-xs font-semibold">Kỳ học Fall 2025</span>
+</div>
+<h1 class="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-text-primary tracking-tight font-headline-xl">
+            Lập trình Web Python (Backend &amp; RESTful Architecture)
+          </h1>
+<p class="text-text-secondary text-base leading-relaxed">
+            Chuyên đề định hướng xây dựng hạ tầng dịch vụ mạng vững chắc, áp dụng thiết kế REST chuẩn mực, xác thực bảo mật đa lớp JWT và mô hình tích hợp dữ liệu cơ sở quan hệ nâng cao với SQLAlchemy ORM.
+          </p>
+<!-- Lecturer & Accreditation meta -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+<div class="flex items-start gap-3 p-3.5 rounded-xl bg-white border border-border-subtle shadow-sm">
+<div class="p-2 bg-primary/10 rounded-lg text-primary">
+<span class="material-symbols-outlined">person</span>
+</div>
+<div>
+<p class="text-xs text-text-muted uppercase font-semibold">Giảng viên phụ trách</p>
+<p class="text-sm font-bold text-text-primary">ThS. Trần Hoàng Nam</p>
+<p class="text-xs text-text-muted">Mã định danh: GV-4102 — Viện Đào tạo CNTT</p>
+</div>
+</div>
+<div class="flex items-start gap-3 p-3.5 rounded-xl bg-white border border-border-subtle shadow-sm">
+<div class="p-2 bg-warning-amber/10 rounded-lg text-warning-amber">
+<span class="material-symbols-outlined">verified</span>
+</div>
+<div>
+<p class="text-xs text-text-muted uppercase font-semibold">Thời lượng &amp; Kiểm định</p>
+<p class="text-sm font-bold text-text-primary">45 Giờ chuẩn hóa (12 bài / 4 modules)</p>
+<p class="text-xs text-text-muted flex items-center gap-1">
+<span class="text-warning-amber font-semibold">★ 4.9/5.0</span> từ Hội đồng Kiểm định Quốc tế
+                </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Media Dossier Card -->
+<div class="lg:col-span-4">
+<div class="relative bg-white rounded-2xl p-3 border border-border-subtle shadow-md overflow-hidden">
+<div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 group">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Architectural code diagram visualization showing Python backend APIs, microservices, and database connectors on an ultra-modern dual monitor setup in a crisp minimalist engineering laboratory with cold indigo and soft ambient lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCzFc0gxZPekvQTfvUmhF-8Xb2w4NZHHyxoX_4Y3jDUl2TCw2ckIu7clDLgrnvgk675jkDrnu8T87FFPY4AQTKCNUlIoOkyF8pcEN0vGLP_dOC1OFgJu-d2BtPhpvxMHWSrX4NLHE102zMMMa8wbRoi5SiSNnWHCXvlpfc-O4bm4vaD703fSHO4m_y6ZaI-wllAalsSOHj2QJyrob6W-6yK_bvmRbbpJJQWZY1A1r3owCtoDbTw4UUC0w">
+<div class="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent flex flex-col justify-end p-4 text-white">
+<span class="inline-flex items-center gap-1 text-xs font-semibold bg-white/20 backdrop-blur-md px-2.5 py-1 rounded w-fit mb-1">
+<span class="material-symbols-outlined text-sm">lock</span> Bản xem trước Guest
+                </span>
+<p class="text-xs font-medium text-slate-200">Video giới thiệu đề cương &amp; tiêu chuẩn đầu ra môn học (3:45 min)</p>
+</div>
+</div>
+<div class="mt-3 flex items-center justify-between text-xs text-text-muted px-1">
+<span class="">Được biên soạn bởi: Ban Đào tạo PWD</span>
+<span class="font-semibold text-primary">Cập nhật: Tháng 08/2025</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- STICKY ACTION BAR & GUEST SECURITY NOTICE -->
+<div class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-border-subtle shadow-xs">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<span class="hidden sm:inline-flex items-center justify-center size-9 rounded-lg bg-primary-container text-white">
+<span class="material-symbols-outlined">menu_book</span>
+</span>
+<div>
+<span class="text-xs font-bold uppercase tracking-wider text-text-muted block">Đăng ký chuyên ngành</span>
+<p class="text-sm font-bold text-text-primary">PWD301 — Học phần Bắt buộc Ngành KTPM</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-2.5">
+<button class="h-[46px] px-6 rounded-lg bg-[#6366F1] hover:bg-primary transition text-white text-sm font-bold inline-flex items-center gap-2 shadow-md shadow-indigo-200">
+<span class="material-symbols-outlined">login</span>
+          Đăng nhập để đăng ký học
+        </button>
+<button class="h-[46px] px-4 rounded-lg bg-surface-container hover:bg-surface-container-high transition text-text-primary text-sm font-semibold inline-flex items-center gap-2 border border-border-subtle">
+<span class="material-symbols-outlined">download</span>
+          Tải đề cương tóm tắt (PDF)
+        </button>
+<button class="h-[46px] px-4 rounded-lg hover:bg-surface-container-low transition text-secondary text-sm font-semibold inline-flex items-center gap-1.5">
+<span class="material-symbols-outlined">rule</span>
+          Kiểm tra điều kiện tiên quyết
+        </button>
+</div>
+</div>
+</div>
+<!-- Guest Security Banner -->
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+<div class="p-4 sm:p-5 rounded-xl border border-primary/20 bg-gradient-to-r from-surface-container-low via-surface-card to-primary/5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-start gap-3.5">
+<div class="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0 mt-0.5 md:mt-0">
+<span class="material-symbols-outlined">shield_person</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-sm font-bold text-text-primary">Chế độ khách vãng lai (Guest Preview Mode)</h3>
+<span class="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">Giới hạn tài nguyên</span>
+</div>
+<p class="text-xs sm:text-sm text-text-muted mt-0.5">
+            Bạn đang xem hồ sơ công khai của khóa học PWD301. Toàn bộ mã nguồn sandbox, bài giảng video và hệ thống thi Midterm được phân quyền cho sinh viên chính thức.
+          </p>
+</div>
+</div>
+<a class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white border border-border-subtle hover:border-primary text-xs font-bold text-primary transition shadow-xs shrink-0" href="#">
+        Đăng nhập mở khóa
+        <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- 4. MAIN ASYMMETRIC CONTENT (65% / 35%) -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- LEFT COLUMN: ACADEMIC DOSSIER (65% -> col-span-8) -->
+<div class="lg:col-span-8 space-y-8">
+<!-- Skills Matrix -->
+<section class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm">
+<div class="flex items-center gap-2.5 mb-4">
+<span class="p-2 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined">hub</span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-text-primary font-headline-sm">Chuẩn đầu ra &amp; Ma trận kỹ năng (Skills Matrix)</h2>
+<p class="text-xs text-text-muted">Các năng lực cốt lõi được định vị theo Khung Trình độ Kỹ thuật Phần mềm chuẩn ABET</p>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+<!-- Skill 1 -->
+<div class="p-3.5 rounded-xl border border-border-subtle bg-surface-container-lowest hover:border-primary/50 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-primary">Kỹ năng cốt lõi #1</span>
+<span class="text-[11px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">Cấp độ 3/4</span>
+</div>
+<h3 class="text-sm font-bold text-text-primary mt-1">Python OOP</h3>
+<p class="text-xs text-text-muted mt-1">Kế thừa, Đa hình, Encapsulation, Magic Methods &amp; Decorators nâng cao.</p>
+</div>
+<!-- Skill 2 -->
+<div class="p-3.5 rounded-xl border border-border-subtle bg-surface-container-lowest hover:border-primary/50 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-primary">Kỹ năng cốt lõi #2</span>
+<span class="text-[11px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">Cấp độ 4/4</span>
+</div>
+<h3 class="text-sm font-bold text-text-primary mt-1">Flask Blueprint</h3>
+<p class="text-xs text-text-muted mt-1">Phân tách Application Factory Pattern, module hóa endpoint và route scoping.</p>
+</div>
+<!-- Skill 3 -->
+<div class="p-3.5 rounded-xl border border-border-subtle bg-surface-container-lowest hover:border-primary/50 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-primary">Kỹ năng cốt lõi #3</span>
+<span class="text-[11px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">Cấp độ 3/4</span>
+</div>
+<h3 class="text-sm font-bold text-text-primary mt-1">SQLAlchemy ORM</h3>
+<p class="text-xs text-text-muted mt-1">Data Modeling, Relationship 1-N, N-N, Migrations &amp; Query Optimization.</p>
+</div>
+<!-- Skill 4 -->
+<div class="p-3.5 rounded-xl border border-border-subtle bg-surface-container-lowest hover:border-primary/50 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-primary">Kỹ năng cốt lõi #4</span>
+<span class="text-[11px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">Cấp độ 4/4</span>
+</div>
+<h3 class="text-sm font-bold text-text-primary mt-1">JWT Authentication</h3>
+<p class="text-xs text-text-muted mt-1">Xác thực Stateless, Refresh Token Rotation, Middleware bảo vệ route nhạy cảm.</p>
+</div>
+<!-- Skill 5 -->
+<div class="p-3.5 rounded-xl border border-border-subtle bg-surface-container-lowest hover:border-primary/50 transition sm:col-span-2 md:col-span-2">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-primary">Kỹ năng cốt lõi #5</span>
+<span class="text-[11px] font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">Cấp độ 4/4</span>
+</div>
+<h3 class="text-sm font-bold text-text-primary mt-1">RESTful API Design</h3>
+<p class="text-xs text-text-muted mt-1">Chuẩn hóa HTTP Status Codes, Resource URL Semantic, OpenAPI/Swagger Documentation, HATEOAS và Validation Schema.</p>
+</div>
+</div>
+</section>
+<!-- Mandatory Prerequisites & Admission Criteria -->
+<section class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm">
+<div class="flex items-center gap-2.5 mb-4">
+<span class="p-2 rounded-lg bg-warning-amber/10 text-warning-amber">
+<span class="material-symbols-outlined">assignment_turned_in</span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-text-primary font-headline-sm">Điều kiện nhập học bắt buộc</h2>
+<p class="text-xs text-text-muted">Kiểm tra tư cách sinh viên trước khi đăng ký ghi danh chính thức</p>
+</div>
+</div>
+<div class="space-y-3">
+<div class="p-4 rounded-xl bg-surface-container-low border border-border-subtle flex items-start gap-3">
+<span class="material-symbols-outlined text-success-emerald mt-0.5">check_circle</span>
+<div>
+<p class="text-sm font-bold text-text-primary">Tiêu chí 1: Hoàn thành Nhập môn Lập trình</p>
+<p class="text-xs text-text-muted mt-0.5">
+                  Đã tích lũy điểm đạt (&gt;= 5.0/10) môn học <em>C/C++ Cơ sở</em> hoặc <em>Python cơ bản (CS101)</em>.
+                </p>
+</div>
+</div>
+<div class="p-4 rounded-xl bg-surface-container-low border border-border-subtle flex items-start gap-3">
+<span class="material-symbols-outlined text-info-sky mt-0.5">assignment</span>
+<div>
+<p class="text-sm font-bold text-text-primary">Tiêu chí 2 (Tùy chọn tương đương): Bài Đánh giá Năng lực Đầu vào</p>
+<p class="text-xs text-text-muted mt-0.5">
+                  Ứng viên tự do hoặc sinh viên chuyển ngành có thể làm bài thi trắc nghiệm thuật toán online 30 phút để được miễn điều kiện CS101.
+                </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Progression Pathway -->
+<section class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm">
+<div class="flex items-center gap-2.5 mb-4">
+<span class="p-2 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined">route</span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-text-primary font-headline-sm">Khóa học tiếp theo (Progression Pathway)</h2>
+<p class="text-xs text-text-muted">Lộ trình nâng cao sau khi hoàn tất khóa học PWD301</p>
+</div>
+</div>
+<div class="p-5 rounded-xl border-2 border-dashed border-primary/30 bg-primary/[0.02]">
+<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+<div class="flex items-center gap-4">
+<div class="size-12 rounded-xl bg-primary-fixed text-primary flex items-center justify-center font-bold text-base">
+                  DBA201
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-base font-bold text-text-primary">DBA201: Cơ sở Dữ liệu Nâng cao &amp; Distributed Sharding</h3>
+<span class="text-[10px] uppercase font-bold bg-amber-100 text-warning-amber px-2 py-0.5 rounded">Ràng buộc</span>
+</div>
+<p class="text-xs text-text-muted mt-1">Thiết kế hệ cơ sở dữ liệu phân tán, tối ưu hóa Indexing và NoSQL Caching (Redis/Postgres).</p>
+</div>
+</div>
+<span class="px-3 py-1.5 rounded-lg bg-surface-container text-xs font-bold text-slate-700 shrink-0">
+                3 Tín chỉ Học thuật
+              </span>
+</div>
+<div class="mt-4 pt-4 border-t border-border-subtle flex items-center gap-2 text-xs text-text-muted">
+<span class="material-symbols-outlined text-sm text-primary">info</span>
+<span class=""><strong>Quy tắc mở khóa tự động:</strong> Môn DBA201 sẽ tự động mở khóa trên hệ thống ghi danh sau khi bạn hoàn thành môn PWD301 với điểm đánh giá tổng hợp ≥ 60%.</span>
+</div>
+</div>
+</section>
+<!-- Full Syllabus (4 Expandable Modules) -->
+<section class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm">
+<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+<div class="flex items-center gap-2.5">
+<span class="p-2 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined">menu_book</span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-text-primary font-headline-sm">Đề cương chi tiết (Full Syllabus)</h2>
+<p class="text-xs text-text-muted">4 Modules mở rộng gồm 12 bài học phân cấp chuyên sâu</p>
+</div>
+</div>
+<span class="text-xs font-semibold text-text-muted">Khách vãng lai xem tóm tắt</span>
+</div>
+<div class="space-y-3">
+<!-- Module 1 -->
+<div class="border border-border-subtle rounded-xl overflow-hidden bg-white">
+<button class="w-full px-4 py-3.5 bg-surface-container-low flex items-center justify-between text-left hover:bg-surface-container transition">
+<div class="flex items-center gap-3">
+<span class="size-6 rounded-md bg-primary text-white text-xs font-bold flex items-center justify-center">M1</span>
+<div>
+<h3 class="text-sm font-bold text-text-primary">Module 1: Môi trường ảo &amp; Python nâng cao</h3>
+<p class="text-xs text-text-muted">3 bài giảng • 10 giờ thực hành</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-slate-400">expand_more</span>
+</div>
+</button>
+<div class="p-4 divide-y divide-border-subtle text-xs space-y-2.5">
+<div class="pt-2 flex items-center justify-between">
+<div>
+<p class="font-semibold text-text-primary">Lesson 01: Thiết lập venv, Poetry &amp; Coding Convention PEP8</p>
+<p class="text-text-muted">Quản lý dependency, biến môi trường và chuẩn hóa project structure.</p>
+</div>
+<span class="inline-flex items-center gap-1 text-slate-400 font-medium">
+<span class="material-symbols-outlined text-[16px]">lock</span> Yêu cầu tài khoản
+                  </span>
+</div>
+<div class="pt-2 flex items-center justify-between">
+<div>
+<p class="font-semibold text-text-primary">Lesson 02: Python OOP, Metaclass &amp; Context Managers</p>
+<p class="text-text-muted">Xây dựng custom context manager với cú pháp with và magic dunder methods.</p>
+</div>
+<span class="inline-flex items-center gap-1 text-slate-400 font-medium">
+<span class="material-symbols-outlined text-[16px]">lock</span> Yêu cầu tài khoản
+                  </span>
+</div>
+</div>
+</div>
+<!-- Module 2 -->
+<div class="border border-border-subtle rounded-xl overflow-hidden bg-white">
+<button class="w-full px-4 py-3.5 bg-surface-container-low flex items-center justify-between text-left hover:bg-surface-container transition">
+<div class="flex items-center gap-3">
+<span class="size-6 rounded-md bg-primary text-white text-xs font-bold flex items-center justify-center">M2</span>
+<div>
+<h3 class="text-sm font-bold text-text-primary">Module 2: Kiến trúc Flask RESTful &amp; Routing Engine</h3>
+<p class="text-xs text-text-muted">3 bài giảng • 12 giờ thực hành</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-slate-400">expand_more</span>
+</button>
+<div class="p-4 divide-y divide-border-subtle text-xs space-y-2.5">
+<div class="pt-2 flex items-center justify-between">
+<div>
+<p class="font-semibold text-text-primary">Lesson 04: Flask Core Request Context &amp; Response Serialization</p>
+<p class="text-text-muted">Hiểu sâu WSGI, request dispatching và error handling tập trung.</p>
+</div>
+<span class="inline-flex items-center gap-1 text-slate-400 font-medium">
+<span class="material-symbols-outlined text-[16px]">lock</span> Yêu cầu tài khoản
+                  </span>
+</div>
+</div>
+</div>
+<!-- Module 3 (Featured Lesson 07 Flask Blueprints) -->
+<div class="border-2 border-primary/40 rounded-xl overflow-hidden bg-white shadow-xs">
+<button class="w-full px-4 py-3.5 bg-indigo-50/50 flex items-center justify-between text-left">
+<div class="flex items-center gap-3">
+<span class="size-6 rounded-md bg-primary text-white text-xs font-bold flex items-center justify-center">M3</span>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-sm font-bold text-primary">Module 3: ORM &amp; Lesson 07 Flask Blueprints</h3>
+<span class="text-[10px] bg-primary text-white font-bold px-2 py-0.5 rounded">Trọng tâm</span>
+</div>
+<p class="text-xs text-text-muted">3 bài giảng • 12 giờ thực hành</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary">expand_less</span>
+</button>
+<div class="p-4 divide-y divide-border-subtle text-xs space-y-3 bg-white">
+<div class="pt-2 flex items-start justify-between gap-2">
+<div>
+<p class="font-bold text-text-primary">Lesson 07: Flask Blueprints &amp; Large-scale Modularity Architecture</p>
+<p class="text-text-muted mt-0.5">
+                      Tách biệt các miền logic (Auth, Products, Billing, Analytics). Cấu hình URL prefixes và nested blueprints cho dự án trên 100 endpoints.
+                    </p>
+<div class="mt-2 flex items-center gap-2">
+<span class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-semibold text-[11px]">Hands-on Sandbox</span>
+<span class="text-slate-400">• Thời lượng: 180 phút</span>
+</div>
+</div>
+<span class="inline-flex items-center gap-1 text-slate-400 font-medium shrink-0">
+<span class="material-symbols-outlined text-[16px]">lock</span> Yêu cầu tài khoản
+                  </span>
+</div>
+<div class="pt-3 flex items-center justify-between">
+<div>
+<p class="font-semibold text-text-primary">Lesson 08: SQLAlchemy Declarative Base &amp; Relationships</p>
+<p class="text-text-muted">Kỹ thuật Cascade delete, lazy loading vs eager joined load.</p>
+</div>
+<span class="inline-flex items-center gap-1 text-slate-400 font-medium">
+<span class="material-symbols-outlined text-[16px]">lock</span> Yêu cầu tài khoản
+                  </span>
+</div>
+</div>
+</div>
+<!-- Module 4 -->
+<div class="border border-border-subtle rounded-xl overflow-hidden bg-white">
+<button class="w-full px-4 py-3.5 bg-surface-container-low flex items-center justify-between text-left hover:bg-surface-container transition">
+<div class="flex items-center gap-3">
+<span class="size-6 rounded-md bg-primary text-white text-xs font-bold flex items-center justify-center">M4</span>
+<div>
+<h3 class="text-sm font-bold text-text-primary">Module 4: Bảo mật &amp; Đánh giá Midterm</h3>
+<p class="text-xs text-text-muted">3 bài giảng • 11 giờ thực hành &amp; Khảo thí</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-slate-400">expand_more</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Midterm Assessment System -->
+<section class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm">
+<div class="flex items-center gap-2.5 mb-4">
+<span class="p-2 rounded-lg bg-danger-rose/10 text-danger-rose">
+<span class="material-symbols-outlined">quiz</span>
+</span>
+<div>
+<h2 class="text-lg font-bold text-text-primary font-headline-sm">Hệ thống Khảo thí &amp; Midterm Assessment</h2>
+<p class="text-xs text-text-muted">Quy chế kiểm tra giữa kỳ bắt buộc trên nền tảng Sandbox tự động chấm điểm</p>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left text-xs border border-border-subtle rounded-xl overflow-hidden">
+<thead class="bg-surface-container-low text-text-secondary uppercase font-bold text-[11px] border-b border-border-subtle">
+<tr>
+<th class="p-3.5">Hạng mục</th>
+<th class="p-3.5">Quy cách khảo thí</th>
+<th class="p-3.5">Thời lượng</th>
+<th class="p-3.5">Trọng số điểm</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle">
+<tr>
+<td class="p-3.5 font-bold text-text-primary">Phần A: Lý thuyết Trắc nghiệm</td>
+<td class="p-3.5 text-text-muted">20 câu trắc nghiệm chuyên sâu (Python internals, WSGI, HTTP Specs)</td>
+<td class="p-3.5 font-semibold text-text-primary">20 phút</td>
+<td class="p-3.5 font-bold text-indigo-600">15 / 40 điểm</td>
+</tr>
+<tr>
+<td class="p-3.5 font-bold text-text-primary">Phần B: Coding API Thực hành</td>
+<td class="p-3.5 text-text-muted">1 bài thực hành xây dựng Blueprint REST API hoàn chỉnh với JWT Auth &amp; Unit Tests</td>
+<td class="p-3.5 font-semibold text-text-primary">40 phút</td>
+<td class="p-3.5 font-bold text-indigo-600">25 / 40 điểm</td>
+</tr>
+<tr class="bg-slate-50 font-bold">
+<td class="p-3.5 text-text-primary" colspan="2">Tổng cộng bài thi Midterm PWD301</td>
+<td class="p-3.5 text-primary">60 phút</td>
+<td class="p-3.5 text-primary">40 điểm (Tối thiểu 24/40 để qua môn)</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<!-- RIGHT COLUMN: PREREQUISITES & ADMISSIONS (35% -> col-span-4) -->
+<aside class="lg:col-span-4 space-y-6">
+<!-- Locked Course DBA201 Widget -->
+<div class="bg-surface-card rounded-2xl p-6 border-2 border-slate-200 shadow-sm relative overflow-hidden">
+<div class="absolute top-0 right-0 bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600 border-b border-l border-slate-200 rounded-bl-lg flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">lock</span>
+            Locked by PWD301
+          </div>
+<span class="text-xs font-bold text-text-muted uppercase tracking-wider block mb-1">Khóa học liên quan &amp; Ràng buộc</span>
+<h3 class="text-base font-bold text-text-primary font-headline-sm">DBA201: Cơ sở Dữ liệu Nâng cao</h3>
+<p class="text-xs text-text-muted mt-2 leading-relaxed">
+            Học phần nghiên cứu chuyên sâu về phân mảnh cơ sở dữ liệu, indexing tối ưu hóa cho ứng dụng web chịu tải hàng triệu request.
+          </p>
+<div class="my-4 p-3 rounded-xl bg-amber-50 border border-warning-amber/30 text-xs text-amber-900 flex items-start gap-2">
+<span class="material-symbols-outlined text-warning-amber text-base shrink-0 mt-0.5">warning</span>
+<span class="">Cơ chế tiên quyết: Sinh viên phải hoàn tất và có điểm thi cuối kỳ hợp lệ môn PWD301 mới được phép mở quyền đăng ký DBA201.</span>
+</div>
+<button class="w-full h-11 rounded-lg bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs cursor-not-allowed flex items-center justify-center gap-2" disabled="">
+<span class="material-symbols-outlined text-base">lock</span>
+            Yêu cầu hoàn tất PWD301 trước
+          </button>
+</div>
+<!-- Academic Admissions & Guest Support -->
+<div class="bg-surface-card rounded-2xl p-6 border border-border-subtle shadow-sm space-y-4">
+<div class="flex items-center gap-2.5">
+<span class="p-2 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined">support_agent</span>
+</span>
+<div>
+<h3 class="text-sm font-bold text-text-primary font-headline-sm">Hỗ trợ Học vụ &amp; Khách vãng lai</h3>
+<p class="text-xs text-text-muted">Giải đáp thông tin điều kiện tuyển sinh</p>
+</div>
+</div>
+<div class="space-y-3 text-xs text-text-secondary">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-slate-400 text-base">phone_in_talk</span>
+<div>
+<span class="font-bold text-text-primary">Hotline Viện CNTT:</span>
+<p class="text-text-muted">(024) 7300 8855 (Máy lẻ 104 - 105)</p>
+</div>
+</div>
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-slate-400 text-base">mail</span>
+<div>
+<span class="font-bold text-text-primary">Hộp thư hỗ trợ đăng ký:</span>
+<p class="text-text-muted">hocvu.cntt@pwd301.edu.vn</p>
+</div>
+</div>
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-slate-400 text-base">event</span>
+<div>
+<span class="font-bold text-text-primary">Thời hạn ghi danh Fall 2025:</span>
+<p class="text-rose-600 font-semibold">Hết hạn vào 17:00 — 15/09/2025</p>
+</div>
+</div>
+</div>
+<div class="pt-2">
+<a class="w-full py-2.5 px-4 rounded-lg bg-surface-container hover:bg-surface-container-high transition text-text-primary font-bold text-xs flex items-center justify-center gap-2 border border-border-subtle" href="#">
+<span class="material-symbols-outlined text-base">chat</span>
+              Trò chuyện với Cố vấn Học thuật
+            </a>
+</div>
+</div>
+<!-- Academic Certification Badge -->
+<div class="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-md">
+<div class="flex items-center gap-3">
+<div class="size-10 rounded-full bg-white/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-indigo-300">workspace_premium</span>
+</div>
+<div>
+<p class="text-xs text-indigo-200 uppercase font-semibold">Chứng nhận sau hoàn thành</p>
+<h4 class="text-sm font-bold">Certificate of Web Backend Mastery</h4>
+</div>
+</div>
+<p class="text-xs text-indigo-100/80 mt-3 leading-relaxed">
+            Chứng chỉ số hóa được định danh bằng mã hash blockchain an toàn, tương thích mạng lưới tuyển dụng đối tác CNTT toàn quốc.
+          </p>
+</div>
+</aside>
+</div>
+</main>
+<!-- 5. BOTTOM SYSTEM STATES (Edge Cases & Mobile Adaptations) -->
+
+<!-- ACADEMIC FOOTER -->
+<footer class="bg-white border-t border-border-subtle py-8">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-muted">
+<div class="flex items-center gap-3">
+<span class="font-bold text-text-primary">PWD301 Academic Portal</span>
+<span class="">•</span>
+<span class="">Bản quyền © 2025 Viện Công nghệ Thông tin &amp; Đào tạo Phần mềm.</span>
+</div>
+<div class="flex items-center gap-6">
+<a class="hover:text-primary transition" href="#">Chính sách học vụ</a>
+<a class="hover:text-primary transition" href="#">Tiêu chuẩn WCAG AA</a>
+<a class="hover:text-primary transition" href="#">Cổng Khảo thí Quốc gia</a>
+</div>
+</div>
+</footer>
+
+
+</body></html>

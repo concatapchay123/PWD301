@@ -1,0 +1,878 @@
+<!DOCTYPE html><html class="scroll-smooth" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Bài 07: Cấu trúc Ứng dụng Lớn với Flask Blueprints &amp; Factory Pattern | PWD301 Academy LMS</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&amp;family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 9999px;
+    }
+    .font-mono-code {
+      font-family: 'Fira Code', monospace;
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "text-secondary": "#1E293B",
+            "error": "#ba1a1a",
+            "surface-dim": "#d2d9f4",
+            "error-container": "#ffdad6",
+            "on-background": "#131b2e",
+            "surface-card": "#FFFFFF",
+            "secondary-fixed-dim": "#c0c1ff",
+            "surface-container": "#eaedff",
+            "surface-container-high": "#e2e7ff",
+            "on-tertiary-fixed-variant": "#004b73",
+            "on-secondary": "#ffffff",
+            "surface-variant": "#dae2fd",
+            "inverse-on-surface": "#eef0ff",
+            "secondary-fixed": "#e1e0ff",
+            "primary-fixed": "#e2dfff",
+            "secondary": "#4648d4",
+            "on-primary-fixed-variant": "#3323cc",
+            "secondary-container": "#6063ee",
+            "surface-container-lowest": "#ffffff",
+            "on-tertiary-container": "#bedfff",
+            "background": "#faf8ff",
+            "tertiary": "#004c76",
+            "success-emerald": "#059669",
+            "surface-container-low": "#f2f3ff",
+            "on-primary-fixed": "#0f0069",
+            "primary": "#3525cd",
+            "primary-indigo": "#4f46e5",
+            "info-sky": "#0284C7",
+            "surface-tint": "#4d44e3",
+            "outline": "#777587",
+            "surface-bright": "#faf8ff",
+            "primary-container": "#4f46e5",
+            "surface": "#faf8ff",
+            "tertiary-fixed-dim": "#93ccff",
+            "text-primary": "#0F172A",
+            "primary-fixed-dim": "#c3c0ff",
+            "inverse-surface": "#283044",
+            "on-tertiary-fixed": "#001d31",
+            "on-primary-container": "#dad7ff",
+            "on-primary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed": "#cce5ff",
+            "tertiary-container": "#00659a",
+            "danger-rose": "#E11D48",
+            "warning-amber": "#D97706",
+            "outline-variant": "#c7c4d8",
+            "text-muted": "#64748B",
+            "surface-canvas": "#F8FAFC",
+            "on-secondary-container": "#fffbff",
+            "border-subtle": "#E2E8F0",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "inverse-primary": "#c3c0ff",
+            "on-secondary-fixed": "#07006c",
+            "on-surface-variant": "#464555",
+            "on-surface": "#131b2e",
+            "on-error": "#ffffff",
+            "surface-container-highest": "#dae2fd",
+            "on-tertiary": "#ffffff"
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "full": "9999px"
+          },
+          fontFamily: {
+            "body-sm": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "caption": ["Inter", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-surface-canvas font-body-md text-text-primary min-h-screen flex flex-col antialiased selection:bg-primary-container/20 selection:text-primary">
+<!-- ================= TOPBAR & SHELL INTEGRATION ================= -->
+<header class="sticky top-0 z-50 h-[68px] bg-surface-card/95 backdrop-blur-md border-b border-border-subtle px-4 lg:px-6 flex items-center justify-between shadow-xs">
+<!-- Left: Logo & Breadcrumbs & Mobile Drawer Toggle -->
+<div class="flex items-center gap-3 min-w-0">
+<button class="lg:hidden p-2 rounded-lg text-text-secondary hover:bg-surface-container-low transition-colors" id="mobileOutlineBtn" title="Mở danh mục bài học" type="button">
+<span class="material-symbols-outlined text-[22px]">menu_book</span>
+</button>
+<a class="flex items-center gap-2.5 flex-shrink-0 group" href="#">
+<div class="w-9 h-9 rounded-lg bg-primary-container flex items-center justify-center shadow-sm group-hover:bg-primary transition-colors">
+<span class="material-symbols-outlined text-on-primary text-[20px]">school</span>
+</div>
+<div class="hidden sm:flex flex-col leading-tight">
+<span class="font-headline-sm text-[15px] font-bold text-text-primary tracking-tight">PWD301 LMS</span>
+<span class="text-[11px] font-caption text-text-muted">Console Học viện</span>
+</div>
+</a>
+<div class="h-5 w-px bg-border-subtle mx-1 hidden sm:block"></div>
+<!-- Academic Breadcrumbs -->
+<nav aria-label="Breadcrumb" class="hidden md:flex items-center gap-1.5 text-[13px] font-body-sm text-text-muted truncate">
+<a class="hover:text-text-primary transition-colors truncate" href="#">Khóa học của tôi</a>
+<span class="text-border-subtle">/</span>
+<a class="hover:text-text-primary transition-colors truncate" href="#">PWD301</a>
+<span class="text-border-subtle">/</span>
+<span class="text-text-muted truncate">Module 3</span>
+<span class="text-border-subtle">/</span>
+<span class="font-semibold text-text-primary truncate">Bài 07: Flask Blueprints</span>
+</nav>
+</div>
+<!-- Center: Active Study Status & Progression -->
+<div class="hidden xl:flex items-center gap-4 bg-surface-container-low px-4 py-1.5 rounded-full border border-border-subtle">
+<span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-success-emerald">
+<span class="w-2 h-2 rounded-full bg-success-emerald animate-pulse"></span>
+        Đang học chính thức
+      </span>
+<span class="text-border-subtle">•</span>
+<div class="flex items-center gap-2 text-[12px] text-text-secondary font-medium">
+<span class="material-symbols-outlined text-[16px] text-primary-indigo">timer</span>
+<span class="">Ước tính: 45 phút</span>
+<span class="text-text-muted">|</span>
+<span class="text-primary-indigo font-semibold">Đã đọc 28/45 phút</span>
+</div>
+<div class="w-20 bg-border-subtle h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary-indigo h-full rounded-full" style="width: 62%;"></div>
+</div>
+</div>
+<!-- Right: Controls, AI Context & Profile -->
+<div class="flex items-center gap-2 sm:gap-3">
+<!-- AI Quick Modal Launcher -->
+<button class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/15 text-primary text-[13px] font-semibold transition-colors border border-primary/20" id="quickAiLaunchBtn" type="button">
+<span class="material-symbols-outlined text-[18px]">smart_toy</span>
+<span class="">Hỏi AI về Bài 07</span>
+<span class="px-1.5 py-0.2 rounded text-[10px] bg-primary text-on-primary">M3</span>
+</button>
+<!-- Font Resizer & Fullscreen -->
+<div class="flex items-center rounded-lg border border-border-subtle bg-surface-card p-0.5 text-text-muted">
+<button class="px-2 py-1 hover:text-text-primary rounded text-xs font-bold transition-colors" id="decreaseFontBtn" title="Thu nhỏ cỡ chữ" type="button">A-</button>
+<button class="px-2 py-1 hover:text-text-primary rounded text-xs font-bold transition-colors" id="increaseFontBtn" title="Phóng to cỡ chữ" type="button">A+</button>
+<button class="px-2 py-1 hover:text-text-primary rounded text-xs transition-colors hidden sm:block" id="fullscreenToggleBtn" title="Chế độ toàn màn hình" type="button">
+<span class="material-symbols-outlined text-[15px] align-middle">fullscreen</span>
+</button>
+</div>
+<!-- Student Profile Badge -->
+<div class="flex items-center gap-2 pl-2 sm:pl-3 border-l border-border-subtle">
+<div class="relative">
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-bold text-xs shadow-xs">
+            MA
+          </div>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-success-emerald ring-2 ring-surface-card"></span>
+</div>
+<div class="hidden lg:flex flex-col text-left leading-none">
+<span class="text-[13px] font-bold text-text-primary">Nguyễn Minh Anh</span>
+<span class="text-[11px] font-caption text-text-muted">MA-8392</span>
+</div>
+</div>
+</div>
+</header>
+<!-- ================= 3-COLUMN MAIN READING CONSOLE ================= -->
+<div class="flex-1 w-full max-w-[1600px] mx-auto flex flex-col lg:flex-row relative">
+<!-- ================= LEFT COLUMN: LESSON OUTLINE & PROGRESSION (260px) ================= -->
+<aside class="fixed lg:sticky top-[68px] left-0 h-[calc(100vh-68px)] w-[280px] lg:w-[268px] bg-surface-card border-r border-border-subtle z-40 flex flex-col justify-between transition-transform duration-300 -translate-x-full lg:translate-x-0 overflow-y-auto custom-scrollbar flex-shrink-0" id="curriculumSidebar">
+<div class="p-4 flex flex-col gap-4">
+<!-- Back link -->
+<a class="inline-flex items-center gap-1.5 text-[12px] font-semibold text-text-muted hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">arrow_back</span>
+          Quay lại Hub Khóa học PWD301
+        </a>
+<!-- Module Progress Header -->
+<div class="bg-surface-container-low p-3.5 rounded-xl border border-border-subtle/80">
+<div class="flex items-center justify-between mb-1.5">
+<span class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Module 3: ORM &amp; Blueprints</span>
+<span class="text-[12px] font-bold text-primary">58%</span>
+</div>
+<div class="w-full bg-border-subtle h-2 rounded-full overflow-hidden mb-2">
+<div class="bg-primary-container h-full rounded-full transition-all" style="width: 58%;"></div>
+</div>
+<span class="text-[11px] text-text-muted">2/4 bài học hoàn tất • 1 bài đang mở</span>
+</div>
+<!-- Lessons Item List -->
+<div class="flex flex-col gap-1.5">
+<span class="text-[11px] font-bold text-text-muted uppercase tracking-wider px-2 pt-1">Danh sách bài học</span>
+<!-- Bài 05 -->
+<a class="p-2.5 rounded-lg flex items-start gap-2.5 text-text-muted hover:bg-surface-container-low transition-colors group" href="#">
+<span class="material-symbols-outlined text-success-emerald text-[18px] mt-0.5">check_circle</span>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] font-medium text-text-secondary group-hover:text-text-primary">Bài 05: REST Constraints &amp; Request Lifecycle</span>
+<span class="text-[11px] text-success-emerald font-semibold">Đã hoàn thành • 100%</span>
+</div>
+</a>
+<!-- Bài 06 -->
+<a class="p-2.5 rounded-lg flex items-start gap-2.5 text-text-muted hover:bg-surface-container-low transition-colors group" href="#">
+<span class="material-symbols-outlined text-success-emerald text-[18px] mt-0.5">check_circle</span>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] font-medium text-text-secondary group-hover:text-text-primary">Bài 06: Database Migrations với Alembic</span>
+<span class="text-[11px] text-success-emerald font-semibold">Đã hoàn thành • 100%</span>
+</div>
+</a>
+<!-- Bài 07: Active -->
+<div class="p-2.5 rounded-xl bg-primary/10 border border-primary/25 flex flex-col gap-1.5 relative shadow-xs">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-primary text-[20px] mt-0.5 animate-pulse">play_circle</span>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] font-bold text-primary">Bài 07: Flask Blueprints &amp; Factory Pattern</span>
+<span class="text-[11px] text-primary/80 font-medium">Đang học • 28/45 phút</span>
+</div>
+</div>
+<!-- Mini progress inside item -->
+<div class="w-full bg-primary/20 h-1 rounded-full overflow-hidden mt-1">
+<div class="bg-primary h-full rounded-full" style="width: 62%;"></div>
+</div>
+</div>
+<!-- Bài 08: Locked Next -->
+<div class="p-2.5 rounded-lg flex items-start gap-2.5 text-text-muted/70 bg-surface-container-low/40">
+<span class="material-symbols-outlined text-text-muted text-[18px] mt-0.5">lock_clock</span>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] font-medium text-text-muted">Bài 08: Authentication &amp; Session RBAC</span>
+<span class="text-[11px] text-text-muted">Mở sau khi hoàn tất Bài 07</span>
+</div>
+</div>
+<!-- Bài 09: Locked -->
+<div class="p-2.5 rounded-lg flex items-start gap-2.5 text-text-muted/60">
+<span class="material-symbols-outlined text-text-muted text-[18px] mt-0.5">lock</span>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] font-medium text-text-muted">Bài 09: RESTful API với Flask-RESTX &amp; JWT</span>
+<span class="text-[11px] text-text-muted">Khóa theo lộ trình</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Session Sync Badge -->
+<div class="p-3 border-t border-border-subtle bg-surface-container-low text-[11px] text-text-muted flex items-center justify-between">
+<span class="flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-success-emerald"></span>
+          Đồng bộ học vụ tức thời
+        </span>
+<span class="font-mono-code text-[10px]">VER: 3.14-LMS</span>
+</div>
+</aside>
+<!-- Overlay for mobile drawer -->
+<div class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 lg:hidden" id="mobileDrawerOverlay"></div>
+<!-- ================= CENTER COLUMN: STRUCTURED LESSON CANVAS (Optimized Typography ~680px) ================= -->
+<main class="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8 flex justify-center pb-28">
+<article class="w-full max-w-[720px] flex flex-col gap-7 text-text-secondary leading-relaxed transition-all" id="readingArticle">
+<!-- Header Metadata & Title -->
+<header class="flex flex-col gap-3 pb-5 border-b border-border-subtle">
+<div class="flex flex-wrap items-center gap-2 text-[12px] font-medium">
+<span class="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">LÝ THUYẾT &amp; THỰC HÀNH</span>
+<span class="text-border-subtle">•</span>
+<span class="text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]">person</span>
+              GV phụ trách: <strong class="text-text-primary">ThS. Trần Hoàng Nam</strong>
+</span>
+<span class="text-border-subtle">•</span>
+<span class="text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]">verified</span>
+              Mục tiêu: Đạt chuẩn SLO-02 &amp; SLO-04
+            </span>
+</div>
+<h1 class="font-headline-xl text-[26px] sm:text-[32px] lg:text-[34px] font-bold text-text-primary tracking-tight leading-snug">
+            Bài 07: Cấu trúc Ứng dụng Lớn với Flask Blueprints &amp; Factory Pattern
+          </h1>
+<p class="text-text-muted text-[15px]">
+            Hướng dẫn tổ chức kiến trúc ứng dụng Flask theo tiêu chuẩn công nghiệp (Production-ready), cô lập routing theo module chức năng và xử lý dứt điểm bài toán Circular Import.
+          </p>
+</header>
+<!-- Learning Goals Box -->
+<div class="p-5 rounded-2xl bg-surface-container-low border border-border-subtle/80 flex flex-col gap-3 shadow-xs">
+<div class="flex items-center gap-2 text-primary font-bold text-[14px]">
+<span class="material-symbols-outlined text-[20px]">flag</span>
+<span class="">Mục tiêu bài học cần đạt (Learning Goals)</span>
+</div>
+<ul class="flex flex-col gap-2 text-[13.5px] text-text-secondary list-none">
+<li class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-success-emerald text-[18px] flex-shrink-0 mt-0.5">check_circle</span>
+<span class=""><strong>Tách module độc lập:</strong> Nắm vững cách chia tách luồng ứng dụng thành các Blueprints (Auth, Catalog, Payment) riêng biệt.</span>
+</li>
+<li class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-success-emerald text-[18px] flex-shrink-0 mt-0.5">check_circle</span>
+<span class=""><strong>Triệt tiêu Circular Import:</strong> Sử dụng cấu trúc thư mục phân tầng kết hợp file `extensions.py` để bảo đảm thứ tự nạp đối tượng an toàn.</span>
+</li>
+<li class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-success-emerald text-[18px] flex-shrink-0 mt-0.5">check_circle</span>
+<span class=""><strong>Chuẩn hóa Application Factory:</strong> Triển khai hàm `create_app(config_name)` hỗ trợ linh hoạt cấu hình Development, Testing và Production.</span>
+</li>
+</ul>
+</div>
+<!-- Accessible Video Player Component -->
+<section class="flex flex-col gap-3" id="videoLecture">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-sm text-[18px] font-bold text-text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-indigo text-[22px]">smart_display</span>
+              Video bài giảng chính thức (HD 1080p)
+            </h2>
+<span class="text-[12px] font-bold text-success-emerald bg-success-emerald/10 px-2 py-0.5 rounded-full">
+              Đã xem 100%
+            </span>
+</div>
+<!-- Video Box Container -->
+<div class="relative rounded-2xl overflow-hidden bg-slate-900 shadow-md aspect-video border border-slate-800 flex flex-col justify-end group">
+<!-- Simulated Video Scene Content -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/30 flex flex-col justify-between p-5">
+<div class="flex items-center justify-between text-white/90">
+<span class="text-xs font-semibold bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-full">
+                  PWD301 • Lesson 07 Video Lecture
+                </span>
+<span class="text-xs text-white/70">Thời lượng: 24:15</span>
+</div>
+<!-- Center Play Icon -->
+<div class="self-center">
+<button class="w-16 h-16 rounded-full bg-primary-container text-white flex items-center justify-center hover:scale-110 transition-transform shadow-xl hover:bg-primary" title="Phát lại video" type="button">
+<span class="material-symbols-outlined text-[36px] ml-1">play_arrow</span>
+</button>
+</div>
+<!-- Controls Toolbar -->
+<div class="flex flex-col gap-2">
+<!-- Timeline progress bar -->
+<div class="w-full bg-white/20 h-1.5 rounded-full overflow-hidden cursor-pointer relative">
+<div class="bg-primary-container h-full rounded-full" style="width: 100%;"></div>
+</div>
+<div class="flex items-center justify-between text-white text-xs">
+<div class="flex items-center gap-3">
+<button class="hover:text-primary-fixed transition-colors" type="button"><span class="material-symbols-outlined text-[18px]">replay_10</span></button>
+<button class="hover:text-primary-fixed transition-colors" type="button"><span class="material-symbols-outlined text-[18px]">volume_up</span></button>
+<span class="font-mono-code text-[11px]">24:15 / 24:15</span>
+</div>
+<div class="flex items-center gap-2">
+<!-- CC Vietnamese Subtitle toggle -->
+<button class="px-2 py-0.5 rounded font-bold bg-white text-slate-900 text-[11px] shadow-xs" title="Phụ đề Tiếng Việt đang bật" type="button">
+                      [CC] VI
+                    </button>
+<!-- Speed toggle -->
+<button class="px-2 py-0.5 rounded bg-white/20 hover:bg-white/30 text-[11px] font-mono-code" type="button">
+                      1.25x
+                    </button>
+<!-- Transcript search launcher -->
+<button class="px-2 py-0.5 rounded bg-white/20 hover:bg-white/30 flex items-center gap-1 text-[11px]" id="toggleTranscriptBtn" title="Mở phụ đề bóc băng" type="button">
+<span class="material-symbols-outlined text-[14px]">subtitles</span>
+<span class="">Transcript</span>
+</button>
+<button class="hover:text-primary-fixed" type="button"><span class="material-symbols-outlined text-[18px]">fullscreen</span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive Transcript Accordion Box (Accessible & Searchable) -->
+<div class="p-3.5 rounded-xl bg-surface-container-low border border-border-subtle text-[13px] flex flex-col gap-2" id="transcriptBox">
+<div class="flex items-center justify-between font-semibold text-text-primary text-[12px]">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-info-sky">segment</span>
+                Bản bóc băng bài giảng (Transcript đồng bộ thời gian)
+              </span>
+<span class="text-[11px] text-text-muted">Bấm vào mốc giây để tua video</span>
+</div>
+<div class="max-h-28 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar text-[12.5px] text-text-secondary">
+<p class=""><span class="font-mono-code font-bold text-primary cursor-pointer hover:underline">[00:00]</span> Thầy chào các em. Hôm nay chúng ta sẽ đi sâu vào kiến trúc Flask cho các dự án quy mô vừa và lớn...</p>
+<p class=""><span class="font-mono-code font-bold text-primary cursor-pointer hover:underline">[04:12]</span> Vấn đề lớn nhất khi ứng dụng phình to là file app.py chứa hàng trăm routes, rất khó maintain và test...</p>
+<p class=""><span class="font-mono-code font-bold text-primary cursor-pointer hover:underline">[12:40]</span> Với Blueprint, chúng ta cô lập các routes thành từng cụm: auth, product, order độc lập hoàn toàn...</p>
+<p class=""><span class="font-mono-code font-bold text-primary cursor-pointer hover:underline">[19:05]</span> Cuối cùng là Application Factory create_app() giúp các bạn truyền các config môi trường khác nhau một cách linh động.</p>
+</div>
+</div>
+</section>
+<!-- SECTION 1: Vấn đề của Monolithic Flask App -->
+<section class="scroll-mt-24 flex flex-col gap-3" id="section1">
+<h2 class="font-headline-md text-[22px] font-bold text-text-primary tracking-tight">
+            1. Vấn đề của cấu trúc Monolithic trong Flask
+          </h2>
+<p class="text-[15px] leading-relaxed">
+            Trong các ví dụ cơ bản lúc mới tiếp cận Python Flask, chúng ta thường khai báo toàn bộ route, model và cấu hình cơ sở dữ liệu bên trong một tệp tin duy nhất là <code>app.py</code>. Mô hình này rất thuận tiện cho quá trình học tập ban đầu hoặc xây dựng các công cụ nguyên mẫu (Proof-of-Concept) nhỏ.
+          </p>
+<p class="text-[15px] leading-relaxed">
+            Tuy nhiên, khi ứng dụng mở rộng lên hàng chục bảng dữ liệu và hàng trăm API endpoints, cách làm này bộc lộ ba nhược điểm chí mạng:
+          </p>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+<div class="p-3.5 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-1">
+<span class="font-bold text-danger-rose text-[13px]">1. File phình to</span>
+<p class="text-[12px] text-text-muted">app.py vượt quá hàng nghìn dòng, gây xung đột mã nguồn liên tục khi làm việc nhóm (merge conflict).</p>
+</div>
+<div class="p-3.5 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-1">
+<span class="font-bold text-warning-amber text-[13px]">2. Circular Import</span>
+<p class="text-[12px] text-text-muted">Module con import `app` từ app.py trong khi `app.py` lại import routes từ module con, dẫn đến treo runtime.</p>
+</div>
+<div class="p-3.5 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-1">
+<span class="font-bold text-info-sky text-[13px]">3. Khó Unit Test</span>
+<p class="text-[12px] text-text-muted">Không thể cô lập từng module để chạy mock testing độc lập mà phải khởi động toàn bộ ứng dụng cồng kềnh.</p>
+</div>
+</div>
+</section>
+<!-- SECTION 2: Cơ chế Blueprint trong Flask & Code Block -->
+<section class="scroll-mt-24 flex flex-col gap-4" id="section2">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-md text-[22px] font-bold text-text-primary tracking-tight">
+              2. Cơ chế Blueprint trong Flask
+            </h2>
+<span class="text-[11px] font-mono-code bg-surface-container-high px-2 py-0.5 rounded text-primary font-bold">flask.Blueprint</span>
+</div>
+<p class="text-[15px] leading-relaxed">
+<code>Blueprint</code> trong Flask là một cách để tổ chức một nhóm các view tương quan, bộ lọc template, static files và routing liên quan. Blueprint hoạt động tương tự như một ứng dụng thu nhỏ (mini-application) nhưng không trực tiếp khởi chạy độc lập mà được "đăng ký" (registered) vào ứng dụng chính.
+          </p>
+<!-- Interactive Multi-tab Code Block Reader -->
+<div class="rounded-2xl overflow-hidden border border-slate-800 bg-[#0F172A] shadow-md">
+<!-- Code Tab Header -->
+<div class="bg-[#1E293B] px-4 py-2.5 flex items-center justify-between border-b border-slate-700/80">
+<div class="flex items-center gap-2">
+<button class="px-3 py-1 rounded-md text-[12px] font-mono-code font-bold bg-primary-container text-white transition-colors" id="tabAuthBtn" type="button">
+                  app/auth/routes.py
+                </button>
+<button class="px-3 py-1 rounded-md text-[12px] font-mono-code font-medium text-slate-400 hover:text-white transition-colors" id="tabCatalogBtn" type="button">
+                  app/catalog/routes.py
+                </button>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[11px] font-mono-code text-slate-400 hidden sm:inline">Python 3.11</span>
+<button class="px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs flex items-center gap-1 font-medium transition-colors" id="copyCodeBtn" title="Sao chép toàn bộ mã" type="button">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span id="copyText" class="">Copy</span>
+</button>
+</div>
+</div>
+<!-- Code Content Block with line numbers -->
+<div class="p-4 overflow-x-auto text-[13px] font-mono-code leading-relaxed text-slate-200">
+<pre class="grid grid-cols-[auto_1fr] gap-x-4"><code class="select-none text-slate-500 text-right pr-2 border-r border-slate-800">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16</code><code><span class="text-indigo-400">from</span> flask <span class="text-indigo-400">import</span> Blueprint, render_template, request, jsonify
+<span class="text-indigo-400">from</span> app.extensions <span class="text-indigo-400">import</span> db
+<span class="text-indigo-400">from</span> app.models.user <span class="text-indigo-400">import</span> User
+
+<span class="text-slate-500"># Khởi tạo Blueprint với prefix định tuyến riêng biệt</span>
+auth_bp = Blueprint(<span class="text-emerald-400">'auth'</span>, __name__, url_prefix=<span class="text-emerald-400">'/api/v1/auth'</span>)
+
+<span class="text-amber-400">@auth_bp.route</span>(<span class="text-emerald-400">'/login'</span>, methods=[<span class="text-emerald-400">'POST'</span>])
+<span class="text-indigo-400">def</span> <span class="text-sky-300">login</span>():
+    data = request.get_json() or {}
+    username = data.get(<span class="text-emerald-400">'username'</span>)
+    password = data.get(<span class="text-emerald-400">'password'</span>)
+    
+    <span class="text-slate-500"># Kiểm tra xác thực qua service layer</span>
+    user = User.authenticate(username, password)
+    <span class="text-indigo-400">return</span> jsonify({<span class="text-emerald-400">"status"</span>: <span class="text-emerald-400">"success"</span>, <span class="text-emerald-400">"user_id"</span>: user.id}), <span class="text-amber-300">200</span></code></pre>
+</div>
+</div>
+</section>
+<!-- SECTION 3: Mô hình Application Factory Pattern -->
+<section class="scroll-mt-24 flex flex-col gap-4" id="section3">
+<h2 class="font-headline-md text-[22px] font-bold text-text-primary tracking-tight">
+            3. Mô hình Application Factory Pattern
+          </h2>
+<p class="text-[15px] leading-relaxed">
+            Thay vì tạo biến toàn cục <code>app = Flask(__name__)</code> ở phạm vi module, ta đóng gói quy trình tạo và cấu hình ứng dụng vào một hàm duy nhất thường được đặt tên là <code>create_app(config_name)</code>.
+          </p>
+<!-- Architecture Flow Diagram Card -->
+<div class="p-5 rounded-2xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-3">
+<span class="text-[11px] font-bold uppercase tracking-wider text-text-muted">Sơ đồ luồng khởi tạo Application Factory</span>
+<div class="flex flex-col md:flex-row items-center justify-between gap-3 text-center text-xs">
+<div class="w-full md:w-1/4 p-3 rounded-xl bg-surface-container-low border border-border-subtle flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[24px]">tune</span>
+<span class="font-bold text-text-primary">1. Nạp Config</span>
+<span class="text-text-muted text-[11px]">Development / Prod</span>
+</div>
+<span class="material-symbols-outlined text-border-subtle hidden md:block">arrow_forward</span>
+<div class="w-full md:w-1/4 p-3 rounded-xl bg-surface-container-low border border-border-subtle flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-info-sky text-[24px]">extension</span>
+<span class="font-bold text-text-primary">2. Init Extensions</span>
+<span class="text-text-muted text-[11px]">db.init_app(app)</span>
+</div>
+<span class="material-symbols-outlined text-border-subtle hidden md:block">arrow_forward</span>
+<div class="w-full md:w-1/4 p-3 rounded-xl bg-surface-container-low border border-border-subtle flex flex-col items-center gap-1">
+<span class="material-symbols-outlined text-success-emerald text-[24px]">hub</span>
+<span class="font-bold text-text-primary">3. Đăng ký Blueprint</span>
+<span class="text-text-muted text-[11px]">auth_bp, catalog_bp</span>
+</div>
+</div>
+</div>
+<!-- Code for Factory Pattern -->
+<div class="rounded-xl overflow-hidden border border-slate-800 bg-[#0F172A] p-4 text-[13px] font-mono-code text-slate-200">
+<div class="text-slate-500 pb-2 text-[11px] border-b border-slate-800"># app/__init__.py</div>
+<pre class="pt-2"><code class="text-indigo-400">def <span class="text-sky-300">create_app</span>(config_class=DevelopmentConfig):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+
+    <span class="text-slate-500"># Khởi tạo các phần mở rộng an toàn</span>
+    db.init_app(app)
+    migrate.init_app(app, db)
+
+    <span class="text-slate-500"># Đăng ký Blueprints</span>
+    <span class="text-indigo-400">from</span> app.auth.routes <span class="text-indigo-400">import</span> auth_bp
+    <span class="text-indigo-400">from</span> app.catalog.routes <span class="text-indigo-400">import</span> catalog_bp
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(catalog_bp)
+
+    <span class="text-indigo-400">return</span> app</code></pre>
+</div>
+<!-- Practical Callout Tip (Avoiding Circular Import) -->
+<div class="p-4 rounded-xl bg-warning-amber/10 border-l-4 border-warning-amber flex items-start gap-3">
+<span class="material-symbols-outlined text-warning-amber text-[22px] flex-shrink-0 mt-0.5">lightbulb</span>
+<div class="flex flex-col gap-1 text-[13.5px]">
+<span class="font-bold text-text-primary">Quy tắc vàng tránh lỗi Circular Import:</span>
+<span class="text-text-secondary">
+                Tuyệt đối không khởi tạo đối tượng <code>db = SQLAlchemy(app)</code> bên trong <code>create_app()</code> hay <code>app.py</code>. Hãy định nghĩa <code>db = SQLAlchemy()</code> độc lập trong tệp <code>app/extensions.py</code>, sau đó mới gọi <code>db.init_app(app)</code> trong Application Factory.
+              </span>
+</div>
+</div>
+</section>
+<!-- SECTION 4: Contextual AI Assistant Inline Card -->
+<section class="mt-4 rounded-2xl bg-gradient-to-br from-primary/5 via-surface-card to-primary/10 border border-primary/20 p-5 shadow-sm flex flex-col gap-4">
+<div class="flex flex-wrap items-center justify-between gap-2">
+<div class="flex items-center gap-2.5">
+<div class="w-9 h-9 rounded-xl bg-primary text-on-primary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[20px]">smart_toy</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-[15px] font-bold text-text-primary">Trợ lý Học tập AI Mentor</span>
+<span class="text-[11px] text-text-muted">Đang khóa ngữ cảnh: <strong>Bài 07 &amp; Slide Module 03</strong></span>
+</div>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-primary/15 text-primary text-[11px] font-bold">Context Lock ON</span>
+</div>
+<!-- Prompt Suggestions Chips -->
+<div class="flex flex-wrap gap-2 pt-1">
+<button class="px-3 py-1.5 rounded-lg bg-surface-card hover:bg-surface-container text-text-secondary text-[12px] font-medium border border-border-subtle transition-colors shadow-xs flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">chat_bubble</span>
+              Giải thích cú pháp `Blueprint('auth', __name__)`
+            </button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-card hover:bg-surface-container text-text-secondary text-[12px] font-medium border border-border-subtle transition-colors shadow-xs flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">chat_bubble</span>
+              Cách lồng Blueprint đa cấp (Nested)?
+            </button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-card hover:bg-surface-container text-text-secondary text-[12px] font-medium border border-border-subtle transition-colors shadow-xs flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-[14px] text-primary">chat_bubble</span>
+              Tại sao không khởi tạo `db = SQLAlchemy(app)` toàn cục?
+            </button>
+</div>
+<!-- Sample Mock Response with Accurate Citation -->
+<div class="p-3.5 rounded-xl bg-surface-card border border-border-subtle flex flex-col gap-2 text-[13px]">
+<div class="flex items-center justify-between text-[11px] text-text-muted">
+<span class="font-bold text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span> Phản hồi từ AI Mentor
+              </span>
+<span class="">Vừa xong</span>
+</div>
+<p class="text-text-secondary">
+              Khi dùng <code>Blueprint('auth', __name__)</code>, đối số thứ nhất là định danh duy nhất (namespace) dùng cho việc tra cứu hàm phân giải URL qua <code>url_for('auth.login')</code>. Đối số thứ hai <code>__name__</code> báo cho Flask biết gốc thư mục để tự động định vị static files và template dành riêng cho module đó.
+            </p>
+<div class="pt-1.5 border-t border-border-subtle/70 flex items-center gap-2 text-[11px] text-text-muted">
+<span class="material-symbols-outlined text-[14px] text-info-sky">menu_book</span>
+<span class="">Trích từ: <strong>Bài 07 - Mục 2.3</strong> và tài liệu <strong>`flask-blueprints-architecture.pdf` (Trang 14)</strong></span>
+</div>
+</div>
+</section>
+</article>
+</main>
+<!-- ================= RIGHT COLUMN: QUICK NAV & CONTROLLED RESOURCE VAULT (280px) ================= -->
+<aside class="w-full lg:w-[290px] xl:w-[310px] p-4 sm:p-6 lg:py-8 lg:px-4 flex flex-col gap-6 flex-shrink-0 border-l border-border-subtle bg-surface-card/60">
+<!-- Table of Contents (On this page) -->
+<div class="flex flex-col gap-3">
+<span class="text-[12px] font-bold text-text-primary uppercase tracking-wider flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">format_list_bulleted</span>
+          Trong bài này
+        </span>
+<nav class="flex flex-col text-[13px] border-l-2 border-border-subtle space-y-1">
+<a class="pl-3 py-1 border-l-2 -ml-[2px] border-transparent hover:border-primary text-text-muted hover:text-text-primary transition-all" href="#videoLecture">Video bài giảng</a>
+<a class="pl-3 py-1 border-l-2 -ml-[2px] border-transparent hover:border-primary text-text-muted hover:text-text-primary transition-all" href="#section1">1. Monolithic Flask App</a>
+<a class="pl-3 py-1 border-l-2 -ml-[2px] border-primary text-primary font-semibold transition-all" href="#section2">2. Cơ chế Blueprint &amp; Code</a>
+<a class="pl-3 py-1 border-l-2 -ml-[2px] border-transparent hover:border-primary text-text-muted hover:text-text-primary transition-all" href="#section3">3. Application Factory</a>
+</nav>
+</div>
+<!-- Completion Evidence Gate (Thước đo minh chứng học tập) -->
+<div class="p-4 rounded-2xl bg-surface-container-low border border-border-subtle flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<span class="text-[12px] font-bold text-text-primary uppercase tracking-wider">Minh chứng hoàn tất</span>
+<span class="text-[11px] font-bold text-warning-amber bg-warning-amber/10 px-2 py-0.5 rounded-full">Chưa đạt</span>
+</div>
+<div class="flex flex-col gap-2.5 text-[12.5px]">
+<!-- Criteria 1: Reading Time -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between text-text-secondary">
+<span class="">Thời gian đọc: <strong>28/35 phút</strong> tối thiểu</span>
+<span class="text-primary font-bold">80%</span>
+</div>
+<div class="w-full bg-border-subtle h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 80%;"></div>
+</div>
+</div>
+<!-- Criteria 2: Video View -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between text-text-secondary">
+<span class="">Đã xem video: <strong>100%</strong></span>
+<span class="text-success-emerald font-bold">Đạt</span>
+</div>
+<div class="w-full bg-border-subtle h-1.5 rounded-full overflow-hidden">
+<div class="bg-success-emerald h-full rounded-full" style="width: 100%;"></div>
+</div>
+</div>
+</div>
+<p class="text-[11px] text-text-muted leading-normal pt-1 border-t border-border-subtle/70">
+          * Hệ thống tự động lưu trữ minh chứng. Khi ấn hoàn thành, dữ liệu sẽ được khóa vĩnh viễn vào hồ sơ học vụ học kỳ Fall 2025.
+        </p>
+</div>
+<!-- Controlled Resource Vault (Kho tài liệu có kiểm duyệt an toàn) -->
+<div class="flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<span class="text-[12px] font-bold text-text-primary uppercase tracking-wider flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-success-emerald">verified_user</span>
+            Tài nguyên đính kèm
+          </span>
+<span class="text-[10px] font-bold uppercase text-text-muted bg-surface-container px-2 py-0.5 rounded">ClamAV Checked</span>
+</div>
+<div class="flex flex-col gap-2.5">
+<!-- Resource 1: PDF Architecture -->
+<div class="p-3 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-2">
+<div class="flex items-start gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-danger-rose/10 text-danger-rose flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+</div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="text-[12.5px] font-bold text-text-primary truncate">flask-blueprints-architecture.pdf</span>
+<span class="text-[11px] text-text-muted">3.2 MB • Tài liệu kiến trúc</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-border-subtle/50">
+<span class="text-[10px] font-bold text-success-emerald flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check</span> AVAILABLE
+              </span>
+<div class="flex items-center gap-1.5">
+<button class="text-[11px] text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-surface-container-low transition-colors" type="button">Xem</button>
+<button class="text-[11px] font-semibold text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors" type="button">Tải về</button>
+</div>
+</div>
+</div>
+<!-- Resource 2: Slides PPTX -->
+<div class="p-3 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-2">
+<div class="flex items-start gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-warning-amber/10 text-warning-amber flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">co_present</span>
+</div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="text-[12.5px] font-bold text-text-primary truncate">week-07-boilerplate-slides.pptx</span>
+<span class="text-[11px] text-text-muted">8.5 MB • Slide thuyết trình</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-border-subtle/50">
+<span class="text-[10px] font-bold text-success-emerald flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check</span> AVAILABLE
+              </span>
+<div class="flex items-center gap-1.5">
+<button class="text-[11px] text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-surface-container-low transition-colors" type="button">Xem</button>
+<button class="text-[11px] font-semibold text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors" type="button">Tải về</button>
+</div>
+</div>
+</div>
+<!-- Resource 3: Starter Code ZIP -->
+<div class="p-3 rounded-xl bg-surface-card border border-border-subtle shadow-xs flex flex-col gap-2">
+<div class="flex items-start gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-info-sky/10 text-info-sky flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">folder_zip</span>
+</div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="text-[12.5px] font-bold text-text-primary truncate">lab07_blueprints_starter.zip</span>
+<span class="text-[11px] text-text-muted">1.8 MB • Mã nguồn mẫu</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-border-subtle/50">
+<span class="text-[10px] font-bold text-success-emerald flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check</span> AVAILABLE
+              </span>
+<button class="text-[11px] font-semibold text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors" type="button">Tải starter code</button>
+</div>
+</div>
+<!-- Resource 4: SCANNING STATE (external_plugins_helper.py) -->
+<div class="p-3 rounded-xl bg-surface-container-low/70 border border-border-subtle flex flex-col gap-2">
+<div class="flex items-start gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-warning-amber/10 text-warning-amber flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px] animate-spin">sync</span>
+</div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="text-[12.5px] font-bold text-text-secondary truncate">external_plugins_helper.py</span>
+<span class="text-[11px] text-warning-amber font-medium">Đang quét mã độc (72%)...</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-border-subtle/40">
+<span class="text-[10px] font-semibold text-text-muted">Cách ly an toàn sandbox</span>
+<button class="text-[11px] text-text-muted bg-border-subtle/40 px-2 py-0.5 rounded cursor-not-allowed" disabled="" type="button">Khóa tải</button>
+</div>
+</div>
+<!-- Resource 5: REJECTED MALWARE STATE (unverified_script.sh) -->
+<div class="p-3 rounded-xl bg-error-container/30 border border-error/30 flex flex-col gap-1.5">
+<div class="flex items-start gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-error text-on-error flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">gpp_bad</span>
+</div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="text-[12.5px] font-bold text-error truncate">unverified_script.sh</span>
+<span class="text-[11px] text-error font-medium">BỊ TỪ CHỐI (Rejected)</span>
+</div>
+</div>
+<p class="text-[11px] text-error leading-tight">
+              Chứa tập lệnh không bảo đảm an toàn hệ thống (CWE-78). Quản trị viên đã vô hiệu hóa tải về vĩnh viễn.
+            </p>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- ================= BOTTOM COMPLETION ACTION BAR ================= -->
+<footer class="sticky bottom-0 z-40 bg-surface-card/95 backdrop-blur-md border-t border-border-subtle py-3 px-4 sm:px-6 shadow-lg">
+<div class="max-w-[1440px] mx-auto flex items-center justify-between gap-3">
+<!-- Left: Previous Lesson -->
+<a class="h-11 px-4 rounded-xl border border-border-subtle bg-surface-card hover:bg-surface-container-low text-text-secondary text-[13px] font-semibold flex items-center gap-1.5 transition-colors shadow-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span>
+<span class="hidden sm:inline">Bài trước: Bài 06 - Database Migrations</span>
+<span class="sm:hidden">Bài 06</span>
+</a>
+<!-- Center: Status indicator -->
+<div class="hidden md:flex items-center gap-2 text-[13px] text-text-muted font-medium">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="">Đang học: <strong>Bài 07 / 12</strong> (Học kỳ Fall 2025)</span>
+</div>
+<!-- Right: Primary Indigo Action Button (#6366F1/primary-container) -->
+<div class="flex items-center gap-2">
+<div class="group relative">
+<button class="h-11 px-5 rounded-xl bg-[#6366F1] hover:bg-indigo-600 active:bg-indigo-700 text-white text-[13.5px] font-bold flex items-center gap-2 transition-all shadow-sm hover:shadow active:scale-[0.99]" id="completeBtn" type="button">
+<span class="">Đánh dấu hoàn thành &amp; Tiếp tục</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+<!-- Tooltip warning condition -->
+<div class="hidden group-hover:block absolute bottom-full right-0 mb-2 w-64 p-2.5 rounded-xl bg-slate-900 text-white text-[11px] shadow-xl pointer-events-none z-50">
+<div class="flex items-start gap-1.5">
+<span class="material-symbols-outlined text-warning-amber text-[16px]">info</span>
+<span class="">Còn <strong>7 phút đọc tối thiểu</strong> để chính thức ghi nhận 100% vào bảng điểm học kỳ.</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</footer>
+<!-- ================= SYSTEM EDGE CASES & SPECS FOOTER ================= -->
+
+<!-- ================= JAVASCRIPT LOGIC ================= -->
+<script>
+    // 1. Mobile Outline Drawer Handler
+    const mobileOutlineBtn = document.getElementById('mobileOutlineBtn');
+    const curriculumSidebar = document.getElementById('curriculumSidebar');
+    const mobileDrawerOverlay = document.getElementById('mobileDrawerOverlay');
+
+    function toggleMobileDrawer() {
+      curriculumSidebar.classList.toggle('-translate-x-full');
+      mobileDrawerOverlay.classList.toggle('hidden');
+    }
+
+    if (mobileOutlineBtn && curriculumSidebar && mobileDrawerOverlay) {
+      mobileOutlineBtn.addEventListener('click', toggleMobileDrawer);
+      mobileDrawerOverlay.addEventListener('click', toggleMobileDrawer);
+    }
+
+    // 2. Transcript Box Toggle
+    const toggleTranscriptBtn = document.getElementById('toggleTranscriptBtn');
+    const transcriptBox = document.getElementById('transcriptBox');
+    if (toggleTranscriptBtn && transcriptBox) {
+      toggleTranscriptBtn.addEventListener('click', () => {
+        transcriptBox.classList.toggle('hidden');
+      });
+    }
+
+    // 3. Font Resizer
+    const article = document.getElementById('readingArticle');
+    let currentFontSize = 15;
+    const decreaseFontBtn = document.getElementById('decreaseFontBtn');
+    const increaseFontBtn = document.getElementById('increaseFontBtn');
+
+    if (decreaseFontBtn && increaseFontBtn && article) {
+      increaseFontBtn.addEventListener('click', () => {
+        if (currentFontSize < 20) {
+          currentFontSize += 1.5;
+          article.style.fontSize = currentFontSize + 'px';
+        }
+      });
+      decreaseFontBtn.addEventListener('click', () => {
+        if (currentFontSize > 13) {
+          currentFontSize -= 1.5;
+          article.style.fontSize = currentFontSize + 'px';
+        }
+      });
+    }
+
+    // 4. Code Block Tab Switcher (Auth vs Catalog)
+    const tabAuthBtn = document.getElementById('tabAuthBtn');
+    const tabCatalogBtn = document.getElementById('tabCatalogBtn');
+    if (tabAuthBtn && tabCatalogBtn) {
+      tabAuthBtn.addEventListener('click', () => {
+        tabAuthBtn.className = 'px-3 py-1 rounded-md text-[12px] font-mono-code font-bold bg-primary-container text-white transition-colors';
+        tabCatalogBtn.className = 'px-3 py-1 rounded-md text-[12px] font-mono-code font-medium text-slate-400 hover:text-white transition-colors';
+      });
+      tabCatalogBtn.addEventListener('click', () => {
+        tabCatalogBtn.className = 'px-3 py-1 rounded-md text-[12px] font-mono-code font-bold bg-primary-container text-white transition-colors';
+        tabAuthBtn.className = 'px-3 py-1 rounded-md text-[12px] font-mono-code font-medium text-slate-400 hover:text-white transition-colors';
+      });
+    }
+
+    // 5. Copy Code snippet handler
+    const copyCodeBtn = document.getElementById('copyCodeBtn');
+    const copyText = document.getElementById('copyText');
+    if (copyCodeBtn && copyText) {
+      copyCodeBtn.addEventListener('click', () => {
+        copyText.textContent = 'Copied!';
+        setTimeout(() => {
+          copyText.textContent = 'Copy';
+        }, 2000);
+      });
+    }
+
+    // 6. Fullscreen Mode
+    const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
+    if (fullscreenToggleBtn) {
+      fullscreenToggleBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      });
+    }
+  </script>
+
+
+</body></html>

@@ -1,0 +1,624 @@
+<!DOCTYPE html><html class="light" lang="vi" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>EduStudio - Soạn Thảo Bài Giảng Thân Thiện</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface": "#131b2e",
+            "primary": "#3525cd",
+            "tertiary-container": "#00659a",
+            "primary-container": "#4f46e5",
+            "surface-container-lowest": "#ffffff",
+            "tertiary-fixed": "#cce5ff",
+            "inverse-primary": "#c3c0ff",
+            "on-tertiary-fixed": "#001d31",
+            "surface-card": "#FFFFFF",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "on-primary-container": "#dad7ff",
+            "border-subtle": "#E2E8F0",
+            "on-primary": "#ffffff",
+            "surface": "#faf8ff",
+            "surface-tint": "#4d44e3",
+            "tertiary-fixed-dim": "#93ccff",
+            "info-sky": "#0284C7",
+            "on-tertiary-container": "#bedfff",
+            "on-primary-fixed": "#0f0069",
+            "secondary-fixed": "#e1e0ff",
+            "on-secondary-fixed": "#07006c",
+            "error": "#ba1a1a",
+            "primary-fixed-dim": "#c3c0ff",
+            "on-secondary-container": "#fffbff",
+            "inverse-surface": "#283044",
+            "text-primary": "#0F172A",
+            "on-tertiary-fixed-variant": "#004b73",
+            "inverse-on-surface": "#eef0ff",
+            "text-muted": "#64748B",
+            "on-error": "#ffffff",
+            "surface-container-highest": "#dae2fd",
+            "background": "#faf8ff",
+            "danger-rose": "#E11D48",
+            "on-primary-fixed-variant": "#3323cc",
+            "surface-bright": "#faf8ff",
+            "surface-dim": "#d2d9f4",
+            "error-container": "#ffdad6",
+            "text-secondary": "#1E293B",
+            "surface-variant": "#dae2fd",
+            "secondary-fixed-dim": "#c0c1ff",
+            "primary-fixed": "#e2dfff",
+            "outline": "#777587",
+            "secondary-container": "#6063ee",
+            "success-emerald": "#059669",
+            "surface-canvas": "#F8FAFC",
+            "on-background": "#131b2e",
+            "surface-container": "#eaedff",
+            "on-secondary": "#ffffff",
+            "on-tertiary": "#ffffff",
+            "tertiary": "#004c76",
+            "on-error-container": "#93000a",
+            "surface-container-low": "#f2f3ff",
+            "outline-variant": "#c7c4d8",
+            "warning-amber": "#D97706",
+            "on-surface-variant": "#464555",
+            "secondary": "#4648d4"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "3xl": "1.5rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-md": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "gutter-mobile": "1rem",
+            "margin-mobile": "1rem",
+            "space-xs": "0.25rem",
+            "gutter": "1.5rem",
+            "margin": "2rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "body-sm": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "caption": ["Inter", "sans-serif"],
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #c7c4d8;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f2f3ff;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased font-body-md min-h-screen selection:bg-primary-fixed selection:text-primary">
+<!-- App Shell Navigation Container -->
+<div class="relative flex h-auto min-h-screen w-full flex-col bg-[#f9f8fb] group/design-root overflow-x-hidden" style="font-family: &quot;Plus Jakarta Sans&quot;, &quot;Noto Sans&quot;, sans-serif;">
+<div class="layout-container flex h-full grow flex-col">
+<div class="px-4 md:px-12 lg:px-24 flex flex-1 justify-center py-5">
+<div class="layout-content-container flex flex-col max-w-[1120px] flex-1">
+<!-- Header from Shared Components -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e8e8f3] px-6 lg:px-10 py-3 bg-surface-container-lowest rounded-2xl shadow-sm mb-4">
+<div class="flex items-center gap-4 text-[#0f0e1b]">
+<div class="size-6 text-primary flex items-center justify-center bg-primary-fixed rounded-lg p-1">
+<svg class="w-full h-full" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M6 6H42L36 24L42 42H6L12 24L6 6Z" fill="currentColor"></path></svg>
+</div>
+<div class="flex flex-col">
+<h2 class="text-[#0f0e1b] text-base lg:text-lg font-bold leading-tight tracking-[-0.015em]">EduStudio - Soạn Thảo Bài Giảng</h2>
+<span class="text-xs text-text-muted">Giảng viên: ThS. Trần Hoàng Nam • FPT Polytechnic</span>
+</div>
+</div>
+<div class="flex flex-1 justify-end items-center gap-4 lg:gap-8">
+<div class="hidden xl:flex items-center gap-7">
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Môn PWD301</a>
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Ngân hàng bài giảng</a>
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Học liệu &amp; Đề thi</a>
+<a class="text-[#0f0e1b] hover:text-primary transition-colors text-sm font-medium leading-normal" href="#">Trợ giúp giảng viên</a>
+</div>
+<div class="flex gap-2.5">
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center gap-2 rounded-xl h-11 px-4 bg-[#e8e8f3] hover:bg-surface-container-high transition-all text-[#0f0e1b] text-sm font-semibold leading-normal shadow-sm active:scale-95">
+<span class="material-symbols-outlined text-[20px] text-primary">visibility</span>
+<span class="truncate">Xem trước bài học</span>
+</button>
+<button class="flex min-w-[120px] cursor-pointer items-center justify-center gap-2 rounded-xl h-11 px-5 bg-primary hover:bg-primary-container text-[#f9f8fb] text-sm font-bold leading-normal tracking-[0.015em] shadow-md hover:shadow-lg transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px] text-white">send</span>
+<span class="truncate">XUẤT BẢN CHO SINH VIÊN HỌC NGAY</span>
+</button>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border-2 border-primary-fixed shadow-sm" data-alt="Chân dung giảng viên đại học trong trang phục thanh lịch với nụ cười thân thiện, phông nền trường học hiện đại ấm áp với ánh sáng tự nhiên dịu nhẹ" style="background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuBdA05UJlxgYV6Uk_07ZRN3RR8e0HGzt1b7ZYOP2pCKU-PHOSBdtzslmsAyk6D20zgMGd67aRWwfamAYINdaFn0yFDQemt9j4b-9rd2L7Vebzmp97NpDUpsAmIGGIYdYADITONFjStT9g2J6Re47t-532J5a7wn60oD0TgsFepWkGMSoXxo2aKWqcMz1csSO4VyBC4f6GNxD7Tewtvwd-ZpGgGqmu9_E0rbyV-HwZzKDNzOcxTYbl-blA&quot;);"></div>
+</div>
+</header>
+<!-- Breadcrumb & Top Indicator -->
+<div class="flex flex-wrap items-center gap-2 px-4 py-2 bg-surface-container-low/70 rounded-xl mb-3 border border-outline-variant/30">
+<a class="text-[#545095] hover:text-primary text-sm font-medium leading-normal flex items-center gap-1" href="#">
+<span class="material-symbols-outlined text-[16px]">school</span> Học kỳ Spring 2025
+          </a>
+<span class="text-[#545095] text-sm font-medium leading-normal">/</span>
+<a class="text-[#545095] hover:text-primary text-sm font-medium leading-normal" href="#">PWD301 - Phát triển ứng dụng Web</a>
+<span class="text-[#545095] text-sm font-medium leading-normal">/</span>
+<span class="text-[#0f0e1b] text-sm font-semibold leading-normal bg-white px-2 py-0.5 rounded-md shadow-xs">Soạn bài: Bài 04 - Thiết kế giao diện thân thiện UX/UI</span>
+</div>
+<!-- Banner Title Section -->
+<div class="flex flex-wrap justify-between items-center gap-4 p-5 bg-surface-card rounded-2xl border border-border-subtle shadow-sm mb-4">
+<div class="flex min-w-72 flex-col gap-1.5">
+<div class="inline-flex items-center gap-2 w-fit px-3 py-1 rounded-full bg-primary-fixed text-primary font-bold text-xs">
+<span class="material-symbols-outlined text-[15px]" style="font-variation-settings: &quot;FILL&quot; 1;">favorite</span>
+              Dễ dùng như Microsoft Word &amp; Canva - Không yêu cầu code
+            </div>
+<h1 class="text-[#0f0e1b] text-2xl lg:text-3xl font-black leading-tight tracking-[-0.02em]">Trình Soạn Thảo Bài Giảng Dễ Dùng (Thầy/Cô không cần biết lập trình)</h1>
+<p class="text-[#545095] text-sm md:text-base font-normal leading-relaxed">
+              Giao diện soạn thảo dạng khối kéo thả thông minh - Hệ thống tự động lưu trữ và định dạng đẹp mắt cho sinh viên.
+            </p>
+</div>
+<!-- Cloud autosave badge -->
+<div class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-success-emerald text-xs md:text-sm font-medium">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: &quot;FILL&quot; 1;">check_circle</span>
+<span class="">Hệ thống đã tự động lưu lúc <strong>09:15</strong> (Không lo mất bài)</span>
+</div>
+</div>
+<!-- Step-by-Step Wizard Bar -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-card border-2 border-primary shadow-xs">
+<div class="size-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm shrink-0">1</div>
+<div class="flex flex-col">
+<span class="text-xs font-semibold uppercase tracking-wider text-primary">Bước 1</span>
+<span class="text-sm font-bold text-text-primary">Đặt tên bài &amp; Chọn danh mục</span>
+</div>
+<span class="material-symbols-outlined ml-auto text-success-emerald text-[22px]" style="font-variation-settings: &quot;FILL&quot; 1;">task_alt</span>
+</div>
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-card border-2 border-primary/50 shadow-xs relative overflow-hidden">
+<div class="size-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-sm">2</div>
+<div class="flex flex-col">
+<span class="text-xs font-semibold uppercase tracking-wider text-primary">Bước 2 (Đang thực hiện)</span>
+<span class="text-sm font-bold text-text-primary">Viết bài hoặc đính kèm tệp</span>
+</div>
+<span class="material-symbols-outlined ml-auto text-primary text-[22px] animate-pulse">edit_note</span>
+</div>
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-low border border-border-subtle opacity-85">
+<div class="size-9 rounded-full bg-surface-container-highest text-text-muted flex items-center justify-center font-bold text-sm shrink-0">3</div>
+<div class="flex flex-col">
+<span class="text-xs font-medium uppercase tracking-wider text-text-muted">Bước 3</span>
+<span class="text-sm font-medium text-text-muted">Xem trước &amp; Bấm xuất bản</span>
+</div>
+<span class="material-symbols-outlined ml-auto text-text-muted text-[20px]">rocket_launch</span>
+</div>
+</div>
+<!-- Mode Toggle Segment (Preserved logic with rich visual style) -->
+<div class="flex px-1 py-1 mb-5">
+<div class="flex h-12 flex-1 items-center justify-center rounded-xl bg-[#e8e8f3] p-1 gap-1">
+<label class="flex cursor-pointer h-full grow items-center justify-center gap-2 rounded-lg px-3 transition-all has-[:checked]:bg-[#f9f8fb] has-[:checked]:shadow-sm has-[:checked]:text-primary text-[#545095] text-sm font-semibold leading-normal">
+<span class="material-symbols-outlined text-[20px]">auto_awesome</span>
+<span class="truncate">Chế độ Cơ bản (Dễ dùng nhất - Khuyên dùng)</span>
+<input checked="" class="invisible w-0" name="editor-mode" type="radio" value="basic">
+</label>
+<label class="flex cursor-pointer h-full grow items-center justify-center gap-2 rounded-lg px-3 transition-all has-[:checked]:bg-[#f9f8fb] has-[:checked]:shadow-sm has-[:checked]:text-[#0f0e1b] text-[#545095] text-sm font-semibold leading-normal">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+<span class="truncate">Chế độ Nâng cao (Dành cho Chuyên gia IT)</span>
+<input class="invisible w-0" name="editor-mode" type="radio" value="advanced">
+</label>
+</div>
+</div>
+<!-- MAIN WYSIWYG EDITOR CANVAS -->
+<main class="flex flex-col gap-6">
+<!-- Section 1: Thông tin tiêu đề bài học -->
+<div class="bg-surface-card p-6 rounded-2xl border border-border-subtle shadow-sm space-y-4">
+<div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+<div class="flex items-center gap-2 text-primary font-bold text-base">
+<span class="material-symbols-outlined text-[22px]">title</span>
+<span class="">Thông tin cốt lõi của bài học</span>
+</div>
+<span class="text-xs text-text-muted font-medium bg-surface-container px-2.5 py-1 rounded-full">Dễ tiếp thu nhất cho sinh viên</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="md:col-span-2 space-y-1.5">
+<label class="text-xs font-bold text-text-primary uppercase tracking-wide">Tên bài giảng hiển thị cho lớp</label>
+<input class="w-full h-11 px-4 rounded-xl border border-border-subtle bg-surface-container-lowest text-text-primary font-semibold text-base focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all" type="text" value="Bài 04: Nguyên lý thiết kế giao diện thân thiện người dùng (UX/UI chuẩn giáo dục)">
+</div>
+<div class="space-y-1.5">
+<label class="text-xs font-bold text-text-primary uppercase tracking-wide">Thời lượng dự kiến</label>
+<div class="relative">
+<select class="w-full h-11 px-4 pr-10 rounded-xl border border-border-subtle bg-surface-container-lowest text-text-primary font-medium text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none appearance-none">
+<option>45 phút (1 tiết)</option>
+<option selected="">90 phút (2 tiết chuẩn)</option>
+<option>180 phút (Thực hành Lab)</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-3 pointer-events-none text-text-muted text-[18px]">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: WYSIWYG Visual Toolbar & Canvas -->
+<div class="bg-surface-card rounded-2xl border border-border-subtle shadow-sm overflow-hidden flex flex-col">
+<!-- Low-Tech Friendly Word/Notion Style Toolbar -->
+<div class="bg-surface-container-low border-b border-border-subtle p-3 flex flex-wrap items-center gap-2 justify-between">
+<div class="flex flex-wrap items-center gap-1 md:gap-2">
+<!-- Dropdown font style -->
+<div class="inline-flex items-center bg-white rounded-lg border border-border-subtle px-2.5 h-10 shadow-xs">
+<span class="text-xs font-semibold text-text-muted mr-1.5">Định dạng:</span>
+<select class="bg-transparent border-0 text-xs font-bold text-text-primary p-0 pr-4 focus:ring-0 cursor-pointer">
+<option>Tiêu đề lớn (H1)</option>
+<option selected="">Tiêu đề vừa (H2)</option>
+<option>Đoạn văn thường</option>
+</select>
+</div>
+<div class="h-6 w-px bg-border-subtle mx-1"></div>
+<!-- Basic text format buttons -->
+<div class="flex items-center bg-white rounded-lg border border-border-subtle p-1 shadow-xs">
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary font-bold transition-colors" title="In đậm (Ctrl+B)">
+<span class="material-symbols-outlined text-[19px]">format_bold</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary transition-colors" title="In nghiêng (Ctrl+I)">
+<span class="material-symbols-outlined text-[19px]">format_italic</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary transition-colors" title="Gạch chân (Ctrl+U)">
+<span class="material-symbols-outlined text-[19px]">format_underlined</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-primary transition-colors" title="Màu chữ nổi bật">
+<span class="material-symbols-outlined text-[19px]">format_color_text</span>
+</button>
+</div>
+<div class="h-6 w-px bg-border-subtle mx-1"></div>
+<!-- Alignment & Lists -->
+<div class="flex items-center bg-white rounded-lg border border-border-subtle p-1 shadow-xs">
+<button class="size-8 rounded bg-surface-container text-primary flex items-center justify-center font-bold" title="Căn trái">
+<span class="material-symbols-outlined text-[19px]">format_align_left</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary" title="Căn giữa">
+<span class="material-symbols-outlined text-[19px]">format_align_center</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary" title="Danh sách số 1, 2, 3">
+<span class="material-symbols-outlined text-[19px]">format_list_numbered</span>
+</button>
+<button class="size-8 rounded hover:bg-surface-container-high flex items-center justify-center text-text-primary" title="Gạch đầu dòng">
+<span class="material-symbols-outlined text-[19px]">format_list_bulleted</span>
+</button>
+</div>
+<div class="h-6 w-px bg-border-subtle mx-1"></div>
+<!-- Quick Insert Media Buttons -->
+<div class="flex items-center gap-1.5">
+<button class="flex items-center gap-1.5 h-10 px-3 rounded-lg bg-white border border-border-subtle text-text-secondary hover:border-primary hover:text-primary text-xs font-semibold shadow-xs transition-all">
+<span class="material-symbols-outlined text-info-sky text-[18px]">image</span>
+<span class="">Chèn ảnh</span>
+</button>
+<button class="flex items-center gap-1.5 h-10 px-3 rounded-lg bg-white border border-border-subtle text-text-secondary hover:border-primary hover:text-primary text-xs font-semibold shadow-xs transition-all">
+<span class="material-symbols-outlined text-danger-rose text-[18px]">smart_display</span>
+<span class="">Chèn video</span>
+</button>
+<button class="flex items-center gap-1.5 h-10 px-3 rounded-lg bg-amber-50 border border-amber-200 text-warning-amber hover:bg-amber-100 text-xs font-bold shadow-xs transition-all">
+<span class="material-symbols-outlined text-[18px]">lightbulb</span>
+<span class="">Hộp ghi chú</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="size-9 rounded-lg bg-white border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary shadow-xs" title="Hoàn tác (Undo)">
+<span class="material-symbols-outlined text-[18px]">undo</span>
+</button>
+<button class="size-9 rounded-lg bg-white border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary shadow-xs" title="Làm lại (Redo)">
+<span class="material-symbols-outlined text-[18px]">redo</span>
+</button>
+</div>
+</div>
+<!-- Content Area with Live Editable Blocks -->
+<div class="p-6 md:p-8 space-y-6 bg-white min-h-[440px]">
+<!-- Block 1: Paragraph / Intro -->
+<div class="group relative p-4 rounded-xl border border-transparent hover:border-dashed hover:border-primary/50 transition-all bg-white hover:bg-surface/50">
+<div class="absolute -top-3 left-4 hidden group-hover:flex items-center gap-1 bg-primary text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+<span class="material-symbols-outlined text-[14px]">drag_indicator</span> Khối Đoạn Văn
+                </div>
+<div class="space-y-2">
+<h3 class="text-xl font-bold text-text-primary">1. Tầm quan trọng của trải nghiệm người dùng (UX) trong kỷ nguyên số</h3>
+<p class="text-base text-text-secondary leading-relaxed">
+                    Chào các bạn sinh viên! Trong bài học này, chúng ta sẽ cùng khám phá cách xây dựng một sản phẩm phần mềm mà bất kỳ ai, từ người rành công nghệ đến người lớn tuổi hoặc sinh viên mới nhập học đều có thể sử dụng dễ dàng trong vòng <strong>3 giây đầu tiên</strong>. Một thiết kế tốt không phải là thiết kế phức tạp nhất, mà là thiết kế giúp người dùng hoàn thành công việc nhanh nhất mà không phải bực bội.
+                  </p>
+</div>
+</div>
+<!-- Block 2: Note Callout Box (Hộp ghi chú lưu ý sinh viên) -->
+
+<!-- Block 3: Video Player Block (Chỉ cần link video trực quan) -->
+<div class="group relative p-5 rounded-2xl bg-surface-container-low border border-border-subtle hover:border-primary/40 transition-all">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="size-7 rounded-lg bg-danger-rose/10 text-danger-rose flex items-center justify-center font-bold">
+<span class="material-symbols-outlined text-[18px]">play_circle</span>
+</span>
+<span class="font-bold text-sm text-text-primary">Video bài giảng đính kèm: 5 Quy Tắc Thiết Kế UX Trong 10 Phút</span>
+</div>
+<span class="text-xs text-success-emerald bg-emerald-100 font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check</span> Đã kết nối video YouTube
+                  </span>
+</div>
+<!-- Video Thumbnail Preview -->
+<div class="relative rounded-xl overflow-hidden aspect-video max-h-72 w-full bg-slate-900 flex items-center justify-center group/player shadow-md">
+<div class="absolute inset-0 bg-cover bg-center opacity-85" data-alt="Hình ảnh bài học thiết kế đồ họa tương tác trên màn hình máy tính hiện đại với các biểu đồ wireframe màu xanh tím thanh lịch, người giảng viên đang thao tác chuẩn mực trong không gian lớp học công nghệ cao" style="background-image: url(&quot;https://lh3.googleusercontent.com/aida-public/AB6AXuC2AwEJYk5p91-QEx9k_31kcNAvkcLDMYMRi3NcR0fa56_Cv6Qb3EA_B_vI85Zjxca5O0zOt9ieK-sIG3iESe-zRugj51k-WErxQU-X9j3CWLmBYl9vFBTWf5XDSl9mA8bRogdutehzO_MPuvKffBLd51FOm3EwRIbCwIHE9g7A6dmKvzCno7nZz8gNQCG7Vyh3VTb2jj_IEgn_guzcYye7Huk2HuGyiFfkM8xouMLHWjUJAAD2sPYhuA&quot;);"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
+<button class="relative z-10 size-16 rounded-full bg-primary hover:bg-primary-container text-white flex items-center justify-center shadow-xl transform transition-transform group-hover/player:scale-110 active:scale-95">
+<span class="material-symbols-outlined text-[36px]" style="font-variation-settings: &quot;FILL&quot; 1;">play_arrow</span>
+</button>
+<div class="absolute bottom-3 left-4 right-4 text-white flex items-center justify-between text-xs font-medium z-10">
+<span class="bg-black/60 px-2.5 py-1 rounded-md backdrop-blur-xs">Nguồn: Kênh Học Liệu PWD301 Official</span>
+<span class="bg-black/60 px-2.5 py-1 rounded-md backdrop-blur-xs">Thời lượng: 12 phút 40 giây</span>
+</div>
+</div>
+<div class="mt-3 flex items-center justify-between">
+<p class="text-xs text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">link</span>
+                    https://www.youtube.com/watch?v=ux-guidelines-pwd301-lesson4
+                  </p>
+<button class="text-xs text-primary font-bold hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">edit</span> Thay link video khác/upload video</button>
+</div>
+</div>
+<!-- Block 4: Interactive Quiz Checkpoint (Khối câu hỏi nhanh) -->
+<div class="p-5 rounded-2xl bg-indigo-50/50 border border-primary/20 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="size-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-xs">?</span>
+<span class="font-bold text-sm text-text-primary">Câu hỏi tương tác ngắn sau khi xem video</span>
+</div>
+<span class="text-xs font-medium text-text-muted">Sinh viên cần trả lời đúng để đánh dấu hoàn thành</span>
+</div>
+<p class="text-sm font-semibold text-text-primary">Câu hỏi 1: Đâu là nguyên tắc căn bản nhất khi thiết kế giao diện cho người lớn tuổi?</p>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+<div class="p-3 rounded-xl bg-white border border-border-subtle flex items-center gap-2.5 text-xs text-text-secondary cursor-pointer hover:border-primary">
+<span class="size-4 rounded-full border border-outline flex items-center justify-center"></span>
+<span class="">Sử dụng thật nhiều hiệu ứng chớp tắt 3D</span>
+</div>
+<div class="p-3 rounded-xl bg-emerald-50 border-2 border-success-emerald flex items-center gap-2.5 text-xs text-success-emerald font-bold cursor-pointer">
+<span class="size-4 rounded-full bg-success-emerald text-white flex items-center justify-center">
+<span class="material-symbols-outlined text-[12px]">done</span>
+</span>
+<span class="">Chữ to rõ, nút bấm tối thiểu 44px, lời văn dễ hiểu (Đáp án đúng)</span>
+</div>
+</div>
+</div>
+<!-- 1-Touch Block Picker (Thanh chèn khối 1-chạm cực to rõ) -->
+<div class="pt-4 border-t border-dashed border-border-subtle">
+<p class="text-center text-xs font-bold text-text-muted uppercase tracking-wider mb-3">
+                  + Bấm vào đây để chèn thêm nội dung mới cho bài giảng
+                </p>
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+<button class="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-border-subtle hover:border-primary hover:bg-primary-fixed/20 transition-all text-center gap-2 group">
+<span class="size-10 rounded-xl bg-surface-container flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[22px]">format_paragraph</span>
+</span>
+<span class="text-xs font-bold text-text-primary group-hover:text-primary">+ Đoạn văn bản</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-border-subtle hover:border-danger-rose hover:bg-rose-50 transition-all text-center gap-2 group">
+<span class="size-10 rounded-xl bg-surface-container flex items-center justify-center text-danger-rose group-hover:bg-danger-rose group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[22px]">smart_display</span>
+</span>
+<span class="text-xs font-bold text-text-primary group-hover:text-danger-rose">+ Video bài giảng</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-border-subtle hover:border-warning-amber hover:bg-amber-50 transition-all text-center gap-2 group">
+<span class="size-10 rounded-xl bg-surface-container flex items-center justify-center text-warning-amber group-hover:bg-warning-amber group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[22px]">lightbulb</span>
+</span>
+<span class="text-xs font-bold text-text-primary group-hover:text-warning-amber">+ Đề thi/kiểm tra</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-border-subtle hover:border-info-sky hover:bg-sky-50 transition-all text-center gap-2 group">
+<span class="size-10 rounded-xl bg-surface-container flex items-center justify-center text-info-sky group-hover:bg-info-sky group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[22px]">quiz</span>
+</span>
+<span class="text-xs font-bold text-text-primary group-hover:text-info-sky">+ Câu hỏi trắc nghiệm</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3.5 rounded-xl border-2 border-border-subtle hover:border-secondary hover:bg-purple-50 transition-all text-center gap-2 group col-span-2 sm:col-span-1">
+<span class="size-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[22px]">attach_file</span>
+</span>
+<span class="text-xs font-bold text-text-primary group-hover:text-secondary">+ Đính kèm tệp tài liệu</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 3: CẢI TIẾN KHU VỰC TẢI VÀ ĐÍNH KÈM TỆP (Friendly Resource Pipeline) -->
+<div class="bg-surface-card p-6 md:p-8 rounded-2xl border border-border-subtle shadow-sm space-y-6">
+<div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border-subtle">
+<div>
+<h3 class="text-lg font-bold text-text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[24px]">cloud_upload</span>
+                  Tài liệu đính kèm cho sinh viên tải về học tập
+                </h3>
+<p class="text-xs text-text-muted mt-0.5">Sinh viên có thể xem trực tiếp trên điện thoại hoặc tải về máy tính xem khi không có mạng</p>
+</div>
+<!-- Subtle technical safety reassurance for tech auditors without overwhelming low-tech teachers -->
+<button class="text-xs text-text-muted hover:text-primary font-medium flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-subtle hover:border-primary/40 transition-colors">
+<span class="material-symbols-outlined text-[16px] text-success-emerald">verified_user</span>
+                Xem chứng chỉ an toàn tệp &amp; hệ thống
+              </button>
+</div>
+<!-- Warm, Friendly Big Upload Dropzone -->
+<div class="border-2 border-dashed border-primary/40 hover:border-primary rounded-2xl p-8 bg-surface/60 hover:bg-primary-fixed/10 transition-all text-center flex flex-col items-center justify-center gap-3 cursor-pointer group">
+<div class="size-16 rounded-full bg-primary/10 group-hover:bg-primary text-primary group-hover:text-white flex items-center justify-center transition-all shadow-xs group-hover:scale-110">
+<span class="material-symbols-outlined text-[36px]">cloud_upload</span>
+</div>
+<div class="space-y-1 max-w-lg">
+<button class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-container text-white text-sm font-bold shadow-md hover:shadow-lg transition-all inline-flex items-center gap-2 active:scale-95">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+                  Bấm vào đây để chọn tệp tài liệu (Word, PowerPoint, PDF, Video)
+                </button>
+<p class="text-xs text-text-muted pt-2">
+                  Hoặc kéo và thả tệp từ máy tính của Thầy/Cô thả trực tiếp vào ô này
+                </p>
+</div>
+<div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 text-success-emerald text-xs font-semibold">
+<span class="material-symbols-outlined text-[16px]">shield_with_heart</span>
+                Hệ thống tự động quét an toàn cho bạn. Bạn chỉ cần chọn tệp, phần còn lại hệ thống sẽ lo!
+              </div>
+</div>
+<!-- List of Attached Files (Clear, Colorful Badges) -->
+<div class="space-y-3">
+<div class="flex items-center justify-between text-xs font-bold text-text-muted uppercase tracking-wider">
+<span class="">Danh sách tài liệu đã đính kèm (3 tệp)</span>
+<span class="text-success-emerald font-semibold normal-case">✓ Đã sẵn sàng cho 45 sinh viên lớp PWD301</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+<!-- File 1: PowerPoint -->
+<div class="p-4 rounded-xl bg-surface-container-lowest border border-border-subtle hover:border-amber-400 transition-all shadow-xs flex flex-col justify-between gap-3 group">
+<div class="flex items-start gap-3">
+<div class="size-11 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                      PPTX
+                    </div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold text-text-primary truncate" title="Slide-Bai-04-Nguyen-Ly-UXUI.pptx">Slide-Bai-04-UXUI.pptx</h4>
+<p class="text-xs text-text-muted mt-0.5">8.4 MB • 42 trang slide</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-bold text-success-emerald bg-emerald-50 px-2 py-0.5 rounded-md mt-1.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Đã kiểm tra sạch &amp; rõ nét
+                      </span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 border-t border-border-subtle/80">
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span> Xem thử
+                    </button>
+<button class="text-xs font-medium text-danger-rose hover:bg-rose-50 px-2 py-1 rounded-md transition-colors flex items-center gap-1" title="Xóa tệp">
+<span class="material-symbols-outlined text-[16px]">delete</span> Xóa
+                    </button>
+</div>
+</div>
+<!-- File 2: Word -->
+<div class="p-4 rounded-xl bg-surface-container-lowest border border-border-subtle hover:border-blue-400 transition-all shadow-xs flex flex-col justify-between gap-3 group">
+<div class="flex items-start gap-3">
+<div class="size-11 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                      DOCX
+                    </div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold text-text-primary truncate" title="Huong-dan-thuc-hanh-Lab4-UX.docx">Huong-dan-Lab4-UX.docx</h4>
+<p class="text-xs text-text-muted mt-0.5">1.2 MB • Tài liệu bài tập</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-bold text-success-emerald bg-emerald-50 px-2 py-0.5 rounded-md mt-1.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Đã kiểm tra sạch &amp; rõ nét
+                      </span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 border-t border-border-subtle/80">
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span> Xem thử
+                    </button>
+<button class="text-xs font-medium text-danger-rose hover:bg-rose-50 px-2 py-1 rounded-md transition-colors flex items-center gap-1" title="Xóa tệp">
+<span class="material-symbols-outlined text-[16px]">delete</span> Xóa
+                    </button>
+</div>
+</div>
+<!-- File 3: PDF -->
+<div class="p-4 rounded-xl bg-surface-container-lowest border border-border-subtle hover:border-red-400 transition-all shadow-xs flex flex-col justify-between gap-3 group">
+<div class="flex items-start gap-3">
+<div class="size-11 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                      PDF
+                    </div>
+<div class="flex-1 min-w-0">
+<h4 class="text-sm font-bold text-text-primary truncate" title="Bang-tra-cuu-WCAG-Mau-sac.pdf">Tra-cuu-WCAG-Mau-sac.pdf</h4>
+<p class="text-xs text-text-muted mt-0.5">3.1 MB • Bảng tra cứu chuẩn</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-bold text-success-emerald bg-emerald-50 px-2 py-0.5 rounded-md mt-1.5">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Đã kiểm tra sạch &amp; rõ nét
+                      </span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 border-t border-border-subtle/80">
+<button class="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span> Xem thử
+                    </button>
+<button class="text-xs font-medium text-danger-rose hover:bg-rose-50 px-2 py-1 rounded-md transition-colors flex items-center gap-1" title="Xóa tệp">
+<span class="material-symbols-outlined text-[16px]">delete</span> Xóa
+                    </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Footer Bar (Large, Accessible, High Affordance) -->
+<div class="sticky bottom-4 z-20 bg-surface-card/95 backdrop-blur-md p-4 lg:p-5 rounded-2xl border-2 border-primary/20 shadow-xl flex flex-wrap items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<div class="size-10 rounded-full bg-emerald-100 text-success-emerald flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[24px]">cloud_done</span>
+</div>
+<div class="flex flex-col">
+<span class="text-sm font-bold text-text-primary">Mọi thay đổi đã được hệ thống lưu an toàn</span>
+<span class="text-xs text-text-muted">Thầy/Cô có thể yên tâm thoát ra và quay lại soạn tiếp bất kỳ lúc nào</span>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+<button class="h-12 px-4 rounded-xl border border-border-subtle bg-white hover:bg-surface-container text-text-secondary text-sm font-bold transition-all shadow-xs flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]">save</span>
+<span class="">Lưu bản nháp</span>
+</button>
+<button class="h-12 px-5 rounded-xl bg-surface-container-high hover:bg-primary-fixed text-primary text-sm font-bold transition-all shadow-xs flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+<span class="">Xem trước như sinh viên thấy</span>
+</button>
+<button class="h-12 px-6 rounded-xl bg-primary hover:bg-primary-container text-white text-base font-bold transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[22px]">rocket_launch</span>
+<span class="">XUẤT BẢN CHO SINH VIÊN HỌC NGAY</span>
+</button>
+</div>
+</div>
+</main>
+<!-- Footer Help & Hotline for low-tech instructors -->
+<footer class="mt-8 mb-6 text-center text-xs text-text-muted space-y-2">
+<p class="flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-warning-amber text-[18px]">support_agent</span>
+            Thầy/Cô cần hỗ trợ kỹ thuật hoặc cần hướng dẫn trực tiếp? Gọi ngay Hotline nội bộ: <strong>1800 6868 (Máy lẻ 102)</strong>
+</p>
+<p class="">© 2025 Hệ thống quản lý học tập số EduStudio LMS - Phiên bản thân thiện dành riêng cho Giảng viên</p>
+</footer>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Simple micro-interaction for low-tech user feedback
+  document.addEventListener('DOMContentLoaded', () => {
+    const publishButtons = document.querySelectorAll('button:has(.material-symbols-outlined)');
+    publishButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        if (btn.innerText.includes('XUẤT BẢN CHO SINH VIÊN HỌC NGAY')) {
+          e.preventDefault();
+          const confirmed = confirm('Thầy/Cô có chắc chắn muốn phát hành Bài giảng này cho toàn bộ sinh viên môn PWD301 không?');
+          if (confirmed) {
+            alert('🎉 Chúc mừng Thầy/Cô! Bài giảng đã được xuất bản thành công tới 45 sinh viên lớp PWD301.');
+          }
+        }
+      });
+    });
+  });
+</script>
+
+
+
+
+</body></html>

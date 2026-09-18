@@ -1,3 +1,524 @@
+# TASK-057 — AI Backend Logic Restoration, Resilient Multi-Key Rotation Pool & Security Hardening
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead AI Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Khắc phục triệt để sự cố nghiêm trọng toàn bộ logic backend của AI không hoạt động được trên nền tảng PWD301 LMS theo yêu cầu `/goal` và `/browser`:
+1. **Phân tích Nguyên nhân Gốc (Root Cause)**:
+   - Key index 0 trong `.env` và `api/api_key.md` (Key ending ...WDXxUw) bị xóa/vô hiệu hóa (`HTTP 401: The bound service account is deleted or disabled`).
+   - `RealGeminiClient._call_gemini_api` trước đây coi HTTP 401 là lỗi bất biến nghiêm trọng và dừng xử lý ngay lập tức ("Failing fast without fallback"), khiến 100% các cuộc gọi AI bị gián đoạn.
+   - Model `gemini-3.8-flash` bị quá tải liên tục (HTTP 503 Service Unavailable) trên máy chủ Google Gemini, trong khi các model ổn định như `gemini-3.6-flash` và `gemini-flash-latest` phản hồi dưới 1 giây.
+2. **Cơ chế Tự động Xoay tua API Key (Resilient Multi-Key Pool)**:
+   - Xây dựng lớp `GeminiKeyPool` an toàn đa luồng (`threading.Lock`), tự động đọc và nạp 93 API keys từ `api/api_key.md` kết hợp `.env`.
+   - Quản lý trạng thái vòng đời từng key (`HEALTHY`, `RATE_LIMITED`, `HIGH_DEMAND`, `INVALID`).
+   - Tự động đánh dấu `INVALID` và xoay tua ngay lập tức sang key kế tiếp khi gặp HTTP 401/403/400.
+   - Tự động đánh dấu `RATE_LIMITED` (cooldown 60s) khi gặp HTTP 429 và `HIGH_DEMAND` (cooldown 15s) khi gặp HTTP 503, xoay tua liền mạch trong 0ms.
+3. **Cơ chế Fallback Đa Mô hình (Model Cascade Resilience)**:
+   - Thiết lập tầng cascade ưu tiên: `gemini-3.6-flash` -> `gemini-flash-latest` -> `gemini-3.7-flash` -> `gemini-3.8-flash` -> `gemini-3.5-flash` -> `gemini-3.1-flash-lite`.
+   - Tự động thử nghiệm các model dự phòng khi model chính quá tải (503) hoặc ngưng hỗ trợ (404).
+   - Tối ưu hóa timeout: giới hạn từ 5 đến 30 giây để kích hoạt chuyển đổi nhanh, không làm treo giao diện.
+4. **Tăng cường Bảo mật Tuyệt đối (Zero Secret Leakage)**:
+   - Chuyển toàn bộ phương thức xác thực sang HTTP Header chuẩn `x-goog-api-key`, nghiêm cấm truyền `?key=` trên URL query parameter nhằm triệt tiêu nguy cơ lộ key trong web server access logs và error tracebacks.
+   - Bộ lọc `RedactingFilter` tích hợp tự động thanh lọc mọi chuỗi khớp định dạng API key Google (`AQ\.[A-Za-z0-9_-]{20,}` và `AIzaSy[A-Za-z0-9_-]{20,}`) thành `[REDACTED_API_KEY]`.
+   - Toàn bộ log vận hành chỉ ghi fingerprint đuôi 6 ký tự (`Key ending ...BGOO1w`), tuyệt đối không để lộ key trong log file, exception message, hoặc JSON payload.
+5. **Xác minh Trực tiếp & Kiểm thử Toàn diện**:
+   - Xác minh end-to-end trên trình duyệt thật bằng Chrome DevTools MCP (`/browser`): Gia sư AI Gemini dạng Floating phản hồi tiếng Việt chuẩn xác, lưu lượng mạng trả về HTTP 200 (2.8 KB JSON) an toàn.
+   - 31/31 bài kiểm thử tự động (Unit & API) PASSED 100%.
+   - 5/5 bài kiểm thử trực tiếp (Live Gemini API) PASSED 100% với khả năng tự phục hồi khi gặp dead-key.
+   - Ruff linter & repo check đạt chuẩn 100% không lỗi.
+
+---
+
+# TASK-056 — Resolution of 12 Core Platform Requirements (Exam Authoring, Lesson Revision Admin Gate, Cross-Instructor Prerequisites & Security Fixes)
+
+**Status:** DONE  
+**Assignee:** Senior Full-Stack Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Hoàn thiện toàn bộ danh mục 12 yêu cầu sửa lỗi và nâng cấp nghiệp vụ quan trọng trên nền tảng PWD301 LMS:
+1. **Gỡ bỏ Chat AI khỏi Topbar**: Bỏ liên kết điều hướng AI Trợ giảng trên toàn bộ thanh Topbar của hệ thống.
+2. **Bỏ sĩ số tối đa của khóa học**: Cho phép khóa học không giới hạn sĩ số tuyển sinh, cập nhật UI và bỏ validation chặn số học viên cứng.
+3. **Quy tắc mật khẩu đăng ký tối thiểu 8 ký tự**: Bắt buộc kết hợp chữ, số và ký tự đặc biệt (`(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}`) ở cả Frontend live checklist và Backend service validation.
+4. **Khôi phục UI/UX đăng ký Giảng viên**: Kích hoạt lại tab đăng ký giảng viên cho học sinh (`StudentView.renderBecomeInstructor`), cho phép nộp hồ sơ, đính kèm chứng chỉ và kiểm tra trạng thái phê duyệt.
+5. **Sửa lỗi xét duyệt Giảng viên bên Admin**: Sửa lỗi parse ID gây `NaN`, tự động cấp role `INSTRUCTOR` ngay khi được phê duyệt và gửi thông báo hệ thống đến học viên.
+6. **Kiểm soát sửa / xóa bài giảng khóa học đã ban hành**: Chặn xóa/sửa trực tiếp khi khóa học ở trạng thái `PUBLISHED`/`APPROVED`/`ARCHIVED`. Tự động tạo `CourseChangeRequest` và gửi thông báo đến Admin để phê duyệt tại hàng đợi chuyên dụng.
+7. **Sửa lỗi xuất bản đề thi**: Bổ sung alias route `/instructor/courses/<cid>/assessments/<aid>/publish`, thêm nút "Xuất bản" trực tiếp trên danh sách bài thi và tự động gán đáp án mặc định nếu đề Azota thiếu dấu sao.
+8. **Sửa lỗi gửi khóa học cho Admin duyệt**: Thêm endpoint alias `/instructor/courses/<cid>/submit` đồng bộ với giao diện nộp đề cương.
+9. **Sửa nút "Ghi nhớ đăng nhập" (Remember Me)**: Cấu hình `session.permanent = True` và thời hạn session cookie 30 ngày (`PERMANENT_SESSION_LIFETIME = timedelta(days=30)`).
+10. **Mở rộng danh mục học thuật**: Chuyển trường chọn danh mục thành input datalist linh hoạt với hơn 15 chuyên ngành đào tạo, cho phép giảng viên tự gõ danh mục theo đề cương.
+11. **Sửa lỗi modal chọn môn tiên quyết**: Sửa lỗi `UI.showModal is not a function` thành `UI.openModal`, nạp danh sách khóa học đầy đủ để lựa chọn.
+12. **Phê duyệt môn tiên quyết chéo giữa các giảng viên**: Nếu môn tiên quyết thuộc giảng viên khác (và người thêm không phải Admin), hệ thống tạo `CourseChangeRequest`, gửi thông báo đến giảng viên sở hữu môn tiên quyết để duyệt/từ chối kèm kiểm tra chu trình DAG Cycle.
+
+---
+
+# TASK-055 — Complete Dark Mode Revitalization & Warm Charcoal Token Harmonization
+
+**Status:** DONE  
+**Assignee:** Senior Frontend Engineer & Lead Product Designer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Khắc phục triệt để tình trạng lệch tông, loang màu và các đốm trắng chói trong Dark Mode của hệ thống PWD301 LMS, thống nhất toàn diện sang chuẩn **Warm Charcoal / Notion Dark**:
+1. **Design Tokens & Dark Mode Guards (`frontend/index.html`)**:
+   - Remap toàn bộ dải màu `slate` (từ `slate-50` đến `slate-950`) trong `tailwind.config` sang sắc độ Warm Charcoal (`#141414`, `#191919`, `#202020`, `#262524`, `#2E2D2B`, `#3E3D3A`, `#6D6C68`, `#9E9D99`, `#EDEDEB`). Đảm bảo toàn bộ các view Student, Instructor, Admin tự động kế thừa bảng màu ấm dịu mắt mà không bị loang màu xanh cold navy.
+   - Thêm bộ Dark Mode Guards tự động chuyển đổi các class pastel (`bg-primary-subtle`, `bg-emerald-50`, `bg-indigo-50`, `bg-purple-50`, `bg-blue-50`, `bg-amber-50`, `bg-rose-50`) sang dạng nền mờ dạ quang trong suốt 14% (`dark:bg-.../14` và text sáng dịu), triệt tiêu hoàn toàn lỗi đốm trắng chói lòa.
+   - Tối ưu biểu tượng Brand Logo và Avatar initials trong Topbar sang nền xám ấm `#2A2928` viền `#3E3D3A`.
+2. **Bàn làm việc Giảng viên (`frontend/assets/js/views/instructor.js`)**:
+   - Chuyển Hero Banner từ gradient vũ trụ loè loẹt sang cấu trúc **Warm Card Surface** (`bg-white dark:bg-[#202020] border-[#E8E6DF] dark:border-[#2E2D2B]`) sang trọng, chuẩn mực.
+   - 4 Thẻ KPI: Khối icon containers áp dụng hiệu ứng **Muted Translucent Glow** dịu mắt (`dark:bg-blue-950/40 text-blue-400`, `dark:bg-emerald-950/40 text-emerald-400`, `dark:bg-indigo-950/40 text-indigo-400`, `dark:bg-purple-950/40 text-purple-400`).
+   - Bảng khóa học gần đây: Nút thao tác "Quản lý" dùng nút ấm thanh lịch `dark:bg-[#262524] text-[#EDEDEB] border-[#2E2D2B]`, loại bỏ nút trắng chói.
+3. **Kiểm thử & Nghiệm thu Trực tiếp**:
+   - Chrome DevTools MCP: Đã chụp màn hình thực tế và kiểm tra trực tiếp ở cả hai chế độ Light và Dark Mode trên trình duyệt thật (`#/instructor/dashboard`, `#/instructor/courses`, `#/instructor/questions`, `#/instructor/exams`, `#/instructor/courses/manage?id=1`).
+   - Console logs: 0 errors, 0 warnings.
+   - Pytest: 10/10 frontend integration tests passed, 3/3 smoke tests passed.
+
+---
+
+# TASK-054 — Complete Warm Editorial UI/UX Transformation, Unified "Soạn đề thi" Exam Studio & Micro-Loader Architecture
+
+**Status:** DONE  
+**Assignee:** Senior Frontend Engineer & Lead Product Designer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Tái thiết kế toàn bộ giao diện, bố cục, hiệu ứng chuyển, cơ chế tải trang của toàn bộ các trang và toàn bộ dự án PWD301 LMS sang phong cách Warm Editorial / Notion-like, đồng thời dung hợp hoàn toàn phân hệ soạn đề thi Azota thành một phần chính thống của hệ thống với tên gọi "Soạn đề thi" quy về một mối:
+1. **Design Tokens & Warm Editorial Aesthetic (`frontend/index.html`)**:
+   - Thiết lập bảng màu Warm Editorial tự nhiên (Light canvas `#FAF9F5`, card surface `#FFFFFF`, border `#E8E6DF`; Dark canvas `#191919`, surface `#222120`, border `#2E2D2B`).
+   - Tích hợp thanh vi mô `#top-micro-loader` ở đỉnh màn hình, chuyển trang tức thì theo triết lý Ponytail.
+   - Nâng cấp Topbar Pill navigation với hiệu ứng trượt chuyển mượt mà và Gia sư AI Gemini Notion-style.
+2. **Thư viện UI Khai báo & Trình Bóc tách Đề thi (`frontend/assets/js/ui.js`)**:
+   - Bổ sung `UI.startMicroLoading()` và `UI.stopMicroLoading()`.
+   - Nâng cấp toàn bộ component generators (button, card, statCard, pageHeader, emptyState, table, modals, toasts).
+   - Đổi tên `AzotaParser` thành `ExamParser` kèm alias `window.AzotaParser = ExamParser` bảo toàn 100% tương thích ngược, tích hợp `parseExamRaw(rawText, totalPoints)` hỗ trợ phân tích đáp án trắc nghiệm, Bloom level và điểm số.
+3. **Master SPA Router (`frontend/assets/js/router.js`)**:
+   - Tự động kích hoạt micro-loading qua `handleRoute()`.
+   - Bổ sung mục menu chính thức Giảng viên: "Soạn đề thi" (`#/instructor/exams`, icon `assignment_add`).
+   - Tự động kích hoạt `fullscreen-focus-mode` khi làm bài thi hoặc vào phòng Soạn đề thi chuyên sâu.
+   - Tự động che giấu và đóng Gia sư AI Floating trong thời gian học viên làm bài thi chống gian lận.
+4. **Dung hợp Hoàn toàn "Soạn đề thi" (`frontend/assets/js/views/instructor.js`)**:
+   - Loại bỏ 100% tên thương hiệu "Azota" trên giao diện người dùng (thay bằng "Soạn đề thi" và "PWD301 LMS Exam Studio").
+   - Nạp mẫu chuẩn `De_thi_chuan_PWD301.docx`, bảo toàn 100% split-view 50/50 visual cards bên trái và raw syntax editor bên phải.
+5. **Chuẩn hóa Toàn bộ Phân hệ Giao diện**:
+   - Auth (`frontend/assets/js/views/auth.js`): Khung đăng nhập căn giữa Notion-like ấm áp, sang trọng.
+   - Student (`frontend/assets/js/views/student.js`): Thống nhất thẻ KPI học vụ, danh sách khảo thí và bảng điểm.
+   - Admin (`frontend/assets/js/views/admin.js`): Trung tâm điều hành quản trị RBAC và cockpit vận hành.
+6. **Kiểm thử & Nghiệm thu Thực tế**:
+   - Node.js check-syntax: 8/8 tệp JS cốt lõi đạt 100% PASS (0 lỗi cú pháp).
+   - Backend Pytest: 535 bài kiểm thử unit tests passed 100%.
+   - Chrome DevTools MCP: Đã kiểm tra trực tiếp trên trình duyệt thực tế cả Light và Dark mode cho tất cả các phân hệ (`#/auth`, `#/instructor/dashboard`, `#/instructor/exams`, `#/student/dashboard`, `#/student/assessments`, `#/admin/governance`).
+
+---
+
+# TASK-053 — Complete Frontend/UI Standardization, Modern Academic SaaS Redesign & Zero-Regression Verification
+
+**Status:** DONE  
+**Assignee:** Senior Frontend Engineer & Lead Product Designer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Tái thiết kế và chuẩn hóa toàn diện giao diện người dùng Frontend/UI cho hệ thống PWD301 LMS theo triết lý "Simple but powerful", loại bỏ 100% tình trạng thiết kế phân mảnh và "AI-generated slop" thành sản phẩm Modern Academic SaaS thương mại cao cấp:
+1. **Design Tokens & Component Utilities**:
+   - `frontend/index.html`: Thiết lập bảng màu Modern Academic SaaS (Primary Indigo `#4F46E5`, Canvas Slate-50, Surface White, Dark Mode Slate-950), font chữ Plus Jakarta Sans / Inter / JetBrains Mono.
+   - Thống nhất các utility tokens: `.c-btn`, `.c-card`, `.c-card-hover`, `.c-input`, `.c-table-wrapper`, `.c-table`, `.c-badge`.
+2. **Kiến trúc Điều hướng Top Navigation Bar**:
+   - Chuyển đổi từ thanh Left Sidebar 256px sang Top Navigation Bar thanh thoát, tối ưu hóa chiều ngang màn hình cho bảng ma trận và trình đọc 3 cột.
+   - Tích hợp Dynamic navigation items (`#topbar-navigation-items`), Role switcher, Notifications hub, và Mobile drawer (`#mobile-nav-drawer`).
+   - Duy trì thẻ `#app-sidebar` ẩn đảm bảo không làm gián đoạn các selector cũ.
+3. **Thư viện Giao diện Khai báo Declarative UI (`frontend/assets/js/ui.js`)**:
+   - Bổ sung các generator functions: `UI.button()`, `UI.input()`, `UI.card()`, `UI.statCard()`, `UI.pageHeader()`, `UI.emptyState()`, `UI.table()`.
+   - Chuẩn hóa hệ thống modal, confirmation, prompt, drawer, status badges.
+   - Bảo toàn 100% `AzotaParser`, `ExamAntiCheatManager`, và `FloatingAITutor`.
+4. **Chuẩn hóa Toàn bộ Phân hệ Giao diện**:
+   - **Auth (`frontend/assets/js/views/auth.js`)**: Giao diện đăng nhập SaaS tối giản căn giữa kèm ngăn trượt tài khoản demo tiện lợi.
+   - **Student (`frontend/assets/js/views/student.js`)**: Tổng quan học vụ KPI, danh mục khóa học, đề cương ABET SLOs, trình đọc bài giảng tập trung, phòng chờ UTC countdown, bàn thi trực tuyến chống gian lận, bảng điểm đối chiếu, gia sư AI Gemini.
+   - **Instructor (`frontend/assets/js/views/instructor.js`)**: Bàn làm việc giảng viên, hồ sơ điều hành 5 tab (Curriculum, ABET SLOs, Roster, Assessments, Settings), studio soạn bài giảng 3 bước, ngân hàng câu hỏi Bloom 6 bậc, bộ soạn đề thi Azota 50/50 split-view.
+   - **Admin (`frontend/assets/js/views/admin.js`)**: Trung tâm điều hành 4 tab (Users & RBAC, Review Queue, Reassign, Security Audit), operations cockpit và khôi phục database có kiểm soát 4 bước.
+5. **Kiểm thử & Xác minh Toàn diện**:
+   - Node.js check-syntax: 100% các tệp JS trong `frontend/assets/js/` vượt qua kiểm tra cú pháp (0 lỗi).
+   - Pytest Frontend Integration & Parity: 15/15 bài kiểm thử passed 100%.
+   - Zero Backend Regression: Backend Python/Flask và CSDL MS SQL Server được giữ nguyên vẹn 100%.
+
+---
+
+# TASK-052 — Student Role Backend Completion, Security Hardening & Full UI/UX Synchronization
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Hoàn thiện toàn diện kiến trúc backend cho vai trò Học viên (Student) với đầy đủ các chức năng khớp 100% với giao diện UI/UX (`StudentView`), loại bỏ triệt để các sai lệch mapping, nâng cao an ninh bảo mật chuẩn quốc tế và chuẩn hóa logic nghiệp vụ khảo thí & học vụ theo quyết định `/grill-me`:
+1. **Khảo thí & Bảng điểm Chuẩn hóa Server-Side**:
+   - `GET /student/assessments`: Trả về đồng thời cả `items` và `assessments` tổng hợp (sắp tới, đang mở, đã làm) kèm điểm số/attempt_id để khớp hoàn hảo với `StudentView.renderAssessmentsList`.
+   - `GET /student/attempt/<attempt_id>/result`: Tính toán server-authoritative `letter_grade` (A-F), `grade_descriptor` (Xuất sắc, Giỏi, Khá, Trung bình, Không đạt), `gpa` (thang 4.0), `percentile_text`, `is_passed`, `proctoring_verified: True` và thực thi nghiêm ngặt `ScoreReleasePolicy`.
+2. **ADR-002 Zero Internal PK Leakage & ClamAV Fail-Closed**:
+   - Chặn đứng 100% rò rỉ BigInt PK: `InstructorApplication` được bổ sung thuộc tính `public_id` (UUIDv5 sinh xác định theo chuẩn OID) và các endpoint `/student/become-instructor` cùng `/api/student/instructor-application` đều chỉ xuất RFC 4122 Public UUID.
+   - Fail-Closed ClamAV: `_serialize_student_lesson` và `_serialize_file_asset` bắt buộc kiểm tra `virus_scan_status == 'CLEAN'`, 100% tệp bẩn, cách ly hoặc chưa quét bị loại trừ khỏi tầm nhìn của học viên.
+3. **Đồng bộ Headless JSON & AI RAG Context (IDOR Defense)**:
+   - `GET /student/my-learning`: Trả về envelope kép gồm `{"enrollments": [...], "courses": [...]}` kèm các alias `title` và `name` song song với `course_title` cho dropdown chọn khóa học của trợ lý AI và thẻ bài học.
+   - `POST /student/ai/chat`: Phòng thủ IDOR nghiêm ngặt bằng cách kiểm tra bắt buộc học viên đã ghi danh khóa học trước khi nạp context tài liệu bài học vào RAG pipeline.
+   - Chuẩn hóa toàn bộ text tiếng Việt UTF-8 không lỗi font mojibake trên các phản hồi JSON.
+4. **Kiểm thử Toàn diện & Xác thực**:
+   - `tests/api/test_student_backend_completion.py`: 5/5 TDD tests PASS 100%.
+   - `tests/api/test_student_exam_backend_remediation.py`: 5/5 tests PASS 100%.
+   - `tests/e2e/test_student_lifecycle_e2e.py`: PASS 100%.
+   - `ruff check src tests`: PASS (100% clean).
+   - `node --check`: PASS (0 syntax errors).
+   - `python scripts/repo_check.py`: PASS.
+
+---
+
+# TASK-051 — Instructor Role Backend Completion, Objective Assessment Grading & UI/UX Synchronization
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Hoàn thiện toàn diện kiến trúc backend cho vai trò Giảng viên (Instructor) với đầy đủ các chức năng khớp 100% với giao diện UI/UX, loại bỏ triệt để các mock/kết nối sai lệch, nâng cao mức độ bảo mật chuẩn doanh nghiệp và tối ưu hóa luồng nghiệp vụ khảo thí theo quyết định `/grill-me`:
+1. **Khảo thí Trắc nghiệm Khách quan 100% Tự động Chấm (Zero Essay/Manual Grading Debt)**:
+   - Hệ thống chuyển đổi dứt khoát sang 100% trắc nghiệm khách quan tự động chấm ngay sau khi nộp (`SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`).
+   - Xóa bỏ triệt để các luồng, mock và chức năng chấm tự luận thủ công.
+   - Trong `import_service.py`: Cảnh báo và từ chối rõ ràng dạng câu hỏi tự luận không được hỗ trợ, đánh dấu `INVALID` và không phát sinh lỗi validation.
+2. **Endpoints Kết quả Khảo thí & Bảng điểm Thí sinh**:
+   - `GET /instructor/assessments/<assessment_id>/attempts`: Trả về danh sách bài nộp của sinh viên kèm điểm số (`raw_score`, `max_possible_points`), phần trăm (`percentage`), trạng thái đạt/không đạt (`is_passed`).
+   - `GET /instructor/attempts/<attempt_id>/results`: Bóc tách chi tiết từng câu hỏi trong bài làm của thí sinh, đối chiếu phương án chọn (`is_selected`), đáp án đúng chuẩn (`is_correct`), điểm số và giải thích học thuật (`explanation`).
+3. **Tiêu chuẩn An ninh & IDOR Defense (In-Depth)**:
+   - Bắt buộc kiểm tra thẩm quyền môn học (`require_course_manager`) trên toàn bộ tài nguyên (khóa học, bài thi, câu hỏi, bài giảng, kết quả thi). Chặn Giảng viên B truy cập bài thi/kết quả của Giảng viên A (HTTP 403 Forbidden).
+   - ADR-002 Zero Internal PK Leakage: 100% ID trả về đều là RFC 4122 Public UUID, che giấu hoàn toàn BigInt PK của CSDL.
+   - Rà soát chống Mass Assignment và duy trì Audit Trail bất biến.
+4. **Đồng bộ Giao diện UI/UX Frontend Single-DOM**:
+   - `frontend/assets/js/api.js`: Thêm `ApiClient.getAssessmentAttempts(assessmentId)` và `ApiClient.getInstructorAttemptResult(attemptId)`.
+   - `frontend/assets/js/views/instructor.js`:
+     - Thêm nút "Bảng điểm & Bài nộp" trên từng thẻ bài thi tại tab Khảo thí.
+     - Modal `InstructorView.openAssessmentResultsModal` hiển thị bảng điểm, tỷ lệ đạt, điểm TB và danh sách thí sinh.
+     - Modal `InstructorView.openAttemptDetailModal` đối chiếu trực quan đáp án chọn của học viên và đáp án đúng từng câu.
+     - Đồng bộ thẻ KPI câu hỏi và thay thế các chuỗi tĩnh/cứng bằng dữ liệu động từ khóa học.
+5. **Kiểm thử Toàn diện**:
+   - `tests/api/test_instructor_backend_completion.py`: 4/4 TDD tests PASS 100%.
+   - `tests/e2e/test_instructor_lifecycle_e2e.py`: PASS 100%.
+   - Toàn bộ 26/26 tests liên quan đến Giảng viên PASS 100%.
+   - `ruff check src tests`: PASS (100% clean).
+   - `node --check`: PASS (0 syntax errors).
+
+---
+
+# TASK-050 — Admin Role Backend Completion, Security Hardening & Full UI/UX Synchronization
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Hoàn thiện toàn bộ cấu trúc backend của role Admin với đầy đủ các chức năng cũng như backend khớp hoàn toàn đúng với những chức năng mà UI/UX của role admin hiển thị (Admin Governance Command Center 4-Tab & Operations Cockpit), sửa những backend được kết nối sai / lệch mapping, nâng cao bảo mật cho backend và luồng logic nghiệp vụ theo thỏa thuận `/grill-me`:
+1. **Academic Course Review Notification & Reason Validation**:
+   - `course_service.py:change_course_status`: Tự động kích hoạt in-app notification gửi Giảng viên sở hữu khi Admin Phê duyệt (`COURSE_APPROVED`) hoặc Từ chối (`COURSE_REJECTED`) đề cương khóa học.
+   - Bắt buộc kiểm tra độ dài `reason` tối thiểu 5 ký tự khi từ chối đề cương từ `SUBMITTED_FOR_REVIEW` về `DRAFT` (ở cả service layer và blueprint routes).
+2. **ClamAV Quarantine Override Audit Integrity**:
+   - `file_service.py:quarantine_override`: Bắt buộc cung cấp `clean_reason` tối thiểu 5 ký tự khi Admin giải phóng tệp bị cách ly, bảo đảm tính giải trình kiểm toán an toàn thông tin.
+3. **Server-Side User Search & Filtering**:
+   - Nâng cấp `GET /admin/users` (Web Session) và `GET /api/admin/users` (JWT API) hỗ trợ tham số truy vấn tìm kiếm `search` (theo name/email), `role` (`STUDENT`/`INSTRUCTOR`/`ADMIN`), và `status` (`ACTIVE`/`SUSPENDED`) thực hiện trực tiếp trên SQL Server.
+4. **ADR-002 Zero Internal PK Leakage Remediation**:
+   - Loại bỏ rò rỉ BigInt PK tại các endpoint duyệt hồ sơ giảng viên (`instructor-applications`): chuyển đổi `applicant_user_id` từ ID số nguyên sang Public UUID chuẩn RFC 4122 (`str(a.applicant.public_id)`).
+5. **System-Wide Broadcast Modal & Frontend Integration**:
+   - Thêm nút "Phát thông báo" trên banner điều hành Admin Governance và modal `AdminView.openBroadcastModal()` cho phép Quản trị viên gửi thông báo toàn viện (phân loại SYSTEM, COURSE, ASSESSMENT tới ALL, STUDENT, INSTRUCTOR, ADMIN) qua `ApiClient.broadcastNotification`.
+   - Kết nối thanh tìm kiếm và bộ lọc vai trò tại Tab 1 Quản trị người dùng với server-side query (debounce 250ms) kèm fallback cục bộ an toàn.
+   - Bổ sung hàm `ApiClient.retryFailedEmails(maxEmails = 50)`.
+6. **Automated Verification & Quality Gates**:
+   - 7/7 TDD test cases mới trong `tests/api/test_admin_backend_completion.py` PASSED 100%.
+   - Toàn bộ 52/52 bài kiểm thử liên quan (`test_admin_backend_completion.py`, `test_admin_audit_api.py`, `test_operations_api.py`, `test_operations_security.py`, `test_operations_service.py`) PASSED 100%.
+   - `scripts/repo_check.py`: PASS.
+   - `python -m ruff check src tests`: PASS (0 lint/formatting errors).
+   - Cú pháp JavaScript `node --check`: PASS 100%.
+
+---
+
+# TASK-049 — Admin Role Backend Completion, Security Hardening & Full UI/UX Synchronization
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Hoàn thiện toàn bộ cấu trúc backend của role Admin với đầy đủ chức năng khớp 100% với UI/UX Admin Portal & Operations Cockpit, xóa bỏ dữ liệu giả lập, sửa kết nối sai, nâng cao bảo mật và chuẩn hóa logic nghiệp vụ:
+1. **Admin Course Inspection**:
+   - Thêm `GET /admin/courses/<course_id>` (Web Session) và `GET /api/admin/courses/<course_id>` (JWT) trả về trọn vẹn hồ sơ học vụ (Metadata, Đề cương Syllabus, Danh sách bài học, Giảng viên phụ trách).
+   - Bổ sung nút "Xem đề cương & bài học" trong Tab 2 (Course Review Queue) và modal `AdminView.openCourseInspectionModal(courseId)`.
+2. **6-Service Health Matrix**:
+   - Nâng cấp `check_system_health()` đo lường thực tế 6 dịch vụ lõi (`web_core`, `mssql`, `clamav`, `storage_minio`, `qdrant_vector`, `redis_tokens`).
+   - Tích hợp `loadHealthMatrix()` nạp động vào `#services-health-grid` trên Operations Cockpit.
+3. **Security Guardrails**:
+   - Ngăn chặn Self-Demotion (Admin không thể tự thu hồi quyền ADMIN của chính mình).
+   - Kích hoạt Last Admin Protection (ngăn chặn khóa tài khoản hoặc tước quyền Admin hoạt động duy nhất còn lại).
+   - Ngăn chặn Self-Suspension (Admin không thể tự khóa tài khoản).
+   - Bắt buộc lý do kiểm toán tối thiểu 5 ký tự đối với mọi thao tác phân quyền hoặc khóa tài khoản của Admin.
+4. **Background Jobs Telemetry & Retry**:
+   - Cung cấp `GET /admin/operations/jobs` (kèm thống kê Queued, Running, Succeeded, Failed) và `POST /admin/operations/jobs/<job_id>/retry`.
+   - Đấu nối nút "Kiểm tra trạng thái & Hàng đợi" mở modal `AdminView.openBackgroundJobsModal()` hỗ trợ retry failed tasks trực tiếp.
+5. **Faculty Reassignment & Workload Engine**:
+   - Bổ sung `get_faculty_workload_metrics()` tính toán tải thực tế (định mức giờ 60h/môn, sinh viên active, phân loại `UNDERLOAD`/`STANDARD`/`OVERLOAD`).
+   - `GET /admin/faculty/workload` và `GET /api/admin/faculty/workload`.
+   - Tự động kích hoạt thông báo kép (Dual In-App Notifications) cho cả 2 giảng viên khi điều chuyển môn học.
+   - Thêm endpoint tải minh chứng đăng ký giảng viên qua JWT (`/api/admin/instructor-applications/<app_id>/evidence/<filename>`).
+6. **Kiểm thử & Linter**:
+   - `python -m ruff check src tests`: PASS (100% clean).
+   - Cú pháp frontend JavaScript `node --check`: PASS.
+   - 61/61 test cases liên quan đến Admin, Audit, Operations API, Operations Security, Operations Service PASSED 100%.
+
+---
+
+# TASK-048 — Full Restoration & End-to-End Verification of Azota Exam Authoring Studio
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-18  
+**Completed Date:** 2026-09-18  
+
+---
+
+## Goal
+Phục hồi toàn bộ kiến trúc, logic, backend, UI/UX, frontend của tính năng tạo đề thi Azota theo yêu cầu `/goal` của người dùng:
+1. **Azota Exam Authoring Studio (`InstructorView.renderExams`)**:
+   - Khôi phục trọn vẹn quy trình 5 Pha (5-Phase Pipeline): Nạp tệp đề thi sẵn có (Dropzone kéo thả, hỗ trợ `.docx`, `.pdf`, `.xlsx`, `.tex`, `.zip`, nạp tệp bằng native `FileReader`, banner khôi phục bản nháp LocalStorage); Trình soạn thảo Split-View 50/50 đồng bộ 2 chiều (Question Cards chuẩn Bloom L1-L4 và Syntax Editor kèm Line Gutter, chống giật lag với debounce 150ms); Ma trận học vụ ABET/SLO; Cấu hình phòng thi & Giám sát bảo mật; Cổng thẩm định chất lượng khảo thí Quality Gate Modal (`modal-validation-console`) với tính năng tự động gán key đề xuất.
+2. **Router & UI Entry Points**:
+   - Router `#/instructor/exams`, menu Sidebar Giảng viên `Soạn đề thi Azota`, breadcrumb title, và chế độ tập trung toàn màn hình `fullscreen-focus-mode`.
+   - Nút CTA `Soạn đề Azota` trên Dashboard Giảng viên, nút `Đề Azota` trong Drawer Khóa học, Tab `Khảo thí & Ngân hàng đề thi` (`tab=assessment`) trong Quản lý Khóa học, và nút `Tạo đề từ kho này` trong Question Bank Studio.
+3. **Backend Integration & Atomic Batch Persistence**:
+   - Kết nối thành công `ApiClient.createAssessment` (`POST /instructor/courses/<course_id>/assessments`).
+   - Sửa lỗi mapping `asmId` (`created?.assessment_id`) và bóc tách câu hỏi `q.stem`, gọi `ApiClient.createAssessmentQuestionsBatch` (`POST /instructor/assessments/<assessment_id>/questions/batch`) lưu đồng bộ toàn bộ câu hỏi và lựa chọn vào Microsoft SQL Server.
+   - Xuất bản đề thi qua `ApiClient.publishAssessment` (`POST /instructor/assessments/<assessment_id>/publish`).
+4. **Kiểm thử Thực tế & Tự động**:
+   - Xác minh trực tiếp trên trình duyệt bằng Chrome DevTools MCP: xuất bản đề thi trực tiếp từ giao diện và xác minh trọn vẹn 6/6 câu hỏi trong CSDL.
+   - 28/28 tests tự động vượt qua (`pytest`). Cú pháp JavaScript `node -c` hợp lệ 100%.
+
+---
+
+# TASK-046 — Student Learning & Examination Lifecycle Backend Remediation & Full Frontend Parity
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-17  
+**Completed Date:** 2026-09-17  
+
+---
+
+## Goal
+Khắc phục triệt để các bất cập và điểm yếu trong Vòng đời Học tập & Khảo thí của Học viên (Student Learning & Examination Lifecycle):
+1. **Attempt Lease Duration**:
+   - Thời hạn editing lease được tính toán theo `time_limit_minutes * 60` của đề thi (giới hạn bởi `deadline_at`), loại bỏ hoàn toàn lỗi văng lease 5 phút (`AttemptLeaseExpiredError` / 409 Conflict) giữa chừng khi làm bài thi dài.
+2. **Autosave Compatibility & Robust ID Resolution**:
+   - Backend `save_attempt_answer` và `_resolve_attempt_question` hỗ trợ nhận diện và ánh xạ đa dạng định danh câu hỏi (`attempt_question_id`, `question_id`, `public_id`) và lựa chọn (`selected_choice_id`, `selected_choice_ids`, `choice_key`, `choice_id`).
+   - Lưu chuẩn xác và bền vững bản ghi `AttemptAnswerChoice` vào CSDL Microsoft SQL Server.
+3. **Deadline Expiration Auto-Finalization**:
+   - Tham số `auto_finalize_expired=True` cho Web UI route `/student/attempt/<attempt_id>/submit` tự động thu bài và kích hoạt chấm điểm khách quan (`grade_attempt_objective_questions`), trả về HTTP 200 OK kèm điểm số `raw_score` thay vì làm gián đoạn học viên bằng lỗi 409 `DEADLINE_EXPIRED`.
+   - Bảo toàn nghiêm ngặt hành vi 409 `DEADLINE_EXPIRED` và trạng thái `EXPIRED` đối với REST API clients (`/api/attempts/<attempt_id>/submit`).
+4. **Enriched Dual-Mode Result Payload**:
+   - Làm giàu payload kết quả bài thi trả về `content`, `choices` (kèm `is_correct`, `is_selected`, `content`), `awarded_points`, `is_correct` phục vụ xem lại chi tiết 1:1 trên giao diện Quiz và thẩm định Rubric ABET.
+   - Sửa lỗi crash 500 tại route `attempt_result_view` do truy cập `course.instructor` sai quan hệ (đổi thành `getattr(course, "owner_instructor", None)`).
+5. **Resource Vault Dual ID Resolution & Inline Streaming**:
+   - Endpoint `/student/courses/<course_id>/files/<id>/download` phân giải thành công cả `FileAsset.public_id` lẫn `LessonResource.public_id`.
+   - Serializer bổ sung `download_url` và `file_asset_id`. Hỗ trợ tham số `?disposition=inline` phục vụ streaming video trực tiếp trên thẻ `<video>`.
+6. **Frontend Synchronization & Resume Experience**:
+   - Cập nhật `frontend/assets/js/views/student.js` tương thích với các khóa định danh backend. Thêm nút **"TIẾP TỤC LÀM BÀI THI (RESUME)"** trong phòng chờ khi đã có active attempt.
+7. **Kiểm thử & Linter**:
+   - 5/5 TDD test cases trong `tests/api/test_student_exam_backend_remediation.py` PASSED 100%.
+   - Toàn bộ 36/36 bài kiểm thử hồi quy (`test_attempt_api.py`, `test_attempt_lease_api.py`, `test_attempt_submission_api.py`, `test_assessment_api.py`, `test_backend_frontend_parity.py`) PASSED 100%.
+   - Tuân thủ nghiêm ngặt chuẩn kiến trúc ADR-002 (loại bỏ rò rỉ key `id`).
+   - Vượt qua 100% kiểm tra linter (`python -m ruff check src tests/api/test_student_exam_backend_remediation.py`).
+
+---
+
+# TASK-045 — Backend Remediation & Full Parity Integration (Missing Endpoints, Atomic Exam Creation, Essay/Rubric Support & RAG Context)
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-17  
+**Completed Date:** 2026-09-17  
+
+---
+
+## Goal
+Khắc phục triệt để các điểm yếu và khoảng cách giữa Backend REST API và Frontend Single-DOM SPA:
+1. **Question Bank Distribution Summary (`GET /courses/<course_id>/questions/summary`)**:
+   - Cung cấp API tổng hợp phân bổ câu hỏi theo độ khó Bloom (`REMEMBER`, `UNDERSTAND`, `APPLY`), phân loại câu hỏi và phân bổ theo từng bài học trực tiếp từ MS SQL Server.
+   - Tuân thủ ADR-002: Synthetic UUID cho `assignment_id` và không làm rò rỉ BigInt PK.
+2. **Hỗ trợ câu hỏi tự luận `ESSAY`**:
+   - Mở rộng whitelist và logic tiếp nhận loại câu hỏi `"ESSAY"` trong `create_instructor_assessment_question_route` và `batch_create_assessment_questions_route`.
+3. **Atomic Exam Batch Question Creation (`POST /assessments/<assessment_id>/questions/batch`)**:
+   - Tiếp nhận mảng câu hỏi và gán trực tiếp vào đề thi trong một atomic transaction CSDL duy nhất (`db.session.commit()`), rollback toàn bộ nếu có lỗi.
+4. **HTTP DELETE gỡ tài nguyên bài học (`DELETE /courses/<course_id>/lessons/<lesson_id>/resources/<resource_id>`)**:
+   - Bổ sung phương thức HTTP `DELETE` chuẩn RESTful cho route gỡ bỏ tài liệu bài học.
+5. **Split-Canvas Rubric Grading Preservation**:
+   - Hỗ trợ lưu trữ điểm phân rã theo 3 tiêu chí Rubric (`rubric_scores: { c1, c2, c3 }`) vào trường `reason` dạng `[Rubric: c1=..., c2=..., c3=...]`, bảo toàn vết thẩm định học thuật phục vụ kiểm định ABET mà không cần thay đổi DDL/schema CSDL.
+6. **AI Student Assistant Contextual RAG Binding**:
+   - Bổ sung truyền `course_id` từ `ApiClient.sendAIChat` và giao diện Student Portal `#ai-context-course-select` vào backend `/student/ai/chat` để kích hoạt RAG context retrieval theo đúng môn học đã chọn.
+7. **Kiểm thử & Linter**:
+   - Toàn bộ 16/16 test suites (`tests/api/test_instructor_backend_remediation.py` và `tests/api/test_frontend_integration.py`) PASSED 100%.
+   - Vượt qua 100% kiểm tra cú pháp và style (`ruff check`).
+
+---
+
+# TASK-044 — Admin Portal & Operations Cockpit End-to-End Modernization (29-Screen Design Compliance & Live MS SQL Server Parity)
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-17  
+**Completed Date:** 2026-09-17  
+
+---
+
+## Goal
+Hiện đại hóa toàn diện Cổng Quản trị viên (Admin Portal) & Cockpit Vận hành (Operations & Security Cockpit) theo chuẩn 29 màn hình thiết kế, đấu nối 100% REST API và CSDL Microsoft SQL Server, loại bỏ hoàn toàn dữ liệu mẫu mock:
+1. **Admin Academic Governance Command Center (4-Tab Modular Command Center)**:
+   - Thẻ KPI thời gian thực: Hàng đợi thẩm định đề cương, An toàn học thuật & Kiểm toán, Giám sát hạ tầng phần cứng.
+   - **Tab 1: Quản trị Người dùng & Phân quyền RBAC (`renderTabUsers`)**: Tải 100% người dùng thực từ CSDL, tìm kiếm & lọc vai trò, phân quyền lũy tiến AUTH-002 (`openRoleModal`), tạm ngưng khẩn cấp (`openSuspendModal`) với fail-closed thu hồi toàn bộ phiên làm việc tức thì (`auth_version`), mở khóa và thu hồi phiên người dùng, tuân thủ nguyên tắc cấm mạo danh (No Impersonation).
+   - **Tab 2: Thẩm định Đề cương & Duyệt Giảng viên (`renderTabReview`)**: Hàng đợi xét duyệt đề cương khóa học thời gian thực (`ApiClient.getPendingCourses()`), xem metadata/diff, phê duyệt/từ chối kèm lý do; Hàng đợi xét duyệt hồ sơ đăng ký giảng viên (`ApiClient.getAdminInstructorApplications()`), xem CV/minh chứng (`openApplicationDetailModal`), phê duyệt bổ nhiệm và từ chối.
+   - **Tab 3: Điều chuyển & Phân công Giảng dạy (`renderTabReassign`)**: Tính toán định mức tải giảng dạy thực tế (Workload SLA) của giảng viên, công cụ điều chuyển môn học an toàn kèm kiểm toán bắt buộc (`ApiClient.reassignCourse`).
+   - **Tab 4: An toàn Học thuật & Nhật ký Kiểm toán (`renderTabSecurity`)**: Truy vấn chuỗi bút lục kiểm toán bất biến (Immutable Audit Trail) với chữ ký băm SHA-256 đối soát, ngăn kéo siêu dữ liệu (`openMetadataDrawer`) tự động che giấu thông tin bí mật (Redaction policy), công cụ giải phóng tệp cách ly ClamAV (`quarantineOverride`).
+2. **Server Operations & Security Cockpit (65/35 Split Operations Cockpit)**:
+   - Bố cục 65/35 chuẩn thiết kế.
+   - Ma trận sức khỏe 6 dịch vụ lõi (WebCore, MS SQL Server, ClamAV Sandbox, MinIO Object Storage, Qdrant Vector, Redis Token Blacklist) kèm chính sách cách ly an toàn tuyệt đối (Fail-Closed Sandbox).
+   - Trạng thái tiến trình nền: Worker chấm lại thi trắc nghiệm (Regrade Worker) bảo lưu mốc nộp bài và đảm bảo tính idempotent.
+   - Khu vực Quản trị Đặc quyền (Isolated Danger Zone): Tuân thủ nguyên tắc bất khả xâm phạm "Never Overwrite Live Database", danh sách bản sao lưu snapshot thực tế (`ApiClient.getAdminBackups()`), xác minh chữ ký SHA-256 (`ApiClient.verifyAdminBackup()`), diễn tập phục hồi Staging Dry-Run (`ApiClient.restoreAdminBackupDryRun()`), và khung kiểm soát 4 bước bắt buộc khi khôi phục Live Database có kiểm soát (`ApiClient.restoreAdminBackup()`).
+   - Chế độ bảo trì toàn viện (Maintenance Window): Kiểm tra trạng thái trực tiếp, kích hoạt bảo trì khẩn cấp (HTTP 503 cho Student/Instructor) và kết thúc bảo trì.
+   - Giám sát phần cứng thời gian thực (Hardware Telemetry): Tự động cập nhật chỉ số CPU, RAM, Ổ cứng và lưu lượng mạng mỗi 10 giây từ `ApiClient.getAdminTelemetry()`.
+3. **Kiểm thử & Xác minh Toàn diện**: Vượt qua 100% repo contract checks, ruff linter/formatter, JavaScript syntax checks (`node --check`), và toàn bộ 22/22 bài kiểm thử pytest liên quan (`tests/api/test_frontend_integration.py`, `tests/api/test_admin_audit_api.py`, `tests/api/test_operations_api.py`, `tests/e2e/test_student_lifecycle_e2e.py`).
+
+---
+
+# TASK-043 — Student Portal End-to-End Modernization (29-Screen Design Compliance & Live Backend Workflows)
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-17  
+**Completed Date:** 2026-09-17  
+
+---
+
+## Goal
+Nâng cấp toàn diện Cổng Học viên (Student Portal) từ phiên bản sơ khai thành phiên bản hoàn chỉnh 100% bám sát bộ mockup thiết kế 29 màn hình và các bất biến kiến trúc PWD301:
+1. **Flyout Notification Hub (Ngăn kéo Trượt phải)**: Slide-out drawer với các danh mục `Tất cả`, `Khảo thí`, `Khóa học`, `Hệ thống`, hỗ trợ đánh dấu đọc từng mục và đọc tất cả, đồng bộ thời gian thực với chuông Topbar.
+2. **Dashboard Học viên Tương tác**: Băng rôn đếm ngược kỳ thi sắp tới (**Upcoming Assessment Countdown Ticker**) với nút vào thẳng phòng chờ, hệ thống 4 KPI thẻ chỉ số học tập, và tiến trình khóa học trực quan.
+3. **Course Detail Academic Dossier (Variant 2)**: Chuẩn hóa hồ sơ học vụ chính quy, tích hợp khối Chuẩn đầu ra môn học **ABET Student Learning Outcomes (SLOs)**, điều kiện tiên quyết, 4 tab nghiệp vụ (Đề cương, Khảo thí, Kho tài nguyên, Giảng viên) và hành động Ghi danh / Rút môn.
+4. **My Learning Master Workspace**: Bộ lọc thông minh (Tất cả / Đang học / Đã hoàn thành), thanh tìm kiếm nhanh theo mã/tên môn học, thẻ khóa học hiển thị thanh tiến độ và tác vụ rút môn.
+5. **Single-Column Focus Lesson Reader**: Chế độ đọc tập trung bài giảng tối ưu (~768px reading width), tích hợp hệ thống Dual Drawer:
+   - **Left Drawer**: Mục lục đề cương bài giảng (Syllabus Outline) cho phép nhảy nhanh giữa các bài học.
+   - **Right Drawer**: Kho tài nguyên đính kèm có nhãn quét an toàn ClamAV (`✓ Đã quét sạch ClamAV - An toàn`) và Sổ tay ghi chú cá nhân (Notepad) tự động lưu trực tiếp vào CSDL Microsoft SQL Server qua API `/student/lessons/<lesson_id>/notes`.
+   - **Thẻ Gia sư AI ngữ cảnh**: Đặt cuối bài giảng kèm các Prompt Chips một chạm (`Tóm tắt 3 ý chính`, `Giải thích thuật toán`, `Bài tập áp dụng`, `Câu hỏi ôn thi`), tương tác trực tiếp với Trợ lý AI Gemini Flash.
+6. **Dual-Mode Assessment Results**: Bảng điểm khảo thí rẽ nhánh thông minh:
+   - *Bài Quiz / Mini-test*: Đối chiếu chi tiết 1:1 từng câu hỏi (lựa chọn sinh viên vs đáp án đúng, giải thích học thuật, nút hỏi gia sư AI từng câu).
+   - *Kỳ thi Giữa kỳ / Cuối kỳ*: Bảng điểm học thuật kèm xếp hạng chữ (Hạng A/B/C/D/F), phân vị học lực so với toàn khóa, tem kiểm định toàn vẹn phòng thi (Proctoring Integrity Verification), và ngăn kéo **Review Detail Drawer** hiển thị bảng tiêu chí Rubric ABET chi tiết.
+7. **Kiểm thử & Xác minh toàn diện**: Vượt qua 100% repo contract checks, ruff linter/formatter, mypy static type checking, toàn bộ 1281 bài kiểm thử pytest liên quan (`./scripts/verify.ps1`), và kiểm thử end-to-end trên trình duyệt Chrome DevTools.
+
+---
+
+# TASK-042 — Complete UI Standardization, Role-Based Unified Single-DOM SPA Architecture & Live Backend API Integration
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-16  
+**Completed Date:** 2026-09-17  
+
+---
+
+## Goal
+1. **Loại bỏ triệt để kiến trúc phân mảnh và iframe**: Thay thế toàn bộ 23 thư mục màn hình tĩnh mock độc lập và thẻ `<iframe id="spa-frame">` bằng **1 App Shell Single-DOM SPA thuần duy nhất** (`#app-viewport`) chạy trực tiếp trên Modern DOM / Vanilla JS, chia theo 3 vai trò rõ ràng (**Student**, **Instructor**, **Admin**).
+2. **Đấu nối 100% dữ liệu thực từ Backend REST API & SQL Server**:
+   - Loại bỏ hoàn toàn mock data tĩnh, số liệu giả cứng (`Math.random()`).
+   - Mọi view đều truy vấn dữ liệu thực qua `ApiClient` đính kèm CSRF token tự động, phân trang và empty-state thân thiện khi chưa có dữ liệu.
+3. **Chuẩn hóa hệ thống giao diện & Điều hướng liên thông**:
+   - **Authentication**: Form đăng nhập email/mật khẩu chuẩn hóa, hỗ trợ show/hide password, ghi nhớ phiên, điều hướng tự động theo quyền cao nhất (`ADMIN` > `INSTRUCTOR` > `STUDENT`).
+   - **Student Portal**: Dashboard KPIs thực tế, Danh mục khóa học (Catalog) tìm kiếm & lọc chuyên ngành, Khóa học của tôi (My Learning) & Đề cương bài giảng chi tiết, Phòng đọc bài giảng học thuật 3 cột (Mục lục, Nội dung Markdown, Tài liệu đính kèm), Khảo thí trực tuyến (Phòng chờ đếm ngược UTC, Bàn thi palette tự động lưu đáp án, Bảng điểm chi tiết), Trợ lý AI Gemini 3.8 Flash học vụ 24/7, Đơn đề cử Giảng viên.
+   - **Instructor Portal**: Dashboard thống kê khóa học phụ trách, Quản lý khóa học 3 tab (Thiết lập, Đề cương/Bài giảng, Roster sinh viên), Ngân hàng câu hỏi chuẩn Bloom (Bộ lọc theo khóa, tạo thủ công & AI Gemini sinh câu hỏi tự động), Soạn đề thi Azota Split-View 50/50 (Cú pháp tự nhiên vs Xem trước trực quan), Studio chấm thi tự luận Split-Canvas đối chiếu rubric.
+   - **Admin Governance & Operations**: Trung tâm quản trị người dùng & phân quyền lũy tiến AUTH-002 (Cấp/thu hồi quyền, khóa/mở tài khoản), Hàng đợi duyệt khóa học, Thẩm định hồ sơ giảng viên, Cockpit vận hành máy chủ với luồng Telemetry phần cứng trực tiếp (CPU, RAM, Disk, Uptime) auto-poll và điều khiển Maintenance Mode.
+   - **Multi-Role Portal Switcher**: Cho phép Quản trị viên và Giảng viên chuyển đổi nhanh chóng giữa các vai trò được cấp phép ngay trên Topbar mà không cần đăng xuất.
+4. **Kiểm thử & Xác minh toàn diện**: Vượt qua 100% repo contract checks, ruff linter/formatter, mypy static type checking, toàn bộ 30 bài kiểm thử pytest API/E2E liên quan, và kiểm thử end-to-end trên trình duyệt Chrome DevTools.
+
+---
+
+# TASK-041 — Platform Runtime Diagnosis & SPA Runtime Bugfixes
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Software Engineer  
+**Started Date:** 2026-09-16  
+**Completed Date:** 2026-09-16  
+
+---
+
+## Goal
+1. Khắc phục lỗi trình duyệt hiển thị màn hình trống / lỗi "Sad face" icon (Aw, Snap!) khi truy cập `http://localhost:5000/`.
+2. Khắc phục lỗi vi phạm CSP Clickjacking (`frame-ancestors 'none'` và `X-Frame-Options: DENY`) chặn iframe hiển thị các màn hình SPA.
+3. Sửa lỗi `HTTP 400 Bad Request: CSRF_ERROR ("The CSRF session token is missing.")` do `session.clear()` tại login xóa secret trong Flask session trong khi `g.csrf_token` bị cache.
+4. Sửa lỗi frontend TypeError `window.AppRouter.refreshCurrentUser is not a function` và selector cú pháp jQuery `:contains("person")`.
+5. Đấu nối trực tiếp form đăng nhập với ApiClient authentication thực tế và định tuyến RBAC (`#/admin/governance`, `#/instructor/dashboard`, `#/student/dashboard`).
+6. Đảm bảo toàn bộ 100% test suites, repo contract checks, ruff linter/formatter, và mypy vượt qua tuyệt đối.
+
+---
+
+# TASK-040 — Complete Removal of UI/UX and Platform Transition to Pure Headless Backend
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Lead Software Engineer  
+**Started Date:** 2026-09-16  
+**Completed Date:** 2026-09-16  
+
+---
+
+## Goal
+1. Xóa bỏ hoàn toàn toàn bộ giao diện hệ thống (UI/UX, Jinja templates, static CSS/JS, HTML mock preview, và tài liệu thiết kế stitch), chuyển đổi PWD301 thành một nền tảng Headless Backend & REST API 100%.
+2. Tinh gọn Flask Application Factory (`src/pwd301/__init__.py`), cấu hình `template_folder=None, static_folder=None`, chuẩn hóa toàn bộ error handlers trả về JSON envelopes.
+3. Tái cấu trúc toàn bộ 5 role-based blueprints (`auth`, `student`, `instructor`, `admin`, `core`) để phục vụ 100% JSON API, loại bỏ triệt để các lệnh `render_template` và HTML redirect.
+4. Điều chỉnh toàn bộ các bộ test suite kiểm thử từ DOM/HTML/Jinja sang kiểm thử JSON payload, bảo toàn 100% quy tắc nghiệp vụ, RBAC, và bất biến hệ thống.
+5. Xác minh toàn bộ repo với `scripts/repo_check.py`, `ruff check`, `ruff format --check`, `mypy src`, và `pytest`.
+
+---
+
+# TASK-033 — Full Frontend Stitch Migration & Production UI/UX System Integration
+
+**Status:** DONE  
+**Assignee:** Principal UI/UX Architect & Lead Fullstack Systems Engineer  
+**Started Date:** 2026-09-15  
+**Completed Date:** 2026-09-16  
+
+---
+
+## Goal
+1. Tích hợp trọn bộ giao diện hiện đại chuẩn Productive Clarity / Carbon từ `frontend-preview` vào hệ thống web production Flask (`src/pwd301/templates`, `src/pwd301/static`).
+2. Bốc tách và tái kết nối toàn bộ dữ liệu backend Flask (RBAC 3 vai trò: Student, Instructor, Admin) với bảo toàn CSRF protection, Flask session-based authentication, telemetry phần cứng live, Azota exam authoring, và Split-Canvas grading studio.
+3. Đạt 100% pass rate trên toàn bộ 1356 tests pytest, ruff lint/format, mypy type checking, và empirical node component verification.
+
+---
+
 # TASK-032 — GMT Timezone Synchronization (Anti-Cheat Real-Time Window) & Bilingual Support (VI/EN)
 
 **Status:** DONE  
@@ -572,3 +1093,58 @@ Resolve the `405 METHOD_NOT_ALLOWED` error encountered when instructors/admins u
   - Clicked "Xuất bản ngay (Admin)": Successfully published course, updated badge to `HUM101 Đang mở (PUBLISHED)`.
   - Checked `/instructor/courses` grid: Course card renders with green `Đang mở` badge and full functional controls.
 
+---
+
+# TASK-039 — System Crash Resolution, Course Customization Schema Migration & Docker Web Container Recovery
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Fullstack Engineer  
+**Started Date:** 2026-09-16  
+**Completed Date:** 2026-09-16  
+
+## Goal
+Investigate and resolve whole-platform system downtime preventing the project from running or serving web requests. Restore Docker containers (`pwd301_web`, `pwd301_db`, `pwd301_clamav`), synchronize database schema migrations with model definitions, and empirically verify all role portals (Student, Instructor, Admin).
+
+## Root Cause Analysis
+1. **Unapplied Schema Migration for Course Customization Fields**:
+   - `src/pwd301/models/course.py` had been updated to declare new columns: `learning_objectives`, `target_audience`, and `completion_requirements`.
+   - Migration `b2c3d4e5f6a8_0005_add_course_customization_fields.py` existed on host, but the Microsoft SQL Server database was at revision `a1b2c3d4e5f7`.
+2. **Stale Docker Container Lacking Migrations Mount**:
+   - The running container `pwd301_web` had been initialized previously prior to mounting `./migrations:/app/migrations`.
+   - When the container started, `docker-entrypoint.sh` ran `flask db upgrade` using only baked-in migrations (up to 0004).
+   - In step 4/4 of entrypoint (`flask seed-demo`), SQLAlchemy queried `Course` selecting `learning_objectives`.
+   - SQL Server threw `pyodbc.ProgrammingError: [42S22] Invalid column name 'learning_objectives'`, causing the Python process to crash and the container to enter an infinite restart loop (`Restarting (1)`).
+3. **Local Database Connection String Drift**:
+   - `.env` had outdated placeholder credentials (`PWD301_USER`), causing local host tooling to fail to connect to the SQL Server container on port 1433.
+
+## Key Changes
+1. **Configuration Synchronization (`.env`)**:
+   - Updated `DATABASE_URL` in `.env` to connect cleanly to local SQL Server container via `sa:AdminStrongPassw0rd!`.
+2. **Database Migration Execution (`b2c3d4e5f6a8`)**:
+   - Executed `flask db upgrade` to advance Alembic revision from `a1b2c3d4e5f7` to `b2c3d4e5f6a8 (head)`.
+   - Added `learning_objectives`, `target_audience`, and `completion_requirements` columns to the `courses` table in SQL Server.
+   - Verified `flask seed-demo` completes with zero errors.
+3. **Container Rebuild & Re-orchestration (`docker compose`)**:
+   - Built fresh image `pwd301-web:latest` incorporating updated packages and migrations.
+   - Recreated and started `pwd301_web` container with verified health checks.
+   - Removed redundant duplicate `alembic/` folder to adhere to repository single-source-of-truth rules.
+
+## Verification Record
+- **Container Health**:
+  - `pwd301_web`: Up & `healthy` on `0.0.0.0:5000->5000/tcp`.
+  - `pwd301_db`: Up & `healthy` on `0.0.0.0:1433->1433/tcp`.
+  - `pwd301_clamav`: Up & `healthy` on `0.0.0.0:3310->3310/tcp`.
+- **Health Endpoint**:
+  - `GET http://localhost:5000/health` returns HTTP 200 `{"env": "development", "probe": "liveness", "status": "ok", "version": "0.0.0"}`.
+- **End-to-End Portal Verification (`scratch/test_live_system.py`)**:
+  - Student login -> `/student/dashboard`: HTTP 200 OK.
+  - Student `/student/my-learning` & `/student/assessments`: HTTP 200 OK.
+  - Instructor login -> `/instructor/dashboard` & `/instructor/courses`: HTTP 200 OK.
+  - Admin login -> `/admin/dashboard`, `/admin/telemetry`, `/admin/health`: HTTP 200 OK.
+- **Static Analysis & Test Suites**:
+  - `python scripts/repo_check.py`: PASS.
+  - `ruff check src tests migrations`: PASS (0 errors).
+  - `ruff format --check src tests migrations`: PASS (220 files formatted).
+  - `mypy src`: PASS (0 issues in 85 files).
+  - `pytest tests/api/test_instructor_course_web_flow.py tests/api/test_web_ui_flow_fixes.py tests/api/test_student_portal_ui.py`: 44/44 passed (100%).
+  - `pytest tests/test_m2_course_customization.py`: 6/6 passed (100%).

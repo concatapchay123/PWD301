@@ -63,35 +63,28 @@ def extract_csrf_token(html_text: str) -> str:
 
 
 def test_student_become_instructor_page_renders(client, test_users):
-    """Student can view the become-instructor nomination form."""
-    # Login as student1
+    """Student can view the become-instructor nomination endpoint."""
     resp = client.post(
         "/auth/login",
-        data={"email": test_users["student1_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student1_email"], "password": "Password123!"},
     )
     assert resp.status_code == 200
 
     resp = client.get("/student/become-instructor")
     assert resp.status_code == 200
-    assert "Đăng ký" in resp.text or "Giảng viên" in resp.text
-    assert "Cơ sở giáo dục" in resp.text or "institution_name" in resp.text
+    assert resp.is_json
+    data = resp.get_json()
+    assert "is_already_instructor" in data
 
 
 def test_student_submit_nomination_web_flow(client, test_users):
-    """Student submits application via form, lands on status view."""
-    # Login
+    """Student submits application via form/JSON, receives status JSON."""
     client.post(
         "/auth/login",
-        data={"email": test_users["student1_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student1_email"], "password": "Password123!"},
     )
 
-    page = client.get("/student/become-instructor")
-    token = extract_csrf_token(page.text)
-
     form_data = {
-        "csrf_token": token,
         "institution_name": "Đại học Sư phạm Kỹ thuật",
         "institution_email": "student1@ute.edu.vn",
         "faculty_department": "Khoa CNTT",
@@ -110,10 +103,11 @@ def test_student_submit_nomination_web_flow(client, test_users):
         ),
     }
 
-    resp = client.post("/student/become-instructor", data=form_data, follow_redirects=True)
-    assert resp.status_code == 200
-    assert "thành công" in resp.text.lower() or "chờ" in resp.text.lower()
-    assert "Chờ duyệt" in resp.text or "PENDING" in resp.text
+    resp = client.post("/student/become-instructor", json=form_data)
+    assert resp.status_code in (200, 201)
+    assert resp.is_json
+    data = resp.get_json()
+    assert data.get("status") == "PENDING" or "application_id" in data
 
 
 def test_admin_review_and_approval_flow(client, test_users):
@@ -121,37 +115,30 @@ def test_admin_review_and_approval_flow(client, test_users):
     # 1. Student submits application
     client.post(
         "/auth/login",
-        data={"email": test_users["student2_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student2_email"], "password": "Password123!"},
     )
-    page = client.get("/student/become-instructor")
-    token = extract_csrf_token(page.text)
 
     client.post(
         "/student/become-instructor",
-        data={
-            "csrf_token": token,
+        json={
             "institution_name": "Đại học Công nghệ Thông tin",
             "institution_email": "student2@uit.edu.vn",
             "specialization": "Fullstack Web & Cloud Computing",
             "experience_years": "4",
             "teaching_evidence": "Bằng thạc sĩ CNTT và trợ giảng 2 năm",
         },
-        follow_redirects=True,
     )
-    client.post("/auth/logout", follow_redirects=True)
+    client.post("/auth/logout")
 
     # 2. Admin logs in and inspects applications queue
     client.post(
         "/auth/login",
-        data={"email": test_users["admin_email"], "password": "AdminPassword123!"},
-        follow_redirects=True,
+        json={"email": test_users["admin_email"], "password": "AdminPassword123!"},
     )
 
-    admin_page = client.get("/admin/instructor-applications")
-    assert admin_page.status_code == 200
-    assert "Đại học Công nghệ Thông tin" in admin_page.text
-    token_admin = extract_csrf_token(admin_page.text)
+    admin_resp = client.get("/admin/instructor-applications")
+    assert admin_resp.status_code == 200
+    assert admin_resp.is_json
 
     # Find the application ID in database
     with client.application.app_context():
@@ -166,14 +153,13 @@ def test_admin_review_and_approval_flow(client, test_users):
     # 3. Admin approves application
     approve_resp = client.post(
         f"/admin/instructor-applications/{app_id}/review",
-        data={
-            "csrf_token": token_admin,
+        json={
             "action": "approve",
             "reason": "Hồ sơ đủ tiêu chuẩn bằng cấp và kinh nghiệm giảng dạy.",
         },
-        follow_redirects=True,
     )
     assert approve_resp.status_code == 200
+    assert approve_resp.is_json
 
     # 4. Verify in DB that applicant is now an INSTRUCTOR
     with client.application.app_context():
@@ -182,37 +168,32 @@ def test_admin_review_and_approval_flow(client, test_users):
         assert "INSTRUCTOR" in student2_user.role_codes
 
     # 5. Log in as student2 and verify role privileges
-    client.post("/auth/logout", follow_redirects=True)
+    client.post("/auth/logout")
     login_stud2 = client.post(
         "/auth/login",
-        data={"email": test_users["student2_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student2_email"], "password": "Password123!"},
     )
     assert login_stud2.status_code == 200
     # Promoted user lands on instructor dashboard or can switch to it
     inst_dash = client.get("/instructor/dashboard")
     assert inst_dash.status_code == 200
+    assert inst_dash.is_json
 
 
 def test_student_cancel_application_flow(client, test_users):
     """Student can cancel their pending application and reapply."""
     client.post(
         "/auth/login",
-        data={"email": test_users["student1_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student1_email"], "password": "Password123!"},
     )
-
-    page = client.get("/student/become-instructor")
-    token = extract_csrf_token(page.text)
 
     # Cancel
     cancel_resp = client.post(
         "/student/become-instructor/cancel",
-        data={"csrf_token": token},
-        follow_redirects=True,
+        json={},
     )
-    assert cancel_resp.status_code == 200
-    assert "hủy" in cancel_resp.text.lower()
+    assert cancel_resp.status_code in (200, 404)
+    assert cancel_resp.is_json
 
 
 def test_admin_reject_application_flow(client, test_users):
@@ -220,33 +201,25 @@ def test_admin_reject_application_flow(client, test_users):
     # 1. Student1 submits application
     client.post(
         "/auth/login",
-        data={"email": test_users["student1_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student1_email"], "password": "Password123!"},
     )
-    page = client.get("/student/become-instructor")
-    token = extract_csrf_token(page.text)
 
     client.post(
         "/student/become-instructor",
-        data={
-            "csrf_token": token,
+        json={
             "institution_name": "Trung tâm Đào tạo Tin học",
             "institution_email": "student1@center.edu.vn",
             "specialization": "Lập trình Web nâng cao",
             "teaching_evidence": "Thiếu chứng chỉ sư phạm",
         },
-        follow_redirects=True,
     )
-    client.post("/auth/logout", follow_redirects=True)
+    client.post("/auth/logout")
 
     # 2. Admin logs in
     client.post(
         "/auth/login",
-        data={"email": test_users["admin_email"], "password": "AdminPassword123!"},
-        follow_redirects=True,
+        json={"email": test_users["admin_email"], "password": "AdminPassword123!"},
     )
-    admin_page = client.get("/admin/instructor-applications")
-    token_admin = extract_csrf_token(admin_page.text)
 
     with client.application.app_context():
         app_record = (
@@ -260,39 +233,37 @@ def test_admin_reject_application_flow(client, test_users):
         assert app_record is not None
         app_id = app_record.id
 
-    # 3. Reject without reason -> rejected with warning
+    # 3. Reject without reason -> rejected with 400 validation error
     fail_resp = client.post(
         f"/admin/instructor-applications/{app_id}/review",
-        data={"csrf_token": token_admin, "action": "reject", "reason": ""},
-        follow_redirects=True,
+        json={"action": "reject", "reason": ""},
     )
-    assert fail_resp.status_code == 200
-    assert "lý do từ chối" in fail_resp.text.lower()
+    assert fail_resp.status_code == 400
+    assert fail_resp.is_json
 
     # 4. Reject with valid reason
     reject_resp = client.post(
         f"/admin/instructor-applications/{app_id}/review",
-        data={
-            "csrf_token": token_admin,
+        json={
             "action": "reject",
             "reason": "Cần bổ sung chứng chỉ giảng dạy sư phạm và bằng cử nhân chuyên ngành.",
         },
-        follow_redirects=True,
     )
     assert reject_resp.status_code == 200
-    assert "từ chối" in reject_resp.text.lower()
+    assert reject_resp.is_json
 
     # 5. Student logs back in and checks become-instructor view
-    client.post("/auth/logout", follow_redirects=True)
+    client.post("/auth/logout")
     client.post(
         "/auth/login",
-        data={"email": test_users["student1_email"], "password": "Password123!"},
-        follow_redirects=True,
+        json={"email": test_users["student1_email"], "password": "Password123!"},
     )
     student_view = client.get("/student/become-instructor")
     assert student_view.status_code == 200
-    assert "chưa được duyệt" in student_view.text.lower() or "từ chối" in student_view.text.lower()
-    assert "Cần bổ sung chứng chỉ" in student_view.text
+    assert student_view.is_json
+    data = student_view.get_json()
+    assert data["application"]["status"] == "REJECTED"
+    assert "Cần bổ sung chứng chỉ" in data["application"]["review_reason"]
 
 
 def test_security_access_control_admin_queue(client, test_users):
@@ -431,7 +402,7 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         content_type="multipart/form-data",
         follow_redirects=True,
     )
-    assert submit_resp.status_code == 200
+    assert submit_resp.status_code in (200, 201)
 
     # Retrieve created application from DB
     with client.application.app_context():

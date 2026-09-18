@@ -854,7 +854,7 @@ def classify_query_scope_hybrid(
     # 3. If AI client provided, invoke AI intent guardrail to stop subtle 'bào AI' attempts
     if client and hasattr(client, "classify_intent"):
         ai_res = client.classify_intent(text, context=context)
-        if not ai_res.is_in_scope or ai_res.is_malicious:
+        if isinstance(ai_res, ScopeResult) and (not ai_res.is_in_scope or ai_res.is_malicious):
             return ai_res
 
     return rule_res

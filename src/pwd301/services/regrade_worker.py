@@ -489,9 +489,6 @@ def _evaluate_attempt_item_regrade(
                         for aa in accepted
                     )
                 awarded_pts = aq.points_assigned if is_correct else Decimal("0.0000")
-            elif q_type == "ESSAY":
-                # Essays preserve manual evaluation or remain pending
-                awarded_pts = old_points
             else:
                 awarded_pts = Decimal("0.0000")
 

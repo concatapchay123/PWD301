@@ -19,12 +19,8 @@ from flask import (
     Response,
     g,
     jsonify,
-    make_response,
-    redirect,
-    render_template,
     request,
     session,
-    url_for,
 )
 from flask_login import current_user
 from flask_wtf.csrf import CSRFError
@@ -35,7 +31,7 @@ from pwd301.blueprints.admin import admin_bp
 from pwd301.blueprints.api_admin import api_admin_bp
 from pwd301.blueprints.api_ai import api_ai_bp
 from pwd301.blueprints.api_assessments import api_assessment_bp
-from pwd301.blueprints.api_attempts import api_attempt_bp
+from pwd301.blueprints.api_attempts import api_attempt_bp, api_regrade_bp
 from pwd301.blueprints.api_auth import api_auth_bp
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.blueprints.api_files import api_file_bp
@@ -46,6 +42,7 @@ from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
+from pwd301.blueprints.frontend import frontend_bp
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.blueprints.student import student_bp
 from pwd301.cli import register_cli_commands
@@ -154,6 +151,7 @@ from pwd301.services.exceptions import (
     StaleLeaseEpochError,
     SubmissionIdempotencyConflictError,
     UnauthorizedError,
+    ValidationError,
 )
 
 __version__ = "0.0.0"
@@ -192,6 +190,8 @@ def _is_api_or_json_request() -> bool:
         return True
     if request.is_json:
         return True
+    if not request.accept_mimetypes.accept_html:
+        return True
     best = request.accept_mimetypes.best_match(["application/json", "text/html"])
     return best == "application/json"
 
@@ -202,60 +202,25 @@ def _format_error_response(
     status_code: int,
     field_errors: dict[str, Any] | None = None,
     retry_after: int | None = None,
-) -> Response | tuple[Response, int]:
+) -> tuple[Response, int]:
     """Format an error response adhering to the PWD301 error model."""
     correlation_id = getattr(g, "correlation_id", uuid.uuid4().hex)
 
-    if _is_api_or_json_request():
-        resp = jsonify(
-            {
-                "error": {
-                    "code": code,
-                    "message": message,
-                    "field_errors": field_errors or {},
-                    "correlation_id": correlation_id,
-                }
+    resp = jsonify(
+        {
+            "error": {
+                "code": code,
+                "message": message,
+                "field_errors": field_errors or {},
+                "correlation_id": correlation_id,
             }
-        )
-        if status_code == 429:
-            resp.headers["Retry-After"] = str(retry_after if retry_after is not None else 60)
-        return resp, status_code
-
-    if status_code in (403, 404, 500):
-        try:
-            rendered = render_template(
-                f"errors/{status_code}.html",
-                status_code=status_code,
-                code=code,
-                message=message,
-                correlation_id=correlation_id,
-            )
-            response = make_response(rendered, status_code)
-            response.headers["Content-Type"] = "text/html; charset=utf-8"
-            return response
-        except Exception:
-            pass
-
-    from markupsafe import escape as html_escape
-
-    escaped_code = html_escape(str(code))
-    escaped_msg = html_escape(str(message))
-    escaped_corr = html_escape(str(correlation_id))
-
-    html_content = (
-        f"<!DOCTYPE html>\n"
-        f'<html lang="en">\n'
-        f'<head><meta charset="utf-8"><title>{status_code} {escaped_code}</title></head>\n'
-        f"<body>\n"
-        f"  <h1>{status_code} {escaped_code}</h1>\n"
-        f"  <p>{escaped_msg}</p>\n"
-        f"  <small>Correlation ID: {escaped_corr}</small>\n"
-        f"</body>\n"
-        f"</html>\n"
+        }
     )
-    response = make_response(html_content, status_code)
-    response.headers["Content-Type"] = "text/html; charset=utf-8"
-    return response
+    if status_code == 429 and retry_after is not None:
+        resp.headers["Retry-After"] = str(retry_after)
+    elif status_code == 429:
+        resp.headers["Retry-After"] = "60"
+    return resp, status_code
 
 
 DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
@@ -322,6 +287,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     AttemptNotSubmitedError: ("STATE_VIOLATION", 409),
     SubmissionIdempotencyConflictError: ("SUBMISSION_CONFLICT", 409),
     # 400 Bad Request & Validation Errors
+    ValidationError: ("VALIDATION_ERROR", 400),
     AIValidationError: ("VALIDATION_ERROR", 400),
     AIOutOfScopeError: ("OUT_OF_SCOPE", 400),
     AIPromptInjectionError: ("PROMPT_INJECTION_DETECTED", 400),
@@ -501,7 +467,7 @@ def create_app(
             f"Unknown configuration '{config_name}'. Available: {list(config_by_name.keys())}"
         )
 
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=None, template_folder=None)
     config_cls = config_by_name[config_name]
     config_obj = config_cls() if isinstance(config_cls, type) else config_cls
     app.config.from_object(config_obj)
@@ -525,6 +491,16 @@ def create_app(
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
+
+    # Pre-CSRF middleware: guarantee session['csrf_token'] exists before
+    # Flask-WTF _csrf_protect runs
+    @app.before_request
+    def _ensure_csrf_session_initialized() -> None:
+        if app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" not in session:
+            from flask_wtf.csrf import generate_csrf
+
+            generate_csrf()
+
     csrf.init_app(app)
     login_manager.init_app(app)
     login_manager.anonymous_user = AnonymousUser
@@ -572,6 +548,16 @@ def create_app(
 
         roles_list = sorted(actor.role_codes) if actor else []
 
+        def get_unread_count_safe() -> int:
+            if actor is not None and hasattr(actor, "id") and actor.id:
+                try:
+                    from pwd301.services.notification_service import get_unread_count
+
+                    return get_unread_count(actor=actor, session=db.session)
+                except Exception:
+                    return 0
+            return 0
+
         return {
             "has_role": has_role,
             "has_any_role": has_any_role,
@@ -580,6 +566,7 @@ def create_app(
             "is_student": is_student,
             "can_manage_course": check_can_manage_course,
             "user_roles": roles_list,
+            "unread_notifications_count": get_unread_count_safe(),
             "_": t,
             "t": t,
             "current_lang": get_current_locale(),
@@ -626,13 +613,11 @@ def create_app(
 
     @login_manager.unauthorized_handler
     def unauthorized() -> Any:
-        if _is_api_or_json_request():
-            return _format_error_response(
-                code="UNAUTHORIZED",
-                message="Authentication required to access this resource.",
-                status_code=401,
-            )
-        return redirect(url_for("auth.login", next=request.url))
+        return _format_error_response(
+            code="UNAUTHORIZED",
+            message="Authentication required to access this resource.",
+            status_code=401,
+        )
 
     # Logging setup
     _configure_logging(app)
@@ -696,32 +681,20 @@ def create_app(
                 actor = None
 
             if not (actor and getattr(actor, "is_admin", False)):
-                if _is_api_or_json_request():
-                    resp = jsonify(
-                        {
-                            "error": {
-                                "code": "MAINTENANCE_MODE_ACTIVE",
-                                "message": (
-                                    "Database restore is currently in progress. "
-                                    "System is temporarily unavailable."
-                                ),
-                                "estimated_end_at": None,
-                                "estimated_duration_minutes": 5,
-                            }
+                resp = jsonify(
+                    {
+                        "error": {
+                            "code": "MAINTENANCE_MODE_ACTIVE",
+                            "message": (
+                                "Database restore is currently in progress. "
+                                "System is temporarily unavailable."
+                            ),
+                            "estimated_end_at": None,
+                            "estimated_duration_minutes": 5,
                         }
-                    )
-                    resp.status_code = 503
-                    resp.headers["Retry-After"] = "300"
-                    return resp
-                resp = make_response(
-                    "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
-                    "<body><h1>503 Service Unavailable</h1>"
-                    "<p>Database restore is currently in progress. "
-                    "System is temporarily unavailable.</p>"
-                    "</body></html>",
-                    503,
+                    }
                 )
-                resp.headers["Content-Type"] = "text/html; charset=utf-8"
+                resp.status_code = 503
                 resp.headers["Retry-After"] = "300"
                 return resp
 
@@ -746,44 +719,26 @@ def create_app(
 
             if not (actor and getattr(actor, "is_admin", False)):
                 retry_after = str(window.estimated_duration_minutes * 60)
-                if _is_api_or_json_request():
-                    resp = jsonify(
-                        {
-                            "error": {
-                                "code": "MAINTENANCE_MODE_ACTIVE",
-                                "message": (
-                                    f"System is currently undergoing scheduled maintenance: "
-                                    f"{window.reason}"
-                                ),
-                                "estimated_end_at": (
-                                    window.estimated_end_at.isoformat()
-                                    if window.estimated_end_at
-                                    else None
-                                ),
-                                "estimated_duration_minutes": window.estimated_duration_minutes,
-                            }
+                resp = jsonify(
+                    {
+                        "error": {
+                            "code": "MAINTENANCE_MODE_ACTIVE",
+                            "message": (
+                                f"System is currently undergoing scheduled maintenance: "
+                                f"{window.reason}"
+                            ),
+                            "estimated_end_at": (
+                                window.estimated_end_at.isoformat()
+                                if window.estimated_end_at
+                                else None
+                            ),
+                            "estimated_duration_minutes": window.estimated_duration_minutes,
                         }
-                    )
-                    resp.status_code = 503
-                    resp.headers["Retry-After"] = retry_after
-                    return resp
-                try:
-                    rendered = render_template("public/maintenance.html", window=window)
-                    resp = make_response(rendered, 503)
-                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-                    resp.headers["Retry-After"] = retry_after
-                    return resp
-                except Exception:
-                    resp = make_response(
-                        "<!DOCTYPE html><html><head><title>System Maintenance</title></head>"
-                        "<body><h1>503 Service Unavailable</h1>"
-                        "<p>System is currently undergoing scheduled maintenance.</p>"
-                        "</body></html>",
-                        503,
-                    )
-                    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-                    resp.headers["Retry-After"] = retry_after
-                    return resp
+                    }
+                )
+                resp.status_code = 503
+                resp.headers["Retry-After"] = retry_after
+                return resp
 
         return None
 
@@ -791,17 +746,27 @@ def create_app(
     def after_request(response: Response) -> Response:
         response.headers["X-Correlation-ID"] = getattr(g, "correlation_id", "")
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        is_frontend = (
+            request.path.startswith("/frontend/")
+            or request.path.startswith("/api/ui/")
+            or request.path == "/"
+        )
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if is_frontend else "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if is_frontend and app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" in session:
+            from flask_wtf.csrf import generate_csrf
+
+            response.set_cookie("csrf_token", generate_csrf(), samesite="Lax")
         if "Content-Security-Policy" not in response.headers:
+            frame_ancestors = "'self'" if is_frontend else "'none'"
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data:; "
-                "font-src 'self' data:; "
-                "connect-src 'self'; "
-                "frame-ancestors 'none';"
+                "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' data: https://fonts.gstatic.com; "
+                "connect-src 'self' https://cdn.tailwindcss.com; "
+                f"frame-ancestors {frame_ancestors};"
             )
         return response
 
@@ -809,6 +774,7 @@ def create_app(
     _register_error_handlers(app)
 
     # Register blueprints
+    app.register_blueprint(frontend_bp)
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_auth_bp)
@@ -823,12 +789,14 @@ def create_app(
     app.register_blueprint(api_student_bp)
     app.register_blueprint(api_assessment_bp)
     app.register_blueprint(api_attempt_bp)
+    app.register_blueprint(api_regrade_bp)
     app.register_blueprint(api_file_bp)
     app.register_blueprint(api_import_bp)
     app.register_blueprint(api_notification_bp)
     app.register_blueprint(api_ai_bp)
 
-    # Exempt REST API blueprints from CSRF validation (API clients use Bearer JWT)
+    # Exempt REST API and frontend blueprints from CSRF validation (API clients use Bearer JWT)
+    csrf.exempt(frontend_bp)
     csrf.exempt(api_auth_bp)
     unversioned_auth = app.blueprints.get("api_auth_unversioned")
     if unversioned_auth:
@@ -840,6 +808,7 @@ def create_app(
     csrf.exempt(api_student_bp)
     csrf.exempt(api_assessment_bp)
     csrf.exempt(api_attempt_bp)
+    csrf.exempt(api_regrade_bp)
     csrf.exempt(api_file_bp)
     csrf.exempt(api_import_bp)
     csrf.exempt(api_notification_bp)

@@ -149,13 +149,11 @@ def test_unauthenticated_api_request_rejected(client: FlaskClient) -> None:
 
 
 def test_unauthenticated_web_request_redirects(client: FlaskClient) -> None:
-    """Unauthenticated Web HTML request redirects to login with relative next URL."""
+    """Unauthenticated request to protected routes returns 401 Unauthorized JSON."""
     resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
-    assert resp.status_code == 302
-    location = resp.headers["Location"]
-    assert "/auth/login" in location
-    # Requirement 4.3: next URL must be a valid safe relative URL to pass _is_safe_redirect_url
-    assert "next=/instructor/dashboard" in location
+    assert resp.status_code == 401
+    json_data = resp.get_json()
+    assert json_data["error"]["code"] == "UNAUTHORIZED"
 
 
 # ==============================================================================
@@ -180,14 +178,13 @@ def test_student_cannot_access_instructor_route_web_html(
     client: FlaskClient,
     student_user: User,
 ) -> None:
-    """Student accessing Instructor route via Web receives 403 status and custom 403.html."""
+    """Student accessing Instructor route receives 403 Forbidden JSON."""
     login_as(client, student_user.email)
 
     resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
     assert resp.status_code == 403
-    html_text = resp.data.decode("utf-8")
-    assert "403 Forbidden" in html_text
-    assert "Truy cập bị từ chối" in html_text
+    json_data = resp.get_json()
+    assert json_data["error"]["code"] == "FORBIDDEN"
 
 
 def test_student_cannot_access_admin_route(
@@ -534,25 +531,22 @@ def test_post_login_redirect_preserves_intended_destination(
     instructor_a: User,
 ) -> None:
     """Post-login redirect flow must preserve destination when using relative next URL."""
-    # 1. Unauthenticated hit on instructor dashboard
+    # 1. Unauthenticated hit on instructor dashboard returns 401 JSON
     resp = client.get("/instructor/dashboard", headers={"Accept": "text/html"})
-    assert resp.status_code == 302
-    login_url = resp.headers["Location"]
-    assert "next=/instructor/dashboard" in login_url
+    assert resp.status_code == 401
 
-    # 2. Complete login with next parameter
+    # 2. Complete login with next parameter returns JSON with redirect_url
     login_resp = client.post(
-        login_url,
-        data={
+        "/auth/login",
+        json={
             "email": instructor_a.email,
             "password": "Password@123",
             "next": "/instructor/dashboard",
         },
-        follow_redirects=False,
     )
-    assert login_resp.status_code == 302
-    # Must redirect to the requested target, NOT default landing
-    assert login_resp.headers["Location"] == "/instructor/dashboard"
+    assert login_resp.status_code == 200
+    # Must preserve the requested target in redirect_url
+    assert login_resp.get_json()["redirect_url"] == "/instructor/dashboard"
 
 
 def test_demoted_former_instructor_cannot_access_or_grade_attempts(

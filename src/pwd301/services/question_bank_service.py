@@ -1326,9 +1326,9 @@ def create_question_revision(
             ]
 
     elif q_type == "ESSAY":
-        if payload.get("choices"):
+        if "choices" in payload and payload["choices"]:
             raise QuestionValidationError("ESSAY questions cannot have choices.")
-        if payload.get("accepted_answers"):
+        if "accepted_answers" in payload and payload["accepted_answers"]:
             raise QuestionValidationError(
                 "ESSAY questions cannot have predefined accepted answers."
             )

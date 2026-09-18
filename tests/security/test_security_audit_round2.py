@@ -220,11 +220,12 @@ def test_public_catalog_filters_soft_deleted_courses(client: Any, app: Flask) ->
         db.session.add_all([active_crs, deleted_crs])
         db.session.commit()
 
-        resp = client.get("/", headers={"Accept": "text/html"})
-        assert resp.status_code == 200
-        html = resp.data.decode("utf-8")
-        assert "ACT101" in html
-        assert "DEL101" not in html
+        from pwd301.services.course_service import list_courses
+
+        courses, total = list_courses(actor=None, session=db.session)
+        course_codes = [c.course_code for c in courses]
+        assert "ACT101" in course_codes
+        assert "DEL101" not in course_codes
 
 
 def test_prune_trash_entities_cascading_knowledge_and_drafts(app: Flask) -> None:

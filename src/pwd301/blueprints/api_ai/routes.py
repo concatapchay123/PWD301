@@ -22,6 +22,7 @@ from pwd301.services.ai_service import (
     send_chat_message,
 )
 from pwd301.services.authorization_service import (
+    admin_required,
     instructor_required,
     require_authenticated_actor,
 )
@@ -291,7 +292,9 @@ def unified_chat_api() -> tuple[Response, int] | Response:
 
 
 @api_ai_bp.route("/conversations/cleanup", methods=["POST"])
+@api_ai_bp.route("/cleanup", methods=["POST"])
 @jwt_required
+@admin_required
 def cleanup_conversations_api() -> tuple[Response, int] | Response:
     """Purge raw messages from conversations inactive > 5 minutes (admin or system maintenance)."""
     actor = require_authenticated_actor()

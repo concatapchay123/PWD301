@@ -127,8 +127,8 @@ def test_admin_health_endpoints(client: FlaskClient, admin_user: User) -> None:
     login_web_user(client, admin_user)
     resp_web = client.get("/admin/health")
     assert resp_web.status_code == 200
-    assert resp_web.content_type.startswith("text/html")
-    assert "Trung tâm Giám sát Sức khỏe" in resp_web.get_data(as_text=True)
+    assert resp_web.is_json
+    assert "components" in resp_web.get_json()
 
     # Web format=json explicit request
     resp_web_json = client.get("/admin/health?format=json")
@@ -256,13 +256,13 @@ def test_maintenance_mode_middleware_interception(
     assert api_err["error"]["code"] == "MAINTENANCE_MODE_ACTIVE"
     assert "reorganization" in api_err["error"]["message"]
 
-    # 5. Student Web request (accept: text/html) receives 503 HTML maintenance page
+    # 5. Student Web request (accept: text/html) receives 503 JSON maintenance response
     resp_student_web = client.get(
         "/",
         headers={"Accept": "text/html"},
     )
     assert resp_student_web.status_code == 503
-    assert "text/html" in resp_student_web.content_type
+    assert resp_student_web.is_json
     assert resp_student_web.headers.get("Retry-After") is not None
 
     # 6. Admin can still access /api/admin/... and /admin/... without interruption

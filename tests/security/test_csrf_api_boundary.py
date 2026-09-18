@@ -115,46 +115,42 @@ def test_bearer_jwt_accepted_on_api_student(client: FlaskClient, student_user: U
 def test_admin_dashboard_web_route_renders_html_with_session(
     client: FlaskClient, admin_user: User
 ) -> None:
-    """Web UI /admin/dashboard accepts session cookie and renders HTML."""
+    """Web route /admin/dashboard accepts session cookie and returns JSON."""
     client.post("/auth/login", data={"email": admin_user.email, "password": "Password@123"})
 
     resp = client.get("/admin/dashboard")
     assert resp.status_code == 200
-    assert resp.content_type.startswith("text/html")
-    assert "Trung tâm Điều hành" in resp.get_data(as_text=True)
+    assert resp.is_json
 
 
 def test_admin_courses_web_route_renders_html_with_session(
     client: FlaskClient, admin_user: User
 ) -> None:
-    """Web UI /admin/courses accepts session cookie and renders HTML."""
+    """Web route /admin/courses accepts session cookie and returns JSON."""
     client.post("/auth/login", data={"email": admin_user.email, "password": "Password@123"})
 
     resp = client.get("/admin/courses")
     assert resp.status_code == 200
-    assert resp.content_type.startswith("text/html")
-    assert "Quản trị Khóa học" in resp.get_data(as_text=True)
+    assert resp.is_json
 
 
 def test_admin_users_web_route_renders_html_with_session(
     client: FlaskClient, admin_user: User
 ) -> None:
-    """Web UI /admin/users accepts session cookie and renders HTML."""
+    """Web route /admin/users accepts session cookie and returns JSON."""
     client.post("/auth/login", data={"email": admin_user.email, "password": "Password@123"})
 
     resp = client.get("/admin/users")
     assert resp.status_code == 200
-    assert resp.content_type.startswith("text/html")
-    assert "Quản trị Tài khoản" in resp.get_data(as_text=True)
+    assert resp.is_json
 
 
 def test_admin_backups_web_route_renders_html_with_session(
     client: FlaskClient, admin_user: User
 ) -> None:
-    """Web UI /admin/backups accepts session cookie and renders HTML."""
+    """Web route /admin/backups accepts session cookie and returns JSON."""
     client.post("/auth/login", data={"email": admin_user.email, "password": "Password@123"})
 
     resp = client.get("/admin/backups")
     assert resp.status_code == 200
-    assert resp.content_type.startswith("text/html")
-    assert "Sao lưu" in resp.get_data(as_text=True)
+    assert resp.is_json

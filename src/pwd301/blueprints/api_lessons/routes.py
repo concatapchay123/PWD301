@@ -7,17 +7,23 @@ from typing import Any
 from flask import Response, jsonify, request
 
 from pwd301.blueprints.api_lessons import api_lesson_bp
+from pwd301.extensions import db
 from pwd301.models.course import Lesson, LessonProgress
 from pwd301.services.authorization_service import (
     get_authenticated_actor,
     instructor_required,
+    require_authenticated_actor,
     student_required,
 )
 from pwd301.services.exceptions import ForbiddenError, LessonValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.lesson_service import (
+    change_lesson_status,
+    create_lesson,
     get_lesson_detail,
     record_lesson_progress,
+    trash_lesson,
+    update_lesson,
 )
 
 
@@ -179,3 +185,62 @@ def detach_lesson_resource_api(lesson_id: str, resource_id: str) -> tuple[Respon
         session=db.session,
     )
     return jsonify({"detached": detached}), 200
+
+
+@api_lesson_bp.route("", methods=["POST"])
+@jwt_required
+@instructor_required
+def create_lesson_api() -> tuple[Response, int] | Response:
+    """Create a new lesson specifying course_id in request body (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    course_id = payload.get("course_id")
+    if not course_id:
+        raise LessonValidationError("course_id is required in request body.")
+    lesson = create_lesson(actor, course_id, payload, session=db.session)
+    return jsonify(_serialize_lesson(lesson)), 201
+
+
+@api_lesson_bp.route("/<lesson_id>", methods=["PUT", "PATCH"])
+@jwt_required
+@instructor_required
+def update_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Update editable lesson fields (title, content, duration, etc.) (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    lesson = update_lesson(actor, lesson_id, payload, session=db.session)
+    return jsonify(_serialize_lesson(lesson)), 200
+
+
+@api_lesson_bp.route("/<lesson_id>", methods=["DELETE"])
+@api_lesson_bp.route("/<lesson_id>/trash", methods=["POST"])
+@jwt_required
+@instructor_required
+def trash_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a lesson to TRASH (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason")
+    lesson = trash_lesson(actor, lesson_id, reason=reason, session=db.session)
+    return (
+        jsonify(
+            {
+                "message": "Lesson moved to TRASH.",
+                "lesson": _serialize_lesson(lesson, include_content=False),
+            }
+        ),
+        200,
+    )
+
+
+@api_lesson_bp.route("/<lesson_id>/status", methods=["POST"])
+@jwt_required
+@instructor_required
+def change_lesson_status_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Transition lesson status (DRAFT, PUBLISHED, HIDDEN) (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    new_status = str(payload.get("status") or payload.get("new_status") or "").strip().upper()
+    reason = payload.get("reason")
+    lesson = change_lesson_status(actor, lesson_id, new_status, reason=reason, session=db.session)
+    return jsonify(_serialize_lesson(lesson)), 200

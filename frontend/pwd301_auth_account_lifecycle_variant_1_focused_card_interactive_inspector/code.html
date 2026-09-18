@@ -1,0 +1,910 @@
+<!DOCTYPE html><html class="h-full" lang="vi" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PWD301 Auth &amp; Account Lifecycle - Productive Clarity</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "info-sky": "#0284C7",
+            "inverse-primary": "#c3c0ff",
+            "secondary-fixed-dim": "#c0c1ff",
+            "tertiary-container": "#00659a",
+            "on-surface-variant": "#464555",
+            "text-primary": "#0F172A",
+            "success-emerald": "#059669",
+            "surface-tint": "#4d44e3",
+            "on-secondary-fixed": "#07006c",
+            "warning-amber": "#D97706",
+            "surface-container-high": "#e2e7ff",
+            "border-subtle": "#E2E8F0",
+            "on-error-container": "#93000a",
+            "surface-variant": "#dae2fd",
+            "outline-variant": "#c7c4d8",
+            "on-surface": "#131b2e",
+            "surface-card": "#FFFFFF",
+            "primary-container": "#4f46e5",
+            "on-secondary-container": "#fffbff",
+            "on-tertiary-container": "#bedfff",
+            "surface-container-highest": "#dae2fd",
+            "error-container": "#ffdad6",
+            "text-muted": "#64748B",
+            "primary-fixed": "#e2dfff",
+            "tertiary": "#004c76",
+            "surface-container": "#eaedff",
+            "danger-rose": "#E11D48",
+            "surface-bright": "#faf8ff",
+            "secondary": "#4648d4",
+            "inverse-surface": "#283044",
+            "surface-dim": "#d2d9f4",
+            "surface-container-low": "#f2f3ff",
+            "primary-fixed-dim": "#c3c0ff",
+            "on-primary-fixed": "#0f0069",
+            "text-secondary": "#1E293B",
+            "on-tertiary": "#ffffff",
+            "error": "#ba1a1a",
+            "surface": "#faf8ff",
+            "primary": "#3525cd",
+            "tertiary-fixed": "#cce5ff",
+            "on-tertiary-fixed": "#001d31",
+            "on-background": "#131b2e",
+            "surface-canvas": "#F8FAFC",
+            "secondary-container": "#6063ee",
+            "outline": "#777587",
+            "inverse-on-surface": "#eef0ff",
+            "on-primary": "#ffffff",
+            "on-tertiary-fixed-variant": "#004b73",
+            "on-primary-fixed-variant": "#3323cc",
+            "secondary-fixed": "#e1e0ff",
+            "tertiary-fixed-dim": "#93ccff",
+            "on-primary-container": "#dad7ff",
+            "surface-container-lowest": "#ffffff",
+            "background": "#faf8ff",
+            "on-secondary": "#ffffff",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "panel": "14px",
+            "full": "9999px"
+          },
+          "fontFamily": {
+            "sans": ["Inter", "sans-serif"],
+            "heading": ["Plus Jakarta Sans", "sans-serif"]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .active-tab {
+      color: #3525cd !important;
+      border-color: #3525cd !important;
+      background-color: #ffffff;
+      font-weight: 700;
+    }
+    .tab-btn {
+      transition: all 0.2s ease-in-out;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body class="bg-surface-canvas text-text-primary min-h-screen flex flex-col font-sans antialiased selection:bg-primary selection:text-white">
+<!-- 1. Public Topbar cao 70px (Đồng bộ Brand & Security Token Status) -->
+<header class="h-[70px] bg-surface-card border-b border-border-subtle sticky top-0 z-50 flex items-center px-4 sm:px-8 shadow-xs">
+<div class="max-w-7xl w-full mx-auto flex items-center justify-between gap-4">
+<!-- Brand Logo -->
+<div class="flex items-center gap-3 shrink-0">
+<div class="size-10 rounded-xl bg-primary flex items-center justify-center text-white font-heading font-extrabold text-xl shadow-sm">
+          P
+        </div>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-heading font-bold text-text-primary text-base sm:text-lg tracking-tight">PWD301 Academy LMS</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-fixed text-primary">v2.4 LTS</span>
+</div>
+<span class="text-xs text-text-muted hidden sm:inline">Học viện Kỹ thuật Phần mềm &amp; Công nghệ Web</span>
+</div>
+</div>
+<!-- Center Security & Catalog Links -->
+<div class="hidden lg:flex items-center gap-6">
+
+
+</div>
+<!-- Right Action CTA -->
+<div class="flex items-center gap-3 shrink-0">
+<button class="h-11 px-4 sm:px-5 bg-primary hover:bg-surface-tint text-white text-sm font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex items-center gap-2 cursor-pointer" onclick="switchTab(3)">
+<span class="material-symbols-outlined text-base">person_add</span>
+<span class="">Đăng ký tài khoản</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Page Introduction & State Simulator Bar -->
+<div class="bg-surface-card border-b border-border-subtle">
+<div class="max-w-6xl mx-auto px-4 py-4 sm:py-6">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="px-2.5 py-0.5 text-xs font-bold rounded bg-surface-container text-primary uppercase tracking-wider">Design System 1 • Productive Clarity</span>
+<span class="text-xs text-text-muted">| Phân vùng Auth State Inspector</span>
+</div>
+<h1 class="text-2xl sm:text-3xl font-heading font-extrabold text-text-primary tracking-tight">PWD301 Auth &amp; Account Lifecycle</h1>
+<p class="text-sm text-text-muted mt-1">Giao diện điều khiển tập trung mô phỏng 6 trạng thái vòng đời tài khoản theo Rulebook Bảo mật PWD301.</p>
+</div>
+<!-- Role Badges info -->
+
+</div>
+<!-- 6 Interactive Lifecycle Tabs -->
+<nav aria-label="Lifecycle Tabs" class="mt-6 -mb-px flex space-x-1 sm:space-x-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-thin">
+<button class="tab-btn active-tab flex items-center gap-2 px-3.5 py-2.5 border-b-2 text-xs sm:text-sm whitespace-nowrap rounded-t-lg focus:outline-none" id="tab-btn-1" onclick="switchTab(1)">
+<span class="material-symbols-outlined text-base">login</span>
+          1. Đăng nhập chính
+        </button>
+
+<button class="tab-btn border-transparent text-text-muted hover:text-text-primary flex items-center gap-2 px-3.5 py-2.5 border-b-2 text-xs sm:text-sm whitespace-nowrap rounded-t-lg focus:outline-none" id="tab-btn-3" onclick="switchTab(3)">
+<span class="material-symbols-outlined text-base">how_to_reg</span>
+          3. Đăng ký tài khoản
+        </button>
+
+<button class="tab-btn border-transparent text-text-muted hover:text-text-primary flex items-center gap-2 px-3.5 py-2.5 border-b-2 text-xs sm:text-sm whitespace-nowrap rounded-t-lg focus:outline-none" id="tab-btn-5" onclick="switchTab(5)">
+<span class="material-symbols-outlined text-base">lock_reset</span>
+          5. Quên &amp; Đặt lại mật khẩu
+        </button>
+
+</nav>
+</div>
+</div>
+<!-- MAIN VIEWPORT CONTAINER -->
+<main class="flex-1 flex flex-col justify-center items-center px-4 py-8 sm:py-12">
+<div class="w-full max-w-lg">
+<!-- ================= TAB 1: LOGIN CHÍNH ================= -->
+<section class="tab-content active" id="tab-content-1">
+<div class="bg-surface-card rounded-panel border border-border-subtle p-6 sm:p-8 shadow-sm">
+<div class="text-center mb-6">
+<h2 class="text-2xl font-heading font-extrabold text-text-primary">Chào mừng trở lại</h2>
+<p class="text-sm text-text-muted mt-1">Đăng nhập tài khoản định danh PWD301 Academy LMS</p>
+</div>
+<form class="space-y-4" onsubmit="event.preventDefault(); simulateLoginSuccess();">
+<!-- Email -->
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="login-email">
+                Email học thuật / Giảng viên / Admin
+              </label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">mail</span>
+</span>
+<input class="w-full pl-10 pr-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary placeholder:text-slate-400 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="login-email" placeholder="tentaikhoan@fpt.edu.vn" required="" type="email">
+</div>
+</div>
+<!-- Password -->
+<div>
+<div class="flex items-center justify-between mb-1.5">
+<label class="text-xs font-semibold text-text-secondary uppercase tracking-wider" for="login-password">
+                  Mật khẩu bảo mật
+                </label>
+<button class="text-xs font-medium text-primary hover:underline focus:outline-none" onclick="switchTab(5)" type="button">
+                  Quên mật khẩu?
+                </button>
+</div>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">lock</span>
+</span>
+<input class="w-full pl-10 pr-11 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary placeholder:text-slate-400 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="login-password" placeholder="Nhập ít nhất 8 ký tự..." required="" type="password">
+<button class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-primary" onclick="togglePasswordVisibility('login-password', 'eye-icon-1')" type="button">
+<span class="material-symbols-outlined text-lg" id="eye-icon-1">visibility</span>
+</button>
+</div>
+</div>
+<!-- Remember Me & Security notice -->
+<div class="flex items-center justify-between pt-1">
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="rounded border-border-subtle text-primary focus:ring-primary size-4" type="checkbox">
+<span class="ml-2 text-xs sm:text-sm text-text-secondary">Ghi nhớ thiết bị an toàn (30 ngày)</span>
+</label>
+<span class="text-xs text-text-muted flex items-center gap-1" title="Token lưu trữ qua Cookie HttpOnly SameSite=Strict">
+<span class="material-symbols-outlined text-xs text-success-emerald">verified_user</span> HttpOnly
+              </span>
+</div>
+<!-- Submit CTA -->
+<button class="w-full h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex items-center justify-center gap-2 cursor-pointer mt-2" type="submit">
+<span class="material-symbols-outlined text-base">login</span>
+<span class="">Đăng nhập LMS</span>
+</button>
+</form>
+<!-- Notification container -->
+<div class="hidden mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2" id="login-feedback-box">
+<span class="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
+<div>
+<strong class="block font-semibold" id="login-role-alert">Đăng nhập thành công!</strong>
+<span id="login-role-detail" class="">Hệ thống đang phát hành HttpOnly Session Cookie và chuẩn bị điều hướng RBAC...</span>
+</div>
+</div>
+<!-- Quick Seed Demo Accounts -->
+<div class="mt-6 pt-5 border-t border-border-subtle">
+<div class="flex items-center justify-between mb-3">
+<span class="text-xs font-semibold uppercase tracking-wider text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">bolt</span>
+                Nạp nhanh tài khoản mẫu (Seed RBAC):
+              </span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+<!-- Seed Student -->
+<button class="text-left p-2.5 rounded-lg border border-border-subtle bg-surface-canvas hover:border-primary hover:bg-white transition-all group focus:outline-none focus:ring-1 focus:ring-primary" onclick="seedAccount('student1@pwd301.local', 'Password123!', 'Học viên: student1', 'ROLE_STUDENT -&gt; #/student/dashboard')" type="button">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-text-primary group-hover:text-primary">Học viên 1</span>
+<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold">SV</span>
+</div>
+<p class="text-[11px] text-text-muted truncate mt-0.5">student1@pwd301.local</p>
+</button>
+<!-- Seed Lecturer -->
+<button class="text-left p-2.5 rounded-lg border border-border-subtle bg-surface-canvas hover:border-primary hover:bg-white transition-all group focus:outline-none focus:ring-1 focus:ring-primary" onclick="seedAccount('instructor1@pwd301.local', 'Password123!', 'Giảng viên: instructor1', 'ROLE_INSTRUCTOR -&gt; #/instructor/dashboard')" type="button">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-text-primary group-hover:text-primary">Giảng viên 1</span>
+<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-semibold">GV</span>
+</div>
+<p class="text-[11px] text-text-muted truncate mt-0.5">instructor1@pwd301.local</p>
+</button>
+<!-- Seed Admin -->
+<button class="text-left p-2.5 rounded-lg border border-border-subtle bg-surface-canvas hover:border-primary hover:bg-white transition-all group focus:outline-none focus:ring-1 focus:ring-primary" onclick="seedAccount('admin@pwd301.local', 'Password123!', 'Quản trị viên: admin', 'ROLE_ADMIN -&gt; #/admin/governance')" type="button">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-text-primary group-hover:text-primary">Root Admin</span>
+<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">Admin</span>
+</div>
+<p class="text-[11px] text-text-muted truncate mt-0.5">admin@pwd301.local</p>
+</button>
+</div>
+</div>
+<div class="mt-5 text-center text-xs text-text-muted">
+            Chưa có tài khoản học thuật? 
+            <button class="text-primary font-semibold hover:underline" onclick="switchTab(3)" type="button">Đăng ký ngay</button>
+</div>
+</div>
+</section>
+<!-- ================= TAB 2: LOGIN LỖI (SECURITY ENUMERATION DEFENSE) ================= -->
+<section class="tab-content" id="tab-content-2">
+<div class="bg-surface-card rounded-panel border border-border-subtle p-6 sm:p-8 shadow-sm">
+<div class="text-center mb-5">
+<span class="inline-flex items-center justify-center size-12 rounded-full bg-red-100 text-danger-rose mb-2">
+<span class="material-symbols-outlined text-2xl">error_outline</span>
+</span>
+<h2 class="text-2xl font-heading font-extrabold text-text-primary">Đăng nhập không thành công</h2>
+<p class="text-xs text-text-muted mt-1">Trình diễn phản hồi chuẩn bảo mật phòng chống Email Enumeration</p>
+</div>
+<!-- Neutral Security Alert Banner -->
+<div class="mb-5 p-4 rounded-xl bg-red-50/80 border border-red-200 text-left">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-danger-rose text-xl shrink-0 mt-0.5">shield_lock</span>
+<div class="text-xs">
+<p class="font-bold text-danger-rose text-sm">Thông tin xác thực không hợp lệ</p>
+<p class="text-slate-700 mt-1 leading-relaxed">
+                  Email hoặc mật khẩu bạn đã nhập không chính xác. Vì lý do bảo mật phòng chống rà quét danh tính (Email Enumeration Mitigation), hệ thống PWD301 không chỉ rõ thông tin nào sai.
+                </p>
+<div class="mt-2 text-[11px] text-slate-500 font-mono bg-white/80 p-2 rounded border border-red-100">
+                  HTTP 401 Unauthorized • ErrorCode: AUTH_INVALID_CREDENTIALS
+                </div>
+</div>
+</div>
+</div>
+<form class="space-y-4" onsubmit="event.preventDefault(); switchTab(1);">
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                Email học thuật
+              </label>
+<input class="w-full px-4 h-11 text-sm bg-red-50/30 border border-red-300 rounded-lg text-text-primary focus:ring-2 focus:ring-danger-rose" type="email" value="alexander.wrong@fpt.edu.vn">
+</div>
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                Mật khẩu
+              </label>
+<input class="w-full px-4 h-11 text-sm bg-red-50/30 border border-red-300 rounded-lg text-text-primary focus:ring-2 focus:ring-danger-rose" type="password" value="incorrectpassword123">
+</div>
+<div class="flex items-center justify-between text-xs pt-1">
+<span class="text-text-muted">Số lần thử còn lại: <strong class="text-danger-rose font-bold">2/5 lần</strong></span>
+<button class="text-primary font-semibold hover:underline" onclick="switchTab(5)" type="button">Quên mật khẩu?</button>
+</div>
+<button class="w-full h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-center gap-2 cursor-pointer" type="submit">
+<span class="material-symbols-outlined text-base">refresh</span>
+<span class="">Thử lại với thông tin đúng</span>
+</button>
+</form>
+<div class="mt-5 p-3 rounded-lg bg-surface-canvas border border-border-subtle text-[12px] text-text-muted">
+<span class="font-semibold text-text-secondary">💡 Tiêu chuẩn Rulebook PWD301:</span>
+            Sau 5 lần đăng nhập sai liên tiếp, cơ chế IP Rate-Limiting &amp; Account Lockout tự động kích hoạt trong 15 phút.
+          </div>
+</div>
+</section>
+<!-- ================= TAB 3: ĐĂNG KÝ TÀI KHOẢN & CHECKLIST ================= -->
+<section class="tab-content" id="tab-content-3">
+<div class="bg-surface-card rounded-panel border border-border-subtle p-6 sm:p-8 shadow-sm">
+<div id="register-form-view">
+<div class="text-center mb-6">
+<h2 class="text-2xl font-heading font-extrabold text-text-primary">Tạo tài khoản LMS mới</h2>
+<p class="text-sm text-text-muted mt-1">Đăng ký tham gia hệ thống học liệu và đồ án môn PWD301</p>
+</div>
+<form class="space-y-4" onsubmit="event.preventDefault(); showRegisterSuccess();">
+<!-- Full Name -->
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="reg-name">
+                  Họ và tên đầy đủ
+                </label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">badge</span>
+</span>
+<input class="w-full pl-10 pr-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary placeholder:text-slate-400 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="reg-name" placeholder="Ví dụ: Đỗ Gia Hưng" required="" type="text">
+</div>
+</div>
+<!-- Academic Email -->
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="reg-email">
+                  Email học thuật (.edu.vn)
+                </label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">school</span>
+</span>
+<input class="w-full pl-10 pr-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary placeholder:text-slate-400 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="reg-email" placeholder="hungdg.se18@fpt.edu.vn" required="" type="email">
+</div>
+</div>
+<!-- Password with dynamic checklist -->
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="reg-password">
+                  Mật khẩu mạnh
+                </label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">password</span>
+</span>
+<input class="w-full pl-10 pr-11 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary placeholder:text-slate-400 focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="reg-password" oninput="validatePasswordPolicy(this.value)" placeholder="Tạo mật khẩu an toàn..." required="" type="password">
+<button class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-text-muted hover:text-text-primary" onclick="togglePasswordVisibility('reg-password', 'eye-icon-reg')" type="button">
+<span class="material-symbols-outlined text-lg" id="eye-icon-reg">visibility</span>
+</button>
+</div>
+<!-- Password Policy Checklist -->
+<div class="mt-2 p-3 bg-surface-canvas rounded-lg border border-border-subtle space-y-1.5">
+<div class="text-[11px] font-semibold text-text-muted mb-1">Tiêu chuẩn mật khẩu an toàn PWD301:</div>
+<div class="grid grid-cols-2 gap-1.5 text-xs">
+<div class="flex items-center gap-1.5 text-text-muted" id="check-len">
+<span class="material-symbols-outlined text-sm">radio_button_unchecked</span>
+<span class="">Ít nhất 8 ký tự</span>
+</div>
+<div class="flex items-center gap-1.5 text-text-muted" id="check-upper">
+<span class="material-symbols-outlined text-sm">radio_button_unchecked</span>
+<span class="">Chữ hoa (A-Z)</span>
+</div>
+<div class="flex items-center gap-1.5 text-text-muted" id="check-num">
+<span class="material-symbols-outlined text-sm">radio_button_unchecked</span>
+<span class="">Chữ số (0-9)</span>
+</div>
+<div class="flex items-center gap-1.5 text-text-muted" id="check-spec">
+<span class="material-symbols-outlined text-sm">radio_button_unchecked</span>
+<span class="">Ký tự đặc biệt (!@#$)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Confirm Password -->
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="reg-confirm">
+                  Xác nhận lại mật khẩu
+                </label>
+<input class="w-full px-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20" id="reg-confirm" placeholder="Nhập lại chính xác mật khẩu..." required="" type="password">
+</div>
+<!-- Terms acceptance -->
+<div class="pt-1">
+<label class="flex items-start text-xs text-text-muted cursor-pointer">
+<input class="rounded border-border-subtle text-primary focus:ring-primary size-4 mt-0.5" required="" type="checkbox">
+<span class="ml-2">Tôi đồng ý với Quy chế Đào tạo &amp; Điều khoản Bảo mật Dữ liệu Học viên PWD301 LMS.</span>
+</label>
+</div>
+<button class="w-full h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-center gap-2 cursor-pointer mt-2" type="submit">
+<span class="material-symbols-outlined text-base">how_to_reg</span>
+<span class="">Tạo tài khoản học thuật</span>
+</button>
+</form>
+<div class="mt-4 text-center text-xs text-text-muted">
+              Đã có tài khoản? 
+              <button class="text-primary font-semibold hover:underline" onclick="switchTab(1)" type="button">Quay lại Đăng nhập</button>
+</div>
+</div>
+<!-- State: 'Đã gửi email kích hoạt' -->
+<div class="hidden text-center py-4" id="register-sent-view">
+<div class="size-14 rounded-full bg-emerald-100 text-success-emerald mx-auto flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-3xl">mark_email_read</span>
+</div>
+<h3 class="text-xl font-heading font-bold text-text-primary">Đã gửi email kích hoạt tài khoản!</h3>
+<p class="text-xs sm:text-sm text-text-muted mt-2 max-w-sm mx-auto">
+              Hệ thống PWD301 đã gửi đường dẫn kích hoạt bảo mật tới hộp thư:
+              <strong class="block text-text-primary font-semibold mt-1" id="registered-email-display">hungdg.se18@fpt.edu.vn</strong>
+</p>
+<div class="mt-5 p-3 rounded-lg bg-surface-canvas border border-border-subtle text-xs text-text-secondary text-left space-y-1">
+<div class="flex items-center gap-2 text-info-sky font-semibold">
+<span class="material-symbols-outlined text-base">timer</span>
+                Hiệu lực liên kết: 24 giờ
+              </div>
+<p class="text-text-muted">Vui lòng kiểm tra hòm thư Chính (hoặc thư mục Spam) và nhấp vào liên kết để kích hoạt trạng thái ACTIVE.</p>
+</div>
+<div class="mt-6 flex flex-col sm:flex-row gap-3">
+<button class="flex-1 h-11 bg-primary text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-surface-tint transition-all flex items-center justify-center gap-2" onclick="switchTab(4)">
+<span class="material-symbols-outlined text-base">open_in_new</span>
+                Chuyển tới Tab Mô phỏng Xác thực
+              </button>
+<button class="h-11 px-4 border border-border-subtle text-text-secondary hover:bg-surface-canvas rounded-lg text-xs font-semibold" onclick="resetRegisterView()">
+                Đăng ký email khác
+              </button>
+</div>
+</div>
+</div>
+</section>
+<!-- ================= TAB 4: XÁC THỰC EMAIL (2 TRẠNG THÁI) ================= -->
+<section class="tab-content" id="tab-content-4">
+<div class="bg-surface-card rounded-panel border border-border-subtle p-6 sm:p-8 shadow-sm">
+<div class="flex items-center justify-between border-b border-border-subtle pb-4 mb-6">
+<div>
+<h2 class="text-xl font-heading font-extrabold text-text-primary">Xác thực Email (Verify Email)</h2>
+<p class="text-xs text-text-muted">Mô phỏng token kích hoạt từ liên kết URL</p>
+</div>
+<!-- Sub-state Switcher for Demo Inspector -->
+<div class="inline-flex rounded-lg bg-surface-canvas p-1 border border-border-subtle">
+<button class="px-2.5 py-1 text-xs font-semibold rounded-md bg-white text-primary shadow-xs" id="substate-valid-btn" onclick="showVerifyState('valid')">Hợp lệ</button>
+<button class="px-2.5 py-1 text-xs font-semibold rounded-md text-text-muted hover:text-text-primary" id="substate-expired-btn" onclick="showVerifyState('expired')">Hết hạn</button>
+</div>
+</div>
+<!-- State 4A: Xác thực thành công -->
+<div class="text-center py-4" id="verify-state-valid">
+<div class="size-16 rounded-full bg-emerald-100 text-success-emerald mx-auto flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-3xl">verified</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-success-emerald uppercase tracking-wider">
+              Token Verified • SHA-256 Valid
+            </span>
+<h3 class="text-2xl font-heading font-extrabold text-text-primary mt-3">Xác thực tài khoản thành công!</h3>
+<p class="text-xs sm:text-sm text-text-muted mt-2 max-w-sm mx-auto">
+              Tài khoản học thuật của bạn đã được kích hoạt trạng thái <strong>ACTIVE</strong>. Bạn đã có toàn quyền truy cập tài liệu và nộp bài tập.
+            </p>
+<div class="mt-6 p-3 bg-surface-canvas rounded-xl border border-border-subtle text-left text-xs space-y-1.5">
+<div class="flex justify-between">
+<span class="text-text-muted">Học viên:</span>
+<span class="font-semibold text-text-primary">Nguyễn Minh Anh</span>
+</div>
+<div class="flex justify-between">
+<span class="text-text-muted">Email:</span>
+<span class="font-mono text-text-primary">minhanh.student@fpt.edu.vn</span>
+</div>
+<div class="flex justify-between">
+<span class="text-text-muted">Vai trò khởi tạo:</span>
+<span class="font-semibold text-primary">ROLE_STUDENT</span>
+</div>
+</div>
+<button class="w-full mt-6 h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2" onclick="switchTab(1)">
+<span class="material-symbols-outlined text-base">login</span>
+<span class="">Đăng nhập ngay vào Không gian học tập</span>
+</button>
+</div>
+<!-- State 4B: Link hết hạn / Token không hợp lệ -->
+<div class="hidden text-center py-4" id="verify-state-expired">
+<div class="size-16 rounded-full bg-amber-100 text-warning-amber mx-auto flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-3xl">hourglass_disabled</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-warning-amber uppercase tracking-wider">
+              Error 410 • Activation Token Expired
+            </span>
+<h3 class="text-2xl font-heading font-extrabold text-text-primary mt-3">Đường dẫn kích hoạt đã hết hạn</h3>
+<p class="text-xs sm:text-sm text-text-muted mt-2 max-w-sm mx-auto leading-relaxed">
+              Vì chính sách bảo mật của PWD301 Academy, token kích hoạt chỉ có hiệu lực trong vòng 24 giờ. Vui lòng yêu cầu hệ thống cấp phát mã kích hoạt mới.
+            </p>
+<div class="mt-6 p-4 bg-amber-50/50 rounded-xl border border-amber-200 text-left">
+<label class="block text-xs font-semibold text-text-secondary uppercase mb-1">Gửi lại liên kết vào email của bạn</label>
+<div class="flex gap-2">
+<input class="flex-1 h-10 text-xs sm:text-sm bg-white border border-border-subtle rounded-lg px-3 text-text-secondary" readonly="" type="email" value="minhanh.student@fpt.edu.vn">
+<button class="h-10 px-4 bg-warning-amber hover:bg-amber-600 text-white font-semibold text-xs rounded-lg transition-colors flex items-center gap-1 shrink-0" onclick="triggerResendEmail(this)">
+<span class="material-symbols-outlined text-sm">forward_to_inbox</span>
+<span class="">Gửi lại</span>
+</button>
+</div>
+<p class="hidden mt-2 text-xs text-emerald-700 font-medium" id="resend-success-msg">✓ Đã gửi email kích hoạt mới thành công!</p>
+</div>
+<div class="mt-6 flex justify-center">
+<button class="text-xs text-text-muted hover:text-primary font-medium flex items-center gap-1" onclick="switchTab(1)">
+<span class="material-symbols-outlined text-sm">arrow_back</span> Quay lại màn hình đăng nhập
+              </button>
+</div>
+</div>
+</div>
+</section>
+<!-- ================= TAB 5: QUÊN & ĐẶT LẠI MẬT KHẨU ================= -->
+<section class="tab-content" id="tab-content-5">
+<div class="bg-surface-card rounded-panel border border-border-subtle p-6 sm:p-8 shadow-sm">
+<!-- Sub-Flow Toggle -->
+<div class="flex items-center justify-between border-b border-border-subtle pb-3 mb-5">
+<h2 class="text-xl font-heading font-extrabold text-text-primary">Khôi phục mật khẩu</h2>
+<div class="inline-flex rounded-lg bg-surface-canvas p-1 border border-border-subtle">
+<button class="px-2 py-1 text-xs font-semibold rounded bg-white text-primary shadow-xs" id="forgot-flow-req-btn" onclick="showForgotSubflow('request')">1. Gửi Yêu cầu</button>
+<button class="px-2 py-1 text-xs font-semibold rounded text-text-muted hover:text-text-primary" id="forgot-flow-reset-btn" onclick="showForgotSubflow('reset')">2. Nhập Mật khẩu Mới</button>
+</div>
+</div>
+<!-- Step 5A: Form yêu cầu trung tính (Neutral Password Reset Request) -->
+<div id="forgot-step-request">
+<p class="text-xs sm:text-sm text-text-muted mb-4 leading-relaxed">
+              Nhập email học thuật đã đăng ký. Hệ thống sẽ cấp một liên kết khôi phục chỉ sử dụng một lần (One-time secure token) có thời hạn 15 phút.
+            </p>
+<form class="space-y-4" onsubmit="event.preventDefault(); showNeutralForgotResponse();">
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="forgot-email">
+                  Email định danh PWD301
+                </label>
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-muted">
+<span class="material-symbols-outlined text-lg">mark_email_unread</span>
+</span>
+<input class="w-full pl-10 pr-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20" id="forgot-email" placeholder="tentaikhoan@fpt.edu.vn" required="" type="email">
+</div>
+</div>
+<button class="w-full h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-center gap-2 cursor-pointer" type="submit">
+<span class="material-symbols-outlined text-base">send</span>
+<span class="">Gửi hướng dẫn đặt lại mật khẩu</span>
+</button>
+</form>
+<!-- Neutral message box (Anti-enumeration standard) -->
+<div class="hidden mt-4 p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-900 space-y-1" id="forgot-neutral-notice">
+<div class="flex items-center gap-2 font-bold text-blue-800">
+<span class="material-symbols-outlined text-base">info</span>
+                Thông báo tiếp nhận yêu cầu an toàn
+              </div>
+<p class="leading-relaxed">
+                Nếu địa chỉ email này tồn tại trong cơ sở dữ liệu học viện, một thư điện tử chứa liên kết đặt lại mật khẩu an toàn đã được gửi. Để bảo mật tính riêng tư, hệ thống sẽ không thông báo email có tồn tại hay không.
+              </p>
+<div class="pt-2 text-right">
+<button class="text-xs font-bold text-primary hover:underline" onclick="showForgotSubflow('reset')">Tiếp tục qua Bước 2 (Mô phỏng nhập link từ email) →</button>
+</div>
+</div>
+<div class="mt-6 text-center text-xs text-text-muted">
+<button class="text-text-secondary hover:text-primary font-medium flex items-center justify-center gap-1 mx-auto" onclick="switchTab(1)" type="button">
+<span class="material-symbols-outlined text-sm">arrow_back</span> Quay lại Đăng nhập
+              </button>
+</div>
+</div>
+<!-- Step 5B: Form tạo mật khẩu mới an toàn -->
+<div class="hidden" id="forgot-step-reset">
+<div class="mb-4">
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">lock_clock</span> Token hợp lệ (Còn 14:22)
+              </span>
+<h3 class="text-lg font-heading font-bold text-text-primary mt-2">Thiết lập mật khẩu mới</h3>
+<p class="text-xs text-text-muted">Mật khẩu mới không được trùng với 3 mật khẩu đã sử dụng gần nhất.</p>
+</div>
+<form class="space-y-4" onsubmit="event.preventDefault(); showResetPasswordSuccess();">
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="new-pass">
+                  Mật khẩu mới
+                </label>
+<input class="w-full px-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20" id="new-pass" placeholder="Nhập ít nhất 8 ký tự kèm số và ký tự đặc biệt" required="" type="password">
+</div>
+<div>
+<label class="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5" for="confirm-new-pass">
+                  Xác nhận lại mật khẩu mới
+                </label>
+<input class="w-full px-4 h-11 text-sm bg-surface-canvas border border-border-subtle rounded-lg text-text-primary focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20" id="confirm-new-pass" placeholder="Nhập lại mật khẩu mới..." required="" type="password">
+</div>
+<div class="p-3 bg-surface-canvas rounded-lg border border-border-subtle text-xs text-text-muted space-y-1">
+<div class="flex items-center gap-1.5 text-text-secondary font-medium">
+<span class="material-symbols-outlined text-sm text-info-sky">lock</span> Hủy hiệu lực phiên đăng nhập cũ
+                </div>
+<p class="">Tất cả các phiên làm việc trên các thiết bị khác sẽ được tự động đăng xuất (Revoke Refresh Tokens).</p>
+</div>
+<button class="w-full h-11 bg-primary hover:bg-surface-tint text-white font-semibold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer" type="submit">
+<span class="material-symbols-outlined text-base">check_circle</span>
+<span class="">Cập nhật mật khẩu &amp; Đăng nhập</span>
+</button>
+</form>
+</div>
+</div>
+</section>
+<!-- ================= TAB 6: TÀI KHOẢN TẠM KHÓA (SUSPENDED) ================= -->
+<section class="tab-content" id="tab-content-6">
+<div class="bg-surface-card rounded-panel border border-red-200 p-6 sm:p-8 shadow-sm">
+<div class="text-center">
+<div class="size-16 rounded-full bg-red-100 text-danger-rose mx-auto flex items-center justify-center mb-3">
+<span class="material-symbols-outlined text-3xl">gavel</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-danger-rose uppercase tracking-wider">
+              Status: ACCOUNT_SUSPENDED (Chặn truy cập)
+            </span>
+<h2 class="text-2xl font-heading font-extrabold text-text-primary mt-3">Tài khoản đang bị tạm khóa</h2>
+<p class="text-xs sm:text-sm text-text-muted mt-2 max-w-sm mx-auto leading-relaxed">
+              Tài khoản học thuật của bạn đang trong trạng thái tạm ngưng do quy định kiểm toán bảo mật hoặc yêu cầu từ Ban Đào tạo PWD301.
+            </p>
+</div>
+<!-- Reason & Security Policy Card -->
+<div class="mt-6 p-4 rounded-xl bg-slate-50 border border-border-subtle text-xs space-y-3">
+<div class="flex justify-between items-center pb-2 border-b border-border-subtle">
+<span class="text-text-muted">Mã hồ sơ tạm dừng:</span>
+<span class="font-mono font-bold text-text-primary">#SUSP-2025-PWD-8841</span>
+</div>
+<div class="flex justify-between items-center pb-2 border-b border-border-subtle">
+<span class="text-text-muted">Thời điểm áp dụng:</span>
+<span class="text-text-secondary font-medium">10:45 AM - Hôm nay</span>
+</div>
+<div>
+<span class="text-text-muted block mb-1">Quy định Bảo mật Thông tin (Non-disclosure):</span>
+<p class="text-text-secondary leading-relaxed bg-white p-2.5 rounded border border-border-subtle text-[11px]">
+                Theo chính sách bảo mật thông tin nội bộ PWD301, giao diện công khai <strong>không hiển thị chi tiết audit/security trace logs hoặc lý do vi phạm chi tiết</strong> để ngăn ngừa phân tích kỹ thuật đảo ngược lỗ hổng.
+              </p>
+</div>
+</div>
+<!-- Contact Designated Admin Box -->
+<div class="mt-5 p-4 rounded-xl bg-primary-fixed/30 border border-primary-fixed text-xs space-y-2">
+<div class="flex items-center gap-2 text-primary font-bold text-sm">
+<span class="material-symbols-outlined text-base">support_agent</span>
+              Thông tin liên hệ giải quyết khiếu nại:
+            </div>
+<p class="text-text-secondary">
+              Vui lòng mang theo Thẻ sinh viên/Giảng viên và liên hệ trực tiếp cán bộ quản trị hệ thống:
+            </p>
+<div class="bg-white p-3 rounded-lg border border-border-subtle flex items-center justify-between">
+<div>
+<p class="font-bold text-text-primary">Admin: Lê Thu Hà</p>
+<p class="text-[11px] text-text-muted">Phòng Khảo thí &amp; Đảm bảo chất lượng phần mềm PWD301</p>
+<p class="text-[11px] font-mono text-primary mt-0.5">halth.admin@fpt.edu.vn | Hotline: (024) 7300 1866</p>
+</div>
+<a class="px-3 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg hover:bg-surface-tint transition-all shrink-0" href="mailto:halth.admin@fpt.edu.vn">
+                Gửi Mail
+              </a>
+</div>
+</div>
+<div class="mt-6 flex flex-col sm:flex-row gap-3">
+<button class="w-full h-11 bg-surface-canvas hover:bg-slate-100 text-text-primary font-semibold text-xs rounded-lg border border-border-subtle transition-all flex items-center justify-center gap-2" onclick="switchTab(1)">
+<span class="material-symbols-outlined text-base">arrow_back</span>
+<span class="">Trở về Đăng nhập tài khoản khác</span>
+</button>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- 4. Thanh Ghi Chú Quy Chuẩn Bảo Mật Hệ Thống Web Session PWD301 -->
+
+<!-- 5. Footer Chuẩn Học Thuật PWD301 -->
+<footer class="bg-surface-card border-t border-border-subtle py-6 px-4 text-center text-xs text-text-muted">
+<div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+<div class="flex items-center gap-2">
+<div class="size-5 rounded bg-primary text-white text-[11px] font-bold flex items-center justify-center">P</div>
+<span class="font-medium text-text-secondary">© 2025 PWD301 Academy LMS. Bản quyền thuộc Bộ môn Phát triển Web Tiên tiến.</span>
+</div>
+<div class="flex items-center gap-4 text-text-muted">
+<a class="hover:text-primary transition-colors" href="#">Điều khoản dịch vụ</a>
+<span class="">•</span>
+<a class="hover:text-primary transition-colors" href="#">Chính sách bảo mật Session</a>
+<span class="">•</span>
+<a class="hover:text-primary transition-colors" href="#">Hỗ trợ kỹ thuật: support-pwd301@fpt.edu.vn</a>
+</div>
+</div>
+</footer>
+<!-- JAVASCRIPT MICRO-INTERACTIONS & SEED ENGINE -->
+<script>
+    // Tab Switcher Logic
+    function switchTab(tabIndex) {
+      for (let i = 1; i <= 6; i++) {
+        const btn = document.getElementById(`tab-btn-${i}`);
+        const content = document.getElementById(`tab-content-${i}`);
+        
+        if (i === tabIndex) {
+          btn.classList.add('active-tab');
+          btn.classList.remove('border-transparent', 'text-text-muted');
+          content.classList.add('active');
+        } else {
+          btn.classList.remove('active-tab');
+          btn.classList.add('border-transparent', 'text-text-muted');
+          content.classList.remove('active');
+        }
+      }
+    }
+
+    // Toggle Password Visibility
+    function togglePasswordVisibility(inputId, iconId) {
+      const input = document.getElementById(inputId);
+      const icon = document.getElementById(iconId);
+      if (!input || !icon) return;
+
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.textContent = 'visibility_off';
+      } else {
+        input.type = 'password';
+        icon.textContent = 'visibility';
+      }
+    }
+
+    // Seed Account Quick Action
+    function seedAccount(email, password, roleName, redirectPath) {
+      const emailInput = document.getElementById('login-email');
+      const passInput = document.getElementById('login-password');
+      const feedbackBox = document.getElementById('login-feedback-box');
+      const roleAlert = document.getElementById('login-role-alert');
+      const roleDetail = document.getElementById('login-role-detail');
+
+      emailInput.value = email;
+      passInput.value = password;
+
+      feedbackBox.classList.remove('hidden');
+      roleAlert.textContent = `Đã nạp thông tin mẫu: ${roleName}`;
+      roleDetail.textContent = `Target RBAC Route: ${redirectPath} (Bấm 'Đăng nhập LMS' để xác thực)`;
+      
+      // Auto focus button
+      emailInput.classList.add('border-primary');
+      setTimeout(() => emailInput.classList.remove('border-primary'), 1000);
+    }
+
+    // Real & Interactive Login Handler
+    async function simulateLoginSuccess() {
+      const feedbackBox = document.getElementById('login-feedback-box');
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const roleAlert = document.getElementById('login-role-alert');
+      const roleDetail = document.getElementById('login-role-detail');
+
+      feedbackBox.classList.remove('hidden');
+      roleAlert.textContent = "Đang xác thực thông tin...";
+      roleDetail.textContent = `Đang kết nối tới máy chủ PWD301 API...`;
+
+      const api = window.ApiClient || (window.parent && window.parent.ApiClient);
+      try {
+        if (api) {
+          const res = await api.login(email, password, true);
+          feedbackBox.classList.remove('hidden');
+          roleAlert.textContent = "Xác thực Session Token thành công!";
+          roleDetail.textContent = `Cấp phát HttpOnly Cookie thành công cho: ${email}. Đang chuyển tiếp...`;
+          const router = (window.parent && window.parent.app) || window.AppRouter;
+          if (router && typeof router.refreshCurrentUser === 'function') {
+            await router.refreshCurrentUser();
+          }
+          const user = (res && res.user) || (router && router.currentUser);
+          let targetHash = '#/student/dashboard';
+          if (user) {
+            if (user.primary_role === 'ADMIN' || (user.role_codes && user.role_codes.includes('ADMIN'))) {
+              targetHash = '#/admin/governance';
+            } else if (user.primary_role === 'INSTRUCTOR' || (user.role_codes && user.role_codes.includes('INSTRUCTOR'))) {
+              targetHash = '#/instructor/dashboard';
+            }
+          }
+          setTimeout(() => {
+            if (window.parent && window.parent.location) {
+              window.parent.location.hash = targetHash;
+            } else {
+              window.location.hash = targetHash;
+            }
+          }, 400);
+        } else {
+          roleAlert.textContent = "Xác thực Session Token thành công!";
+          roleDetail.textContent = `Cấp phát HttpOnly Cookie thành công cho: ${email}.`;
+        }
+      } catch (err) {
+        feedbackBox.classList.remove('hidden');
+        feedbackBox.classList.remove('bg-emerald-50', 'border-emerald-200', 'text-emerald-800');
+        feedbackBox.classList.add('bg-rose-50', 'border-rose-200', 'text-rose-800');
+        roleAlert.textContent = "Đăng nhập không thành công";
+        roleDetail.textContent = err.message || "Email hoặc mật khẩu không chính xác.";
+      }
+    }
+
+    // Dynamic Password Policy Checklist
+    function validatePasswordPolicy(val) {
+      const checkLen = document.getElementById('check-len');
+      const checkUpper = document.getElementById('check-upper');
+      const checkNum = document.getElementById('check-num');
+      const checkSpec = document.getElementById('check-spec');
+
+      const setValid = (el, valid) => {
+        const icon = el.querySelector('.material-symbols-outlined');
+        if (valid) {
+          el.className = "flex items-center gap-1.5 text-success-emerald font-medium";
+          icon.textContent = "check_circle";
+        } else {
+          el.className = "flex items-center gap-1.5 text-text-muted";
+          icon.textContent = "radio_button_unchecked";
+        }
+      };
+
+      setValid(checkLen, val.length >= 8);
+      setValid(checkUpper, /[A-Z]/.test(val));
+      setValid(checkNum, /[0-9]/.test(val));
+      setValid(checkSpec, /[!@#$%^&*(),.?":{}|<>]/.test(val));
+    }
+
+    // Register flow state change
+    function showRegisterSuccess() {
+      const regEmail = document.getElementById('reg-email').value || "hungdg.se18@fpt.edu.vn";
+      document.getElementById('registered-email-display').textContent = regEmail;
+      document.getElementById('register-form-view').classList.add('hidden');
+      document.getElementById('register-sent-view').classList.remove('hidden');
+    }
+
+    function resetRegisterView() {
+      document.getElementById('register-form-view').classList.remove('hidden');
+      document.getElementById('register-sent-view').classList.add('hidden');
+    }
+
+    // Verification Sub-state handler
+    function showVerifyState(state) {
+      const validBox = document.getElementById('verify-state-valid');
+      const expiredBox = document.getElementById('verify-state-expired');
+      const btnValid = document.getElementById('substate-valid-btn');
+      const btnExpired = document.getElementById('substate-expired-btn');
+
+      if (state === 'valid') {
+        validBox.classList.remove('hidden');
+        expiredBox.classList.add('hidden');
+        btnValid.className = "px-2.5 py-1 text-xs font-semibold rounded-md bg-white text-primary shadow-xs";
+        btnExpired.className = "px-2.5 py-1 text-xs font-semibold rounded-md text-text-muted hover:text-text-primary";
+      } else {
+        validBox.classList.add('hidden');
+        expiredBox.classList.remove('hidden');
+        btnExpired.className = "px-2.5 py-1 text-xs font-semibold rounded-md bg-white text-warning-amber shadow-xs";
+        btnValid.className = "px-2.5 py-1 text-xs font-semibold rounded-md text-text-muted hover:text-text-primary";
+      }
+    }
+
+    function triggerResendEmail(btn) {
+      btn.innerHTML = `<span class="material-symbols-outlined text-sm animate-spin">sync</span> Đang gửi...`;
+      setTimeout(() => {
+        btn.innerHTML = `<span class="material-symbols-outlined text-sm">done</span> Đã gửi`;
+        document.getElementById('resend-success-msg').classList.remove('hidden');
+      }, 700);
+    }
+
+    // Forgot password subflows
+    function showForgotSubflow(step) {
+      const reqView = document.getElementById('forgot-step-request');
+      const resetView = document.getElementById('forgot-step-reset');
+      const reqBtn = document.getElementById('forgot-flow-req-btn');
+      const resetBtn = document.getElementById('forgot-flow-reset-btn');
+
+      if (step === 'request') {
+        reqView.classList.remove('hidden');
+        resetView.classList.add('hidden');
+        reqBtn.className = "px-2 py-1 text-xs font-semibold rounded bg-white text-primary shadow-xs";
+        resetBtn.className = "px-2 py-1 text-xs font-semibold rounded text-text-muted hover:text-text-primary";
+      } else {
+        reqView.classList.add('hidden');
+        resetView.classList.remove('hidden');
+        resetBtn.className = "px-2 py-1 text-xs font-semibold rounded bg-white text-primary shadow-xs";
+        reqBtn.className = "px-2 py-1 text-xs font-semibold rounded text-text-muted hover:text-text-primary";
+      }
+    }
+
+    function showNeutralForgotResponse() {
+      document.getElementById('forgot-neutral-notice').classList.remove('hidden');
+    }
+
+    function showResetPasswordSuccess() {
+      alert("Mật khẩu mới đã được cập nhật an toàn và thu hồi các phiên đăng nhập cũ. Đang quay lại màn hình đăng nhập!");
+      switchTab(1);
+    }
+  </script>
+
+
+</body></html>

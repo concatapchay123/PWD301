@@ -4,8 +4,8 @@ Implements business logic for TASK-020:
 - Fail-closed security validation (files must be ACTIVE, PRESENT, and PASS malware scans).
 - OpenXML DOCX parsing using standard library zipfile and xml.etree.ElementTree.
 - Resilient PDF text extraction via pypdf with fallback content stream token extraction.
-- Pattern matcher engine for 5 question types (SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE,
-  SHORT_ANSWER, ESSAY) recognizing stems, choices, answers, difficulty, points, explanations.
+- Pattern matcher engine for 4 objective question types (SINGLE_CHOICE, MULTIPLE_CHOICE,
+  TRUE_FALSE, SHORT_ANSWER) recognizing stems, choices, answers, difficulty, points, explanations.
 - Duplicate detection engine using SHA-256 exact hashes and difflib.SequenceMatcher.
 - Review workflow and atomic database commit into canonical Question Bank entities.
 - Zero PK leakage conforming to ADR-002 (public UUID boundaries).
@@ -51,6 +51,7 @@ from pwd301.models.question_bank import Question
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import require_course_manager
 from pwd301.services.exceptions import (
+    AssessmentLockedError,
     CourseNotFoundError,
     DocumentImportError,
     DocumentImportJobNotFoundError,
@@ -394,8 +395,8 @@ def parse_question_blocks(lines: list[str]) -> list[ParsedQuestionDraft]:
 
     # Step 2: Parse each block into a ParsedQuestionDraft
     parsed_questions: list[ParsedQuestionDraft] = []
-    for idx, (_ord_val, blk_lines) in enumerate(blocks, start=1):
-        draft = _parse_single_block(idx, blk_lines)
+    for _ord_val, blk_lines in blocks:
+        draft = _parse_single_block(len(parsed_questions) + 1, blk_lines)
 
         if draft:
             parsed_questions.append(draft)
@@ -525,14 +526,23 @@ def _parse_single_block(ordinal: int, lines: list[str]) -> ParsedQuestionDraft |
         full_stem = POINTS_PATTERN.sub("", full_stem).strip()
 
     # Clean leading "Câu 1:", "Question 1." from the stem
+    has_header = False
     for pat in STEM_PATTERNS:
         m = pat.match(full_stem)
         if m:
+            has_header = True
             full_stem = m.group(2).strip()
             break
+    if not has_header:
+        has_header = any(any(pat.match(line) for pat in STEM_PATTERNS) for line in lines)
 
     if not full_stem:
         warnings.append("Question stem is empty.")
+
+    # If this block has neither question header, nor choices, nor answers,
+    # nor explicit question tags, it is prose/preamble text and not a question structure.
+    if not (has_header or choices or detected_answers or explicit_type or diff_match or pts_match):
+        return None
 
     # Determine Question Type if not explicitly tagged
     if explicit_type:
@@ -551,10 +561,7 @@ def _parse_single_block(ordinal: int, lines: list[str]) -> ParsedQuestionDraft |
         else:
             question_type = "SINGLE_CHOICE"
     else:
-        if detected_answers and len(detected_answers[0]) < 100:
-            question_type = "SHORT_ANSWER"
-        else:
-            question_type = "ESSAY"
+        question_type = "SHORT_ANSWER"
 
     # Set choice correctness
     correct_count = 0
@@ -582,7 +589,9 @@ def _parse_single_block(ordinal: int, lines: list[str]) -> ParsedQuestionDraft |
         confidence -= 0.30
         review_state = "INVALID"
 
-    if question_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
+    if question_type == "ESSAY":
+        confidence += 0.30
+    elif question_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE"):
         if len(choices) >= 2:
             confidence += 0.15
         else:
@@ -606,8 +615,6 @@ def _parse_single_block(ordinal: int, lines: list[str]) -> ParsedQuestionDraft |
             confidence = min(confidence, 0.70)
             warnings.append("No expected answer key detected for SHORT_ANSWER.")
             review_state = "NEEDS_REVIEW"
-    elif question_type == "ESSAY":
-        confidence += 0.25
 
     confidence = max(0.0, min(1.0, confidence))
 
@@ -908,10 +915,26 @@ def create_import_job(
             "Only DOCX and PDF documents are supported."
         )
 
+    target_assessment = None
+    if draft_assessment_id is not None:
+        from pwd301.services.assessment_service import _resolve_assessment
+
+        target_assessment = _resolve_assessment(draft_assessment_id, session=sess)
+        if target_assessment is None:
+            raise DocumentImportError(f"Target assessment '{draft_assessment_id}' not found.")
+        if target_assessment.course_id != course.id:
+            raise DocumentImportError("Draft assessment does not belong to the target course.")
+        if target_assessment.first_attempt_started_at is not None:
+            raise AssessmentLockedError(
+                "Cannot import questions into an assessment whose attempts have started "
+                "(Invariant 14)."
+            )
+
     job = DocumentImportJob(
         course_id=course.id,
         source_file_asset_id=asset.id,
         requested_by_user_id=actor.id,
+        draft_assessment_id=target_assessment.id if target_assessment is not None else None,
         document_type=doc_type,
         status="QUEUED",
         parser_version="pwd301.parser.v1",
@@ -1319,6 +1342,20 @@ def commit_import_job(
             iq.approved_question_id = created_q.id
             created_question_public_ids.append(str(created_q.public_id))
             imported_count += 1
+
+            if job.draft_assessment_id is not None:
+                from pwd301.services.assessment_service import assign_question
+
+                assign_question(
+                    actor=actor,
+                    assessment_id=job.draft_assessment_id,
+                    payload={
+                        "question_id": created_q.id,
+                        "points": float(points) if points else 1.0,
+                        "source_type": "IMPORT",
+                    },
+                    session=sess,
+                )
 
         job.status = "COMPLETED"
         job.completed_at = utc_now()

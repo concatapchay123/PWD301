@@ -715,15 +715,13 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             is_current=True,
             created_by_user_id=instructor1.id,
             content=(
-                "Hãy giải thích tại sao hệ thống Web đa luồng cần sử dụng Connection Pooling "
-                "khi kết nối tới Microsoft SQL Server, "
-                "và rủi ro nếu ứng dụng không giải phóng kết nối đúng cách là gì?"
+                "Hãy phân tích vai trò và rủi ro của Connection Pooling "
+                "trong kiến trúc ứng dụng web đa luồng."
             ),
             question_type="ESSAY",
             explanation=(
-                "Tiêu chí chấm: 1) Tái sử dụng socket connection giảm handshake overhead; "
-                "2) Kiểm soát số lượng kết nối đồng thời bảo vệ DB; "
-                "3) Rủi ro Connection leak gây cạn kiệt pool khiến request mới bị timeout."
+                "Connection Pooling giúp giảm overhead kết nối nhưng có nguy cơ "
+                "rò rỉ kết nối nếu không được giải phóng."
             ),
             change_type="INITIAL",
             approved_at=now,
@@ -994,12 +992,11 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 saved_at=now - timedelta(days=4, hours=1, minutes=42),
                 answer_text=(
                     "Alembic"
-                    if q_rev.question_type == "SHORT_ANSWER"
+                    if q_key == "Q4"
                     else (
-                        "Connection pooling giúp tái sử dụng socket TCP và TLS handshake, "
-                        "đồng thời giới hạn số lượng kết nối bảo vệ SQL Server. "
-                        "Rủi ro connection leak làm cạn kiệt tài nguyên khiến request mới timeout."
-                        if q_rev.question_type == "ESSAY"
+                        "Connection pooling giúp tái sử dụng socket kết nối, "
+                        "giảm độ trễ TCP handshake nhưng cần quản lý timeout chặt chẽ."
+                        if q_key == "Q5"
                         else None
                     )
                 ),
@@ -1009,25 +1006,33 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             session.add(ans)
             session.flush()
 
-            # Grade: 4.0 for all
-            session.add(
-                AttemptQuestionGrade(
-                    attempt_question_id=aq.id,
-                    awarded_points=decimal.Decimal("4.0000"),
-                    grading_status=(
-                        "MANUAL_GRADED" if q_rev.question_type == "ESSAY" else "AUTO_GRADED"
-                    ),
-                    grading_rule=("MANUAL" if q_rev.question_type == "ESSAY" else "ORIGINAL"),
-                    graded_against_revision_id=q_rev.id,
-                    graded_by_user_id=(instructor1.id if q_rev.question_type == "ESSAY" else None),
-                    graded_at=now - timedelta(days=4, hours=1),
-                    manual_reason=(
-                        "Phân tích xuất sắc, nêu rõ ưu điểm socket reuse và nguy cơ cạn kiệt pool."
-                        if q_rev.question_type == "ESSAY"
-                        else None
-                    ),
+            # Grade: 4.0 for all (Q5 is MANUAL_GRADED)
+            if q_key == "Q5":
+                session.add(
+                    AttemptQuestionGrade(
+                        attempt_question_id=aq.id,
+                        awarded_points=decimal.Decimal("4.0000"),
+                        grading_status="MANUAL_GRADED",
+                        grading_rule="ORIGINAL",
+                        graded_against_revision_id=q_rev.id,
+                        manual_reason=(
+                            "Phân tích chi tiết, chính xác vai trò và rủi ro của connection pool."
+                        ),
+                        graded_by_user_id=instructor1.id,
+                        graded_at=now - timedelta(days=4, hours=1),
+                    )
                 )
-            )
+            else:
+                session.add(
+                    AttemptQuestionGrade(
+                        attempt_question_id=aq.id,
+                        awarded_points=decimal.Decimal("4.0000"),
+                        grading_status="AUTO_GRADED",
+                        grading_rule="ORIGINAL",
+                        graded_against_revision_id=q_rev.id,
+                        graded_at=now - timedelta(days=4, hours=1),
+                    )
+                )
 
         # Assessment Result for student1
         session.add(
@@ -1126,13 +1131,8 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 saved_at=now - timedelta(hours=2, minutes=45),
                 answer_text=(
                     "Flask-Migrate"
-                    if q_rev.question_type == "SHORT_ANSWER"
-                    else (
-                        "Connection pooling giúp tái sử dụng các kết nối có sẵn, "
-                        "tránh việc phải tạo lại kết nối liên tục gây chậm hệ thống."
-                        if q_rev.question_type == "ESSAY"
-                        else None
-                    )
+                    if q_key == "Q4"
+                    else ("TCP Connection" if q_key == "Q5" else None)
                 ),
             )
             if selected_choice_snapshots:
@@ -1140,19 +1140,19 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             session.add(ans)
             session.flush()
 
-            if q_rev.question_type == "ESSAY":
-                # Pending manual grade for demonstration in Instructor grading UI!
+            # Auto-graded: Q1-Q3 correct (12 pts), Q4 incorrect (0 pts), Q5 pending essay
+            if q_key == "Q5":
                 session.add(
                     AttemptQuestionGrade(
                         attempt_question_id=aq.id,
                         awarded_points=decimal.Decimal("0.0000"),
                         grading_status="PENDING",
-                        grading_rule="MANUAL",
+                        grading_rule="ORIGINAL",
                         graded_against_revision_id=q_rev.id,
+                        graded_at=now - timedelta(hours=2, minutes=40),
                     )
                 )
             else:
-                # Auto-graded objective questions: Q1, Q2, Q3 correct (12 pts)
                 pts = (
                     decimal.Decimal("4.0000")
                     if q_key in ("Q1", "Q2", "Q3")
@@ -1175,8 +1175,8 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 raw_score=decimal.Decimal("12.0000"),
                 max_score=decimal.Decimal("20.0000"),
                 percent_score=decimal.Decimal("60.0000"),
-                passed=None,
-                status="PENDING",
+                passed=True,
+                status="RELEASED",
             )
         )
 

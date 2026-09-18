@@ -182,6 +182,18 @@ def check_prerequisites_met(
     )
 
     completed_ids = {s.course_id for s in summaries}
+    completed_enrs = (
+        sess.query(Enrollment.course_id)
+        .filter(
+            Enrollment.student_user_id == student_user_id,
+            Enrollment.course_id.in_(prereq_ids),
+            Enrollment.status == "COMPLETED",
+        )
+        .all()
+    )
+    for ce in completed_enrs:
+        completed_ids.add(ce[0])
+
     missing_ids = [pid for pid in prereq_ids if pid not in completed_ids]
 
     if not missing_ids:

@@ -23,6 +23,9 @@ DRAFT → SUBMITTED_FOR_REVIEW → APPROVED → PUBLISHED; có thể ARCHIVED ho
 | `title` | `NVARCHAR(200)` | No |  | Tên Course |
 | `title_normalized` | `NVARCHAR(200)` | No | `LOWER(LTRIM(RTRIM([title]))) PERSISTED` | Tên chuẩn hóa |
 | `description` | `NVARCHAR(MAX)` | Yes |  | Mô tả |
+| `learning_objectives` | `NVARCHAR(MAX)` | Yes |  | Mục tiêu và kỹ năng đạt được sau khóa học (multiline text / JSON array) |
+| `target_audience` | `NVARCHAR(MAX)` | Yes |  | Đối tượng người học phù hợp (multiline text / JSON array) |
+| `completion_requirements` | `NVARCHAR(MAX)` | Yes |  | Quy định và điều kiện hoàn thành khóa học |
 | `category` | `NVARCHAR(100)` | Yes |  | Danh mục |
 | `difficulty` | `VARCHAR(20)` | Yes |  | BEGINNER/INTERMEDIATE/ADVANCED |
 | `owner_instructor_id` | `BIGINT` | Yes |  | Instructor hiện quản lý; có thể NULL tạm thời |

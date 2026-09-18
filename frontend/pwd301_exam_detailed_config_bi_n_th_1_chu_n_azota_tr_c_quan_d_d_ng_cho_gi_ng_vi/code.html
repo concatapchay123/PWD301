@@ -1,0 +1,464 @@
+<!DOCTYPE html><html class="h-full bg-slate-50" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Cấu hình Chi tiết Đề thi | PWD301 LMS</title>
+<!-- Google Fonts: Plus Jakarta Sans -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS CDN with Forms and Container Queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#EEF2FF',
+              100: '#E0E7FF',
+              200: '#C7D2FE',
+              300: '#A5B4FC',
+              400: '#818CF8',
+              500: '#6366F1',
+              600: '#4F46E5',
+              700: '#4338CA',
+              800: '#3730A3',
+              900: '#312E81',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Styles -->
+<style data-purpose="toggle-switch-styling">
+    /* Custom Toggle Switch */
+    .toggle-checkbox:checked {
+      right: 2px;
+      border-color: #6366F1;
+      transform: translateX(100%);
+    }
+    .toggle-checkbox:checked + .toggle-label {
+      background-color: #6366F1;
+    }
+    .toggle-checkbox {
+      right: auto;
+      left: 2px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+<!-- END: Custom Styles -->
+</head>
+<body class="h-full font-sans antialiased text-slate-800 bg-[#F8FAFC] pb-28">
+<!-- BEGIN: Sticky Header / Topbar -->
+<header class="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm" data-purpose="topbar-navigation">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="flex items-center justify-between h-16">
+<!-- Left: Logo & Breadcrumbs -->
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold shadow-md shadow-brand-500/20">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</div>
+<div>
+<div class="flex items-center space-x-2">
+<span class="font-bold text-slate-900 text-base leading-tight">PWD301 LMS</span>
+<span class="px-2 py-0.5 text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 rounded-md">v3.4 PRO</span>
+</div>
+<p class="text-xs text-slate-500 truncate max-w-xs md:max-w-md">
+<span class="font-medium text-slate-700">De_thi_Azota_De_6.docx</span> • Mã đề: <span class="font-mono text-brand-700 font-semibold">xdflp9</span>
+</p>
+</div>
+</div>
+<!-- Center: Workflow Stepper -->
+<div class="hidden md:flex items-center space-x-2">
+<!-- Step 1 Done -->
+<div class="flex items-center space-x-1.5 text-emerald-600 text-xs font-semibold">
+<span class="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-xs">✓</span>
+<span class="">1. Soạn câu hỏi</span>
+</div>
+<span class="text-slate-300 text-sm">/</span>
+<!-- Step 2 Done -->
+<div class="flex items-center space-x-1.5 text-emerald-600 text-xs font-semibold">
+<span class="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center text-xs">✓</span>
+<span class="">2. Cấu hình chung</span>
+</div>
+<span class="text-slate-300 text-sm">/</span>
+<!-- Step 3 Active -->
+<div class="flex items-center space-x-1.5 text-brand-600 text-xs font-bold bg-brand-50 px-2.5 py-1 rounded-full border border-brand-200">
+<span class="w-5 h-5 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs">3</span>
+<span class="">Cấu hình chi tiết &amp; Phòng thi</span>
+</div>
+</div>
+<!-- Right: Action Buttons -->
+<div class="flex items-center space-x-3">
+<button class="hidden sm:inline-flex items-center px-3.5 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition" type="button">
+<svg class="w-4 h-4 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            Xem trước góc nhìn SV
+          </button>
+<button class="inline-flex items-center px-4 py-2 text-xs font-semibold text-white bg-brand-600 rounded-lg shadow-sm hover:bg-brand-700 active:scale-95 transition" type="button">
+<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            Xuất bản đề thi
+          </button>
+</div>
+</div>
+</div>
+</header>
+<!-- END: Sticky Header -->
+<!-- BEGIN: Main Form Layout -->
+<main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8" data-purpose="exam-configuration-content">
+<!-- Title banner for prompt feedback -->
+<div class="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+<div>
+<h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Cấu hình Đợt Khảo Thí &amp; Bảo Mật Phòng Thi</h1>
+<p class="text-sm text-slate-500 mt-1">Biến thể 1: Chuẩn Azota Trực quan &amp; Dễ dùng cho Giảng viên Low-tech</p>
+</div>
+<div class="flex items-center space-x-2 text-xs text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+<span class="">Tự động lưu nháp lúc 11:50 AM</span>
+</div>
+</div>
+<form class="space-y-6" onsubmit="event.preventDefault();">
+<!-- BEGIN: Section 1 - Exam Type Selection -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm" data-purpose="exam-type-card">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div>
+<h2 class="text-base font-bold text-slate-900">Loại cấu hình</h2>
+<p class="text-xs text-slate-500 mt-1">Cấu hình này thường dùng cho các kỳ thi nghiêm túc, cần bảo mật đáp án và đề thi cho tới khi kết thúc kỳ thi.</p>
+</div>
+<!-- Segmented Control for Exam Type -->
+<div class="inline-flex p-1 bg-slate-100 rounded-xl self-start sm:self-center border border-slate-200">
+<button class="px-5 py-2 text-xs font-bold rounded-lg shadow-sm bg-brand-600 text-white transition" type="button">
+              Kiểm tra
+            </button>
+<button class="px-5 py-2 text-xs font-semibold text-slate-600 rounded-lg hover:text-slate-900 transition" type="button">
+              Luyện tập
+            </button>
+</div>
+</div>
+</section>
+<!-- END: Section 1 -->
+<!-- BEGIN: Section 2 - Time and Access Control -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-6" data-purpose="timing-access-card">
+<div class="border-b border-slate-100 pb-3">
+<h2 class="text-base font-bold text-slate-900">Cấu hình thời gian &amp; Quyền truy cập</h2>
+<p class="text-xs text-slate-500 mt-0.5">Quy định thời hạn nộp bài và đối tượng sinh viên được phép tham dự.</p>
+</div>
+<!-- Duration Setting -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="flex items-center text-xs font-bold text-slate-700 mb-1" for="exam-duration">
+<span class="">Thời gian làm bài (phút)</span>
+<span class="ml-1 text-slate-400 cursor-pointer" title="Hệ thống tự thu bài khi hết giờ">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</label>
+<input class="w-full text-sm font-semibold rounded-lg border-slate-300 focus:ring-brand-500 focus:border-brand-500 py-2.5 px-3" id="exam-duration" min="0" type="number" value="40">
+<p class="text-[11px] text-slate-500 mt-1">Nhập 0 để không giới hạn thời gian làm bài.</p>
+</div>
+<div>
+<label class="flex items-center text-xs font-bold text-slate-700 mb-1">
+<span class="">Thời gian mở giao đề thi</span>
+<span class="ml-1 text-slate-400 cursor-pointer" title="Khoảng thời gian sinh viên được click 'Vào làm bài'">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</label>
+<div class="flex items-center space-x-2">
+<input class="w-full text-xs rounded-lg border-slate-300 focus:ring-brand-500 focus:border-brand-500 py-2 px-2.5" type="datetime-local" value="2026-09-15T08:00">
+<span class="text-xs text-slate-400">đến</span>
+<input class="w-full text-xs rounded-lg border-slate-300 focus:ring-brand-500 focus:border-brand-500 py-2 px-2.5" type="datetime-local" value="2026-09-15T12:00">
+<button class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-500 text-xs font-medium shrink-0" type="button">
+                Đặt lại
+              </button>
+</div>
+<p class="text-[11px] text-slate-400 mt-1">Chỉ được phép gia hạn thêm. Bỏ trống nếu không muốn giới hạn khung giờ nộp bài.</p>
+</div>
+</div>
+<!-- Permissions Radio Selection -->
+<div>
+<label class="block text-xs font-bold text-slate-700 mb-2">Ai được phép làm bài?</label>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+<!-- Option 1: Public -->
+<label class="relative flex items-center p-3.5 border-2 rounded-xl border-brand-500 bg-brand-50/50 cursor-pointer transition">
+<input checked="" class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="access_control" type="radio" value="all">
+<div class="ml-3">
+<span class="block text-xs font-bold text-slate-900">Tất cả mọi người</span>
+<span class="block text-[11px] text-slate-500 mt-0.5">Bất kỳ ai có mã đề/đường dẫn</span>
+</div>
+</label>
+<!-- Option 2: By Class -->
+<label class="relative flex items-center p-3.5 border border-slate-200 hover:border-slate-300 bg-white rounded-xl cursor-pointer transition">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="access_control" type="radio" value="class">
+<div class="ml-3">
+<span class="block text-xs font-bold text-slate-900">Giao theo lớp</span>
+<span class="block text-[11px] text-slate-500 mt-0.5">Chọn lớp PWD301_L04, L02</span>
+</div>
+</label>
+<!-- Option 3: By Student -->
+<label class="relative flex items-center p-3.5 border border-slate-200 hover:border-slate-300 bg-white rounded-xl cursor-pointer transition">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="access_control" type="radio" value="student">
+<div class="ml-3">
+<span class="block text-xs font-bold text-slate-900">Giao cho học sinh cụ thể</span>
+<span class="block text-[11px] text-slate-500 mt-0.5">Chọn từ danh bạ sinh viên</span>
+</div>
+</label>
+</div>
+<!-- Alert Helper for Public Access -->
+<div class="mt-3 flex items-start p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900">
+<svg class="w-4 h-4 text-blue-600 mt-0.5 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<p class="">Mọi học sinh đều có thể tìm kiếm và tham gia đề thi, kể cả học sinh chưa thuộc lớp học nào trên Azota. Lựa chọn này cho phép những học sinh không đăng ký/đăng nhập tài khoản vẫn có thể tham gia thi.</p>
+</div>
+</div>
+</section>
+<!-- END: Section 2 -->
+<!-- BEGIN: Section 3 - Security & Proctoring -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-6" data-purpose="proctoring-security-card">
+<div class="border-b border-slate-100 pb-3 flex items-center justify-between">
+<div>
+<h2 class="text-base font-bold text-slate-900 flex items-center">
+<span class="">Bảo mật &amp; Giám sát Chống gian lận</span>
+<span class="ml-2 px-2 py-0.5 text-[10px] font-extrabold uppercase bg-red-100 text-red-600 rounded-md">High Security</span>
+</h2>
+<p class="text-xs text-slate-500 mt-0.5">Thiết lập công nghệ chống chuyển tab và bảo vệ toàn vẹn kỳ thi.</p>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Max Attempts -->
+<div>
+<label class="block text-xs font-bold text-slate-700 mb-1" for="exam-attempts">Số lượt làm bài tối đa</label>
+<input class="w-full text-sm font-semibold rounded-lg border-slate-300 focus:ring-brand-500 focus:border-brand-500 py-2.5 px-3" id="exam-attempts" min="0" type="number" value="1">
+<p class="text-[11px] text-slate-500 mt-1">*Nhập 0 hoặc để trống để không giới hạn số lượt làm đề thi.</p>
+</div>
+<!-- Password -->
+<div>
+<label class="block text-xs font-bold text-slate-700 mb-1" for="exam-password">Mật khẩu đề thi</label>
+<div class="relative">
+<input class="w-full text-sm font-mono rounded-lg border-slate-300 focus:ring-brand-500 focus:border-brand-500 py-2.5 px-3 pr-10" id="exam-password" placeholder="Nhập mật khẩu phòng thi..." type="text" value="PWD301@2026">
+<button class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<p class="text-[11px] text-slate-400 mt-1">Học sinh phải nhập đúng mật khẩu này để bắt đầu làm bài.</p>
+</div>
+</div>
+<!-- Proctoring Options -->
+<div class="pt-2 border-t border-slate-100">
+<label class="block text-xs font-bold text-slate-700 mb-2">Giám sát tự động (AI Proctoring)</label>
+<div class="flex items-center space-x-6">
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="proctor_mode" type="radio" value="off">
+<span class="ml-2 text-xs font-medium text-slate-700">Tắt</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="proctor_mode" type="radio" value="on">
+<span class="ml-2 text-xs font-bold text-brand-700 flex items-center">
+                Giám sát thoát màn hình &amp; Chuyển tab
+                <span class="ml-1 text-slate-400" title="Cảnh báo khi học sinh rời khỏi giao diện làm bài hoặc mở tab mới"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></span>
+</span>
+</label>
+</div>
+<p class="text-[11px] text-slate-500 mt-1">Hỗ trợ ghi nhận số lần chuyển tab. Rời màn hình quá 3 lần hệ thống sẽ tự động khóa bài và nộp.</p>
+</div>
+<!-- Toggles: Student Identification & App Only -->
+<div class="space-y-4 pt-3 border-t border-slate-100">
+<!-- Toggle 1: Student info verification -->
+<div class="flex items-center justify-between">
+<div class="pr-4">
+<span class="text-xs font-bold text-slate-800 block">Xác thực thông tin sinh viên</span>
+<span class="text-[11px] text-slate-500 block mt-0.5">Yêu cầu khai báo bổ sung: Họ tên, Mã sinh viên (MA-xxxx), Lớp và Email trường.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+<!-- Toggle 2: Azota App Only -->
+<div class="flex items-center justify-between">
+<div class="pr-4">
+<div class="flex items-center space-x-2">
+<span class="text-xs font-bold text-slate-800 block">Chỉ thi trên ứng dụng Azota / Safe Exam Browser</span>
+<span class="px-1.5 py-0.5 text-[9px] font-extrabold uppercase bg-red-500 text-white rounded">Mới</span>
+</div>
+<span class="text-[11px] text-slate-500 block mt-0.5">Khi bật, đề thi chỉ có thể thực hiện trên app để vô hiệu hóa hoàn toàn copy/paste, chụp màn hình.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+</div>
+</section>
+<!-- END: Section 3 -->
+<!-- BEGIN: Section 4 - Randomization -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-4" data-purpose="randomization-card">
+<div class="border-b border-slate-100 pb-3">
+<h2 class="text-base font-bold text-slate-900">Đảo câu hỏi và đáp án</h2>
+<p class="text-xs text-slate-500 mt-0.5">Xáo trộn ngẫu nhiên để chống nhìn bài xung quanh trong phòng máy.</p>
+</div>
+<!-- Toggle: Shuffle questions & answers -->
+<div class="flex items-center justify-between py-2">
+<div class="pr-4">
+<span class="text-xs font-bold text-slate-800 block">Đảo thứ tự câu hỏi và đáp án</span>
+<span class="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
+              Hệ thống sẽ tự động đảo các câu hỏi và thứ tự đáp án (A, B, C, D) trong mỗi câu hỏi cho từng học sinh. Nếu đề có phân nhóm, hệ thống sẽ đảo câu trong phạm vi từng nhóm.
+            </span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+<!-- Toggle: Hide group headers -->
+<div class="flex items-center justify-between py-2 border-t border-slate-100">
+<div class="pr-4">
+<span class="text-xs font-bold text-slate-800 block">Ẩn tiêu đề nhóm câu hỏi</span>
+<span class="text-[11px] text-slate-500 block mt-0.5">Ẩn các tiêu đề nhóm (VD: Phần 1: Trắc nghiệm khách quan, Phần 2: Đọc hiểu) khi hiển thị cho học sinh.</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0">
+<input class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+</section>
+<!-- END: Section 4 -->
+<!-- BEGIN: Section 5 - Input Keyboard Configuration -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-4" data-purpose="keyboard-config-card">
+<div class="border-b border-slate-100 pb-3">
+<h2 class="text-base font-bold text-slate-900">Cấu hình bàn phím nhập liệu câu tự luận</h2>
+<p class="text-xs text-slate-500 mt-0.5">Chọn loại bộ gõ phù hợp với đặc thù môn thi (văn học, toán lý hóa hoặc tin học).</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+<!-- Keyboard 1: Standard (Selected) -->
+<div class="relative border-2 border-brand-600 bg-brand-50/40 rounded-xl p-4 cursor-pointer transition hover:shadow-sm">
+<div class="absolute top-3 right-3 w-5 h-5 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs font-bold">
+              ✓
+            </div>
+<div class="w-9 h-9 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center mb-3">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<h3 class="text-xs font-bold text-slate-900">Bàn phím cơ bản</h3>
+<p class="text-[11px] text-slate-600 mt-1">Bàn phím văn bản thông thường, phù hợp trắc nghiệm và trả lời ngắn.</p>
+</div>
+<!-- Keyboard 2: Math -->
+<div class="relative border border-slate-200 hover:border-slate-300 bg-white rounded-xl p-4 cursor-pointer transition">
+<div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center mb-3 font-serif italic text-base font-bold">
+              fx
+            </div>
+<h3 class="text-xs font-bold text-slate-900">Bàn phím toán học</h3>
+<p class="text-[11px] text-slate-500 mt-1">Tích hợp LaTeX, phân số, căn bậc hai, ký hiệu ma trận và tích phân.</p>
+</div>
+<!-- Keyboard 3: Rich Text / Code -->
+<div class="relative border border-slate-200 hover:border-slate-300 bg-white rounded-xl p-4 cursor-pointer transition">
+<div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center mb-3">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<h3 class="text-xs font-bold text-slate-900">Soạn thảo phong phú &amp; Code Editor</h3>
+<p class="text-[11px] text-slate-500 mt-1">Định dạng văn bản, thụt lề, bảng biểu và tô màu cú pháp (Syntax Highlight).</p>
+</div>
+</div>
+<p class="text-[11px] text-amber-600 flex items-center">
+<svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          Có thể cấu hình mở rộng cho phép học sinh tải ảnh chụp bài làm tự luận bằng điện thoại.
+        </p>
+</section>
+<!-- END: Section 5 -->
+<!-- BEGIN: Section 6 - Score and Answer Visibility -->
+<section class="bg-white border border-slate-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-5" data-purpose="results-display-card">
+<div class="border-b border-slate-100 pb-3">
+<h2 class="text-base font-bold text-slate-900">Điểm số, Đáp án &amp; Hiển thị sau khi thi</h2>
+<p class="text-xs text-slate-500 mt-0.5">Kiểm soát chặt chẽ thời điểm công bố kết quả để ngăn ngừa lộ đề thi.</p>
+</div>
+<!-- Setting: View Scores -->
+<div>
+<label class="block text-xs font-bold text-slate-700 mb-2">Cho xem điểm</label>
+<div class="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-700">
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_scores" type="radio" value="never">
+<span class="ml-2">Không</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_scores" type="radio" value="submitted">
+<span class="ml-2 font-semibold text-brand-700">Khi làm bài xong</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_scores" type="radio" value="all_finished">
+<span class="ml-2">Khi tất cả thi xong</span>
+</label>
+</div>
+</div>
+<!-- Setting: View Exam Questions & Key -->
+<div class="pt-3 border-t border-slate-100">
+<label class="block text-xs font-bold text-slate-700 mb-2">Cho xem đề thi và đáp án</label>
+<div class="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-700">
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_answers" type="radio" value="never">
+<span class="ml-2">Không</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input checked="" class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_answers" type="radio" value="submitted">
+<span class="ml-2 font-semibold text-brand-700">Khi làm bài xong</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_answers" type="radio" value="all_finished">
+<span class="ml-2">Khi tất cả thi xong</span>
+</label>
+<label class="inline-flex items-center cursor-pointer">
+<input class="h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500" name="view_answers" type="radio" value="score_threshold">
+<span class="ml-2">Khi đạt đến số điểm nhất định</span>
+</label>
+</div>
+</div>
+<!-- Toggle: Hide Answers for Incorrect questions -->
+<div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+<div class="pr-4">
+<span class="text-xs font-bold text-slate-800 block">Ẩn đáp án cho câu trả lời sai</span>
+<span class="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
+              Khi bật tính năng này, sinh viên chỉ biết câu nào đúng hay sai, không xem được đáp án chính xác. Hữu ích cho việc luyện tập lặp lại để tự tìm ra đáp án đúng.
+            </span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer shrink-0">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+</section>
+<!-- END: Section 6 -->
+<!-- BEGIN: Section 7 - Leaderboard & Pre-exam Notice -->
+
+<!-- END: Section 7 -->
+</form>
+</main>
+<!-- END: Main Form Layout -->
+<!-- BEGIN: Fixed Bottom Actions Bar -->
+<aside class="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-slate-200 py-3 px-4 z-40 shadow-lg" data-purpose="fixed-bottom-bar">
+<div class="max-w-5xl mx-auto flex items-center justify-between">
+<!-- Back Link -->
+<a class="inline-flex items-center min-h-[44px] px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition" href="#">
+<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 19l-7-7m0 0l7-7m-7 7h18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="">Quay lại: Cấu hình chung</span>
+</a>
+<!-- Primary Actions -->
+<div class="flex items-center space-x-3">
+<button class="min-h-[44px] px-4 py-2.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition active:scale-95" type="button">
+          Lưu nháp cấu hình
+        </button>
+<button class="min-h-[44px] px-6 py-2.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-md shadow-brand-500/30 transition active:scale-95 flex items-center" type="button">
+<span class="">Xuất bản &amp; Mở ca thi</span>
+<svg class="w-4 h-4 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+</div>
+</aside>
+<!-- END: Fixed Bottom Actions Bar -->
+
+
+</body></html>

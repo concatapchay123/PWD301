@@ -1,0 +1,368 @@
+<!DOCTYPE html><html class="h-full bg-[#F8FAFC]" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Instructor Focused Essay Grading Studio | PWD301 Focus Canvas</title>
+<!-- Tailwind CSS v3 with Forms & Container Queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Plus Jakarta Sans, Inter, JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+            body: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          },
+          colors: {
+            primary: {
+              DEFAULT: '#6366F1',
+              50: '#EEF2FF',
+              100: '#E0E7FF',
+              600: '#4F46E5',
+              700: '#4338CA',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Custom sleek scrollbars for 50:50 split panes */
+    .pane-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .pane-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .pane-scroll::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 9999px;
+    }
+    .pane-scroll::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden text-slate-800 bg-[#F8FAFC] antialiased flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+<!-- ================= TOP COMPACT NAVIGATION BAR (56px) ================= -->
+<header class="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none shadow-xs">
+<!-- Left: Return to Queue & Question Identity -->
+<div class="flex items-center space-x-3 sm:space-x-4 min-w-0">
+<button class="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors group" type="button">
+<span class="material-symbols-outlined text-[18px] text-slate-500 group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+<span class="hidden md:inline">Hàng đợi</span>
+<kbd class="hidden lg:inline px-1.5 py-0.5 text-[10px] font-mono text-slate-500 bg-white rounded border border-slate-200">Esc</kbd>
+</button>
+<div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
+<!-- Exam Context & Question Info -->
+<div class="flex items-center space-x-2 min-w-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 shrink-0">
+          Câu 14 (15.0đ)
+        </span>
+<div class="truncate text-xs">
+<span class="font-bold text-slate-900">Giữa kỳ PWD301:</span>
+<span class="text-slate-600 ml-1 truncate">FastAPI Bearer Auth &amp; Redis Token Blacklist</span>
+</div>
+</div>
+</div>
+<!-- Center/Right: Student Identity, Step Navigator & Fast Tools -->
+<div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
+<!-- Candidate Stepper -->
+<div class="flex items-center bg-slate-100/90 rounded-xl p-1 border border-slate-200">
+<button class="p-1 text-slate-500 hover:text-slate-900 hover:bg-white rounded-lg transition-all disabled:opacity-40" disabled="" title="Bài trước (Alt + Left)" type="button">
+<span class="material-symbols-outlined text-[18px] block">chevron_left</span>
+</button>
+<div class="px-2.5 text-center">
+<div class="flex items-center space-x-1.5">
+<span class="text-xs font-bold text-slate-900">Nguyễn Minh Anh</span>
+<span class="font-mono text-[11px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 rounded">MA-8392</span>
+</div>
+<p class="text-[10px] text-slate-500 font-medium">Bài 1 / 4 cần chấm</p>
+</div>
+<button class="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition-all" title="Bài tiếp theo (Alt + Right)" type="button">
+<span class="material-symbols-outlined text-[18px] block">chevron_right</span>
+</button>
+</div>
+<!-- Zen Focus Mode & Shortcuts -->
+<div class="hidden sm:flex items-center space-x-1 pl-1">
+<button class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors" title="Toàn màn hình / Zen Focus" type="button">
+<span class="material-symbols-outlined text-[19px]">fullscreen</span>
+</button>
+<button class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors" title="Phím tắt trợ giúp (?)" type="button">
+<span class="material-symbols-outlined text-[19px]">help_outline</span>
+</button>
+</div>
+</div>
+</header>
+<!-- ================= SPLIT CANVAS 50:50 WORKSPACE ================= -->
+<main class="flex-1 flex overflow-hidden min-h-0">
+<!-- ================= LEFT COLUMN: STUDENT SUBMISSION PANE (50%) ================= -->
+<section class="w-1/2 flex flex-col border-r border-slate-200 bg-[#F8FAFC] overflow-hidden">
+<!-- Frozen Snapshot Bar -->
+<div class="px-5 py-2.5 bg-slate-900 text-slate-300 flex items-center justify-between text-xs shrink-0 select-none">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-amber-400 text-base">lock</span>
+<span class="font-semibold text-white">Frozen Attempt Snapshot</span>
+<span class="text-slate-400">•</span>
+<span class="text-slate-300">Nộp lúc: <strong class="text-white font-mono">09:44:18</strong></span>
+</div>
+<div class="flex items-center space-x-2 font-mono text-[11px] text-slate-400">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+<span>SHA-256: #b8f2-984e</span>
+</div>
+</div>
+<!-- Scrollable Left Pane Content -->
+<div class="flex-1 overflow-y-auto pane-scroll p-5 space-y-4">
+<!-- Question Prompt (Collapsible Details) -->
+<details class="group bg-white rounded-xl border border-slate-200 p-3.5 text-xs shadow-2xs" open="">
+<summary class="flex items-center justify-between cursor-pointer font-bold text-slate-900 select-none">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-indigo-600 text-sm">assignment</span>
+<span>Yêu cầu đề bài (Câu 14 - Tự luận Code Sandbox)</span>
+</div>
+<span class="material-symbols-outlined text-slate-400 text-base group-open:rotate-180 transition-transform">expand_more</span>
+</summary>
+<div class="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 leading-relaxed space-y-1.5">
+<p>Viết dependency function <code class="font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 font-semibold">get_current_active_user</code> giải mã Bearer Token. Bắt buộc xử lý mã lỗi HTTP 401 khi token hết hạn hoặc nằm trong danh sách thu hồi (Redis Blacklist).</p>
+<div class="flex items-center space-x-3 text-[11px] text-slate-500 pt-1 font-mono">
+<span>Stack: Python 3.11 • FastAPI • python-jose • Redis</span>
+</div>
+</div>
+</details>
+<!-- Automated Test Runner Output (Passed 3/3 Unit Tests) -->
+<div class="bg-slate-900 rounded-xl border border-slate-800 p-3.5 text-xs font-mono shadow-xs">
+<div class="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px]">
+<span class="flex items-center text-emerald-400 font-bold tracking-tight">
+<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block mr-2 animate-pulse"></span>
+              Pytest Sandbox Automated Run: PASSED 3/3 (100%)
+            </span>
+<span class="text-slate-400">Thời gian chạy: 214ms</span>
+</div>
+<div class="pt-2.5 space-y-1 text-[11px] text-slate-400">
+<p class="flex items-center justify-between">
+<span><span class="text-emerald-400 font-bold">✓ PASSED</span> test_valid_jwt_token_returns_user_payload</span>
+<span class="text-slate-500">62ms</span>
+</p>
+<p class="flex items-center justify-between">
+<span><span class="text-emerald-400 font-bold">✓ PASSED</span> test_expired_token_raises_http_401</span>
+<span class="text-slate-500">45ms</span>
+</p>
+<p class="flex items-center justify-between">
+<span><span class="text-emerald-400 font-bold">✓ PASSED</span> test_blacklisted_token_rejected_immediately</span>
+<span class="text-slate-500">107ms</span>
+</p>
+</div>
+</div>
+<!-- Student Source Code Viewer with Line Numbers -->
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+<div class="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+<div class="flex items-center space-x-2 font-mono text-slate-700">
+<span class="material-symbols-outlined text-sm text-slate-400">terminal</span>
+<span class="font-semibold">auth_dependency.py</span>
+<span class="text-slate-400">• 22 lines</span>
+</div>
+<span class="text-[11px] font-mono text-slate-500">Python 3.11</span>
+</div>
+<!-- Code Body -->
+<div class="p-4 bg-slate-950 text-slate-200 text-[12px] font-mono leading-relaxed overflow-x-auto pane-scroll">
+<div class="flex min-w-[520px]">
+<!-- Line Numbers -->
+<div class="select-none text-slate-600 text-right pr-4 border-r border-slate-800 space-y-1 font-medium text-[11px]">
+<div>01</div><div>02</div><div>03</div><div>04</div><div>05</div>
+<div>06</div><div>07</div><div>08</div><div>09</div><div>10</div>
+<div>11</div><div>12</div><div>13</div><div>14</div><div>15</div>
+<div>16</div><div>17</div><div>18</div><div>19</div><div>20</div>
+<div>21</div><div>22</div>
+</div>
+<!-- Highlighted Code -->
+<pre class="pl-4 space-y-1"><code><span class="text-purple-400">from</span> fastapi <span class="text-purple-400">import</span> Depends, HTTPException, status
+<span class="text-purple-400">from</span> fastapi.security <span class="text-purple-400">import</span> OAuth2PasswordBearer
+<span class="text-purple-400">from</span> jose <span class="text-purple-400">import</span> JWTError, jwt
+<span class="text-purple-400">import</span> redis
+
+<span class="text-slate-500"># Khởi tạo kết nối Redis Blacklist</span>
+redis_client = redis.Redis(host=<span class="text-emerald-300">"localhost"</span>, port=6379, db=0, decode_responses=<span class="text-amber-400">True</span>)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=<span class="text-emerald-300">"token"</span>)
+
+<span class="text-purple-400">async def</span> <span class="text-blue-400">get_current_active_user</span>(token: <span class="text-cyan-300">str</span> = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=<span class="text-emerald-300">"Không thể xác thực thông tin đăng nhập hoặc Token đã bị vô hiệu"</span>,
+        headers={<span class="text-emerald-300">"WWW-Authenticate"</span>: <span class="text-emerald-300">"Bearer"</span>},
+    )
+    <span class="text-purple-400">try</span>:
+        <span class="text-slate-500"># Kiểm tra blacklist Redis trước khi decode payload</span>
+        <span class="text-purple-400">if</span> redis_client.get(f<span class="text-emerald-300">"blacklist:{token}"</span>):
+            <span class="text-purple-400">raise</span> credentials_exception
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: <span class="text-cyan-300">str</span> = payload.get(<span class="text-emerald-300">"sub"</span>)
+        <span class="text-purple-400">if</span> username <span class="text-purple-400">is None</span>:
+            <span class="text-purple-400">raise</span> credentials_exception
+    <span class="text-purple-400">except</span> JWTError:
+        <span class="text-purple-400">raise</span> credentials_exception
+    <span class="text-purple-400">return</span> {<span class="text-emerald-300">"username"</span>: username, <span class="text-emerald-300">"role"</span>: <span class="text-emerald-300">"authenticated_student"</span>}</code></pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ================= RIGHT COLUMN: RUBRIC GRADING CANVAS (50%) ================= -->
+<section class="w-1/2 flex flex-col bg-white overflow-hidden">
+<!-- Right Sub-header: Rubric Matrix Context -->
+<div class="px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between shrink-0 select-none">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-indigo-600 text-lg">fact_check</span>
+<h2 class="text-xs font-bold uppercase tracking-wider text-slate-800">Thẩm định Rubric 3 tiêu chí</h2>
+<span class="text-[11px] font-mono text-slate-500">(Thang điểm 15.0đ)</span>
+</div>
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+          Chấm điểm trực tiếp
+        </span>
+</div>
+<!-- Scrollable Rubric Form -->
+<div class="flex-1 overflow-y-auto pane-scroll p-6 space-y-5">
+<!-- 3 RUBRIC CRITERIA WITH FAST CLICK TILES & ACCURATE INPUT -->
+<div class="space-y-4">
+<!-- Criteria 1 -->
+<div class="p-4 rounded-xl border border-indigo-200/90 bg-indigo-50/25 space-y-3">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-xs font-bold text-slate-900">1. Khai báo Route &amp; Khung logic Auth</p>
+<p class="text-[11px] text-slate-500 mt-0.5">Cú pháp OAuth2PasswordBearer, async dependency function chuẩn PEP8.</p>
+</div>
+<span class="text-xs font-bold text-indigo-700 font-mono bg-white px-2 py-0.5 rounded border border-indigo-200">
+                5.0 / 5.0đ
+              </span>
+</div>
+<!-- Fast buttons & Range -->
+<div class="flex items-center space-x-2">
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">0đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">2.5đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">4.0đ</button>
+<button class="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-xs border border-indigo-600" type="button">5.0đ (Tối đa)</button>
+<div class="flex-1 pl-2 flex items-center space-x-2">
+<input class="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer" max="5" min="0" step="0.5" type="range" value="5">
+<span class="text-xs font-mono font-bold text-slate-800 w-7 text-right">5.0</span>
+</div>
+</div>
+</div>
+<!-- Criteria 2 -->
+<div class="p-4 rounded-xl border border-indigo-200/90 bg-indigo-50/25 space-y-3">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-xs font-bold text-slate-900">2. Xử lý ngoại lệ HTTP 401 &amp; Header WWW-Authenticate</p>
+<p class="text-[11px] text-slate-500 mt-0.5">Bắt lỗi JWTError, cấu hình Header RFC 6750, phản hồi rõ ràng.</p>
+</div>
+<span class="text-xs font-bold text-indigo-700 font-mono bg-white px-2 py-0.5 rounded border border-indigo-200">
+                4.5 / 5.0đ
+              </span>
+</div>
+<!-- Fast buttons & Range -->
+<div class="flex items-center space-x-2">
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">0đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">2.5đ</button>
+<button class="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-xs border border-indigo-600" type="button">4.5đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">5.0đ</button>
+<div class="flex-1 pl-2 flex items-center space-x-2">
+<input class="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer" max="5" min="0" step="0.5" type="range" value="4.5">
+<span class="text-xs font-mono font-bold text-slate-800 w-7 text-right">4.5</span>
+</div>
+</div>
+</div>
+<!-- Criteria 3 -->
+<div class="p-4 rounded-xl border border-indigo-200/90 bg-indigo-50/25 space-y-3">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-xs font-bold text-slate-900">3. Tối ưu truy vấn Blacklist Redis &amp; Invalidation</p>
+<p class="text-[11px] text-slate-500 mt-0.5">Truy vấn key <code class="font-mono text-indigo-700">blacklist:{token}</code> độ phức tạp O(1), an toàn kết nối.</p>
+</div>
+<span class="text-xs font-bold text-indigo-700 font-mono bg-white px-2 py-0.5 rounded border border-indigo-200">
+                5.0 / 5.0đ
+              </span>
+</div>
+<!-- Fast buttons & Range -->
+<div class="flex items-center space-x-2">
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">0đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">2.5đ</button>
+<button class="px-2.5 py-1 text-xs font-medium rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700" type="button">4.0đ</button>
+<button class="px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-xs border border-indigo-600" type="button">5.0đ (Tối đa)</button>
+<div class="flex-1 pl-2 flex items-center space-x-2">
+<input class="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer" max="5" min="0" step="0.5" type="range" value="5">
+<span class="text-xs font-mono font-bold text-slate-800 w-7 text-right">5.0</span>
+</div>
+</div>
+</div>
+</div>
+<!-- SCORE SYNTHESIS CARD -->
+<div class="rounded-xl bg-slate-900 text-white p-4 space-y-2.5 shadow-sm">
+<div class="flex justify-between items-center text-xs">
+<span class="text-slate-400">Điểm tự luận Câu 14 (Rubric tổng):</span>
+<span class="font-bold text-base text-emerald-400 font-mono">14.5 / 15.0 đ</span>
+</div>
+<div class="flex justify-between items-center text-xs">
+<span class="text-slate-400">Điểm trắc nghiệm khách quan (Khóa):</span>
+<span class="font-bold text-slate-200 font-mono">22.0 / 25.0 đ</span>
+</div>
+<div class="pt-2 border-t border-slate-800 flex justify-between items-center">
+<div>
+<span class="text-xs uppercase tracking-wider text-slate-400 font-bold block">Tổng điểm bài thi PWD301</span>
+<span class="text-[11px] text-slate-400">Hệ 40 điểm quy đổi chuẩn hệ 10</span>
+</div>
+<div class="text-right">
+<span class="text-xl font-extrabold text-white font-mono tracking-tight">36.5 / 40.0 đ</span>
+<span class="block text-xs font-bold text-indigo-300">Quy đổi: 9.1 / 10.0</span>
+</div>
+</div>
+</div>
+<!-- MANDATORY ABET REASON / AUDIT NOTE -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<label class="block text-xs font-bold uppercase tracking-wider text-slate-700" for="regrade_reason">
+              Lý do điều chỉnh / Ghi chú thẩm định <span class="text-rose-500">*</span>
+</label>
+<span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">Bắt buộc theo chuẩn ABET</span>
+</div>
+<textarea class="w-full rounded-xl border-slate-300 text-xs text-slate-900 focus:border-indigo-600 focus:ring-indigo-600 p-2.5 shadow-2xs" id="regrade_reason" placeholder="Ghi rõ căn cứ trừ điểm hoặc ghi chú thẩm định..." rows="2">Trừ 0.5 điểm ở Tiêu chí 2 do sinh viên chưa tách biệt thông điệp lỗi chi tiết cho trường hợp token hết hạn so với token revoked blacklist.</textarea>
+</div>
+<!-- PEDAGOGICAL FEEDBACK FOR STUDENT -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<label class="block text-xs font-bold uppercase tracking-wider text-slate-700" for="student_feedback">
+              Nhận xét sư phạm gửi sinh viên
+            </label>
+<div class="flex items-center space-x-1">
+<button class="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60" type="button">+ Code sạch</button>
+<button class="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60" type="button">+ Tối ưu TTL Redis</button>
+</div>
+</div>
+<textarea class="w-full rounded-xl border-slate-300 text-xs text-slate-900 focus:border-indigo-600 focus:ring-indigo-600 p-2.5 shadow-2xs" id="student_feedback" placeholder="Lời khuyên chi tiết cho sinh viên..." rows="2">Em làm rất tốt phần tích hợp Redis Blacklist với cấu trúc O(1). Ở các dự án thực tế, em nên tạo thêm một middleware để tự động phân tích header WWW-Authenticate cho các scope phân quyền khác nhau nhé.</textarea>
+</div>
+</div>
+<!-- FIXED BOTTOM ACTION BAR (RIGHT PANE DEDICATED CTA) -->
+<div class="px-6 py-3 border-t border-slate-200 bg-slate-50/90 flex items-center justify-between shrink-0">
+<div class="flex items-center space-x-2 text-xs text-slate-500">
+<span class="material-symbols-outlined text-emerald-600 text-base">cloud_done</span>
+<span>Tự động lưu bản nháp</span>
+</div>
+<div class="flex items-center space-x-2.5">
+<button class="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 rounded-xl shadow-2xs transition-colors" type="button">
+            Lưu nháp
+          </button>
+<button class="inline-flex items-center px-4 py-2 text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-sm shadow-indigo-500/25 transition-all" type="button">
+<span>Lưu điểm &amp; Bài tiếp</span>
+<kbd class="ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-indigo-800 text-indigo-100 rounded border border-indigo-400/40">Ctrl + Enter</kbd>
+<span class="material-symbols-outlined text-base ml-1.5">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+</body></html>

@@ -271,25 +271,47 @@ def _resolve_file_asset(
     asset_or_id: FileAsset | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
 ) -> FileAsset | None:
-    """Resolve a FileAsset instance by model, public UUID, or internal PK."""
+    """Resolve a FileAsset instance by model, public UUID, internal PK, or LessonResource ID."""
     if isinstance(asset_or_id, FileAsset):
         return asset_or_id
 
     sess = session if session is not None else db.session
     if isinstance(asset_or_id, int):
-        return sess.get(FileAsset, asset_or_id)
+        fa = sess.get(FileAsset, asset_or_id)
+        if fa is not None:
+            return fa
+        res = sess.get(LessonResource, asset_or_id)
+        if res is not None and res.file_asset is not None:
+            return res.file_asset
+        return None
 
     if isinstance(asset_or_id, uuid.UUID):
-        return sess.query(FileAsset).filter(FileAsset.public_id == asset_or_id).first()
+        fa = sess.query(FileAsset).filter(FileAsset.public_id == asset_or_id).first()
+        if fa is not None:
+            return fa
+        for lr in sess.query(LessonResource).all():
+            if lr.public_id == asset_or_id and lr.file_asset is not None:
+                return lr.file_asset
+        return None
 
     if isinstance(asset_or_id, str):
         try:
             val_uuid = uuid.UUID(asset_or_id)
-            return sess.query(FileAsset).filter(FileAsset.public_id == val_uuid).first()
+            fa = sess.query(FileAsset).filter(FileAsset.public_id == val_uuid).first()
+            if fa is not None:
+                return fa
+            for lr in sess.query(LessonResource).all():
+                if lr.public_id == val_uuid and lr.file_asset is not None:
+                    return lr.file_asset
         except ValueError:
             pass
         if asset_or_id.isdigit():
-            return sess.get(FileAsset, int(asset_or_id))
+            fa = sess.get(FileAsset, int(asset_or_id))
+            if fa is not None:
+                return fa
+            res = sess.get(LessonResource, int(asset_or_id))
+            if res is not None and res.file_asset is not None:
+                return res.file_asset
 
     return None
 
@@ -578,6 +600,16 @@ def store_file_stream(
                     )
                 )
 
+            sess.flush()
+            from pwd301.services.background_job_service import enqueue_background_job
+
+            enqueue_background_job(
+                job_type="FILE_SCAN",
+                payload={"asset_id": asset.id, "user_id": actor.id},
+                run_async=False,
+                session=sess,
+            )
+
             sess.commit()
             return asset
 
@@ -829,6 +861,16 @@ def add_file_revision(
                         completed_at=now,
                     )
                 )
+
+            sess.flush()
+            from pwd301.services.background_job_service import enqueue_background_job
+
+            enqueue_background_job(
+                job_type="FILE_SCAN",
+                payload={"asset_id": asset.id, "user_id": actor.id},
+                run_async=False,
+                session=sess,
+            )
 
             sess.commit()
             return new_rev
@@ -1308,6 +1350,12 @@ def rescan_file_asset(
             if target_path.exists() and "quarantine" in str(target_path):
                 target_path.unlink(missing_ok=True)
 
+        for rev in asset.revisions:
+            if rev.id != revision.id and (rev.is_current or rev.status == "ACTIVE"):
+                rev.is_current = False
+                rev.status = "REPLACED"
+                rev.replaced_at = now
+
         revision.blob_id = blob.id
         revision.status = "ACTIVE"
         revision.is_current = True
@@ -1386,8 +1434,11 @@ def quarantine_override(
         raise FileAccessDeniedError("Administrator privileges required for quarantine override.")
 
     clean_reason = (reason or "").strip()
-    if not clean_reason:
-        raise FileValidationError("Justification reason is required for quarantine override.")
+    if not clean_reason or len(clean_reason) < 5:
+        raise FileValidationError(
+            "Justification reason is required for quarantine override: "
+            "Lý do giải phóng tệp kiểm dịch kiểm toán bắt buộc tối thiểu 5 ký tự."
+        )
 
     asset = _resolve_file_asset(asset_id, session=sess)
     if asset is None:
@@ -1458,6 +1509,12 @@ def quarantine_override(
         "asset_status": asset.status,
         "revision_status": revision.status,
     }
+
+    for rev in asset.revisions:
+        if rev.id != revision.id and (rev.is_current or rev.status == "ACTIVE"):
+            rev.is_current = False
+            rev.status = "REPLACED"
+            rev.replaced_at = now
 
     revision.blob_id = blob.id
     revision.status = "ACTIVE"
@@ -1549,6 +1606,7 @@ def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
         "status": effective_status,
         "asset_status": asset.status,
         "revision_status": cur_rev.status if cur_rev else asset.status,
+        "virus_scan_status": getattr(asset, "virus_scan_status", "CLEAN"),
         "current_version": cur_rev.revision_no if cur_rev else 1,
         "revision_no": cur_rev.revision_no if cur_rev else 1,
         "created_at": asset.created_at.isoformat() if asset.created_at else None,
@@ -1571,12 +1629,25 @@ def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
 
 def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
     """Serialize LessonResource with synthetic public UUIDv5 per ADR-002."""
+    fa = res.file_asset
+    file_asset_id = str(fa.public_id) if fa and hasattr(fa, "public_id") else None
+    course_id = (
+        str(fa.course.public_id)
+        if fa and getattr(fa, "course", None) and hasattr(fa.course, "public_id")
+        else (str(res.lesson.course.public_id) if res.lesson and res.lesson.course else "")
+    )
+    download_url = (
+        f"/student/courses/{course_id}/files/{str(res.public_id)}/download"
+        if course_id
+        else f"/student/files/{file_asset_id}/download"
+    )
     return {
         "resource_id": str(res.public_id),
         "lesson_id": str(res.lesson.public_id) if res.lesson else None,
-        "title": res.label or (res.file_asset.display_name if res.file_asset else None),
+        "title": res.label or (fa.display_name if fa else None),
         "label": res.label,
-        "file_asset": _serialize_file_asset(res.file_asset) if res.file_asset else None,
+        "download_url": download_url,
+        "file_asset": _serialize_file_asset(fa) if fa else None,
         "position": res.position,
         "is_required": res.is_required,
         "created_at": res.created_at.isoformat() if res.created_at else None,

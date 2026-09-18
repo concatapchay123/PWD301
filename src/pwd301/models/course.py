@@ -15,11 +15,15 @@ Implements canonical schema tables from sql/002_course_learning.sql:
 
 from __future__ import annotations
 
+import json
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship, validates
+
+if TYPE_CHECKING:
+    from pwd301.models.file_import import LessonResource
 
 from pwd301.extensions import Base, db
 from pwd301.models.types import (
@@ -30,6 +34,24 @@ from pwd301.models.types import (
     UTCDateTime,
     utc_now,
 )
+
+
+def _parse_string_list(raw: str | None) -> list[str]:
+    """Parse list of strings from JSON array or newline-delimited text."""
+    if not raw:
+        return []
+    stripped = raw.strip()
+    if not stripped:
+        return []
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+    lines = [line.strip() for line in stripped.splitlines()]
+    return [line for line in lines if line]
 
 
 class Course(Base):
@@ -61,6 +83,9 @@ class Course(Base):
         nullable=False,
     )
     description = db.Column(NVarCharMax, nullable=True)
+    learning_objectives = db.Column(NVarCharMax, nullable=True)
+    target_audience = db.Column(NVarCharMax, nullable=True)
+    completion_requirements = db.Column(NVarCharMax, nullable=True)
     category = db.Column(sa.Unicode(100), nullable=True)
     difficulty = db.Column(sa.String(20), nullable=True)
     owner_instructor_id = db.Column(
@@ -173,6 +198,21 @@ class Course(Base):
     def owner_id(self) -> int | None:
         """Alias for owner_instructor_id conforming to task description."""
         return self.owner_instructor_id
+
+    @property
+    def code(self) -> str:
+        """Alias for course_code."""
+        return self.course_code
+
+    @property
+    def learning_objectives_list(self) -> list[str]:
+        """Return learning objectives as a parsed list of strings."""
+        return _parse_string_list(self.learning_objectives)
+
+    @property
+    def target_audience_list(self) -> list[str]:
+        """Return target audience items as a parsed list of strings."""
+        return _parse_string_list(self.target_audience)
 
     @validates("course_code")
     def _validate_course_code(self, key: str, value: str | None) -> str | None:
@@ -414,7 +454,12 @@ class Lesson(Base):
     )
     title = db.Column(sa.Unicode(200), nullable=False)
     summary = db.Column(sa.Unicode(1000), nullable=True)
-    markdown_content = db.Column(NVarCharMax, nullable=False)
+    markdown_content = db.Column(
+        NVarCharMax,
+        nullable=False,
+        default="",
+        server_default=sa.text("''"),
+    )
     position = db.Column(sa.Integer, nullable=False)
     estimated_duration_minutes = db.Column(sa.Integer, nullable=True)
     minimum_completion_seconds = db.Column(
@@ -502,6 +547,33 @@ class Lesson(Base):
         backref="staged_lessons",
     )
     deleted_by = relationship("User", foreign_keys=[deleted_by_user_id])
+    resources = relationship(
+        "LessonResource",
+        back_populates="lesson",
+        cascade="all, delete-orphan",
+        order_by="LessonResource.position",
+    )
+
+    @property
+    def video_resource(self) -> LessonResource | None:
+        """Return the primary attached video resource if one exists."""
+        if not hasattr(self, "resources") or not self.resources:
+            return None
+        for res in self.resources:
+            if getattr(res, "file_asset", None) and getattr(res.file_asset, "is_video", False):
+                return res
+        return None
+
+    @property
+    def document_resources(self) -> list[LessonResource]:
+        """Return attached document and supplementary resources (non-video)."""
+        if not hasattr(self, "resources") or not self.resources:
+            return []
+        return [
+            res
+            for res in self.resources
+            if getattr(res, "file_asset", None) and not getattr(res.file_asset, "is_video", False)
+        ]
 
     @property
     def content_markdown(self) -> str:
@@ -511,6 +583,15 @@ class Lesson(Base):
     @content_markdown.setter
     def content_markdown(self, value: str) -> None:
         self.markdown_content = value
+
+    @property
+    def order_index(self) -> int:
+        """Alias for position conforming to standard naming."""
+        return self.position
+
+    @order_index.setter
+    def order_index(self, value: int) -> None:
+        self.position = value
 
 
 class Enrollment(Base):

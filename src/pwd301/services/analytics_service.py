@@ -33,6 +33,7 @@ from pwd301.models.attempt_regrade import (
 from pwd301.models.course import Course, Enrollment
 from pwd301.models.file_import import FileBlob, FileRevision
 from pwd301.models.identity import InstructorApplication, Role, User, UserRole
+from pwd301.models.question_bank import Question
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
     require_course_manager,
@@ -329,6 +330,8 @@ def get_instructor_overview_analytics(
             "instructor_name": actor.display_name,
             "managed_courses_count": 0,
             "total_students_count": 0,
+            "total_students": 0,
+            "total_questions": 0,
             "active_enrollments_count": 0,
             "completed_enrollments_count": 0,
             "average_progress_percent": 0.0,
@@ -356,17 +359,19 @@ def get_instructor_overview_analytics(
     completed_enrollments_count = int(enr_stats.completed or 0)
     overall_avg_progress = round(float(enr_stats.avg_progress or 0.0), 2)
 
-    # Pending essay grading count across managed courses
-    pending_grading_count = int(
-        sess.query(func.count(AssessmentAttempt.id))
-        .join(Assessment, AssessmentAttempt.assessment_id == Assessment.id)
+    # Questions count across managed courses
+    total_questions_count = (
+        sess.query(func.count(Question.id))
         .filter(
-            Assessment.course_id.in_(course_ids),
-            AssessmentAttempt.status == "PENDING_GRADING",
+            Question.course_id.in_(course_ids),
+            Question.deleted_at.is_(None),
         )
         .scalar()
         or 0
     )
+
+    # All assessments are now objective and auto-graded (no pending essay grading)
+    pending_grading_count = 0
 
     # Per-course summaries (single grouped query)
     course_enr_rows = (
@@ -418,6 +423,8 @@ def get_instructor_overview_analytics(
         "instructor_name": actor.display_name,
         "managed_courses_count": managed_courses_count,
         "total_students_count": total_students_count,
+        "total_students": total_students_count,
+        "total_questions": int(total_questions_count),
         "active_enrollments_count": active_enrollments_count,
         "completed_enrollments_count": completed_enrollments_count,
         "average_progress_percent": overall_avg_progress,
@@ -701,6 +708,8 @@ def get_student_learning_overview(
             "course_id": str(e.course.public_id) if e.course else None,
             "course_code": e.course.course_code if e.course else None,
             "course_title": e.course.title if e.course else None,
+            "title": e.course.title if e.course else None,
+            "name": e.course.title if e.course else None,
             "instructor_name": (
                 e.course.owner_instructor.display_name
                 if (e.course and e.course.owner_instructor)
@@ -708,6 +717,7 @@ def get_student_learning_overview(
             ),
             "progress_percent": round(float(e.current_progress_percent or 0.0), 2),
             "status": e.status,
+            "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
             "lessons_count": (
                 len([les for les in e.course.lessons if les.deleted_at is None]) if e.course else 0
             ),

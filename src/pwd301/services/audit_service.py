@@ -625,7 +625,11 @@ def suspend_user_account(
 
     clean_reason = (reason or "").strip()
     if not clean_reason:
-        raise ValidationError("Reason is required to suspend a user account.")
+        raise ValidationError("Reason is required for account suspension.")
+    if len(clean_reason) < 5:
+        raise ValidationError(
+            "Reason is required: Lý do tạm ngưng tài khoản bắt buộc tối thiểu 5 ký tự."
+        )
 
     sess = session if session is not None else db.session
     target_user = _resolve_user(target_user_id, session=sess)
@@ -634,6 +638,22 @@ def suspend_user_account(
 
     if target_user.id == admin_actor.id:
         raise ValidationError("Administrators cannot suspend their own account.")
+
+    # Guard: Last Admin Protection
+    if target_user.is_admin:
+        from pwd301.models.identity import Role
+
+        admin_role = sess.query(Role).filter(Role.code == "ADMIN").first()
+        if admin_role:
+            active_admins = (
+                sess.query(User)
+                .filter(User.roles.contains(admin_role), User.status != "SUSPENDED")
+                .all()
+            )
+            if len(active_admins) <= 1 and any(u.id == target_user.id for u in active_admins):
+                raise AdminActionForbiddenError(
+                    "Không thể tạm ngưng tài khoản Quản trị viên duy nhất còn lại của hệ thống."
+                )
 
     now = utc_now()
     before_state = {

@@ -1,0 +1,965 @@
+<!DOCTYPE html><html lang="vi" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "background": "#f9f9ff",
+          "surface-container-lowest": "#ffffff",
+          "on-surface": "#111c2d",
+          "danger": "#DC2626",
+          "success-bg": "#ECFDF5",
+          "on-surface-variant": "#464554",
+          "primary-fixed": "#e1e0ff",
+          "on-secondary-container": "#54647a",
+          "secondary-fixed": "#d3e4fe",
+          "secondary-fixed-dim": "#b7c8e1",
+          "on-error-container": "#93000a",
+          "info": "#0284C7",
+          "on-secondary-fixed": "#0b1c30",
+          "error-container": "#ffdad6",
+          "surface-container-high": "#dee8ff",
+          "border-strong": "#CBD5E1",
+          "primary": "#4648d4",
+          "surface-variant": "#d8e3fb",
+          "on-tertiary": "#ffffff",
+          "on-tertiary-fixed": "#301400",
+          "primary-fixed-dim": "#c0c1ff",
+          "warning": "#D97706",
+          "secondary": "#505f76",
+          "danger-bg": "#FEF2F2",
+          "outline": "#767586",
+          "tertiary-fixed": "#ffdcc5",
+          "warning-bg": "#FFFBEB",
+          "error": "#ba1a1a",
+          "on-tertiary-container": "#fffbff",
+          "border-default": "#E2E8F0",
+          "tertiary-fixed-dim": "#ffb783",
+          "surface-bright": "#f9f9ff",
+          "surface-container-highest": "#d8e3fb",
+          "surface-dim": "#cfdaf2",
+          "outline-variant": "#c7c4d7",
+          "bg-background": "#F8FAFC",
+          "tertiary-container": "#b55d00",
+          "on-secondary": "#ffffff",
+          "on-error": "#ffffff",
+          "primary-subtle": "#EEF2FF",
+          "text-disabled": "#94A3B8",
+          "on-secondary-fixed-variant": "#38485d",
+          "on-primary-container": "#fffbff",
+          "surface-container-low": "#f0f3ff",
+          "on-primary-fixed": "#07006c",
+          "inverse-surface": "#263143",
+          "inverse-on-surface": "#ecf1ff",
+          "surface": "#f9f9ff",
+          "on-primary-fixed-variant": "#2f2ebe",
+          "on-tertiary-fixed-variant": "#703700",
+          "text-muted": "#64748B",
+          "surface-tint": "#494bd6",
+          "primary-container": "#6063ee",
+          "inverse-primary": "#c0c1ff",
+          "bg-surface": "#FFFFFF",
+          "text-main": "#1E293B",
+          "on-primary": "#ffffff",
+          "tertiary": "#904900",
+          "success": "#059669",
+          "secondary-container": "#d0e1fb",
+          "info-bg": "#F0F9FF",
+          "surface-container": "#e7eeff",
+          "on-background": "#111c2d",
+          "primary-hover": "#4F46E5"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "margin": "2rem",
+          "space-md": "1.5rem",
+          "gutter": "1.5rem",
+          "space-xl": "3rem",
+          "space-xs": "0.5rem",
+          "space-lg": "2rem",
+          "space-sm": "1rem"
+        },
+        "fontFamily": {
+          "body-md-medium": [
+            "Plus Jakarta Sans"
+          ],
+          "headline-md": [
+            "Plus Jakarta Sans"
+          ],
+          "caption": [
+            "Plus Jakarta Sans"
+          ],
+          "label-md": [
+            "Plus Jakarta Sans"
+          ],
+          "headline-sm": [
+            "Plus Jakarta Sans"
+          ],
+          "body-md": [
+            "Plus Jakarta Sans"
+          ],
+          "headline-lg": [
+            "Plus Jakarta Sans"
+          ],
+          "label-sm": [
+            "Plus Jakarta Sans"
+          ],
+          "headline-lg-mobile": [
+            "Plus Jakarta Sans"
+          ]
+        },
+        "fontSize": {
+          "body-md-medium": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-md": [
+            "20px",
+            {
+              "lineHeight": "28px",
+              "fontWeight": "600"
+            }
+          ],
+          "caption": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "400"
+            }
+          ],
+          "label-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-sm": [
+            "18px",
+            {
+              "lineHeight": "26px",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "14px",
+            {
+              "lineHeight": "20px",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-lg": [
+            "28px",
+            {
+              "lineHeight": "36px",
+              "fontWeight": "700"
+            }
+          ],
+          "label-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-lg-mobile": [
+            "24px",
+            {
+              "lineHeight": "32px",
+              "fontWeight": "700"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-bg-background font-body-md text-text-main antialiased"><aside class="fixed left-0 top-0 h-full w-[276px] bg-bg-surface z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col flex-1 min-h-0"><div class="h-[74px] px-space-md flex items-center gap-space-xs bg-bg-surface"><img alt="PWD301 Logo Brandmark" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1Xj7RaPqbWliKn7IMWDSmjV-0fxWADLzXWR_Jx-Ufz6M6Bsb3CMvBpklvIURxUoDes-pEWq9tDbqguiZDDx8oA0VFXYA3hwc7fGFMvyBrXjQbSrZn_ng7xEHkkH04QDwUx2x48D3J10c56qbVQV1GCRmKDqA_Dmi9BcDHYsQOj-X9WBz5RSZM6SzwBEoAXcE0ddENyByFztlcYw-k12sXy-abuGC9CYHz3wYDSeKuyN7j7sIKKUyc-zpYM"><div class="flex flex-col"><span class="font-headline-sm text-headline-sm text-on-surface leading-none">PWD301</span><span class="font-caption text-caption text-text-muted tracking-wider uppercase mt-1">Academy LMS</span></div></div><div class="px-space-md py-space-xs"><div class="bg-surface-container-low p-1 rounded-lg flex items-center justify-between text-caption font-caption"><button class="flex-1 py-1 text-center rounded bg-primary text-on-primary font-label-sm shadow-sm transition-all" type="button">Sinh viên</button><button class="flex-1 py-1 text-center rounded text-text-muted hover:text-on-surface transition-all" type="button">Giảng viên</button><button class="flex-1 py-1 text-center rounded text-text-muted hover:text-on-surface transition-all" type="button">Quản trị</button></div></div><nav class="flex-1 px-space-sm py-space-xs overflow-y-auto space-y-1" data-active-classes="bg-primary-container text-on-primary-container font-label-md rounded-xl shadow-sm"><div class="px-space-sm pt-2 pb-1 text-caption font-caption text-text-muted uppercase tracking-wider">Học tập &amp; Tiến độ</div><a aria-current="page" class="flex items-center gap-3 px-space-sm py-2.5 transition-colors bg-primary-container text-on-primary-container font-label-md rounded-xl shadow-sm" data-path="bang-dieu-khien" href="#"><span class="material-symbols-outlined text-[20px]">dashboard</span><span class="font-body-md-medium text-body-md-medium">Bảng điều khiển</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="khoa-hoc-cua-toi" href="#"><span class="material-symbols-outlined text-[20px]">auto_stories</span><span class="font-body-md-medium text-body-md-medium">Khóa học của tôi</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="lich-deadline" href="#"><span class="material-symbols-outlined text-[20px]">calendar_month</span><span class="font-body-md-medium text-body-md-medium">Lịch &amp; Deadline</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="bai-giang-tai-lieu" href="#"><span class="material-symbols-outlined text-[20px]">menu_book</span><span class="font-body-md-medium text-body-md-medium">Bài giảng &amp; Tài liệu</span></a><div class="px-space-sm pt-4 pb-1 text-caption font-caption text-text-muted uppercase tracking-wider">Khảo thí &amp; Công cụ</div><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="danh-gia-bai-thi" href="#"><span class="material-symbols-outlined text-[20px]">assignment_turned_in</span><span class="font-body-md-medium text-body-md-medium">Đánh giá &amp; Bài thi</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="ngan-hang-cau-hoi" href="#"><span class="material-symbols-outlined text-[20px]">quiz</span><span class="font-body-md-medium text-body-md-medium">Ngân hàng câu hỏi</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="tro-ly-ai" href="#"><span class="material-symbols-outlined text-[20px]">smart_toy</span><span class="font-body-md-medium text-body-md-medium">Trợ lý AI</span></a><a class="flex items-center gap-3 px-space-sm py-2.5 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="cai-dat-he-thong" href="#"><span class="material-symbols-outlined text-[20px]">settings</span><span class="font-body-md-medium text-body-md-medium">Cài đặt hệ thống</span></a></nav></div><div class="p-space-sm"><div class="bg-surface-container-low rounded-xl p-space-sm flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-2.5 min-w-0"><div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="min-w-0 flex flex-col"><span class="font-body-md-medium text-body-md-medium text-on-surface truncate">Nguyễn Minh Anh</span><span class="font-caption text-caption text-text-muted truncate">MA-8392 • IT4</span></div></div><button class="text-text-muted hover:text-danger p-1 rounded transition-colors" title="Đăng xuất" type="button"><span class="material-symbols-outlined text-[20px]">logout</span></button></div></div></aside><div class="pl-[276px]"><header class="fixed top-0 left-[276px] right-0 h-[74px] bg-bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex items-center justify-between px-space-lg"><div class="flex items-center gap-space-sm"><img alt="PWD301 Logo Brandmark" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1Xj7RaPqbWliKn7IMWDSmjV-0fxWADLzXWR_Jx-Ufz6M6Bsb3CMvBpklvIURxUoDes-pEWq9tDbqguiZDDx8oA0VFXYA3hwc7fGFMvyBrXjQbSrZn_ng7xEHkkH04QDwUx2x48D3J10c56qbVQV1GCRmKDqA_Dmi9BcDHYsQOj-X9WBz5RSZM6SzwBEoAXcE0ddENyByFztlcYw-k12sXy-abuGC9CYHz3wYDSeKuyN7j7sIKKUyc-zpYM"><nav class="flex items-center gap-2 font-body-md-medium text-body-md-medium text-text-muted"><span class="text-on-surface font-label-md">PWD301</span><span class="text-text-disabled">/</span><span class="text-on-surface-variant font-label-md">Thư viện thành phần &amp; App Shell</span></nav></div><div class="flex items-center gap-space-md"><div class="flex items-center bg-surface-container-low p-1 rounded-lg text-caption font-caption"><button class="px-2 py-0.5 rounded bg-bg-surface text-on-surface font-label-sm shadow-sm transition-all" type="button">VI</button><button class="px-2 py-0.5 rounded text-text-muted hover:text-on-surface transition-all" type="button">EN</button></div><button class="relative p-2 text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-surface-container-lowest"></span></button><div class="h-6 w-px bg-surface-container-high"></div><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="flex flex-col text-left"><span class="font-label-md text-label-md text-on-surface leading-tight">Nguyễn Minh Anh</span><span class="font-caption text-caption text-text-muted">Sinh viên - MA-8392</span></div></div></div></header><main class="w-full pt-[74px] px-space-lg py-space-lg bg-bg-background min-h-screen"><div class="flex flex-col w-full font-body text-on-surface">
+<!-- Top Archival Header Panel -->
+<div class="bg-surface-container-lowest rounded-xl p-6 mb-6 shadow-sm flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">
+<div class="space-y-1.5 max-w-3xl">
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label text-xs tracking-wider uppercase font-medium">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+          Operational Cockpit • Lớp Bảo Mật Cấp III
+        </span>
+<span class="text-xs font-label text-on-surface-variant/80">Mã trạm: SEC-SOC-04</span>
+</div>
+<h1 class="font-headline text-2xl lg:text-3xl text-on-surface tracking-tight font-normal leading-tight">
+        Trung tâm Giám sát Vận hành &amp; Nhật ký Kiểm toán Toàn viện
+      </h1>
+<p class="text-sm text-on-surface-variant font-body leading-relaxed">
+        Phiên trực ban giám sát an ninh: <span class="font-medium text-on-surface">Lê Thu Hà (AD-0012)</span> • Thẩm quyền: Tổng kiểm soát Hạ tầng &amp; Khảo thí số • Token phiên: <span class="font-mono text-xs text-primary font-medium">SES-2026-X8849-AUTH</span>
+</p>
+</div>
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
+
+<button class="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-primary to-primary-container text-on-primary font-label text-sm font-medium hover:opacity-95 shadow-sm active:scale-[0.99] transition-all min-h-[44px]" onclick="openBackupModal()" type="button">
+<span class="material-symbols-outlined text-lg">shield</span>
+<span class="">Tạo bản sao lưu khẩn cấp</span>
+</button>
+</div>
+</div>
+<!-- Main Cockpit Split Layout: 65% Operations / 35% Threat & Immutable Audit -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+<!-- LEFT COLUMN (65% -> 8 cols of 12) -->
+<div class="xl:col-span-8 flex flex-col gap-6">
+<!-- 1. Service Health Matrix (Academic Trust & Fail-Closed Notice) -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+<div>
+<h2 class="font-headline text-lg text-on-surface">Ma trận Sức khỏe Hạ tầng Dịch vụ</h2>
+<p class="font-body text-xs text-on-surface-variant">Tình trạng các tiến trình nền tảng, cơ chế phát hiện và điều tiết tải</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 text-xs font-label bg-surface-container-low text-on-surface-variant px-3 py-1 rounded-md">
+<span class="material-symbols-outlined text-sm text-primary">sync</span> 6 Node Hoạt Động
+            </span>
+<span class="inline-flex items-center gap-1 text-xs font-label bg-tertiary-fixed text-on-tertiary-fixed px-3 py-1 rounded-md font-medium">
+<span class="material-symbols-outlined text-sm">warning</span> 1 Cần Chú Ý
+            </span>
+</div>
+</div>
+<!-- Fail-Closed Banner for Quarantine Policy -->
+<div class="bg-surface-container p-4 rounded-xl mb-5 flex items-start gap-3.5">
+<div class="w-9 h-9 rounded-lg bg-tertiary/15 text-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-xl">policy</span>
+</div>
+<div class="text-xs space-y-1">
+<div class="font-label font-semibold text-on-surface flex items-center gap-2">
+<span class="">Chính sách Cách ly An toàn Tuyệt đối (Fail-Closed Quarantine Sandbox)</span>
+<span class="px-2 py-0.5 rounded bg-tertiary text-on-tertiary text-[10px] uppercase font-mono">Hiệu Lực</span>
+</div>
+<p class="text-on-surface-variant leading-relaxed">
+              Dịch vụ Quét mã độc ClamAV hiện chạy ở trạng thái <strong class="text-on-surface">Degraded (Độ trễ gia tăng)</strong>. Áp dụng quy tắc học thuật khắt khe: mọi bài nộp nén (.zip, .xlsm, .docx) đều bị tạm giữ trong vùng Sandbox biệt lập, <span class="text-error font-medium">tuyệt đối không giải phóng về hệ thống giảng dạy</span> cho tới khi chữ ký quét sạch 100%.
+            </p>
+</div>
+</div>
+<!-- 6 Micro Service Cards Horizontal Matrix -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+<!-- Web App Core -->
+<div class="bg-surface-container-low p-3.5 rounded-lg flex flex-col justify-between gap-3">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-on-surface-variant">PWD-WebCore</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 99.98%
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">Web App Service</div>
+<div class="text-xs text-on-surface-variant">Cluster Nginx • 14ms Latency</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">Req: 1,840 rpm</span>
+<span class="text-primary font-medium">Bình thường</span>
+</div>
+</div>
+<!-- Primary Database -->
+<div class="bg-surface-container-low p-3.5 rounded-lg flex flex-col justify-between gap-3">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-on-surface-variant">PWD-Postgres</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 100%
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">Master DB (PostgreSQL 16)</div>
+<div class="text-xs text-on-surface-variant">Conn Pool: 42/120 • WAL Sync OK</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">Read IOPS: 4.2k</span>
+<span class="text-primary font-medium">Ổn định</span>
+</div>
+</div>
+<!-- Background Daemons -->
+<div class="bg-surface-container-low p-3.5 rounded-lg flex flex-col justify-between gap-3">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-on-surface-variant">Celery Workers</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 99.8%
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">Background Daemons</div>
+<div class="text-xs text-on-surface-variant">Queue: 18 đang đợi • 4 Daemons</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">CPU: 32%</span>
+<span class="text-primary font-medium">Đang xử lý</span>
+</div>
+</div>
+<!-- ClamAV Malware Scanner (Degraded) -->
+<div class="bg-surface-container p-3.5 rounded-lg flex flex-col justify-between gap-3 relative overflow-hidden">
+<div class="absolute top-0 right-0 w-2 h-full bg-tertiary"></div>
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-tertiary font-semibold">ClamAV Quarantine</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[11px] font-semibold">
+                Degraded
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">Malware Engine</div>
+<div class="text-xs text-tertiary font-medium">Engine Signature: Update Lag 4m</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">Quarantine: 9 tệp</span>
+<span class="text-tertiary font-semibold">Fail-Closed On</span>
+</div>
+</div>
+<!-- Object Storage S3 MinIO -->
+<div class="bg-surface-container-low p-3.5 rounded-lg flex flex-col justify-between gap-3">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-on-surface-variant">MinIO Vault</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 100%
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">Object Storage S3</div>
+<div class="text-xs text-on-surface-variant">Dung lượng: 1.84 TB / 5 TB</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">Write: 18 MB/s</span>
+<span class="text-primary font-medium">Sẵn sàng</span>
+</div>
+</div>
+<!-- RAG Vector Engine -->
+<div class="bg-surface-container-low p-3.5 rounded-lg flex flex-col justify-between gap-3">
+<div class="flex items-center justify-between">
+<span class="font-label text-xs uppercase tracking-wider text-on-surface-variant">Qdrant Vector</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> 99.9%
+              </span>
+</div>
+<div>
+<div class="text-sm font-semibold text-on-surface">RAG Vector Engine</div>
+<div class="text-xs text-on-surface-variant">148k Giáo trình Embeddings</div>
+</div>
+<div class="flex items-center justify-between pt-1 text-[11px] text-on-surface-variant font-mono">
+<span class="">Query: 28ms</span>
+<span class="text-primary font-medium">Tối ưu</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. Background Operations & Job Progress Section -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm">
+<div class="flex items-center justify-between mb-4">
+<div>
+<h2 class="font-headline text-lg text-on-surface">Tác vụ Nền Đang Thực Thi (Background Operations)</h2>
+<p class="font-body text-xs text-on-surface-variant">Hàng đợi tái cấu trúc điểm số, nạp bộ đề và quét tệp định kỳ</p>
+</div>
+<span class="font-mono text-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1 rounded">
+            Daemons Threads: 8 Active
+          </span>
+</div>
+<div class="space-y-4">
+<!-- Job 1: Recompute Midterm (Running 71%) -->
+<div class="p-4 rounded-xl bg-surface-container-low flex flex-col gap-3">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container/20 text-primary flex items-center justify-center font-mono text-xs font-bold">
+                  RG
+                </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-sm font-semibold text-on-surface">Chấm lại bài thi trắc nghiệm Midterm PWD301</span>
+<span class="font-mono text-xs text-primary bg-primary-fixed px-2 py-0.5 rounded">#RG-2026-008</span>
+</div>
+<div class="text-xs text-on-surface-variant mt-0.5">
+                    Chính sách: <span class="font-medium text-on-surface">Answer-only recompute</span> (Bảo lưu mốc nộp bài gốc • Khối lớp IT4-K22)
+                  </div>
+</div>
+</div>
+<div class="flex items-center gap-2 self-end sm:self-auto">
+<button class="px-3 py-1.5 rounded bg-surface-container-highest hover:bg-surface-dim text-xs font-label font-medium text-on-surface transition-colors min-h-[36px]" type="button">
+                  Tạm dừng
+                </button>
+<button class="px-3 py-1.5 rounded bg-surface-container-highest hover:bg-surface-dim text-xs font-label font-medium text-on-surface transition-colors min-h-[36px]" type="button">
+                  Chạy lại
+                </button>
+</div>
+</div>
+<!-- Visual Progress Bar + Step details -->
+<div class="space-y-1.5">
+<div class="flex justify-between items-center text-xs">
+<span class="font-mono text-on-surface-variant">Tiến độ: 1,420 / 2,000 bài làm</span>
+<span class="font-mono font-semibold text-primary">71% Hoàn thành</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-primary rounded-full transition-all duration-500" style="width: 71%;"></div>
+</div>
+<div class="flex justify-between text-[11px] text-on-surface-variant">
+<span class="">Ước tính còn lại: 1 phút 48 giây</span>
+<span class="">Tốc độ: 18 bài/giây</span>
+</div>
+</div>
+</div>
+<!-- Job 2: Import Questions DOCX (Completed) -->
+<div class="p-3.5 rounded-lg bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-surface-container text-on-surface-variant flex items-center justify-center font-mono text-xs font-bold">
+                IMP
+              </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-sm font-medium text-on-surface">Nạp ngân hàng đề thi chuẩn hóa từ .DOCX</span>
+<span class="font-mono text-xs text-on-surface-variant">#IMP-9201</span>
+</div>
+<div class="text-xs text-on-surface-variant">Người thực hiện: TS. Hoàng Long (Bộ môn Mạng máy tính) • 150 câu hỏi</div>
+</div>
+</div>
+<div class="flex items-center gap-3 self-end sm:self-auto">
+<span class="inline-flex items-center gap-1 text-xs font-label font-medium text-on-surface bg-surface-container-high px-2.5 py-1 rounded">
+<span class="material-symbols-outlined text-sm text-primary">check_circle</span> Hoàn tất (100%)
+              </span>
+<button class="text-xs text-primary hover:underline font-label" type="button">Xem báo cáo</button>
+</div>
+</div>
+<!-- Job 3: Deep Scan Macro File (Review / Quarantine) -->
+<div class="p-3.5 rounded-lg bg-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center font-mono text-xs font-bold">
+                SCN
+              </div>
+<div>
+<div class="flex items-center gap-2">
+<span class="text-sm font-medium text-on-surface">Quét sâu ClamAV tệp Lab04_Helper.xlsm</span>
+<span class="font-mono text-xs text-tertiary font-semibold">#SCAN-892</span>
+</div>
+<div class="text-xs text-on-surface-variant">Phát hiện VBA Macro không chữ ký số • Tạm giữ tại Sandbox V-Quarantine</div>
+</div>
+</div>
+<div class="flex items-center gap-2 self-end sm:self-auto">
+<span class="px-2.5 py-1 rounded bg-tertiary text-on-tertiary text-xs font-label font-medium">Quarantine Review</span>
+<button class="px-3 py-1 rounded bg-surface-container-lowest text-xs font-label text-on-surface shadow-sm hover:bg-surface-container-high min-h-[36px]" type="button">Cô lập vĩnh viễn</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 3. Isolated Danger Zone (Backup & Staging Restore Hub) -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm">
+<div class="flex items-start justify-between gap-4 mb-4">
+<div class="space-y-1">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-error text-xl">gavel</span>
+<h2 class="font-headline text-lg text-on-surface">Khu Vực Quản Trị Đặc Quyền (Isolated Danger Zone)</h2>
+</div>
+<p class="font-body text-xs text-on-surface-variant">
+              Quản lý bản sao lưu và trung tâm khôi phục đối soát. Mọi tác vụ tại đây đều kích hoạt ghi vết kiểm toán vĩnh viễn.
+            </p>
+</div>
+<span class="text-xs font-label uppercase px-2.5 py-1 rounded bg-surface-container text-on-surface-variant font-medium">
+            Air-gapped Replica
+          </span>
+</div>
+<!-- Strict Staging Architecture Callout -->
+<div class="bg-surface-container p-4 rounded-lg mb-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-2xl mt-0.5">schema</span>
+<div class="text-xs">
+<span class="font-semibold text-on-surface block mb-0.5">Nguyên tắc Bất khả Xâm phạm: "Never Overwrite Live Database"</span>
+<span class="text-on-surface-variant">Mọi yêu cầu phục hồi sẽ bung bản ghi sang máy chủ Staging cô lập song song để đối soát sai khác (Diff Check) trước khi cân nhắc đồng bộ dữ liệu vào sản phẩm.</span>
+</div>
+</div>
+<div class="shrink-0">
+<span class="text-xs font-mono px-3 py-1.5 rounded bg-surface-container-lowest text-on-surface font-medium shadow-sm">
+              Staging Host: stg-eval-pwd.edu.vn
+            </span>
+</div>
+</div>
+<!-- Backup Archive List -->
+<div class="space-y-3 mb-6">
+<div class="text-xs font-label uppercase tracking-wider text-on-surface-variant font-semibold">Danh mục Snapshot lưu trữ gần nhất</div>
+<!-- Item 1: Full Backup -->
+<div class="p-3.5 rounded-lg bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="space-y-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-primary text-on-primary font-label text-[10px] uppercase font-semibold">Toàn phần (Full)</span>
+<span class="font-mono text-xs font-bold text-on-surface">SNAPSHOT-2026-03-31-DAILY-FULL.tar.zst</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant font-mono">
+<span class="">Dung lượng: 14.82 GB</span>
+<span class="">•</span>
+<span class="">SHA-256: 9b2d...f41e</span>
+<span class="">•</span>
+<span class="">Tạo lúc: 02:00:00 31/03/2026</span>
+</div>
+</div>
+<button class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-surface-container-high hover:bg-surface-dim text-xs font-label font-medium text-primary transition-all min-h-[40px]" onclick="initiateRestore('SNAPSHOT-2026-03-31-DAILY-FULL.tar.zst', 'Toàn phần (Full)')" type="button">
+<span class="material-symbols-outlined text-base">restore</span> Khôi phục sang Staging
+            </button>
+</div>
+<!-- Item 2: Incremental Backup -->
+<div class="p-3.5 rounded-lg bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="space-y-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-label text-[10px] uppercase font-semibold">Tăng dần (Incremental)</span>
+<span class="font-mono text-xs font-bold text-on-surface">INC-2026-03-31-1000-WAL.bin</span>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant font-mono">
+<span class="">Dung lượng: 284 MB</span>
+<span class="">•</span>
+<span class="">SHA-256: 4a77...99c2</span>
+<span class="">•</span>
+<span class="">Tạo lúc: 10:00:00 31/03/2026</span>
+</div>
+</div>
+<button class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-surface-container-high hover:bg-surface-dim text-xs font-label font-medium text-primary transition-all min-h-[40px]" onclick="initiateRestore('INC-2026-03-31-1000-WAL.bin', 'Tăng dần (Incremental)')" type="button">
+<span class="material-symbols-outlined text-base">restore</span> Khôi phục sang Staging
+            </button>
+</div>
+</div>
+<!-- 4-Step Guardrail Restore Verification Visual Workflow -->
+<div class="bg-surface-container p-4 rounded-xl">
+<div class="flex items-center justify-between mb-3">
+<span class="text-xs font-label uppercase tracking-widest text-on-surface-variant font-semibold">Khung Kiểm soát 4 Bước Bắt Buộc (Strict 4-Step Guardrails)</span>
+<span class="text-xs font-body text-on-surface-variant">Không chấp thuận bỏ qua bất kỳ bước nào</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+<div class="bg-surface-container-lowest p-3 rounded-lg flex flex-col justify-between gap-1 shadow-sm">
+<div class="text-[11px] font-label text-on-surface-variant flex items-center justify-between">
+<span class="">Bước 01</span>
+<span class="material-symbols-outlined text-primary text-base">fingerprint</span>
+</div>
+<div class="text-xs font-semibold text-on-surface">Xác thực lại (Re-auth)</div>
+<div class="text-[11px] text-on-surface-variant">Mã OTP FIDO2 phần cứng</div>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-lg flex flex-col justify-between gap-1 shadow-sm">
+<div class="text-[11px] font-label text-on-surface-variant flex items-center justify-between">
+<span class="">Bước 02</span>
+<span class="material-symbols-outlined text-primary text-base">keyboard</span>
+</div>
+<div class="text-xs font-semibold text-on-surface">Nhập cụm xác nhận</div>
+<div class="text-[11px] font-mono text-tertiary">"KHÔI PHỤC DỮ LIỆU"</div>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-lg flex flex-col justify-between gap-1 shadow-sm">
+<div class="text-[11px] font-label text-on-surface-variant flex items-center justify-between">
+<span class="">Bước 03</span>
+<span class="material-symbols-outlined text-primary text-base">history_edu</span>
+</div>
+<div class="text-xs font-semibold text-on-surface">Lý do kiểm toán</div>
+<div class="text-[11px] text-on-surface-variant">Bắt buộc tối thiểu 20 từ</div>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-lg flex flex-col justify-between gap-1 shadow-sm">
+<div class="text-[11px] font-label text-on-surface-variant flex items-center justify-between">
+<span class="">Bước 04</span>
+<span class="material-symbols-outlined text-primary text-base">draw</span>
+</div>
+<div class="text-xs font-semibold text-on-surface">Ký số xác nhận</div>
+<div class="text-[11px] text-on-surface-variant">Chứng thư số CQT nội bộ</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN (35% -> 4 cols of 12) -->
+<div class="xl:col-span-4 flex flex-col gap-6">
+<!-- Actionable Alert Queue -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm">
+<div class="flex items-center justify-between mb-3.5">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-xl">crisis_alert</span>
+<h2 class="font-headline text-base text-on-surface">Hàng đợi Cảnh báo An ninh</h2>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-mono text-xs font-bold">2 Mới</span>
+</div>
+<div class="space-y-3">
+<!-- Alert 1: Anomalous Auth -->
+<div class="p-3.5 rounded-lg bg-surface-container-low space-y-2.5" id="alert-card-1">
+<div class="flex items-start justify-between gap-2">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-error text-lg mt-0.5">security_update_warning</span>
+<div>
+<div class="text-xs font-bold text-on-surface">5 lần đăng nhập thất bại liên tiếp</div>
+<div class="text-[11px] text-on-surface-variant">Tài khoản: <span class="font-mono text-on-surface">tran.vantu@acad.pwd</span></div>
+</div>
+</div>
+<span class="text-[10px] font-mono text-on-surface-variant">10:12:44</span>
+</div>
+<div class="bg-surface-container px-2.5 py-1.5 rounded text-[11px] font-mono text-on-surface-variant space-y-0.5">
+<div class="">IP: 185.220.101.5 (Tor Exit Node)</div>
+<div class="">Geo: Frankfurt, DE • Tác vụ: Khóa tạm thời 30m</div>
+</div>
+<div class="flex items-center justify-end gap-2 pt-1">
+<button class="px-3 py-1.5 rounded bg-primary text-on-primary hover:opacity-90 font-label text-xs font-medium transition-opacity min-h-[36px]" onclick="acknowledgeAlert('alert-card-1', 'Chặn dải IP Tor Exit Node')" type="button">
+                Xác nhận (Acknowledge)
+              </button>
+</div>
+</div>
+<!-- Alert 2: Sandbox Latency -->
+<div class="p-3.5 rounded-lg bg-surface-container-low space-y-2.5" id="alert-card-2">
+<div class="flex items-start justify-between gap-2">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-tertiary text-lg mt-0.5">hourglass_top</span>
+<div>
+<div class="text-xs font-bold text-on-surface">Độ trễ phân tích Sandbox vượt ngưỡng</div>
+<div class="text-[11px] text-on-surface-variant">Thời gian quét trung bình: 142s (&gt; 60s quy định)</div>
+</div>
+</div>
+<span class="text-[10px] font-mono text-on-surface-variant">10:04:19</span>
+</div>
+<div class="bg-surface-container px-2.5 py-1.5 rounded text-[11px] text-on-surface-variant leading-relaxed">
+              9 tệp sinh viên đang giữ trong Sandbox. Không có sự cố rò rỉ mã nguồn.
+            </div>
+<div class="flex items-center justify-end gap-2 pt-1">
+<button class="px-3 py-1.5 rounded bg-surface-container-high hover:bg-surface-dim text-on-surface font-label text-xs font-medium transition-colors min-h-[36px]" onclick="acknowledgeAlert('alert-card-2', 'Chuyển phân luồng sang node phụ')" type="button">
+                Xác nhận &amp; Cân bằng tải
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Immutable Cryptographic Audit Stream -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm flex flex-col flex-1">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-xl">history_toggle_off</span>
+<h2 class="font-headline text-base text-on-surface">Nhật ký Kiểm toán Bất biến</h2>
+</div>
+<span class="px-2 py-0.5 rounded bg-surface-container text-[11px] font-mono font-medium text-on-surface-variant">
+            Append-Only
+          </span>
+</div>
+<p class="text-xs text-on-surface-variant mb-4 leading-relaxed">
+          Sổ cái nối tiếp mật mã học. Mỗi hành động gắn kèm mã SHA-256 đối soát. Tuyệt đối không hỗ trợ chỉnh sửa hay xóa bản ghi.
+        </p>
+<!-- Ledger Entries Stream -->
+<div class="space-y-3 overflow-y-auto max-h-[580px] pr-1">
+<!-- Entry 1 -->
+<div class="p-3 rounded-lg bg-surface-container-low space-y-2 text-xs">
+<div class="flex items-center justify-between">
+<span class="font-mono text-[11px] text-on-surface-variant">10:14:18 • 31/03/2026</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label text-[10px] font-semibold">THÀNH CÔNG</span>
+</div>
+<div class="font-semibold text-on-surface">
+              Actor: <span class="text-primary">Lê Thu Hà (AD-0012)</span>
+</div>
+<div class="text-on-surface-variant">
+              Tác vụ: Đẩy cấu hình tường lửa WAF (Chặn subnet 185.220.101.0/24)
+            </div>
+<div class="bg-surface-container px-2 py-1 rounded font-mono text-[10px] text-on-surface-variant truncate">
+              SHA: e8f2a17088b63dc4e9a3efd8e23910c22934ef02604bb49d74e578c7
+            </div>
+<div class="flex items-center justify-between pt-1">
+<span class="text-[11px] text-on-surface-variant font-label">Lý do: Phát hiện bruteforce Tor</span>
+<button class="text-primary hover:underline font-label text-[11px] font-medium" onclick="viewMetadata('AUD-98211')" type="button">Chi tiết siêu dữ liệu →</button>
+</div>
+</div>
+<!-- Entry 2 -->
+<div class="p-3 rounded-lg bg-surface-container-low space-y-2 text-xs">
+<div class="flex items-center justify-between">
+<span class="font-mono text-[11px] text-on-surface-variant">10:10:02 • 31/03/2026</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label text-[10px] font-semibold">THÀNH CÔNG</span>
+</div>
+<div class="font-semibold text-on-surface">
+              Actor: <span class="text-on-surface">System Daemon (Auto-Cron)</span>
+</div>
+<div class="text-on-surface-variant">
+              Tác vụ: Hoàn tất bản sao lưu tăng dần <span class="font-mono text-[11px]">INC-2026-03-31-1000-WAL</span>
+</div>
+<div class="bg-surface-container px-2 py-1 rounded font-mono text-[10px] text-on-surface-variant truncate">
+              SHA: 4a778c187d9f9c066b1a20fe2cfdb1e57c12693ab8d7452d5e2199c2
+            </div>
+<div class="flex items-center justify-between pt-1">
+<span class="text-[11px] text-on-surface-variant font-label">Đích: Kho lưu MinIO S3</span>
+<button class="text-primary hover:underline font-label text-[11px] font-medium" onclick="viewMetadata('AUD-98210')" type="button">Chi tiết siêu dữ liệu →</button>
+</div>
+</div>
+<!-- Entry 3 -->
+<div class="p-3 rounded-lg bg-surface-container-low space-y-2 text-xs">
+<div class="flex items-center justify-between">
+<span class="font-mono text-[11px] text-on-surface-variant">09:58:33 • 31/03/2026</span>
+<span class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container font-label text-[10px] font-semibold">TỪ CHỐI</span>
+</div>
+<div class="font-semibold text-on-surface">
+              Actor: <span class="text-error">Vũ Quang Huy (GV-4011)</span>
+</div>
+<div class="text-on-surface-variant">
+              Tác vụ: Thử nghiệm sửa câu hỏi thi sau khi bài làm đã phát hành
+            </div>
+<div class="bg-surface-container px-2 py-1 rounded font-mono text-[10px] text-on-surface-variant truncate">
+              SHA: d11bc3741890ef9217b1297e012fae205697d8120e8b1b9eac6b341f
+            </div>
+<div class="flex items-center justify-between pt-1">
+<span class="text-[11px] text-error font-label">Policy Violation: Exam Locked</span>
+<button class="text-primary hover:underline font-label text-[11px] font-medium" onclick="viewMetadata('AUD-98208')" type="button">Chi tiết siêu dữ liệu →</button>
+</div>
+</div>
+<!-- Entry 4 -->
+<div class="p-3 rounded-lg bg-surface-container-low space-y-2 text-xs">
+<div class="flex items-center justify-between">
+<span class="font-mono text-[11px] text-on-surface-variant">09:40:11 • 31/03/2026</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label text-[10px] font-semibold">THÀNH CÔNG</span>
+</div>
+<div class="font-semibold text-on-surface">
+              Actor: <span class="text-primary">Lê Thu Hà (AD-0012)</span>
+</div>
+<div class="text-on-surface-variant">
+              Tác vụ: Khởi động Worker tái chấm Midterm PWD301 (#RG-2026-008)
+            </div>
+<div class="bg-surface-container px-2 py-1 rounded font-mono text-[10px] text-on-surface-variant truncate">
+              SHA: b939e0881f1b4028ccae12260f89d536a0f124bbccf1890a2ec70092
+            </div>
+<div class="flex items-center justify-between pt-1">
+<span class="text-[11px] text-on-surface-variant font-label">Căn cứ: Quyết định phúc tra 14/HĐKT</span>
+<button class="text-primary hover:underline font-label text-[11px] font-medium" onclick="viewMetadata('AUD-98205')" type="button">Chi tiết siêu dữ liệu →</button>
+</div>
+</div>
+</div>
+<div class="mt-4 pt-3 text-center">
+<span class="text-[11px] text-on-surface-variant font-mono flex items-center justify-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Chuỗi kiểm toán bảo đảm toàn vẹn mật mã • 1,489,201 khối
+          </span>
+</div>
+</div>
+</div>
+</div>
+<!-- MODAL: Staging Restore Guardrail Hub -->
+<div class="fixed inset-0 z-50 bg-on-surface/40 backdrop-blur-sm hidden flex items-center justify-center p-4" id="restore-modal">
+<div class="bg-surface-container-lowest max-w-xl w-full rounded-xl p-6 shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="w-8 h-8 rounded bg-error-container text-error flex items-center justify-center">
+<span class="material-symbols-outlined text-lg">settings_backup_restore</span>
+</span>
+<div>
+<h3 class="font-headline text-base font-semibold text-on-surface">Quy trình Khôi phục Thử nghiệm sang Staging</h3>
+<p class="font-body text-xs text-on-surface-variant" id="modal-target-backup">Snapshot: SNAPSHOT-2026-03-31-DAILY-FULL.tar.zst</p>
+</div>
+</div>
+<button class="p-1 rounded text-on-surface-variant hover:text-on-surface" onclick="closeRestoreModal()" type="button">
+<span class="material-symbols-outlined text-xl">close</span>
+</button>
+</div>
+<div class="p-3.5 rounded bg-surface-container text-xs text-on-surface-variant space-y-1">
+<div class="font-semibold text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-base text-tertiary">info</span>
+          Lưu ý An toàn Tuyệt đối:
+        </div>
+<p class="">Hệ thống không ghi đè vào máy chủ đang hoạt động. Một bản sao database hoàn toàn độc lập sẽ được kiến tạo tại cụm kiểm tra: <span class="font-mono text-on-surface font-semibold">staging-db-replica-02</span>.</p>
+</div>
+<div class="space-y-4">
+<!-- Guardrail Step 2: Confirm Phrase -->
+<div class="space-y-1.5">
+<label class="block text-xs font-label font-semibold text-on-surface">
+            Nhập chính xác cụm từ: <span class="font-mono text-error">KHÔI PHỤC DỮ LIỆU</span>
+</label>
+<input class="w-full bg-surface-container-lowest px-3 py-2 text-xs rounded font-mono text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm" id="confirm-phrase-input" placeholder="Gõ chính xác cụm chữ in hoa trên..." type="text">
+</div>
+<!-- Guardrail Step 3: Mandatory Reason -->
+<div class="space-y-1.5">
+<label class="block text-xs font-label font-semibold text-on-surface">
+            Lý do giải trình kiểm toán (Tối thiểu 20 từ) <span class="text-error">*</span>
+</label>
+<textarea class="w-full bg-surface-container-lowest p-3 text-xs rounded text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm font-body" id="audit-reason-input" placeholder="Ghi rõ số hiệu công văn hoặc nguyên do đối soát sai lệch điểm số..." rows="3"></textarea>
+<div class="text-[11px] text-right font-mono text-on-surface-variant" id="reason-word-count">0 / 20 từ</div>
+</div>
+<!-- Guardrail Step 4: Digital Sign Checkbox -->
+<label class="flex items-start gap-2.5 p-3 rounded bg-surface-container-low cursor-pointer">
+<input class="mt-0.5 rounded text-primary focus:ring-primary" id="sign-cert-check" type="checkbox">
+<span class="text-xs text-on-surface leading-snug">
+            Tôi ký số điện tử xác nhận với vai trò <strong>Lê Thu Hà (AD-0012)</strong>, cam kết việc kích hoạt staging restore tuân thủ đúng Quy chế Giám sát Dữ liệu Khảo thí ĐH.
+          </span>
+</label>
+</div>
+<div class="flex items-center justify-end gap-3 pt-2">
+<button class="px-4 py-2 rounded bg-surface-container-high hover:bg-surface-dim text-xs font-label text-on-surface font-medium min-h-[40px]" onclick="closeRestoreModal()" type="button">
+          Hủy bỏ
+        </button>
+<button class="px-4 py-2 rounded bg-primary text-on-primary hover:opacity-95 text-xs font-label font-medium min-h-[40px] shadow-sm" id="submit-restore-btn" onclick="executeStagingRestore()" type="button">
+          Khởi tạo Node Staging Restore
+        </button>
+</div>
+</div>
+</div>
+<!-- DRAWER: Safe Metadata Viewer (Tokens Redacted) -->
+<div class="fixed inset-y-0 right-0 w-full max-w-md bg-surface-container-lowest shadow-2xl z-50 transform translate-x-full transition-transform duration-200 ease-in-out flex flex-col" id="metadata-drawer">
+<div class="p-5 flex items-center justify-between bg-surface-container-low">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">data_object</span>
+<div>
+<h3 class="font-headline text-sm font-semibold text-on-surface">Siêu dữ liệu Kiểm toán Chi tiết</h3>
+<span class="font-mono text-xs text-on-surface-variant" id="drawer-record-id">ID: AUD-98211</span>
+</div>
+</div>
+<button class="p-1 rounded text-on-surface-variant hover:text-on-surface" onclick="closeMetadataDrawer()" type="button">
+<span class="material-symbols-outlined text-xl">close</span>
+</button>
+</div>
+<div class="p-5 overflow-y-auto flex-1 space-y-4 text-xs font-mono">
+<div class="p-3 rounded bg-surface-container text-on-surface-variant leading-relaxed text-[11px]">
+<strong class="text-on-surface font-semibold block mb-1">Chính sách Bảo mật Thông tin (Redaction Active):</strong>
+        Mọi khóa phiên bí mật (Session Tokens), khóa riêng mật mã (Private Keys) và mật khẩu băm đã được tự động che dấu dạng <span class="bg-surface-dim px-1 text-on-surface">***REDACTED***</span>.
+      </div>
+<div class="space-y-1">
+<span class="text-[11px] font-label uppercase text-on-surface-variant">Payload Raw JSON (Đối soát SHA-256)</span>
+<pre class="bg-surface-container-low p-3.5 rounded text-[11px] text-on-surface overflow-x-auto leading-relaxed font-mono">{
+  "audit_event_id": "AUD-98211",
+  "timestamp": "2026-03-31T10:14:18.042+07:00",
+  "actor": {
+    "user_id": "AD-0012",
+    "full_name": "Lê Thu Hà",
+    "role": "SYSTEM_ADMIN_LEVEL_3",
+    "auth_token": "bearer ***REDACTED_SENSITIVE_SESSION_JWT***",
+    "hardware_fido2_hash": "f940...a911"
+  },
+  "action": "WAF_RULE_DEPLOY",
+  "target": "SUBNET:185.220.101.0/24",
+  "reason": "Phát hiện bruteforce Tor liên tục vào cổng sinh viên",
+  "payload_signature": "e8f2a17088b63dc4e9a3efd8e23910c22934ef02604bb49d74e578c7",
+  "immutable_prev_hash": "4a778c187d9f9c066b1a20fe2cfdb1e57c12693ab8d7452d5e2199c2",
+  "status": "COMMITTED"
+}</pre>
+</div>
+<div class="space-y-2 pt-2">
+<div class="flex justify-between py-1.5 border-b border-surface-container-high/50">
+<span class="text-on-surface-variant font-label">Nút chấp thuận (Node Validator):</span>
+<span class="text-on-surface font-semibold">val-primary-01.pwd.edu.vn</span>
+</div>
+<div class="flex justify-between py-1.5 border-b border-surface-container-high/50">
+<span class="text-on-surface-variant font-label">Khối sổ cái (Ledger Block):</span>
+<span class="text-on-surface font-semibold">#1,489,201</span>
+</div>
+<div class="flex justify-between py-1.5">
+<span class="text-on-surface-variant font-label">Ký số thời gian (Timestamp Authority):</span>
+<span class="text-primary font-semibold">VNPT-CA RFC 3161 OK</span>
+</div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low flex justify-end">
+<button class="px-4 py-2 rounded bg-surface-container-high hover:bg-surface-dim text-xs font-label font-medium text-on-surface min-h-[40px]" onclick="closeMetadataDrawer()" type="button">
+        Đóng cửa sổ
+      </button>
+</div>
+</div>
+<!-- Accessible Toast Feedback Notification -->
+<div aria-live="assertive" class="fixed bottom-6 right-6 bg-inverse-surface text-inverse-on-surface px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 text-xs font-label hidden z-50" id="soc-toast" role="alert">
+<span class="material-symbols-outlined text-base text-inverse-primary" id="toast-icon">check_circle</span>
+<span id="toast-message" class="">Đã xác nhận sự kiện an ninh và tạo bút lục kiểm toán.</span>
+</div>
+</div>
+<script>
+  // Live Clock Demonstration
+  setInterval(() => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const el = document.getElementById('live-ntp-clock');
+    if (el) {
+      el.innerHTML = `${hours}:${minutes}:${seconds} UTC+7 <span class="inline-block w-1.5 h-1.5 rounded-full bg-tertiary" title="Độ trễ thấp"></span>`;
+    }
+  }, 1000);
+
+  // Toast System
+  function showToast(msg, isError = false) {
+    const toast = document.getElementById('soc-toast');
+    const text = document.getElementById('toast-message');
+    const icon = document.getElementById('toast-icon');
+    if (!toast || !text) return;
+
+    text.textContent = msg;
+    icon.textContent = isError ? 'error' : 'verified';
+    toast.classList.remove('hidden');
+    setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 4000);
+  }
+
+  // Backup Quick Trigger
+  function openBackupModal() {
+    initiateRestore('SNAPSHOT-KHAN-CAP-REALTIME.tar.zst', 'Khẩn cấp thời gian thực');
+  }
+
+  // Restore Modal Logic
+  function initiateRestore(snapshotName, type) {
+    const modal = document.getElementById('restore-modal');
+    const targetLabel = document.getElementById('modal-target-backup');
+    if (targetLabel) targetLabel.textContent = `Tệp: ${snapshotName} (${type})`;
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeRestoreModal() {
+    const modal = document.getElementById('restore-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  // Word count helper for audit reason
+  const reasonTextarea = document.getElementById('audit-reason-input');
+  if (reasonTextarea) {
+    reasonTextarea.addEventListener('input', (e) => {
+      const words = e.target.value.trim().split(/\s+/).filter(Boolean);
+      const countEl = document.getElementById('reason-word-count');
+      if (countEl) {
+        countEl.textContent = `${words.length} / 20 từ`;
+        if (words.length >= 20) {
+          countEl.classList.remove('text-on-surface-variant');
+          countEl.classList.add('text-primary', 'font-semibold');
+        } else {
+          countEl.classList.add('text-on-surface-variant');
+          countEl.classList.remove('text-primary', 'font-semibold');
+        }
+      }
+    });
+  }
+
+  function executeStagingRestore() {
+    const phrase = document.getElementById('confirm-phrase-input').value.trim();
+    const reason = document.getElementById('audit-reason-input').value.trim();
+    const signed = document.getElementById('sign-cert-check').checked;
+    const words = reason.split(/\s+/).filter(Boolean);
+
+    if (phrase !== 'KHÔI PHỤC DỮ LIỆU') {
+      alert('Vui lòng gõ chính xác cụm từ: KHÔI PHỤC DỮ LIỆU');
+      return;
+    }
+
+    if (words.length < 20) {
+      alert('Lý do giải trình kiểm toán phải đạt tối thiểu 20 từ nhằm đáp ứng tiêu chuẩn thanh tra ISO/IEC 27001.');
+      return;
+    }
+
+    if (!signed) {
+      alert('Bạn bắt buộc phải tích chọn cam kết ký số điện tử để chịu trách nhiệm giải trình.');
+      return;
+    }
+
+    closeRestoreModal();
+    showToast('Yêu cầu khởi tạo Staging Restore đã gửi. Máy chủ replica đang triển khai ngầm.');
+  }
+
+  // Alert acknowledge
+  function acknowledgeAlert(cardId, actionNote) {
+    const card = document.getElementById(cardId);
+    if (card) {
+      card.style.opacity = '0.5';
+      card.style.pointerEvents = 'none';
+      const btn = card.querySelector('button');
+      if (btn) btn.textContent = 'Đã xác nhận & Ghi sổ';
+    }
+    showToast(`Đã xử lý: ${actionNote}. Bút lục đã lưu vào chuỗi bất biến.`);
+  }
+
+  // Metadata Drawer
+  function viewMetadata(auditId) {
+    const drawer = document.getElementById('metadata-drawer');
+    const idEl = document.getElementById('drawer-record-id');
+    if (idEl) idEl.textContent = `ID: ${auditId}`;
+    if (drawer) drawer.classList.remove('translate-x-full');
+  }
+
+  function closeMetadataDrawer() {
+    const drawer = document.getElementById('metadata-drawer');
+    if (drawer) drawer.classList.add('translate-x-full');
+  }
+</script></main></div>
+
+</body></html>

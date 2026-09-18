@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
 
-from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Response,
+    current_app,
+    jsonify,
+    request,
+    send_file,
+    session,
+)
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment, Lesson, LessonProgress
+from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
@@ -25,6 +34,11 @@ from pwd301.services.enrollment_service import (
     re_enroll_student,
 )
 from pwd301.services.exceptions import LessonValidationError, ResourceNotFoundError
+from pwd301.services.file_service import (
+    _serialize_lesson_resource,
+    get_file_for_download,
+    sanitize_filename,
+)
 from pwd301.services.lesson_service import (
     get_lesson_detail,
     get_lesson_progress,
@@ -40,8 +54,6 @@ def dashboard() -> Any:
     """Student dashboard displaying learning overview and enrolled courses."""
     actor = require_authenticated_actor()
     overview = get_student_learning_overview(actor, session=db.session)
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/dashboard.html", overview=overview)
     return jsonify(overview), 200
 
 
@@ -66,16 +78,9 @@ def attempt_view(attempt_id: str) -> Any:
                 session=db.session,
             )
         except Exception:
-            try:
-                _, raw_token = takeover_attempt_lease(
-                    actor=actor,
-                    attempt_id=attempt_id,
-                    session=db.session,
-                )
-                session[f"attempt_lease_{attempt_id}"] = raw_token
-            except Exception:
-                raw_token = ""
-    else:
+            raw_token = None
+
+    if not raw_token:
         try:
             _, raw_token = takeover_attempt_lease(
                 actor=actor,
@@ -84,7 +89,7 @@ def attempt_view(attempt_id: str) -> Any:
             )
             session[f"attempt_lease_{attempt_id}"] = raw_token
         except Exception:
-            raw_token = ""
+            raw_token = None
 
     delivery = get_attempt_delivery(
         student_actor=actor,
@@ -92,10 +97,7 @@ def attempt_view(attempt_id: str) -> Any:
         session=db.session,
     )
     delivery["lease_token"] = raw_token
-
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/attempt.html", delivery=delivery)
-    return jsonify(delivery)
+    return jsonify(delivery), 200
 
 
 @student_bp.route("/assessments/<assessment_id>/start", methods=["POST"])
@@ -128,10 +130,6 @@ def student_start_assessment(assessment_id: str) -> Any:
                 .first()
             )
             if existing is not None:
-                if not request.is_json and request.accept_mimetypes.accept_html:
-                    return redirect(
-                        url_for("student.attempt_view", attempt_id=str(existing.public_id))
-                    )
                 return (
                     jsonify(
                         {
@@ -143,9 +141,6 @@ def student_start_assessment(assessment_id: str) -> Any:
                     200,
                 )
         raise
-
-    if not request.is_json and request.accept_mimetypes.accept_html:
-        return redirect(url_for("student.attempt_view", attempt_id=str(attempt.public_id)))
 
     return (
         jsonify(
@@ -190,47 +185,45 @@ def course_progress(course_id: str) -> Any:
         "status": enrollment.status,
         "enrolled_at": enrollment.enrolled_at.isoformat(),
     }
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        lessons = (
-            sess.query(Lesson)
-            .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
-            .order_by(Lesson.position.asc())
-            .all()
-        )
-        if lessons:
-            completed_lesson_ids: set[int] = set()
-            if enrollment.current_period_id:
-                lesson_ids = [les.id for les in lessons]
-                progresses = (
-                    sess.query(LessonProgress)
-                    .filter(
-                        LessonProgress.enrollment_period_id == enrollment.current_period_id,
-                        LessonProgress.lesson_id.in_(lesson_ids),
-                    )
-                    .all()
-                )
-                completed_lesson_ids = {
-                    p.lesson_id for p in progresses if p.completed_at is not None
-                }
-            # Target first uncompleted lesson or first lesson if none/all completed
-            target_lesson = next(
-                (les for les in lessons if les.id not in completed_lesson_ids),
-                lessons[0],
-            )
-            return redirect(
-                url_for(
-                    "student.get_student_lesson_route",
-                    course_id=str(course.public_id),
-                    lesson_id=str(target_lesson.public_id),
-                )
-            )
-        flash(f"Khóa học '{course.title}' chưa có bài học nào được xuất bản.", "info")
-        return redirect(url_for("student.dashboard"))
-
     return jsonify(data), 200
 
 
 def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str, Any]:
+    import json
+
+    video_url = None
+    res_list = []
+    if hasattr(les, "resources") and les.resources:
+        for r in les.resources:
+            if (
+                r.file_asset
+                and r.file_asset.status in ("ACTIVE", "PENDING_SCAN", "QUARANTINED")
+                and r.file_asset.virus_scan_status == "CLEAN"
+            ):
+                ser_r = _serialize_lesson_resource(r)
+                res_list.append(ser_r)
+                mime = (r.file_asset.mime_type or "").lower()
+                name = (r.file_asset.original_filename or "").lower()
+                if (
+                    not video_url
+                    and r.file_asset.virus_scan_status == "CLEAN"
+                    and (mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv")))
+                ):
+                    video_url = (
+                        f"/student/files/{r.file_asset.public_id}/download?disposition=inline"
+                    )
+
+    personal_notes = ""
+    notes_saved_at = None
+    if p and p.completion_rule_snapshot_json:
+        try:
+            p_data = json.loads(p.completion_rule_snapshot_json)
+            if isinstance(p_data, dict):
+                personal_notes = p_data.get("personal_notes", "")
+                notes_saved_at = p_data.get("notes_saved_at")
+        except Exception:
+            pass
+
     return {
         "lesson_id": str(les.public_id),
         "course_id": str(les.course.public_id) if les.course else None,
@@ -241,12 +234,16 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": float(les.viewed_fraction_required),
+        "video_url": video_url,
+        "personal_notes": personal_notes,
+        "notes_saved_at": notes_saved_at,
         "progress": {
             "seconds_spent": p.seconds_spent if p else 0,
             "max_view_fraction": float(p.max_view_fraction) if p else 0.0,
             "is_completed": p.completed_at is not None if p else False,
             "completed_at": p.completed_at.isoformat() if p and p.completed_at else None,
         },
+        "resources": res_list,
     }
 
 
@@ -267,21 +264,6 @@ def get_student_lesson_route(course_id: str, lesson_id: str) -> Any:
 
     progress = get_lesson_progress(actor, lesson_id)
 
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        all_lessons = (
-            sess.query(Lesson)
-            .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
-            .order_by(Lesson.position.asc())
-            .all()
-        )
-        return render_template(
-            "student/lesson.html",
-            course=course,
-            lesson=lesson,
-            progress=progress,
-            all_lessons=all_lessons,
-        )
-
     return jsonify(_serialize_student_lesson(lesson, progress)), 200
 
 
@@ -296,34 +278,120 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         raise LessonValidationError("Invalid JSON payload.")
 
     seconds_increment = payload.get("seconds_increment")
-    view_fraction = payload.get("view_fraction")
+    if seconds_increment is None:
+        seconds_increment = payload.get("time_spent_seconds", 0)
 
-    if seconds_increment is None or view_fraction is None:
-        raise LessonValidationError("Both seconds_increment and view_fraction are required.")
+    view_fraction = payload.get("view_fraction")
+    if view_fraction is None:
+        view_fraction = 1.0 if payload.get("completed") else 0.0
 
     try:
-        sec_int = int(seconds_increment)
-        vf_float = float(view_fraction)
+        sec_int = int(str(seconds_increment or 0))
+        vf_float = float(view_fraction if view_fraction is not None else 0.0)
     except (ValueError, TypeError):
         raise LessonValidationError(
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
+    bounded_sec = max(1, min(sec_int, 60))
+    bounded_vf = max(0.0, min(vf_float, 1.0))
+
     progress = record_lesson_progress(
         actor=actor,
         lesson_id=lesson_id,
-        seconds_increment=sec_int,
-        view_fraction=vf_float,
+        seconds_increment=bounded_sec,
+        view_fraction=bounded_vf,
     )
+
+    if payload.get("completed") and progress.completed_at is None:
+        now = utc_now()
+        progress.completed_at = now
+        progress.updated_at = now
+        db.session.commit()
 
     data = {
         "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
         "seconds_spent": progress.seconds_spent,
         "max_view_fraction": float(progress.max_view_fraction),
         "is_completed": progress.completed_at is not None,
+        "completed": progress.completed_at is not None,
         "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
     }
     return jsonify(data), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/notes", methods=["GET"])
+@student_required
+def get_student_lesson_notes(lesson_id: str) -> tuple[Response, int] | Response:
+    """Retrieve personal notes for a lesson from lesson progress or session."""
+    import json
+
+    actor = require_authenticated_actor()
+    notes = ""
+    saved_at = None
+    try:
+        progress = get_lesson_progress(actor, lesson_id, session=db.session)
+        if progress and progress.completion_rule_snapshot_json:
+            try:
+                p_data = json.loads(progress.completion_rule_snapshot_json)
+                if isinstance(p_data, dict):
+                    notes = p_data.get("personal_notes", "")
+                    saved_at = p_data.get("notes_saved_at")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    if not notes:
+        notes = session.get(f"lesson_notes_{lesson_id}", "")
+        saved_at = session.get(f"lesson_notes_saved_{lesson_id}")
+
+    return jsonify({"notes": notes, "saved_at": saved_at}), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/notes", methods=["POST"])
+@student_required
+def save_student_lesson_notes(lesson_id: str) -> tuple[Response, int] | Response:
+    """Save personal notes for a lesson into lesson progress and session."""
+    import json
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    notes = payload.get("notes", "")
+    now_iso = utc_now().isoformat()
+
+    session[f"lesson_notes_{lesson_id}"] = notes
+    session[f"lesson_notes_saved_{lesson_id}"] = now_iso
+
+    try:
+        progress = get_lesson_progress(actor, lesson_id, session=db.session)
+        if progress:
+            existing = {}
+            if progress.completion_rule_snapshot_json:
+                try:
+                    existing = json.loads(progress.completion_rule_snapshot_json)
+                    if not isinstance(existing, dict):
+                        existing = {}
+                except Exception:
+                    existing = {}
+            existing["personal_notes"] = notes
+            existing["notes_saved_at"] = now_iso
+            progress.completion_rule_snapshot_json = json.dumps(existing)
+            progress.updated_at = utc_now()
+            db.session.commit()
+    except Exception:
+        pass
+
+    return (
+        jsonify(
+            {
+                "notes": notes,
+                "saved_at": now_iso,
+                "message": "Đã lưu ghi chú thành công.",
+            }
+        ),
+        200,
+    )
 
 
 def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
@@ -367,10 +435,6 @@ def student_enroll_course(course_id: str) -> Any:
         enrollment = enroll_student(actor=actor, course_id=course_id, session=db.session)
         status_code = 201 if getattr(enrollment, "_is_new", False) else 200
 
-        if not request.is_json and request.accept_mimetypes.accept_html:
-            flash("Ghi danh khóa học thành công! Chúc bạn có trải nghiệm học tập tốt.", "success")
-            return redirect(url_for("student.course_progress", course_id=course_id))
-
         return jsonify(_serialize_enrollment(enrollment)), status_code
     except (
         EnrollmentPrerequisiteError,
@@ -380,16 +444,13 @@ def student_enroll_course(course_id: str) -> Any:
         EnrollmentStateViolationError,
         EnrollmentError,
         ServiceError,
-    ) as e:
-        if not request.is_json and request.accept_mimetypes.accept_html:
-            flash(f"Không thể ghi danh: {str(e)}", "danger")
-            return redirect(url_for("student.student_course_detail", course_id=course_id))
+    ):
         raise
 
 
 @student_bp.route("/courses/<course_id>/leave", methods=["POST"])
 @student_required
-def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
+def student_leave_course(course_id: str) -> Any:
     """Withdraw from an active course."""
     actor = require_authenticated_actor()
 
@@ -404,7 +465,7 @@ def student_leave_course(course_id: str) -> tuple[Response, int] | Response:
 
 @student_bp.route("/courses/<course_id>/re-enroll", methods=["POST"])
 @student_required
-def student_re_enroll_course(course_id: str) -> tuple[Response, int] | Response:
+def student_re_enroll_course(course_id: str) -> Any:
     """Re-enroll in a previously left course."""
     actor = require_authenticated_actor()
 
@@ -477,10 +538,6 @@ def get_student_course_completion_route(course_id: str) -> tuple[Response, int] 
 @student_bp.route("/notifications", methods=["GET"])
 @student_required
 def notifications_center() -> tuple[Response, int] | Response:
-    """Student Web notifications center page and AJAX endpoint."""
-    from flask import render_template
-
-    from pwd301.services.authorization_service import _is_api_or_json_request
     from pwd301.services.notification_service import (
         get_unread_count,
         get_user_preferences,
@@ -492,29 +549,17 @@ def notifications_center() -> tuple[Response, int] | Response:
     prefs = get_user_preferences(actor=actor, session=db.session)
     unread = get_unread_count(actor=actor, session=db.session)
 
-    if _is_api_or_json_request():
-        return (
-            jsonify(
-                {
-                    "items": items,
-                    "total": total,
-                    "unread_count": unread,
-                    "preferences": prefs,
-                }
-            ),
-            200,
-        )
-
-    rendered = render_template(
-        "notifications/index.html",
-        notifications=items,
-        total=total,
-        unread_count=unread,
-        preferences=prefs,
+    return (
+        jsonify(
+            {
+                "items": items,
+                "total": total,
+                "unread_count": unread,
+                "preferences": prefs,
+            }
+        ),
+        200,
     )
-    from flask import make_response
-
-    return make_response(rendered)
 
 
 @student_bp.route("/notifications/<notification_id>/read", methods=["POST"])
@@ -529,9 +574,6 @@ def student_mark_notification_read(notification_id: str) -> Any:
         notification_id=notification_id,
         session=db.session,
     )
-    if not request.is_json and request.accept_mimetypes.accept_html:
-        flash("Đã đánh dấu thông báo là đã đọc.", "success")
-        return redirect(url_for("student.notifications_center"))
     return jsonify(result), 200
 
 
@@ -545,9 +587,6 @@ def student_mark_all_read() -> Any:
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     category = payload.get("category") or request.args.get("category")
     count = mark_all_as_read(actor=actor, category=category, session=db.session)
-    if not request.is_json and request.accept_mimetypes.accept_html:
-        flash(f"Đã đánh dấu {count} thông báo là đã đọc.", "success")
-        return redirect(url_for("student.notifications_center"))
     return jsonify({"marked_count": count}), 200
 
 
@@ -658,13 +697,10 @@ def submit_student_attempt(attempt_id: str) -> Any:
         attempt_id=attempt_id,
         idempotency_key=idempotency_key,
         raw_lease_token=raw_token,
+        auto_finalize_expired=True,
         session=db.session,
     )
     session.pop(f"attempt_lease_{attempt_id}", None)
-
-    if not request.is_json and request.accept_mimetypes.accept_html:
-        flash("Nộp bài thi thành công!", "success")
-        return redirect(url_for("student.attempt_result_view", attempt_id=attempt_id))
 
     return jsonify(result), 200
 
@@ -675,25 +711,113 @@ def my_learning() -> Any:
     """Student view for all enrolled courses with progress and completion summary."""
     actor = require_authenticated_actor()
     overview = get_student_learning_overview(actor, session=db.session)
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/my_learning.html", overview=overview)
-    return jsonify({"enrollments": overview["enrollments"]}), 200
+    enrollments_data = overview.get("enrollments", [])
+    return (
+        jsonify(
+            {
+                "enrollments": enrollments_data,
+                "courses": enrollments_data,
+                "overall_average_progress_percent": overview.get(
+                    "overall_average_progress_percent", 0.0
+                ),
+            }
+        ),
+        200,
+    )
 
 
 @student_bp.route("/assessments", methods=["GET"])
 @student_required
 def assessments_view() -> Any:
-    """Student view for upcoming and past assessments."""
+    """Student view for upcoming and past assessments with full items listing."""
+    from pwd301.models.assessment import Assessment
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+
     actor = require_authenticated_actor()
-    overview = get_student_learning_overview(actor, session=db.session)
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/assessments.html", overview=overview)
-    return jsonify(
-        {
-            "upcoming": overview["upcoming_assessments"],
-            "recent_results": overview["recent_results"],
-        }
-    ), 200
+    sess = db.session
+    overview = get_student_learning_overview(actor, session=sess)
+
+    # Find active & completed enrollment course IDs
+    enrollments = (
+        sess.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+        )
+        .all()
+    )
+    enrolled_course_ids = [e.course_id for e in enrollments]
+
+    items: list[dict[str, Any]] = []
+    if enrolled_course_ids:
+        assessments = (
+            sess.query(Assessment)
+            .filter(
+                Assessment.course_id.in_(enrolled_course_ids),
+                Assessment.status == "PUBLISHED",
+                Assessment.deleted_at.is_(None),
+            )
+            .order_by(Assessment.created_at.desc())
+            .all()
+        )
+        for a in assessments:
+            existing_attempt = (
+                sess.query(AssessmentAttempt)
+                .filter(
+                    AssessmentAttempt.assessment_id == a.id,
+                    AssessmentAttempt.student_user_id == actor.id,
+                )
+                .order_by(AssessmentAttempt.id.desc())
+                .first()
+            )
+            max_pts = float(
+                getattr(a, "max_points", None)
+                or (
+                    sum(float(qa.points or 0.0) for qa in a.question_assignments)
+                    if getattr(a, "question_assignments", None)
+                    else 10.0
+                )
+                or 10.0
+            )
+            res_raw = None
+            res_passed = None
+            if existing_attempt and existing_attempt.result:
+                if existing_attempt.result.raw_score is not None:
+                    res_raw = float(existing_attempt.result.raw_score)
+                if existing_attempt.result.passed is not None:
+                    res_passed = bool(existing_attempt.result.passed)
+
+            items.append(
+                {
+                    "assessment_id": str(a.public_id),
+                    "id": str(a.public_id),
+                    "title": a.title,
+                    "course_code": a.course.course_code if a.course else None,
+                    "course_title": a.course.title if a.course else None,
+                    "assessment_type": a.assessment_type,
+                    "time_limit_minutes": a.time_limit_minutes or 45,
+                    "max_points": max_pts,
+                    "status": a.status,
+                    "open_at": a.open_at.isoformat() if a.open_at else None,
+                    "close_at": a.close_at.isoformat() if a.close_at else None,
+                    "attempt_id": str(existing_attempt.public_id) if existing_attempt else None,
+                    "attempt_status": existing_attempt.status if existing_attempt else None,
+                    "raw_score": res_raw,
+                    "is_passed": res_passed,
+                }
+            )
+
+    return (
+        jsonify(
+            {
+                "items": items,
+                "assessments": items,
+                "upcoming": overview["upcoming_assessments"],
+                "recent_results": overview["recent_results"],
+            }
+        ),
+        200,
+    )
 
 
 @student_bp.route("/assessments/<assessment_id>", methods=["GET"])
@@ -739,21 +863,17 @@ def assessment_detail_view(assessment_id: str) -> Any:
     if close_at_dt and now_utc >= close_at_dt:
         is_closed = True
 
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template(
-            "student/assessment_detail.html",
-            assessment=assessment_data,
-            active_attempt=active_attempt,
-            is_open=is_open,
-            is_closed=is_closed,
-            seconds_until_open=seconds_until_open,
-            server_now_iso=now_utc.isoformat(),
-        )
     return (
         jsonify(
             {
                 "assessment_id": str(assess_obj.public_id),
                 "title": assessment_data.get("title"),
+                "assessment": assessment_data,
+                "is_open": is_open,
+                "is_closed": is_closed,
+                "seconds_until_open": seconds_until_open,
+                "server_now_iso": now_utc.isoformat(),
+                "active_attempt_id": str(active_attempt.public_id) if active_attempt else None,
             }
         ),
         200,
@@ -776,32 +896,39 @@ def attempt_result_view(attempt_id: str) -> Any:
     if attempt:
         if attempt.assessment:
             result_data["assessment_title"] = attempt.assessment.title
+            assess_type = getattr(attempt.assessment, "assessment_type", None)
+            if assess_type is not None:
+                result_data["assessment_type"] = (
+                    assess_type.name if hasattr(assess_type, "name") else str(assess_type)
+                )
+            result_data["duration_minutes"] = getattr(attempt.assessment, "duration_minutes", 45)
             if attempt.assessment.course:
+                result_data["course_id"] = str(attempt.assessment.course.public_id)
                 result_data["assessment_code"] = attempt.assessment.course.course_code
+                inst = getattr(attempt.assessment.course, "owner_instructor", None)
+                if inst:
+                    result_data["instructor_name"] = getattr(inst, "display_name", None) or getattr(
+                        inst, "full_name", ""
+                    )
         result_data["started_at"] = attempt.started_at.isoformat() if attempt.started_at else None
         result_data["submitted_at"] = (
             attempt.submitted_at.isoformat() if attempt.submitted_at else None
         )
     result_data["is_released"] = result_data.get("score_status") == "RELEASED"
 
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template("student/result.html", result=result_data)
     return jsonify(result_data), 200
 
 
 @student_bp.route("/ai-assistant", methods=["GET"])
 @student_required
 def ai_assistant_view() -> Any:
-    """Redirect to student dashboard with floating AI assistant."""
+    """Informative endpoint for student AI assistant."""
     require_authenticated_actor()
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return redirect(url_for("student.dashboard"))
     return (
         jsonify(
             {
-                "status": "deprecated",
-                "message": "Use floating AI assistant",
-                "redirect_url": url_for("student.dashboard"),
+                "status": "ok",
+                "message": "AI assistant ready.",
             }
         ),
         200,
@@ -847,6 +974,40 @@ def student_ai_chat() -> Any:
     if conv is None:
         course_id = payload.get("course_id")
         lesson_id = payload.get("lesson_id")
+        if course_id:
+            target_course = _resolve_course(course_id, session=db.session)
+            if target_course is None:
+                return (
+                    jsonify({"error": {"message": "Khóa học không tồn tại.", "code": "NOT_FOUND"}}),
+                    404,
+                )
+            enr_check = (
+                db.session.query(Enrollment)
+                .filter(
+                    Enrollment.student_user_id == actor.id,
+                    Enrollment.course_id == target_course.id,
+                    Enrollment.status.in_(("ACTIVE", "COMPLETED")),
+                )
+                .first()
+            )
+            if not enr_check:
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "message": (
+                                    "Bạn chưa ghi danh khóa học này nên không thể "
+                                    "truy cập trợ lý AI ngữ cảnh."
+                                ),
+                                "code": "FORBIDDEN_NOT_ENROLLED",
+                            },
+                            "status": "refused",
+                        }
+                    ),
+                    403,
+                )
+            course_id = str(target_course.public_id)
+
         context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
         try:
             conv = create_conversation(
@@ -982,12 +1143,9 @@ def get_student_lesson_by_id(lesson_id: str) -> Any:
     lesson = get_lesson_detail(actor, lesson_id)
     if lesson.course is None:
         raise ResourceNotFoundError("Course not found for this lesson.")
-    return redirect(
-        url_for(
-            "student.get_student_lesson_route",
-            course_id=str(lesson.course.public_id),
-            lesson_id=str(lesson.public_id),
-        )
+    return get_student_lesson_route(
+        course_id=str(lesson.course.public_id),
+        lesson_id=str(lesson.public_id),
     )
 
 
@@ -1029,15 +1187,28 @@ def student_course_detail(course_id: str) -> Any:
             .all()
         )
         completed_ids = {s[0] for s in summaries}
-
-    prereq_items = []
-    for p in prereqs:
-        prereq_items.append(
-            {
-                "course": p,
-                "is_satisfied": p.id in completed_ids,
-            }
+        completed_enrs = (
+            db.session.query(Enrollment.course_id)
+            .filter(
+                Enrollment.student_user_id == actor.id,
+                Enrollment.course_id.in_(prereq_ids),
+                Enrollment.status == "COMPLETED",
+            )
+            .all()
         )
+        for ce in completed_enrs:
+            completed_ids.add(ce[0])
+
+    prereq_items = [
+        {
+            "id": str(p.public_id),
+            "code": p.course_code,
+            "course_code": p.course_code,
+            "title": p.title,
+            "is_satisfied": p.id in completed_ids,
+        }
+        for p in prereqs
+    ]
 
     active_count = (
         db.session.query(sa.func.count(Enrollment.id))
@@ -1050,6 +1221,10 @@ def student_course_detail(course_id: str) -> Any:
     )
     is_full = bool(course.capacity and course.capacity > 0 and active_count >= course.capacity)
 
+    from pwd301.models.assessment import Assessment
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.models.file_import import FileAsset
+
     lessons = (
         db.session.query(Lesson)
         .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
@@ -1057,35 +1232,171 @@ def student_course_detail(course_id: str) -> Any:
         .all()
     )
 
-    if request.accept_mimetypes.accept_html and not request.is_json:
-        return render_template(
-            "student/course_detail.html",
-            course=course,
-            enrollment=enrollment,
-            prerequisites=prereqs,
-            prereq_items=prereq_items,
-            is_eligible=is_eligible,
-            missing_titles=missing_titles,
-            active_count=active_count,
-            is_full=is_full,
-            lessons=lessons,
+    lesson_progress_map: dict[int, LessonProgress] = {}
+    if enrollment and enrollment.current_period_id and lessons:
+        progs = (
+            db.session.query(LessonProgress)
+            .filter(
+                LessonProgress.enrollment_period_id == enrollment.current_period_id,
+                LessonProgress.lesson_id.in_([les.id for les in lessons]),
+            )
+            .all()
         )
-    return jsonify({"course_id": str(course.public_id), "title": course.title}), 200
+        for prg in progs:
+            lesson_progress_map[prg.lesson_id] = prg
+
+    assessments = (
+        db.session.query(Assessment)
+        .filter(
+            Assessment.course_id == course.id,
+            Assessment.status == "PUBLISHED",
+            Assessment.deleted_at.is_(None),
+        )
+        .order_by(Assessment.created_at.asc())
+        .all()
+    )
+
+    serialized_assessments = []
+    for a in assessments:
+        existing_attempt = (
+            db.session.query(AssessmentAttempt)
+            .filter(
+                AssessmentAttempt.assessment_id == a.id,
+                AssessmentAttempt.student_user_id == actor.id,
+            )
+            .order_by(AssessmentAttempt.id.desc())
+            .first()
+        )
+        serialized_assessments.append(
+            {
+                "assessment_id": str(a.public_id),
+                "title": a.title,
+                "assessment_type": a.assessment_type,
+                "time_limit_minutes": a.time_limit_minutes,
+                "max_points": float(
+                    getattr(a, "max_points", None)
+                    or (
+                        sum(float(qa.points or 0.0) for qa in a.question_assignments)
+                        if getattr(a, "question_assignments", None)
+                        else 10.0
+                    )
+                    or 10.0
+                ),
+                "status": a.status,
+                "attempt_id": str(existing_attempt.public_id) if existing_attempt else None,
+                "attempt_status": existing_attempt.status if existing_attempt else None,
+            }
+        )
+
+    file_assets = (
+        db.session.query(FileAsset)
+        .filter(
+            FileAsset.course_id == course.id,
+            FileAsset.status == "ACTIVE",
+            FileAsset.deleted_at.is_(None),
+        )
+        .all()
+    )
+    serialized_resources = []
+    for fa in file_assets:
+        if fa.virus_scan_status != "CLEAN":
+            continue
+        rev_name = fa.revisions[-1].original_filename if fa.revisions else None
+        serialized_resources.append(
+            {
+                "resource_id": str(fa.public_id),
+                "label": fa.display_name or rev_name or "Tài liệu môn học",
+                "filename": rev_name or fa.display_name,
+                "file_size_formatted": "Tài liệu giáo trình",
+                "download_url": (
+                    f"/student/courses/{course.public_id}/files/{fa.public_id}/download"
+                ),
+            }
+        )
+
+    serialized_lessons = []
+    for les in lessons:
+        les_prg = lesson_progress_map.get(les.id)
+        serialized_lessons.append(
+            {
+                "id": str(les.public_id),
+                "public_id": str(les.public_id),
+                "lesson_id": str(les.public_id),
+                "title": les.title,
+                "summary": les.summary,
+                "position": les.position,
+                "estimated_duration_minutes": les.estimated_duration_minutes or 45,
+                "is_completed": les_prg.completed_at is not None if les_prg else False,
+                "progress": {
+                    "seconds_spent": les_prg.seconds_spent if les_prg else 0,
+                    "max_view_fraction": float(les_prg.max_view_fraction) if les_prg else 0.0,
+                    "is_completed": les_prg.completed_at is not None if les_prg else False,
+                    "completed_at": (
+                        les_prg.completed_at.isoformat()
+                        if les_prg and les_prg.completed_at
+                        else None
+                    ),
+                },
+                "resources": (
+                    [
+                        _serialize_lesson_resource(r)
+                        for r in les.resources
+                        if r.file_asset
+                        and r.file_asset.status == "ACTIVE"
+                        and r.file_asset.virus_scan_status == "CLEAN"
+                    ]
+                    if hasattr(les, "resources") and les.resources
+                    else []
+                ),
+            }
+        )
+
+    return jsonify(
+        {
+            "course": {
+                "id": str(course.public_id),
+                "public_id": str(course.public_id),
+                "code": course.course_code,
+                "course_code": course.course_code,
+                "title": course.title,
+                "description": course.description,
+                "category": course.category,
+                "difficulty": course.difficulty,
+                "learning_objectives": course.learning_objectives,
+                "target_audience": course.target_audience,
+                "completion_requirements": course.completion_requirements,
+                "status": course.status,
+                "capacity": course.capacity,
+                "is_full": is_full,
+                "active_enrolled_count": active_count,
+                "instructor_name": (
+                    course.owner_instructor.display_name
+                    if course.owner_instructor
+                    else "Hội đồng Khoa học Khoa CNTT"
+                ),
+            },
+            "enrollment": (
+                {
+                    "status": enrollment.status if enrollment else None,
+                    "id": str(enrollment.public_id) if enrollment else None,
+                    "enrollment_id": str(enrollment.public_id) if enrollment else None,
+                }
+                if enrollment
+                else None
+            ),
+            "is_eligible": is_eligible,
+            "missing_titles": missing_titles,
+            "prerequisites": prereq_items,
+            "lessons": serialized_lessons,
+            "assessments": serialized_assessments,
+            "resources": serialized_resources,
+        }
+    ), 200
 
 
 # ==============================================================================
 # Instructor Application / Self-Nomination Portal
 # ==============================================================================
-
-
-def _wants_json() -> bool:
-    """Check if the client specifically requested a JSON response."""
-    if request.is_json:
-        return True
-    if request.path.startswith("/api/"):
-        return True
-    accept = request.headers.get("Accept", "")
-    return "application/json" in accept and "text/html" not in accept
 
 
 @student_bp.route("/become-instructor", methods=["GET"])
@@ -1097,20 +1408,14 @@ def become_instructor() -> Any:
     actor = require_authenticated_actor()
     app_record = get_user_active_application(actor.id, session=db.session)
 
-    if not _wants_json():
-        return render_template(
-            "student/become_instructor.html",
-            application=app_record,
-            is_already_instructor=actor.is_instructor,
-        )
-
     return (
         jsonify(
             {
                 "is_already_instructor": actor.is_instructor,
                 "application": (
                     {
-                        "id": app_record.id,
+                        "id": str(app_record.public_id),
+                        "application_id": str(app_record.public_id),
                         "status": app_record.status,
                         "status_label": app_record.status_label_vi,
                         "details": app_record.parsed_details,
@@ -1133,9 +1438,7 @@ def become_instructor() -> Any:
 @student_required
 def submit_become_instructor() -> Any:
     """Submit a self-nomination application to become an instructor."""
-    from pathlib import Path
 
-    from flask import current_app
     from werkzeug.utils import secure_filename
 
     from pwd301.services.exceptions import ValidationError
@@ -1148,42 +1451,111 @@ def submit_become_instructor() -> Any:
     # Xử lý các tệp tin minh chứng đính kèm nếu có
     attached_files = []
     if "evidence_files" in request.files:
+        import hashlib
+        import shutil
+
+        from werkzeug.utils import secure_filename
+
+        from pwd301.services.file_service import LimitingStream, get_file_quarantine_root
+        from pwd301.services.scanner_service import scan_file_all_engines
+
         files = request.files.getlist("evidence_files")
-        allowed_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx", ".zip", ".doc"}
-        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage"))
-        user_storage = storage_root / "instructor_applications" / str(actor.id)
+        allowed_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
+        storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+        # ADR-02: Use actor.public_id instead of internal BigInt actor.id
+        user_storage = storage_root / "instructor_applications" / str(actor.public_id)
         user_storage.mkdir(parents=True, exist_ok=True)
+
+        quarantine_root = get_file_quarantine_root()
+        max_evidence_bytes = 50_000_000  # Enforce 50 MB ceiling (SEC-02 DoS prevention)
 
         for f in files:
             if not f or not f.filename or not f.filename.strip():
                 continue
-            ext = Path(f.filename).suffix.lower()
+            clean_original_name = sanitize_filename(f.filename)
+            ext = Path(clean_original_name).suffix.lower()
             if ext not in allowed_extensions:
                 msg = (
-                    f"Định dạng tệp '{f.filename}' không được hỗ trợ. "
-                    "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel/ZIP."
+                    f"Định dạng tệp '{clean_original_name}' không được hỗ trợ. "
+                    "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel (.docx, .xlsx)."
                 )
-                if not _wants_json():
-                    flash(msg, "danger")
-                    return redirect(url_for("student.become_instructor"))
                 return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": msg}}), 400
 
-            safe_stem = secure_filename(Path(f.filename).stem) or "evidence"
+            temp_filename = f"evidence_{uuid.uuid4().hex}.tmp"
+            temp_path = quarantine_root / temp_filename
+            hasher = hashlib.sha256()
+            total_size = 0
+            stream_reader = LimitingStream(f.stream, max_bytes=max_evidence_bytes)
+
+            try:
+                with open(temp_path, "wb") as f_out:
+                    while True:
+                        chunk = stream_reader.read(64 * 1024)
+                        if not chunk:
+                            break
+                        total_size += len(chunk)
+                        hasher.update(chunk)
+                        f_out.write(chunk)
+            except Exception as read_err:
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+                msg = f"Lỗi đọc tệp '{clean_original_name}': {str(read_err)}"
+                return jsonify({"error": {"code": "FILE_UPLOAD_ERROR", "message": msg}}), 400
+
+            if total_size <= 0:
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+                continue
+
+            # Multi-engine malware scanning (SEC-02 ClamAV scan)
+            scan_verdicts = scan_file_all_engines(temp_path)
+            is_clean = all(v.status == "PASS" for v in scan_verdicts)
+            if not is_clean:
+                if temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
+                msg = f"Tệp tin '{clean_original_name}' bị nghi ngờ chứa mã độc và đã bị từ chối."
+                return jsonify({"error": {"code": "FILE_INFECTED", "message": msg}}), 400
+
+            safe_stem = secure_filename(Path(clean_original_name).stem) or "evidence"
             saved_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
             dest_path = user_storage / saved_filename
-            f.save(str(dest_path))
-            file_size = dest_path.stat().st_size if dest_path.exists() else 0
+
+            try:
+                shutil.move(str(temp_path), str(dest_path))
+            except Exception:
+                shutil.copy2(str(temp_path), str(dest_path))
+                temp_path.unlink(missing_ok=True)
 
             attached_files.append(
                 {
-                    "original_name": Path(f.filename).name,
+                    "original_name": clean_original_name,
                     "saved_filename": saved_filename,
-                    "size": file_size,
+                    "size": total_size,
+                    "sha256": hasher.hexdigest(),
+                    "virus_scan_status": "CLEAN",
                 }
             )
 
     if attached_files:
         payload["attached_files"] = attached_files
+
+    # Defensively map alternate/brief web form fields
+    if "institution_name" not in payload and "teaching_experience" in payload:
+        parts = str(payload.get("teaching_experience", "")).split("tại", 1)
+        if len(parts) == 2:
+            payload.setdefault("institution_name", parts[1].strip() or "Đại học / Viện đào tạo")
+            payload.setdefault("specialization", parts[0].strip() or "Công nghệ thông tin")
+        else:
+            payload.setdefault("institution_name", "Đại học / Viện đào tạo")
+            payload.setdefault(
+                "specialization", str(payload.get("teaching_experience", "Công nghệ thông tin"))
+            )
+    if "specialization" not in payload and "teaching_experience" in payload:
+        payload["specialization"] = str(payload.get("teaching_experience", "Công nghệ thông tin"))
+    if "statement_of_purpose" not in payload and "statement" in payload:
+        payload["statement_of_purpose"] = payload.get("statement", "")
+    if "evidence_urls" not in payload and "certificate_url" in payload:
+        payload["evidence_urls"] = payload.get("certificate_url", "")
 
     try:
         app_record = submit_instructor_application(
@@ -1192,24 +1564,14 @@ def submit_become_instructor() -> Any:
             session=db.session,
         )
     except ValidationError as exc:
-        if not _wants_json():
-            flash(str(exc), "danger")
-            return redirect(url_for("student.become_instructor"))
         return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
-
-    if not _wants_json():
-        flash(
-            "Hồ sơ đề cử giảng viên của bạn đã được gửi thành công! "
-            "Quản trị viên sẽ sớm thẩm định và phản hồi.",
-            "success",
-        )
-        return redirect(url_for("student.become_instructor"))
 
     return (
         jsonify(
             {
                 "message": "Đơn đăng ký đã được gửi thành công.",
-                "application_id": app_record.id,
+                "application_id": str(app_record.public_id),
+                "id": str(app_record.public_id),
                 "status": app_record.status,
             }
         ),
@@ -1218,6 +1580,9 @@ def submit_become_instructor() -> Any:
 
 
 @student_bp.route("/become-instructor/cancel", methods=["POST"])
+@student_bp.route(
+    "/become-instructor/cancel", methods=["POST"], endpoint="cancel_instructor_application"
+)
 @student_required
 def cancel_become_instructor() -> Any:
     """Cancel a pending instructor application."""
@@ -1230,9 +1595,6 @@ def cancel_become_instructor() -> Any:
     actor = require_authenticated_actor()
     app_record = get_user_active_application(actor.id, session=db.session)
     if app_record is None or app_record.status != "PENDING":
-        if not _wants_json():
-            flash("Không tìm thấy đơn đăng ký đang chờ xét duyệt để hủy.", "warning")
-            return redirect(url_for("student.become_instructor"))
         return jsonify(
             {"error": {"code": "NOT_FOUND", "message": "Không có đơn đang chờ xét duyệt."}}
         ), 404
@@ -1244,13 +1606,56 @@ def cancel_become_instructor() -> Any:
             session=db.session,
         )
     except (ValidationError, ResourceNotFoundError) as exc:
-        if not _wants_json():
-            flash(str(exc), "danger")
-            return redirect(url_for("student.become_instructor"))
         return jsonify({"error": {"code": "ERROR", "message": str(exc)}}), 400
 
-    if not _wants_json():
-        flash("Bạn đã hủy đơn đăng ký thành công.", "info")
-        return redirect(url_for("student.become_instructor"))
+    return (
+        jsonify(
+            {
+                "message": "Đã hủy đơn đăng ký thành công.",
+                "application_id": str(cancelled.public_id),
+                "id": str(cancelled.public_id),
+                "status": cancelled.status,
+            }
+        ),
+        200,
+    )
 
-    return jsonify({"message": "Đã hủy đơn đăng ký.", "status": cancelled.status}), 200
+
+@student_bp.route("/courses/<course_id>/files/<asset_id>/download", methods=["GET"])
+@student_bp.route(
+    "/courses/<course_id>/files/<asset_id>/download",
+    methods=["GET"],
+    endpoint="download_lesson_file",
+)
+@student_bp.route("/files/<asset_id>/download", methods=["GET"])
+@student_required
+def download_student_course_file_route(asset_id: str, course_id: str | None = None) -> Any:
+    """Download or stream a course file asset for an enrolled student.
+
+    Enforces active enrollment, published course status, and clean scan status (fail-closed).
+    """
+    actor = require_authenticated_actor()
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+
+    if course_id is not None:
+        course = _resolve_course(course_id, session=db.session)
+        if course is None or course.id != asset.course_id:
+            raise ResourceNotFoundError("File asset not found for the specified course.")
+
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+
+    clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
+    return send_file(
+        physical_path,
+        mimetype=blob.detected_mime_type,
+        as_attachment=(disposition == "attachment"),
+        download_name=clean_filename,
+        conditional=True,
+    )

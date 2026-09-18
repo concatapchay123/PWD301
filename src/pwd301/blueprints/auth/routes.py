@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
 from flask import (
     current_app,
     flash,
+    g,
     jsonify,
     make_response,
     redirect,
-    render_template,
     request,
     session,
     url_for,
@@ -60,20 +61,41 @@ def _is_safe_redirect_url(target: str) -> bool:
 
 
 def _is_json_request() -> bool:
-    """Determine whether request explicitly asks for or provides JSON."""
-    if request.is_json:
-        return True
-    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
-    return best == "application/json"
+    """Determine whether request expects a JSON/API response (Always True in headless backend)."""
+    return True
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login() -> Any:
     """Handle user login for Web UI and same-origin AJAX."""
     if request.method == "GET":
+        from flask_wtf.csrf import generate_csrf
+
+        token = generate_csrf()
         if current_user.is_authenticated:
-            return redirect(url_for("core.index"))
-        return render_template("auth/login.html")
+            return jsonify(
+                {
+                    "status": "authenticated",
+                    "csrf_token": token,
+                    "user": {
+                        "id": str(getattr(current_user, "public_id", current_user.id)),
+                        "email": current_user.email,
+                        "display_name": getattr(current_user, "display_name", ""),
+                        "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+                        "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+                    },
+                }
+            ), 200
+        return (
+            jsonify(
+                {
+                    "status": "ok",
+                    "csrf_token": token,
+                    "message": "PWD301 Authentication Endpoint. POST credentials to login.",
+                }
+            ),
+            200,
+        )
 
     # POST processing
     if request.is_json:
@@ -93,77 +115,79 @@ def login() -> Any:
     is_locked, retry_after = is_login_locked(remote_ip, email)
     if is_locked:
         msg = f"Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau {retry_after} giây."
-        if _is_json_request():
-            resp = jsonify(
-                {
-                    "error": {
-                        "code": "RATE_LIMIT_EXCEEDED",
-                        "message": msg,
-                    }
+        resp = jsonify(
+            {
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": msg,
                 }
-            )
-            resp.status_code = 429
-            resp.headers["Retry-After"] = str(retry_after)
-            return resp
-        flash(msg, "danger")
-        html_resp = make_response(render_template("auth/login.html"), 429)
-        html_resp.headers["Retry-After"] = str(retry_after)
-        return html_resp
+            }
+        )
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
 
     # Credential verification (timing-safe against email enumeration)
     user = get_user_by_email(email)
     if not verify_password(user, password) or user is None:
         record_failed_login(remote_ip, email)
-        if _is_json_request():
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "code": "INVALID_CREDENTIALS",
-                            "message": "Email hoặc mật khẩu không chính xác.",
-                        }
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_CREDENTIALS",
+                        "message": "Email hoặc mật khẩu không chính xác.",
                     }
-                ),
-                401,
-            )
-        flash("Email hoặc mật khẩu không chính xác.", "danger")
-        return render_template("auth/login.html"), 401
+                }
+            ),
+            401,
+        )
 
     clear_login_attempts(remote_ip, email)
 
     # Active status verification
     if not user.is_active:
-        if _is_json_request():
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "code": "ACCOUNT_INACTIVE",
-                            "message": "Tài khoản đã bị tạm khóa hoặc ngừng kích hoạt.",
-                        }
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "ACCOUNT_INACTIVE",
+                        "message": "Tài khoản đã bị tạm khóa hoặc ngừng kích hoạt.",
                     }
-                ),
-                403,
-            )
-        flash("Tài khoản đã bị tạm khóa hoặc ngừng kích hoạt.", "danger")
-        return render_template("auth/login.html"), 403
+                }
+            ),
+            403,
+        )
 
     # Create server-side AuthSession in database
     user_agent_str = request.user_agent.string if request.user_agent else None
+    session_duration = timedelta(days=30) if remember else None
     auth_session, raw_session_key = create_auth_session(
         user=user,
         ip_address=request.remote_addr,
         user_agent=user_agent_str,
+        session_duration=session_duration,
     )
 
     # Establish Flask-Login session identity
     # (clear existing unauthenticated session to prevent session fixation)
     session.clear()
     login_user(user, remember=remember)
+    if remember:
+        session.permanent = True
 
     # Store session-integrity values in Flask session cookie
     session["auth_session_key"] = raw_session_key
     session["auth_version"] = user.auth_version
+
+    # Regenerate fresh CSRF token post-login to prevent session fixation and ensure
+    # state-changing API readiness
+    from flask_wtf.csrf import generate_csrf
+
+    # Evict cached request-scoped CSRF token on Flask's g object so generate_csrf()
+    # is forced to generate a brand-new token and populate session['csrf_token'].
+    g.pop("csrf_token", None)
+    new_csrf_token = generate_csrf()
 
     # Determine role-aware default landing dashboard and active role
     primary_role = user.primary_role
@@ -184,11 +208,12 @@ def login() -> Any:
         target_url = next_url
 
     if _is_json_request():
-        return (
+        resp = make_response(
             jsonify(
                 {
                     "status": "ok",
                     "message": "Đăng nhập thành công.",
+                    "csrf_token": new_csrf_token,
                     "redirect_url": target_url,
                     "user": {
                         "public_id": str(user.public_id),
@@ -199,9 +224,13 @@ def login() -> Any:
             ),
             200,
         )
+        resp.set_cookie("csrf_token", new_csrf_token, samesite="Lax")
+        return resp
 
     flash("Đăng nhập thành công!", "success")
-    return redirect(target_url)
+    resp_redirect = make_response(redirect(target_url))
+    resp_redirect.set_cookie("csrf_token", new_csrf_token, samesite="Lax")
+    return resp_redirect
 
 
 @auth_bp.route("/switch-role", methods=["POST"])
@@ -325,8 +354,16 @@ def register() -> Any:
     """Handle user registration for Web UI."""
     if request.method == "GET":
         if current_user.is_authenticated:
-            return redirect(url_for("core.index"))
-        return render_template("auth/register.html")
+            return jsonify({"status": "authenticated"}), 200
+        return (
+            jsonify(
+                {
+                    "status": "ok",
+                    "message": "PWD301 Registration Endpoint. POST name, email, password.",
+                }
+            ),
+            200,
+        )
 
     # POST processing
     if request.is_json:
@@ -346,35 +383,28 @@ def register() -> Any:
             display_name=display_name,
         )
     except ServiceError as exc:
-        if _is_json_request():
-            return (
-                jsonify(
-                    {
-                        "error": {
-                            "code": "VALIDATION_ERROR",
-                            "message": str(exc),
-                        }
-                    }
-                ),
-                400,
-            )
-        flash(str(exc), "danger")
-        return render_template("auth/register.html"), 400
-
-    if _is_json_request():
         return (
             jsonify(
                 {
-                    "status": "ok",
-                    "message": "Đăng ký tài khoản thành công!",
-                    "public_id": str(user.public_id),
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(exc),
+                    }
                 }
             ),
-            201,
+            400,
         )
 
-    flash("Đăng ký tài khoản thành công! Vui lòng đăng nhập.", "success")
-    return redirect(url_for("auth.login"))
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Đăng ký tài khoản thành công!",
+                "public_id": str(user.public_id),
+            }
+        ),
+        201,
+    )
 
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
@@ -382,7 +412,14 @@ def register() -> Any:
 def change_password_view() -> Any:
     """Handle password change for authenticated users."""
     if request.method == "GET":
-        return render_template("auth/change_password.html")
+        return (
+            jsonify(
+                {
+                    "message": "PWD301 Change Password Endpoint. POST current and new password.",
+                }
+            ),
+            200,
+        )
 
     if request.is_json:
         data: dict[str, Any] = request.get_json() or {}
@@ -396,17 +433,11 @@ def change_password_view() -> Any:
 
     if not current_pwd or not new_pwd:
         msg = "Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới."
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
-        flash(msg, "danger")
-        return render_template("auth/change_password.html"), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
 
     if new_pwd != confirm_pwd:
         msg = "Mật khẩu xác nhận không khớp với mật khẩu mới."
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
-        flash(msg, "danger")
-        return render_template("auth/change_password.html"), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
 
     try:
         user = change_password(
@@ -415,13 +446,8 @@ def change_password_view() -> Any:
             new_password=new_pwd,
         )
     except (InvalidPasswordError, ServiceError) as exc:
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
-        flash(str(exc), "danger")
-        return render_template("auth/change_password.html"), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
 
-    # Since change_password increments auth_version and revokes existing sessions,
-    # establish a fresh authenticated session for the current browser
     user_agent_str = request.user_agent.string if request.user_agent else None
     auth_session, raw_session_key = create_auth_session(
         user=user,
@@ -432,11 +458,7 @@ def change_password_view() -> Any:
     session["auth_session_key"] = raw_session_key
     session["auth_version"] = user.auth_version
 
-    if _is_json_request():
-        return jsonify({"status": "ok", "message": "Đổi mật khẩu thành công."}), 200
-
-    flash("Đổi mật khẩu thành công!", "success")
-    return redirect(url_for("core.index"))
+    return jsonify({"status": "ok", "message": "Đổi mật khẩu thành công."}), 200
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
@@ -444,8 +466,15 @@ def forgot_password() -> Any:
     """Handle password reset request."""
     if request.method == "GET":
         if current_user.is_authenticated:
-            return redirect(url_for("core.index"))
-        return render_template("auth/forgot_password.html")
+            return jsonify({"status": "authenticated"}), 200
+        return (
+            jsonify(
+                {
+                    "message": "PWD301 Forgot Password Endpoint. POST email to request reset.",
+                }
+            ),
+            200,
+        )
 
     if request.is_json:
         data: dict[str, Any] = request.get_json() or {}
@@ -455,10 +484,7 @@ def forgot_password() -> Any:
 
     if not email:
         msg = "Vui lòng nhập địa chỉ email."
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
-        flash(msg, "danger")
-        return render_template("auth/forgot_password.html"), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
 
     user = get_user_by_email(email)
     reset_token: str | None = None
@@ -488,19 +514,14 @@ def forgot_password() -> Any:
                 "Failed to enqueue password reset email for user %s: %s", user.id, exc
             )
 
-    # Prevent email enumeration by returning uniform success message
     msg = (
         "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được "
         "gửi đến hộp thư của bạn."
     )
-    if _is_json_request():
-        payload: dict[str, Any] = {"status": "ok", "message": msg}
-        if current_app.config.get("TESTING") and reset_token is not None:
-            payload["reset_token"] = reset_token
-        return jsonify(payload), 200
-
-    flash(msg, "info")
-    return redirect(url_for("auth.login"))
+    payload: dict[str, Any] = {"status": "ok", "message": msg}
+    if current_app.config.get("TESTING") and reset_token is not None:
+        payload["reset_token"] = reset_token
+    return jsonify(payload), 200
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
@@ -509,13 +530,18 @@ def reset_password(token: str) -> Any:
     user_id = verify_password_reset_token(token)
     if not user_id:
         msg = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."
-        if _is_json_request():
-            return jsonify({"error": {"code": "INVALID_TOKEN", "message": msg}}), 400
-        flash(msg, "danger")
-        return redirect(url_for("auth.forgot_password"))
+        return jsonify({"error": {"code": "INVALID_TOKEN", "message": msg}}), 400
 
     if request.method == "GET":
-        return render_template("auth/reset_password.html", token=token)
+        return (
+            jsonify(
+                {
+                    "message": "PWD301 Reset Password Endpoint. POST new_password.",
+                    "token": token,
+                }
+            ),
+            200,
+        )
 
     if request.is_json:
         data: dict[str, Any] = request.get_json() or {}
@@ -527,17 +553,11 @@ def reset_password(token: str) -> Any:
 
     if not new_pwd:
         msg = "Vui lòng nhập mật khẩu mới."
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
-        flash(msg, "danger")
-        return render_template("auth/reset_password.html", token=token), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
 
     if new_pwd != confirm_pwd:
         msg = "Mật khẩu xác nhận không khớp với mật khẩu mới."
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
-        flash(msg, "danger")
-        return render_template("auth/reset_password.html", token=token), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": msg}}), 400
 
     try:
         from pwd301.services.auth_token_service import (
@@ -552,17 +572,10 @@ def reset_password(token: str) -> Any:
         except Exception:
             set_password(user_id=user_id, new_password=new_pwd)
     except (InvalidPasswordError, ServiceError) as exc:
-        if _is_json_request():
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
-        flash(str(exc), "danger")
-        return render_template("auth/reset_password.html", token=token), 400
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
 
     msg = "Đặt lại mật khẩu thành công! Vui lòng đăng nhập bằng mật khẩu mới."
-    if _is_json_request():
-        return jsonify({"status": "ok", "message": msg}), 200
-
-    flash(msg, "success")
-    return redirect(url_for("auth.login"))
+    return jsonify({"status": "ok", "message": msg}), 200
 
 
 @auth_bp.route("/verify-email/<token>", methods=["GET"])

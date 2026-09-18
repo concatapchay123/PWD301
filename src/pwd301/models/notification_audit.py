@@ -425,6 +425,26 @@ class AuditEvent(Base):
         self.after_json = value
 
     @property
+    def before_state(self) -> dict[str, Any] | None:
+        """Parsed before_json payload as a dict."""
+        if not self.before_json:
+            return None
+        try:
+            return json.loads(self.before_json)
+        except Exception:
+            return None
+
+    @property
+    def after_state(self) -> dict[str, Any] | None:
+        """Parsed after_json payload as a dict."""
+        if not self.after_json:
+            return None
+        try:
+            return json.loads(self.after_json)
+        except Exception:
+            return None
+
+    @property
     def correlation_id(self) -> uuid.UUID | None:
         """Alias for request_id conforming to task description."""
         return self.request_id
@@ -448,6 +468,17 @@ class AuditEvent(Base):
                 after_data = json.loads(self.after_json)
             except Exception:
                 after_data = self.after_json
+
+        def _sanitize_ad002(data: Any) -> Any:
+            if not isinstance(data, dict):
+                return data
+            clean = dict(data)
+            if "owner_instructor_public_id" in clean:
+                clean["owner_instructor_id"] = clean.pop("owner_instructor_public_id")
+            return clean
+
+        before_data = _sanitize_ad002(before_data)
+        after_data = _sanitize_ad002(after_data)
 
         actor_public_id = str(self.actor.public_id) if self.actor is not None else None
         actor_name = self.actor.display_name if self.actor is not None else None

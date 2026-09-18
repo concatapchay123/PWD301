@@ -43,7 +43,7 @@ from pwd301.models.course import Course, Lesson
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.question_bank import Question, QuestionRevision
-from pwd301.models.types import utc_now
+from pwd301.models.types import normalize_row_version, utc_now
 from pwd301.services.authorization_service import (
     can_manage_course,
     require_course_manager,
@@ -56,6 +56,7 @@ from pwd301.services.exceptions import (
     AssessmentStateViolationError,
     AssessmentValidationError,
     BlueprintValidationError,
+    ConflictError,
     QuestionCorrectionNotFoundError,
     QuestionNotFoundError,
     ResourceNotFoundError,
@@ -643,6 +644,15 @@ def update_assessment(
         raise AssessmentStateViolationError(
             f"Cannot update assessment in terminal status '{assessment.status}'."
         )
+
+    if (
+        "row_version" in payload
+        and payload["row_version"] is not None
+        and assessment.row_version is not None
+    ):
+        norm_client = normalize_row_version(payload["row_version"])
+        if norm_client is not None and norm_client != assessment.row_version:
+            raise ConflictError("Assessment has been modified concurrently by another transaction.")
 
     # 1. Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:

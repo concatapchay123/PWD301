@@ -153,3 +153,43 @@ def test_api_publish_request_and_archive(
     )
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "ARCHIVED"
+
+
+def test_api_update_course_optimistic_concurrency(
+    client: FlaskClient, instructor_user: User
+) -> None:
+    """Test PATCH /api/courses/<id> optimistic concurrency control (row_version)."""
+    from pwd301.extensions import db
+
+    course = create_course(
+        instructor_user,
+        {"course_code": "OCC-101", "title": "OCC Course"},
+    )
+    course.row_version = b"\x00\x00\x00\x00\x00\x00\x00\x01"
+    db.session.commit()
+
+    tokens = create_token_pair(instructor_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    # Stale row_version should return 409 Conflict
+    resp = client.patch(
+        f"/api/courses/{course.public_id}",
+        headers=headers,
+        json={
+            "title": "Conflicting Update",
+            "row_version": "0x0000000000000002",
+        },
+    )
+    assert resp.status_code == 409
+
+    # Matching row_version should succeed
+    resp = client.patch(
+        f"/api/courses/{course.public_id}",
+        headers=headers,
+        json={
+            "title": "Matching OCC Title",
+            "row_version": "0x0000000000000001",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["title"] == "Matching OCC Title"

@@ -128,7 +128,7 @@ def get_instructor_application_api() -> tuple[Response, int] | Response:
                 "is_already_instructor": actor.is_instructor,
                 "application": (
                     {
-                        "id": app_record.id,
+                        "id": str(app_record.public_id),
                         "status": app_record.status,
                         "status_label": app_record.status_label_vi,
                         "details": app_record.parsed_details,
@@ -171,7 +171,7 @@ def submit_instructor_application_api() -> tuple[Response, int] | Response:
         jsonify(
             {
                 "message": "Đơn đăng ký đã được gửi thành công.",
-                "application_id": app_record.id,
+                "application_id": str(app_record.public_id),
                 "status": app_record.status,
             }
         ),

@@ -62,14 +62,15 @@ def test_404_error_handler_api_format(client: FlaskClient) -> None:
 
 
 def test_404_error_handler_html_format(client: FlaskClient) -> None:
-    """Verify 404 on a browser page route returns HTML with correct status code."""
+    """Verify 404 in headless backend returns standardized JSON error response."""
     response = client.get(
         "/nonexistent-page",
         headers={"Accept": "text/html"},
     )
     assert response.status_code == 404
-    assert "text/html" in response.content_type
-    assert b"RESOURCE_NOT_FOUND" in response.data
+    assert response.is_json
+    data = response.get_json()
+    assert data["error"]["code"] == "RESOURCE_NOT_FOUND"
 
 
 def test_405_error_handler(client: FlaskClient) -> None:

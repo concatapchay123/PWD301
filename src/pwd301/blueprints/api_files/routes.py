@@ -11,6 +11,7 @@ from flask import Response, current_app, jsonify, make_response, request, send_f
 from pwd301.blueprints.api_files import api_file_bp
 from pwd301.extensions import db
 from pwd301.services.authorization_service import (
+    admin_required,
     get_authenticated_actor,
     require_authenticated_actor,
 )
@@ -35,6 +36,7 @@ from pwd301.services.jwt_auth_service import jwt_required
 
 
 @api_file_bp.route("/<asset_id>", methods=["GET"])
+@jwt_required
 def get_file_metadata_api(asset_id: str) -> tuple[Response, int] | Response:
     """Retrieve FileAsset metadata conforming to ADR-002 (zero internal PK leakage)."""
     actor = get_authenticated_actor()
@@ -237,6 +239,7 @@ def rescan_file_api(asset_id: str) -> tuple[Response, int] | Response:
 
 @api_file_bp.route("/<asset_id>/quarantine-override", methods=["POST"])
 @jwt_required
+@admin_required
 def quarantine_override_api(asset_id: str) -> tuple[Response, int] | Response:
     """Admin override to release a quarantined/rejected file asset (Admin JWT required)."""
     actor = require_authenticated_actor()

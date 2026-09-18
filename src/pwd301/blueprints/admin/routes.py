@@ -1,13 +1,15 @@
-from __future__ import annotations
-
+import contextlib
+import json
 from typing import Any
 
-from flask import Response, flash, jsonify, redirect, render_template, request, url_for
+import sqlalchemy as sa
+from flask import Response, flash, jsonify, redirect, request, url_for
 
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
-from pwd301.models.course import Course
+from pwd301.models.course import Course, CourseChangeRequest, Lesson
 from pwd301.models.identity import User
+from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -20,8 +22,10 @@ from pwd301.services.course_service import (
     trash_course,
 )
 from pwd301.services.exceptions import (
+    AdminActionForbiddenError,
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
+    ValidationError,
 )
 from pwd301.services.file_service import _serialize_file_asset, quarantine_override
 from pwd301.services.operations_service import (
@@ -52,16 +56,8 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 
 
 def _is_api_request() -> bool:
-    """Determine whether the incoming request expects a JSON/API response."""
-    if request.path.startswith("/api/"):
-        return True
-    if request.is_json:
-        return True
-    if request.args.get("format") == "json":
-        return True
-    if request.accept_mimetypes.accept_html:
-        return request.accept_mimetypes["application/json"] > request.accept_mimetypes["text/html"]
-    return request.accept_mimetypes.accept_json
+    """Determine whether the request expects JSON (Always True in headless mode)."""
+    return True
 
 
 @admin_bp.route("/dashboard", methods=["GET"])
@@ -70,9 +66,7 @@ def dashboard() -> tuple[Response, int] | Response | str:
     """Administrator dashboard overview with comprehensive system analytics."""
     actor = require_authenticated_actor()
     overview = get_admin_system_overview(actor, session=db.session)
-    if _is_api_request():
-        return jsonify(overview), 200
-    return render_template("admin/dashboard.html", overview=overview)
+    return jsonify(overview), 200
 
 
 @admin_bp.route("/courses", methods=["GET"])
@@ -88,52 +82,167 @@ def admin_courses() -> tuple[Response, int] | Response | str:
         .all()
     )
     pending_courses = [c for c in courses if c.status == "SUBMITTED_FOR_REVIEW"]
-    if _is_api_request():
-        return (
-            jsonify(
-                {
-                    "courses": [_serialize_course(c) for c in courses],
-                    "pending_count": len(pending_courses),
-                }
-            ),
-            200,
-        )
-    return render_template(
-        "admin/courses.html",
-        courses=courses,
-        pending_courses=pending_courses,
+    return (
+        jsonify(
+            {
+                "courses": [_serialize_course(c) for c in courses],
+                "pending_count": len(pending_courses),
+            }
+        ),
+        200,
     )
+
+
+@admin_bp.route("/courses/<course_id>", methods=["GET"])
+@admin_required
+def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
+    """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
+    require_authenticated_actor()
+    sess = db.session
+    from pwd301.services.authorization_service import _resolve_course
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError(f"Course '{course_id}' not found.")
+
+    lessons = sorted(course.lessons, key=lambda item: getattr(item, "position", 0))
+    lessons_data = [
+        {
+            "lesson_id": str(item.public_id),
+            "title": item.title,
+            "order_index": getattr(item, "order_index", getattr(item, "position", 1)),
+            "position": getattr(item, "position", 1),
+            "status": item.status,
+            "summary": item.summary,
+        }
+        for item in lessons
+        if getattr(item, "deleted_at", None) is None
+    ]
+
+    return (
+        jsonify(
+            {
+                "course_id": str(course.public_id),
+                "course_code": course.course_code,
+                "title": course.title,
+                "description": course.description,
+                "status": course.status,
+                "difficulty": course.difficulty,
+                "category": course.category,
+                "learning_objectives": course.learning_objectives,
+                "owner_instructor_id": (
+                    str(course.owner_instructor.public_id) if course.owner_instructor else None
+                ),
+                "owner_instructor_name": (
+                    course.owner_instructor.display_name
+                    if course.owner_instructor
+                    else "Unassigned"
+                ),
+                "owner_instructor_email": (
+                    course.owner_instructor.email if course.owner_instructor else None
+                ),
+                "lessons": lessons_data,
+                "created_at": course.created_at.isoformat(),
+                "updated_at": course.updated_at.isoformat(),
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/faculty/workload", methods=["GET"])
+@admin_required
+def admin_faculty_workload() -> tuple[Response, int] | Response:
+    """Retrieve faculty teaching workload metrics and SLA distribution (Admin only)."""
+    require_authenticated_actor()
+    from pwd301.services.course_service import get_faculty_workload_metrics
+
+    data = get_faculty_workload_metrics(session=db.session)
+    return jsonify(data), 200
 
 
 @admin_bp.route("/users", methods=["GET"])
 @admin_required
 def admin_users() -> tuple[Response, int] | Response | str:
-    """Administrator users management page."""
+    """Administrator users management listing with server-side filter and search."""
     require_authenticated_actor()
     sess = db.session
-    users = sess.query(User).order_by(User.created_at.desc()).all()
-    if _is_api_request():
-        return (
-            jsonify(
-                {
-                    "users": [
-                        {
-                            "user_id": str(u.public_id),
-                            "email": u.email,
-                            "display_name": u.display_name,
-                            "status": u.status,
-                            "roles": sorted(u.role_codes),
-                            "suspended_at": u.suspended_at.isoformat() if u.suspended_at else None,
-                            "created_at": u.created_at.isoformat(),
-                        }
-                        for u in users
-                    ],
-                    "total": len(users),
-                }
-            ),
-            200,
+
+    query = sess.query(User)
+
+    search_term = (request.args.get("search") or "").strip()
+    if search_term:
+        query = query.filter(
+            sa.or_(
+                User.display_name.ilike(f"%{search_term}%"),
+                User.email.ilike(f"%{search_term}%"),
+            )
         )
-    return render_template("admin/users.html", users=users)
+
+    role_filter = (request.args.get("role") or "").strip().upper()
+    if role_filter and role_filter != "ALL":
+        from pwd301.models.identity import Role
+
+        query = query.filter(User.roles.any(Role.code == role_filter))
+
+    status_filter = (request.args.get("status") or "").strip().upper()
+    if status_filter and status_filter != "ALL":
+        query = query.filter(User.status == status_filter)
+
+    total = query.count()
+    users = query.order_by(User.created_at.desc()).all()
+    return (
+        jsonify(
+            {
+                "users": [
+                    {
+                        "user_id": str(u.public_id),
+                        "email": u.email,
+                        "display_name": u.display_name,
+                        "status": u.status,
+                        "roles": sorted(u.role_codes),
+                        "suspended_at": u.suspended_at.isoformat() if u.suspended_at else None,
+                        "created_at": u.created_at.isoformat(),
+                    }
+                    for u in users
+                ],
+                "total": total,
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/users/<user_id>", methods=["GET"])
+@admin_required
+def admin_get_user(user_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed user profile for administrators."""
+    require_authenticated_actor()
+    sess = db.session
+    target_user = _resolve_user(user_id, session=sess)
+    if target_user is None:
+        raise ResourceNotFoundError(f"User '{user_id}' not found.")
+
+    return (
+        jsonify(
+            {
+                "user_id": str(target_user.public_id),
+                "email": target_user.email,
+                "display_name": target_user.display_name,
+                "status": target_user.status,
+                "roles": sorted(target_user.role_codes),
+                "auth_version": target_user.auth_version,
+                "suspended_at": (
+                    target_user.suspended_at.isoformat() if target_user.suspended_at else None
+                ),
+                "created_at": target_user.created_at.isoformat(),
+                "updated_at": (
+                    target_user.updated_at.isoformat() if target_user.updated_at else None
+                ),
+            }
+        ),
+        200,
+    )
 
 
 @admin_bp.route("/analytics/overview", methods=["GET"])
@@ -174,6 +283,22 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
             400,
         )
 
+    clean_reason = str(reason or "").strip()
+    if len(clean_reason) < 5:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": (
+                            "Lý do thay đổi phân quyền kiểm toán bắt buộc tối thiểu 5 ký tự."
+                        ),
+                    }
+                }
+            ),
+            400,
+        )
+
     try:
         if action == "assign":
             updated_user = assign_role_to_user(
@@ -191,18 +316,31 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 reason=reason,
                 session=sess,
             )
-    except InvalidRoleAssignmentError as exc:
+    except (InvalidRoleAssignmentError, ValidationError) as exc:
         sess.rollback()
         return (
             jsonify(
                 {
                     "error": {
-                        "code": "INVALID_ROLE_ASSIGNMENT",
+                        "code": "VALIDATION_ERROR",
                         "message": str(exc),
                     }
                 }
             ),
             400,
+        )
+    except AdminActionForbiddenError as exc:
+        sess.rollback()
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": str(exc),
+                    }
+                }
+            ),
+            403,
         )
 
     return (
@@ -266,6 +404,26 @@ def review_course(course_id: str) -> Any:
             ),
             400,
         )
+
+    if action == "reject":
+        clean_reason = str(reason or "").strip()
+        if len(clean_reason) < 5:
+            if not _is_api_request():
+                flash("Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự.", "danger")
+                return redirect(url_for("admin.admin_courses"))
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "VALIDATION_ERROR",
+                            "message": (
+                                "Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự."
+                            ),
+                        }
+                    }
+                ),
+                400,
+            )
 
     target_status = "APPROVED" if action == "approve" else "DRAFT"
     course = change_course_status(
@@ -472,28 +630,17 @@ def list_audit_logs() -> tuple[Response, int] | Response | str:
         session=db.session,
     )
 
-    if _is_api_request():
-        return (
-            jsonify(
-                {
-                    "items": items,
-                    "total": total,
-                    "page": p,
-                    "per_page": pp,
-                    "total_pages": total_pages,
-                }
-            ),
-            200,
-        )
-
-    return render_template(
-        "admin/audit_logs.html",
-        items=items,
-        total=total,
-        page=p,
-        per_page=pp,
-        total_pages=total_pages,
-        filters=filters,
+    return (
+        jsonify(
+            {
+                "items": items,
+                "total": total,
+                "page": p,
+                "per_page": pp,
+                "total_pages": total_pages,
+            }
+        ),
+        200,
     )
 
 
@@ -625,12 +772,7 @@ def admin_health() -> tuple[Response, int] | Response | str:
     """Comprehensive system operational health evaluation for administrators."""
     require_authenticated_actor()
     report = check_system_health(include_details=True, session=db.session)
-    if _is_api_request():
-        return jsonify(report), 200
-    from pwd301.services.operations_service import get_real_system_telemetry
-
-    telemetry = get_real_system_telemetry()
-    return render_template("admin/health.html", report=report, telemetry=telemetry)
+    return jsonify(report), 200
 
 
 @admin_bp.route("/telemetry", methods=["GET"])
@@ -649,9 +791,7 @@ def admin_list_backups() -> tuple[Response, int] | Response | str:
     """List historical database backups ordered by execution timestamp."""
     actor = require_authenticated_actor()
     backups = list_backups(actor, session=db.session)
-    if _is_api_request():
-        return jsonify({"items": backups, "total": len(backups)}), 200
-    return render_template("admin/backups.html", backups=backups)
+    return jsonify({"items": backups, "total": len(backups)}), 200
 
 
 @admin_bp.route("/backups", methods=["POST"])
@@ -810,6 +950,43 @@ def admin_maintenance_status() -> tuple[Response, int] | Response:
 
 
 # ==============================================================================
+# Operations Background Jobs Telemetry & Management
+# ==============================================================================
+
+
+@admin_bp.route("/operations/jobs", methods=["GET"])
+@admin_required
+def admin_operations_jobs() -> tuple[Response, int] | Response:
+    """List asynchronous background worker jobs with telemetry summary (Admin only)."""
+    require_authenticated_actor()
+    from pwd301.services.operations_service import list_background_jobs
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    status = request.args.get("status")
+    job_type = request.args.get("job_type")
+    data = list_background_jobs(
+        page=page,
+        per_page=per_page,
+        status=status,
+        job_type=job_type,
+        session=db.session,
+    )
+    return jsonify(data), 200
+
+
+@admin_bp.route("/operations/jobs/<job_id>/retry", methods=["POST"])
+@admin_required
+def admin_retry_job(job_id: str) -> tuple[Response, int] | Response:
+    """Trigger manual re-execution of a failed or stuck background job (Admin only)."""
+    actor = require_authenticated_actor()
+    from pwd301.services.operations_service import retry_background_job
+
+    data = retry_background_job(admin_actor=actor, job_identifier=job_id, session=db.session)
+    return jsonify(data), 200
+
+
+# ==============================================================================
 # Instructor Applications Management & Review
 # ==============================================================================
 
@@ -834,46 +1011,40 @@ def admin_instructor_applications() -> tuple[Response, int] | Response | str:
     approved_count = sum(1 for a in all_apps if a.status == "APPROVED")
     rejected_count = sum(1 for a in all_apps if a.status == "REJECTED")
 
-    if _is_api_request():
-        return (
-            jsonify(
-                {
-                    "total": len(applications),
-                    "pending_count": pending_count,
-                    "applications": [
-                        {
-                            "id": a.id,
-                            "applicant_user_id": a.applicant_user_id,
-                            "applicant_name": a.applicant.display_name if a.applicant else "N/A",
-                            "applicant_email": a.applicant.email if a.applicant else "N/A",
-                            "status": a.status,
-                            "status_label": a.status_label_vi,
-                            "details": a.parsed_details,
-                            "reviewed_by": a.reviewed_by.display_name if a.reviewed_by else None,
-                            "review_reason": a.review_reason,
-                            "created_at": a.created_at.isoformat(),
-                            "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
-                        }
-                        for a in applications
-                    ],
-                }
-            ),
-            200,
-        )
-
-    return render_template(
-        "admin/instructor_applications.html",
-        applications=applications,
-        current_status=status_filter,
-        pending_count=pending_count,
-        approved_count=approved_count,
-        rejected_count=rejected_count,
+    return (
+        jsonify(
+            {
+                "total": len(applications),
+                "pending_count": pending_count,
+                "approved_count": approved_count,
+                "rejected_count": rejected_count,
+                "applications": [
+                    {
+                        "id": str(a.public_id),
+                        "applicant_user_id": (
+                            str(a.applicant.public_id) if a.applicant else str(a.applicant_user_id)
+                        ),
+                        "applicant_name": a.applicant.display_name if a.applicant else "N/A",
+                        "applicant_email": a.applicant.email if a.applicant else "N/A",
+                        "status": a.status,
+                        "status_label": a.status_label_vi,
+                        "details": a.parsed_details,
+                        "reviewed_by": a.reviewed_by.display_name if a.reviewed_by else None,
+                        "review_reason": a.review_reason,
+                        "created_at": a.created_at.isoformat(),
+                        "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+                    }
+                    for a in applications
+                ],
+            }
+        ),
+        200,
     )
 
 
-@admin_bp.route("/instructor-applications/<int:app_id>", methods=["GET"])
+@admin_bp.route("/instructor-applications/<app_id>", methods=["GET"])
 @admin_required
-def admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | Response:
+def admin_instructor_application_detail(app_id: str) -> tuple[Response, int] | Response:
     """Get detailed view of a single instructor application."""
     from pwd301.services.user_service import get_instructor_application
 
@@ -885,8 +1056,12 @@ def admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | R
     return (
         jsonify(
             {
-                "id": app_record.id,
-                "applicant_user_id": app_record.applicant_user_id,
+                "id": str(app_record.public_id),
+                "applicant_user_id": (
+                    str(app_record.applicant.public_id)
+                    if app_record.applicant
+                    else str(app_record.applicant_user_id)
+                ),
                 "applicant_name": app_record.applicant.display_name
                 if app_record.applicant
                 else "N/A",
@@ -908,9 +1083,9 @@ def admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | R
     )
 
 
-@admin_bp.route("/instructor-applications/<int:app_id>/review", methods=["POST"])
+@admin_bp.route("/instructor-applications/<app_id>/review", methods=["POST"])
 @admin_required
-def admin_review_instructor_application(app_id: int) -> Any:
+def admin_review_instructor_application(app_id: str) -> Any:
     """Approve or reject an instructor application (Admin only)."""
     from pwd301.services.exceptions import ValidationError
     from pwd301.services.user_service import review_instructor_application
@@ -949,7 +1124,7 @@ def admin_review_instructor_application(app_id: int) -> Any:
         jsonify(
             {
                 "message": msg,
-                "application_id": app_record.id,
+                "application_id": str(app_record.public_id),
                 "status": app_record.status,
             }
         ),
@@ -957,9 +1132,9 @@ def admin_review_instructor_application(app_id: int) -> Any:
     )
 
 
-@admin_bp.route("/instructor-applications/<int:app_id>/evidence/<filename>", methods=["GET"])
+@admin_bp.route("/instructor-applications/<app_id>/evidence/<filename>", methods=["GET"])
 @admin_required
-def admin_download_application_evidence(app_id: int, filename: str) -> Any:
+def admin_download_application_evidence(app_id: str, filename: str) -> Any:
     """Download attached evidence file for an instructor application."""
     from pathlib import Path
 
@@ -984,7 +1159,8 @@ def admin_download_application_evidence(app_id: int, filename: str) -> Any:
     download_name = matched_meta.get("original_name", safe_name) if matched_meta else safe_name
 
     storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
-    app_dir = storage_root / "instructor_applications" / str(app_record.applicant_user_id)
+    applicant_key = str(app_record.applicant.public_id) if app_record.applicant else ""
+    app_dir = storage_root / "instructor_applications" / applicant_key
     file_path = (app_dir / safe_name).resolve()
 
     # Chống Path Traversal và kiểm tra tồn tại
@@ -996,3 +1172,196 @@ def admin_download_application_evidence(app_id: int, filename: str) -> Any:
         as_attachment=True,
         download_name=download_name,
     )
+
+
+@admin_bp.route("/change-requests", methods=["GET"])
+@admin_required
+def admin_list_change_requests() -> tuple[Response, int] | Response:
+    """List all course and lesson change requests for admin review."""
+    require_authenticated_actor()
+
+    status_filter = request.args.get("status", "ALL").strip().upper()
+    query = db.session.query(CourseChangeRequest).order_by(CourseChangeRequest.created_at.desc())
+    if status_filter != "ALL":
+        query = query.filter(CourseChangeRequest.status == status_filter)
+
+    records = query.all()
+    results = []
+    for r in records:
+        try:
+            payload_data = json.loads(r.proposed_payload_json) if r.proposed_payload_json else {}
+        except Exception:
+            payload_data = {}
+
+        target_title = None
+        if r.target_type == "LESSON" and r.target_id:
+            les = db.session.get(Lesson, r.target_id)
+            if les:
+                target_title = les.title
+        elif r.target_type == "PREREQUISITE" and r.target_id:
+            c = db.session.get(Course, r.target_id)
+            if c:
+                target_title = c.title
+
+        results.append(
+            {
+                "id": r.id,
+                "course_id": str(r.course.public_id) if r.course else str(r.course_id),
+                "course_code": r.course.course_code if r.course else None,
+                "course_title": r.course.title if r.course else None,
+                "requested_by_id": str(r.requested_by.public_id) if r.requested_by else None,
+                "requested_by_name": r.requested_by.display_name if r.requested_by else None,
+                "change_type": r.change_type,
+                "target_type": r.target_type,
+                "target_id": r.target_id,
+                "target_title": target_title,
+                "proposed_payload": payload_data,
+                "status": r.status,
+                "review_reason": r.review_reason,
+                "created_at": r.created_at.isoformat(),
+                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            }
+        )
+
+    pending_count = sum(1 for r in records if r.status == "PENDING")
+    return jsonify({"change_requests": results, "pending_count": pending_count}), 200
+
+
+@admin_bp.route("/change-requests/<int:req_id>/review", methods=["POST"])
+@admin_required
+def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
+    """Approve or reject a course/lesson change request (Admin only)."""
+    from pwd301.services.enrollment_service import add_course_prerequisite
+    from pwd301.services.lesson_service import trash_lesson, update_lesson
+    from pwd301.services.notification_service import dispatch_notification
+
+    actor = require_authenticated_actor()
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = str(payload.get("action", "")).strip().lower()
+    reason = str(payload.get("reason", "")).strip()
+
+    if action not in ("approve", "reject"):
+        raise ValidationError("Action must be 'approve' or 'reject'.")
+
+    req_record = db.session.get(CourseChangeRequest, req_id)
+    if req_record is None:
+        raise ResourceNotFoundError("Change request not found.")
+
+    if req_record.status != "PENDING":
+        raise ValidationError(f"Change request is already in '{req_record.status}' status.")
+
+    now = utc_now()
+    try:
+        p_data = (
+            json.loads(req_record.proposed_payload_json) if req_record.proposed_payload_json else {}
+        )
+    except Exception:
+        p_data = {}
+
+    if action == "approve":
+        if req_record.change_type == "LESSON_STRUCTURE" and p_data.get("action") == "DELETE":
+            lesson_id = req_record.target_id or p_data.get("lesson_id")
+            if lesson_id:
+                trash_lesson(
+                    actor,
+                    lesson_id,
+                    reason=reason or "Admin phê duyệt yêu cầu xóa",
+                    session=db.session,
+                )
+            msg = f"Đã phê duyệt yêu cầu xóa bài giảng #{req_record.target_id}."
+
+        elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
+            staged = (
+                db.session.query(Lesson).filter(Lesson.change_request_id == req_record.id).first()
+            )
+            if staged:
+                from pwd301.services.lesson_service import approve_course_change_request
+
+                approve_course_change_request(
+                    actor, req_record.id, review_reason=reason, session=db.session
+                )
+            else:
+                lesson_id = req_record.target_id
+                if lesson_id:
+                    update_data = {
+                        k: v
+                        for k, v in p_data.items()
+                        if k
+                        in (
+                            "title",
+                            "summary",
+                            "markdown_content",
+                            "estimated_duration_minutes",
+                            "status",
+                        )
+                    }
+                    if update_data:
+                        update_lesson(actor, lesson_id, update_data, session=db.session)
+            msg = f"Đã phê duyệt thay đổi nội dung bài giảng #{req_record.target_id}."
+
+        elif req_record.change_type == "PREREQUISITE":
+            add_course_prerequisite(
+                actor=actor,
+                course_id=req_record.course_id,
+                prerequisite_course_id=req_record.target_id,
+                session=db.session,
+            )
+            msg = f"Đã phê duyệt thiết lập môn tiên quyết #{req_record.target_id}."
+
+        else:
+            msg = f"Đã phê duyệt yêu cầu thay đổi #{req_record.id}."
+
+        req_record.status = "APPROVED"
+        req_record.reviewed_by_user_id = actor.id
+        req_record.review_reason = reason or "Admin đã phê duyệt"
+        req_record.reviewed_at = now
+        req_record.applied_at = now
+        db.session.flush()
+
+        if req_record.requested_by:
+            with contextlib.suppress(Exception):
+                dispatch_notification(
+                    recipient_user=req_record.requested_by,
+                    event_type="COURSE_CHANGE_APPROVED",
+                    title="Yêu cầu thay đổi đã được Admin phê duyệt",
+                    body=(
+                        f"Quản trị viên đã phê duyệt yêu cầu thay đổi #{req_record.id} "
+                        f"({req_record.change_type})."
+                    ),
+                    category="COURSE",
+                    session=db.session,
+                )
+
+    else:
+        staged = db.session.query(Lesson).filter(Lesson.change_request_id == req_record.id).first()
+        if staged:
+            from pwd301.services.lesson_service import reject_course_change_request
+
+            reject_course_change_request(
+                actor, req_record.id, review_reason=reason, session=db.session
+            )
+
+        req_record.status = "REJECTED"
+        req_record.reviewed_by_user_id = actor.id
+        req_record.review_reason = reason or "Admin từ chối yêu cầu thay đổi"
+        req_record.reviewed_at = now
+        db.session.flush()
+
+        if req_record.requested_by:
+            with contextlib.suppress(Exception):
+                dispatch_notification(
+                    recipient_user=req_record.requested_by,
+                    event_type="COURSE_CHANGE_REJECTED",
+                    title="Yêu cầu thay đổi bị Admin từ chối",
+                    body=(
+                        f"Quản trị viên đã từ chối yêu cầu thay đổi #{req_record.id}. "
+                        f"Lý do: {reason or 'Không có'}."
+                    ),
+                    category="COURSE",
+                    session=db.session,
+                )
+        msg = f"Đã từ chối yêu cầu thay đổi #{req_record.id}."
+
+    db.session.commit()
+    return jsonify({"status": req_record.status, "message": msg}), 200

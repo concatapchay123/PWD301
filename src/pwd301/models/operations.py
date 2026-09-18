@@ -118,6 +118,11 @@ class BackgroundJob(Base):
         ),
     )
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Expose job_key GUID as canonical public identifier complying with ADR-002."""
+        return self.job_key
+
 
 class SystemAlert(Base):
     """System-level operations alert incident mapping to 'system_alerts' table."""

@@ -1,0 +1,469 @@
+<!DOCTYPE html><html class="h-full bg-slate-50 text-slate-800" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Kỳ thi Giữa kỳ: PWD301 Midterm Examination - Focus Mode Console</title>
+<!-- Google Fonts: Plus Jakarta Sans -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#EEF2FF',
+              100: '#E0E7FF',
+              200: '#C7D2FE',
+              300: '#A5B4FC',
+              400: '#818CF8',
+              500: '#6366F1', // Primary Indigo
+              600: '#4F46E5', // Hover Indigo
+              700: '#4338CA',
+              800: '#3730A3',
+              900: '#312E81',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom CSS for subtle animations & layout fixes -->
+<style data-purpose="custom-ui-helpers">
+    /* Pulse ring for server clock critical threshold */
+    @keyframes server-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .animate-pulse-subtle {
+      animation: server-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    /* Monospace tabular nums for countdown & metrics */
+    .tabular-timer {
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body class="min-h-full flex flex-col font-sans antialiased text-slate-800 bg-slate-50">
+<!-- BEGIN: MinimalProctoredTopBar -->
+<!-- Topbar bảo mật tối giản - Reduced Focus Shell (Không có notification bell hay external links) -->
+<header class="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm" data-purpose="exam-topbar">
+<div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+<!-- Left: Brand, Exam Identity & Progress Bar -->
+<div class="flex items-center gap-4 sm:gap-6 min-w-0">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-brand-500 text-white flex items-center justify-center font-extrabold text-sm shadow-sm flex-shrink-0">
+            P3
+          </div>
+<div class="truncate">
+<div class="flex items-center gap-2">
+<span class="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">Chính thức</span>
+<h1 class="text-sm sm:text-base font-bold text-slate-900 truncate">
+                PWD301 Midterm Exam
+              </h1>
+</div>
+<p class="text-xs text-slate-500 truncate hidden sm:block">
+              Thí sinh: <span class="font-medium text-slate-700">Nguyễn Minh Anh</span> (MSSV: <span class="font-mono text-slate-700">MA-8392</span>) • Phòng 402-A
+            </p>
+</div>
+</div>
+<!-- Inline Question Progress Counter -->
+<div class="hidden lg:flex items-center gap-3 pl-6 border-l border-slate-200">
+<div class="text-xs font-semibold text-slate-600 whitespace-nowrap">
+            Tiến độ: <span class="text-brand-600 font-bold">12</span> / 30 câu
+          </div>
+<div class="w-28 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200" title="Đã làm 40%">
+<div class="h-full bg-brand-500 rounded-full transition-all duration-300" style="width: 40%"></div>
+</div>
+</div>
+</div>
+<!-- Right: Server Clock, Autosave Status, and Primary Submit CTA -->
+<div class="flex items-center gap-3 sm:gap-5 flex-shrink-0">
+<!-- Autosave & Server Connection Heartbeat -->
+<div class="hidden md:flex flex-col items-end text-right">
+<div class="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-subtle"></span>
+<span class="">Đã kết nối máy chủ (16ms)</span>
+</div>
+<div aria-live="polite" class="text-[11px] text-slate-400 tabular-timer" data-purpose="autosave-status">
+            Đã lưu tự động lúc 10:42:15
+          </div>
+</div>
+<!-- Server Authority Countdown Clock -->
+<div class="flex items-center gap-2.5 bg-slate-900 text-white px-3.5 py-1.5 rounded-lg shadow-sm border border-slate-800" title="Thời gian được kiểm soát đồng bộ NTP bởi Máy chủ Khảo thí">
+<svg class="w-4 h-4 text-brand-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<div class="flex flex-col">
+<span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold leading-none">Thời gian còn lại</span>
+<span class="text-base sm:text-lg font-bold font-mono tracking-tight text-white tabular-timer leading-tight">24:18</span>
+</div>
+</div>
+<!-- Submit Exam CTA Button -->
+<button class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-xs sm:text-sm font-semibold px-4 py-2 sm:px-4.5 sm:py-2 rounded-lg shadow-sm shadow-brand-500/20 transition-all focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2" onclick="document.getElementById('submit-modal').classList.remove('hidden')" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="">Nộp bài thi</span>
+</button>
+</div>
+</div>
+</header>
+<!-- END: MinimalProctoredTopBar -->
+<!-- BEGIN: MainContentLayout -->
+<!-- Bố cục 2 cột tiêu chuẩn: Cột chính làm bài thi + Cột điều hướng Navigator 300px -->
+<main class="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<!-- BEGIN: CentralExamCanvas -->
+<!-- Vùng nội dung câu hỏi chính (Lg: 8 or 9 columns) -->
+<section aria-label="Nội dung câu hỏi" class="lg:col-span-8 xl:col-span-9 space-y-6">
+<!-- Question 12 (Current Active - In-depth MCQ) -->
+<article class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" data-purpose="active-question-card">
+<!-- Card Header: Metadata, Point value and Flag action -->
+<div class="px-6 py-4 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-bold bg-brand-100 text-brand-800 border border-brand-200">
+                Câu 12 / 30
+              </span>
+<span class="text-xs font-medium text-slate-500">Trắc nghiệm chuyên sâu (MCQ)</span>
+<span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">1.5 Điểm</span>
+</div>
+<!-- Flag Review Toggle Button -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition" title="Đánh dấu câu hỏi để xem lại trước khi nộp bài" type="button">
+<svg class="w-3.5 h-3.5 text-amber-600 fill-amber-500" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" fill-rule="evenodd"></path>
+</svg>
+<span class="">Đã gắn cờ xem lại</span>
+</button>
+</div>
+<!-- Question Body -->
+<div class="p-6 space-y-5">
+<div class="prose prose-slate max-w-none text-slate-900 font-medium text-base leading-relaxed">
+              Trong kiến trúc thiết kế <strong>Flask Application Factory</strong>, tại sao việc khởi tạo đối tượng tiện ích SQLAlchemy <code class="font-mono text-sm bg-slate-100 px-1.5 py-0.5 rounded text-brand-700 font-semibold">db = SQLAlchemy()</code> nên được đặt bên ngoài thân hàm <code class="font-mono text-sm bg-slate-100 px-1.5 py-0.5 rounded text-brand-700 font-semibold">create_app()</code> (global scope) thay vì khởi tạo trực tiếp bên trong hàm này?
+            </div>
+<!-- MCQ Option List -->
+<div aria-label="Danh sách lựa chọn đáp án" class="space-y-3 pt-2" role="radiogroup">
+<!-- Option A -->
+<label class="relative flex items-start p-4 rounded-xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/80 cursor-pointer transition-all">
+<input class="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300" name="question-12" type="radio" value="A">
+<div class="ml-3.5 text-sm">
+<span class="font-bold text-slate-900 mr-1.5">A.</span>
+<span class="text-slate-700">Để SQLAlchemy tự động kết nối đến cơ sở dữ liệu ngay khi tập tin được import mà không cần gọi hàm <code class="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">app.run()</code>.</span>
+</div>
+</label>
+<!-- Option B (Selected State) -->
+<label class="relative flex items-start p-4 rounded-xl border-2 border-brand-500 bg-brand-50/30 cursor-pointer shadow-sm transition-all ring-1 ring-brand-500/20">
+<input checked="" class="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300" name="question-12" type="radio" value="B">
+<div class="ml-3.5 text-sm flex-1">
+<div class="flex items-center justify-between gap-2">
+<span class="font-bold text-slate-900 mr-1.5">B.</span>
+<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 bg-brand-100 px-2 py-0.5 rounded">
+<svg class="w-3 h-3 text-brand-600" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+                      Đã chọn &amp; lưu tự động
+                    </span>
+</div>
+<span class="text-slate-900 font-medium block mt-0.5">
+                    Cho phép các module định nghĩa Models (Data Models) có thể import đối tượng <code class="font-mono text-xs bg-brand-100/60 px-1 py-0.5 rounded font-bold text-brand-900">db</code> mà không gây ra hiện tượng Circular Import (nhập tuần hoàn), sau đó gắn kết với ứng dụng cụ thể qua <code class="font-mono text-xs bg-brand-100/60 px-1 py-0.5 rounded font-bold text-brand-900">db.init_app(app)</code>.
+                  </span>
+</div>
+</label>
+<!-- Option C -->
+<label class="relative flex items-start p-4 rounded-xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/80 cursor-pointer transition-all">
+<input class="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300" name="question-12" type="radio" value="C">
+<div class="ml-3.5 text-sm">
+<span class="font-bold text-slate-900 mr-1.5">C.</span>
+<span class="text-slate-700">Vì SQLAlchemy không hỗ trợ đa luồng (Multi-threading) nếu được đặt bên trong Application Factory.</span>
+</div>
+</label>
+<!-- Option D -->
+<label class="relative flex items-start p-4 rounded-xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/80 cursor-pointer transition-all">
+<input class="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-slate-300" name="question-12" type="radio" value="D">
+<div class="ml-3.5 text-sm">
+<span class="font-bold text-slate-900 mr-1.5">D.</span>
+<span class="text-slate-700">Bắt buộc theo chuẩn PSR-7 của Python Web Framework để cấu trúc thư viện ORM tương thích với SQLite.</span>
+</div>
+</label>
+</div>
+</div>
+<!-- Question Footer Navigation Actions -->
+<div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-4">
+<button class="inline-flex items-center gap-1.5 px-4 py-2 border border-slate-300 text-xs sm:text-sm font-semibold rounded-lg text-slate-700 bg-white hover:bg-slate-100 shadow-sm transition" type="button">
+<svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="">Câu trước</span>
+</button>
+<div class="flex items-center gap-3">
+<span class="text-xs text-slate-400 hidden sm:inline">Phím tắt: [Ctrl + Enter] để lưu và tiếp</span>
+<button class="inline-flex items-center gap-1.5 px-5 py-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-xs sm:text-sm font-semibold rounded-lg text-white shadow-sm transition" type="button">
+<span class="">Lưu &amp; Câu tiếp theo</span>
+<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</div>
+</article>
+<!-- Contextual Demo Preview: Additional Question Types in Exam -->
+<div class="pt-4 border-t border-slate-200">
+<h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Các định dạng câu hỏi khác trong cấu trúc đề thi</h2>
+<div class="space-y-6">
+<!-- Type 2: Short Answer Question -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4" data-purpose="short-answer-demo">
+<div class="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700">Câu 13 / 30</span>
+<span class="text-xs text-slate-500 font-medium">Điền câu trả lời ngắn (Short Answer) — 1.0 Điểm</span>
+</div>
+<span class="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path></svg>
+                  Đã lưu
+                </span>
+</div>
+<p class="text-sm font-medium text-slate-800">
+                Hãy viết cú pháp đăng ký Blueprint <code class="font-mono text-xs bg-slate-100 text-brand-600 px-1 py-0.5 rounded">auth_bp</code> vào đối tượng ứng dụng <code class="font-mono text-xs bg-slate-100 text-brand-600 px-1 py-0.5 rounded">app</code> với tiền tố đường dẫn URL là <code class="font-mono text-xs bg-slate-100 text-brand-600 px-1 py-0.5 rounded">/auth</code>.
+              </p>
+<div>
+<input class="w-full font-mono text-sm bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 shadow-inner" placeholder="Nhập đoạn mã thực thi..." type="text" value="app.register_blueprint(auth_bp, url_prefix='/auth')">
+<p class="text-[11px] text-slate-400 mt-1.5">Hệ thống chấp nhận định dạng chuẩn PEP8. Không phân biệt khoảng trắng dư thừa ở hai đầu chuỗi.</p>
+</div>
+</article>
+<!-- Type 3: Live Code / Essay Sandbox Question -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4" data-purpose="code-editor-demo">
+<div class="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700">Câu 14 / 30</span>
+<span class="text-xs text-slate-500 font-medium">Tự luận / Lập trình Live Coding — 2.5 Điểm</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[11px] text-slate-400 tabular-timer">184 ký tự • 8 dòng</span>
+<span class="text-xs text-emerald-600 font-medium flex items-center gap-1">
+<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path></svg>
+                    Đã lưu lúc 10:41:02
+                  </span>
+</div>
+</div>
+<p class="text-sm font-medium text-slate-800">
+                Viết một hàm view function trong Flask có route <code class="font-mono text-xs bg-slate-100 text-brand-600 px-1 py-0.5 rounded">/api/v1/health</code> trả về dữ liệu JSON: <code class="font-mono text-xs bg-slate-100 text-slate-800 px-1 py-0.5 rounded">{"status": "healthy", "service": "pwd301"}</code> cùng mã trạng thái HTTP 200.
+              </p>
+<!-- Mock Code Editor with Line Numbers -->
+<div class="rounded-lg border border-slate-800 bg-slate-900 text-slate-200 overflow-hidden shadow-sm font-mono text-xs leading-5">
+<div class="bg-slate-950 px-4 py-2 border-b border-slate-800 flex items-center justify-between text-slate-400">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+<span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+<span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+<span class="ml-2 text-[11px] text-slate-300">solution.py (Python 3.11)</span>
+</div>
+<span class="text-[10px] text-slate-400">Docker Sandbox Enabled</span>
+</div>
+<div class="flex p-3">
+<!-- Line numbers -->
+<div class="select-none text-slate-600 text-right pr-4 border-r border-slate-800 space-y-0.5 font-mono">
+<div class="">1</div><div class="">2</div><div class="">3</div><div class="">4</div><div class="">5</div><div class="">6</div><div class="">7</div>
+</div>
+<!-- Code text -->
+<div class="pl-4 flex-1 text-slate-200 space-y-0.5 font-mono">
+<div class=""><span class="text-purple-400">from</span> flask <span class="text-purple-400">import</span> jsonify</div>
+<div class=""><span class="text-purple-400">from</span> . <span class="text-purple-400">import</span> api_bp</div>
+<div>&nbsp;</div>
+<div class=""><span class="text-yellow-400">@api_bp</span>.<span class="text-blue-400">route</span>(<span class="text-emerald-300">'/health'</span>, methods=[<span class="text-emerald-300">'GET'</span>])</div>
+<div class=""><span class="text-purple-400">def</span> <span class="text-blue-400">health_check</span>():</div>
+<div class="pl-4"><span class="text-purple-400">return</span> jsonify({<span class="text-emerald-300">"status"</span>: <span class="text-emerald-300">"healthy"</span>, <span class="text-emerald-300">"service"</span>: <span class="text-emerald-300">"pwd301"</span>}), <span class="text-amber-400">200</span></div>
+<div>&nbsp;</div>
+</div>
+</div>
+</div>
+</article>
+</div>
+</div>
+</section>
+<!-- END: CentralExamCanvas -->
+<!-- BEGIN: QuestionNavigatorSidebar -->
+<!-- Cột Navigator 300px: Lọc theo trạng thái và ma trận 30 câu hỏi -->
+<aside aria-label="Bảng điều hướng danh sách câu hỏi" class="lg:col-span-4 xl:col-span-3 space-y-5">
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sticky top-24">
+<!-- Navigator Title & Snapshot Version -->
+<div class="flex items-center justify-between pb-4 border-b border-slate-100">
+<div>
+<h2 class="text-sm font-bold text-slate-900">Danh mục câu hỏi</h2>
+<p class="text-[11px] text-slate-500">Mã đề thi: <span class="font-mono font-semibold text-slate-700">A04</span></p>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200" title="Bản chụp đề thi đã được cố định tại thời điểm bắt đầu">
+              Frozen v1.0.4
+            </span>
+</div>
+<!-- Status Legend & Counters -->
+<div class="grid grid-cols-2 gap-2 py-3 border-b border-slate-100 text-xs">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded bg-emerald-500 flex-shrink-0"></span>
+<span class="text-slate-600">Đã trả lời: <strong class="text-slate-800">11</strong></span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded border-2 border-brand-500 bg-brand-50 flex-shrink-0"></span>
+<span class="text-slate-600">Đang làm: <strong class="text-brand-700">1</strong></span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded bg-amber-400 flex-shrink-0"></span>
+<span class="text-slate-600">Đã gắn cờ: <strong class="text-amber-800">2</strong></span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded border border-slate-300 bg-slate-50 flex-shrink-0"></span>
+<span class="text-slate-600">Chưa làm: <strong class="text-slate-800">16</strong></span>
+</div>
+</div>
+<!-- Quick Filter Tabs -->
+<div class="flex rounded-lg bg-slate-100 p-1 my-3 text-xs font-semibold">
+<button class="flex-1 py-1 px-2 rounded-md bg-white text-slate-800 shadow-sm text-center">Tất cả (30)</button>
+<button class="flex-1 py-1 px-2 rounded-md text-slate-500 hover:text-slate-800 text-center">Chưa làm (16)</button>
+<button class="flex-1 py-1 px-2 rounded-md text-slate-500 hover:text-slate-800 text-center">Cờ (2)</button>
+</div>
+<!-- Question Grid (1 to 30) -->
+<!-- State mapping:
+               1-11: Answered (Emerald bg / white text)
+               12: Active current (Ring-2 brand-500, bold)
+               15, 22: Flagged (Amber pill with flag badge)
+               13, 14, 16-21, 23-30: Unanswered (Slate border & text)
+          -->
+<div aria-label="30 câu hỏi" class="grid grid-cols-5 gap-2 pt-2" role="group">
+<!-- 1 to 10 (Answered) -->
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 1: Đã làm" type="button">1</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 2: Đã làm" type="button">2</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 3: Đã làm" type="button">3</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 4: Đã làm" type="button">4</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 5: Đã làm" type="button">5</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 6: Đã làm" type="button">6</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 7: Đã làm" type="button">7</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 8: Đã làm" type="button">8</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 9: Đã làm" type="button">9</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 10: Đã làm" type="button">10</button>
+<!-- 11: Answered -->
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 11: Đã làm" type="button">11</button>
+<!-- 12: Current Active + Flagged -->
+<button class="h-9 rounded-lg text-xs font-black bg-brand-50 border-2 border-brand-500 text-brand-700 ring-2 ring-brand-500/30 relative shadow-sm" title="Câu 12: Đang làm (Đã gắn cờ)" type="button">
+              12
+              <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 border-2 border-white rounded-full"></span>
+</button>
+<!-- 13, 14: Answered in demo context -->
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 13: Đã làm" type="button">13</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition" title="Câu 14: Đã làm" type="button">14</button>
+<!-- 15: Flagged + Unanswered -->
+<button class="h-9 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition relative" title="Câu 15: Đã gắn cờ xem lại" type="button">
+              15
+              <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full"></span>
+</button>
+<!-- 16 to 21: Unanswered -->
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">16</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">17</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">18</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">19</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">20</button>
+<!-- 21 to 25 -->
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">21</button>
+<button class="h-9 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 transition relative" title="Câu 22: Đã gắn cờ xem lại" type="button">
+              22
+              <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full"></span>
+</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">23</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">24</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">25</button>
+<!-- 26 to 30 -->
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">26</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">27</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">28</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">29</button>
+<button class="h-9 rounded-lg text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition" type="button">30</button>
+</div>
+<!-- Bottom Proctoring Note in Navigator -->
+<div class="mt-5 p-3 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 leading-normal">
+<span class="font-semibold text-slate-700">Lưu ý giám thị:</span> Trạng thái bài thi được sao lưu phân tán. Khi bấm câu hỏi bất kỳ, câu hiện tại sẽ tự động đồng bộ lên server.
+          </div>
+</div>
+</aside>
+<!-- END: QuestionNavigatorSidebar -->
+</div>
+</main>
+<!-- END: MainContentLayout -->
+<!-- BEGIN: SafetyAndEdgeCasesSpecification -->
+<!-- Hàng đặc tả an toàn & các trạng thái biên (Safety & Edge Cases Bar ở chân trang) -->
+
+<!-- END: SafetyAndEdgeCasesSpecification -->
+<!-- BEGIN: SubmitConfirmationModal -->
+<!-- Popup xác nhận nộp bài thi (Idempotent Submit Protection Modal) -->
+<div aria-labelledby="modal-headline" aria-modal="true" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 hidden" id="submit-modal" role="dialog">
+<div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+<div class="flex items-start gap-4">
+<div class="w-11 h-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex-1">
+<h3 class="text-lg font-bold text-slate-900" id="modal-headline">
+            Xác nhận nộp bài thi PWD301 Midterm
+          </h3>
+<p class="text-xs text-slate-500 mt-0.5">
+            Mã phiên làm bài: <span class="font-mono font-semibold">ATTEMPT-MA8392-MID-2025</span>
+</p>
+</div>
+</div>
+<!-- Submission Summary Box -->
+<div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+<div class="text-xs font-semibold text-slate-700">Tóm tắt tiến độ làm bài:</div>
+<div class="grid grid-cols-3 gap-2 text-center">
+<div class="bg-white p-2.5 rounded-lg border border-slate-200">
+<div class="text-lg font-extrabold text-slate-800">12</div>
+<div class="text-[11px] text-slate-500">Đã trả lời</div>
+</div>
+<div class="bg-white p-2.5 rounded-lg border border-rose-200 bg-rose-50/30">
+<div class="text-lg font-extrabold text-rose-600">18</div>
+<div class="text-[11px] text-rose-600 font-medium">Chưa hoàn thành</div>
+</div>
+<div class="bg-white p-2.5 rounded-lg border border-amber-200 bg-amber-50/30">
+<div class="text-lg font-extrabold text-amber-600">2</div>
+<div class="text-[11px] text-amber-700 font-medium">Cờ xem lại</div>
+</div>
+</div>
+<div class="p-3 bg-amber-50/80 rounded-lg border border-amber-200 text-xs text-amber-900 space-y-1">
+<div class="font-bold flex items-center gap-1.5">
+<span class="">Cảnh báo trước khi gửi:</span>
+</div>
+<p class="leading-relaxed">
+            Bạn vẫn còn <strong class="text-rose-700">18 câu chưa trả lời</strong>. Sau khi bấm nộp, hệ thống sẽ chốt mã khóa Idempotent Token và bạn sẽ <strong>không thể hoàn tác hay làm lại</strong>.
+          </p>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center justify-end gap-3 pt-2">
+<button class="px-4 py-2.5 rounded-lg border border-slate-300 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-100 transition" onclick="document.getElementById('submit-modal').classList.add('hidden')" type="button">
+          Quay lại kiểm tra
+        </button>
+<button class="px-5 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-brand-500/20 transition" onclick="alert('Bài thi đã được ký số và gửi nộp thành công về Hội đồng Khảo thí!'); document.getElementById('submit-modal').classList.add('hidden');" type="button">
+          Xác nhận nộp bài ngay
+        </button>
+</div>
+</div>
+</div>
+<!-- END: SubmitConfirmationModal -->
+<!-- JavaScript Handler for Modal ESC & Keyboard Shortcuts -->
+<script data-purpose="modal-interactions">
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        const modal = document.getElementById('submit-modal');
+        if (modal && !modal.classList.contains('hidden')) {
+          modal.classList.add('hidden');
+        }
+      }
+    });
+  </script>
+
+
+</body></html>

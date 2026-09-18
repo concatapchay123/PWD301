@@ -180,12 +180,13 @@ def _make_assessment_with_questions(
         session=db.session,
     )
 
-    # Essay question
+    # Short Answer question
     q2_data: dict[str, Any] = {
-        "question_type": "ESSAY",
+        "question_type": "SHORT_ANSWER",
         "difficulty": "UNDERSTAND",
         "content": "Explain idempotent API design.",
         "default_points": 10.0,
+        "accepted_answers": ["Idempotence ensures duplicate requests produce same effect."],
     }
     q2 = create_question(instructor, course.id, q2_data, session=db.session)
     assign_question(
@@ -225,7 +226,7 @@ def test_full_lifecycle_start_autosave_sync_submit(
     questions = start_data["questions"]
     assert len(questions) == 2
     mcq_q = [q for q in questions if q["question_type"] == "SINGLE_CHOICE"][0]
-    essay_q = [q for q in questions if q["question_type"] == "ESSAY"][0]
+    essay_q = [q for q in questions if q["question_type"] == "SHORT_ANSWER"][0]
 
     lease_header = {"X-Attempt-Lease-Token": raw_lease_token}
 

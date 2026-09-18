@@ -90,7 +90,7 @@ def test_instructor_web_create_course_success(
     client: FlaskClient,
     instructor_user: User,
 ) -> None:
-    """POST /instructor/courses with valid form data redirects to my_courses with success flash."""
+    """POST /instructor/courses with valid data returns 201 JSON with created course."""
     login_web_user(client, instructor_user)
     with client.session_transaction() as sess:
         sess["active_role"] = "INSTRUCTOR"
@@ -104,14 +104,13 @@ def test_instructor_web_create_course_success(
             "category": "Phát triển Web",
             "difficulty": "BEGINNER",
         },
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "Khóa học mới đã được tạo thành công" in html
-    assert "NEW-WEB-101" in html
+    assert resp.status_code == 201
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["course_code"] == "NEW-WEB-101"
+    assert data["title"] == "Lập Trình Web Hiện Đại"
 
 
 def test_instructor_web_create_course_duplicate_active_title_graceful_flash(
@@ -119,7 +118,7 @@ def test_instructor_web_create_course_duplicate_active_title_graceful_flash(
     client: FlaskClient,
     instructor_user: User,
 ) -> None:
-    """Duplicate active title must not return 500; must flash error and redirect."""
+    """Duplicate active title must not return 500; must return 409 JSON error."""
     create_course(
         instructor_user,
         {
@@ -141,15 +140,12 @@ def test_instructor_web_create_course_duplicate_active_title_graceful_flash(
             "title": "khóa học đang hoạt động",  # Same title in lower case
             "description": "Attempted duplicate",
         },
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
-    # Must NOT be 500 error!
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "500 INTERNAL_ERROR" not in html
-    assert "already exists" in html or "đã tồn tại" in html
+    assert resp.status_code == 409
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["error"]["code"] == "CONFLICT"
 
 
 def test_instructor_web_create_course_db_integrity_error_graceful_flash(
@@ -158,7 +154,7 @@ def test_instructor_web_create_course_db_integrity_error_graceful_flash(
     instructor_user: User,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DB IntegrityError must not return 500; must flash danger error."""
+    """DB IntegrityError must not return 500; must return 409 JSON error."""
     login_web_user(client, instructor_user)
     with client.session_transaction() as sess:
         sess["active_role"] = "INSTRUCTOR"
@@ -171,14 +167,12 @@ def test_instructor_web_create_course_db_integrity_error_graceful_flash(
     resp = client.post(
         "/instructor/courses",
         data={"course_code": "DUP-101", "title": "Dup Title"},
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "500 INTERNAL_ERROR" not in html
-    assert "trùng lặp" in html or "already exists" in html or "Không thể tạo" in html
+    assert resp.status_code == 409
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["error"]["code"] == "CONFLICT"
 
 
 def test_post_course_settings_update_route_success(
@@ -187,7 +181,7 @@ def test_post_course_settings_update_route_success(
     instructor_user: User,
 ) -> None:
     """POST /instructor/courses/<course_id> must NOT return 405.
-    Must update metadata and redirect gracefully.
+    Must update metadata and return 200 JSON.
     """
     sess: Session = db.session
     course = create_course(
@@ -209,15 +203,12 @@ def test_post_course_settings_update_route_success(
             "category": "Trí tuệ nhân tạo",
             "capacity": "45",
         },
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
-    # Must be 200 after redirect, NOT 405 Method Not Allowed!
     assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "405 METHOD_NOT_ALLOWED" not in html
-    assert "Cập nhật thông tin khóa học thành công" in html
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["title"] == "After Update Course Title"
 
     sess.refresh(course)
     assert course.title == "After Update Course Title"
@@ -230,7 +221,7 @@ def test_instructor_publish_draft_course_warning(
     client: FlaskClient,
     instructor_user: User,
 ) -> None:
-    """Instructor calling publish on DRAFT course gets graceful warning flash, not crash."""
+    """Instructor calling publish on DRAFT course gets 409 JSON error, not crash."""
     sess: Session = db.session
     course = create_course(
         instructor_user,
@@ -245,15 +236,12 @@ def test_instructor_publish_draft_course_warning(
 
     resp = client.post(
         f"/instructor/courses/{course.public_id}/publish",
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "405 METHOD_NOT_ALLOWED" not in html
-    assert "500 INTERNAL_ERROR" not in html
-    assert "cần" in html or "Bản thảo" in html or "xét duyệt" in html
+    assert resp.status_code == 409
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["error"]["code"] == "COURSE_STATE_VIOLATION"
 
 
 def test_admin_publish_draft_course_direct_success(
@@ -279,13 +267,12 @@ def test_admin_publish_draft_course_direct_success(
 
     resp = client.post(
         f"/instructor/courses/{course.public_id}/publish",
-        headers={"Accept": "text/html"},
-        follow_redirects=True,
     )
 
     assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "đã được xuất bản chính thức thành công" in html
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["status"] == "PUBLISHED"
 
     sess.refresh(course)
     assert course.status == "PUBLISHED"

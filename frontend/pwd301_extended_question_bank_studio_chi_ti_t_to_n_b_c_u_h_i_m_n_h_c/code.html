@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+
+<html lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Fira+Code:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "primary": "#4f46e5",
+          "primary-container": "#4338ca",
+          "secondary": "#4648d4",
+          "background": "#faf8ff",
+          "surface-canvas": "#f8fafc",
+          "surface-card": "#ffffff",
+          "surface-container-low": "#f8faff",
+          "surface-container": "#eaedff",
+          "surface-container-high": "#e2e7ff",
+          "surface-container-highest": "#dae2fd",
+          "on-surface": "#0f172a",
+          "on-surface-variant": "#475569",
+          "on-primary": "#ffffff",
+          "border-subtle": "#e2e8f0",
+          "text-muted": "#64748b",
+          "text-primary": "#0f172a",
+          "text-secondary": "#1e293b",
+          "success-emerald": "#059669",
+          "warning-amber": "#d97706",
+          "danger-rose": "#e11d48",
+          "info-sky": "#0284c7"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "2xl": "1rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "space-xs": "0.25rem",
+          "space-sm": "0.5rem",
+          "space-md": "1rem",
+          "space-lg": "1.5rem",
+          "space-xl": "2rem"
+        },
+        "fontFamily": {
+          "headline-sm": ["Plus Jakarta Sans"],
+          "headline-md": ["Plus Jakarta Sans"],
+          "headline-lg": ["Plus Jakarta Sans"],
+          "headline-xl": ["Plus Jakarta Sans"],
+          "body-sm": ["Inter"],
+          "body-md": ["Inter"],
+          "body-lg": ["Inter"],
+          "label-sm": ["Inter"],
+          "label-md": ["Inter"],
+          "caption": ["Inter"],
+          "mono": ["Fira Code", "monospace"]
+        },
+        "fontSize": {
+          "headline-sm": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+          "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+          "headline-lg": ["26px", { "lineHeight": "34px", "fontWeight": "700" }],
+          "headline-xl": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+          "body-sm": ["13px", { "lineHeight": "19px", "fontWeight": "400" }],
+          "body-md": ["14px", { "lineHeight": "21px", "fontWeight": "400" }],
+          "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+          "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+          "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+          "caption": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+        }
+      }
+    }
+  }</script></head><body class="bg-surface-canvas text-on-surface font-body-md text-body-md antialiased">
+<!-- FIXED SIDEBAR -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-surface-card z-50 flex flex-col shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-r border-border-subtle">
+<div class="h-16 px-space-md flex items-center gap-space-sm bg-surface-card border-b border-border-subtle/70">
+<div class="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[20px]">school</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface leading-none font-bold">LMS Khảo thí</span>
+<span class="font-caption text-caption text-text-muted mt-0.5">Viện Đào tạo CNTT</span>
+</div>
+</div>
+<div class="px-space-md py-space-xs">
+<div class="p-space-sm rounded-xl bg-surface-container-low flex flex-col gap-space-xs border border-border-subtle">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-on-primary font-bold text-sm shadow-sm">
+          TN
+        </div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="font-label-md text-label-md text-on-surface truncate font-semibold">ThS. Trần Hoàng Nam</span>
+<span class="font-caption text-caption text-text-muted truncate">Mã GV: GV-4102</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs border-t border-border-subtle/60">
+<span class="font-caption text-caption text-on-surface-variant truncate">Bộ môn KTPM</span>
+<span class="px-space-xs py-0.5 rounded-full bg-primary/10 text-primary font-caption text-[11px] font-bold">ABET Lead</span>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-space-md py-space-sm overflow-y-auto space-y-1">
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">dashboard</span><span>Bàn làm việc</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">menu_book</span><span>Khóa học phụ trách</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">auto_stories</span><span>Đề cương &amp; Bài học</span></div>
+</a>
+<a aria-current="page" class="flex items-center justify-between px-space-md py-2.5 bg-primary text-on-primary font-label-md rounded-xl shadow-sm transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">quiz</span><span class="font-semibold">Ngân hàng câu hỏi</span></div>
+<span class="px-space-xs py-0.5 rounded-full bg-white text-primary font-caption text-[11px] font-bold shadow-sm">230 câu</span>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">assignment</span><span>Khảo thí &amp; Đề thi</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">calendar_month</span><span>Lịch dạy &amp; Coi thi</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">fact_check</span><span>Chấm điểm &amp; SLA</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">verified</span><span>Chuẩn đầu ra ABET</span></div>
+</a>
+<a class="flex items-center justify-between px-space-md py-2.5 rounded-xl font-label-md text-label-md text-on-surface-variant hover:bg-surface-canvas hover:text-on-surface transition-all" href="#">
+<div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">settings</span><span>Cài đặt học vụ</span></div>
+</a>
+</nav>
+<div class="p-space-md bg-surface-card border-t border-border-subtle flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-success-emerald animate-pulse"></span>
+<span class="font-caption text-caption text-text-muted">Hệ thống Sẵn sàng</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant font-mono text-[11px]">v3.4.2</span>
+</div>
+</aside>
+<!-- MAIN CONTENT WRAPPER -->
+<div class="pl-[260px]">
+<!-- TOPBAR -->
+<header class="fixed top-0 left-[260px] right-0 h-16 bg-surface-card/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-border-subtle z-40 flex items-center justify-between px-space-lg">
+<div class="flex items-center gap-space-md min-w-0">
+<div class="flex items-center gap-space-xs font-label-md text-label-md text-text-muted truncate">
+<span class="hover:text-on-surface cursor-pointer truncate">Khóa học</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="hover:text-on-surface cursor-pointer truncate">Ngân hàng câu hỏi tổng hợp</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="text-on-surface font-semibold truncate flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono text-[12px] font-bold">PWD301</span>
+        Lập trình Web Python (Chi tiết 230 câu hỏi)
+      </span>
+</div>
+</div>
+<div class="flex items-center gap-space-md flex-shrink-0">
+<div class="hidden md:flex items-center gap-space-xs px-space-sm py-1 rounded-full bg-surface-canvas text-on-surface-variant font-caption text-caption border border-border-subtle">
+<span class="material-symbols-outlined text-[16px] text-primary">event_available</span>
+<span>Học kỳ Fall 2025</span>
+</div>
+<div class="hidden lg:flex items-center gap-space-xs px-space-sm py-1 rounded-full bg-surface-canvas text-on-surface-variant font-caption text-caption border border-border-subtle">
+<span class="material-symbols-outlined text-[16px] text-success-emerald">sync</span>
+<span>Đồng bộ UTC+7: Live</span>
+</div>
+<button class="relative w-9 h-9 rounded-xl bg-surface-canvas flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-slate-100 transition-colors border border-border-subtle">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger-rose"></span>
+</button>
+<div class="flex items-center gap-space-sm pl-space-xs border-l border-border-subtle">
+<div class="flex flex-col text-right hidden sm:flex">
+<span class="font-label-md text-label-md text-on-surface leading-tight font-semibold">ThS. Trần Hoàng Nam</span>
+<span class="font-caption text-caption text-text-muted leading-tight">Chủ nhiệm môn PWD301</span>
+</div>
+<div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-on-primary font-semibold text-sm shadow-sm">
+          TN
+        </div>
+</div>
+</div>
+</header>
+<!-- BODY CONTENT -->
+<main class="w-full pt-20 px-space-lg pb-space-xl bg-surface-canvas min-h-screen">
+<!-- HEADER NAVIGATION & ACTION BAR -->
+<div class="flex flex-col gap-space-md mb-space-lg">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center gap-2">
+<a class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-card hover:bg-slate-100 text-text-secondary border border-border-subtle font-caption text-caption font-semibold transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">arrow_back</span>
+<span>Quay lại danh mục môn học</span>
+</a>
+<span class="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-mono text-[12px] font-bold border border-primary/20">
+            MÃ MÔN: PWD301
+          </span>
+<span class="px-2.5 py-0.5 rounded-full bg-success-emerald/10 text-success-emerald font-caption text-[11px] font-semibold flex items-center gap-1 border border-success-emerald/20">
+<span class="w-1.5 h-1.5 rounded-full bg-success-emerald"></span> ABET CAC Criterion 3
+          </span>
+<span class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-info-sky/10 text-info-sky font-caption text-[11px] font-medium">
+<span class="material-symbols-outlined text-[13px]">cloud_done</span> Đồng bộ Khảo thí
+          </span>
+</div>
+<div class="flex items-center gap-3 mt-1 flex-wrap">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight font-extrabold">
+            PWD301: Lập trình Web Python (FastAPI / Flask / SQLAlchemy)
+          </h1>
+</div>
+<p class="font-body-sm text-body-sm text-text-muted flex items-center gap-2 flex-wrap">
+<span>Giảng viên phụ trách: <strong class="text-on-surface">ThS. Trần Hoàng Nam (GV-4102)</strong></span>
+<span>•</span>
+<span>Bộ môn: <strong class="text-on-surface">Kỹ thuật Phần mềm</strong></span>
+<span>•</span>
+<span>Học kỳ: <strong class="text-primary">Fall 2025</strong></span>
+<span>•</span>
+<span>Quy chế an toàn: <span class="text-danger-rose font-medium">Strict SLA Revision Lock</span></span>
+</p>
+</div>
+<!-- ACTIONS TOOLBAR -->
+<div class="flex items-center gap-2 flex-wrap self-start md:self-center">
+<button class="h-10 px-3.5 rounded-xl bg-surface-card hover:bg-slate-50 border border-border-subtle text-text-secondary font-label-md text-label-md flex items-center gap-1.5 shadow-xs transition-colors">
+<span class="material-symbols-outlined text-[18px] text-info-sky">upload_file</span>
+<span>Nạp tệp Word / Excel</span>
+</button>
+<button class="h-10 px-3.5 rounded-xl bg-surface-card hover:bg-slate-50 border border-border-subtle text-text-secondary font-label-md text-label-md flex items-center gap-1.5 shadow-xs transition-colors">
+<span class="material-symbols-outlined text-[18px] text-warning-amber">output</span>
+<span>Xuất QTI / PDF</span>
+</button>
+<button class="h-10 px-3.5 rounded-xl bg-surface-card hover:bg-slate-50 border border-border-subtle text-text-secondary font-label-md text-label-md flex items-center gap-1.5 shadow-xs transition-colors">
+<span class="material-symbols-outlined text-[18px] text-primary">post_add</span>
+<span>Tạo đề từ kho này</span>
+</button>
+<button class="h-10 px-4 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-label-md text-label-md font-semibold flex items-center gap-1.5 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[19px]">add_circle</span>
+<span>Tạo câu hỏi mới</span>
+</button>
+</div>
+</div>
+<!-- 4 SUMMARY KPI CARDS -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- KPI 1 -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption text-text-muted font-medium">Tổng số câu hỏi PWD301</span>
+<span class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">quiz</span>
+</span>
+</div>
+<div class="mt-2">
+<div class="font-headline-xl text-headline-xl font-bold text-on-surface">230 <span class="text-body-sm text-text-muted font-normal">câu</span></div>
+<div class="mt-1.5 flex items-center justify-between font-caption text-[11px] text-text-muted">
+<span class="text-primary font-semibold">MCQ: 150 (65.2%)</span>
+<span class="text-warning-amber font-semibold">Code: 45 (19.5%)</span>
+<span class="text-info-sky font-semibold">Điền: 35 (15.3%)</span>
+</div>
+<div class="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden flex mt-1.5">
+<div class="h-full bg-primary" style="width: 65.2%"></div>
+<div class="h-full bg-warning-amber" style="width: 19.5%"></div>
+<div class="h-full bg-info-sky" style="width: 15.3%"></div>
+</div>
+</div>
+</div>
+<!-- KPI 2 -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-danger-rose/20 shadow-xs flex flex-col justify-between relative overflow-hidden">
+<div class="absolute right-0 top-0 w-24 h-24 bg-danger-rose/5 rounded-bl-full pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption text-danger-rose font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">lock</span> Khóa đề Giữa kỳ (Midterm)
+        </span>
+<span class="px-2 py-0.5 rounded bg-danger-rose/10 text-danger-rose font-caption text-[10px] font-bold">STRICT SLA</span>
+</div>
+<div class="mt-2">
+<div class="font-headline-xl text-headline-xl font-bold text-danger-rose">42 <span class="text-body-sm text-danger-rose/80 font-normal">câu đang thi</span></div>
+<p class="font-caption text-[11.5px] text-text-muted mt-1 leading-tight">
+          Bảo lưu điểm 45 SV đã nộp. Sửa đổi sẽ tự sinh bản <strong>v3.0</strong> và hỏi chế độ Regrade.
+        </p>
+</div>
+</div>
+<!-- KPI 3 -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption text-text-muted font-medium">Phân bổ Bloom Taxonomy</span>
+<span class="font-caption text-[11px] text-info-sky font-semibold">ABET CAC-3</span>
+</div>
+<div class="mt-2">
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">3 Cấp độ</span>
+<span class="font-caption text-caption text-success-emerald font-semibold">Cân đối chuẩn</span>
+</div>
+<div class="mt-1.5 flex items-center justify-between font-caption text-[11px]">
+<span class="text-success-emerald font-semibold">Nhận biết: 60 (26%)</span>
+<span class="text-warning-amber font-semibold">Thông hiểu: 95 (41%)</span>
+<span class="text-danger-rose font-semibold">Vận dụng: 75 (33%)</span>
+</div>
+<div class="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden flex mt-1.5">
+<div class="h-full bg-success-emerald" style="width: 26%"></div>
+<div class="h-full bg-warning-amber" style="width: 41%"></div>
+<div class="h-full bg-danger-rose" style="width: 33%"></div>
+</div>
+</div>
+</div>
+<!-- KPI 4 -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle shadow-xs flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption text-text-muted font-medium">Chuẩn đầu ra ABET / SLO</span>
+<span class="w-8 h-8 rounded-lg bg-success-emerald/10 text-success-emerald flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+</span>
+</div>
+<div class="mt-2">
+<div class="flex items-baseline gap-2">
+<span class="font-headline-xl text-headline-xl font-bold text-success-emerald">100%</span>
+<span class="font-caption text-caption text-text-muted">chuẩn hóa</span>
+</div>
+<div class="mt-1 flex items-center gap-1.5 font-caption text-[11px] text-text-muted">
+<span class="px-1.5 py-0.5 rounded bg-surface-canvas border border-border-subtle font-mono text-[10px] font-semibold text-primary">SLO-1 (45)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-canvas border border-border-subtle font-mono text-[10px] font-semibold text-primary">SLO-2 (65)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-canvas border border-border-subtle font-mono text-[10px] font-semibold text-primary">SLO-3 (70)</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-canvas border border-border-subtle font-mono text-[10px] font-semibold text-primary">SLO-4 (50)</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- MODULE TABS NAVIGATION -->
+<div class="bg-surface-card rounded-2xl border border-border-subtle p-2 shadow-xs mb-space-md">
+<div class="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+<button class="px-4 py-2 rounded-xl text-text-muted hover:text-on-surface hover:bg-surface-canvas font-label-md text-body-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-colors">
+<span>Tất cả câu hỏi</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-text-muted font-caption text-[11px] font-bold">230</span>
+</button>
+<button class="px-4 py-2 rounded-xl text-text-muted hover:text-on-surface hover:bg-surface-canvas font-label-md text-body-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-colors">
+<span>M01: Kiến trúc Web &amp; Asyncio</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-text-muted font-caption text-[11px]">45 câu</span>
+</button>
+<button class="px-4 py-2 rounded-xl bg-primary text-on-primary font-label-md text-body-sm font-semibold flex items-center gap-2 shadow-xs whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px] text-amber-300">lock</span>
+<span>M02: Bảo mật API, JWT &amp; RBAC</span>
+<span class="px-2 py-0.5 rounded-full bg-white/20 text-white font-caption text-[11px] font-bold">65 câu (42 Midterm)</span>
+</button>
+<button class="px-4 py-2 rounded-xl text-text-muted hover:text-on-surface hover:bg-surface-canvas font-label-md text-body-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-colors">
+<span>M03: CSDL ORM SQLAlchemy</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-text-muted font-caption text-[11px]">70 câu</span>
+</button>
+<button class="px-4 py-2 rounded-xl text-text-muted hover:text-on-surface hover:bg-surface-canvas font-label-md text-body-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-colors">
+<span>M04: Triển khai Docker &amp; CI/CD</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-text-muted font-caption text-[11px]">50 câu</span>
+</button>
+</div>
+</div>
+<!-- ADVANCED FILTER BAR -->
+<div class="bg-surface-card rounded-2xl p-space-md border border-border-subtle shadow-xs mb-space-lg flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-sm">
+<div class="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-space-sm">
+<!-- SEARCH INPUT -->
+<div class="relative flex-1">
+<span class="material-symbols-outlined text-[18px] text-text-muted absolute left-3 top-2.5 pointer-events-none">search</span>
+<input class="w-full h-10 pl-9 pr-3 rounded-xl bg-surface-canvas text-on-surface font-body-sm text-body-sm border border-border-subtle focus:outline-none focus:bg-surface-card focus:border-primary transition-all placeholder:text-text-muted" placeholder="Tìm kiếm theo từ khóa, ID câu hỏi (PWD301-Q-024...), SLO hoặc tags..." type="text" value="JWT"/>
+</div>
+<!-- DROPDOWN TYPE -->
+<div class="relative w-full sm:w-48">
+<select class="w-full h-10 pl-3 pr-8 rounded-xl bg-surface-canvas text-on-surface font-body-sm text-body-sm border border-border-subtle appearance-none focus:outline-none cursor-pointer">
+<option selected="">Tất cả loại câu hỏi</option>
+<option>Trắc nghiệm 4 lựa chọn (MCQ)</option>
+<option>Live Code PyTest (Sandbox)</option>
+<option>Điền khuyết từ khóa</option>
+</select>
+<span class="material-symbols-outlined text-[16px] text-text-muted absolute right-2.5 top-3 pointer-events-none">expand_more</span>
+</div>
+<!-- DROPDOWN DIFFICULTY -->
+<div class="relative w-full sm:w-44">
+<select class="w-full h-10 pl-3 pr-8 rounded-xl bg-surface-canvas text-on-surface font-body-sm text-body-sm border border-border-subtle appearance-none focus:outline-none cursor-pointer">
+<option selected="">Mọi độ khó Bloom</option>
+<option>Nhận biết (Easy)</option>
+<option>Thông hiểu (Medium)</option>
+<option>Vận dụng cao (Hard)</option>
+</select>
+<span class="material-symbols-outlined text-[16px] text-text-muted absolute right-2.5 top-3 pointer-events-none">expand_more</span>
+</div>
+<!-- DROPDOWN STATUS -->
+<div class="relative w-full sm:w-52">
+<select class="w-full h-10 pl-3 pr-8 rounded-xl bg-surface-canvas text-on-surface font-body-sm text-body-sm border border-border-subtle appearance-none focus:outline-none cursor-pointer">
+<option>Tất cả trạng thái</option>
+<option selected="">Đang thi Midterm (Khóa SLA)</option>
+<option>Sẵn sàng xuất đề</option>
+<option>Bản nháp AI / Chờ thẩm định</option>
+</select>
+<span class="material-symbols-outlined text-[16px] text-text-muted absolute right-2.5 top-3 pointer-events-none">expand_more</span>
+</div>
+</div>
+<div class="flex items-center gap-2 justify-end pt-2 lg:pt-0 border-t lg:border-t-0 border-border-subtle">
+<button class="h-10 px-3 rounded-xl bg-surface-canvas hover:bg-slate-100 text-text-secondary border border-border-subtle font-label-md text-caption flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">filter_alt_off</span>
+<span>Xóa lọc</span>
+</button>
+<div class="h-6 w-px bg-border-subtle"></div>
+<span class="font-caption text-caption text-text-muted whitespace-nowrap">Đang hiển thị <strong>65/230 câu</strong></span>
+</div>
+</div>
+<!-- SPLIT VIEW: MASTER QUESTION LIST (60%) & INSPECTOR / REVISION LOCK PANEL (40%) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-start">
+<!-- CỘT TRÁI: QUESTION MASTER LIST (7 cols ~ 60%) -->
+<div class="lg:col-span-7 flex flex-col gap-space-md">
+<!-- QUESTION CARD 1: PWD301-Q-024 (SELECTED & LOCKED) -->
+<div class="p-space-md rounded-2xl bg-surface-card border-2 border-primary shadow-sm flex flex-col gap-3 relative transition-all">
+<div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border-subtle">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-md bg-primary text-on-primary font-mono text-[12px] font-bold">PWD301-Q-024</span>
+<span class="px-2 py-0.5 rounded-md bg-slate-100 text-on-surface font-caption text-[11px] font-semibold">Trắc nghiệm 4 lựa chọn</span>
+<span class="px-2 py-0.5 rounded-full bg-warning-amber/10 text-warning-amber font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-warning-amber"></span> Thông hiểu (Medium)
+              </span>
+<span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-[11px] font-bold">SLO-2.1</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-danger-rose/10 text-danger-rose font-caption text-[11px] font-bold border border-danger-rose/20">
+<span class="material-symbols-outlined text-[13px]">lock</span> Khóa Midterm SLA (45 bài nộp)
+              </span>
+<span class="px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-mono text-[10px]">v2.4</span>
+</div>
+</div>
+<div class="font-body-md text-on-surface leading-relaxed">
+<p class="font-semibold text-[14.5px]">
+              Trong kiến trúc RESTful API xây dựng với Python (FastAPI/Django), tại sao mô hình <strong class="text-primary">Stateless Authentication bằng JSON Web Token (JWT)</strong> lại được ưu tiên sử dụng thay vì Stateful Session trên máy chủ trong các hệ thống Microservices quy mô lớn?
+            </p>
+</div>
+<!-- CHOICES LIST -->
+<div class="space-y-2 mt-1">
+<!-- Option A -->
+<div class="p-2.5 rounded-xl border border-border-subtle bg-surface-canvas text-body-sm flex items-start gap-2.5">
+<span class="w-6 h-6 rounded-full bg-slate-200 text-text-secondary flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">A</span>
+<span class="text-text-secondary">JWT tự động mã hóa bí mật dữ liệu payload nên an toàn tuyệt đối ngay cả khi truyền tải qua giao thức HTTP không mã hóa.</span>
+</div>
+<!-- Option B (Correct) -->
+<div class="p-2.5 rounded-xl border border-emerald-300 bg-emerald-50/70 text-body-sm flex items-start gap-2.5">
+<div class="w-6 h-6 rounded-full bg-success-emerald text-on-primary flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5 shadow-xs">B</div>
+<div class="flex flex-col gap-1 text-on-surface">
+<div class="flex items-center gap-1.5 font-semibold text-success-emerald">
+<span>JWT tự chứa thông tin xác thực (Self-contained), giúp máy chủ xác minh chữ ký mã hóa không phụ thuộc vào bộ nhớ tập trung (Redis/Session Store), tối ưu hóa khả năng mở rộng ngang (Horizontal Scaling).</span>
+<span class="material-symbols-outlined text-[16px] text-success-emerald">check_circle</span>
+</div>
+<span class="font-caption text-[11.5px] text-text-muted italic bg-white/70 p-1.5 rounded border border-emerald-200">
+                  Chuẩn trích dẫn: RFC 7519 &amp; Giáo trình PWD301 Chương 4.3 (FastAPI OAuth2 Bearer).
+                </span>
+</div>
+</div>
+<!-- Option C -->
+<div class="p-2.5 rounded-xl border border-border-subtle bg-surface-canvas text-body-sm flex items-start gap-2.5">
+<span class="w-6 h-6 rounded-full bg-slate-200 text-text-secondary flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">C</span>
+<span class="text-text-secondary">Máy chủ có thể thu hồi (Revoke) ngay lập tức một JWT bị lộ mà không cần truy vấn bất kỳ danh sách đen (Blacklist) hay cơ sở dữ liệu nào.</span>
+</div>
+<!-- Option D -->
+<div class="p-2.5 rounded-xl border border-border-subtle bg-surface-canvas text-body-sm flex items-start gap-2.5">
+<span class="w-6 h-6 rounded-full bg-slate-200 text-text-secondary flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">D</span>
+<span class="text-text-secondary">Kích thước của chuỗi JWT luôn nhỏ hơn 32 bytes nên giúp tiết kiệm 95% băng thông mạng so với Cookie Session truyền thống.</span>
+</div>
+</div>
+<div class="pt-2 border-t border-border-subtle flex items-center justify-between text-caption font-caption text-text-muted">
+<div class="flex items-center gap-3">
+<span>Module: <strong>M02 Bảo mật API</strong></span>
+<span>•</span>
+<span>Phân quyền: <strong>ThS. Trần Hoàng Nam</strong></span>
+<span>•</span>
+<span>Tỉ lệ trả lời đúng: <strong class="text-success-emerald">71.4%</strong></span>
+</div>
+<div class="flex items-center gap-1 text-primary font-semibold">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+<span>Đang chọn kiểm tra</span>
+</div>
+</div>
+</div>
+<!-- QUESTION CARD 2: PWD301-Q-049 (LIVE CODE SANDBOX) -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle hover:border-slate-300 shadow-xs flex flex-col gap-3 transition-all cursor-pointer">
+<div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border-subtle">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-md bg-slate-100 text-on-surface font-mono text-[12px] font-bold">PWD301-Q-049</span>
+<span class="px-2 py-0.5 rounded-md bg-warning-amber/10 text-warning-amber font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">code</span> Live Code PyTest (Sandbox)
+              </span>
+<span class="px-2 py-0.5 rounded-full bg-danger-rose/10 text-danger-rose font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-danger-rose"></span> Vận dụng cao (Hard)
+              </span>
+<span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-[11px] font-bold">SLO-2.3</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success-emerald/10 text-success-emerald font-caption text-[11px] font-medium">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Sẵn sàng xuất đề
+              </span>
+<span class="px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-mono text-[10px]">v1.2</span>
+</div>
+</div>
+<div class="font-body-md text-on-surface leading-relaxed">
+<p class="font-semibold text-[14.5px]">
+              Viết hàm decorator <code class="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-primary font-bold text-xs">@require_role('admin')</code> trong Flask kiểm tra claim <code class="font-mono text-xs">role</code> trong JWT payload được giải mã từ request header <code class="font-mono text-xs">Authorization: Bearer &lt;token&gt;</code>. Trả về mã lỗi 403 Forbidden nếu không đủ thẩm quyền.
+            </p>
+</div>
+<!-- CODE SNIPPET BOX -->
+<div class="rounded-xl bg-slate-900 text-slate-100 p-3 font-mono text-xs overflow-x-auto border border-slate-800">
+<div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800 text-slate-400 text-[11px]">
+<span>solution_template.py</span>
+<span class="text-info-sky">Python 3.11 • PyTest (5 test cases)</span>
+</div>
+<pre class="leading-relaxed"><code><span class="text-pink-400">from</span> functools <span class="text-pink-400">import</span> wraps
+<span class="text-pink-400">from</span> flask <span class="text-pink-400">import</span> request, jsonify
+<span class="text-pink-400">import</span> jwt
+
+<span class="text-pink-400">def</span> <span class="text-yellow-300">require_role</span>(role_name: str):
+    <span class="text-pink-400">def</span> <span class="text-yellow-300">decorator</span>(f):
+        <span class="text-indigo-300">@wraps</span>(f)
+        <span class="text-pink-400">def</span> <span class="text-yellow-300">decorated_function</span>(*args, **kwargs):
+            auth_header = request.headers.get(<span class="text-emerald-300">'Authorization'</span>)
+            <span class="text-slate-400"># Kiểm tra và giải mã JWT token ở đây...</span>
+            <span class="text-pink-400">return</span> f(*args, **kwargs)
+        <span class="text-pink-400">return</span> decorated_function
+    <span class="text-pink-400">return</span> decorator</code></pre>
+</div>
+<div class="pt-2 border-t border-border-subtle flex items-center justify-between text-caption font-caption text-text-muted">
+<div class="flex items-center gap-3">
+<span>Đánh giá tự động: <strong>5 Unit Tests (Docker Sandbox)</strong></span>
+<span>•</span>
+<span>Thời gian chạy giới hạn: <strong>1.5s</strong></span>
+</div>
+<button class="px-2.5 py-1 rounded-lg bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-text-secondary font-label-sm text-caption font-semibold">
+              Xem chi tiết Test Suite
+            </button>
+</div>
+</div>
+<!-- QUESTION CARD 3: PWD301-Q-038 (FILL IN THE BLANK) -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle hover:border-slate-300 shadow-xs flex flex-col gap-3 transition-all cursor-pointer">
+<div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border-subtle">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-md bg-slate-100 text-on-surface font-mono text-[12px] font-bold">PWD301-Q-038</span>
+<span class="px-2 py-0.5 rounded-md bg-info-sky/10 text-info-sky font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">edit_note</span> Điền khuyết từ khóa
+              </span>
+<span class="px-2 py-0.5 rounded-full bg-warning-amber/10 text-warning-amber font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-warning-amber"></span> Thông hiểu (Medium)
+              </span>
+<span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-[11px] font-bold">SLO-3.2</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success-emerald/10 text-success-emerald font-caption text-[11px] font-medium">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Sẵn sàng xuất đề
+              </span>
+<span class="px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-mono text-[10px]">v1.0</span>
+</div>
+</div>
+<div class="font-body-md text-on-surface leading-relaxed">
+<p class="font-semibold text-[14.5px]">
+              Để phòng chống lỗi hiệu năng nghiêm trọng <strong class="text-danger-rose">N+1 Query</strong> trong SQLAlchemy khi truy vấn danh sách bài viết kèm thông tin chi tiết tác giả, lập trình viên cần sử dụng kỹ thuật nạp dữ liệu trước (Eager loading) thông qua phương thức <span class="px-2.5 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary font-mono font-bold text-xs">[ Ô ĐIỀN KHUYẾT ]</span> thay vì cơ chế mặc định Lazy loading.
+            </p>
+</div>
+<div class="p-3 rounded-xl bg-surface-canvas border border-border-subtle flex flex-col gap-1.5">
+<span class="font-caption text-caption text-text-muted font-semibold">Tập đáp án hợp lệ được hệ thống chấm tự động chấp nhận:</span>
+<div class="flex items-center gap-2 flex-wrap">
+<span class="px-2.5 py-1 rounded-lg bg-emerald-100/80 text-success-emerald font-mono text-xs font-bold border border-emerald-300 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check</span> joinedload()
+              </span>
+<span class="px-2.5 py-1 rounded-lg bg-emerald-100/80 text-success-emerald font-mono text-xs font-bold border border-emerald-300 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check</span> selectinload()
+              </span>
+<span class="px-2.5 py-1 rounded-lg bg-emerald-100/80 text-success-emerald font-mono text-xs font-bold border border-emerald-300 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check</span> subqueryload()
+              </span>
+</div>
+</div>
+<div class="pt-2 border-t border-border-subtle flex items-center justify-between text-caption font-caption text-text-muted">
+<div class="flex items-center gap-3">
+<span>Module: <strong>M03 ORM SQLAlchemy</strong></span>
+<span>•</span>
+<span>Quy tắc so khớp: <strong>Không phân biệt hoa thường / Regex</strong></span>
+</div>
+<button class="px-2.5 py-1 rounded-lg bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-text-secondary font-label-sm text-caption font-semibold">
+              Chỉnh quy tắc
+            </button>
+</div>
+</div>
+<!-- QUESTION CARD 4: PWD301-Q-015 (MCQ ACID / RACE CONDITION) -->
+<div class="p-space-md rounded-2xl bg-surface-card border border-border-subtle hover:border-slate-300 shadow-xs flex flex-col gap-3 transition-all cursor-pointer">
+<div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-border-subtle">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-md bg-slate-100 text-on-surface font-mono text-[12px] font-bold">PWD301-Q-015</span>
+<span class="px-2 py-0.5 rounded-md bg-slate-100 text-on-surface font-caption text-[11px] font-semibold">Trắc nghiệm 4 lựa chọn</span>
+<span class="px-2 py-0.5 rounded-full bg-danger-rose/10 text-danger-rose font-caption text-[11px] font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-danger-rose"></span> Vận dụng cao (Hard)
+              </span>
+<span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-[11px] font-bold">SLO-3.4</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success-emerald/10 text-success-emerald font-caption text-[11px] font-medium">
+<span class="material-symbols-outlined text-[13px]">check_circle</span> Sẵn sàng xuất đề
+              </span>
+<span class="px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-mono text-[10px]">v1.4</span>
+</div>
+</div>
+<div class="font-body-md text-on-surface leading-relaxed">
+<p class="font-semibold text-[14.5px]">
+              Khi xử lý nguy cơ Race Condition trong việc cập nhật số dư ví điện tử của người dùng đồng thời trên nhiều tiến trình Worker FastAPI, kỹ thuật nào sau đây đảm bảo tính toàn vẹn dữ liệu ACID tốt nhất ở tầng cơ sở dữ liệu?
+            </p>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-body-sm">
+<div class="p-2 rounded-xl bg-surface-canvas border border-border-subtle text-text-secondary flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-slate-200 text-xs font-bold flex items-center justify-center">A</span>
+<span>Sử dụng biến toàn cục Python threading.Lock</span>
+</div>
+<div class="p-2 rounded-xl bg-emerald-50 border border-emerald-300 text-on-surface flex items-center gap-2 font-semibold">
+<span class="w-5 h-5 rounded-full bg-success-emerald text-on-primary text-xs font-bold flex items-center justify-center">B</span>
+<span class="text-success-emerald">SELECT ... FOR UPDATE (Pessimistic Locking)</span>
+</div>
+<div class="p-2 rounded-xl bg-surface-canvas border border-border-subtle text-text-secondary flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-slate-200 text-xs font-bold flex items-center justify-center">C</span>
+<span>Tăng thời gian sleep() ngẫu nhiên trước khi commit</span>
+</div>
+<div class="p-2 rounded-xl bg-surface-canvas border border-border-subtle text-text-secondary flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-slate-200 text-xs font-bold flex items-center justify-center">D</span>
+<span>Chuyển chế độ isolation level sang READ UNCOMMITTED</span>
+</div>
+</div>
+<div class="pt-2 border-t border-border-subtle flex items-center justify-between text-caption font-caption text-text-muted">
+<div class="flex items-center gap-3">
+<span>Module: <strong>M03 ORM &amp; Database</strong></span>
+<span>•</span>
+<span>Thẩm định: <strong>TS. Lê Quốc Trung (Chấp thuận)</strong></span>
+</div>
+<span class="font-caption text-[11px] text-text-muted">ID Ngân hàng viện: #BK-7892</span>
+</div>
+</div>
+<!-- PAGINATION FOOTER -->
+<div class="p-space-md bg-surface-card rounded-2xl border border-border-subtle shadow-xs flex items-center justify-between text-text-muted font-caption text-caption">
+<span>Hiển thị <strong>4</strong> trong tổng số <strong>230 câu hỏi</strong> (Trang 1 / 23)</span>
+<div class="flex items-center gap-1.5">
+<button class="w-8 h-8 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle flex items-center justify-center text-text-muted disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[16px]">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded-xl bg-primary text-on-primary font-bold">1</button>
+<button class="w-8 h-8 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-on-surface font-medium">2</button>
+<button class="w-8 h-8 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-on-surface font-medium">3</button>
+<span class="px-1 text-slate-400">...</span>
+<button class="w-8 h-8 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-on-surface font-medium">23</button>
+<button class="w-8 h-8 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle flex items-center justify-center text-text-muted">
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- CỘT PHẢI: QUESTION INSPECTOR & REVISION LOCK GOVERNANCE (5 cols ~ 40%) -->
+<div class="lg:col-span-5 flex flex-col gap-space-md sticky top-20">
+<!-- MAIN INSPECTOR CARD -->
+<div class="bg-surface-card rounded-2xl p-space-md border-2 border-border-subtle shadow-sm flex flex-col gap-space-md">
+<!-- INSPECTOR HEADER -->
+<div class="flex items-start justify-between pb-space-xs border-b border-border-subtle">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-caption text-caption uppercase tracking-wider font-bold text-primary">Thanh tra &amp; Kiểm định Câu hỏi</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold">
+              PWD301-Q-024 (Đang chọn)
+            </h2>
+<span class="font-caption text-caption text-text-muted">
+              Loại: Trắc nghiệm khách quan • Điểm đề xuất: <strong>0.5 điểm</strong>
+</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1.5 rounded-xl bg-surface-canvas hover:bg-slate-100 text-text-muted hover:text-on-surface transition-colors" title="Lịch sử đối soát">
+<span class="material-symbols-outlined text-[18px]">history</span>
+</button>
+<button class="p-1.5 rounded-xl bg-surface-canvas hover:bg-slate-100 text-text-muted hover:text-on-surface transition-colors" title="Thu nhỏ">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+</div>
+<!-- MANDATORY REVISION LOCK WARNING (RULEBOOK PWD301) -->
+<div class="p-space-md rounded-2xl bg-rose-50 border-2 border-danger-rose/30 flex flex-col gap-2.5">
+<div class="flex items-center gap-2 text-danger-rose font-bold text-body-sm">
+<span class="material-symbols-outlined text-[20px]">gavel</span>
+<span>Quy chuẩn Khảo thí: Revision Lock Rule (SLA Strict)</span>
+</div>
+<div class="font-body-sm text-on-surface text-[12.5px] leading-relaxed">
+          Câu hỏi này hiện đang được liên kết trực tiếp với <strong>Đề thi Giữa kỳ Midterm Exam PWD301</strong> (Đã ghi nhận <strong>45 sinh viên</strong> hoàn tất nộp bài thi).
+          <div class="mt-1.5 p-2 rounded-xl bg-white/90 border border-danger-rose/20 text-[12px] text-danger-rose">
+<strong>Ràng buộc hệ thống:</strong> Không thể thay đổi loại câu hỏi (Question Type). Mọi thao tác chỉnh sửa nội dung/đáp án sẽ tự động đóng băng bản v2.4 và <strong>tạo mới phiên bản độc lập v3.0</strong>.
+          </div>
+</div>
+<!-- REGRADE POLICY OPTIONS -->
+<div class="mt-1 flex flex-col gap-1.5">
+<span class="font-caption text-[11px] font-bold uppercase tracking-wider text-text-muted">Chọn 1 trong 2 chính sách chấm thi tự động:</span>
+<label class="flex items-start gap-2 p-2 rounded-xl bg-white border border-border-subtle cursor-pointer hover:border-primary transition-all">
+<input checked="" class="mt-0.5 text-primary focus:ring-primary h-4 w-4" name="regrade_policy" type="radio"/>
+<div class="flex flex-col text-body-sm text-[12px]">
+<span class="font-semibold text-on-surface">Tùy chọn 1: Chấm lại theo đáp án đúng (Answer-only regrade)</span>
+<span class="text-text-muted text-[11px]">Hệ thống chỉ so khớp lại đáp án chuẩn với bài làm sinh viên đã nộp.</span>
+</div>
+</label>
+<label class="flex items-start gap-2 p-2 rounded-xl bg-white border border-border-subtle cursor-pointer hover:border-primary transition-all">
+<input class="mt-0.5 text-primary focus:ring-primary h-4 w-4" name="regrade_policy" type="radio"/>
+<div class="flex flex-col text-body-sm text-[12px]">
+<span class="font-semibold text-on-surface">Tùy chọn 2: Cộng trọn điểm học thuật (Full-credit policy)</span>
+<span class="text-text-muted text-[11px]">Tặng trọn vẹn điểm câu này cho toàn bộ sinh viên đã làm mã đề.</span>
+</div>
+</label>
+</div>
+</div>
+<!-- ABET CRITERION & METADATA -->
+<div class="p-space-md rounded-2xl bg-surface-canvas border border-border-subtle flex flex-col gap-2">
+<span class="font-caption text-caption text-text-muted uppercase tracking-wider font-bold">Thuộc tính Học thuật &amp; ABET SLO</span>
+<div class="grid grid-cols-2 gap-2 text-caption">
+<div class="p-2 rounded-xl bg-surface-card border border-border-subtle">
+<span class="text-text-muted text-[11px] block">Mã Chuẩn ABET CAC:</span>
+<span class="font-semibold text-on-surface">Criterion 3 (SO-1, SO-2)</span>
+</div>
+<div class="p-2 rounded-xl bg-surface-card border border-border-subtle">
+<span class="text-text-muted text-[11px] block">Mục tiêu môn học (SLO):</span>
+<span class="font-mono font-bold text-primary">SLO-2 (Security &amp; JWT)</span>
+</div>
+<div class="p-2 rounded-xl bg-surface-card border border-border-subtle">
+<span class="text-text-muted text-[11px] block">Cấp độ nhận thức:</span>
+<span class="font-semibold text-warning-amber">Bloom Level 2 (Comprehension)</span>
+</div>
+<div class="p-2 rounded-xl bg-surface-card border border-border-subtle">
+<span class="text-text-muted text-[11px] block">Độ phân biệt (Discrimination):</span>
+<span class="font-mono font-bold text-success-emerald">D = 0.42 (Rất tốt)</span>
+</div>
+</div>
+</div>
+<!-- AUDIT TRAIL & VERSION HISTORY -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption text-text-muted uppercase tracking-wider font-bold">Nhật ký Phiên bản (Audit Trail)</span>
+<span class="font-mono text-[10px] text-text-muted">SHA-256: 7f8a9...b412</span>
+</div>
+<div class="p-2.5 rounded-2xl bg-surface-canvas border border-border-subtle space-y-2.5">
+<!-- Version v2.4 (Current) -->
+<div class="flex items-start gap-2 text-caption text-[11.5px]">
+<div class="w-5 h-5 rounded-full bg-primary/20 text-primary font-bold flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5">v2.4</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<strong class="text-on-surface">ThS. Trần Hoàng Nam</strong>
+<span class="text-text-muted text-[10px]">Hôm nay 08:30</span>
+</div>
+<p class="text-text-muted">Khóa SLA phục vụ kỳ thi Midterm Exam đợt 1.</p>
+</div>
+</div>
+<!-- Version v2.0 -->
+<div class="flex items-start gap-2 text-caption text-[11.5px]">
+<div class="w-5 h-5 rounded-full bg-slate-200 text-text-secondary font-bold flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5">v2.0</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<strong class="text-on-surface">TS. Lê Quốc Trung</strong>
+<span class="text-text-muted text-[10px]">12/09/2025</span>
+</div>
+<p class="text-text-muted">Thẩm định phản biện: Chuẩn hóa câu chữ phương án B theo RFC 7519.</p>
+</div>
+</div>
+<!-- Version v1.0 -->
+<div class="flex items-start gap-2 text-caption text-[11.5px]">
+<div class="w-5 h-5 rounded-full bg-slate-200 text-text-secondary font-bold flex items-center justify-center flex-shrink-0 text-[10px] mt-0.5">v1.0</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<strong class="text-on-surface">ThS. Trần Hoàng Nam</strong>
+<span class="text-text-muted text-[10px]">01/09/2025</span>
+</div>
+<p class="text-text-muted">Khởi tạo câu hỏi ban đầu vào ngân hàng môn PWD301.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- ACTIONS TOOLBAR FOR SELECTED QUESTION -->
+<div class="flex flex-col gap-2 pt-2 border-t border-border-subtle">
+<div class="grid grid-cols-2 gap-2">
+<button class="h-10 px-3 rounded-xl bg-primary hover:bg-primary-container text-on-primary font-label-md text-caption font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all">
+<span class="material-symbols-outlined text-[18px]">edit_document</span>
+<span>Tạo phiên bản v3.0</span>
+</button>
+<button class="h-10 px-3 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-text-secondary font-label-md text-caption font-semibold flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+<span>Nhân bản (Duplicate)</span>
+</button>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<button class="h-9 px-2 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-text-secondary font-label-sm text-[12px] flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[16px] text-info-sky">science</span>
+<span>Thử nghiệm Sandbox</span>
+</button>
+<button class="h-9 px-2 rounded-xl bg-surface-canvas hover:bg-slate-100 border border-border-subtle text-text-secondary font-label-sm text-[12px] flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[16px] text-warning-amber">history_edu</span>
+<span>Lịch sử đối soát SHA</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- FOOTER COMPLIANCE BAR -->
+<footer class="mt-space-xl pt-space-md border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-space-sm text-text-muted font-caption text-caption">
+<div class="flex items-center gap-space-sm">
+<span class="flex items-center gap-1 text-success-emerald font-semibold">
+<span class="w-2 h-2 rounded-full bg-success-emerald"></span> Hệ thống khảo thí trực tuyến đồng bộ theo chuẩn ABET CAC Criterion 3
+      </span>
+</div>
+<div class="flex items-center gap-space-md">
+<span>Bảo mật <strong>ISO/IEC 27001</strong></span>
+<span>•</span>
+<span>Mã băm Merkle Root: <strong class="font-mono text-[11px]">88c2-3e0f-9a1b</strong></span>
+<span>•</span>
+<span class="font-mono">LMS Exam Studio v3.4.2</span>
+</div>
+</footer>
+</main>
+</div>
+</body></html>

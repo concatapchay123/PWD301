@@ -127,3 +127,32 @@ def _setup_rowversion_fetched_value() -> None:
                 col.server_default = sa.FetchedValue()
             if col.server_onupdate is None:
                 col.server_onupdate = sa.FetchedValue()
+
+
+def normalize_row_version(val: Any) -> bytes | None:
+    """Normalize row_version representation (hex string, base64, bytes) into canonical bytes."""
+    import base64
+
+    if val is None:
+        return None
+    if isinstance(val, (bytes, bytearray)):
+        return bytes(val)
+    if isinstance(val, str):
+        val_str = val.strip().strip('"').strip("'")
+        if not val_str:
+            return None
+        if val_str.startswith("0x") or val_str.startswith("0X"):
+            try:
+                return bytes.fromhex(val_str[2:])
+            except ValueError:
+                pass
+        try:
+            return bytes.fromhex(val_str)
+        except ValueError:
+            pass
+        try:
+            return base64.b64decode(val_str)
+        except Exception:
+            pass
+        return val_str.encode("utf-8")
+    return None

@@ -365,3 +365,41 @@ def test_authentication_required(client: FlaskClient, course: Course) -> None:
 
     res_get = client.get(f"/api/courses/{course.public_id}/assessments")
     assert res_get.status_code == 401
+
+
+def test_update_assessment_optimistic_concurrency(
+    client: FlaskClient, auth_headers: dict[str, str], course: Course
+) -> None:
+    """Test PATCH /api/assessments/<id> optimistic concurrency control (row_version)."""
+    from pwd301.extensions import db
+    from pwd301.models.assessment import Assessment
+
+    res_create = client.post(
+        f"/api/courses/{course.public_id}/assessments",
+        json={"title": "OCC Exam", "assessment_type": "QUIZ"},
+        headers=auth_headers,
+    )
+    asm_id = res_create.get_json()["assessment_id"]
+
+    import uuid
+
+    asm = db.session.query(Assessment).filter(Assessment.public_id == uuid.UUID(asm_id)).first()
+    asm.row_version = b"\x00\x00\x00\x00\x00\x00\x00\x05"
+    db.session.commit()
+
+    # Stale row_version should return 409 Conflict
+    res_stale = client.patch(
+        f"/api/assessments/{asm_id}",
+        json={"title": "Stale Update", "row_version": "0x0000000000000009"},
+        headers=auth_headers,
+    )
+    assert res_stale.status_code == 409
+
+    # Matching row_version should succeed
+    res_match = client.patch(
+        f"/api/assessments/{asm_id}",
+        json={"title": "Fresh Update", "row_version": "0x0000000000000005"},
+        headers=auth_headers,
+    )
+    assert res_match.status_code == 200
+    assert res_match.get_json()["title"] == "Fresh Update"

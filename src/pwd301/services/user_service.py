@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import uuid
 from typing import Any
 
@@ -26,6 +27,7 @@ from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
 from pwd301.services.exceptions import (
     AccountNotActiveError,
+    AdminActionForbiddenError,
     InvalidEmailError,
     InvalidPasswordError,
     InvalidRoleAssignmentError,
@@ -91,14 +93,25 @@ def validate_password(password: str) -> None:
         password: Raw password to validate.
 
     Raises:
-        InvalidPasswordError: If the password is empty or does not meet minimum length.
+        InvalidPasswordError: If the password does not meet complexity and length requirements.
     """
     if not password or not isinstance(password, str):
-        raise InvalidPasswordError("Password cannot be empty.")
+        raise InvalidPasswordError("Mật khẩu không được để trống.")
 
     if len(password) < MIN_PASSWORD_LENGTH:
         raise InvalidPasswordError(
-            f"Password must be at least {MIN_PASSWORD_LENGTH} characters long."
+            f"Mật khẩu phải có tối thiểu {MIN_PASSWORD_LENGTH} ký tự."
+        )
+
+    if not re.search(r"[A-Za-z]", password):
+        raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một chữ cái.")
+
+    if not re.search(r"\d", password):
+        raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một chữ số.")
+
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise InvalidPasswordError(
+            "Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*...)."
         )
 
 
@@ -676,6 +689,11 @@ def assign_role_to_user(
     if norm_code not in ("STUDENT", "INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
 
+    if assigned_by_user_id is not None and reason is not None:
+        clean_reason = reason.strip()
+        if len(clean_reason) < 5:
+            raise ValidationError("Lý do cấp vai trò kiểm toán bắt buộc tối thiểu 5 ký tự.")
+
     # Determine required cumulative closure
     if norm_code == "STUDENT":
         target_roles = {"STUDENT"}
@@ -814,12 +832,38 @@ def remove_role_from_user(
     if norm_code not in ("INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
 
+    if removed_by_user_id is not None and reason is not None:
+        clean_reason = reason.strip()
+        if len(clean_reason) < 5:
+            raise ValidationError("Lý do thu hồi vai trò kiểm toán bắt buộc tối thiểu 5 ký tự.")
+
+    # Guard: Self-Demotion Block
+    if removed_by_user_id is not None and user.id == removed_by_user_id and norm_code == "ADMIN":
+        raise AdminActionForbiddenError(
+            "Không thể tự thu hồi quyền Quản trị viên (ADMIN) của chính mình."
+        )
+
     current_codes = set(user.role_codes)
     if norm_code not in current_codes:
         return user  # Role already absent, idempotent
 
     # Enforce cumulative downgrade
     roles_to_remove = {"INSTRUCTOR", "ADMIN"} if norm_code == "INSTRUCTOR" else {"ADMIN"}
+
+    # Guard: Last Admin Protection
+    if "ADMIN" in roles_to_remove:
+        admin_role = sess.query(Role).filter(Role.code == "ADMIN").first()
+        if admin_role:
+            active_admins = (
+                sess.query(User)
+                .filter(User.roles.contains(admin_role), User.status != "SUSPENDED")
+                .all()
+            )
+            if len(active_admins) <= 1 and any(u.id == user.id for u in active_admins):
+                raise AdminActionForbiddenError(
+                    "Không thể tước quyền Quản trị viên của tài khoản Admin "
+                    "hoạt động duy nhất còn lại trong hệ thống."
+                )
 
     new_role_codes = current_codes - roles_to_remove
     if not validate_role_combination(new_role_codes):
@@ -1136,12 +1180,31 @@ def get_user_active_application(
 
 
 def get_instructor_application(
-    application_id: int,
+    application_id: int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
 ) -> InstructorApplication | None:
-    """Retrieve an instructor application by primary key."""
+    """Retrieve an instructor application by internal primary key or public UUIDv5."""
     sess = session if session is not None else db.session
-    return sess.get(InstructorApplication, application_id)
+    if isinstance(application_id, InstructorApplication):
+        return application_id
+    if isinstance(application_id, int):
+        return sess.get(InstructorApplication, application_id)
+    if isinstance(application_id, str):
+        if application_id.isdigit():
+            return sess.get(InstructorApplication, int(application_id))
+        try:
+            target_uuid = uuid.UUID(application_id)
+        except (ValueError, TypeError):
+            return None
+    elif isinstance(application_id, uuid.UUID):
+        target_uuid = application_id
+    else:
+        return None
+
+    for app in sess.query(InstructorApplication).all():
+        if app.public_id == target_uuid:
+            return app
+    return None
 
 
 def list_instructor_applications(
@@ -1157,7 +1220,7 @@ def list_instructor_applications(
 
 
 def review_instructor_application(
-    application_id: int,
+    application_id: int | uuid.UUID | str,
     admin_user_id: int,
     action: str,
     reason: str | None = None,
@@ -1175,7 +1238,7 @@ def review_instructor_application(
     if clean_action not in ("approve", "reject"):
         raise ValidationError("Hành động xét duyệt phải là 'approve' hoặc 'reject'.")
 
-    app_record = sess.get(InstructorApplication, application_id)
+    app_record = get_instructor_application(application_id, session=sess)
     if app_record is None:
         raise ResourceNotFoundError(f"Đơn đăng ký #{application_id} không tồn tại.")
 

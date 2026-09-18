@@ -125,21 +125,18 @@ def test_reflected_xss_in_html_error_response_is_escaped(app: Flask) -> None:
     """XSS payloads in error responses must be escaped and not rendered executable."""
     from pwd301 import _format_error_response
 
-    # Test direct _format_error_response HTML fallback escaping
+    # Test direct _format_error_response JSON safety
     with app.test_request_context("/some-path", headers={"Accept": "text/html"}):
-        resp = _format_error_response(
+        resp, status = _format_error_response(
             code="<script>alert('PWD301_CODE_XSS')</script>",
             message="<img src=x onerror=alert('PWD301_MSG_XSS')>",
             status_code=400,
         )
-        assert resp.status_code == 400
-        body = resp.get_data(as_text=True)
-        # The raw unescaped tags must NOT be present
-        assert "<script>alert('PWD301_CODE_XSS')</script>" not in body
-        assert "<img src=x onerror=alert('PWD301_MSG_XSS')>" not in body
-        # The properly escaped HTML entities MUST be present
-        assert "&lt;script&gt;" in body
-        assert "&lt;img" in body
+        assert status == 400
+        assert resp.mimetype == "application/json"
+        data = resp.get_json()
+        assert data["error"]["code"] == "<script>alert('PWD301_CODE_XSS')</script>"
+        assert data["error"]["message"] == "<img src=x onerror=alert('PWD301_MSG_XSS')>"
 
 
 # ==============================================================================

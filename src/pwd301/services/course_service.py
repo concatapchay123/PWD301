@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -23,10 +24,10 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseCompletionRule, CoursePrerequisite
-from pwd301.models.identity import User
+from pwd301.models.course import Course, CourseCompletionRule, CoursePrerequisite, Enrollment
+from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
-from pwd301.models.types import utc_now
+from pwd301.models.types import normalize_row_version, utc_now
 from pwd301.services.authorization_service import (
     _resolve_course,
     _resolve_user,
@@ -35,6 +36,7 @@ from pwd301.services.authorization_service import (
     require_course_manager,
 )
 from pwd301.services.exceptions import (
+    ConflictError,
     CourseAlreadyExistsError,
     CourseDependencyError,
     CourseStateViolationError,
@@ -44,6 +46,8 @@ from pwd301.services.exceptions import (
     ResourceNotFoundError,
     UserNotFoundError,
 )
+
+logger = logging.getLogger(__name__)
 
 # Allowed difficulty values per database check constraint ck_courses_2
 VALID_DIFFICULTIES = {"BEGINNER", "INTERMEDIATE", "ADVANCED"}
@@ -264,6 +268,9 @@ def create_course(
         title=title,
         title_normalized=norm_title,
         description=data.get("description"),
+        learning_objectives=data.get("learning_objectives"),
+        target_audience=data.get("target_audience"),
+        completion_requirements=data.get("completion_requirements"),
         category=data.get("category"),
         difficulty=difficulty,
         capacity=capacity,
@@ -346,9 +353,17 @@ def update_course(
     if course.deleted_at is not None and not actor.is_admin:
         raise ForbiddenError("Cannot update a soft-deleted course.")
 
+    if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
+        norm_client = normalize_row_version(data["row_version"])
+        if norm_client is not None and norm_client != course.row_version:
+            raise ConflictError("Course has been modified concurrently by another transaction.")
+
     before_state = {
         "title": course.title,
         "description": course.description,
+        "learning_objectives": course.learning_objectives,
+        "target_audience": course.target_audience,
+        "completion_requirements": course.completion_requirements,
         "category": course.category,
         "difficulty": course.difficulty,
         "capacity": course.capacity,
@@ -383,6 +398,18 @@ def update_course(
 
     if "description" in data:
         course.description = data["description"]
+
+    if "learning_objectives" in data:
+        lo = data["learning_objectives"]
+        course.learning_objectives = lo.strip() if isinstance(lo, str) else lo
+
+    if "target_audience" in data:
+        ta = data["target_audience"]
+        course.target_audience = ta.strip() if isinstance(ta, str) else ta
+
+    if "completion_requirements" in data:
+        cr = data["completion_requirements"]
+        course.completion_requirements = cr.strip() if isinstance(cr, str) else cr
 
     if "category" in data:
         cat = data["category"]
@@ -441,6 +468,9 @@ def update_course(
     after_state = {
         "title": course.title,
         "description": course.description,
+        "learning_objectives": course.learning_objectives,
+        "target_audience": course.target_audience,
+        "completion_requirements": course.completion_requirements,
         "category": course.category,
         "difficulty": course.difficulty,
         "capacity": course.capacity,
@@ -448,17 +478,16 @@ def update_course(
         "thumbnail_file_asset_id": course.thumbnail_file_asset_id,
     }
 
-    # Audit metadata changes if published or explicitly modified by admin
-    if course.status == "PUBLISHED" or actor.is_admin:
-        _record_audit_event(
-            sess=sess,
-            actor=actor,
-            action="COURSE_UPDATED",
-            target_id=course.id,
-            reason=data.get("reason"),
-            before_json=json.dumps(before_state),
-            after_json=json.dumps(after_state),
-        )
+    # Audit metadata changes
+    _record_audit_event(
+        sess=sess,
+        actor=actor,
+        action="COURSE_UPDATED",
+        target_id=course.id,
+        reason=data.get("reason"),
+        before_json=json.dumps(before_state),
+        after_json=json.dumps(after_state),
+    )
 
     try:
         sess.commit()
@@ -592,6 +621,13 @@ def change_course_status(
             "Cannot restore a previously published course to DRAFT status."
         )
 
+    if current_status == "SUBMITTED_FOR_REVIEW" and target_status == "DRAFT" and actor.is_admin:
+        clean_reason = (reason or "").strip()
+        if len(clean_reason) < 5:
+            raise CourseValidationError(
+                "Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự."
+            )
+
     before_state = {"status": current_status}
     now = utc_now()
 
@@ -644,6 +680,60 @@ def change_course_status(
         after_json=json.dumps(after_state),
     )
 
+    # 6. Dispatch in-app notifications to course owner instructor for Admin review outcomes
+    if target_status == "APPROVED" and course.owner_instructor_id:
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=course.owner_instructor_id,
+                event_type="COURSE_APPROVED",
+                title=f"Đề cương môn học {course.course_code} đã được phê duyệt",
+                body=(
+                    f"Đề cương môn học '{course.title}' ({course.course_code}) đã được "
+                    "Quản trị viên phê duyệt. Khóa học đã sẵn sàng để xuất bản "
+                    "hoặc cập nhật nội dung bài giảng."
+                ),
+                category="COURSE",
+                payload={
+                    "course_id": str(course.public_id),
+                    "course_code": course.course_code,
+                    "reason": reason or "",
+                },
+                session=sess,
+            )
+        except Exception as exc:
+            logger.warning("Failed to dispatch course approval notification: %s", exc)
+
+    elif (
+        current_status == "SUBMITTED_FOR_REVIEW"
+        and target_status == "DRAFT"
+        and actor.is_admin
+        and course.owner_instructor_id
+    ):
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=course.owner_instructor_id,
+                event_type="COURSE_REJECTED",
+                title=f"Đề cương môn học {course.course_code} yêu cầu chỉnh sửa",
+                body=(
+                    f"Đề cương môn học '{course.title}' ({course.course_code}) đã bị "
+                    f"Quản trị viên từ chối phê duyệt. Lý do kiểm toán: {reason}. "
+                    "Vui lòng cập nhật đề cương và gửi lại thẩm định."
+                ),
+                category="COURSE",
+                payload={
+                    "course_id": str(course.public_id),
+                    "course_code": course.course_code,
+                    "reason": reason or "",
+                },
+                session=sess,
+            )
+        except Exception as exc:
+            logger.warning("Failed to dispatch course rejection notification: %s", exc)
+
     try:
         sess.commit()
     except Exception:
@@ -694,6 +784,7 @@ def reassign_course_owner(
         raise ResourceNotFoundError("Course not found.")
 
     target_user_id: int | None = None
+    target_user_public_id: str | None = None
     if new_instructor_id is not None:
         target_user = _resolve_user(new_instructor_id, session=sess)
         if target_user is None:
@@ -703,8 +794,14 @@ def reassign_course_owner(
                 f"User '{target_user.email}' must have INSTRUCTOR role to own a course."
             )
         target_user_id = target_user.id
+        target_user_public_id = str(target_user.public_id)
 
     old_owner_id = course.owner_instructor_id
+    old_owner_public_id: str | None = None
+    if old_owner_id:
+        old_owner = sess.get(User, old_owner_id)
+        if old_owner:
+            old_owner_public_id = str(old_owner.public_id)
     now = utc_now()
 
     course.owner_instructor_id = target_user_id
@@ -716,9 +813,74 @@ def reassign_course_owner(
         action="COURSE_OWNER_REASSIGNED",
         target_id=course.id,
         reason=reason,
-        before_json=json.dumps({"owner_instructor_id": old_owner_id}),
-        after_json=json.dumps({"owner_instructor_id": target_user_id}),
+        before_json=json.dumps(
+            {
+                "owner_instructor_id": old_owner_id,
+                "owner_instructor_public_id": old_owner_public_id,
+            }
+        ),
+        after_json=json.dumps(
+            {
+                "owner_instructor_id": target_user_id,
+                "owner_instructor_public_id": target_user_public_id,
+            }
+        ),
     )
+
+    # Dual In-App Notifications for Former and New Course Owners
+    if old_owner_id:
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=old_owner_id,
+                event_type="COURSE_OWNER_REASSIGNED",
+                title=f"Thông báo điều chuyển môn học {course.course_code}",
+                body=(
+                    f"Môn học {course.course_code} - '{course.title}' đã được chuyển giao/bàn giao "
+                    f"trách nhiệm quản lý cho giảng viên khác theo quyết định của Quản trị viên."
+                ),
+                category="COURSE",
+                payload={
+                    "course_id": str(course.public_id),
+                    "course_code": course.course_code,
+                    "reason": reason or "",
+                },
+                session=sess,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to dispatch reassignment notification to previous owner %s: %s",
+                old_owner_id,
+                exc,
+            )
+
+    if target_user_id:
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            dispatch_notification(
+                recipient_user=target_user_id,
+                event_type="COURSE_OWNER_REASSIGNED",
+                title=f"Phân công phụ trách môn học {course.course_code}",
+                body=(
+                    f"Bạn đã được phân công tiếp nhận phụ trách quản lý môn học "
+                    f"{course.course_code} - '{course.title}' từ Ban Quản trị học vụ."
+                ),
+                category="COURSE",
+                payload={
+                    "course_id": str(course.public_id),
+                    "course_code": course.course_code,
+                    "reason": reason or "",
+                },
+                session=sess,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to dispatch reassignment notification to new owner %s: %s",
+                target_user_id,
+                exc,
+            )
 
     try:
         sess.commit()
@@ -843,3 +1005,127 @@ def list_courses(
     courses = query.order_by(Course.created_at.desc()).offset(offset).limit(limit).all()
 
     return courses, total_count
+
+
+def get_faculty_workload_metrics(
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Calculate academic teaching workload and SLA metrics for all faculty members.
+
+    Aggregates courses owned by active instructors, active student enrollment counts,
+    and estimates academic teaching hours (60 hours per course base standard).
+
+    Returns:
+        dict containing:
+        - total_faculty: total count of users with INSTRUCTOR role
+        - instructors: list of faculty workload profiles
+        - summary: aggregate statistics
+    """
+    sess = session if session is not None else db.session
+
+    instructor_role = sess.query(Role).filter(Role.code == "INSTRUCTOR").first()
+    if not instructor_role:
+        return {
+            "total_faculty": 0,
+            "instructors": [],
+            "summary": {
+                "underload_count": 0,
+                "standard_count": 0,
+                "overload_count": 0,
+                "total_assigned_courses": 0,
+            },
+        }
+
+    # Query all users having the INSTRUCTOR role
+    instructors = (
+        sess.query(User)
+        .filter(User.roles.contains(instructor_role))
+        .order_by(User.display_name.asc(), User.email.asc())
+        .all()
+    )
+
+    instructor_list: list[dict[str, Any]] = []
+    underload_count = 0
+    standard_count = 0
+    overload_count = 0
+    total_assigned_courses = 0
+
+    for ins in instructors:
+        # Get active/managed courses (non-TRASH)
+        courses = (
+            sess.query(Course)
+            .filter(
+                Course.owner_instructor_id == ins.id,
+                Course.status != "TRASH",
+            )
+            .order_by(Course.created_at.desc())
+            .all()
+        )
+
+        course_ids = [c.id for c in courses]
+        course_count = len(courses)
+        total_assigned_courses += course_count
+
+        active_students_count = 0
+        if course_ids:
+            active_students_count = (
+                sess.query(Enrollment)
+                .filter(
+                    Enrollment.course_id.in_(course_ids),
+                    Enrollment.status == "ACTIVE",
+                )
+                .count()
+            )
+
+        estimated_hours = course_count * 60
+        max_hours = 300
+        workload_pct = min(100, round((estimated_hours / max_hours) * 100)) if max_hours else 0
+
+        if course_count == 0:
+            workload_status = "UNASSIGNED"
+            underload_count += 1
+        elif estimated_hours < 120:
+            workload_status = "UNDERLOAD"
+            underload_count += 1
+        elif estimated_hours <= 240:
+            workload_status = "STANDARD"
+            standard_count += 1
+        else:
+            workload_status = "OVERLOAD"
+            overload_count += 1
+
+        instructor_list.append(
+            {
+                "user_id": str(ins.public_id),
+                "email": ins.email,
+                "display_name": ins.display_name or ins.email.split("@")[0],
+                "status": ins.status,
+                "assigned_courses_count": course_count,
+                "active_students_count": active_students_count,
+                "estimated_hours": estimated_hours,
+                "max_hours": max_hours,
+                "workload_pct": workload_pct,
+                "workload_status": workload_status,
+                "courses": [
+                    {
+                        "course_id": str(c.public_id),
+                        "course_code": c.course_code,
+                        "title": c.title,
+                        "status": c.status,
+                        "difficulty": c.difficulty,
+                    }
+                    for c in courses
+                ],
+            }
+        )
+
+    return {
+        "total_faculty": len(instructors),
+        "instructors": instructor_list,
+        "summary": {
+            "underload_count": underload_count,
+            "standard_count": standard_count,
+            "overload_count": overload_count,
+            "total_assigned_courses": total_assigned_courses,
+        },
+    }

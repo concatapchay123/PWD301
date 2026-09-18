@@ -259,3 +259,207 @@ def get_current_user() -> tuple[Response, int]:
         ),
         200,
     )
+
+
+@api_auth_bp.route("/logout", methods=["POST"])
+def logout_api() -> tuple[Response, int]:
+    """Revoke current API authentication grant (JWT Bearer or body token)."""
+    data: dict[str, Any] = request.get_json(silent=True) or {}
+    token = str(data.get("token", "")).strip() or str(data.get("refresh_token", "")).strip()
+
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+
+    if not token:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "AUTHENTICATION_REQUIRED",
+                        "message": "Authentication token required for logout.",
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            401,
+        )
+
+    revoke_token(token)
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "message": "Logged out successfully.",
+            }
+        ),
+        200,
+    )
+
+
+@api_auth_bp.route("/email-change", methods=["POST"])
+@jwt_required
+def request_email_change_api() -> tuple[Response, int]:
+    """Initiate an email change request and issue a verification token (JWT required)."""
+    from pwd301.extensions import db
+    from pwd301.models.identity import User
+    from pwd301.services.auth_token_service import SecurityTokenPurpose, create_security_token
+    from pwd301.services.email_service import validate_email_syntax
+
+    user = g.current_user
+    data: dict[str, Any] = request.get_json(silent=True) or {}
+    new_email = str(data.get("new_email", "")).strip().lower()
+
+    if not new_email:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "new_email is required.",
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            400,
+        )
+
+    try:
+        validate_email_syntax(new_email)
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(exc),
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            400,
+        )
+
+    if new_email == user.email_normalized or new_email == user.email.lower():
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "New email must be different from current email.",
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            400,
+        )
+
+    existing = db.session.query(User).filter(User.email_normalized == new_email).first()
+    if existing is not None and existing.id != user.id:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "CONFLICT",
+                        "message": f"Email '{new_email}' is already in use.",
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            409,
+        )
+
+    token_record, raw_token = create_security_token(
+        user_id=user.id,
+        purpose=SecurityTokenPurpose.EMAIL_CHANGE,
+        pending_email=new_email,
+        session=db.session,
+    )
+
+    user.pending_email = new_email
+    db.session.commit()
+
+    return (
+        jsonify(
+            {
+                "message": "Verification token issued for email change.",
+                "pending_email": new_email,
+                "token": raw_token,
+            }
+        ),
+        202,
+    )
+
+
+@api_auth_bp.route("/email-change/verify", methods=["POST"])
+def verify_email_change_api() -> tuple[Response, int]:
+    """Verify email change token and update user email address."""
+    from pwd301.extensions import db
+    from pwd301.services.auth_token_service import apply_email_change_with_token
+    from pwd301.services.exceptions import (
+        InvalidTokenError,
+        TokenAlreadyConsumedError,
+        TokenExpiredError,
+        UserAlreadyExistsError,
+    )
+
+    data: dict[str, Any] = request.get_json(silent=True) or {}
+    token = str(data.get("token", "")).strip()
+
+    if not token:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Verification token is required.",
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            400,
+        )
+
+    try:
+        updated_user = apply_email_change_with_token(token, session=db.session)
+        updated_user.pending_email = None
+        db.session.commit()
+    except (TokenExpiredError, InvalidTokenError, TokenAlreadyConsumedError) as exc:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "TOKEN_INVALID",
+                        "message": str(exc),
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            400,
+        )
+    except UserAlreadyExistsError as exc:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "CONFLICT",
+                        "message": str(exc),
+                        "correlation_id": getattr(g, "correlation_id", ""),
+                    }
+                }
+            ),
+            409,
+        )
+
+    return (
+        jsonify(
+            {
+                "message": "Email changed successfully.",
+                "email": updated_user.email,
+                "auth_version": updated_user.auth_version,
+            }
+        ),
+        200,
+    )

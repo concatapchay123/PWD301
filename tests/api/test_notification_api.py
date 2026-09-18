@@ -242,9 +242,12 @@ def test_admin_retry_failed_emails_api(
 def test_web_session_notification_center(
     app: Flask, client: FlaskClient, student_user: User
 ) -> None:
-    """Validate student Web session access to notification center page."""
+    """Validate student Web session access to notification center endpoint."""
     login_web_user(client, student_user)
 
     resp = client.get("/student/notifications")
     assert resp.status_code == 200
-    assert b"Trung t\xc3\xa2m Th\xc3\xb4ng b\xc3\xa1o" in resp.data
+    assert resp.is_json
+    data = resp.get_json()
+    assert "items" in data
+    assert "preferences" in data

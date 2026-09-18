@@ -47,16 +47,8 @@ from pwd301.services.exceptions import (
 
 
 def _is_api_or_json_request() -> bool:
-    """Determine whether the incoming request expects a JSON/API response."""
-    if request.path == "/api" or request.path.startswith("/api/"):
-        return True
-    if request.is_json:
-        return True
-    if request.args.get("format") == "json":
-        return True
-    if request.accept_mimetypes.accept_html:
-        return request.accept_mimetypes["application/json"] > request.accept_mimetypes["text/html"]
-    return request.accept_mimetypes.accept_json
+    """Headless backend: all requests receive JSON/API responses."""
+    return True
 
 
 def get_authenticated_actor() -> User | None:
@@ -103,8 +95,16 @@ def get_authenticated_actor() -> User | None:
     # Invariant: Web session cookies must NEVER authenticate requests to CSRF-exempt
     # API endpoints (/api/*) to prevent Cross-Site Request Forgery (CSRF).
     # REST API clients must supply Bearer JWT.
+    # Exception: Safe GET requests to /api/files/<asset_id>/download allow session cookies
+    # for web browser users (safe, idempotent GET per ADR-002 and 09_FILE_IMPORT_API.md).
     if has_request_context() and (request.path == "/api" or request.path.startswith("/api/")):
-        return None
+        is_safe_file_download = (
+            request.method == "GET"
+            and request.path.startswith("/api/files/")
+            and request.path.endswith("/download")
+        )
+        if not is_safe_file_download:
+            return None
 
     if (
         current_user
@@ -242,6 +242,12 @@ def _resolve_course(
             pass
         if course_or_id.isdigit():
             return sess.get(Course, int(course_or_id))
+        norm_code = course_or_id.strip().upper()
+        return (
+            sess.query(Course)
+            .filter(Course.course_code_normalized == norm_code, Course.deleted_at.is_(None))
+            .first()
+        )
 
     return None
 

@@ -26,7 +26,7 @@ def test_set_language_web_and_json_flow(client: FlaskClient) -> None:
 
     # 2. Switch back to Vietnamese via Form
     res2 = client.post("/auth/set-language", data={"lang": "vi"}, follow_redirects=False)
-    assert res2.status_code in (302, 303)
+    assert res2.status_code == 200
     with client.session_transaction() as sess:
         assert sess.get("lang") == "vi"
     cookie_vi = client.get_cookie("pwd301_lang")

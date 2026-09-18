@@ -235,12 +235,13 @@ def test_instructor_complete_lifecycle_e2e(
     ck_candidate = c_candidate.choice_key
     ck_follower = c_follower.choice_key
 
-    # Import Question via DOCX: Essay
+    # Import Question via DOCX: Short Answer (Objective question)
     docx_paras = [
         (
-            "Câu 1: Phân tích cơ chế Split-Brain trong hệ thống phân tán "
-            "và cách Raft giải quyết. [ESSAY] [ANALYZE] [50 pts]"
+            "Câu 1: Cơ chế giải quyết split-brain trong Raft là gì? "
+            "[SHORT_ANSWER] [ANALYZE] [50 pts]"
         ),
+        "Đáp án: Majority Quorum",
         (
             "Giải thích: Raft giải quyết bằng Majority Quorum (N/2 + 1) "
             "và Leader Term số nguyên đơn điệu tăng."
@@ -286,13 +287,13 @@ def test_instructor_complete_lifecycle_e2e(
     assert commit_res["imported_count"] == 1
 
     imported_q_uuid = uuid.UUID(commit_res["created_question_ids"][0])
-    q_essay = sess.query(Question).filter(Question.public_id == imported_q_uuid).one()
-    assert q_essay.current_revision.question_type == "ESSAY"
+    q_sa = sess.query(Question).filter(Question.public_id == imported_q_uuid).one()
+    assert q_sa.current_revision.question_type == "SHORT_ANSWER"
 
     # Verify Provenance tracking
     prov = (
         sess.query(QuestionProvenance)
-        .filter(QuestionProvenance.question_revision_id == q_essay.current_revision.id)
+        .filter(QuestionProvenance.question_revision_id == q_sa.current_revision.id)
         .first()
     )
     assert prov is not None
@@ -323,7 +324,7 @@ def test_instructor_complete_lifecycle_e2e(
     assign_question(
         instructor_user,
         assessment.id,
-        {"question_id": q_essay.id, "section_id": sec.id, "position": 2, "points_assigned": 50.0},
+        {"question_id": q_sa.id, "section_id": sec.id, "position": 2, "points_assigned": 50.0},
         session=sess,
     )
     publish_assessment(instructor_user, assessment.id, session=sess)
@@ -374,12 +375,12 @@ def test_instructor_complete_lifecycle_e2e(
         )
 
     # -------------------------------------------------------------------------
-    # 6. Student Submits with Objective and Essay Answers
+    # 6. Student Submits with Objective Answers (Auto-Graded)
     # -------------------------------------------------------------------------
     delivery_qs = attempt.attempt_questions
     assert len(delivery_qs) == 2
     aq_mc = next(aq for aq in delivery_qs if aq.question_type_snapshot == "SINGLE_CHOICE")
-    aq_es = next(aq for aq in delivery_qs if aq.question_type_snapshot == "ESSAY")
+    aq_sa = next(aq for aq in delivery_qs if aq.question_type_snapshot == "SHORT_ANSWER")
 
     # Answer MCQ (Selected Candidate = ck_candidate)
     save_attempt_answer(
@@ -395,16 +396,14 @@ def test_instructor_complete_lifecycle_e2e(
         session=sess,
     )
 
-    # Answer Essay
+    # Answer Short Answer
     save_attempt_answer(
         actor=student_user,
         attempt_id=attempt.id,
-        attempt_question_id=aq_es.id,
+        attempt_question_id=aq_sa.id,
         payload={
             "client_sequence": 2,
-            "answer_text": (
-                "Split-brain is prevented via majority quorum (N/2 + 1) and term numbering."
-            ),
+            "answer_text": "Majority Quorum",
             "lease_epoch": attempt.lease_epoch,
         },
         raw_lease_token=lease_tok,
@@ -412,7 +411,7 @@ def test_instructor_complete_lifecycle_e2e(
     )
     sess.commit()
 
-    # Submit attempt -> Needs manual grading for essay
+    # Submit attempt -> 100% objective auto-graded immediately!
     submit_res = submit_assessment_attempt(
         actor=student_user,
         attempt_id=attempt.id,
@@ -420,25 +419,55 @@ def test_instructor_complete_lifecycle_e2e(
         session=sess,
     )
     sess.commit()
-    assert submit_res["status"] == "PENDING_GRADING"
+    assert submit_res["status"] == "GRADED"
 
     sess.refresh(attempt)
-    assert attempt.status == "PENDING_GRADING"
+    assert attempt.status == "GRADED"
+    assert attempt.result is not None
+    assert attempt.result.raw_score == Decimal("100.0000")
+    assert attempt.result.passed is True
 
-    # MCQ was auto-graded for 50 pts, Essay is still pending
+    # Both MCQ and Short Answer were auto-graded for 50 pts each
     grade_mc = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq_mc.id).one()
     assert grade_mc.awarded_points == Decimal("50.0000")
     assert grade_mc.grading_status == "AUTO_GRADED"
 
+    grade_sa = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq_sa.id).one()
+    assert grade_sa.awarded_points == Decimal("50.0000")
+    assert grade_sa.grading_status == "AUTO_GRADED"
+
     # -------------------------------------------------------------------------
-    # 7. Instructor Performs Manual Essay Grading
+    # 7. Instructor Inspects Results & Optional Score Adjustment
     # -------------------------------------------------------------------------
+    from pwd301.services.attempt_service import (
+        get_instructor_attempt_evaluation,
+        list_assessment_student_results,
+    )
+
+    attempts_summary = list_assessment_student_results(
+        actor=instructor_user,
+        assessment_id=assessment.id,
+        session=sess,
+    )
+    assert attempts_summary["total"] == 1
+    assert attempts_summary["attempts"][0]["raw_score"] == 100.0
+    assert attempts_summary["attempts"][0]["percentage"] == 100.0
+
+    eval_detail = get_instructor_attempt_evaluation(
+        actor=instructor_user,
+        attempt_id=attempt.id,
+        session=sess,
+    )
+    assert eval_detail["total_awarded_points"] == 100.0
+    assert len(eval_detail["questions"]) == 2
+
+    # Score adjustment verification via grade_essay_question (adjust Short Answer to 40.0 pts)
     manual_grade_res = grade_essay_question(
         actor=instructor_user,
         attempt_id=attempt.id,
-        attempt_question_id=aq_es.id,
+        attempt_question_id=aq_sa.id,
         awarded_points=40.0,
-        reason="Good conceptual analysis of majority quorum.",
+        reason="Partial credit adjustment on short answer.",
         session=sess,
     )
     sess.commit()
@@ -448,20 +477,20 @@ def test_instructor_complete_lifecycle_e2e(
     sess.refresh(attempt)
     assert attempt.status == "GRADED"
     assert attempt.result is not None
-    # 50.0 (MCQ) + 40.0 (Essay) = 90.0
+    # 50.0 (MCQ) + 40.0 (SA) = 90.0
     assert attempt.result.raw_score == Decimal("90.0000")
     assert attempt.result.passed is True
 
     # Check AttemptQuestionGradeHistory
-    es_hist = (
+    sa_hist = (
         sess.query(AttemptQuestionGradeHistory)
-        .filter_by(attempt_question_id=aq_es.id)
+        .filter_by(attempt_question_id=aq_sa.id)
         .order_by(AttemptQuestionGradeHistory.created_at.desc())
         .first()
     )
-    assert es_hist is not None
-    assert es_hist.new_points == Decimal("40.0000")
-    assert es_hist.reason_code == "MANUAL_REVISION"
+    assert sa_hist is not None
+    assert sa_hist.new_points == Decimal("40.0000")
+    assert sa_hist.reason_code == "MANUAL_REVISION"
 
     # -------------------------------------------------------------------------
     # 8. Question Flaw Discovered -> QuestionRevision & Regrade Engine (Alg 11)

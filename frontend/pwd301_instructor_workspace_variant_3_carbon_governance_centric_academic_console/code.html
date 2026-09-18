@@ -1,0 +1,926 @@
+<!DOCTYPE html><html lang="vi" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Governance Console • PWD301 - Carbon Academic System</title>
+<!-- Tailwind CSS v3 with forms and container queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts Setup: IBM Plex Sans & IBM Plex Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&amp;family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Target Design Theme Configuration (Design System 2: Carbon Enterprise System) -->
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-background": "#161616",
+            "on-primary": "#ffffff",
+            "tertiary-fixed-dim": "#42be65",
+            "tertiary-container": "#defbe6",
+            "secondary": "#6f6f6f",
+            "primary-container": "#d0e2ff",
+            "inverse-surface": "#393939",
+            "on-tertiary-fixed-variant": "#044317",
+            "on-secondary-container": "#525252",
+            "on-tertiary-fixed": "#022d0d",
+            "surface": "#ffffff",
+            "secondary-fixed": "#e0e0e0",
+            "surface-container-lowest": "#ffffff",
+            "outline-variant": "#e0e0e0",
+            "secondary-fixed-dim": "#c6c6c6",
+            "surface-tint": "#0f62fe",
+            "background": "#ffffff",
+            "on-surface-variant": "#525252",
+            "on-tertiary": "#ffffff",
+            "inverse-primary": "#78a9ff",
+            "surface-container-low": "#f4f4f4",
+            "outline": "#8d8d8d",
+            "inverse-on-surface": "#f4f4f4",
+            "on-tertiary-container": "#044317",
+            "secondary-container": "#e0e0e0",
+            "on-secondary-fixed": "#161616",
+            "primary": "#0f62fe",
+            "primary-hover": "#0353e9",
+            "tertiary": "#198038",
+            "on-secondary-fixed-variant": "#525252",
+            "primary-fixed": "#d0e2ff",
+            "surface-variant": "#f4f4f4",
+            "error-container": "#fff1f1",
+            "surface-bright": "#ffffff",
+            "surface-dim": "#e0e0e0",
+            "surface-container-high": "#e0e0e0",
+            "primary-fixed-dim": "#78a9ff",
+            "on-primary-fixed-variant": "#0043ce",
+            "surface-container-highest": "#c6c6c6",
+            "on-secondary": "#ffffff",
+            "tertiary-fixed": "#a7f0ba",
+            "on-primary-container": "#161616",
+            "on-primary-fixed": "#001d6c",
+            "surface-container": "#f4f4f4",
+            "on-error": "#ffffff",
+            "error": "#da1e28",
+            "on-error-container": "#750e13",
+            "on-surface": "#161616",
+            "carbon-gray-10": "#f4f4f4",
+            "carbon-gray-20": "#e0e0e0",
+            "carbon-gray-30": "#c6c6c6",
+            "carbon-gray-50": "#8d8d8d",
+            "carbon-gray-70": "#525252",
+            "carbon-gray-90": "#262626",
+            "carbon-gray-100": "#161616",
+            "carbon-blue": "#0f62fe",
+            "carbon-blue-dark": "#0043ce",
+            "carbon-blue-light": "#edf5ff",
+            "carbon-alert-red": "#da1e28",
+            "carbon-alert-bg": "#fff1f1",
+            "carbon-green": "#198038",
+            "carbon-green-bg": "#defbe6",
+            "carbon-warning": "#f1c21b",
+            "carbon-warning-bg": "#fdf7e7",
+          },
+          borderRadius: {
+            DEFAULT: "2px",
+            sm: "2px",
+            md: "4px",
+            lg: "4px",
+            xl: "4px",
+            full: "9999px"
+          },
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'monospace'],
+            headline: ['"IBM Plex Sans"', 'sans-serif'],
+            display: ['"IBM Plex Sans"', 'sans-serif'],
+            body: ['"IBM Plex Sans"', 'sans-serif'],
+            label: ['"IBM Plex Sans"', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      font-family: 'IBM Plex Sans', sans-serif;
+      background-color: #f4f4f4;
+      color: #161616;
+      -webkit-font-smoothing: antialiased;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .material-symbols-outlined.fill {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+    }
+    /* Enterprise Carbon Scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f4f4f4;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #8d8d8d;
+      border-radius: 0px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #525252;
+    }
+    .touch-target-min {
+      min-height: 40px;
+      min-width: 40px;
+    }
+    /* Carbon strict focus ring */
+    input:focus, select:focus, textarea:focus, button:focus-visible {
+      outline: 2px solid #0f62fe !important;
+      outline-offset: -1px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col lg:flex-row bg-[#f4f4f4] text-[#161616] font-sans antialiased text-[13px] leading-normal">
+<!-- ========================================================================= -->
+<!-- 1. CARBON PERSISTENT INSTRUCTOR SIDEBAR (260px, Crisp 4px / 0px borders)  -->
+<!-- ========================================================================= -->
+<aside class="w-[260px] hidden lg:flex flex-col shrink-0 bg-[#ffffff] border-r border-[#e0e0e0] sticky top-0 h-screen z-30" data-purpose="academic-sidebar">
+<!-- Header Carbon Brand -->
+<div class="h-12 px-4 border-b border-[#e0e0e0] flex items-center justify-between bg-[#161616] text-white">
+<div class="flex items-center gap-2.5">
+<div class="w-6 h-6 bg-[#0f62fe] text-white flex items-center justify-center font-mono font-bold text-xs">
+          C
+        </div>
+<div>
+<div class="text-[10px] uppercase font-mono tracking-widest text-[#c6c6c6] leading-none">Console Academic</div>
+<div class="text-xs font-semibold tracking-tight leading-tight">Học Viện Công Nghệ</div>
+</div>
+</div>
+<span class="text-[10px] font-mono px-1.5 py-0.5 bg-[#262626] text-[#c6c6c6] border border-[#393939]">v2.4-STD</span>
+</div>
+<!-- Instructor Identity Card (Carbon Compact Data Density) -->
+<div class="p-3 mx-2 my-2 bg-[#f4f4f4] border border-[#e0e0e0]">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 bg-[#0f62fe] text-white font-mono font-bold flex items-center justify-center text-xs">
+          HN
+        </div>
+<div class="min-w-0 flex-1">
+<p class="text-xs font-semibold text-[#161616] truncate">ThS. Trần Hoàng Nam</p>
+<div class="flex items-center gap-1.5 text-[11px] text-[#525252] font-mono">
+<span class="">GV-4102</span>
+<span class="">•</span>
+<span class="text-[#0f62fe] font-medium">Chủ nhiệm môn</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 8 Standard Navigation Items (Carbon High-Density Spec) -->
+<nav class="flex-1 px-2 py-1 space-y-0.5 overflow-y-auto text-xs font-medium" data-purpose="instructor-nav">
+<!-- Item 1: Tổng quan -->
+<a class="flex items-center gap-2.5 px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#overview">
+<span class="material-symbols-outlined text-[18px]">dashboard</span>
+<span class="">Tổng quan</span>
+</a>
+<!-- Item 2: Khóa học của tôi (ACTIVE: PWD301) -->
+<a class="flex items-center justify-between px-3 py-2 bg-[#edf5ff] text-[#0f62fe] font-semibold border-l-4 border-[#0f62fe]" href="#active-course">
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-[18px] text-[#0f62fe]">school</span>
+<span class="truncate">Học phần: PWD301</span>
+</div>
+<span class="text-[9px] font-mono uppercase bg-[#0f62fe] text-white px-1 py-0.2">ACTIVE</span>
+</a>
+<!-- Item 3: Bài học & Tài liệu -->
+<a class="flex items-center gap-2.5 px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#curriculum-section">
+<span class="material-symbols-outlined text-[18px]">menu_book</span>
+<span class="">Bài học &amp; Tài liệu</span>
+</a>
+<!-- Item 4: Question Bank -->
+<a class="flex items-center justify-between px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#question-bank">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px]">quiz</span>
+<span class="">Ngân hàng câu hỏi</span>
+</div>
+<span class="text-[10px] font-mono bg-[#e0e0e0] text-[#161616] px-1.5 font-semibold">128</span>
+</a>
+<!-- Item 5: Khảo thí & Đề thi -->
+<a class="flex items-center justify-between px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#exams">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+<span class="">Khảo thí &amp; Đề thi</span>
+</div>
+<span class="w-2 h-2 bg-[#da1e28]" title="Sắp diễn ra ca thi"></span>
+</a>
+<!-- Item 6: Nhập liệu (Import) -->
+<a class="flex items-center gap-2.5 px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#import">
+<span class="material-symbols-outlined text-[18px]">cloud_upload</span>
+<span class="">Nhập liệu &amp; Thẩm định</span>
+</a>
+<!-- Item 7: Chấm điểm & Phúc khảo -->
+<a class="flex items-center justify-between px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#grading">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px]">rate_review</span>
+<span class="">Chấm điểm &amp; Phúc khảo</span>
+</div>
+<span class="text-[10px] font-mono bg-[#fff1f1] text-[#da1e28] px-1.5 border border-[#da1e28]/20 font-bold">4 bài</span>
+</a>
+<!-- Item 8: Báo cáo & Phân tích SLO -->
+<a class="flex items-center gap-2.5 px-3 py-2 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0] transition-colors" href="#slo-section">
+<span class="material-symbols-outlined text-[18px]">analytics</span>
+<span class="">Báo cáo &amp; Chuẩn SLO</span>
+</a>
+</nav>
+<!-- Governance Status Box in Sidebar Footer -->
+<div class="p-3 border-t border-[#e0e0e0] bg-[#f4f4f4] text-[11px] text-[#525252] space-y-1">
+<div class="flex items-center justify-between font-medium text-[#161616]">
+<span class="">Chuẩn Quy chế Hội đồng:</span>
+<span class="text-[#198038] bg-[#defbe6] px-1.5 py-0.5 border border-[#198038]/30 font-semibold text-[10px]">TUÂN THỦ</span>
+</div>
+<p class="text-[10px] font-mono leading-tight text-[#6f6f6f]">Mã kiểm định: ABET / AUN-QA Kỳ Thu 2025.</p>
+</div>
+</aside>
+<!-- ========================================================================= -->
+<!-- MAIN WORKSPACE CONTAINER (Carbon Crisp 4px / Density Oriented)            -->
+<!-- ========================================================================= -->
+<div class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+<!-- 1. HEADER GOVERNANCE (Carbon UI Shell Style) -->
+<header class="bg-[#ffffff] border-b border-[#e0e0e0] sticky top-0 z-20" data-purpose="console-header">
+<div class="max-w-[1500px] mx-auto px-4 sm:px-6 h-12 flex items-center justify-between gap-3">
+<!-- Mobile Drawer Trigger & Breadcrumbs -->
+<div class="flex items-center gap-3 min-w-0">
+<button aria-label="Open Mobile Drawer" class="lg:hidden p-1 text-[#161616] hover:bg-[#e0e0e0] touch-target-min" onclick="document.getElementById('mobileDrawer').classList.toggle('hidden')">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="flex items-center gap-2 text-xs truncate font-mono">
+<a class="text-[#525252] hover:text-[#0f62fe] hidden sm:inline" href="#">Hội đồng Đào tạo</a>
+<span class="text-[#c6c6c6] hidden sm:inline">/</span>
+<a class="text-[#525252] hover:text-[#0f62fe] truncate hidden md:inline" href="#">Khoa CN Web &amp; Python</a>
+<span class="text-[#c6c6c6] hidden md:inline">/</span>
+<span class="font-bold text-[#161616] truncate font-sans">PWD301: Lập trình Web Flask Chuyên sâu</span>
+</div>
+</div>
+<!-- Academic Governance Metadata & Actions -->
+<div class="flex items-center gap-2.5 shrink-0">
+<!-- Status Badge Carbon Pill -->
+<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 bg-[#defbe6] text-[#198038] border border-[#198038]/30">
+<span class="w-1.5 h-1.5 bg-[#198038]"></span>
+<span class="hidden sm:inline">Học phần chính thức •</span> Đã công bố (Published)
+          </span>
+<!-- Curriculum Version Selector with Revision History Dropdown -->
+<div class="relative hidden sm:block">
+<select class="text-xs font-mono font-medium py-1 pl-2.5 pr-7 bg-[#f4f4f4] text-[#161616] border border-[#8d8d8d] hover:bg-[#e0e0e0] focus:border-[#0f62fe] cursor-pointer">
+<option selected="">Version 2.4 (Hiện hành)</option>
+<option>Version 2.3 (Lưu trữ 2024)</option>
+<option>Version 3.0-Draft (Hội đồng thẩm định)</option>
+<option disabled="">--- Lịch sử sửa đổi ---</option>
+<option disabled="">Rev 2.4.1 (16/08/2026 - ThS. Nam)</option>
+<option disabled="">Rev 2.3.9 (10/06/2025 - TS. Linh)</option>
+</select>
+</div>
+<!-- Public syllabus link -->
+<a class="hidden md:inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-[#161616] bg-[#ffffff] hover:bg-[#f4f4f4] border border-[#8d8d8d] transition touch-target-min" href="#">
+<span class="">Xem trước Public</span>
+<span class="material-symbols-outlined text-[15px]">north_east</span>
+</a>
+<!-- Primary Action CTA Carbon Blue -->
+<button class="inline-flex items-center gap-1.5 px-3.5 py-1 text-xs font-semibold text-white bg-[#0f62fe] hover:bg-[#0353e9] transition touch-target-min" onclick="alert('Khởi tạo trình hướng dẫn soạn thảo đề cương học phần mới tuân thủ quy chế Viện đào tạo.')">
+<span class="material-symbols-outlined text-[16px]">add</span>
+<span class="">+ Tạo khóa học mới</span>
+</button>
+</div>
+</div>
+<!-- Mobile Horizontal Overflow Navigation (390px Viewport Support) -->
+<div class="lg:hidden flex items-center gap-1 px-3 py-1.5 border-t border-[#e0e0e0] overflow-x-auto text-xs font-mono whitespace-nowrap bg-[#ffffff] scrollbar-none">
+<a class="px-2 py-0.5 bg-[#edf5ff] text-[#0f62fe] font-semibold border-b-2 border-[#0f62fe]" href="#overview">Tổng quan</a>
+<a class="px-2 py-0.5 text-[#525252] hover:text-[#161616]" href="#course-profile">01.Định danh PWD301</a>
+<a class="px-2 py-0.5 text-[#525252] hover:text-[#161616]" href="#slo-section">02.Chuẩn SLO</a>
+<a class="px-2 py-0.5 text-[#525252] hover:text-[#161616]" href="#prerequisites-section">03.Chuỗi Tiên quyết</a>
+<a class="px-2 py-0.5 text-[#525252] hover:text-[#161616]" href="#curriculum-section">04.Khung Giáo trình</a>
+<a class="px-2 py-0.5 text-[#525252] hover:text-[#161616]" href="#edge-cases">Ngoại lệ &amp; Phê duyệt</a>
+</div>
+</header>
+<!-- MOBILE DRAWER MODAL (SPEC 390PX VIEWPORT) -->
+<div class="hidden lg:hidden fixed inset-0 z-50 bg-[#161616]/70 flex" id="mobileDrawer">
+<div class="w-[300px] max-w-[85vw] bg-white h-full flex flex-col p-4 shadow-xl border-r border-[#e0e0e0]">
+<div class="flex items-center justify-between pb-3 border-b border-[#e0e0e0]">
+<div class="font-bold text-sm text-[#161616]">Quản trị Học thuật Carbon</div>
+<button class="p-1 hover:bg-[#e0e0e0]" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">
+<span class="material-symbols-outlined text-lg">close</span>
+</button>
+</div>
+<div class="py-3 text-xs space-y-1 overflow-y-auto">
+<div class="text-[10px] font-mono text-[#6f6f6f] uppercase py-1">Điều hướng Giảng viên</div>
+<a class="block px-3 py-2 bg-[#edf5ff] text-[#0f62fe] font-semibold" href="#active-course" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">PWD301: Web Flask Chuyên sâu</a>
+<a class="block px-3 py-2 text-[#525252] hover:bg-[#f4f4f4]" href="#slo-section" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">Chuẩn đầu ra SLO</a>
+<a class="block px-3 py-2 text-[#525252] hover:bg-[#f4f4f4]" href="#prerequisites-section" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">Chuỗi Tiên quyết Dependency</a>
+<a class="block px-3 py-2 text-[#525252] hover:bg-[#f4f4f4]" href="#curriculum-section" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">4 Modules &amp; ClamAV</a>
+<a class="block px-3 py-2 text-[#525252] hover:bg-[#f4f4f4]" href="#edge-cases" onclick="document.getElementById('mobileDrawer').classList.add('hidden')">Kiểm thử Ngoại lệ Hệ thống</a>
+</div>
+<div class="mt-auto pt-3 border-t border-[#e0e0e0] text-[11px] font-mono text-[#525252]">
+          Học Viện Công Nghệ • v2.4-Carbon
+        </div>
+</div>
+</div>
+<!-- MAIN SCROLLABLE WORKSPACE AREA -->
+<main class="max-w-[1500px] w-full mx-auto px-4 sm:px-6 py-4 space-y-4 flex-1">
+<!-- ===================================================================== -->
+<!-- 2. 3 ACTIONABLE TEACHING KPIS & ACTION QUEUE (Carbon Data-Dense)       -->
+<!-- ===================================================================== -->
+<section aria-labelledby="kpi-heading" data-purpose="teaching-kpis-and-queue">
+<h2 class="sr-only" id="kpi-heading">Chỉ số giảng dạy và hàng đợi hành động trọng tâm</h2>
+<!-- KPI 3-Column Carbon Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+<!-- KPI 1: Students & Lab Progress -->
+<div class="bg-[#ffffff] border border-[#e0e0e0] p-3.5 relative overflow-hidden border-t-2 border-t-[#0f62fe]">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-[11px] font-mono font-medium text-[#525252] uppercase tracking-wider">Sinh viên đang theo học</p>
+<div class="flex items-baseline gap-2 mt-1">
+<span class="text-2xl font-bold font-mono text-[#161616] tracking-tight">45</span>
+<span class="text-xs text-[#525252] font-mono">/ 50 chỉ tiêu</span>
+</div>
+<div class="text-[11px] text-[#198038] font-medium mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]">task_alt</span>
+<span class="">Lớp <strong>PWD301_L04</strong> • Nộp bài lab đạt <strong>91%</strong></span>
+</div>
+</div>
+<span class="w-8 h-8 bg-[#edf5ff] text-[#0f62fe] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">group</span>
+</span>
+</div>
+<div class="w-full bg-[#e0e0e0] h-1 mt-2.5">
+<div class="bg-[#0f62fe] h-1" style="width: 91%"></div>
+</div>
+</div>
+<!-- KPI 2: Grading Midterm Queue -->
+<div class="bg-[#ffffff] border border-[#e0e0e0] p-3.5 relative overflow-hidden border-t-2 border-t-[#da1e28]">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-[11px] font-mono font-medium text-[#525252] uppercase tracking-wider">Bài thi tự luận Midterm chờ chấm</p>
+<div class="flex items-baseline gap-2 mt-1">
+<span class="text-2xl font-bold font-mono text-[#da1e28] tracking-tight">04</span>
+<span class="text-xs text-[#525252] font-mono">bài thi cần chấm điểm</span>
+</div>
+<div class="text-[11px] text-[#da1e28] font-medium mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]">schedule</span>
+<span class="">Hạn chót: <strong>28/10 23:59</strong> • GV phụ trách chính</span>
+</div>
+</div>
+<span class="w-8 h-8 bg-[#fff1f1] text-[#da1e28] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">pending_actions</span>
+</span>
+</div>
+<div class="w-full bg-[#e0e0e0] h-1 mt-2.5">
+<div class="bg-[#da1e28] h-1" style="width: 75%"></div>
+</div>
+</div>
+<!-- KPI 3: Scheduled Exam Countdown -->
+<div class="bg-[#ffffff] border border-[#e0e0e0] p-3.5 relative overflow-hidden border-t-2 border-t-[#f1c21b]">
+<div class="flex items-start justify-between">
+<div>
+<p class="text-[11px] font-mono font-medium text-[#525252] uppercase tracking-wider">Khảo thí sắp mở</p>
+<div class="flex items-baseline gap-2 mt-1">
+<span class="text-2xl font-bold font-mono text-[#161616] tracking-tight">09:00</span>
+<span class="text-[10px] text-[#161616] font-mono font-bold bg-[#fdf7e7] px-1.5 py-0.5 border border-[#f1c21b]">Còn 35 phút</span>
+</div>
+<div class="text-[11px] text-[#525252] font-medium mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-[#0f62fe]">meeting_room</span>
+<span class="">Phòng thi <strong>402-A</strong> • Đề 64 (Đề đảo tự động)</span>
+</div>
+</div>
+<span class="w-8 h-8 bg-[#fdf7e7] text-[#161616] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">timer</span>
+</span>
+</div>
+<div class="w-full bg-[#e0e0e0] h-1 mt-2.5">
+<div class="bg-[#198038] h-1" style="width: 88%"></div>
+</div>
+</div>
+</div>
+<!-- High-Priority Action Queue Row (Carbon Dense Notification Banner) -->
+<div class="mt-2 bg-[#ffffff] border border-[#e0e0e0] p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+<div class="flex items-center gap-2 text-xs text-[#161616]">
+<span class="w-2 h-2 bg-[#da1e28]"></span>
+<span class="text-[#525252] uppercase font-mono font-bold text-[11px] tracking-wider">Hàng đợi tức thì (Action Queue):</span>
+<span class="hidden md:inline text-[#c6c6c6]">|</span>
+<span class="font-medium text-[#161616]">ThS. Trần Hoàng Nam có 3 tác vụ học vụ cần xử lý trong phiên làm việc</span>
+</div>
+<div class="flex flex-wrap items-center gap-1.5">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#da1e28] bg-[#fff1f1] hover:bg-[#ffd7d9] border border-[#da1e28]/30 transition touch-target-min" onclick="alert('Đang mở Module Chấm thi Tự luận: 4 bài thi của Lớp PWD301_L04.')">
+<span class="material-symbols-outlined text-[15px]">edit_note</span>
+<span class="">[Vào chấm thi tự luận (4)]</span>
+</button>
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0f62fe] bg-[#edf5ff] hover:bg-[#d0e2ff] border border-[#0f62fe]/30 transition touch-target-min" onclick="alert('Đang kết nối giám sát trực tiếp Phòng thi 402-A...')">
+<span class="material-symbols-outlined text-[15px]">videocam</span>
+<span class="">[Giám sát phòng thi số 402-A]</span>
+</button>
+<button class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#161616] bg-[#f4f4f4] hover:bg-[#e0e0e0] border border-[#8d8d8d] transition touch-target-min" onclick="alert('Mở 12 câu hỏi vừa nhập liệu từ đề thi trắc nghiệm để rà soát.')">
+<span class="material-symbols-outlined text-[15px]">fact_check</span>
+<span class="">[Rà soát 12 câu hỏi import]</span>
+</button>
+</div>
+</div>
+</section>
+<!-- ===================================================================== -->
+<!-- 4. GOVERNANCE POLICY DISCLOSURE (Rulebook Clause 4.2 - Carbon Callout) -->
+<!-- ===================================================================== -->
+<section class="bg-[#ffffff] border-l-4 border-l-[#0f62fe] border border-[#e0e0e0] p-3.5 text-xs" data-purpose="approval-policy-banner">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+<div class="flex items-start gap-3">
+<div class="p-1.5 bg-[#0f62fe] text-white shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-base">gavel</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-xs font-bold text-[#161616] uppercase tracking-wide">Quy chế Phân định Thay đổi Đề cương (Rulebook Clause 4.2)</h3>
+<span class="bg-[#edf5ff] text-[#0f62fe] font-mono text-[10px] font-bold px-1.5 py-0.2 border border-[#0f62fe]/20">BẮT BUỘC</span>
+</div>
+<p class="text-[#525252] mt-1 leading-relaxed">
+                • <strong>Lưu cập nhật nhỏ (Minor Save):</strong> Chỉnh sửa văn phong, link tài liệu hoặc định dạng được cập nhật tức thời khi nhấn nút <em>"Lưu phần này"</em> ở từng khối.<br>
+                • <strong>Thay đổi trọng yếu (Material Changes):</strong> Sửa Chuẩn đầu ra (SLO), thay đổi cấu trúc Tín chỉ hoặc Môn học Tiên quyết đòi hỏi phải gửi biểu quyết đến Hội đồng Khoa học &amp; Đào tạo Viện phê duyệt trước khi có hiệu lực.
+              </p>
+</div>
+</div>
+<div class="shrink-0 flex items-center gap-2 self-end md:self-center">
+<button class="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0f62fe] hover:bg-[#0353e9] transition touch-target-min flex items-center gap-1.5" onclick="document.getElementById('approvalModal').classList.remove('hidden')">
+<span class="">Gửi xét duyệt Hội đồng Đào tạo</span>
+<span class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- ===================================================================== -->
+<!-- 5. COURSE PROFILE & SETTINGS (4 Discrete Independent Save Sections)   -->
+<!-- ===================================================================== -->
+<div class="space-y-4" data-purpose="course-profile-and-settings">
+<!-- =================================================================== -->
+<!-- KHỐI 01: THÔNG TIN ĐỊNH DANH & GIỚI THIỆU HỌC PHẦN (Discrete Save) -->
+<!-- =================================================================== -->
+<article class="bg-[#ffffff] border border-[#e0e0e0]" data-purpose="profile-section" id="course-profile">
+<div class="bg-[#f4f4f4] px-4 py-2.5 border-b border-[#e0e0e0] flex flex-wrap items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#161616] text-white flex items-center justify-center text-xs font-bold font-mono">01</span>
+<div>
+<h3 class="text-xs font-bold uppercase tracking-wider text-[#161616]">Thông tin Định danh &amp; Giới thiệu Học phần</h3>
+<p class="text-[11px] text-[#6f6f6f]">Mã môn, tín chỉ, khối lượng giờ và ngôn ngữ giảng dạy chính</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[11px] text-[#525252] font-mono">Đã lưu: 16/08/2026 09:12</span>
+<button class="px-3 py-1 text-xs font-semibold text-[#161616] bg-[#ffffff] hover:bg-[#e0e0e0] border border-[#8d8d8d] transition touch-target-min" onclick="alert('Đã lưu độc lập Phần 1: Thông tin Định danh!')">
+                Lưu phần này
+              </button>
+</div>
+</div>
+<form class="p-4 grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs" onsubmit="event.preventDefault();">
+<!-- Mã môn học -->
+<div>
+<label class="block font-medium text-[#161616] mb-1">Mã Học Phần (Course Code) <span class="text-[#da1e28]">*</span></label>
+<div class="relative">
+<input class="w-full bg-[#e0e0e0] border border-[#8d8d8d] text-[#161616] font-mono font-bold text-xs px-2.5 py-1.5 cursor-not-allowed" readonly="" type="text" value="PWD301">
+<span class="absolute right-2 top-1.5 text-[9px] text-[#525252] font-mono uppercase bg-[#f4f4f4] px-1 border border-[#c6c6c6]">Cố định</span>
+</div>
+<p class="text-[10px] font-mono text-[#6f6f6f] mt-1">Mã định danh do Phòng Quản trị Khảo thí cấp phát.</p>
+</div>
+<!-- Tên học phần -->
+<div class="md:col-span-2">
+<label class="block font-medium text-[#161616] mb-1">Tên Học Phần Tiếng Việt &amp; Tiếng Anh <span class="text-[#da1e28]">*</span></label>
+<input class="w-full border border-[#8d8d8d] bg-[#ffffff] text-[#161616] text-xs px-2.5 py-1.5 focus:border-[#0f62fe]" type="text" value="Lập trình Ứng dụng Web với Python Flask (Advanced Python Web Development)">
+</div>
+<!-- Tín chỉ & Số giờ chuẩn -->
+<div>
+<label class="block font-medium text-[#161616] mb-1">Số Tín chỉ &amp; Giờ Học chuẩn</label>
+<div class="flex items-center gap-2">
+<input class="w-16 border border-[#8d8d8d] bg-[#ffffff] text-[#161616] text-xs px-2 py-1.5 font-mono font-bold" max="6" min="1" type="number" value="4">
+<span class="text-[#525252] font-medium text-[11px]">Tín chỉ (45 giờ Lý thuyết + Thực hành)</span>
+</div>
+</div>
+<!-- Ngôn ngữ giảng dạy -->
+<div>
+<label class="block font-medium text-[#161616] mb-1">Ngôn ngữ Giảng dạy</label>
+<select class="w-full border border-[#8d8d8d] bg-[#ffffff] text-[#161616] text-xs px-2.5 py-1.5 focus:border-[#0f62fe]">
+<option selected="">Tiếng Việt (Thuật ngữ Kỹ thuật Anh - Mỹ)</option>
+<option>Song ngữ Anh - Việt (Bilingual)</option>
+<option>100% English (International Standard)</option>
+</select>
+</div>
+<!-- Phân loại học phần -->
+<div>
+<label class="block font-medium text-[#161616] mb-1">Phân Loại Học Phần</label>
+<select class="w-full border border-[#8d8d8d] bg-[#ffffff] text-[#161616] text-xs px-2.5 py-1.5 focus:border-[#0f62fe]">
+<option selected="">Chuyên ngành Bắt buộc (Major Core)</option>
+<option>Chuyên ngành Tự chọn (Elective)</option>
+<option>Đồ án tốt nghiệp / Thực tập</option>
+</select>
+</div>
+<!-- Mô tả học thuật -->
+<div class="md:col-span-3">
+<label class="block font-medium text-[#161616] mb-1">Mô tả Học thuật Tổng quan (Academic Abstract)</label>
+<textarea class="w-full border border-[#8d8d8d] bg-[#ffffff] text-[#161616] text-xs p-2.5 leading-relaxed focus:border-[#0f62fe]" rows="3">Học phần trang bị kiến thức chuyên sâu về kiến trúc Web micro-framework với Python Flask, mô hình phân cấp Blueprint, thiết kế Application Factory, lập trình ORM SQLite/PostgreSQL tối ưu chống N+1 Query, xác thực danh tính CSRF/JWT và triển khai hệ thống kiểm thử tự động với PyTest.</textarea>
+</div>
+</form>
+</article>
+<!-- =================================================================== -->
+<!-- KHỐI 02: CHUẨN ĐẦU RA HỌC PHẦN (SLO MATRIX) (Discrete Save)        -->
+<!-- =================================================================== -->
+<article class="bg-[#ffffff] border border-[#e0e0e0]" data-purpose="slo-matrix-section" id="slo-section">
+<div class="bg-[#f4f4f4] px-4 py-2.5 border-b border-[#e0e0e0] flex flex-wrap items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#0f62fe] text-white flex items-center justify-center text-xs font-bold font-mono">02</span>
+<div>
+<h3 class="text-xs font-bold uppercase tracking-wider text-[#161616]">Chuẩn Đầu Ra Học Phần (Student Learning Outcomes - SLO)</h3>
+<p class="text-[11px] text-[#6f6f6f]">4 chuẩn cốt lõi gắn kết Khung kiểm định Quốc tế AUN-QA / ABET</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-[#525252] bg-[#e0e0e0] px-2 py-0.5 border border-[#8d8d8d]">Yêu cầu Hội đồng duyệt khi sửa</span>
+<button class="px-3 py-1 text-xs font-semibold text-white bg-[#0f62fe] hover:bg-[#0353e9] transition touch-target-min" onclick="alert('Đã cập nhật bản nháp Ma trận SLO! Cần gửi Hội đồng duyệt trước kỳ học mới.')">
+                Lưu bản nháp SLO
+              </button>
+</div>
+</div>
+<div class="p-4 space-y-2 text-xs">
+<!-- SLO-1 -->
+<div class="p-3 border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f4f4f4] flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+<div class="flex items-start gap-2.5">
+<span class="px-2 py-0.5 bg-[#edf5ff] text-[#0f62fe] font-mono font-bold text-xs shrink-0 border border-[#0f62fe]/30">SLO-1</span>
+<div>
+<h4 class="font-bold text-[#161616]">Làm chủ Kiến trúc Flask Factory &amp; Modular Blueprint</h4>
+<p class="text-[#525252] mt-0.5">Xây dựng ứng dụng web phân tách nhiều module độc lập, đăng ký động các router và cô lập cấu hình testing/production.</p>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0 self-end md:self-center font-mono">
+<span class="text-[11px] text-[#525252] bg-[#f4f4f4] px-2 py-0.5 border border-[#e0e0e0]">Trọng số: <strong>25%</strong></span>
+
+</div>
+</div>
+<!-- SLO-2 -->
+<div class="p-3 border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f4f4f4] flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+<div class="flex items-start gap-2.5">
+<span class="px-2 py-0.5 bg-[#edf5ff] text-[#0f62fe] font-mono font-bold text-xs shrink-0 border border-[#0f62fe]/30">SLO-2</span>
+<div>
+<h4 class="font-bold text-[#161616]">Tối ưu hóa Truy vấn Cơ sở Dữ liệu &amp; ORM</h4>
+<p class="text-[#525252] mt-0.5">Triệt tiêu lỗi N+1 Query bằng kỹ thuật Eager Loading (`joinedload`), thiết kế chỉ mục (Index) và quan hệ 1-N, N-N chuẩn hóa.</p>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0 self-end md:self-center font-mono">
+<span class="text-[11px] text-[#525252] bg-[#f4f4f4] px-2 py-0.5 border border-[#e0e0e0]">Trọng số: <strong>30%</strong></span>
+
+</div>
+</div>
+<!-- SLO-3 -->
+<div class="p-3 border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f4f4f4] flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+<div class="flex items-start gap-2.5">
+<span class="px-2 py-0.5 bg-[#edf5ff] text-[#0f62fe] font-mono font-bold text-xs shrink-0 border border-[#0f62fe]/30">SLO-3</span>
+<div>
+<h4 class="font-bold text-[#161616]">Bảo mật REST API &amp; Phòng vệ Lỗ hổng Web OWASP</h4>
+<p class="text-[#525252] mt-0.5">Triển khai CSRF token, Sanitization chống XSS/SQL Injection, băm mật khẩu Argon2id và kiểm soát phân quyền RBAC.</p>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0 self-end md:self-center font-mono">
+<span class="text-[11px] text-[#525252] bg-[#f4f4f4] px-2 py-0.5 border border-[#e0e0e0]">Trọng số: <strong>25%</strong></span>
+
+</div>
+</div>
+<!-- SLO-4 -->
+<div class="p-3 border border-[#e0e0e0] bg-[#ffffff] hover:bg-[#f4f4f4] flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+<div class="flex items-start gap-2.5">
+<span class="px-2 py-0.5 bg-[#edf5ff] text-[#0f62fe] font-mono font-bold text-xs shrink-0 border border-[#0f62fe]/30">SLO-4</span>
+<div>
+<h4 class="font-bold text-[#161616]">Kiểm thử Tự động &amp; Triển khai CI/CD Web Microservice</h4>
+<p class="text-[#525252] mt-0.5">Viết bộ Unit Test &amp; Integration Test bằng PyTest đạt độ phủ code (Code Coverage) &gt;= 80% trước khi triển khai.</p>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0 self-end md:self-center font-mono">
+<span class="text-[11px] text-[#525252] bg-[#f4f4f4] px-2 py-0.5 border border-[#e0e0e0]">Trọng số: <strong>20%</strong></span>
+
+</div>
+</div>
+</div>
+</article>
+<!-- =================================================================== -->
+<!-- KHỐI 03: ĐIỀU KIỆN TIÊN QUYẾT & CHUỖI PHỤ THUỘC (DEPENDENCY ENGINE) -->
+<!-- =================================================================== -->
+<article class="bg-[#ffffff] border border-[#e0e0e0]" data-purpose="prerequisite-dependency-engine" id="prerequisites-section">
+<div class="bg-[#f4f4f4] px-4 py-2.5 border-b border-[#e0e0e0] flex flex-wrap items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#161616] text-white flex items-center justify-center text-xs font-bold font-mono">03</span>
+<div>
+<h3 class="text-xs font-bold uppercase tracking-wider text-[#161616]">Điều Kiện Tiên Quyết &amp; Động Cơ Chuỗi Phụ Thuộc (Dependency Engine)</h3>
+<p class="text-[11px] text-[#6f6f6f]">Kiểm soát luồng học tập, chống chu trình lặp (Cycle Detection) và bảo vệ toàn vẹn dữ liệu</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1 text-xs font-semibold text-[#161616] bg-[#ffffff] hover:bg-[#e0e0e0] border border-[#8d8d8d] transition touch-target-min" onclick="alert('Đã kiểm tra tính toàn vẹn chuỗi môn học. Không phát hiện xung đột hợp lệ!')">
+                Lưu quan hệ tiên quyết
+              </button>
+</div>
+</div>
+<div class="p-4 space-y-4 text-xs">
+<!-- Search & Selector for Prerequisite (Published Only) -->
+<div>
+<label class="block font-medium text-[#161616] mb-1.5">
+                Thêm môn học tiên quyết bắt buộc (Chỉ hiển thị các môn ĐÃ CÔNG BỐ - Published):
+              </label>
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+<div class="relative flex-1">
+<span class="material-symbols-outlined absolute left-2.5 top-2 text-[#8d8d8d] text-[16px]">search</span>
+<select class="w-full pl-8 pr-4 py-1.5 border border-[#8d8d8d] text-xs font-medium text-[#161616] bg-[#ffffff] focus:border-[#0f62fe]">
+<option selected="" value="CS101">CS101 - Nhập môn Khoa học Máy tính &amp; Lập trình Python (4 tín chỉ) • Đã công bố</option>
+<option value="WEB102">WEB102 - Nền tảng HTML5, CSS3 &amp; JavaScript Hiện đại (3 tín chỉ) • Đã công bố</option>
+<option value="DBA101">DBA101 - Cơ sở Dữ liệu Quan hệ SQL căn bản (3 tín chỉ) • Đã công bố</option>
+</select>
+</div>
+<button class="px-3.5 py-1.5 bg-[#0f62fe] hover:bg-[#0353e9] text-white font-semibold transition touch-target-min shrink-0 flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">add_link</span>
+<span class="">Thiết lập Tiên Quyết</span>
+</button>
+</div>
+</div>
+<!-- VISUAL WORKFLOW GRAPH: CS101 -> PWD301 -> DBA201 -->
+<div>
+<span class="text-[11px] font-mono uppercase font-bold text-[#525252] block mb-2">
+                Sơ đồ Trực quan Chuỗi Đào tạo (Visual Curriculum Pipeline):
+              </span>
+<div class="p-3.5 bg-[#f4f4f4] border border-[#e0e0e0]">
+<div class="flex flex-col md:flex-row items-center justify-between gap-3 text-center">
+<!-- Step 1: Predecessor (CS101) -->
+<div class="w-full md:w-1/3 p-3 bg-[#ffffff] border border-[#c6c6c6] text-left">
+<div class="flex items-center justify-between mb-1">
+<span class="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-[#f4f4f4] text-[#161616] border border-[#e0e0e0]">TIÊN QUYẾT 1</span>
+<span class="text-[10px] text-[#198038] font-semibold font-mono bg-[#defbe6] px-1 py-0.2">Published</span>
+</div>
+<h4 class="font-bold text-[#161616] text-xs">CS101: Nhập môn Python</h4>
+<p class="text-[11px] text-[#525252] mt-0.5">Sinh viên phải đạt &gt;= 5.0 để mở khóa PWD301</p>
+</div>
+<!-- Arrow Connector -->
+<div class="flex items-center justify-center text-[#0f62fe] font-bold">
+<span class="material-symbols-outlined text-2xl hidden md:inline">arrow_forward</span>
+<span class="material-symbols-outlined text-2xl md:hidden">arrow_downward</span>
+</div>
+<!-- Step 2: CURRENT (PWD301) Carbon Blue Active Card -->
+<div class="w-full md:w-1/3 p-3 bg-[#edf5ff] border-2 border-[#0f62fe] text-left relative">
+<span class="absolute -top-2.5 right-2 bg-[#0f62fe] text-white font-mono font-bold text-[9px] px-1.5 py-0.2 uppercase">Hiện tại</span>
+<div class="flex items-center justify-between mb-1">
+<span class="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-[#d0e2ff] text-[#0043ce]">PWD301</span>
+<span class="text-[10px] text-[#0043ce] font-semibold font-mono">Chính thức</span>
+</div>
+<h4 class="font-bold text-[#001d6c] text-xs">PWD301: Web Flask Chuyên Sâu</h4>
+<p class="text-[11px] text-[#0043ce] mt-0.5">Học kỳ Thu 2025 • 4 Tín chỉ</p>
+</div>
+<!-- Arrow Connector -->
+<div class="flex items-center justify-center text-[#8d8d8d] font-bold">
+<span class="material-symbols-outlined text-2xl hidden md:inline">arrow_forward</span>
+<span class="material-symbols-outlined text-2xl md:hidden">arrow_downward</span>
+</div>
+<!-- Step 3: Successor (DBA201) -->
+<div class="w-full md:w-1/3 p-3 bg-[#ffffff] border border-[#c6c6c6] text-left">
+<div class="flex items-center justify-between mb-1">
+<span class="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-[#f4f4f4] text-[#161616] border border-[#e0e0e0]">MÔN KẾ TIẾP</span>
+<span class="text-[10px] text-[#525252] font-mono bg-[#e0e0e0] px-1 py-0.2">Rào chắn phụ thuộc</span>
+</div>
+<h4 class="font-bold text-[#161616] text-xs">DBA201: CSDL Nâng cao &amp; Sharding</h4>
+<p class="text-[11px] text-[#525252] mt-0.5">Bắt buộc hoàn tất PWD301 mới được ghi danh</p>
+</div>
+</div>
+</div>
+</div>
+<!-- CRITICAL GOVERNANCE WARNING: CYCLE PREVENTION ENGINE -->
+<div class="p-3 bg-[#fff1f1] border-l-4 border-l-[#da1e28] border border-[#ffd7d9] text-xs space-y-1 text-[#161616]" data-purpose="cycle-detection-alert">
+<div class="flex items-center gap-2 font-bold text-[#da1e28]">
+<span class="material-symbols-outlined text-[#da1e28] text-base">error</span>
+<span class="font-mono uppercase text-[11px] tracking-wide">Cơ chế Chặn Vòng lặp &amp; Tự Tham chiếu (Self-Reference &amp; Cycle Prevention):</span>
+</div>
+<p class="text-[#525252] leading-relaxed pl-6">
+<strong>Phát hiện Nguy cơ Chu trình (Cycle Detected):</strong> Hệ thống tự động khóa thao tác thêm <code class="font-mono bg-white px-1 py-0.2 border border-[#ffd7d9] text-[#da1e28]">DBA201</code> vào làm tiên quyết của <code class="font-mono bg-white px-1 py-0.2 border border-[#ffd7d9] text-[#da1e28]">PWD301</code>. Vì chính học phần <code class="font-mono">DBA201</code> đang cấu hình điều kiện bắt buộc sinh viên phải qua môn <code class="font-mono">PWD301</code> trước. Mọi liên kết gây luồng lặp vô tận (Deadlock) đều bị engine từ chối lập tức.
+              </p>
+</div>
+<!-- CRITICAL GOVERNANCE WARNING: CASCADE DELETE RESTRICTION -->
+<div class="p-3 bg-[#fdf7e7] border-l-4 border-l-[#f1c21b] border border-[#f1c21b]/40 text-xs space-y-1 text-[#161616]" data-purpose="deletion-lock-alert">
+<div class="flex items-center gap-2 font-bold text-[#161616]">
+<span class="material-symbols-outlined text-[#161616] text-base">lock</span>
+<span class="font-mono uppercase text-[11px] tracking-wide">Cảnh báo Ràng buộc Toàn vẹn Học phần (Deletion &amp; Archival Lock):</span>
+</div>
+<p class="text-[#525252] leading-relaxed pl-6">
+<code class="font-mono bg-white px-1 py-0.2 border text-[#161616]">PWD301</code> hiện đang là <strong>rào chắn tiên quyết bắt buộc</strong> của môn <code class="font-mono">DBA201</code> trong chương trình đào tạo Cử nhân Kỹ sư Phần mềm. Theo Rulebook đào tạo, <strong>Giảng viên không thể tự ý Xóa (Delete) hoặc Lưu trữ (Archive)</strong> học phần này. Nếu cần thay đổi, phải đệ trình văn bản xin chuyển đổi chuỗi lên Admin Hội đồng Đào tạo Viện xét duyệt.
+              </p>
+</div>
+</div>
+</article>
+<!-- =================================================================== -->
+<!-- KHỐI 04: KHUNG GIÁO TRÌNH 4 MODULES (12 BÀI HỌC) (Discrete Save)   -->
+<!-- =================================================================== -->
+<article class="bg-[#ffffff] border border-[#e0e0e0]" data-purpose="curriculum-modules-section" id="curriculum-section">
+<div class="bg-[#f4f4f4] px-4 py-2.5 border-b border-[#e0e0e0] flex flex-wrap items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#161616] text-white flex items-center justify-center text-xs font-bold font-mono">04</span>
+<div>
+<h3 class="text-xs font-bold uppercase tracking-wider text-[#161616]">Khung Giáo Trình &amp; Cấu Trúc Học Tập (4 Modules • 12 Bài học)</h3>
+<p class="text-[11px] text-[#6f6f6f]">Tích hợp kiểm định tài liệu số &amp; tự động quét mã độc ClamAV</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1 text-xs font-semibold text-[#161616] bg-[#ffffff] hover:bg-[#e0e0e0] border border-[#8d8d8d] transition touch-target-min" onclick="alert('Đã cập nhật khung tài liệu bài giảng cho 4 Modules!')">
+                Lưu cấu trúc giáo trình
+              </button>
+</div>
+</div>
+<div class="p-4 space-y-2 text-xs" id="accordion-curriculum">
+<!-- Module 1 -->
+<details class="group border border-[#e0e0e0] bg-[#ffffff]" open="">
+<summary class="px-3.5 py-2.5 cursor-pointer flex items-center justify-between font-semibold text-[#161616] hover:bg-[#f4f4f4] select-none">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#0f62fe] text-white text-[10px] flex items-center justify-center font-mono font-bold">M1</span>
+<span class="">Module 1: Kiến trúc Flask Web &amp; Application Factory (3 Bài học)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-[#198038] bg-[#defbe6] px-2 py-0.5 border border-[#198038]/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+<span class="">ClamAV Scanned OK</span>
+</span>
+<span class="material-symbols-outlined text-[18px] group-open:rotate-180 transition-transform text-[#525252]">expand_more</span>
+</div>
+</summary>
+<div class="px-3.5 py-2 border-t border-[#e0e0e0] bg-[#ffffff] space-y-1.5 font-sans">
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 01: Thiết kế thư mục chuẩn Flask Enterprise &amp; Tách biệt Config</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Video • 1 Bài đọc • 45p</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 02: Blueprints Routing &amp; Đăng ký Middleware tập trung</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Video • 1 Lab Thực hành</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-[#161616]">Bài 03: Xử lý Exception Hook &amp; Custom JSON Error Response</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Trắc nghiệm (10 câu)</span>
+</div>
+</div>
+</details>
+<!-- Module 2 -->
+<details class="group border border-[#e0e0e0] bg-[#ffffff]" open="">
+<summary class="px-3.5 py-2.5 cursor-pointer flex items-center justify-between font-semibold text-[#161616] hover:bg-[#f4f4f4] select-none">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#0f62fe] text-white text-[10px] flex items-center justify-center font-mono font-bold">M2</span>
+<span class="">Module 2: Tối ưu CSDL SQLAlchemy ORM &amp; Phân trang N+1 (3 Bài học)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-[#198038] bg-[#defbe6] px-2 py-0.5 border border-[#198038]/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+<span class="">ClamAV Scanned OK</span>
+</span>
+<span class="material-symbols-outlined text-[18px] group-open:rotate-180 transition-transform text-[#525252]">expand_more</span>
+</div>
+</summary>
+<div class="px-3.5 py-2 border-t border-[#e0e0e0] bg-[#ffffff] space-y-1.5 font-sans">
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 04: Mô hình hóa Quan hệ One-to-Many, Many-to-Many trong SQLite/PostgreSQL</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Video • 1 Slide</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#0f62fe] font-semibold">Bài 05: Kỹ thuật Eager Loading (`joinedload`) triệt tiêu N+1 Query (Trọng tâm Đề 64)</span>
+<span class="text-[#198038] font-mono text-[11px] font-bold">1 Sandbox Live-Code</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-[#161616]">Bài 06: Database Migration an toàn với Flask-Migrate / Alembic</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Lab Sandbox</span>
+</div>
+</div>
+</details>
+<!-- Module 3 -->
+<details class="group border border-[#e0e0e0] bg-[#ffffff]">
+<summary class="px-3.5 py-2.5 cursor-pointer flex items-center justify-between font-semibold text-[#161616] hover:bg-[#f4f4f4] select-none">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#0f62fe] text-white text-[10px] flex items-center justify-center font-mono font-bold">M3</span>
+<span class="">Module 3: Bảo mật Xác thực CSRF, JWT Token &amp; Phòng vệ OWASP (3 Bài học)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-[#198038] bg-[#defbe6] px-2 py-0.5 border border-[#198038]/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+<span class="">ClamAV Scanned OK</span>
+</span>
+<span class="material-symbols-outlined text-[18px] group-open:rotate-180 transition-transform text-[#525252]">expand_more</span>
+</div>
+</summary>
+<div class="px-3.5 py-2 border-t border-[#e0e0e0] bg-[#ffffff] space-y-1.5 font-sans">
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 07: Xác thực Cookie Stateful vs Stateless JWT Token</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Video • 1 Lab</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 08: Chống Cross-Site Request Forgery (CSRF) cho Form &amp; Fetch API</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Lab Sandbox</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-[#161616]">Bài 09: Giới hạn tần suất gọi API (Rate Limiting) và Input Sanitization</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Mini Project</span>
+</div>
+</div>
+</details>
+<!-- Module 4 -->
+<details class="group border border-[#e0e0e0] bg-[#ffffff]">
+<summary class="px-3.5 py-2.5 cursor-pointer flex items-center justify-between font-semibold text-[#161616] hover:bg-[#f4f4f4] select-none">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 bg-[#0f62fe] text-white text-[10px] flex items-center justify-center font-mono font-bold">M4</span>
+<span class="">Module 4: Kiểm thử Đơn vị PyTest &amp; Triển khai Microservices Docker (3 Bài học)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-[#198038] bg-[#defbe6] px-2 py-0.5 border border-[#198038]/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+<span class="">ClamAV Scanned OK</span>
+</span>
+<span class="material-symbols-outlined text-[18px] group-open:rotate-180 transition-transform text-[#525252]">expand_more</span>
+</div>
+</summary>
+<div class="px-3.5 py-2 border-t border-[#e0e0e0] bg-[#ffffff] space-y-1.5 font-sans">
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 10: Xây dựng Test Fixtures &amp; Mocking Database với PyTest</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Video • 1 Lab</span>
+</div>
+<div class="flex items-center justify-between py-1 border-b border-[#f4f4f4]">
+<span class="text-[#161616]">Bài 11: Đóng gói Container Production với Gunicorn &amp; Nginx Reverse Proxy</span>
+<span class="text-[#6f6f6f] font-mono text-[11px]">1 Lab Dockerfile</span>
+</div>
+<div class="flex items-center justify-between py-1">
+<span class="text-[#161616]">Bài 12: Đồ án Cuối kỳ: Triển khai API RESTful chuẩn OpenAPI 3.0</span>
+<span class="text-[#0f62fe] font-mono text-[11px] font-bold">Bảo vệ đồ án</span>
+</div>
+</div>
+</details>
+</div>
+</article>
+</div>
+<!-- ===================================================================== -->
+<!-- 6. EDGE CASES & GOVERNANCE AUDIT STATES (Carbon High-Density Spec)    -->
+<!-- ===================================================================== -->
+
+</main>
+<!-- CARBON SYSTEM FOOTER -->
+<footer class="mt-auto border-t border-[#e0e0e0] bg-[#ffffff] py-3 text-xs text-[#525252]" data-purpose="academic-footer">
+<div class="max-w-[1500px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-[#198038]"></span>
+<span class="">Hệ thống Quản trị Đào tạo &amp; Khảo thí Viện Đào tạo Công nghệ • Carbon Console v2.4</span>
+</div>
+<div class="flex items-center gap-3 text-[#6f6f6f] font-mono text-[11px]">
+<span class="">Mã băm Audit Trail: <strong class="text-[#161616]">sha256:4f8e...c120</strong></span>
+<span class="">•</span>
+<span class="">Giảng viên: ThS. Trần Hoàng Nam</span>
+</div>
+</div>
+</footer>
+</div>
+<!-- ========================================================================= -->
+<!-- MODAL: GỬI THAY ĐỔI ĐỂ HỘI ĐỒNG ĐÀO TẠO PHÊ DUYỆT (MATERIAL APPROVAL)     -->
+<!-- ========================================================================= -->
+<div class="hidden fixed inset-0 z-50 overflow-y-auto bg-[#161616]/70 backdrop-blur-none flex items-center justify-center p-4" id="approvalModal">
+<div class="bg-white max-w-lg w-full border border-[#8d8d8d] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+<div class="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 bg-[#0f62fe] text-white flex items-center justify-center font-bold">
+<span class="material-symbols-outlined text-sm">verified_user</span>
+</div>
+<div>
+<h3 class="text-xs font-bold uppercase tracking-wider text-[#161616]">Đệ Trình Phê Duyệt Đề Cương Lên Hội Đồng</h3>
+<p class="text-[11px] text-[#6f6f6f]">Học phần: PWD301 • Người đệ trình: ThS. Trần Hoàng Nam</p>
+</div>
+</div>
+<button class="p-1 text-[#525252] hover:text-[#161616] hover:bg-[#e0e0e0]" onclick="document.getElementById('approvalModal').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="p-4 space-y-3 text-xs">
+<div class="p-2.5 bg-[#edf5ff] border-l-4 border-l-[#0f62fe] border border-[#d0e2ff] text-[#001d6c] leading-relaxed">
+<strong>Thông báo quy chế:</strong> Các thay đổi về Chuẩn đầu ra (SLO) và Chuỗi môn Tiên quyết sẽ được chuyển thành bản thảo <code class="font-mono bg-white px-1">Version 3.0-Draft</code> và gửi tới Trưởng Bộ môn (TS. Vũ Mai Linh) cùng Hội đồng Khoa học xem xét trong vòng 48 giờ làm việc.
+        </div>
+<div>
+<label class="block font-medium text-[#161616] mb-1">Ghi chú tóm tắt lý do điều chỉnh cho Hội đồng:</label>
+<textarea class="w-full border border-[#8d8d8d] p-2 text-xs focus:border-[#0f62fe]" placeholder="VD: Bổ sung chuẩn SLO-2 về Eager loading phòng chống N+1 theo khuyến nghị khảo sát doanh nghiệp kỳ vừa qua..." rows="3"></textarea>
+</div>
+<div class="space-y-1.5 text-[11px] text-[#525252]">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="border-[#8d8d8d] text-[#0f62fe] focus:ring-0" type="checkbox">
+<span class="">Tôi xác nhận các môn tiên quyết (CS101) đã được thẩm định tính khả thi chuỗi.</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="border-[#8d8d8d] text-[#0f62fe] focus:ring-0" type="checkbox">
+<span class="">Tôi đã quét toàn bộ file tài liệu qua ClamAV không chứa mã độc.</span>
+</label>
+</div>
+</div>
+<div class="p-3 bg-[#f4f4f4] border-t border-[#e0e0e0] flex items-center justify-end gap-2">
+<button class="px-3 py-1.5 text-xs font-semibold text-[#161616] hover:bg-[#e0e0e0] border border-[#8d8d8d] transition" onclick="document.getElementById('approvalModal').classList.add('hidden')">
+          Hủy bỏ
+        </button>
+<button class="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0f62fe] hover:bg-[#0353e9] transition flex items-center gap-1.5" onclick="alert('Đã đệ trình thành công yêu cầu phê duyệt #SUB-9021 lên Hội đồng Đào tạo Viện!'); document.getElementById('approvalModal').classList.add('hidden');">
+<span class="material-symbols-outlined text-[15px]">send</span>
+<span class="">Xác nhận &amp; Đệ trình</span>
+</button>
+</div>
+</div>
+</div>
+
+
+</body></html>

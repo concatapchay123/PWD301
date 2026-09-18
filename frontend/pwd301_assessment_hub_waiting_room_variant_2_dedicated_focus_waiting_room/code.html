@@ -1,0 +1,623 @@
+<!DOCTYPE html><html class="h-full bg-surface-canvas" lang="vi" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>PWD301 LMS Exam Portal - Dedicated Focus Room &amp; Readiness Sandbox</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-lowest": "#ffffff",
+            "outline": "#777587",
+            "primary": "#3525cd",
+            "on-surface-variant": "#464555",
+            "on-secondary": "#ffffff",
+            "surface-canvas": "#F8FAFC",
+            "on-primary-fixed-variant": "#3323cc",
+            "success-emerald": "#059669",
+            "surface-bright": "#faf8ff",
+            "surface": "#faf8ff",
+            "on-tertiary": "#ffffff",
+            "primary-fixed": "#e2dfff",
+            "tertiary-container": "#00659a",
+            "on-surface": "#131b2e",
+            "surface-container-highest": "#dae2fd",
+            "tertiary-fixed": "#cce5ff",
+            "secondary": "#4648d4",
+            "on-secondary-fixed": "#07006c",
+            "border-subtle": "#E2E8F0",
+            "info-sky": "#0284C7",
+            "on-primary": "#ffffff",
+            "outline-variant": "#c7c4d8",
+            "on-tertiary-fixed-variant": "#004b73",
+            "on-primary-container": "#dad7ff",
+            "secondary-container": "#6063ee",
+            "on-error-container": "#93000a",
+            "on-error": "#ffffff",
+            "surface-container-low": "#f2f3ff",
+            "text-secondary": "#1E293B",
+            "on-tertiary-fixed": "#001d31",
+            "error": "#ba1a1a",
+            "on-tertiary-container": "#bedfff",
+            "on-primary-fixed": "#0f0069",
+            "surface-variant": "#dae2fd",
+            "secondary-fixed-dim": "#c0c1ff",
+            "danger-rose": "#E11D48",
+            "surface-tint": "#4d44e3",
+            "surface-card": "#FFFFFF",
+            "text-muted": "#64748B",
+            "secondary-fixed": "#e1e0ff",
+            "text-primary": "#0F172A",
+            "surface-container": "#eaedff",
+            "on-secondary-container": "#fffbff",
+            "inverse-on-surface": "#eef0ff",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-container-high": "#e2e7ff",
+            "primary-container": "#4f46e5",
+            "surface-dim": "#d2d9f4",
+            "on-background": "#131b2e",
+            "tertiary": "#004c76",
+            "inverse-surface": "#283044",
+            "inverse-primary": "#c3c0ff",
+            "tertiary-fixed-dim": "#93ccff",
+            "error-container": "#ffdad6",
+            "warning-amber": "#D97706",
+            "background": "#faf8ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "gutter-mobile": "1rem",
+            "space-md": "1rem",
+            "gutter": "1.5rem",
+            "margin": "2rem",
+            "margin-mobile": "1rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"],
+            "caption": ["Inter", "sans-serif"],
+            "body-sm": ["Inter", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "mono": ["JetBrains Mono", "monospace"]
+          },
+          "fontSize": {
+            "headline-lg": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+            "headline-xl": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "21px", "fontWeight": "400" }],
+            "headline-sm": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "caption": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+    }
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+    .status-pulse {
+      animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-body-md text-on-surface bg-surface-canvas selection:bg-primary-fixed selection:text-primary">
+<!-- ========================================================================= -->
+<!-- 1. REDUCED FOCUS TOPBAR (Height ~70px, Academic Standard Proctoring Bar)  -->
+<!-- ========================================================================= -->
+<header class="sticky top-0 z-40 h-[70px] bg-surface-card border-b border-border-subtle shadow-sm px-4 lg:px-8 flex items-center justify-between">
+<!-- Brand & Room ID -->
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-headline-md shadow-sm">
+<svg class="w-5 h-5 text-on-primary" fill="currentColor" viewBox="0 0 24 24">
+<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</div>
+<div class="leading-none">
+<h1 class="text-sm font-headline-sm text-text-primary tracking-tight">PWD301 LMS Exam Portal</h1>
+<span class="text-[11px] font-mono text-text-muted">Academic Proctor Engine v4.2.1</span>
+</div>
+</div>
+<div class="h-6 w-px bg-border-subtle hidden sm:block"></div>
+<div class="hidden sm:flex items-center gap-2 px-3 py-1 bg-surface-container rounded-md border border-outline-variant/40">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+<span class="text-xs font-semibold text-text-primary">Phòng 402-A</span>
+<span class="text-xs text-text-muted">• PWD301 Midterm Assessment (Chính thức)</span>
+</div>
+</div>
+<!-- Center/Right Network NTP & Real-time Telemetry -->
+<div class="flex items-center gap-3 lg:gap-6">
+
+<!-- Action Buttons -->
+<div class="flex items-center gap-2">
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-error-container text-on-error-container hover:bg-error/20 text-xs font-semibold border border-error/20 transition-all focus:outline-none focus:ring-2 focus:ring-error" title="Kết nối trực tiếp tới ban thư ký khảo thí" type="button">
+<span class="material-symbols-outlined text-[16px]" data-icon="support_agent">support_agent</span>
+<span class="hidden sm:inline">Trợ giúp kỹ thuật</span>
+</button>
+<a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-canvas hover:bg-surface-container text-text-secondary hover:text-text-primary text-xs font-medium border border-border-subtle transition-all" href="#hub-overview">
+<span class="material-symbols-outlined text-[16px]" data-icon="logout">logout</span>
+<span class="hidden sm:inline">Thoát về Hub</span>
+</a>
+</div>
+</div>
+</header>
+<!-- ========================================================================= -->
+<!-- MAIN LAYOUT: TWO-COLUMN FOCUS EXAMINATION WAITING ROOM (60% / 40%)        -->
+<!-- ========================================================================= -->
+<main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+<!-- Top Breadcrumb & Live Context Banner -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border-subtle">
+<div>
+<div class="flex items-center gap-2 text-xs font-medium text-text-muted mb-1">
+<span class="">Kỳ thi Học kỳ Spring 2025</span>
+<span class="">/</span>
+<span class="">Lập trình Web Python (PWD301)</span>
+<span class="">/</span>
+<span class="text-primary font-semibold">Phòng Chờ Sát Hạch Số 402-A</span>
+</div>
+<h2 class="text-xl sm:text-2xl font-headline-lg text-text-primary tracking-tight">
+          Phòng Chờ Thi &amp; Kiểm Định Sẵn Sàng (Readiness Console)
+        </h2>
+</div>
+<!-- Student Badge Verification -->
+<div class="flex items-center gap-3 bg-surface-card px-3.5 py-2 rounded-xl border border-border-subtle shadow-xs self-start sm:self-auto">
+<div class="w-9 h-9 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-sm">
+          MA
+        </div>
+<div class="text-left leading-tight">
+<div class="flex items-center gap-1.5">
+<span class="text-xs font-semibold text-text-primary">Nguyễn Minh Anh</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-success-emerald/10 text-success-emerald font-bold">VERIFIED</span>
+</div>
+<span class="text-[11px] text-text-muted font-mono">MSSV: MA-8392 • Lớp PWD301.K18</span>
+</div>
+</div>
+</div>
+<!-- Grid Container -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<!-- ===================================================================== -->
+<!-- LEFT COLUMN (60% ~ 7/12 col): EXAM DOSSIER & COUNTDOWN GATE           -->
+<!-- ===================================================================== -->
+<div class="lg:col-span-7 space-y-5">
+<!-- BIG COUNTDOWN CARD (Gate Access Control) -->
+<div class="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-surface-card via-surface-card to-surface-container-low p-6 shadow-sm">
+<div class="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+<div>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary mb-2">
+<span class="material-symbols-outlined text-[14px]" data-icon="lock_clock">lock_clock</span>
+                CỔNG BẢO MẬT KHẢO THÍ ĐANG KHÓA
+              </span>
+<h3 class="text-xs font-bold uppercase tracking-wider text-text-muted">Đếm ngược giờ mở đề thi</h3>
+</div>
+<div class="text-left md:text-right">
+<span class="text-xs text-text-muted block">Khung giờ mở phòng thi</span>
+<span class="text-sm font-semibold font-mono text-text-primary">09:00:00 — 10:00:00 GMT+7</span>
+</div>
+</div>
+<!-- Giant Digital Clock Display -->
+<div class="my-6 text-center py-4 bg-surface-canvas/80 rounded-xl border border-border-subtle">
+<div class="text-xs font-mono uppercase tracking-widest text-text-muted mb-2">Thời gian còn lại để mở khóa bài thi</div>
+<div class="flex items-center justify-center gap-2 sm:gap-4 font-mono font-bold text-text-primary">
+<div class="flex flex-col items-center">
+<span class="text-3xl sm:text-5xl tracking-tighter bg-surface-card px-3 py-2 rounded-lg border border-border-subtle shadow-inner" id="timer-hours">00</span>
+<span class="text-[10px] text-text-muted uppercase mt-1 font-sans">Giờ</span>
+</div>
+<span class="text-2xl sm:text-4xl text-text-muted/60 -mt-4">:</span>
+<div class="flex flex-col items-center">
+<span class="text-3xl sm:text-5xl tracking-tighter bg-surface-card px-3 py-2 rounded-lg border border-border-subtle shadow-inner text-primary" id="timer-minutes">34</span>
+<span class="text-[10px] text-text-muted uppercase mt-1 font-sans">Phút</span>
+</div>
+<span class="text-2xl sm:text-4xl text-text-muted/60 -mt-4">:</span>
+<div class="flex flex-col items-center">
+<span class="text-3xl sm:text-5xl tracking-tighter bg-surface-card px-3 py-2 rounded-lg border border-border-subtle shadow-inner text-primary" id="timer-seconds">54</span>
+<span class="text-[10px] text-text-muted uppercase mt-1 font-sans">Giây</span>
+</div>
+</div>
+</div>
+<!-- Server Authority Notice Banner -->
+<div class="flex items-start gap-3 p-3.5 bg-surface-canvas rounded-lg border border-border-subtle text-xs text-text-secondary">
+<span class="material-symbols-outlined text-info-sky text-[20px] shrink-0 mt-0.5" data-icon="shield">shield</span>
+<div class="leading-relaxed">
+<strong class="text-text-primary font-semibold">Quyền hạn Thời gian Máy chủ (Server Authority):</strong>
+              Mọi mốc thời gian, tiến trình nộp bài và thời lượng làm bài <strong>60 phút</strong> được tính toán độc lập tại Máy chủ Khảo thí của nhà trường. Hệ thống chống gian lận sẽ chặn đứng tuyệt đối mọi can thiệp thay đổi múi giờ hoặc đồng hồ phần cứng của sinh viên.
+            </div>
+</div>
+<!-- Dynamic Primary Call To Action Area -->
+<div class="mt-6 pt-4 border-t border-border-subtle flex flex-col sm:flex-row items-center justify-between gap-4">
+<div class="flex items-center gap-2 text-xs text-text-muted" id="cta-helper-text">
+<span class="material-symbols-outlined text-[16px] text-warning-amber" data-icon="info">info</span>
+<span class="">Nút làm bài sẽ kích hoạt tự động đúng <strong>09:00:00</strong></span>
+</div>
+<!-- The Main Action Button (Controlled via simulator below) -->
+<button class="w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-not-allowed bg-outline-variant/40 text-on-surface-variant/70 border border-outline-variant shadow-none" disabled="" id="btn-enter-exam" type="button">
+<span class="material-symbols-outlined text-[18px]" data-icon="lock">lock</span>
+<span id="btn-enter-exam-label" class="">Chờ mở bài thi (00:34:54)</span>
+</button>
+</div>
+</div>
+<!-- EXAM STRUCTURE & REGULATIONS (Academic Dossier) -->
+<div class="bg-surface-card rounded-xl border border-border-subtle p-5 space-y-4 shadow-xs">
+<div class="flex items-center justify-between">
+<h4 class="text-sm font-headline-sm text-text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="fact_check">fact_check</span>
+              Hồ Sơ Cấu Trúc Khảo Thí (Exam Dossier)
+            </h4>
+<span class="text-[11px] font-mono text-text-muted px-2 py-0.5 rounded bg-surface-container">ID: PWD301-MD2025</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+<div class="p-3 bg-surface-canvas rounded-lg border border-border-subtle">
+<span class="text-text-muted block mb-1">Quy mô bài thi:</span>
+<span class="font-semibold text-text-primary text-sm">40 Điểm Tổng kết</span>
+<p class="text-text-muted mt-1 text-[11px]">20 câu Trắc nghiệm (20đ) + 1 Bài Thực hành Code Flask Blueprint SQLite (20đ)</p>
+</div>
+<div class="p-3 bg-surface-canvas rounded-lg border border-border-subtle">
+<span class="text-text-muted block mb-1">Thời lượng &amp; Điều kiện qua môn:</span>
+<span class="font-semibold text-text-primary text-sm">60 Phút • Tối thiểu 24/40</span>
+<p class="text-text-muted mt-1 text-[11px]">Đạt chuẩn để mở khóa học phần DBA201 (Cơ sở Dữ liệu Nâng cao)</p>
+</div>
+</div>
+<!-- Academic Strict Lock Rules -->
+<div class="p-4 bg-surface-container-low rounded-lg border border-border-subtle space-y-2.5">
+<div class="flex items-center gap-2 text-xs font-bold text-text-primary">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="security">security</span>
+              Quy Chế Giám Sát Phòng Khảo Thí (First-Start Lock Policy):
+            </div>
+<ul class="text-xs text-text-secondary space-y-1.5 pl-5 list-disc marker:text-primary">
+<li class=""><strong>First-Start Lock:</strong> Khi sinh viên bấm "Bắt đầu làm bài", màn hình sẽ chuyển sang chế độ Full-Screen Sandbox bảo mật.</li>
+<li class=""><strong>Chặn chuyển tác vụ:</strong> Rời khỏi thẻ trình duyệt hoặc mở tab khác quá <strong>03 lần</strong> sẽ kích hoạt tự động khóa bài thi và ghi biên bản gửi hội đồng khảo thí.</li>
+<li class=""><strong>Audit Logging:</strong> Toàn bộ thao tác phím (Keystroke telemetry), clipboard paste và trạng thái sandbox được lưu trữ trực tiếp trên máy chủ.</li>
+</ul>
+</div>
+</div>
+</div>
+<!-- ===================================================================== -->
+<!-- RIGHT COLUMN (40% ~ 5/12 col): INTERACTIVE READINESS & SANDBOX CHECK  -->
+<!-- ===================================================================== -->
+<div class="lg:col-span-5 space-y-5">
+<!-- Live Hardware & Environment Inspection Card -->
+<div class="bg-surface-card rounded-xl border border-border-subtle p-5 shadow-xs space-y-4">
+<div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+<div>
+<h4 class="text-sm font-headline-sm text-text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="tune">tune</span>
+                Kiểm Định Thiết Bị Khảo Thí
+              </h4>
+<p class="text-[11px] text-text-muted">Xác thực 4 tiêu chuẩn kỹ thuật trước giờ thi</p>
+</div>
+<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-success-emerald bg-success-emerald/10 px-2 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" data-icon="verified">verified</span>
+              4/4 ĐẠT
+            </span>
+</div>
+<!-- Webcam Preview Frame for Examination Compliance -->
+<div class="space-y-2">
+<div class="flex items-center justify-between text-xs">
+<span class="font-medium text-text-secondary flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-text-muted" data-icon="videocam">videocam</span>
+                Góc quay Camera Giám sát AI
+              </span>
+<span class="text-[11px] font-mono text-success-emerald font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-success-emerald"></span>
+                WebRTC Active (30 FPS)
+              </span>
+</div>
+<div class="relative w-full h-44 rounded-lg overflow-hidden bg-surface-canvas border border-border-subtle group">
+<!-- Placeholder image adhering strictly to rules -->
+<img class="w-full h-full object-cover" data-alt="A clean, focused academic portrait of an Asian male university student seated in a well-lit minimalist study room during an official online proctored exam. He is looking directly at the camera with clear lighting on his face, wearing headphones, framed from the chest up against a plain neutral interior wall. The image features modern cool gray and slate tones aligned with university assessment technology." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTSvojbWck5pmHbvCWCKZMdEZqLwMqOkf69EeunqQhRajB4q3C-vOGIwr4Xp7SVwFxk9or_jQAwR2t5djSY8eqV6XCAb7tiIUFshr76l1TNzPkyKYOoA8rqjak3I_IOJ4XzwU-JZe6QEtByUi83txSSQYN0e0uysXKwfUZ5Vtn5V36J9J6g5s-WtS6aN3Jzwc_3dc_u_m2RD6zc4hm5Xg-82MVN_zivVnY4iR9xNsySNVFGx4MfQqhWg">
+<!-- Real-time HUD overlay on webcam -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-between p-3 pointer-events-none">
+<div class="flex justify-between items-start">
+<span class="px-2 py-0.5 rounded bg-black/50 text-[10px] font-mono text-white backdrop-blur-xs flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-danger-rose animate-pulse"></span>
+                    REC • AI FACIAL TRACK
+                  </span>
+<span class="px-1.5 py-0.5 rounded bg-black/40 text-[10px] font-mono text-white">
+                    HD 1080p
+                  </span>
+</div>
+<div class="flex justify-between items-end text-white text-[11px] font-mono">
+<span class="">Candidate: MA-8392</span>
+<span class="text-success-emerald bg-black/60 px-1.5 py-0.5 rounded font-bold">Face In Frame (98.4%)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 4 Specific Diagnostic Checks -->
+<div class="space-y-2.5 pt-1">
+<!-- 1. Đường truyền mạng -->
+<div class="p-3 bg-surface-canvas rounded-lg border border-border-subtle flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-md bg-success-emerald/10 text-success-emerald flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]" data-icon="wifi">wifi</span>
+</div>
+<div>
+<div class="text-xs font-semibold text-text-primary">1. Đường truyền Mạng &amp; CDN</div>
+<div class="text-[11px] text-text-muted font-mono">Ping: 15ms • Tải về: 48.2 Mbps</div>
+</div>
+</div>
+<span class="text-xs font-semibold text-success-emerald flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="check_circle">check_circle</span>
+                Tối ưu
+              </span>
+</div>
+<!-- 2. Camera & Mic giám sát -->
+<div class="p-3 bg-surface-canvas rounded-lg border border-border-subtle flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-md bg-success-emerald/10 text-success-emerald flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]" data-icon="mic">mic</span>
+</div>
+<div>
+<div class="text-xs font-semibold text-text-primary">2. Âm thanh Mic WebRTC</div>
+<div class="text-[11px] text-text-muted">Đã nhận tín hiệu sạch (-32 dB)</div>
+</div>
+</div>
+<span class="text-xs font-semibold text-success-emerald flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="check_circle">check_circle</span>
+                Đã cấp quyền
+              </span>
+</div>
+<!-- 3. Docker Sandbox -->
+
+<!-- 4. Token xác thực SHA-256 HMAC -->
+
+</div>
+<!-- Re-check Diagnostic Trigger -->
+<div class="pt-2">
+<button class="w-full py-2.5 px-4 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-medium text-xs flex items-center justify-center gap-2 border border-outline-variant/60 transition-colors" id="btn-recheck" type="button">
+<span class="material-symbols-outlined text-[16px]" data-icon="refresh">refresh</span>
+              Kiểm tra lại toàn bộ thiết bị (Run Re-check)
+            </button>
+</div>
+</div>
+<!-- System Announcement / Room Supervisor Note -->
+
+</div>
+</div>
+<!-- ========================================================================= -->
+<!-- 3. HUB FAST-SWITCHER & EDGE-CASE SIMULATOR (Interactive Developer Demo)    -->
+<!-- ========================================================================= -->
+
+<!-- ========================================================================= -->
+<!-- 4. ACADEMIC HUB CONTEXT: OTHER REGISTERED EXAMS (4 BÀI THI KHÁC TẠI HUB)  -->
+<!-- ========================================================================= -->
+
+</main>
+<!-- ========================================================================= -->
+<!-- MODAL / INTERACTION JAVASCRIPT LOGIC                                      -->
+<!-- ========================================================================= -->
+<script>
+    // Live NTP Time Increment simulation
+    let ntpSeconds = 48;
+    let ntpMinutes = 24;
+    let ntpHours = 8;
+
+    setInterval(() => {
+      ntpSeconds++;
+      if (ntpSeconds >= 60) {
+        ntpSeconds = 0;
+        ntpMinutes++;
+        if (ntpMinutes >= 60) {
+          ntpMinutes = 0;
+          ntpHours++;
+        }
+      }
+      const pad = (n) => String(n).padStart(2, '0');
+      const timeStr = `${pad(ntpHours)}:${pad(ntpMinutes)}:${pad(ntpSeconds)}`;
+      const ntpEl = document.getElementById('server-ntp-time');
+      if (ntpEl) ntpEl.textContent = timeStr;
+    }, 1000);
+
+    // Simulated Countdown Timer
+    let countdown = 35 * 60 + 12; // 35m 12s
+    const timerMinEl = document.getElementById('timer-minutes');
+    const timerSecEl = document.getElementById('timer-seconds');
+    const btnLabelEl = document.getElementById('btn-enter-exam-label');
+
+    setInterval(() => {
+      if (countdown > 0 && currentActiveState === 'scheduled') {
+        countdown--;
+        const m = Math.floor(countdown / 60);
+        const s = countdown % 60;
+        if (timerMinEl) timerMinEl.textContent = String(m).padStart(2, '0');
+        if (timerSecEl) timerSecEl.textContent = String(s).padStart(2, '0');
+        if (btnLabelEl && btnLabelEl.textContent.includes('Chờ mở bài thi')) {
+          btnLabelEl.textContent = `Chờ mở bài thi (00:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')})`;
+        }
+      }
+    }, 1000);
+
+    // Recheck Hardware Simulation
+    const btnRecheck = document.getElementById('btn-recheck');
+    if (btnRecheck) {
+      btnRecheck.addEventListener('click', function() {
+        const originalContent = this.innerHTML;
+        this.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin" data-icon="sync">sync</span> Đang quét kiểm định phần cứng & container...`;
+        this.disabled = true;
+        setTimeout(() => {
+          this.innerHTML = originalContent;
+          this.disabled = false;
+          alert('Kiểm định thành công: Mọi chỉ số phần cứng (Camera, Mic, Network, Flask Sandbox) đáp ứng 100% điều kiện phòng thi.');
+        }, 1200);
+      });
+    }
+
+    // STATE SWITCHER SIMULATION
+    let currentActiveState = 'scheduled';
+
+    function switchState(state) {
+      currentActiveState = state;
+      const btn = document.getElementById('btn-enter-exam');
+      const btnLabel = document.getElementById('btn-enter-exam-label');
+      const ctaHelper = document.getElementById('cta-helper-text');
+      const alertBox = document.getElementById('state-alert-box');
+      
+      // Update Tab Pill styles
+      document.querySelectorAll('.state-tab-btn').forEach(b => {
+        b.className = 'state-tab-btn px-3 py-2 rounded-lg text-xs font-medium border text-left flex flex-col gap-1 transition-all bg-surface-card hover:bg-surface-container border-border-subtle text-text-secondary';
+        const dot = b.querySelector('span > span');
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-transparent';
+      });
+
+      const activeTab = document.getElementById(`btn-state-${state}`);
+      if (activeTab) {
+        activeTab.className = 'state-tab-btn px-3 py-2 rounded-lg text-xs font-medium border text-left flex flex-col gap-1 transition-all bg-primary-fixed text-on-primary-fixed border-primary shadow-xs';
+        const dot = activeTab.querySelector('span > span');
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-primary';
+      }
+
+      // Handle individual state changes
+      if (state === 'scheduled') {
+        alertBox.classList.add('hidden');
+        btn.disabled = true;
+        btn.className = 'w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-not-allowed bg-outline-variant/40 text-on-surface-variant/70 border border-outline-variant shadow-none';
+        btn.querySelector('.material-symbols-outlined').textContent = 'lock';
+        btnLabel.textContent = 'Chờ mở bài thi (00:35:12)';
+        ctaHelper.innerHTML = `
+          <span class="material-symbols-outlined text-[16px] text-warning-amber" data-icon="info">info</span>
+          <span>Nút làm bài sẽ kích hoạt tự động đúng <strong>09:00:00</strong></span>
+        `;
+      } 
+      else if (state === 'ready') {
+        alertBox.classList.remove('hidden');
+        alertBox.className = 'p-4 rounded-xl border border-success-emerald/30 bg-success-emerald/10 text-success-emerald flex items-center justify-between text-xs';
+        alertBox.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px]" data-icon="check_circle">check_circle</span>
+            <div>
+              <strong class="font-bold text-sm block text-text-primary">Thời gian thi đã điểm: 09:00:00</strong>
+              Cổng thi số 402-A đã mở khóa. Sinh viên vui lòng bấm nút "Bắt đầu làm bài" để chuyển vào giao diện thi toàn màn hình.
+            </div>
+          </div>
+          <span class="font-mono text-xs px-2 py-1 rounded bg-success-emerald text-white font-bold">READY</span>
+        `;
+
+        btn.disabled = false;
+        btn.className = 'w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer bg-primary text-on-primary hover:bg-primary-container shadow-md hover:shadow-lg';
+        btn.querySelector('.material-symbols-outlined').textContent = 'play_arrow';
+        btnLabel.textContent = 'Bắt đầu làm bài ngay';
+        ctaHelper.innerHTML = `
+          <span class="material-symbols-outlined text-[16px] text-success-emerald" data-icon="check">check</span>
+          <span class="text-success-emerald font-semibold">Máy chủ đã cấp quyền vào phòng thi</span>
+        `;
+      } 
+      else if (state === 'resumed') {
+        alertBox.classList.remove('hidden');
+        alertBox.className = 'p-4 rounded-xl border border-info-sky/30 bg-info-sky/10 text-text-primary flex items-center justify-between text-xs';
+        alertBox.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-info-sky" data-icon="history">history</span>
+            <div>
+              <strong class="font-bold text-sm block">Đã phát hiện phiên làm bài dở dang!</strong>
+              Hệ thống tìm thấy tiến trình trước đó của bạn (đã trả lời 12/20 câu trắc nghiệm). Thời gian còn lại: <strong>24 phút 18 giây</strong>.
+            </div>
+          </div>
+          <span class="font-mono text-xs px-2 py-1 rounded bg-info-sky text-white font-bold">RESUME SESSION</span>
+        `;
+
+        btn.disabled = false;
+        btn.className = 'w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer bg-secondary text-on-secondary hover:bg-secondary-container shadow-md';
+        btn.querySelector('.material-symbols-outlined').textContent = 'resume';
+        btnLabel.textContent = 'Tiếp tục làm bài (Còn 24:18)';
+        ctaHelper.innerHTML = `
+          <span class="material-symbols-outlined text-[16px] text-info-sky" data-icon="sync">sync</span>
+          <span>Dữ liệu bài làm đã tự động khôi phục từ Cloud Cache</span>
+        `;
+      }
+      else if (state === 'locked') {
+        alertBox.classList.remove('hidden');
+        alertBox.className = 'p-4 rounded-xl border border-error/30 bg-error/10 text-error flex items-center justify-between text-xs';
+        alertBox.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px]" data-icon="gavel">gavel</span>
+            <div>
+              <strong class="font-bold text-sm block">Phiên thi bị khóa do vi phạm Quy chế Khảo thí</strong>
+              Cảnh báo: Phát hiện mở 4 ứng dụng ngoài luồng hoặc cố ý tắt Camera giám sát WebRTC. Đã ghi nhận biên bản số BB-8392.
+            </div>
+          </div>
+          <button type="button" class="px-3 py-1 rounded bg-error text-white font-bold hover:bg-red-700">Khiếu nại</button>
+        `;
+
+        btn.disabled = true;
+        btn.className = 'w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-not-allowed bg-error/20 text-error border border-error/40 shadow-none';
+        btn.querySelector('.material-symbols-outlined').textContent = 'block';
+        btnLabel.textContent = 'Tài khoản bị khóa thi';
+        ctaHelper.innerHTML = `
+          <span class="material-symbols-outlined text-[16px] text-error" data-icon="error">error</span>
+          <span class="text-error font-medium">Liên hệ giám thị phòng 402-A để mở khóa</span>
+        `;
+      }
+      else if (state === 'offline') {
+        alertBox.classList.remove('hidden');
+        alertBox.className = 'p-4 rounded-xl border border-warning-amber/30 bg-warning-amber/10 text-text-primary flex items-center justify-between text-xs';
+        alertBox.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-warning-amber" data-icon="wifi_off">wifi_off</span>
+            <div>
+              <strong class="font-bold text-sm block">Mất tín hiệu kết nối WebSocket tới Máy chủ NTP</strong>
+              Hệ thống đang tự động kích hoạt chế độ đồng bộ ngoại tuyến an toàn (Offline Sync Queue). Vui lòng giữ nguyên tab trình duyệt.
+            </div>
+          </div>
+          <button type="button" onclick="switchState('ready')" class="px-3 py-1 rounded bg-warning-amber text-white font-bold hover:bg-amber-600">Thử kết nối lại</button>
+        `;
+
+        btn.disabled = true;
+        btn.className = 'w-full sm:w-auto px-7 py-3 rounded-lg font-headline-sm text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-not-allowed bg-outline-variant/30 text-text-muted border border-outline-variant';
+        btn.querySelector('.material-symbols-outlined').textContent = 'cloud_off';
+        btnLabel.textContent = 'Đang thử kết nối lại...';
+        ctaHelper.innerHTML = `
+          <span class="material-symbols-outlined text-[16px] text-warning-amber animate-spin" data-icon="sync">sync</span>
+          <span class="text-warning-amber font-mono">Đang thử lại gói tin (Lần 3/5)...</span>
+        `;
+      }
+    }
+  </script>
+
+
+</body></html>

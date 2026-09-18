@@ -7,6 +7,7 @@ architecture specification and non-negotiable invariants.
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,6 +43,8 @@ class BaseConfig:
     SESSION_COOKIE_HTTPONLY: bool = True
     SESSION_COOKIE_SAMESITE: str = "Lax"
     SESSION_COOKIE_SECURE: bool = False
+    PERMANENT_SESSION_LIFETIME: timedelta = timedelta(days=30)
+    REMEMBER_COOKIE_DURATION: timedelta = timedelta(days=30)
     REMEMBER_COOKIE_HTTPONLY: bool = True
     REMEMBER_COOKIE_SAMESITE: str = "Lax"
     REMEMBER_COOKIE_SECURE: bool = False

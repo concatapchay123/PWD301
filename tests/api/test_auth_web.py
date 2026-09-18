@@ -27,12 +27,12 @@ class TestWebAuth:
     """Test suite for Web UI / Session authentication endpoints."""
 
     def test_login_page_renders_get(self, client: FlaskClient) -> None:
-        """GET /auth/login returns 200 with HTML form."""
+        """GET /auth/login returns 200 with JSON endpoint info in headless mode."""
         resp = client.get("/auth/login")
         assert resp.status_code == 200
-        assert "Đăng nhập PWD301".encode() in resp.data
-        assert b"email" in resp.data
-        assert b"password" in resp.data
+        assert resp.is_json
+        data = resp.get_json()
+        assert data["status"] == "ok"
 
     def test_login_form_success(self, client: FlaskClient, web_user: User) -> None:
         """POST /auth/login with form data creates AuthSession and sets session cookie."""
@@ -44,7 +44,10 @@ class TestWebAuth:
             },
             follow_redirects=False,
         )
-        assert resp.status_code == 302
+        assert resp.status_code == 200
+        assert resp.is_json
+        data = resp.get_json()
+        assert data["status"] == "ok"
 
         # Verify AuthSession record in DB
         auth_sess = db.session.query(AuthSession).filter(AuthSession.user_id == web_user.id).first()
@@ -52,11 +55,10 @@ class TestWebAuth:
         assert auth_sess.auth_version == web_user.auth_version
         assert auth_sess.revoked_at is None
 
-        # Verify authenticated access using the session cookie via HTML request
-        home_resp = client.get("/", headers={"Accept": "text/html"})
-        assert home_resp.status_code == 200
-        # In base.html, authenticated user shows display_name in user menu
-        assert web_user.display_name.encode("utf-8") in home_resp.data
+        # Verify authenticated access using the session cookie via protected student route
+        dash_resp = client.get("/student/dashboard")
+        assert dash_resp.status_code == 200
+        assert dash_resp.is_json
 
     def test_login_ajax_json_success(self, client: FlaskClient, web_user: User) -> None:
         """POST /auth/login with JSON body returns 200 JSON with user data."""
@@ -123,8 +125,8 @@ class TestWebAuth:
         assert auth_sess.revoked_at is not None
 
         # Subsequent request should be guest/anonymous
-        home_resp = client.get("/", headers={"Accept": "text/html"})
-        assert "Đăng nhập".encode() in home_resp.data
+        dash_resp = client.get("/student/dashboard")
+        assert dash_resp.status_code == 401
 
     def test_session_invalidated_on_password_change(
         self, client: FlaskClient, web_user: User
@@ -137,8 +139,8 @@ class TestWebAuth:
         )
 
         # Confirm authenticated
-        resp1 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") in resp1.data
+        resp1 = client.get("/student/dashboard")
+        assert resp1.status_code == 200
 
         # User changes password
         change_password(
@@ -148,8 +150,8 @@ class TestWebAuth:
         )
 
         # Next request using the same session cookie must be rejected
-        resp2 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") not in resp2.data
+        resp2 = client.get("/student/dashboard")
+        assert resp2.status_code == 401
 
     def test_session_invalidated_on_user_suspend(self, client: FlaskClient, web_user: User) -> None:
         """Account suspension immediately invalidates active web session."""
@@ -160,15 +162,15 @@ class TestWebAuth:
         )
 
         # Confirm authenticated
-        resp1 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") in resp1.data
+        resp1 = client.get("/student/dashboard")
+        assert resp1.status_code == 200
 
         # Suspend account
         suspend_user(web_user.id, reason="Account under audit")
 
         # Next request must be treated as unauthenticated
-        resp2 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") not in resp2.data
+        resp2 = client.get("/student/dashboard")
+        assert resp2.status_code == 401
 
     def test_register_page_and_submit(self, client: FlaskClient) -> None:
         """GET and POST /auth/register creates new User with STUDENT role."""
@@ -176,7 +178,8 @@ class TestWebAuth:
 
         get_resp = client.get("/auth/register")
         assert get_resp.status_code == 200
-        assert "Đăng ký tài khoản".encode() in get_resp.data
+        assert get_resp.is_json
+        assert get_resp.get_json()["status"] == "ok"
 
         post_resp = client.post(
             "/auth/register",
@@ -204,23 +207,23 @@ class TestWebAuth:
             "/auth/login",
             json={"email": "student@demo.local", "password": "Password123!"},
         )
-        resp1 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") in resp1.data
+        resp1 = client.get("/student/dashboard")
+        assert resp1.status_code == 200
 
         # Tamper: remove auth_session_key from session
         with client.session_transaction() as sess:
             sess.pop("auth_session_key", None)
 
-        resp2 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") not in resp2.data
+        resp2 = client.get("/student/dashboard")
+        assert resp2.status_code == 401
 
         # Tamper: remove auth_version from session
         with client.session_transaction() as sess:
             sess["auth_session_key"] = "some-key"
             sess.pop("auth_version", None)
 
-        resp3 = client.get("/", headers={"Accept": "text/html"})
-        assert web_user.display_name.encode("utf-8") not in resp3.data
+        resp3 = client.get("/student/dashboard")
+        assert resp3.status_code == 401
 
     def test_login_open_redirect_defense(self, client: FlaskClient, web_user: User) -> None:
         """Verify login next parameter blocks open redirect attacks (e.g. /\\attacker.com)."""
@@ -242,8 +245,9 @@ class TestWebAuth:
                 },
                 follow_redirects=False,
             )
-            assert resp.status_code == 302
-            redirect_target = resp.headers.get("Location", "")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            redirect_target = data.get("redirect_url", "")
             # Must NOT redirect to the attacker host or scheme
             assert not redirect_target.startswith("//")
             assert not redirect_target.startswith("/\\")
@@ -260,5 +264,65 @@ class TestWebAuth:
             },
             follow_redirects=False,
         )
-        assert good_resp.status_code == 302
-        assert good_resp.headers.get("Location") == "/courses/my-course-123"
+        assert good_resp.status_code == 200
+        assert good_resp.get_json().get("redirect_url") == "/courses/my-course-123"
+
+    def test_login_preserves_and_returns_csrf_token(
+        self, client: FlaskClient, web_user: User
+    ) -> None:
+        """Login must regenerate and return a fresh CSRF token, and populate session."""
+        resp = client.post(
+            "/auth/login",
+            json={
+                "email": "student@demo.local",
+                "password": "Password123!",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "csrf_token" in data
+        assert len(data["csrf_token"]) > 20
+        with client.session_transaction() as sess:
+            assert "csrf_token" in sess
+            assert sess["csrf_token"] is not None
+
+    def test_login_with_active_csrf_and_subsequent_post_request(
+        self, app: Flask, client: FlaskClient, web_user: User
+    ) -> None:
+        """With WTF_CSRF_ENABLED active, login replaces CSRF session token cleanly."""
+        app.config["WTF_CSRF_ENABLED"] = True
+        try:
+            # 1. Fetch pre-login CSRF token
+            csrf_resp = client.get("/auth/login")
+            assert csrf_resp.status_code == 200
+            pre_token = csrf_resp.get_json()["csrf_token"]
+
+            # 2. Log in with the CSRF token
+            login_resp = client.post(
+                "/auth/login",
+                json={
+                    "email": "student@demo.local",
+                    "password": "Password123!",
+                },
+                headers={"X-CSRF-Token": pre_token},
+            )
+            assert login_resp.status_code == 200
+            login_data = login_resp.get_json()
+            assert login_data["status"] == "ok"
+            new_token = login_data["csrf_token"]
+            assert new_token != pre_token
+
+            # Verify session has the new token stored
+            with client.session_transaction() as sess:
+                assert sess.get("csrf_token") is not None
+
+            # 3. Perform subsequent authenticated POST with the new CSRF token (e.g. logout)
+            post_resp = client.post(
+                "/auth/logout",
+                json={},
+                headers={"X-CSRF-Token": new_token},
+            )
+            assert post_resp.status_code == 200
+            assert post_resp.get_json()["status"] == "ok"
+        finally:
+            app.config["WTF_CSRF_ENABLED"] = False

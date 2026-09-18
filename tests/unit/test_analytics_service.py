@@ -516,3 +516,7 @@ def test_student_learning_overview_deadlines_and_score_release(
     result_attempt_ids = [r["attempt_id"] for r in overview["recent_results"]]
     assert str(att_released.public_id) in result_attempt_ids
     assert str(att_unreleased.public_id) not in result_attempt_ids  # Held by policy
+
+    # 4. Enrolled at timestamp present in enrollment cards
+    assert len(overview["enrollments"]) > 0
+    assert overview["enrollments"][0]["enrolled_at"] is not None

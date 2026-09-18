@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import sqlalchemy as sa
 from flask import Response, jsonify, request
 
 from pwd301.blueprints.api_admin import api_admin_bp
@@ -26,6 +27,7 @@ from pwd301.services.course_service import (
     trash_course,
 )
 from pwd301.services.exceptions import (
+    AdminActionForbiddenError,
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
     ValidationError,
@@ -94,14 +96,107 @@ def api_admin_courses() -> tuple[Response, int] | Response:
     )
 
 
+@api_admin_bp.route("/courses/<course_id>", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
+    """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
+    require_authenticated_actor()
+    sess = db.session
+    from pwd301.services.authorization_service import _resolve_course
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError(f"Course '{course_id}' not found.")
+
+    lessons = sorted(course.lessons, key=lambda item: getattr(item, "position", 0))
+    lessons_data = [
+        {
+            "lesson_id": str(item.public_id),
+            "title": item.title,
+            "order_index": getattr(item, "order_index", getattr(item, "position", 1)),
+            "position": getattr(item, "position", 1),
+            "status": item.status,
+            "summary": item.summary,
+        }
+        for item in lessons
+        if getattr(item, "deleted_at", None) is None
+    ]
+
+    return (
+        jsonify(
+            {
+                "course_id": str(course.public_id),
+                "course_code": course.course_code,
+                "title": course.title,
+                "description": course.description,
+                "status": course.status,
+                "difficulty": course.difficulty,
+                "category": course.category,
+                "learning_objectives": course.learning_objectives,
+                "owner_instructor_id": (
+                    str(course.owner_instructor.public_id) if course.owner_instructor else None
+                ),
+                "owner_instructor_name": (
+                    course.owner_instructor.display_name
+                    if course.owner_instructor
+                    else "Unassigned"
+                ),
+                "owner_instructor_email": (
+                    course.owner_instructor.email if course.owner_instructor else None
+                ),
+                "lessons": lessons_data,
+                "created_at": course.created_at.isoformat(),
+                "updated_at": course.updated_at.isoformat(),
+            }
+        ),
+        200,
+    )
+
+
+@api_admin_bp.route("/faculty/workload", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_faculty_workload() -> tuple[Response, int] | Response:
+    """Retrieve faculty teaching workload metrics and SLA distribution (Admin only)."""
+    require_authenticated_actor()
+    from pwd301.services.course_service import get_faculty_workload_metrics
+
+    data = get_faculty_workload_metrics(session=db.session)
+    return jsonify(data), 200
+
+
 @api_admin_bp.route("/users", methods=["GET"])
 @jwt_required
 @admin_required
 def api_admin_users() -> tuple[Response, int] | Response:
-    """Administrator users listing endpoint."""
+    """Administrator users listing endpoint with server-side filter and search."""
     require_authenticated_actor()
     sess = db.session
-    users = sess.query(User).order_by(User.created_at.desc()).all()
+
+    query = sess.query(User)
+
+    search_term = (request.args.get("search") or "").strip()
+    if search_term:
+        query = query.filter(
+            sa.or_(
+                User.display_name.ilike(f"%{search_term}%"),
+                User.email.ilike(f"%{search_term}%"),
+            )
+        )
+
+    role_filter = (request.args.get("role") or "").strip().upper()
+    if role_filter and role_filter != "ALL":
+        from pwd301.models.identity import Role
+
+        query = query.filter(User.roles.any(Role.code == role_filter))
+
+    status_filter = (request.args.get("status") or "").strip().upper()
+    if status_filter and status_filter != "ALL":
+        query = query.filter(User.status == status_filter)
+
+    total = query.count()
+    users = query.order_by(User.created_at.desc()).all()
     return (
         jsonify(
             {
@@ -117,7 +212,40 @@ def api_admin_users() -> tuple[Response, int] | Response:
                     }
                     for u in users
                 ],
-                "total": len(users),
+                "total": total,
+            }
+        ),
+        200,
+    )
+
+
+@api_admin_bp.route("/users/<user_id>", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_get_user(user_id: str) -> tuple[Response, int] | Response:
+    """Retrieve detailed user profile for administrators."""
+    require_authenticated_actor()
+    sess = db.session
+    target_user = _resolve_user(user_id, session=sess)
+    if target_user is None:
+        raise ResourceNotFoundError(f"User '{user_id}' not found.")
+
+    return (
+        jsonify(
+            {
+                "user_id": str(target_user.public_id),
+                "email": target_user.email,
+                "display_name": target_user.display_name,
+                "status": target_user.status,
+                "roles": sorted(target_user.role_codes),
+                "auth_version": target_user.auth_version,
+                "suspended_at": (
+                    target_user.suspended_at.isoformat() if target_user.suspended_at else None
+                ),
+                "created_at": target_user.created_at.isoformat(),
+                "updated_at": (
+                    target_user.updated_at.isoformat() if target_user.updated_at else None
+                ),
             }
         ),
         200,
@@ -164,6 +292,22 @@ def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
             400,
         )
 
+    clean_reason = str(reason or "").strip()
+    if len(clean_reason) < 5:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": (
+                            "Lý do thay đổi phân quyền kiểm toán bắt buộc tối thiểu 5 ký tự."
+                        ),
+                    }
+                }
+            ),
+            400,
+        )
+
     try:
         if action == "assign":
             updated_user = assign_role_to_user(
@@ -181,18 +325,31 @@ def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 reason=reason,
                 session=sess,
             )
-    except InvalidRoleAssignmentError as exc:
+    except (InvalidRoleAssignmentError, ValidationError) as exc:
         sess.rollback()
         return (
             jsonify(
                 {
                     "error": {
-                        "code": "INVALID_ROLE_ASSIGNMENT",
+                        "code": "VALIDATION_ERROR",
                         "message": str(exc),
                     }
                 }
             ),
             400,
+        )
+    except AdminActionForbiddenError as exc:
+        sess.rollback()
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": str(exc),
+                    }
+                }
+            ),
+            403,
         )
 
     return (
@@ -255,6 +412,23 @@ def api_review_course(course_id: str) -> tuple[Response, int] | Response:
             ),
             400,
         )
+
+    if action == "reject":
+        clean_reason = str(reason or "").strip()
+        if len(clean_reason) < 5:
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "VALIDATION_ERROR",
+                            "message": (
+                                "Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự."
+                            ),
+                        }
+                    }
+                ),
+                400,
+            )
 
     target_status = "APPROVED" if action == "approve" else "DRAFT"
     course = change_course_status(
@@ -753,6 +927,45 @@ def api_admin_maintenance_status() -> tuple[Response, int] | Response:
 
 
 # ==============================================================================
+# Operations Background Jobs Telemetry & Management
+# ==============================================================================
+
+
+@api_admin_bp.route("/operations/jobs", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_operations_jobs() -> tuple[Response, int] | Response:
+    """List asynchronous background worker jobs with telemetry summary (Admin JWT required)."""
+    require_authenticated_actor()
+    from pwd301.services.operations_service import list_background_jobs
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    status = request.args.get("status")
+    job_type = request.args.get("job_type")
+    data = list_background_jobs(
+        page=page,
+        per_page=per_page,
+        status=status,
+        job_type=job_type,
+        session=db.session,
+    )
+    return jsonify(data), 200
+
+
+@api_admin_bp.route("/operations/jobs/<job_id>/retry", methods=["POST"])
+@jwt_required
+@admin_required
+def api_admin_retry_job(job_id: str) -> tuple[Response, int] | Response:
+    """Trigger manual re-execution of a failed or stuck background job (Admin JWT required)."""
+    actor = require_authenticated_actor()
+    from pwd301.services.operations_service import retry_background_job
+
+    data = retry_background_job(admin_actor=actor, job_identifier=job_id, session=db.session)
+    return jsonify(data), 200
+
+
+# ==============================================================================
 # Instructor Applications Admin API
 # ==============================================================================
 
@@ -783,8 +996,10 @@ def api_admin_instructor_applications() -> tuple[Response, int] | Response:
                 "pending_count": pending_count,
                 "applications": [
                     {
-                        "id": a.id,
-                        "applicant_user_id": a.applicant_user_id,
+                        "id": str(a.public_id),
+                        "applicant_user_id": (
+                            str(a.applicant.public_id) if a.applicant else str(a.applicant_user_id)
+                        ),
                         "applicant_name": a.applicant.display_name if a.applicant else "N/A",
                         "applicant_email": a.applicant.email if a.applicant else "N/A",
                         "status": a.status,
@@ -803,10 +1018,10 @@ def api_admin_instructor_applications() -> tuple[Response, int] | Response:
     )
 
 
-@api_admin_bp.route("/instructor-applications/<int:app_id>", methods=["GET"])
+@api_admin_bp.route("/instructor-applications/<app_id>", methods=["GET"])
 @jwt_required
 @admin_required
-def api_admin_instructor_application_detail(app_id: int) -> tuple[Response, int] | Response:
+def api_admin_instructor_application_detail(app_id: str) -> tuple[Response, int] | Response:
     """Get single instructor application details (Admin JWT required)."""
     from pwd301.services.user_service import get_instructor_application
 
@@ -818,8 +1033,12 @@ def api_admin_instructor_application_detail(app_id: int) -> tuple[Response, int]
     return (
         jsonify(
             {
-                "id": app_record.id,
-                "applicant_user_id": app_record.applicant_user_id,
+                "id": str(app_record.public_id),
+                "applicant_user_id": (
+                    str(app_record.applicant.public_id)
+                    if app_record.applicant
+                    else str(app_record.applicant_user_id)
+                ),
                 "applicant_name": app_record.applicant.display_name
                 if app_record.applicant
                 else "N/A",
@@ -841,10 +1060,10 @@ def api_admin_instructor_application_detail(app_id: int) -> tuple[Response, int]
     )
 
 
-@api_admin_bp.route("/instructor-applications/<int:app_id>/review", methods=["POST"])
+@api_admin_bp.route("/instructor-applications/<app_id>/review", methods=["POST"])
 @jwt_required
 @admin_required
-def api_admin_review_instructor_application(app_id: int) -> tuple[Response, int] | Response:
+def api_admin_review_instructor_application(app_id: str) -> tuple[Response, int] | Response:
     """Approve or reject instructor application (Admin JWT required)."""
     from pwd301.services.user_service import review_instructor_application
 
@@ -872,9 +1091,50 @@ def api_admin_review_instructor_application(app_id: int) -> tuple[Response, int]
                     if action == "approve"
                     else f"Đã từ chối đơn #{app_id}."
                 ),
-                "application_id": app_record.id,
+                "application_id": str(app_record.public_id),
                 "status": app_record.status,
             }
         ),
         200,
+    )
+
+
+@api_admin_bp.route("/instructor-applications/<app_id>/evidence/<filename>", methods=["GET"])
+@jwt_required
+@admin_required
+def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
+    """Download attached evidence file for an instructor application (Admin JWT required)."""
+    from pathlib import Path
+
+    from flask import current_app, send_file
+    from werkzeug.utils import secure_filename
+
+    from pwd301.services.user_service import get_instructor_application
+
+    require_authenticated_actor()
+    app_record = get_instructor_application(app_id, session=db.session)
+    if app_record is None:
+        raise ResourceNotFoundError(f"Đơn đăng ký #{app_id} không tồn tại.")
+
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        raise ResourceNotFoundError("Tên tệp tin không hợp lệ.")
+
+    details = app_record.parsed_details
+    attached_files = details.get("attached_files", [])
+    matched_meta = next((f for f in attached_files if f.get("saved_filename") == safe_name), None)
+    download_name = matched_meta.get("original_name", safe_name) if matched_meta else safe_name
+
+    storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
+    applicant_key = str(app_record.applicant.public_id) if app_record.applicant else ""
+    app_dir = storage_root / "instructor_applications" / applicant_key
+    file_path = (app_dir / safe_name).resolve()
+
+    if not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
+        raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
+
+    return send_file(
+        str(file_path),
+        as_attachment=True,
+        download_name=download_name,
     )

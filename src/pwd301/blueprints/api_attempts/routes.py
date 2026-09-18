@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import Response, jsonify, request
 
-from pwd301.blueprints.api_attempts import api_attempt_bp
+from pwd301.blueprints.api_attempts import api_attempt_bp, api_regrade_bp
 from pwd301.extensions import db
 from pwd301.models.types import utc_now
 from pwd301.services.assessment_service import _normalize_dt
@@ -13,11 +13,9 @@ from pwd301.services.attempt_service import (
     get_attempt_grade_history,
     get_attempt_result_for_student,
     grade_essay_question,
-    list_student_assessment_attempts,
     release_attempt_lease,
     renew_attempt_lease,
     save_attempt_answer,
-    start_assessment_attempt,
     submit_assessment_attempt,
     sync_offline_answers,
     takeover_attempt_lease,
@@ -26,7 +24,6 @@ from pwd301.services.authorization_service import (
     instructor_required,
     require_authenticated_actor,
 )
-from pwd301.services.exceptions import AttemptValidationError
 from pwd301.services.jwt_auth_service import jwt_required
 from pwd301.services.regrade_worker import (
     get_regrade_job_detail,
@@ -47,51 +44,7 @@ def _extract_lease_token() -> str | None:
     return None
 
 
-@api_attempt_bp.route("/api/assessments/<assessment_id>/attempts", methods=["POST"])
-@jwt_required
-def start_assessment_attempt_route(assessment_id: str) -> tuple[Response, int] | Response:
-    """Start an eligible assessment attempt for the authenticated student.
-
-    POST /api/assessments/<assessment_id>/attempts
-    """
-    actor = require_authenticated_actor()
-
-    attempt, raw_lease_token = start_assessment_attempt(
-        student_actor=actor,
-        assessment_id=assessment_id,
-        session=db.session,
-    )
-
-    delivery = get_attempt_delivery(
-        student_actor=actor,
-        attempt_id=str(attempt.public_id),
-        session=db.session,
-    )
-
-    response_payload = {
-        "attempt_id": str(attempt.public_id),
-        "assessment_id": delivery["assessment_id"],
-        "attempt_number": attempt.attempt_number,
-        "status": attempt.status,
-        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
-        "deadline_at": attempt.deadline_at.isoformat() if attempt.deadline_at else None,
-        "server_time": delivery["server_time"],
-        "remaining_seconds": delivery["remaining_seconds"],
-        "raw_lease_token": raw_lease_token,
-        "lease_token": raw_lease_token,
-        "lease_expires_at": (
-            attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
-        ),
-        "lease_epoch": attempt.lease_epoch or 1,
-        "total_questions": delivery["total_questions"],
-        "total_points": delivery["total_points"],
-        "delivery": delivery,
-        "questions": delivery["questions"],
-    }
-    return jsonify(response_payload), 201
-
-
-@api_attempt_bp.route("/api/attempts/<attempt_id>", methods=["GET"])
+@api_attempt_bp.route("/<attempt_id>", methods=["GET"])
 @jwt_required
 def get_attempt_delivery_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Retrieve frozen assessment attempt delivery payload for candidate presentation.
@@ -109,25 +62,8 @@ def get_attempt_delivery_route(attempt_id: str) -> tuple[Response, int] | Respon
     return jsonify(delivery), 200
 
 
-@api_attempt_bp.route("/api/assessments/<assessment_id>/attempts", methods=["GET"])
-@jwt_required
-def list_student_assessment_attempts_route(assessment_id: str) -> tuple[Response, int] | Response:
-    """List history of attempts taken by the authenticated student for an assessment.
-
-    GET /api/assessments/<assessment_id>/attempts
-    """
-    actor = require_authenticated_actor()
-
-    attempts = list_student_assessment_attempts(
-        student_actor=actor,
-        assessment_id=assessment_id,
-        session=db.session,
-    )
-    return jsonify({"attempts": attempts, "total": len(attempts)}), 200
-
-
-@api_attempt_bp.route("/api/attempts/<attempt_id>/lease/heartbeat", methods=["POST"])
-@api_attempt_bp.route("/api/attempts/<attempt_id>/heartbeat", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/lease/heartbeat", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/heartbeat", methods=["POST"])
 @jwt_required
 def renew_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Renew active editing lease for the authenticated student.
@@ -146,8 +82,8 @@ def renew_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Respons
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/lease/takeover", methods=["POST"])
-@api_attempt_bp.route("/api/attempts/<attempt_id>/lease", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/lease/takeover", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/lease", methods=["POST"])
 @jwt_required
 def takeover_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Take over editing lease from another tab or window.
@@ -185,7 +121,7 @@ def takeover_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Resp
     return jsonify(response_payload), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/answers/<attempt_question_id>", methods=["PUT"])
+@api_attempt_bp.route("/<attempt_id>/answers/<attempt_question_id>", methods=["PUT"])
 @jwt_required
 def save_attempt_answer_route(
     attempt_id: str,
@@ -209,7 +145,7 @@ def save_attempt_answer_route(
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/answers/sync", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/answers/sync", methods=["POST"])
 @jwt_required
 def sync_offline_answers_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Synchronize a batch of offline answers accumulated while disconnected.
@@ -236,7 +172,7 @@ def sync_offline_answers_route(attempt_id: str) -> tuple[Response, int] | Respon
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/submit", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/submit", methods=["POST"])
 @jwt_required
 def submit_assessment_attempt_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Submit assessment attempt with idempotency protection.
@@ -263,7 +199,7 @@ def submit_assessment_attempt_route(attempt_id: str) -> tuple[Response, int] | R
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/lease/release", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/lease/release", methods=["POST"])
 @jwt_required
 def release_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Release active editing lease voluntarily when closing tab.
@@ -281,7 +217,7 @@ def release_attempt_lease_route(attempt_id: str) -> tuple[Response, int] | Respo
     return jsonify({"message": "Lease released successfully."}), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/result", methods=["GET"])
+@api_attempt_bp.route("/<attempt_id>/result", methods=["GET"])
 @jwt_required
 def get_attempt_result_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Retrieve attempt result for the candidate student or authorized reviewer.
@@ -297,7 +233,7 @@ def get_attempt_result_route(attempt_id: str) -> tuple[Response, int] | Response
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
+@api_attempt_bp.route("/<attempt_id>/grades/<attempt_question_id>", methods=["POST"])
 @jwt_required
 @instructor_required
 def grade_attempt_question_route(
@@ -309,26 +245,25 @@ def grade_attempt_question_route(
     POST /api/attempts/<attempt_id>/grades/<attempt_question_id>
     """
     actor = require_authenticated_actor()
-    body = request.get_json(silent=True) or request.form.to_dict() or {}
-    points = body.get("awarded_points")
-    if points is None:
-        points = body.get("score")
-    if points is None:
-        raise AttemptValidationError("awarded_points (or score) is required.")
+    payload = request.get_json(silent=True) or {}
+    awarded_points = payload.get("awarded_points")
+    if awarded_points is None:
+        from pwd301.services.exceptions import ValidationError
 
-    reason = body.get("reason") or body.get("feedback")
+        raise ValidationError("awarded_points is required.")
+    reason = payload.get("reason") or payload.get("feedback")
     result = grade_essay_question(
         actor=actor,
         attempt_id=attempt_id,
         attempt_question_id=attempt_question_id,
-        awarded_points=points,
+        awarded_points=awarded_points,
         reason=reason,
         session=db.session,
     )
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/attempts/<attempt_id>/grade-history", methods=["GET"])
+@api_attempt_bp.route("/<attempt_id>/grade-history", methods=["GET"])
 @jwt_required
 def get_attempt_grade_history_route(attempt_id: str) -> tuple[Response, int] | Response:
     """Retrieve full audit history of score evaluations for an attempt.
@@ -340,7 +275,7 @@ def get_attempt_grade_history_route(attempt_id: str) -> tuple[Response, int] | R
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/regrade-jobs/<job_id>", methods=["GET"])
+@api_regrade_bp.route("/<job_id>", methods=["GET"])
 @jwt_required
 @instructor_required
 def get_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
@@ -353,7 +288,7 @@ def get_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:
     return jsonify(result), 200
 
 
-@api_attempt_bp.route("/api/regrade-jobs/<job_id>/retry", methods=["POST"])
+@api_regrade_bp.route("/<job_id>/retry", methods=["POST"])
 @jwt_required
 @instructor_required
 def retry_regrade_job_route(job_id: str) -> tuple[Response, int] | Response:

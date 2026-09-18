@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-api_attempt_bp: Blueprint = Blueprint("api_attempts", __name__)
+api_attempt_bp: Blueprint = Blueprint("api_attempts", __name__, url_prefix="/api/attempts")
+api_regrade_bp: Blueprint = Blueprint("api_regrades", __name__, url_prefix="/api/regrade-jobs")
 
 from pwd301.blueprints.api_attempts import routes as _routes  # noqa: E402, F401

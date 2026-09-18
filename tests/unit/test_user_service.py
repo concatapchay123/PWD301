@@ -92,16 +92,28 @@ def test_normalize_email_invalid(invalid_input: str):
 
 
 def test_validate_password():
-    """Verify password validation enforces minimum length."""
+    """Verify password validation enforces minimum length and complexity."""
     with pytest.raises(InvalidPasswordError):
         validate_password("")
 
     with pytest.raises(InvalidPasswordError):
         validate_password("short")
 
-    # 8 chars or more should pass
-    validate_password("12345678")
+    # Missing letter
+    with pytest.raises(InvalidPasswordError):
+        validate_password("12345678!@#")
+
+    # Missing number
+    with pytest.raises(InvalidPasswordError):
+        validate_password("SecurePassword@")
+
+    # Missing special character
+    with pytest.raises(InvalidPasswordError):
+        validate_password("SecurePassword123")
+
+    # Valid: >= 8 chars, letters, numbers, special characters
     validate_password("SecurePassword@2026")
+    validate_password("Password123!")
 
 
 # ---------------------------------------------------------------------------

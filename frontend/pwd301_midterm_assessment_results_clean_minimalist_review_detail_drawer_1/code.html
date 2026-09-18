@@ -1,0 +1,736 @@
+<!DOCTYPE html><html lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Kết quả Khảo thí PWD301 - Nguyễn Minh Anh (MA-8392)</title>
+<!-- Tailwind CSS v3 with forms and container queries plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Font Setup: Plus Jakarta Sans for crisp, academic typography -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            success: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: StyleConfigurations -->
+<style data-purpose="base-layout">
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Scrollbar aesthetics */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+<style data-purpose="custom-components">
+    .choice-grid-btn {
+      transition: all 0.15s ease-in-out;
+    }
+    .badge-soft-success {
+      background-color: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+    .badge-soft-brand {
+      background-color: #e0e7ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+    }
+    .drawer-backdrop {
+      transition: opacity 0.3s ease;
+    }
+    .drawer-panel {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+  </style>
+<!-- END: StyleConfigurations -->
+</head>
+<body class="min-h-screen flex flex-col bg-[#f8fafc] text-slate-800">
+<!-- BEGIN: TopBar -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.03)]" data-purpose="system-header">
+<div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+<!-- Breadcrumbs and context -->
+<div class="flex items-center space-x-3 text-sm">
+<a class="text-slate-500 hover:text-brand-600 transition-colors flex items-center gap-1.5 font-medium" href="#">
+<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M10 19l-7-7m0 0l7-7m7 7H3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+          Học phần PWD301
+        </a>
+<span class="text-slate-300">/</span>
+<span class="text-slate-500">Khảo thí &amp; Đánh giá</span>
+<span class="text-slate-300">/</span>
+<span class="font-semibold text-slate-900">Kết quả Đánh giá Midterm (Chính thức)</span>
+</div>
+<!-- Quick action controls -->
+<div class="flex items-center space-x-3">
+<!-- Room and Exam Indicator -->
+<span class="hidden md:inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md border border-slate-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          Đề 64 • Phòng 402-A
+        </span>
+<!-- Right action buttons matching reference screen -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-sm transition" onclick="window.print()">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+          Xuất bảng điểm (PDF)
+        </button>
+<a class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-md shadow-sm transition" href="#">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+          Bảng điều khiển môn học
+        </a>
+</div>
+</div>
+</header>
+<!-- END: TopBar -->
+<!-- BEGIN: MainContent -->
+<main class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 flex-1" data-purpose="exam-results-workspace">
+<!-- Notice Banner for Grade Revision Completed -->
+<div class="mb-5 bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-sm">
+<div class="flex items-center gap-3">
+<span class="p-1.5 bg-brand-600 text-white rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</span>
+<div>
+<span class="font-bold text-slate-800">Thông báo Học vụ #TB-8392:</span>
+<span class="text-slate-600 ml-1">Hội đồng Khảo thí &amp; Bộ môn Web Python đã hoàn tất xét duyệt đơn phúc khảo. Điểm chính thức:</span>
+<span class="line-through text-slate-400 mx-1">33.0</span>
+<span class="text-brand-700 font-bold bg-white px-2 py-0.5 rounded border border-indigo-200">36.5 / 40.0</span>
+</div>
+</div>
+<button class="text-xs font-semibold text-brand-600 hover:text-brand-800 underline flex items-center gap-1" onclick="toggleAuditDrawer(true)">
+        Xem lịch sử duyệt điểm &amp; nhật ký kiểm toán →
+      </button>
+</div>
+<!-- 2-Column Responsive Layout -->
+<div class="flex flex-col lg:flex-row items-start gap-5">
+<!-- BEGIN: LeftSidebar (Candidate & Metrics Summary) -->
+<aside class="w-full lg:w-[330px] shrink-0 flex flex-col gap-4" data-purpose="candidate-sidebar">
+<!-- Profile Card -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4.5">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-base shadow-inner">
+              MA
+            </div>
+<div class="min-w-0 flex-1">
+<div class="flex items-center gap-1.5">
+<h2 class="text-base font-bold text-slate-900 truncate">Nguyễn Minh Anh</h2>
+<span class="inline-flex items-center text-emerald-600" title="Sinh viên đã xác minh">
+<svg class="w-4 h-4 fill-current" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</div>
+<p class="text-xs text-slate-500 font-mono mt-0.5">MSSV: MA-8392 • PWD301_L04</p>
+<p class="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+<svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+                Ngày sinh: 01/02/2004
+              </p>
+</div>
+</div>
+</div>
+<!-- Academic Assessment Card (Matching Reference Layout) -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" data-purpose="score-summary-card">
+<!-- Section title header -->
+<div class="bg-slate-100/70 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+<span class="text-xs font-bold uppercase tracking-wider text-slate-600">Thông tin chi tiết</span>
+<span class="inline-flex items-center text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              Đạt chuẩn môn học
+            </span>
+</div>
+<div class="p-4.5 space-y-4 text-sm">
+<!-- Score Highlight Row -->
+<div class="flex items-center justify-between">
+<div>
+<span class="text-xs text-slate-500 block mb-0.5">Điểm tổng kết:</span>
+<div class="flex items-baseline gap-1">
+<span class="text-3xl font-extrabold text-slate-900 tracking-tight">9.1</span>
+<span class="text-slate-400 text-sm font-medium">/ 10.0</span>
+</div>
+<div class="text-[11px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  36.5 / 40.0 chuẩn khảo thí
+                </div>
+</div>
+<!-- Scale button -->
+<button class="px-2.5 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg border border-brand-200 transition flex items-center gap-1.5 shadow-sm" onclick="alert('Thang điểm 10.0: Quy đổi từ tổng điểm thực hành 40 điểm (Tỷ lệ đạt 91.25%). Xếp loại: Xuất sắc (Top 5% Lớp).')">
+<svg class="w-3.5 h-3.5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+                Thang điểm
+              </button>
+</div>
+<div class="h-px bg-slate-100"></div>
+<!-- Detailed breakdown list -->
+<div class="space-y-2.5 text-xs text-slate-600">
+<div class="flex justify-between items-center">
+<span class="text-slate-500">Thời gian làm bài:</span>
+<span class="font-semibold text-slate-800 font-mono">44 phút (Chuẩn 60p)</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-slate-500">Thời gian nộp bài:</span>
+<span class="font-semibold text-slate-800 font-mono">16/08/2026 10:17</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-slate-500">Trắc nghiệm lý thuyết:</span>
+<span class="font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">18.5 / 20.0 đ (10/10 câu)</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-slate-500">Thực hành Code Flask:</span>
+<span class="font-semibold text-brand-700 bg-indigo-50 px-1.5 py-0.5 rounded">18.0 / 20.0 đ (4/4 test)</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-slate-500">Giảng viên chấm thi:</span>
+<span class="font-semibold text-slate-800">ThS. Trần Hoàng Nam</span>
+</div>
+</div>
+<!-- Instructor Note Box -->
+<div class="p-3 bg-slate-50 rounded-lg border border-slate-200/80 text-xs">
+<div class="flex items-center justify-between mb-1.5">
+<span class="font-bold text-slate-700 flex items-center gap-1">
+<svg class="w-3.5 h-3.5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+                  Nhận xét của GV:
+                </span>
+<span class="text-[10px] text-slate-400">27/10/2025</span>
+</div>
+<p class="text-slate-600 italic leading-relaxed">
+                "Bài làm rất chắc chắn về kiến trúc Flask Factory và phân tách Blueprint. Khả năng viết test case cho RESTful API đạt chuẩn kiểm thử tự động."
+              </p>
+</div>
+<!-- Action Buttons for Progressive Disclosure -->
+<div class="space-y-2 pt-1">
+<button class="w-full py-2 px-3 bg-white hover:bg-slate-50 text-brand-700 border border-brand-200 hover:border-brand-300 font-semibold rounded-lg text-xs flex items-center justify-center gap-2 shadow-xs transition" onclick="toggleAuditDrawer(true)">
+<svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+                Xem chi tiết phúc khảo &amp; kiểm toán (3)
+              </button>
+<div class="flex items-center justify-between text-xs pt-1 px-1">
+<span class="text-slate-500">Mã băm chữ ký số:</span>
+<span class="font-mono text-slate-400 text-[10px]" title="SHA-256 Verified">7f8a92b1...10243</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exam Attempts Pagination (As present in reference image) -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5 flex items-center justify-between" data-purpose="attempts-navigation">
+<span class="text-xs font-semibold text-slate-700">Xem các lần Thi: <strong class="text-slate-900 font-bold ml-1">Lần 1</strong> <span class="text-slate-400 font-normal">/ 1</span></span>
+<div class="flex items-center space-x-1.5">
+<button class="w-7 h-7 rounded border border-slate-200 bg-slate-50 text-slate-300 flex items-center justify-center cursor-not-allowed text-xs" disabled="">
+              &lt;
+            </button>
+<button class="w-7 h-7 rounded border border-slate-200 bg-slate-50 text-slate-300 flex items-center justify-center cursor-not-allowed text-xs" disabled="">
+              &gt;
+            </button>
+</div>
+</div>
+</aside>
+<!-- END: LeftSidebar -->
+<!-- BEGIN: RightMainViewer (Exam Sheet & Question Walkthrough) -->
+<section class="flex-1 min-w-0 w-full" data-purpose="questions-sheet-container">
+<!-- Top Sticky Sub-Header matching Reference UI -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-4">
+<div class="px-5 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100">
+<!-- Tabs -->
+<div class="flex items-center space-x-6 text-sm font-semibold">
+<button class="text-brand-600 border-b-2 border-brand-600 pb-1.5 -mb-3 flex items-center gap-2">
+<span>Trắc nghiệm lý thuyết</span>
+<span class="bg-indigo-50 text-brand-700 text-xs px-2 py-0.5 rounded-full font-bold">10 câu</span>
+</button>
+<button class="text-slate-500 hover:text-slate-800 pb-1.5 -mb-3 transition flex items-center gap-1.5 font-medium">
+<span>Tự luận &amp; Code Sandbox</span>
+<span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">1 câu</span>
+</button>
+</div>
+<!-- Right metadata & filter status -->
+<div class="flex items-center space-x-2">
+<span class="px-2.5 py-1 bg-emerald-600 text-white rounded text-xs font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+                ĐÚNG 100%
+              </span>
+<span class="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded text-xs font-semibold">
+                Đề đảo
+              </span>
+<span class="text-xs text-slate-400 font-mono pl-1">ID: PWD-DE-64</span>
+</div>
+</div>
+<!-- Secondary Filter Bar -->
+<div class="px-5 py-2.5 bg-slate-50/70 flex items-center justify-between text-xs text-slate-600">
+<div class="flex items-center gap-2">
+<span>Bộ lọc:</span>
+<button class="px-2.5 py-1 bg-white border border-slate-300 font-semibold rounded text-slate-800 shadow-xs">Tất cả (11)</button>
+<button class="px-2.5 py-1 hover:bg-white text-slate-600 font-medium rounded transition">Đúng hoàn toàn (11)</button>
+<button class="px-2.5 py-1 hover:bg-white text-slate-600 font-medium rounded transition">Cần lưu ý (0)</button>
+</div>
+<div class="text-slate-500 italic text-[11px]">
+              * Bấm vào biểu tượng ghi chú để xem chú giải chi tiết từng câu
+            </div>
+</div>
+</div>
+<!-- Question List Cards -->
+<div class="space-y-4">
+<!-- BEGIN: Question 46 -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-slate-300 transition-colors" data-purpose="question-item">
+<!-- Question header with ID and Bookmark -->
+<div class="flex items-start justify-between gap-4 mb-3">
+<div class="flex items-center gap-2">
+<span class="text-base font-bold text-slate-900">Câu 46</span>
+<span class="text-xs font-mono text-slate-400">ID: 573291789</span>
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  +1.85 đ
+                </span>
+</div>
+<button class="text-slate-400 hover:text-brand-600 p-1 rounded hover:bg-slate-50 transition" title="Ghi chú câu này">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Question Stem -->
+<p class="text-[15px] font-medium text-slate-800 leading-relaxed mb-4">
+              Is an open door policy equivalent to ensuring employee voice? (Trong quản trị và điều hành kỹ thuật, chính sách mở cửa có đồng nghĩa với việc bảo đảm tiếng nói của nhân sự?)
+            </p>
+<!-- Options Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-6">
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">A.</strong> No, because an open door policy is the opposite of employee voice.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">B.</strong> Yes, because both allow employees to speak up.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">C.</strong> Yes, because an open door policy is essential for employee voice.
+              </div>
+<div class="p-2.5 rounded-lg border border-emerald-300 bg-emerald-50/40 text-slate-800 font-medium">
+<strong class="font-bold text-emerald-700 mr-1.5">D.</strong> No, because an open door policy does not ensure employees feel heard.
+              </div>
+</div>
+<!-- Answer Evaluation & Button Bar (Identical to reference layout in IMAGE_4) -->
+<div class="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-100">
+<span class="text-sm font-bold text-emerald-600 tracking-wide">
+                Đáp án đúng: D
+              </span>
+<!-- Multiple choice selection indicators -->
+<div class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-r border-slate-200">A</span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-r border-slate-200">B</span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-r border-slate-200">C</span>
+<!-- Correct Pick with circle checkmark matching screenshot -->
+<span class="w-12 h-8 flex items-center justify-center gap-1 text-emerald-600 bg-emerald-50 border-2 border-emerald-500 font-bold -my-[1px]">
+<svg class="w-3.5 h-3.5 text-emerald-600 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+                  D
+                </span>
+</div>
+</div>
+</article>
+<!-- END: Question 46 -->
+<!-- BEGIN: Question 47 -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-slate-300 transition-colors" data-purpose="question-item">
+<div class="flex items-start justify-between gap-4 mb-3">
+<div class="flex items-center gap-2">
+<span class="text-base font-bold text-slate-900">Câu 47</span>
+<span class="text-xs font-mono text-slate-400">ID: 573291782</span>
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  +1.85 đ
+                </span>
+</div>
+<button class="text-slate-400 hover:text-brand-600 p-1 rounded hover:bg-slate-50 transition" title="Ghi chú câu này">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<p class="text-[15px] font-medium text-slate-800 leading-relaxed mb-4">
+              When conducting a business impact assessment (BIA), why is it important to interview or survey personnel the ground level, not just managers and other higher-ups?
+            </p>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-6">
+<div class="p-2.5 rounded-lg border border-emerald-300 bg-emerald-50/40 text-slate-800 font-medium">
+<strong class="font-bold text-emerald-700 mr-1.5">A.</strong> They may have more institutional knowledge about a subject than managers.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">B.</strong> They are more likely to find the time to complete an interview or survey.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">C.</strong> They have a greater obligation to answer questions.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">D.</strong> They are more likely to be candid and give forthright responses.
+              </div>
+</div>
+<div class="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-100">
+<span class="text-sm font-bold text-emerald-600 tracking-wide">
+                Đáp án đúng: A
+              </span>
+<div class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+<span class="w-12 h-8 flex items-center justify-center gap-1 text-emerald-600 bg-emerald-50 border-2 border-emerald-500 font-bold -my-[1px]">
+<svg class="w-3.5 h-3.5 text-emerald-600 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+                  A
+                </span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-l border-slate-200">B</span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-l border-slate-200">C</span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-l border-slate-200">D</span>
+</div>
+</div>
+</article>
+<!-- END: Question 47 -->
+<!-- BEGIN: Question 48 (Flask Application Factory Concept) -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-slate-300 transition-colors" data-purpose="question-item">
+<div class="flex items-start justify-between gap-4 mb-3">
+<div class="flex items-center gap-2">
+<span class="text-base font-bold text-slate-900">Câu 48</span>
+<span class="text-xs font-mono text-slate-400">ID: 573291794</span>
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  +1.85 đ
+                </span>
+</div>
+<button class="text-slate-400 hover:text-brand-600 p-1 rounded hover:bg-slate-50 transition" title="Ghi chú câu này">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<p class="text-[15px] font-medium text-slate-800 leading-relaxed mb-4">
+              Trong mô hình phát triển web với Flask lớn, mục đích chính của việc triển khai mẫu thiết kế <strong class="text-brand-700 font-mono">Application Factory</strong> (thông qua hàm <code class="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs">create_app()</code>) là gì?
+            </p>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-6">
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">A.</strong> Giảm kích thước file binary khi build container Docker cho production.
+              </div>
+<div class="p-2.5 rounded-lg border border-emerald-300 bg-emerald-50/40 text-slate-800 font-medium">
+<strong class="font-bold text-emerald-700 mr-1.5">B.</strong> Cho phép khởi tạo nhiều instance ứng dụng với các file cấu hình môi trường khác nhau (Testing, Dev, Production) và tránh phụ thuộc tuần hoàn (circular imports).
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">C.</strong> Tự động mã hóa mật khẩu người dùng với thuật toán argon2id mà không cần import thêm thư viện.
+              </div>
+<div class="p-2.5 rounded-lg border border-transparent bg-slate-50/50 text-slate-700">
+<strong class="font-bold text-slate-900 mr-1.5">D.</strong> Buộc toàn bộ các view function phải chuyển sang mô hình xử lý Async/Await ASGI.
+              </div>
+</div>
+<div class="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-100">
+<span class="text-sm font-bold text-emerald-600 tracking-wide">
+                Đáp án đúng: B
+              </span>
+<div class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-r border-slate-200">A</span>
+<span class="w-12 h-8 flex items-center justify-center gap-1 text-emerald-600 bg-emerald-50 border-2 border-emerald-500 font-bold -my-[1px]">
+<svg class="w-3.5 h-3.5 text-emerald-600 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+                  B
+                </span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-l border-slate-200">C</span>
+<span class="w-10 h-8 flex items-center justify-center text-slate-400 bg-white border-l border-slate-200">D</span>
+</div>
+</div>
+<!-- Expandable Explanation (Minimal progressive disclosure) -->
+<div class="mt-4 pt-3 border-t border-dashed border-slate-200 text-xs text-slate-600 bg-slate-50/50 p-3 rounded-lg">
+<span class="font-semibold text-brand-700">Giải thích chuẩn học vụ:</span>
+              Theo tài liệu chính thức Flask documentation, Application Factory cho phép cô lập cấu hình, đăng ký blueprints động và khởi tạo test client mà không làm phân tán global app state.
+            </div>
+</article>
+<!-- END: Question 48 -->
+<!-- BEGIN: Practical Coding Section -->
+<article class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm" data-purpose="coding-assessment-item">
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+<div>
+<span class="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-2.5 py-1 rounded-md border border-brand-200">
+                  Tự luận #01: Live-Coding Backend
+                </span>
+<h3 class="text-base font-bold text-slate-900 mt-2">
+                  Thực hành Flask Blueprint &amp; Tối ưu truy vấn SQLite ORM (N+1 Query Elimination)
+                </h3>
+</div>
+<div class="text-right">
+<span class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full inline-flex items-center gap-1">
+<svg class="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path>
+</svg>
+                  18.0 / 20.0 đ (Đã cộng 3.5đ phúc khảo)
+                </span>
+<p class="text-[11px] text-slate-400 mt-1 font-mono">Test suites: 4/4 Passed (100%)</p>
+</div>
+</div>
+<!-- Prompt description -->
+<p class="text-sm text-slate-600 mb-3">
+<strong>Yêu cầu đề bài:</strong> Xây dựng RESTful endpoint <code class="text-xs font-mono bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded">GET /api/v1/students</code> hỗ trợ phân trang, eager loading để triệt tiêu lỗi N+1 query và xác thực CSRF token hợp lệ.
+            </p>
+<!-- Code Sandbox Snippet with syntax style -->
+<div class="rounded-xl overflow-hidden border border-slate-800 bg-[#0f172a] font-mono text-xs shadow-md">
+<div class="bg-[#1e293b] px-4 py-2 border-b border-slate-700 flex items-center justify-between text-slate-300">
+<div class="flex items-center space-x-2">
+<span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
+<span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
+<span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+<span class="text-slate-400 text-[11px] ml-2">api/routes/student_bp.py (Mã nguồn đã nộp của thí sinh)</span>
+</div>
+<span class="text-[11px] text-emerald-400 font-sans font-semibold flex items-center gap-1">
+                  ✓ Syntax Check OK
+                </span>
+</div>
+<pre class="p-4 text-slate-200 overflow-x-auto leading-relaxed"><code><span class="text-slate-500"># Trích xuất đoạn mã đã nộp của thí sinh MA-8392:</span>
+<span class="text-indigo-400">@student_bp.route</span>(<span class="text-emerald-300">'/'</span>, methods=[<span class="text-emerald-300">'GET'</span>])
+<span class="text-indigo-400">@require_csrf_protection</span>
+<span class="text-sky-400">def</span> <span class="text-amber-300">get_students</span>():
+    page = request.args.get(<span class="text-emerald-300">'page'</span>, <span class="text-purple-300">1</span>, type=<span class="text-sky-300">int</span>)
+    <span class="text-slate-500"># Tối ưu hóa: Sử dụng joinedload để tránh query lặp N+1 vào bảng Department</span>
+    query = Student.query.options(db.joinedload(Student.department))
+    pagination = query.paginate(page=page, per_page=<span class="text-purple-300">15</span>, error_out=<span class="text-amber-400">False</span>)
+    <span class="text-sky-400">return</span> jsonify({
+        <span class="text-emerald-300">'status'</span>: <span class="text-emerald-300">'success'</span>,
+        <span class="text-emerald-300">'items'</span>: [s.to_dict() <span class="text-sky-400">for</span> s <span class="text-sky-400">in</span> pagination.items],
+        <span class="text-emerald-300">'total'</span>: pagination.total
+    }), <span class="text-purple-300">200</span></code></pre>
+</div>
+<!-- Resolution note from Head of Dept -->
+<div class="mt-4 p-3.5 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs">
+<div class="flex items-center gap-2 text-emerald-900 font-bold mb-1">
+<svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+                Kết luận chấm phúc khảo của Trưởng bộ môn (TS. Vũ Mai Linh):
+              </div>
+<p class="text-slate-700 leading-relaxed">
+                Thí sinh sử dụng đúng kỹ thuật <code class="font-mono text-emerald-800 bg-emerald-100/70 px-1 py-0.5 rounded">joinedload</code> trên SQLAlchemy và kiểm tra ràng buộc token CSRF chặt chẽ. Điểm ban đầu bị trừ nhầm do hệ thống test case tự động không truyền header CSRF hợp lệ. Điểm được phục hồi trọn vẹn từ 14.5 lên 18.0.
+              </p>
+</div>
+</article>
+<!-- END: Practical Coding Section -->
+</div>
+</section>
+<!-- END: RightMainViewer -->
+</div>
+</main>
+<!-- END: MainContent -->
+<!-- BEGIN: AuditDrawerModal (Progressive Disclosure Modal/Drawer) -->
+<div aria-hidden="true" class="fixed inset-0 z-50 pointer-events-none transition-all duration-300 opacity-0" id="auditDrawer">
+<!-- Backdrop -->
+<div class="absolute inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity cursor-pointer" id="drawerBackdrop" onclick="toggleAuditDrawer(false)"></div>
+<!-- Drawer Panel right aligned -->
+<div class="absolute inset-y-0 right-0 max-w-xl w-full bg-white shadow-2xl flex flex-col pointer-events-auto transform translate-x-full transition-transform duration-300 ease-out" id="drawerPanel">
+<!-- Drawer Header -->
+<div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-base font-bold text-slate-900">Chi Tiết Phúc Khảo &amp; Kiểm Toán Khảo Thí</h3>
+<span class="px-2 py-0.5 text-[11px] font-mono font-bold bg-indigo-100 text-brand-700 rounded">#PK-8392</span>
+</div>
+<p class="text-xs text-slate-500 mt-0.5">Môn: PWD301 • Thí sinh: MA-8392 (Nguyễn Minh Anh)</p>
+</div>
+<button class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition" onclick="toggleAuditDrawer(false)">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Drawer Body Content -->
+<div class="flex-1 overflow-y-auto p-5 space-y-6 text-sm">
+<!-- Immutable Revision Timeline -->
+<div>
+<h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+<svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            Lịch Sử Điều Chỉnh Điểm Bất Biến (Audit Trail)
+          </h4>
+<div class="space-y-3">
+<!-- Timeline Item 1 -->
+<div class="p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs">
+<div class="flex items-center justify-between font-semibold mb-1">
+<span class="text-slate-800">#01 • Nhập điểm sơ bộ tự động</span>
+<span class="font-mono text-slate-500">26/10/2025 14:30</span>
+</div>
+<p class="text-slate-600 mb-2">Chấm sơ bộ vòng đầu tiên sau khi kết thúc ca thi.</p>
+<div class="flex items-center justify-between font-mono bg-white p-2 rounded border border-slate-200 text-[11px]">
+<span>Điểm: <strong>30.0 / 40.0</strong> (TN: 18.5 + TL: 11.5)</span>
+<span class="text-slate-400">GỐC</span>
+</div>
+</div>
+<!-- Timeline Item 2 -->
+<div class="p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs">
+<div class="flex items-center justify-between font-semibold mb-1">
+<span class="text-slate-800">#02 • Giảng viên rà soát kỹ thuật</span>
+<span class="font-mono text-slate-500">27/10/2025 10:15</span>
+</div>
+<p class="text-slate-600 mb-2">ThS. Trần Hoàng Nam rà soát lại test case SQLite Blueprint &amp; bổ sung điểm ngoại lệ CSRF.</p>
+<div class="flex items-center justify-between font-mono bg-white p-2 rounded border border-slate-200 text-[11px]">
+<span>Điểm: <span class="line-through text-slate-400">30.0</span> → <strong class="text-brand-600">33.0 / 40.0</strong></span>
+<span class="text-brand-600 font-semibold">+3.0 đ</span>
+</div>
+</div>
+<!-- Timeline Item 3 (Official Final) -->
+<div class="p-3 rounded-lg border border-emerald-200 bg-emerald-50/50 text-xs">
+<div class="flex items-center justify-between font-semibold text-emerald-900 mb-1">
+<span class="flex items-center gap-1">
+<svg class="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path>
+</svg>
+                  #03 • Hội đồng Trưởng bộ môn phê duyệt
+                </span>
+<span class="font-mono text-slate-500">28/10/2025 08:30</span>
+</div>
+<p class="text-slate-700 mb-2">TS. Vũ Mai Linh chấp thuận giải thuật tối ưu truy vấn N+1 theo chuẩn PEP8 và logic phân trang nâng cao.</p>
+<div class="flex items-center justify-between font-mono bg-white p-2 rounded border border-emerald-300 text-[11px]">
+<span>Điểm: <span class="line-through text-slate-400">33.0</span> → <strong class="text-emerald-700 font-bold">36.5 / 40.0</strong></span>
+<span class="px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold text-[10px]">CHÍNH THỨC</span>
+</div>
+</div>
+</div>
+</div>
+<!-- SLO Radar Competency Mapping -->
+<div class="pt-2 border-t border-slate-200">
+<h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+            Chuẩn Đầu Ra Học Phần (SLO Mapping)
+          </h4>
+<div class="space-y-2.5 text-xs">
+<div>
+<div class="flex justify-between mb-1">
+<span class="text-slate-700 font-medium">SLO 1: Kiến trúc Flask Blueprint &amp; Factory</span>
+<span class="font-bold text-slate-800">95%</span>
+</div>
+<div class="w-full bg-slate-100 rounded-full h-2">
+<div class="bg-brand-600 h-2 rounded-full" style="width: 95%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-1">
+<span class="text-slate-700 font-medium">SLO 2: Tối ưu CSDL SQLAlchemy &amp; ORM Query</span>
+<span class="font-bold text-slate-800">90%</span>
+</div>
+<div class="w-full bg-slate-100 rounded-full h-2">
+<div class="bg-emerald-500 h-2 rounded-full" style="width: 90%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-1">
+<span class="text-slate-700 font-medium">SLO 3: Bảo mật Web (CSRF / Input Sanitization)</span>
+<span class="font-bold text-slate-800">88%</span>
+</div>
+<div class="w-full bg-slate-100 rounded-full h-2">
+<div class="bg-indigo-500 h-2 rounded-full" style="width: 88%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Digital Signature Security Box -->
+<div class="p-3.5 bg-slate-100 rounded-xl text-xs space-y-1.5 border border-slate-200">
+<div class="flex items-center gap-1.5 font-bold text-slate-800">
+<svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            Xác thực Chữ ký số &amp; Pháp lý Khảo thí
+          </div>
+<p class="text-slate-500 text-[11px] leading-relaxed">
+            Bản ghi điểm số này đã được niêm phong mật mã bởi Phòng Đào tạo Đại học. Mã băm HMAC-SHA256 đối chiếu khớp 100% với server gốc:
+          </p>
+<div class="p-2 bg-white rounded border border-slate-200 font-mono text-[10px] text-slate-700 break-all select-all">
+            HMAC-SHA256: 7f8a92b1e4c93d08f23498a12bc90fa9824de817cba10243
+          </div>
+</div>
+</div>
+<!-- Drawer Footer -->
+<div class="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
+<button class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm transition" onclick="toggleAuditDrawer(false)">
+          Đóng ngăn kiểm toán
+        </button>
+</div>
+</div>
+</div>
+<!-- END: AuditDrawerModal -->
+<!-- BEGIN: Footer -->
+<footer class="mt-auto border-t border-slate-200 bg-white py-4 text-xs text-slate-500" data-purpose="page-footer">
+<div class="max-w-[1600px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span>Hệ thống Khảo thí &amp; Đánh giá Học phần PWD301 • Học viện Công nghệ LMS</span>
+</div>
+<div>
+        Hỗ trợ kỹ thuật khảo thí: <a class="text-brand-600 hover:underline" href="mailto:khaothi@university.edu.vn">khaothi@university.edu.vn</a> • Hotline: 1900-6868
+      </div>
+</div>
+</footer>
+<!-- END: Footer -->
+<!-- BEGIN: InteractiveScripts -->
+<script data-purpose="drawer-interactivity">
+    function toggleAuditDrawer(show) {
+      const drawer = document.getElementById('auditDrawer');
+      const panel = document.getElementById('drawerPanel');
+      
+      if (show) {
+        drawer.classList.remove('pointer-events-none', 'opacity-0');
+        drawer.classList.add('opacity-100');
+        panel.classList.remove('translate-x-full');
+        panel.classList.add('translate-x-0');
+        document.body.style.overflow = 'hidden';
+      } else {
+        drawer.classList.add('opacity-0');
+        panel.classList.add('translate-x-full');
+        panel.classList.remove('translate-x-0');
+        setTimeout(() => {
+          drawer.classList.add('pointer-events-none');
+          document.body.style.overflow = '';
+        }, 300);
+      }
+    }
+
+    // Keyboard shortcut (Escape to close drawer)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleAuditDrawer(false);
+      }
+    });
+  </script>
+<!-- END: InteractiveScripts -->
+</body></html>

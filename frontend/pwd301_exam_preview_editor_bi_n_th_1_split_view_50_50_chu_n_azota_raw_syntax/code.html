@@ -1,0 +1,837 @@
+<!DOCTYPE html><html class="h-full bg-slate-50" lang="vi"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Azota Exam Studio &amp; PWD301 LMS - Xem trước &amp; Soạn thảo đề thi</title>
+<!-- Google Fonts: Plus Jakarta Sans, Inter, JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            }
+          },
+          boxShadow: {
+            'soft': '0 2px 10px -2px rgba(15, 23, 42, 0.05), 0 1px 3px -1px rgba(15, 23, 42, 0.05)',
+            'card': '0 4px 20px -2px rgba(15, 23, 42, 0.06), 0 1px 4px -1px rgba(15, 23, 42, 0.04)',
+          }
+        }
+      }
+    }
+  </script>
+<style data-purpose="custom-layout">
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f8fafc;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Syntax Highlighting Styles based on Azota */
+    .token-q { color: #2563eb; font-weight: 700; }
+    .token-bracket { color: #dc2626; font-weight: 500; }
+    .token-correct { color: #dc2626; font-weight: 700; background: #fee2e2; border-radius: 4px; padding: 0 4px; display: inline-block; }
+    .token-opt { color: #dc2626; font-weight: 600; }
+    .token-text { color: #1e293b; }
+    .token-comment { color: #64748b; font-style: italic; }
+  </style>
+</head>
+<body class="h-full font-sans antialiased text-slate-800 bg-slate-50 flex flex-col overflow-hidden">
+<!-- ============================================================== -->
+<!-- BEGIN: TopHeader (Sticky Topbar)                               -->
+<!-- ============================================================== -->
+<header class="sticky top-0 z-40 bg-white border-b border-slate-200/90 shadow-xs select-none" data-purpose="main-header">
+<div class="max-w-[1920px] mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-3">
+<!-- Left side: Brand, Back Button, Editable Exam Title -->
+<div class="flex items-center gap-2.5 min-w-0">
+<a class="flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-100 transition-colors" href="#" title="Hệ thống PWD301 LMS - Azota">
+<div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-extrabold text-base shadow-sm shadow-brand-500/30">
+          A
+        </div>
+<span class="font-extrabold text-lg tracking-tight text-slate-900 hidden sm:inline-block">Azota</span>
+</a>
+<button class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors" onclick="switchTab(1)" title="Quay lại danh sách / nạp đề" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path>
+</svg>
+</button>
+<!-- Document Title Input -->
+<div class="flex items-center max-w-sm sm:max-w-md w-full relative">
+<input class="text-xs sm:text-sm font-semibold text-slate-800 bg-slate-50 hover:bg-slate-100/90 focus:bg-white border border-slate-200 focus:border-brand-500 rounded-lg px-2.5 py-1 w-full transition-all truncate focus:ring-2 focus:ring-brand-500/20" id="examTitleInput" title="Nhấp để đổi tên đề thi" type="text" value="De_thi_Azota_De_6.docx">
+<span class="hidden md:inline-flex ml-2 items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">PWD301 Active</span>
+</div>
+</div>
+<!-- Center: Workflow Stepper Navigation (3 bước) -->
+<nav class="hidden lg:flex items-center bg-slate-100/90 p-0.5 rounded-xl border border-slate-200/80" data-purpose="workflow-stepper">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all" id="tab-btn-1" onclick="switchTab(1)">
+<span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-white border border-slate-300 text-slate-600 font-bold">1</span>
+<span>Nạp đề &amp; File</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-brand-600 shadow-xs transition-all" id="tab-btn-2" onclick="switchTab(2)">
+<span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-brand-600 text-white font-bold">2</span>
+<span>Soạn thảo &amp; Bóc tách</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all" id="tab-btn-3" onclick="switchTab(3)">
+<span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-white border border-slate-300 text-slate-600 font-bold">3</span>
+<span>Cấu hình khảo thí</span>
+</button>
+</nav>
+<!-- Right side: Actions, Localization, User Profile -->
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" type="button">
+        Hủy
+      </button>
+<button class="inline-flex items-center gap-1 px-3.5 py-1.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-lg text-xs font-semibold shadow-sm transition-all" onclick="openModalInfo()" type="button">
+<span>Tiếp tục</span>
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+<div class="h-4 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+<!-- Flag Icon: Tiếng Việt -->
+<button class="w-6 h-4 rounded overflow-hidden shadow-xs border border-slate-200 shrink-0 hidden sm:block" title="Tiếng Việt" type="button">
+<svg class="w-full h-full object-cover" viewBox="0 0 30 20">
+<rect fill="#da251d" height="20" width="30"></rect>
+<polygon fill="#ff0" points="15,4 16.5,8.8 21.5,8.8 17.5,11.8 19,16.5 15,13.5 11,16.5 12.5,11.8 8.5,8.8 13.5,8.8"></polygon>
+</svg>
+</button>
+<!-- Notification Bell -->
+<button class="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg relative transition-colors" title="Thông báo hệ thống" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="w-2 h-2 bg-red-500 rounded-full absolute top-1 right-1"></span>
+</button>
+<!-- User Profile Avatar: ThS. Trần Hoàng Nam (HN) -->
+<div class="flex items-center gap-1.5 pl-1" title="ThS. Trần Hoàng Nam - Giảng viên PWD301">
+<div class="w-8 h-8 rounded-full bg-brand-100 border border-brand-300 text-brand-700 font-bold text-xs flex items-center justify-center cursor-pointer shadow-xs">
+          HN
+        </div>
+</div>
+</div>
+</div>
+</header>
+<!-- END: TopHeader -->
+<!-- ============================================================== -->
+<!-- Sub-Bar: Thanh công cụ khảo thí (Azota subtoolbar)            -->
+<!-- ============================================================== -->
+<div class="bg-white border-b border-slate-200 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2.5 shadow-xs text-xs shrink-0 select-none" data-purpose="exam-sub-toolbar">
+<!-- Left Side Tools -->
+<div class="flex items-center flex-wrap gap-2">
+<!-- Nút: Chia điểm đều -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold shadow-xs transition-colors" onclick="autoDividePoints()" title="Chia điểm đều cho tất cả câu hỏi" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Chia điểm</span>
+</button>
+<!-- Nút: Thông tin đề -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-700 rounded-lg font-medium transition-colors" onclick="openModalInfo()" title="Xem phân bổ câu hỏi và cấu trúc Bloom" type="button">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Thông tin đề</span>
+</button>
+<!-- Input: Đi đến câu -->
+<div class="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+<span class="text-slate-500 font-medium">Đi đến câu</span>
+<input class="w-12 px-1.5 py-1 text-xs border border-slate-300 rounded-md focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-center font-bold text-slate-800" id="jumpQuestionInput" max="13" min="1" type="number" value="1">
+<button class="px-2.5 py-1 bg-brand-600 text-white rounded-md hover:bg-brand-700 font-semibold" onclick="jumpToQuestion()" type="button">Đến</button>
+</div>
+<!-- Sync & Status Badge -->
+<div class="hidden xl:flex items-center gap-1.5 pl-3 border-l border-slate-200 text-slate-500 text-[11px]">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span>Đã tự động lưu 30 giây trước • 0 lỗi cú pháp</span>
+</div>
+</div>
+<!-- Right Side Tools -->
+<div class="flex items-center flex-wrap gap-1.5 text-xs">
+<!-- Upload Button -->
+<button class="inline-flex items-center gap-1 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 font-medium" onclick="switchTab(1)" title="Upload tệp mới" type="button">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Upload</span>
+</button>
+<!-- Chọn từ ngân hàng PWD301 -->
+<button class="inline-flex items-center gap-1 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 font-medium" title="Kho câu hỏi PWD301 LMS" type="button">
+<span class="text-brand-600 font-bold">+</span>
+<span>Chọn từ ngân hàng PWD301</span>
+</button>
+<!-- Chèn công thức LaTeX -->
+<button class="inline-flex items-center gap-1 px-2 py-1.5 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 font-medium" title="Soạn thảo công thức toán học LaTeX" type="button">
+<span class="font-serif italic font-bold text-slate-800">Σ</span>
+<span class="hidden md:inline">Chèn công thức</span>
+</button>
+<!-- Chèn Code / Tương tác -->
+<button class="inline-flex items-center gap-1 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 font-medium" title="Chèn code Python/JS hoặc nội dung tương tác" type="button">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Chèn nội dung tương tác</span>
+</button>
+<!-- More actions menu -->
+<button class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg border border-transparent hover:border-slate-200" title="Tác vụ khác" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- ============================================================== -->
+<!-- MAIN WORKSPACE CONTAINER                                      -->
+<!-- ============================================================== -->
+<main class="flex-1 overflow-hidden relative flex flex-col" data-purpose="content-area">
+<!-- ============================================================ -->
+<!-- TAB 1: File Upload & Creation Methods (Ẩn mặc định)         -->
+<!-- ============================================================ -->
+<section class="hidden flex-1 overflow-y-auto max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full" data-purpose="file-upload-view" id="view-step-1">
+<div class="mb-5">
+<h1 class="text-xl font-bold text-slate-900">Tạo đề mới / Nạp file câu hỏi</h1>
+<p class="text-xs text-slate-500 mt-1">Tải tệp câu hỏi Word, PDF hoặc lựa chọn phương thức tạo bài thi từ Ngân hàng PWD301</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-8 shadow-card flex flex-col justify-between">
+<div class="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-10 text-center transition-all bg-slate-50/50 hover:bg-brand-50/20 group cursor-pointer" onclick="switchTab(2)">
+<div class="w-16 h-16 mx-auto mb-4 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</div>
+<h3 class="text-sm font-bold text-slate-800">Chọn File Word/PDF hoặc kéo thả File vào đây</h3>
+<p class="text-xs text-slate-500 mt-2">Hỗ trợ các định dạng .docx, .pdf, .xlsx, .tex, .zip</p>
+<span class="inline-block mt-3 px-3 py-1 bg-brand-50 text-brand-700 font-semibold rounded-lg text-xs">Nhấn để nạp đề mẫu: De_thi_Azota_De_6.docx</span>
+</div>
+</div>
+<div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 shadow-card">
+<h2 class="text-sm font-bold text-slate-900 mb-3">Tùy chọn tạo trực tuyến</h2>
+<div class="space-y-3">
+<div class="p-3.5 rounded-xl border border-slate-200 hover:border-brand-500 bg-slate-50/40 cursor-pointer flex items-start gap-3" onclick="switchTab(2)">
+<div class="w-9 h-9 rounded-lg bg-brand-100 text-brand-600 flex items-center justify-center shrink-0 font-bold">1</div>
+<div>
+<h4 class="text-xs font-bold text-slate-900">Soạn thảo trực tiếp</h4>
+<p class="text-[11px] text-slate-500 mt-0.5">Sử dụng trình phân tích AI để chia cột và gắn đáp án tự động.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ============================================================ -->
+<!-- TAB 2: Split View 50:50 (Visual Preview & Raw Code Editor)  -->
+<!-- ============================================================ -->
+<section class="flex-1 h-full flex flex-col overflow-hidden" data-purpose="editor-view" id="view-step-2">
+<div class="flex-1 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 h-full overflow-hidden bg-white">
+<!-- ======================================================== -->
+<!-- LEFT COLUMN: Visual Question Preview & In-place Editing -->
+<!-- ======================================================== -->
+<div class="overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/60 h-full" data-purpose="rendered-preview-list" id="preview-container">
+<!-- CARD CÂU 1: Multi-choice (TN nhiều đáp án) -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-soft p-4.5 transition-all hover:border-slate-300 relative group" id="q-card-1">
+<!-- Meta Header -->
+<div class="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2.5 py-1 bg-brand-50 text-brand-700 font-bold rounded-lg border border-brand-200/60 text-xs">Câu 1.</span>
+<div class="relative inline-flex items-center">
+<input class="w-24 px-2 py-0.5 text-xs font-semibold border border-slate-200 rounded-md text-slate-700 focus:border-brand-500 focus:ring-0" id="score-q1" placeholder="Nhập điểm" type="text" value="2.5 điểm">
+</div>
+<button class="inline-flex items-center gap-1 px-2 py-1 text-slate-500 hover:text-slate-800 rounded border border-slate-200 hover:bg-slate-50 text-[11px]" title="Gắn tệp âm thanh nghe hiểu" type="button">
+<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Audio</span>
+</button>
+<!-- Loại câu dropdown -->
+<select class="text-xs border-slate-200 rounded-md py-0.5 px-2 text-slate-700 font-medium focus:border-brand-500">
+<option selected="">TN nhiều đáp án</option>
+<option>Trắc nghiệm 1 đáp án</option>
+<option>Tự luận</option>
+<option>Điền từ</option>
+</select>
+</div>
+<!-- Header Right Icons -->
+<div class="flex items-center gap-2 text-slate-400">
+<button class="hover:text-brand-600 text-slate-400" title="Gắn nhãn Bloom L1" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</button>
+<button class="hover:text-brand-600 flex items-center gap-1 text-[11px] font-medium text-brand-600" title="Sinh ngẫu nhiên câu hỏi tương đương" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Đổi câu khác</span>
+</button>
+<button class="hover:text-slate-700 text-slate-400" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Question Content (Editable inline) -->
+<div class="text-xs sm:text-sm font-semibold text-slate-900 leading-snug p-2 rounded-lg hover:bg-slate-50 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 outline-none" title="Nhấp để sửa nội dung câu hỏi">
+            To be patentable an invention must meet the following requirements: (Select multiple answers)
+          </div>
+<!-- Question Choices A, B, C, D theo hình tham khảo -->
+<div class="mt-3 space-y-2">
+<!-- Choice A -->
+<div class="flex items-start gap-2 group/opt">
+<button class="w-6 h-6 rounded-md border border-slate-300 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 hover:border-brand-500" type="button">A</button>
+<div class="text-xs text-slate-700 p-2 border border-slate-200 rounded-lg w-full bg-white hover:border-slate-300 transition-colors">
+                It must be an intellectual property, be new (i.e. not already available to the public), be created by a human being, have patrimonial rights in it
+              </div>
+</div>
+<!-- Choice B (TICK CHỌN ĐÁP ÁN ĐÚNG - Khung viền xanh/tím) -->
+<div class="flex items-start gap-2 group/opt" id="opt-1-b">
+<button class="w-6 h-6 rounded-md bg-brand-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs" onclick="toggleOption('1-b')" title="Bỏ chọn đáp án đúng" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+</svg>
+</button>
+<div class="text-xs text-slate-900 font-medium p-2 border border-brand-500 bg-brand-50/20 rounded-lg w-full ring-1 ring-brand-500/30">
+<span class="font-bold text-brand-700 mr-1">B.</span>
+                It must be new (i.e. not already available to the public), involve an inventive step, have an industrial application
+              </div>
+</div>
+<!-- Choice C -->
+<div class="flex items-start gap-2 group/opt">
+<button class="w-6 h-6 rounded-md border border-slate-300 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 hover:border-brand-500" type="button">C</button>
+<div class="text-xs text-slate-700 p-2 border border-slate-200 rounded-lg w-full bg-white hover:border-slate-300 transition-colors">
+                It must be new (i.e. not already available to the public), be created by a human being, have an industrial application
+              </div>
+</div>
+<!-- Choice D (TICK CHỌN ĐÁP ÁN ĐÚNG - Khung viền xanh/tím) -->
+<div class="flex items-start gap-2 group/opt" id="opt-1-d">
+<button class="w-6 h-6 rounded-md bg-brand-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs" onclick="toggleOption('1-d')" title="Bỏ chọn đáp án đúng" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+</svg>
+</button>
+<div class="text-xs text-slate-900 font-medium p-2 border border-brand-500 bg-brand-50/20 rounded-lg w-full ring-1 ring-brand-500/30">
+<span class="font-bold text-brand-700 mr-1">D.</span>
+                It must be novel, it must not be obvious or easily deducible by a professional of the sector, it must be susceptible to industrial application
+              </div>
+</div>
+</div>
+<!-- Bottom In-place Action Helpers -->
+<div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+<div class="flex items-center gap-3">
+<button class="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1" type="button">
+<span>+ Thêm phương án</span>
+</button>
+<button class="hover:text-slate-800 flex items-center gap-1" type="button">
+<span>Thêm lời giải thích chi tiết</span>
+</button>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-1 hover:text-slate-800" title="Di chuyển lên" type="button">↑</button>
+<button class="p-1 hover:text-slate-800" title="Di chuyển xuống" type="button">↓</button>
+<button class="text-rose-500 hover:text-rose-700 font-medium ml-1" type="button">Xóa câu</button>
+</div>
+</div>
+</div>
+<!-- CARD CÂU 2: Multiple Choice (Chọn B & C) -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-soft p-4.5 transition-all hover:border-slate-300 relative group" id="q-card-2">
+<div class="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2.5 py-1 bg-brand-50 text-brand-700 font-bold rounded-lg border border-brand-200/60 text-xs">Câu 2.</span>
+<input class="w-24 px-2 py-0.5 text-xs font-semibold border border-slate-200 rounded-md text-slate-700 focus:border-brand-500" placeholder="Nhập điểm" type="text" value="2.5 điểm">
+<button class="inline-flex items-center gap-1 px-2 py-1 text-slate-500 hover:text-slate-800 rounded border border-slate-200 hover:bg-slate-50 text-[11px]" type="button">
+<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Audio</span>
+</button>
+<select class="text-xs border-slate-200 rounded-md py-0.5 px-2 text-slate-700 font-medium">
+<option selected="">TN nhiều đáp án</option>
+<option>Trắc nghiệm 1 đáp án</option>
+</select>
+</div>
+<div class="flex items-center gap-2 text-slate-400">
+<button class="hover:text-brand-600 text-slate-400" title="Gắn nhãn Bloom L2" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</button>
+<button class="hover:text-brand-600 flex items-center gap-1 text-[11px] font-medium text-brand-600" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Đổi câu khác</span>
+</button>
+<button class="hover:text-slate-700 text-slate-400" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+</div>
+</div>
+<div class="text-xs sm:text-sm font-semibold text-slate-900 leading-snug p-2 rounded-lg hover:bg-slate-50 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 outline-none">
+            You plan on streamlining your company's product experience, but you also want to uphold the agency and autonomy of your users. Which of the following actions would uphold these principles? (Select two.)
+          </div>
+<div class="mt-3 space-y-2">
+<!-- Choice A -->
+<div class="flex items-start gap-2">
+<button class="w-6 h-6 rounded-md border border-slate-300 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5" type="button">A</button>
+<div class="text-xs text-slate-700 p-2 border border-slate-200 rounded-lg w-full bg-white">
+                Applying machine intelligence to simulate customer behavior
+              </div>
+</div>
+<!-- Choice B (Correct) -->
+<div class="flex items-start gap-2" id="opt-2-b">
+<button class="w-6 h-6 rounded-md bg-brand-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs" onclick="toggleOption('2-b')" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+</svg>
+</button>
+<div class="text-xs text-slate-900 font-medium p-2 border border-brand-500 bg-brand-50/20 rounded-lg w-full ring-1 ring-brand-500/30">
+<span class="font-bold text-brand-700 mr-1">B.</span>
+                Respecting the right of the user to choose and customize their experiences
+              </div>
+</div>
+<!-- Choice C (Correct) -->
+<div class="flex items-start gap-2" id="opt-2-c">
+<button class="w-6 h-6 rounded-md bg-brand-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs" onclick="toggleOption('2-c')" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+</svg>
+</button>
+<div class="text-xs text-slate-900 font-medium p-2 border border-brand-500 bg-brand-50/20 rounded-lg w-full ring-1 ring-brand-500/30">
+<span class="font-bold text-brand-700 mr-1">C.</span>
+                Refraining from guiding users into something they didn't wish for or intend
+              </div>
+</div>
+<!-- Choice D -->
+<div class="flex items-start gap-2">
+<button class="w-6 h-6 rounded-md border border-slate-300 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5" type="button">D</button>
+<div class="text-xs text-slate-700 p-2 border border-slate-200 rounded-lg w-full bg-white">
+                Enabling government agencies to have a personalized interface with software
+              </div>
+</div>
+</div>
+<div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+<div class="flex items-center gap-3">
+<button class="text-brand-600 hover:text-brand-700 font-semibold" type="button">+ Thêm phương án</button>
+<button class="hover:text-slate-800" type="button">Thêm lời giải thích chi tiết</button>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-1 hover:text-slate-800" type="button">↑</button>
+<button class="p-1 hover:text-slate-800" type="button">↓</button>
+<button class="text-rose-500 hover:text-rose-700 font-medium ml-1" type="button">Xóa câu</button>
+</div>
+</div>
+</div>
+<!-- CARD CÂU 3: Trắc nghiệm 1 đáp án (Single choice dạng button như ảnh) -->
+<div class="bg-white rounded-xl border border-slate-200 shadow-soft p-4.5 transition-all hover:border-slate-300 relative group" id="q-card-3">
+<div class="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs">
+<div class="flex items-center gap-1.5 flex-wrap">
+<span class="px-2.5 py-1 bg-brand-50 text-brand-700 font-bold rounded-lg border border-brand-200/60 text-xs">Câu 3.</span>
+<input class="w-24 px-2 py-0.5 text-xs font-semibold border border-slate-200 rounded-md text-slate-700 focus:border-brand-500" placeholder="Nhập điểm" type="text" value="2.5 điểm">
+<select class="text-xs border-slate-200 rounded-md py-0.5 px-2 text-slate-700 font-medium">
+<option selected="">Trắc nghiệm</option>
+<option>Tự luận</option>
+</select>
+</div>
+<div class="flex items-center gap-2 text-slate-400">
+<button class="hover:text-brand-600 text-slate-400" title="Gắn nhãn Bloom L3" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+</svg>
+</button>
+<button class="hover:text-brand-600 flex items-center gap-1 text-[11px] font-medium text-brand-600" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Đổi câu khác</span>
+</button>
+<button class="hover:text-slate-700 text-slate-400" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+</div>
+</div>
+<div class="text-xs sm:text-sm font-semibold text-slate-900 leading-snug p-2 rounded-lg hover:bg-slate-50 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-500 outline-none">
+            When used in recommendation engines, explainable algorithms can help answer the question of ___
+          </div>
+<!-- Buttons Group for Short Options as seen in IMAGE_14 -->
+<div class="mt-3 flex flex-wrap gap-2 text-xs">
+<button class="px-3.5 py-1.5 rounded-lg border border-brand-500 bg-brand-50 text-brand-700 font-semibold flex items-center gap-1.5 shadow-xs" type="button">
+<span class="w-3.5 h-3.5 rounded-full bg-brand-600 text-white flex items-center justify-center text-[9px] font-bold">✓</span>
+<span>A. why?</span>
+</button>
+<button class="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium" type="button">
+              B. how?
+            </button>
+<button class="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium" type="button">
+              C. who?
+            </button>
+<button class="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium" type="button">
+              D. what?
+            </button>
+</div>
+<div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+<div class="flex items-center gap-3">
+<button class="text-brand-600 hover:text-brand-700 font-semibold" type="button">+ Thêm phương án</button>
+<button class="hover:text-slate-800" type="button">Thêm lời giải thích chi tiết</button>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-1 hover:text-slate-800" type="button">↑</button>
+<button class="p-1 hover:text-slate-800" type="button">↓</button>
+<button class="text-rose-500 hover:text-rose-700 font-medium ml-1" type="button">Xóa câu</button>
+</div>
+</div>
+</div>
+</div>
+<!-- ======================================================== -->
+<!-- RIGHT COLUMN: Raw Text Code Editor & Syntax Inspector   -->
+<!-- ======================================================== -->
+<div class="flex flex-col h-full bg-white select-text" data-purpose="code-editor-column">
+<!-- Editor Top mini banner -->
+<div class="bg-slate-50/80 px-4 py-1.5 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500 select-none">
+<div class="flex items-center gap-2">
+<span class="font-mono text-slate-600 font-semibold">Trình soạn thảo mã Azota Syntax</span>
+<span class="text-slate-300">|</span>
+<span>Ký tự <code class="text-red-600 font-bold bg-red-50 px-1 rounded">*</code> trước đáp án = ĐÁP ÁN ĐÚNG</span>
+</div>
+<div class="flex items-center gap-1 text-slate-600 hover:text-brand-600 cursor-pointer" onclick="syncRawToPreview()" title="Đồng bộ lại sang khung xem trước">
+<svg class="w-3.5 h-3.5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="font-semibold">Đồng bộ sang xem trước</span>
+</div>
+</div>
+<!-- Raw Text Editor with Line Numbers (1 to 26+) -->
+<div class="flex-1 overflow-y-auto font-mono text-[12px] leading-5 sm:leading-6 p-2 sm:p-3 select-text flex bg-white">
+<!-- Line Numbers Column -->
+<div class="text-right pr-3.5 text-slate-400 select-none border-r border-slate-200/80 space-y-0.5 font-medium shrink-0">
+<div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div>
+<div>11</div><div>12</div><div>13</div><div>14</div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div><div>20</div>
+<div>21</div><div>22</div><div>23</div><div>24</div><div>25</div><div>26</div><div>27</div><div>28</div><div>29</div><div>30</div>
+</div>
+<!-- Code Content exactly matching Image 14 -->
+<div class="pl-3.5 space-y-0.5 w-full overflow-x-auto text-slate-800 outline-none" id="rawEditorContent">
+<div><span class="token-q">Câu 1.</span><span class="token-bracket">[!b:$ To be patentable an invention must meet the following requirements: (Select multiple answers)$]</span></div>
+<div><span class="token-opt">A.</span> It must be an intellectual property, be new (i.e. not already available to the public), be created by a human being, have patrimonial rights in it</div>
+<div><span class="token-correct">*B.</span> It must be new (i.e. not already available to the public), involve an inventive step, have an industrial application</div>
+<div><span class="token-opt">C.</span> It must be new (i.e. not already available to the public), be created by a human being, have an industrial application</div>
+<div><span class="token-correct">*D.</span> It must be novel, it must not be obvious or easily deducible by a professional of the sector, it must be susceptible to industrial application</div>
+<div class="pt-1.5"><span class="token-q">Câu 2.</span><span class="token-bracket">[!b:$ You plan on streamlining your company's product experience, but you also want to uphold the agency and autonomy of your users. Which of the following actions would uphold these principles? (Select two.)$]</span></div>
+<div><span class="token-opt">A.</span> Applying machine intelligence to simulate customer behavior</div>
+<div><span class="token-correct">*B.</span> Respecting the right of the user to choose and customize their experiences</div>
+<div><span class="token-correct">*C.</span> Refraining from guiding users into something they didn't wish for or intend</div>
+<div><span class="token-opt">D.</span> Enabling government agencies to have a personalized interface with software</div>
+<div class="pt-1.5"><span class="token-q">Câu 3.</span><span class="token-bracket">[!b:$ When used in recommendation engines, explainable algorithms can help answer the question of ___$]</span></div>
+<div><span class="token-correct">*A.</span> why?</div>
+<div><span class="token-opt">B.</span> how?</div>
+<div><span class="token-opt">C.</span> who?</div>
+<div><span class="token-opt">D.</span> what?</div>
+<div class="pt-1.5"><span class="token-q">Câu 4.</span><span class="token-bracket">[!b:$ _____ algorithms are a challenge to explainable AI, as their complexity makes it difficult to weigh attribute importance$]</span></div>
+<div><span class="token-opt">A.</span> ethical</div>
+<div><span class="token-correct">*B.</span> deep learning</div>
+<div><span class="token-opt">C.</span> explainable</div>
+<div><span class="token-opt">D.</span> malicious</div>
+<div class="pt-1.5"><span class="token-q">Câu 5.</span><span class="token-bracket">[!b:$ You're training a model to classify whether or not a bridge is likely to collapse given several factors. You have a dataset of thousands of existing bridges and their attributes, where each bridge is labeled as having collapsed or not collapsed. Only a handful of bridges in the dataset are labeled as having collapsed-the rest are labeled as not collapsed. Given your goal of minimizing bridge collapse and the severe harm it can cause which of the following metrics would be most useful for evaluating the model?$]</span></div>
+<div><span class="token-opt">A.</span> Accuracy</div>
+<div><span class="token-opt">B.</span> Confusion matrix</div>
+<div><span class="token-opt">C.</span> Precision</div>
+<div><span class="token-correct">*D.</span> Recall</div>
+<div class="pt-1.5"><span class="token-q">Câu 6.</span><span class="token-bracket">[!b:$ Your business handles the personal data of California residents. Which of the following regulations would enable a resident to request that their data be deleted from your company's files?$]</span></div>
+</div>
+</div>
+<!-- Bottom Template Footer Helper matching image reference -->
+<div class="border-t border-slate-200 px-4 py-2 bg-slate-50 flex items-center justify-between text-xs text-slate-500 shrink-0 select-none">
+<div class="flex items-center gap-2 overflow-x-auto">
+<span class="font-semibold text-slate-700 shrink-0">Nội dung mẫu:</span>
+<a class="text-brand-600 hover:underline shrink-0" href="#">Mẫu 1</a>
+<span class="text-slate-300">|</span>
+<a class="text-brand-600 hover:underline shrink-0" href="#">Mẫu 2</a>
+<span class="text-slate-300">|</span>
+<a class="text-brand-600 hover:underline shrink-0" href="#">Mẫu 3 (Có điền từ)</a>
+<span class="text-slate-300">|</span>
+<a class="text-brand-600 hover:underline shrink-0" href="#">Mẫu 4</a>
+<span class="text-slate-300">|</span>
+<a class="text-brand-600 hover:underline shrink-0" href="#">Mẫu 5 (Có câu Đúng-Sai)</a>
+<span class="text-slate-300">|</span>
+<a class="text-brand-600 hover:underline font-bold shrink-0" href="#">Mẫu 6 (Tổng hợp)</a>
+</div>
+<!-- Quick Action Floating Button -->
+<button class="w-7 h-7 rounded-full bg-brand-100 text-brand-600 hover:bg-brand-600 hover:text-white flex items-center justify-center transition-colors shrink-0" title="Chỉnh sửa nhanh cú pháp">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- ============================================================ -->
+<!-- TAB 3: Full Exam Configuration (Step 3)                     -->
+<!-- ============================================================ -->
+<section class="hidden flex-1 overflow-y-auto max-w-4xl mx-auto px-4 sm:px-6 py-6 pb-28 space-y-6 w-full" data-purpose="exam-configuration-form" id="view-step-3">
+<!-- Top Exam Identity Banner -->
+<div class="text-center pb-1">
+<h2 class="text-base font-bold text-slate-800">Tên đề thi: <span class="text-brand-600">De_thi_Azota_De_6.docx</span> - Mã đề PWD301: <span class="font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-700">xdflp9</span></h2>
+</div>
+<!-- Mode Switcher: Kiểm tra vs Luyện tập -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div>
+<h3 class="text-sm font-bold text-slate-900">Loại cấu hình bài thi</h3>
+<p class="text-xs text-slate-500 mt-0.5">Dùng cho các kỳ thi nghiêm túc PWD301 LMS, bảo mật đáp án và đề thi tới khi kết thúc</p>
+</div>
+<div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+<button class="px-5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white shadow-xs" type="button">Kiểm tra</button>
+<button class="px-5 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900" type="button">Luyện tập</button>
+</div>
+</div>
+<!-- Card Cấu hình chung -->
+<div class="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
+<div class="px-6 py-3.5 border-b border-slate-100 bg-slate-50/50">
+<h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Cấu hình chung</h3>
+</div>
+<div class="p-6 space-y-4">
+<div>
+<label class="block text-xs font-semibold text-slate-700 mb-1.5">Tên đề thi</label>
+<input class="w-full text-xs font-medium border-slate-200 rounded-xl focus:border-brand-500 focus:ring-brand-500 px-3 py-2" type="text" value="De_thi_Azota_De_6.docx">
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div>
+<label class="block text-xs font-semibold text-slate-700 mb-1.5">Môn học</label>
+<input class="w-full text-xs border-slate-200 rounded-xl px-3 py-2" type="text" value="PWD301 - Web Development with Python">
+</div>
+<div>
+<label class="block text-xs font-semibold text-slate-700 mb-1.5">Thời gian làm bài (phút)</label>
+<input class="w-full text-xs border-slate-200 rounded-xl px-3 py-2" type="number" value="45">
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- ============================================================== -->
+<!-- BEGIN: Modal Thông tin đề (Exam Information Modal)             -->
+<!-- ============================================================== -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs hidden transition-opacity" data-purpose="exam-info-modal" id="modal-info">
+<div class="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+<!-- Modal Header -->
+<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+<h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+<svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Thông tin chi tiết đề thi PWD301</span>
+</h3>
+<button class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" onclick="closeModalInfo()" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Modal Body -->
+<div class="p-6 max-h-[65vh] overflow-y-auto space-y-4">
+<div class="bg-brand-50/60 border border-brand-100 rounded-xl p-3.5 flex items-center justify-between">
+<div>
+<p class="text-xs font-semibold text-slate-700">Tổng số câu hỏi được AI bóc tách:</p>
+<span class="text-lg font-black text-brand-700">13 câu hỏi</span>
+</div>
+<div class="text-right">
+<p class="text-xs font-semibold text-slate-700">Tổng điểm đề:</p>
+<span class="text-lg font-black text-emerald-600">40.0 điểm</span>
+</div>
+</div>
+<!-- Phân bổ Bloom L1-L3 -->
+<div>
+<p class="text-xs font-bold text-slate-800 mb-2">Phân bổ ma trận năng lực Bloom Taxonomy:</p>
+<div class="grid grid-cols-3 gap-2 text-center text-xs">
+<div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+<span class="text-slate-500 block text-[10px] font-semibold">Nhận biết (L1)</span>
+<span class="font-bold text-slate-900 text-sm">6 câu (46%)</span>
+</div>
+<div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+<span class="text-slate-500 block text-[10px] font-semibold">Thông hiểu (L2)</span>
+<span class="font-bold text-slate-900 text-sm">5 câu (38%)</span>
+</div>
+<div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+<span class="text-slate-500 block text-[10px] font-semibold">Vận dụng (L3)</span>
+<span class="font-bold text-slate-900 text-sm">2 câu (16%)</span>
+</div>
+</div>
+</div>
+<!-- Table Info -->
+<div class="border border-slate-200 rounded-xl overflow-hidden">
+<table class="w-full text-left text-xs border-collapse">
+<thead>
+<tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+<th class="py-2.5 px-3">Loại câu</th>
+<th class="py-2.5 px-2 text-center">Số lượng</th>
+<th class="py-2.5 px-3">Danh sách câu</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100 text-slate-700">
+<tr>
+<td class="py-2.5 px-3 font-medium">TN nhiều đáp án</td>
+<td class="py-2.5 px-2 font-bold text-center">2</td>
+<td class="py-2.5 px-3 text-brand-600 font-medium">Câu 1, Câu 2</td>
+</tr>
+<tr>
+<td class="py-2.5 px-3 font-medium">Trắc nghiệm 1 đáp án</td>
+<td class="py-2.5 px-2 font-bold text-center">11</td>
+<td class="py-2.5 px-3 text-brand-600 font-medium">Câu 3 đến Câu 13</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Modal Footer -->
+<div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+<p class="text-xs text-slate-600">Chuyển sang bước Cấu hình khảo thí?</p>
+<div class="flex items-center gap-2">
+<button class="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100" onclick="closeModalInfo()" type="button">Đóng</button>
+<button class="px-5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors" onclick="proceedToConfiguration()" type="button">
+          Tiếp tục cấu hình &gt;
+        </button>
+</div>
+</div>
+</div>
+</div>
+<!-- END: Modal Thông tin đề -->
+<!-- ============================================================== -->
+<!-- Floating Customer Support Widget                              -->
+<!-- ============================================================== -->
+<aside class="fixed bottom-4 right-4 z-40 select-none" data-purpose="support-widget">
+<button class="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 px-3.5 py-2 rounded-full border border-slate-200 shadow-lg transition-transform hover:scale-105 active:scale-95" title="Kênh trợ giúp kỹ thuật Azota - PWD301" type="button">
+<div class="w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<span class="text-xs font-bold">Hỗ trợ khảo thí trực tuyến</span>
+</button>
+</aside>
+<!-- ============================================================== -->
+<!-- Interactive Tab & Editor Script                                -->
+<!-- ============================================================== -->
+<script data-purpose="tab-switcher">
+  function switchTab(step) {
+    document.getElementById('view-step-1').classList.add('hidden');
+    document.getElementById('view-step-2').classList.add('hidden');
+    document.getElementById('view-step-3').classList.add('hidden');
+
+    for (let i = 1; i <= 3; i++) {
+      const btn = document.getElementById('tab-btn-' + i);
+      if (btn) {
+        btn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-all";
+        const badge = btn.querySelector('span:first-child');
+        if (badge) {
+          badge.className = "w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-white border border-slate-300 text-slate-600 font-bold";
+        }
+      }
+    }
+
+    const activeView = document.getElementById('view-step-' + step);
+    if (activeView) {
+      activeView.classList.remove('hidden');
+    }
+
+    const activeBtn = document.getElementById('tab-btn-' + step);
+    if (activeBtn) {
+      activeBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-brand-600 shadow-xs transition-all";
+      const badge = activeBtn.querySelector('span:first-child');
+      if (badge) {
+        badge.className = "w-4 h-4 rounded-full flex items-center justify-center text-[10px] bg-brand-600 text-white font-bold";
+      }
+    }
+  }
+
+  function openModalInfo() {
+    const modal = document.getElementById('modal-info');
+    modal.classList.remove('hidden');
+  }
+
+  function closeModalInfo() {
+    const modal = document.getElementById('modal-info');
+    modal.classList.add('hidden');
+  }
+
+  function proceedToConfiguration() {
+    closeModalInfo();
+    switchTab(3);
+  }
+
+  function autoDividePoints() {
+    const totalPoints = 40.0;
+    const totalQuestions = 13;
+    const pointsPerQuestion = (totalPoints / totalQuestions).toFixed(2);
+    alert('Đã chia đều: ' + pointsPerQuestion + ' điểm / câu (Tổng ' + totalPoints + ' điểm cho 13 câu).');
+  }
+
+  function jumpToQuestion() {
+    const qNum = document.getElementById('jumpQuestionInput').value;
+    const target = document.getElementById('q-card-' + qNum);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('ring-2', 'ring-brand-500');
+      setTimeout(() => {
+        target.classList.remove('ring-2', 'ring-brand-500');
+      }, 1500);
+    } else {
+      alert('Đã cuộn đến vị trí câu ' + qNum);
+    }
+  }
+
+  function toggleOption(id) {
+    const el = document.getElementById('opt-' + id);
+    if (!el) return;
+    const btn = el.querySelector('button');
+    const content = el.querySelector('div');
+    if (btn.classList.contains('bg-brand-600')) {
+      // Toggle off
+      btn.className = "w-6 h-6 rounded-md border border-slate-300 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5";
+      btn.innerHTML = id.split('-')[1].toUpperCase();
+      content.className = "text-xs text-slate-700 p-2 border border-slate-200 rounded-lg w-full bg-white";
+    } else {
+      // Toggle on
+      btn.className = "w-6 h-6 rounded-md bg-brand-600 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs";
+      btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path></svg>`;
+      content.className = "text-xs text-slate-900 font-medium p-2 border border-brand-500 bg-brand-50/20 rounded-lg w-full ring-1 ring-brand-500/30";
+    }
+  }
+
+  function syncRawToPreview() {
+    alert('Đã đồng bộ thời gian thực từ bản soạn thảo thô sang khung xem trước trực quan!');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    switchTab(2); // Mở sẵn Tab 2: Soạn thảo & Bóc tách (Xem trước Split-view 50:50)
+  });
+</script>
+</body></html>

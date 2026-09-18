@@ -9,6 +9,7 @@ from flask import Response, jsonify, request
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.types import normalize_row_version
 from pwd301.services.analytics_service import get_instructor_course_analytics
 from pwd301.services.assessment_service import (
     _serialize_assessment,
@@ -16,7 +17,6 @@ from pwd301.services.assessment_service import (
     list_course_assessments,
 )
 from pwd301.services.authorization_service import (
-    _resolve_course,
     get_authenticated_actor,
     instructor_required,
     require_authenticated_actor,
@@ -28,10 +28,12 @@ from pwd301.services.completion_service import (
     set_course_completion_rule,
 )
 from pwd301.services.course_service import (
+    _resolve_course,
     change_course_status,
     create_course,
     get_course_detail,
     list_courses,
+    trash_course,
     update_course,
 )
 from pwd301.services.enrollment_service import (
@@ -44,13 +46,18 @@ from pwd301.services.enrollment_service import (
     remove_course_prerequisite,
 )
 from pwd301.services.exceptions import (
+    ConflictError,
     CourseValidationError,
-    ForbiddenError,
     ResourceNotFoundError,
+    UnauthorizedError,
     ValidationError,
 )
 from pwd301.services.jwt_auth_service import jwt_required
-from pwd301.services.lesson_service import get_course_lessons
+from pwd301.services.lesson_service import (
+    create_lesson,
+    get_course_lessons,
+    reorder_lessons,
+)
 from pwd301.services.question_bank_service import (
     _serialize_question,
     create_question,
@@ -139,6 +146,13 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
+    client_row_version = payload.get("row_version") or request.headers.get("If-Match")
+    if client_row_version is not None:
+        target_course = _resolve_course(course_id, session=db.session)
+        if target_course and target_course.row_version is not None:
+            norm_client = normalize_row_version(client_row_version)
+            if norm_client is not None and norm_client != target_course.row_version:
+                raise ConflictError("Course has been modified concurrently by another transaction.")
     course = update_course(actor, course_id, payload)
     return jsonify(_serialize_course(course)), 200
 
@@ -458,7 +472,7 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
     """
     actor = get_authenticated_actor()
     if actor is None or not actor.is_active:
-        raise ForbiddenError("Authentication required to access progress.")
+        raise UnauthorizedError("Authentication required to access progress.")
 
     course = _resolve_course(course_id, session=db.session)
     if course is None:
@@ -500,6 +514,7 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
 
 @api_course_bp.route("/<course_id>/questions", methods=["POST"])
 @jwt_required
+@instructor_required
 def create_course_question_route(course_id: str) -> tuple[Response, int] | Response:
     """Create a new Question in the course's question bank.
 
@@ -778,3 +793,59 @@ def get_course_analytics_api(course_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     analytics = get_instructor_course_analytics(actor, course_id, session=db.session)
     return jsonify(analytics), 200
+
+
+@api_course_bp.route("/<course_id>/trash", methods=["POST"])
+@api_course_bp.route("/<course_id>", methods=["DELETE"])
+@jwt_required
+@instructor_required
+def trash_course_api(course_id: str) -> tuple[Response, int] | Response:
+    """Soft-delete a course to TRASH (JWT required)."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    reason = payload.get("reason")
+    course = trash_course(actor, course_id, reason=reason)
+    return (
+        jsonify(
+            {
+                "message": "Course trashed successfully.",
+                "course": _serialize_course(course),
+            }
+        ),
+        200,
+    )
+
+
+@api_course_bp.route("/<course_id>/lessons", methods=["POST"])
+@jwt_required
+@instructor_required
+def create_course_lesson_api(course_id: str) -> tuple[Response, int] | Response:
+    """Create a new lesson in a managed course (JWT required)."""
+    from pwd301.blueprints.api_lessons.routes import _serialize_lesson
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    lesson = create_lesson(actor, course_id, payload, session=db.session)
+    return jsonify(_serialize_lesson(lesson)), 201
+
+
+@api_course_bp.route("/<course_id>/lessons/reorder", methods=["POST"])
+@jwt_required
+@instructor_required
+def reorder_course_lessons_api(course_id: str) -> tuple[Response, int] | Response:
+    """Reorder lessons contiguous sequence in a course (JWT required)."""
+    from pwd301.blueprints.api_lessons.routes import _serialize_lesson
+
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    ordered_ids = payload.get("ordered_lesson_ids") or payload.get("lesson_ids") or []
+    lessons = reorder_lessons(actor, course_id, ordered_ids, session=db.session)
+    return (
+        jsonify(
+            {
+                "message": "Lessons reordered successfully.",
+                "lessons": [_serialize_lesson(les, include_content=False) for les in lessons],
+            }
+        ),
+        200,
+    )

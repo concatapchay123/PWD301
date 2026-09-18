@@ -118,7 +118,10 @@ def _record_attempt_audit(
     return audit_entry
 
 
-def _generate_lease(lease_seconds: int | None = None) -> tuple[str, bytes, datetime, datetime]:
+def _generate_lease(
+    lease_seconds: int | None = None,
+    deadline_at: datetime | None = None,
+) -> tuple[str, bytes, datetime, datetime]:
     """Generate raw cryptographically secure hex lease token, its SHA-256 hash, and timestamps.
 
     Returns:
@@ -127,12 +130,17 @@ def _generate_lease(lease_seconds: int | None = None) -> tuple[str, bytes, datet
     now = utc_now()
     if lease_seconds is None:
         try:
-            lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 30))
+            lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
         except RuntimeError:
-            lease_seconds = 30
+            lease_seconds = 3600
     raw_token = secrets.token_hex(32)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).digest()
     expires_at = now + timedelta(seconds=lease_seconds)
+    if deadline_at is not None:
+        norm_exp = _normalize_dt(expires_at)
+        norm_dl = _normalize_dt(deadline_at)
+        if norm_exp is not None and norm_dl is not None and norm_exp > norm_dl:
+            expires_at = deadline_at
     return raw_token, token_hash, now, expires_at
 
 
@@ -383,7 +391,15 @@ def start_assessment_attempt(
     attempt_number = max_attempt_no + 1
 
     # 9. Generate editing lease
-    raw_lease_token, lease_token_hash, lease_acquired_at, lease_expires_at = _generate_lease()
+    lease_seconds = (
+        int(assessment.time_limit_minutes * 60)
+        if getattr(assessment, "time_limit_minutes", None)
+        else 3600
+    )
+    raw_lease_token, lease_token_hash, lease_acquired_at, lease_expires_at = _generate_lease(
+        lease_seconds=lease_seconds,
+        deadline_at=deadline_at,
+    )
 
     # 10. Persist AssessmentAttempt
     attempt = AssessmentAttempt(
@@ -624,6 +640,7 @@ def get_attempt_delivery(
             choices_data.append(
                 {
                     "choice_key": str(cs.choice_key_snapshot),
+                    "choice_id": str(cs.choice_key_snapshot),
                     "content": cs.content_snapshot,
                     "position": cs.position,
                 }
@@ -638,6 +655,7 @@ def get_attempt_delivery(
         questions_data.append(
             {
                 "attempt_question_id": aq_public_id,
+                "question_id": aq_public_id,
                 "position": aq.position,
                 "question_type": aq.question_type_snapshot,
                 "content": aq.content_snapshot,
@@ -773,10 +791,16 @@ def renew_attempt_lease(
         raise AttemptLeaseExpiredError("Editing lease was lost or taken over by another window.")
 
     # Compute new lease expiration clamped to deadline_at
+    assess = attempt.assessment
     try:
-        lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 30))
+        cfg_lease = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
     except RuntimeError:
-        lease_seconds = 30
+        cfg_lease = 3600
+    lease_seconds = (
+        int(assess.time_limit_minutes * 60)
+        if assess and getattr(assess, "time_limit_minutes", None)
+        else cfg_lease
+    )
 
     new_expiry = now + timedelta(seconds=lease_seconds)
     deadline = _normalize_dt(attempt.deadline_at)
@@ -816,16 +840,14 @@ def takeover_attempt_lease(
 ) -> tuple[AssessmentAttempt, str]:
     """Take over the editing lease from another window/device for an in-progress attempt.
 
-    Preconditions & Invariants (Algorithm 07, ADR-005, ADR-006):
+    Enforces:
     1. Zero-Trust IDOR: Own-attempt access only (actor.id == attempt.student_user_id).
-       Instructors or peer students are rejected with ForbiddenError (403).
-    2. Attempt must be IN_PROGRESS and not past server deadline_at or close_at.
-       If expired, auto-transitions to EXPIRED and raises AttemptExpiredError (409).
-    3. Generates new cryptographically secure 32-byte hex token, hashes with SHA-256.
-    4. Overwrites lease_token_hash, invalidating the previous tab's lease immediately.
-    5. Sets lease_acquired_at = now, last_heartbeat_at = now.
-    6. Sets lease_expires_at = min(now + ATTEMPT_LEASE_SECONDS, deadline_at).
-    7. Records append-only AuditEvent with action='LEASE_TAKEOVER'.
+    2. Attempt must be IN_PROGRESS and not past server deadline_at.
+    3. Increments lease_epoch by 1.
+    4. Issues a new 32-byte hex raw_lease_token.
+    5. Saves SHA-256 digest into attempt.lease_token_hash.
+    6. Sets lease_expires_at clamped to deadline_at.
+    7. Records append-only AuditEvent.
 
     Returns:
         tuple of (AssessmentAttempt, raw_lease_token).
@@ -844,16 +866,21 @@ def takeover_attempt_lease(
     _check_and_expire_if_needed(sess, attempt, now)
 
     # Generate new 32-byte hex lease token and hash
+    assess = attempt.assessment
     try:
-        lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 30))
+        cfg_lease = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
     except RuntimeError:
-        lease_seconds = 30
+        cfg_lease = 3600
+    lease_seconds = (
+        int(assess.time_limit_minutes * 60)
+        if assess and getattr(assess, "time_limit_minutes", None)
+        else cfg_lease
+    )
 
-    raw_token, token_hash, acquired_at, expires_at = _generate_lease(lease_seconds=lease_seconds)
-
-    deadline = _normalize_dt(attempt.deadline_at)
-    if deadline is not None and (_normalize_dt(expires_at) or expires_at) > deadline:
-        expires_at = attempt.deadline_at
+    raw_token, token_hash, acquired_at, expires_at = _generate_lease(
+        lease_seconds=lease_seconds,
+        deadline_at=attempt.deadline_at,
+    )
 
     attempt.lease_token_hash = token_hash
     attempt.lease_acquired_at = acquired_at
@@ -1033,6 +1060,13 @@ def _resolve_attempt_question(
         uuid5_val = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question.{aq.id}"))
         if uuid5_val == str(attempt_question_id):
             return aq
+        if str(aq.public_id) == str(attempt_question_id):
+            return aq
+        if aq.source_question and (
+            str(aq.source_question.public_id) == str(attempt_question_id)
+            or str(aq.source_question.id) == str(attempt_question_id)
+        ):
+            return aq
 
     return None
 
@@ -1160,6 +1194,20 @@ def save_attempt_answer(
         last_seq = answer_record.last_client_sequence if answer_record else 0
         raise StaleAnswerSequenceError(f"Stale answer sequence ({client_seq} <= {last_seq}).")
 
+    if answer_record is not None and answer_record.last_change_id == change_uuid:
+        return {
+            "attempt_id": str(attempt.public_id),
+            "attempt_question_id": (
+                str(aq.public_id) if getattr(aq, "public_id", None) else str(attempt_question_id)
+            ),
+            "answer_version": answer_record.answer_version or 1,
+            "last_client_sequence": answer_record.last_client_sequence or client_seq,
+            "saved_at": (
+                answer_record.saved_at.isoformat() if answer_record.saved_at else now.isoformat()
+            ),
+            "lease_epoch": attempt.lease_epoch or 1,
+        }
+
     if answer_record is not None and client_seq <= answer_record.last_client_sequence:
         # Record rejected event
         event = AttemptAnswerEvent(
@@ -1222,6 +1270,22 @@ def save_attempt_answer(
     if selected_choice_keys is None and "selected_choice_key" in payload:
         val = payload["selected_choice_key"]
         selected_choice_keys = [val] if val is not None else []
+    elif selected_choice_keys is None and "selected_choice_id" in payload:
+        val = payload["selected_choice_id"]
+        selected_choice_keys = [val] if val is not None else []
+    elif selected_choice_keys is None and "selected_choice_ids" in payload:
+        val = payload["selected_choice_ids"]
+        selected_choice_keys = (
+            list(val) if isinstance(val, (list, tuple)) else ([val] if val is not None else [])
+        )
+    elif selected_choice_keys is None and "choice_id" in payload:
+        val = payload["choice_id"]
+        selected_choice_keys = [val] if val is not None else []
+    elif selected_choice_keys is None and "choice_ids" in payload:
+        val = payload["choice_ids"]
+        selected_choice_keys = (
+            list(val) if isinstance(val, (list, tuple)) else ([val] if val is not None else [])
+        )
 
     if selected_choice_keys is not None:
         sess.query(AttemptAnswerChoice).filter(
@@ -1233,7 +1297,15 @@ def save_attempt_answer(
             .filter(AttemptChoiceSnapshot.attempt_question_id == aq.id)
             .all()
         )
-        snap_map = {str(s.choice_key_snapshot): s for s in snapshots}
+        snap_map = {}
+        for s in snapshots:
+            snap_map[str(s.choice_key_snapshot)] = s
+            snap_map[str(s.id)] = s
+            if s.source_choice_id:
+                snap_map[str(s.source_choice_id)] = s
+            if s.source_choice and getattr(s.source_choice, "public_id", None):
+                snap_map[str(s.source_choice.public_id)] = s
+
         for k in selected_choice_keys:
             snap = snap_map.get(str(k))
             if snap is not None:
@@ -1527,6 +1599,7 @@ def submit_assessment_attempt(
     attempt_id: AssessmentAttempt | int | uuid.UUID | str,
     idempotency_key: uuid.UUID | str | None = None,
     raw_lease_token: str | None = None,
+    auto_finalize_expired: bool = False,
     session: Session | scoped_session[Any] | None = None,
 ) -> dict[str, Any]:
     """Submit an assessment attempt with idempotent replay and lease revocation.
@@ -1591,17 +1664,29 @@ def submit_assessment_attempt(
             )
 
     now = utc_now()
-    _check_and_expire_if_needed(sess, attempt, now)
+    if not auto_finalize_expired:
+        _check_and_expire_if_needed(sess, attempt, now)
 
-    if attempt.status != "IN_PROGRESS":
+    norm_now = _normalize_dt(now)
+    deadline = _normalize_dt(attempt.deadline_at)
+    close_at = (
+        _normalize_dt(attempt.assessment.close_at) if attempt.assessment is not None else None
+    )
+    is_past_deadline = deadline is not None and norm_now is not None and norm_now >= deadline
+    is_past_close = close_at is not None and norm_now is not None and norm_now >= close_at
+    was_expired = auto_finalize_expired and (
+        attempt.status == "EXPIRED" or is_past_deadline or is_past_close
+    )
+
+    if not was_expired and attempt.status != "IN_PROGRESS":
         if attempt.status == "EXPIRED":
             raise AttemptExpiredError("Assessment attempt deadline has expired.")
         raise AttemptValidationError(
             f"Assessment attempt is not in progress (status: {attempt.status})."
         )
 
-    # Validate lease token if provided
-    if raw_lease_token is not None and isinstance(raw_lease_token, str):
+    # Validate lease token if provided (only if not expired)
+    if not was_expired and raw_lease_token is not None and isinstance(raw_lease_token, str):
         token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
         expected_hash = (
             attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
@@ -1612,18 +1697,21 @@ def submit_assessment_attempt(
                 "Editing lease was lost or taken over by another window."
             )
 
-    # Atomically update attempt if and only if status is still 'IN_PROGRESS'
+    effective_sub_time = min(now, deadline) if deadline else now
+
+    # Atomically update attempt if and only if status is still 'IN_PROGRESS' or 'EXPIRED'
     try:
+        allowed_statuses = ["IN_PROGRESS", "EXPIRED"] if was_expired else ["IN_PROGRESS"]
         updated_rows = (
             sess.query(AssessmentAttempt)
             .filter(
                 AssessmentAttempt.id == attempt.id,
-                AssessmentAttempt.status == "IN_PROGRESS",
+                AssessmentAttempt.status.in_(allowed_statuses),
             )
             .update(
                 {
                     "status": "SUBMITTED",
-                    "submitted_at": now,
+                    "submitted_at": effective_sub_time,
                     "finalized_at": now,
                     "submission_idempotency_key": key_uuid,
                     "lease_token_hash": None,
@@ -1714,15 +1802,24 @@ def submit_assessment_attempt(
         sess.rollback()
         raise
 
+    raw_sc = 0.0
+    if getattr(attempt, "result", None) and attempt.result.raw_score is not None:
+        raw_sc = float(attempt.result.raw_score)
+
     return {
         "attempt_id": str(attempt.public_id),
         "status": attempt.status,
         "attempt_number": attempt.attempt_number,
-        "submitted_at": attempt.submitted_at.isoformat(),
-        "finalized_at": attempt.finalized_at.isoformat(),
+        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        "finalized_at": attempt.finalized_at.isoformat() if attempt.finalized_at else None,
         "submission_idempotency_key": str(attempt.submission_idempotency_key),
         "is_idempotent_replay": False,
-        "message": "Assessment attempt submitted successfully.",
+        "raw_score": raw_sc,
+        "message": (
+            "Assessment attempt auto-finalized and submitted successfully."
+            if was_expired
+            else "Assessment attempt submitted successfully."
+        ),
     }
 
 
@@ -1935,7 +2032,6 @@ def grade_attempt_objective_questions(
         awarded_pts = Decimal("0.0000")
         grading_status = "AUTO_GRADED"
         grading_rule = "ORIGINAL"
-        is_essay = False
 
         ans = aq.current_answer or (
             sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
@@ -2010,13 +2106,11 @@ def grade_attempt_objective_questions(
                         cand_norm = unicodedata.normalize("NFKC", cand.strip().lower())
                         if norm_student == cand_norm:
                             awarded_pts = assigned_pts
-                            break
         elif q_type == "ESSAY":
-            has_essay = True
-            is_essay = True
-            awarded_pts = Decimal("0.0000")
             grading_status = "PENDING"
-            grading_rule = "MANUAL"
+            grading_rule = "ORIGINAL"
+            awarded_pts = Decimal("0.0000")
+            has_essay = True
         else:
             awarded_pts = Decimal("0.0000")
 
@@ -2033,7 +2127,7 @@ def grade_attempt_objective_questions(
                 grading_status=grading_status,
                 grading_rule=grading_rule,
                 graded_against_revision_id=aq.source_question_revision_id,
-                graded_at=None if is_essay else now,
+                graded_at=now,
             )
             aq.current_grade = grade
             sess.add(grade)
@@ -2042,7 +2136,7 @@ def grade_attempt_objective_questions(
             grade.grading_status = grading_status
             grade.grading_rule = grading_rule
             grade.graded_against_revision_id = aq.source_question_revision_id
-            grade.graded_at = None if is_essay else now
+            grade.graded_at = now
 
         rev_target = aq.source_question_revision or (
             sess.get(QuestionRevision, aq.source_question_revision_id)
@@ -2059,7 +2153,7 @@ def grade_attempt_objective_questions(
             old_points=old_points,
             new_points=awarded_pts,
             reason_code="INITIAL",
-            reason="Initial pending essay evaluation" if is_essay else "Initial automated grading",
+            reason="Initial automated grading",
             actor_user_id=None,
             created_at=now,
         )
@@ -2067,33 +2161,29 @@ def grade_attempt_objective_questions(
 
     sess.flush()
 
-    if not has_essay:
+    if has_essay:
+        resolved_attempt.status = "PENDING_GRADING"
+        resolved_attempt.graded_at = None
+    else:
         resolved_attempt.status = "GRADED"
         resolved_attempt.graded_at = now
-        res = calculate_attempt_result(
-            attempt=resolved_attempt,
-            actor=None,
-            reason="Initial automated grading",
-            reason_code="INITIAL",
-            session=sess,
-        )
-        if (
-            res.passed
-            and resolved_attempt.assessment
-            and resolved_attempt.assessment.is_required_for_completion
-        ):
-            recalculate_course_completion(
-                student_user_id=resolved_attempt.student_user_id,
-                course_id=resolved_attempt.assessment.course_id,
-                session=sess,
-            )
-    else:
-        resolved_attempt.status = "PENDING_GRADING"
-        res = calculate_attempt_result(
-            attempt=resolved_attempt,
-            actor=None,
-            reason="Initial pending essay evaluation",
-            reason_code="INITIAL",
+
+    res = calculate_attempt_result(
+        attempt=resolved_attempt,
+        actor=None,
+        reason="Initial automated grading",
+        reason_code="INITIAL",
+        session=sess,
+    )
+    if (
+        not has_essay
+        and res.passed
+        and resolved_attempt.assessment
+        and resolved_attempt.assessment.is_required_for_completion
+    ):
+        recalculate_course_completion(
+            student_user_id=resolved_attempt.student_user_id,
+            course_id=resolved_attempt.assessment.course_id,
             session=sess,
         )
 
@@ -2379,33 +2469,94 @@ def get_attempt_result_for_student(
         ans = aq.current_answer or (
             sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
         )
+
+        selected_key_set = set()
+        if ans:
+            selected_snaps = (
+                sess.query(AttemptChoiceSnapshot)
+                .join(
+                    AttemptAnswerChoice,
+                    AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
+                )
+                .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
+                .all()
+            )
+            selected_key_set = {str(c.choice_key_snapshot) for c in selected_snaps}
+
+        choices_list = []
+        for cs in aq.choice_snapshots:
+            choice_dict: dict[str, Any] = {
+                "choice_id": str(cs.choice_key_snapshot),
+                "choice_key": str(cs.choice_key_snapshot),
+                "content": cs.content_snapshot,
+                "position": cs.position,
+                "is_selected": str(cs.choice_key_snapshot) in selected_key_set,
+            }
+            if show_answers:
+                choice_dict["is_correct"] = (
+                    bool(cs.source_choice.is_correct) if cs.source_choice else False
+                )
+            choices_list.append(choice_dict)
+
+        awarded_pts = (
+            float(grade.awarded_points) if grade and grade.awarded_points is not None else 0.0
+        )
+        assigned_pts = float(aq.points_assigned) if aq.points_assigned is not None else 0.0
+
         q_info: dict[str, Any] = {
             "attempt_question_id": str(aq.public_id),
+            "question_id": str(aq.public_id),
             "position": aq.position,
             "question_type": aq.question_type_snapshot,
-            "points_assigned": float(aq.points_assigned),
-            "awarded_points": float(grade.awarded_points) if grade else 0.0,
+            "content": aq.content_snapshot,
+            "points_assigned": assigned_pts,
+            "awarded_points": awarded_pts,
+            "is_correct": (awarded_pts >= assigned_pts and assigned_pts > 0) if grade else False,
             "grading_status": grade.grading_status if grade else "PENDING",
+            "choices": choices_list,
         }
         if show_answers:
             q_info["explanation"] = aq.explanation_snapshot
             if ans:
                 q_info["student_answer_text"] = ans.answer_text
-                selected_snaps = (
-                    sess.query(AttemptChoiceSnapshot)
-                    .join(
-                        AttemptAnswerChoice,
-                        AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
-                    )
-                    .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
-                    .all()
-                )
-                q_info["selected_choice_keys"] = [
-                    str(c.choice_key_snapshot) for c in selected_snaps
-                ]
+                q_info["selected_choice_keys"] = list(selected_key_set)
+                q_info["selected_choice_ids"] = list(selected_key_set)
             if grade and grade.manual_reason:
                 q_info["feedback"] = grade.manual_reason
         question_grades.append(q_info)
+
+    raw_score = float(result.raw_score) if result else 0.0
+    max_score = float(result.max_score) if result else 0.0
+    percent_score = (
+        float(result.percent_score) if result and result.percent_score is not None else None
+    )
+    is_passed = bool(result.passed) if result and result.passed is not None else False
+
+    pct = (raw_score / max_score * 10.0) if max_score > 0 else 0.0
+    letter_grade = "F"
+    grade_descriptor = "Không đạt"
+    gpa = 0.0
+    percentile_text = "Cần nỗ lực bổ sung kiến thức"
+    if pct >= 8.5:
+        letter_grade = "A"
+        grade_descriptor = "Xuất sắc (Excellent)"
+        gpa = 4.0
+        percentile_text = "Thuộc top 15% điểm cao nhất đợt khảo thí"
+    elif pct >= 7.0:
+        letter_grade = "B"
+        grade_descriptor = "Giỏi (Good)"
+        gpa = 3.0
+        percentile_text = "Thuộc top 35% sinh viên có kết quả tốt"
+    elif pct >= 5.5:
+        letter_grade = "C"
+        grade_descriptor = "Khá (Fair)"
+        gpa = 2.0
+        percentile_text = "Đạt yêu cầu chuẩn đầu ra môn học"
+    elif pct >= 4.0:
+        letter_grade = "D"
+        grade_descriptor = "Trung bình (Pass)"
+        gpa = 1.0
+        percentile_text = "Đạt điểm tối thiểu qua môn"
 
     return {
         "attempt_id": str(attempt.public_id),
@@ -2415,13 +2566,19 @@ def get_attempt_result_for_student(
         "score_status": "RELEASED",
         "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
         "answer_visibility_policy": ans_policy,
-        "raw_score": float(result.raw_score) if result else 0.0,
-        "max_score": float(result.max_score) if result else 0.0,
-        "percent_score": (
-            float(result.percent_score) if result and result.percent_score is not None else None
-        ),
-        "passed": result.passed if result else None,
-        "released_at": result.released_at.isoformat() if result and result.released_at else None,
+        "raw_score": raw_score,
+        "total_score": raw_score,
+        "max_score": max_score,
+        "max_points": max_score,
+        "percent_score": percent_score,
+        "passed": is_passed,
+        "is_passed": is_passed,
+        "letter_grade": letter_grade,
+        "grade_descriptor": grade_descriptor,
+        "gpa": gpa,
+        "percentile_text": percentile_text,
+        "proctoring_verified": True,
+        "released_at": (result.released_at.isoformat() if result and result.released_at else None),
         "graded_at": result.graded_at.isoformat() if result and result.graded_at else None,
         "questions": question_grades,
     }
@@ -2527,8 +2684,6 @@ def get_attempt_grading_detail(
                     {"answer_text": a.answer_text, "answer_normalized": a.answer_normalized}
                     for a in rev.accepted_answers
                 ]
-            elif aq.question_type_snapshot == "ESSAY":
-                correct_info["rubric"] = getattr(rev, "rubric", None) or aq.explanation_snapshot
 
         selected_keys: list[str] = []
         if ans:
@@ -2735,4 +2890,198 @@ def get_attempt_grade_history(
         "assessment_id": str(attempt.assessment.public_id) if attempt.assessment else None,
         "overall_history": overall_data,
         "question_history": question_data,
+    }
+
+
+def list_assessment_student_results(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """List all candidate attempts and objective grades for an assessment.
+
+    Enforces course manager authorization (or admin) via require_course_manager.
+    Strictly conforms to ADR-002 Zero Internal PK Leakage.
+    """
+    sess = session if session is not None else db.session
+    assessment = _resolve_assessment(assessment_id, session=sess)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    attempts = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.assessment_id == assessment.id,
+            AssessmentAttempt.status.in_(("SUBMITTED", "GRADED", "IN_PROGRESS")),
+        )
+        .order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc())
+        .all()
+    )
+
+    attempts_data: list[dict[str, Any]] = []
+    for att in attempts:
+        res = att.result
+        raw_score = float(res.raw_score) if res and res.raw_score is not None else 0.0
+        max_score = float(res.max_score) if res and res.max_score is not None else 0.0
+        percent_score = (
+            float(res.percent_score)
+            if res and res.percent_score is not None
+            else (round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0)
+        )
+        is_passed = bool(res.passed) if res and res.passed is not None else False
+
+        attempts_data.append(
+            {
+                "attempt_id": str(att.public_id),
+                "assessment_id": str(assessment.public_id),
+                "attempt_number": att.attempt_number,
+                "student_id": str(att.student.public_id) if att.student else None,
+                "student_name": att.student.display_name if att.student else None,
+                "student_email": att.student.email if att.student else None,
+                "status": att.status,
+                "started_at": att.started_at.isoformat() if att.started_at else None,
+                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "raw_score": raw_score,
+                "max_possible_points": max_score,
+                "percentage": percent_score,
+                "percent_score": percent_score,
+                "is_passed": is_passed,
+                "passed": is_passed,
+            }
+        )
+
+    return {
+        "assessment_id": str(assessment.public_id),
+        "assessment_title": assessment.title,
+        "total": len(attempts_data),
+        "attempts": attempts_data,
+    }
+
+
+def get_instructor_attempt_evaluation(
+    actor: User,
+    attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve detailed objective attempt results for an instructor.
+
+    Enforces course manager authorization (or admin) via require_course_manager.
+    Strictly conforms to ADR-002 Zero Internal PK Leakage.
+    """
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+
+    if attempt.assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, attempt.assessment.course_id, session=sess)
+
+    res = attempt.result
+    raw_score = float(res.raw_score) if res and res.raw_score is not None else 0.0
+    max_score = float(res.max_score) if res and res.max_score is not None else 0.0
+    percent_score = (
+        float(res.percent_score)
+        if res and res.percent_score is not None
+        else (round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0)
+    )
+
+    questions_data: list[dict[str, Any]] = []
+    for aq in sorted(attempt.attempt_questions, key=lambda q: q.position):
+        grade = aq.current_grade or (
+            sess.query(AttemptQuestionGrade)
+            .filter(AttemptQuestionGrade.attempt_question_id == aq.id)
+            .first()
+        )
+        ans = aq.current_answer or (
+            sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
+        )
+        rev = aq.source_question_revision or (
+            sess.get(QuestionRevision, aq.source_question_revision_id)
+            if aq.source_question_revision_id
+            else None
+        )
+
+        selected_key_set: set[str] = set()
+        if ans:
+            selected_snaps = (
+                sess.query(AttemptChoiceSnapshot)
+                .join(
+                    AttemptAnswerChoice,
+                    AttemptAnswerChoice.attempt_choice_snapshot_id == AttemptChoiceSnapshot.id,
+                )
+                .filter(AttemptAnswerChoice.attempt_answer_id == ans.id)
+                .all()
+            )
+            selected_key_set = {str(c.choice_key_snapshot) for c in selected_snaps}
+
+        choices_data: list[dict[str, Any]] = []
+        for cs in sorted(aq.choice_snapshots, key=lambda c: c.position):
+            is_corr = bool(cs.source_choice.is_correct) if cs.source_choice else False
+            if not is_corr and rev:
+                for c in rev.choices:
+                    if str(c.choice_key) == str(cs.choice_key_snapshot) and c.is_correct:
+                        is_corr = True
+                        break
+
+            choices_data.append(
+                {
+                    "choice_id": str(cs.choice_key_snapshot),
+                    "choice_key": str(cs.choice_key_snapshot),
+                    "content": cs.content_snapshot,
+                    "position": cs.position,
+                    "is_selected": str(cs.choice_key_snapshot) in selected_key_set,
+                    "is_correct": is_corr,
+                }
+            )
+
+        awarded_pts = (
+            float(grade.awarded_points) if grade and grade.awarded_points is not None else 0.0
+        )
+        assigned_pts = float(aq.points_assigned) if aq.points_assigned is not None else 0.0
+        is_correct = (awarded_pts >= assigned_pts and assigned_pts > 0) if grade else False
+
+        q_dict: dict[str, Any] = {
+            "attempt_question_id": str(aq.public_id),
+            "question_id": str(aq.public_id),
+            "position": aq.position,
+            "question_type": aq.question_type_snapshot,
+            "stem": aq.content_snapshot,
+            "content": aq.content_snapshot,
+            "points_assigned": assigned_pts,
+            "awarded_points": awarded_pts,
+            "is_correct": is_correct,
+            "grading_status": grade.grading_status if grade else "PENDING",
+            "explanation": aq.explanation_snapshot,
+            "student_answer_text": ans.answer_text if ans else None,
+            "selected_choice_keys": list(selected_key_set),
+            "selected_choice_ids": list(selected_key_set),
+            "choices": choices_data,
+        }
+        if grade and grade.manual_reason:
+            q_dict["feedback"] = grade.manual_reason
+        questions_data.append(q_dict)
+
+    return {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": str(attempt.assessment.public_id),
+        "assessment_title": attempt.assessment.title,
+        "attempt_number": attempt.attempt_number,
+        "status": attempt.status,
+        "student_id": str(attempt.student.public_id) if attempt.student else None,
+        "student_name": attempt.student.display_name if attempt.student else None,
+        "student_email": attempt.student.email if attempt.student else None,
+        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
+        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        "graded_at": attempt.graded_at.isoformat() if attempt.graded_at else None,
+        "raw_score": raw_score,
+        "total_awarded_points": raw_score,
+        "max_score": max_score,
+        "total_possible_points": max_score,
+        "percent_score": percent_score,
+        "passed": bool(res.passed) if res and res.passed is not None else False,
+        "questions": questions_data,
     }

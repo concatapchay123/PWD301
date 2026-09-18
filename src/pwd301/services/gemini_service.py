@@ -10,14 +10,18 @@ Implements:
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import hashlib
 import json
 import logging
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
 from abc import ABC, abstractmethod
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +38,49 @@ from pwd301.services.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Security & API Key Regex Patterns for Zero Leakage Redaction
+_KEY_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"AQ\.[A-Za-z0-9_-]{20,}"),
+    re.compile(r"AIzaSy[A-Za-z0-9_-]{20,}"),
+]
+
+
+def mask_api_key(text: Any) -> str:
+    """Redact raw Gemini/Google API keys from strings, logs, URLs, and exceptions."""
+    if not text:
+        return ""
+    if not isinstance(text, str):
+        try:
+            text = str(text)
+        except Exception:
+            return ""
+    result = text
+    for pat in _KEY_PATTERNS:
+        result = pat.sub("[REDACTED_API_KEY]", result)
+    return result
+
+
+class RedactingFilter(logging.Filter):
+    """Logging filter that redacts API keys and secrets from all emitted log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = mask_api_key(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: mask_api_key(v) if isinstance(v, str) else v
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(
+                    mask_api_key(a) if isinstance(a, str) else a for a in record.args
+                )
+        return True
+
+
+logger.addFilter(RedactingFilter())
 
 # Bounded worker thread pool for resilient, non-blocking outbound LLM network requests
 _GEMINI_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
@@ -418,28 +465,196 @@ class MockGeminiClient(GeminiClientBase):
         )
 
 
-def load_api_keys_from_keyfile() -> list[str]:
-    """Scan and parse Gemini API keys from api/api_key.md if available."""
-    keys: list[str] = []
-    candidates = [
-        Path("api/api_key.md"),
-        Path(__file__).resolve().parent.parent.parent.parent / "api" / "api_key.md",
-    ]
-    for p in candidates:
+class GeminiKeyStatus(StrEnum):
+    """Health classification for managed Gemini API keys."""
+
+    HEALTHY = "HEALTHY"
+    RATE_LIMITED = "RATE_LIMITED"
+    HIGH_DEMAND = "HIGH_DEMAND"
+    INVALID = "INVALID"
+
+
+class GeminiKeyPool:
+    """Thread-safe pool managing Gemini API keys, health states, rotation, and cool-downs."""
+
+    def __init__(
+        self,
+        keys: list[str] | None = None,
+        keyfile_paths: list[Path] | None = None,
+    ) -> None:
+        self._lock = threading.Lock()
+        self._keys: list[str] = []
+        self._statuses: dict[str, GeminiKeyStatus] = {}
+        self._cooldown_until: dict[str, float] = {}
+        self._active_index: int = 0
+
+        # Load keys from explicit arguments or file paths
+        if keys is not None:
+            for k in keys:
+                self._add_key(k, allow_test_keys=True)
+        elif keyfile_paths is not None:
+            for p in keyfile_paths:
+                self._load_from_path(p)
+        else:
+            self._load_default_sources()
+
+    def _add_key(self, raw_key: str, allow_test_keys: bool = False) -> None:
+        cleaned = raw_key.strip()
+        if not cleaned:
+            return
+        is_valid_format = (
+            cleaned.startswith("AQ.") or cleaned.startswith("AIzaSy")
+        ) and len(cleaned) > 20
+        if (
+            is_valid_format or (allow_test_keys and len(cleaned) > 0)
+        ) and cleaned not in self._keys:
+            self._keys.append(cleaned)
+            self._statuses[cleaned] = GeminiKeyStatus.HEALTHY
+
+    def _load_from_path(self, p: Path) -> None:
         if p.exists() and p.is_file():
             try:
                 for line in p.read_text(encoding="utf-8").splitlines():
-                    cleaned = line.strip()
-                    is_valid_key = (
-                        cleaned.startswith("AQ.") or cleaned.startswith("AIzaSy")
-                    ) and len(cleaned) > 20
-                    if is_valid_key and cleaned not in keys:
-                        keys.append(cleaned)
-            except Exception as e:
-                logger.debug("Failed reading keyfile %s: %s", p, e)
-            if keys:
-                break
-    return keys
+                    self._add_key(line)
+            except Exception as exc:
+                logger.debug("Error reading keyfile %s: %s", p, exc)
+
+    def _load_default_sources(self) -> None:
+        candidates = [
+            Path("api/api_key.md"),
+            Path(__file__).resolve().parent.parent.parent.parent / "api" / "api_key.md",
+        ]
+        for p in candidates:
+            self._load_from_path(p)
+
+    @property
+    def keys(self) -> list[str]:
+        with self._lock:
+            return list(self._keys)
+
+    def get_key_status(self, key: str) -> GeminiKeyStatus:
+        with self._lock:
+            return self._statuses.get(key, GeminiKeyStatus.INVALID)
+
+    def get_current_key(self) -> str | None:
+        """Retrieve the currently active healthy key, or rotate to next available healthy key."""
+        with self._lock:
+            if not self._keys:
+                return None
+            now = time.time()
+            n = len(self._keys)
+            for i in range(n):
+                idx = (self._active_index + i) % n
+                k = self._keys[idx]
+                st = self._statuses.get(k, GeminiKeyStatus.HEALTHY)
+                if st == GeminiKeyStatus.HEALTHY:
+                    self._active_index = idx
+                    return k
+                elif st in (GeminiKeyStatus.RATE_LIMITED, GeminiKeyStatus.HIGH_DEMAND):
+                    if now >= self._cooldown_until.get(k, 0):
+                        self._statuses[k] = GeminiKeyStatus.HEALTHY
+                        self._active_index = idx
+                        return k
+            for i in range(n):
+                idx = (self._active_index + i) % n
+                k = self._keys[idx]
+                if self._statuses.get(k) != GeminiKeyStatus.INVALID:
+                    self._active_index = idx
+                    return k
+            return None
+
+    def get_healthy_keys_sequence(self, max_keys: int = 10) -> list[str]:
+        """Return a sequence of healthy and recovering keys to try for a request."""
+        with self._lock:
+            if not self._keys:
+                return []
+            now = time.time()
+            n = len(self._keys)
+            healthy_list: list[str] = []
+            cooldown_list: list[str] = []
+
+            for i in range(n):
+                idx = (self._active_index + i) % n
+                k = self._keys[idx]
+                st = self._statuses.get(k, GeminiKeyStatus.HEALTHY)
+                if st == GeminiKeyStatus.HEALTHY:
+                    healthy_list.append(k)
+                elif st in (GeminiKeyStatus.RATE_LIMITED, GeminiKeyStatus.HIGH_DEMAND):
+                    if now >= self._cooldown_until.get(k, 0):
+                        self._statuses[k] = GeminiKeyStatus.HEALTHY
+                        healthy_list.append(k)
+                    else:
+                        cooldown_list.append(k)
+            result = healthy_list + cooldown_list
+            if not result:
+                result = [self._keys[(self._active_index + i) % n] for i in range(n)]
+            return result[:max_keys]
+
+    def report_key_success(self, key: str) -> None:
+        """Mark key healthy and lock active index onto this working key."""
+        with self._lock:
+            if key in self._statuses:
+                self._statuses[key] = GeminiKeyStatus.HEALTHY
+                with contextlib.suppress(ValueError):
+                    self._active_index = self._keys.index(key)
+
+    def report_key_failure(self, key: str, error_code: int, reason: str = "") -> None:
+        """Report error on key and transition health status safely without secret leaks."""
+        with self._lock:
+            now = time.time()
+            key_fingerprint = f"Key ending ...{key[-6:] if len(key) >= 6 else '???'}"
+            if error_code in (401, 403):
+                self._statuses[key] = GeminiKeyStatus.INVALID
+                logger.warning(
+                    "Gemini API key %s marked INVALID (HTTP %d: %s). Rotating to next key.",
+                    key_fingerprint,
+                    error_code,
+                    mask_api_key(reason),
+                )
+            elif error_code == 400 and (
+                "API_KEY" in reason.upper() or "KEY_EXPIRED" in reason.upper()
+            ):
+                self._statuses[key] = GeminiKeyStatus.INVALID
+                logger.warning(
+                    "Gemini API key %s marked INVALID (HTTP 400: %s). Rotating to next key.",
+                    key_fingerprint,
+                    mask_api_key(reason),
+                )
+            elif error_code == 429:
+                self._statuses[key] = GeminiKeyStatus.RATE_LIMITED
+                self._cooldown_until[key] = now + 60.0
+                logger.warning(
+                    "Gemini API key %s marked RATE_LIMITED for 60s (HTTP 429). Rotating.",
+                    key_fingerprint,
+                )
+            elif error_code == 503:
+                self._statuses[key] = GeminiKeyStatus.HIGH_DEMAND
+                self._cooldown_until[key] = now + 15.0
+                logger.warning(
+                    "Gemini API key %s marked HIGH_DEMAND for 15s (HTTP 503). Rotating.",
+                    key_fingerprint,
+                )
+            else:
+                self._cooldown_until[key] = now + 5.0
+            if self._keys:
+                self._active_index = (self._active_index + 1) % len(self._keys)
+
+
+_SHARED_KEY_POOL: GeminiKeyPool | None = None
+
+
+def get_key_pool() -> GeminiKeyPool:
+    """Retrieve shared GeminiKeyPool singleton."""
+    global _SHARED_KEY_POOL
+    if _SHARED_KEY_POOL is None:
+        _SHARED_KEY_POOL = GeminiKeyPool()
+    return _SHARED_KEY_POOL
+
+
+def load_api_keys_from_keyfile() -> list[str]:
+    """Scan and parse Gemini API keys from api/api_key.md if available."""
+    pool = get_key_pool()
+    return pool.keys
 
 
 # Active key index shared across requests for efficient rotation
@@ -447,41 +662,54 @@ _ACTIVE_KEY_INDEX: int = 0
 
 
 class RealGeminiClient(GeminiClientBase):
-    """Production Gemini REST API client with resilience, key rotation, and error translation."""
+    """Production Gemini REST API client with resilience, multi-key rotation, and model fallback."""
 
     FALLBACK_MODELS = (
-        "gemini-3.8-flash",
         "gemini-3.6-flash",
         "gemini-flash-latest",
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
     )
 
     def __init__(
         self,
-        api_key: str,
-        model_name: str = "gemini-3.8-flash",
+        api_key: str | None = None,
+        model_name: str = "gemini-3.6-flash",
         timeout_seconds: float = 15,
+        key_pool: GeminiKeyPool | None = None,
     ) -> None:
-        global _ACTIVE_KEY_INDEX
-        self.api_key = api_key
-        self.api_keys = [api_key] if api_key else []
-        file_keys = load_api_keys_from_keyfile()
-        for k in file_keys:
-            if k not in self.api_keys:
-                self.api_keys.append(k)
+        if key_pool is not None:
+            self.key_pool = key_pool
+        else:
+            self.key_pool = GeminiKeyPool(keys=[api_key] if api_key else None)
 
-        self.model_name = model_name or "gemini-3.8-flash"
+        if api_key:
+            self.key_pool._add_key(api_key, allow_test_keys=True)
+
+        self.api_key = api_key or self.key_pool.get_current_key() or ""
+        self.model_name = model_name or "gemini-3.6-flash"
         # Timeout clamping per system specification (15s to 30s)
         # Allows sub-second values when explicitly supplied for unit testing
         if timeout_seconds < 1:
             self.timeout_seconds = timeout_seconds
         else:
-            self.timeout_seconds = min(30, max(15, int(timeout_seconds)))
+            self.timeout_seconds = min(30, max(5, int(timeout_seconds)))
         self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
-        self._key_idx = _ACTIVE_KEY_INDEX
+
+    @property
+    def api_keys(self) -> list[str]:
+        return self.key_pool.keys
+
+    @api_keys.setter
+    def api_keys(self, new_keys: list[str]) -> None:
+        self.key_pool = GeminiKeyPool(keys=new_keys)
+        if new_keys:
+            self.api_key = new_keys[0]
 
     def _call_gemini_api(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Execute HTTP POST to Gemini REST API with comprehensive key rotation & model fallback."""
-        global _ACTIVE_KEY_INDEX
         req_data = json.dumps(payload).encode("utf-8")
 
         candidate_models = [self.model_name] + [
@@ -489,7 +717,6 @@ class RealGeminiClient(GeminiClientBase):
         ]
 
         last_error: Exception | None = None
-        num_keys = len(self.api_keys)
 
         for model_candidate in candidate_models:
             url = (
@@ -497,17 +724,11 @@ class RealGeminiClient(GeminiClientBase):
                 f"{model_candidate}:generateContent"
             )
 
-            # Build rotating keys starting from _ACTIVE_KEY_INDEX (try up to 6 keys per model)
-            if num_keys > 0:
-                start_idx = _ACTIVE_KEY_INDEX % num_keys
-                keys_to_try = [
-                    self.api_keys[(start_idx + i) % num_keys] for i in range(min(num_keys, 6))
-                ]
-            else:
-                start_idx = 0
+            keys_to_try = self.key_pool.get_healthy_keys_sequence(max_keys=8)
+            if not keys_to_try and self.api_key:
                 keys_to_try = [self.api_key]
 
-            for key_idx_offset, key_attempt in enumerate(keys_to_try):
+            for key_attempt in keys_to_try:
 
                 def _do_http_post(target_url: str = url, target_key: str = key_attempt) -> bytes:
                     headers = {
@@ -532,80 +753,106 @@ class RealGeminiClient(GeminiClientBase):
                     future = _GEMINI_EXECUTOR.submit(_do_http_post)
                     timeout_val = self.timeout_seconds + (0.2 if self.timeout_seconds < 1 else 2)
                     resp_bytes = future.result(timeout=timeout_val)
+                    self.key_pool.report_key_success(key_attempt)
                     if model_candidate != self.model_name:
                         self.model_name = model_candidate
                         self.base_url = url
-                    # Update active key index to the working key
-                    if num_keys > 0:
-                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset) % num_keys
                     return json.loads(resp_bytes.decode("utf-8"))
                 except concurrent.futures.TimeoutError:
                     logger.warning(
-                        "Gemini model %s timed out after %ds on key %d. Trying fallback model.",
+                        "Gemini model %s timed out after %ds on key ending ...%s. Rotating.",
                         model_candidate,
                         self.timeout_seconds,
-                        (start_idx + key_idx_offset) % num_keys if num_keys else 0,
+                        key_attempt[-6:] if len(key_attempt) >= 6 else "???",
                     )
                     last_error = AIServiceUnavailableError(
                         f"Gemini API request timed out after {self.timeout_seconds}s."
                     )
-                    if num_keys > 0:
-                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
-                    break
+                    self.key_pool.report_key_failure(key_attempt, error_code=504, reason="Timeout")
+                    continue
                 except urllib.error.HTTPError as exc:
+                    err_body = ""
+                    with contextlib.suppress(Exception):
+                        err_body = exc.read().decode("utf-8", errors="replace")[:300]
+                    sanitized_body = mask_api_key(err_body)
+
                     if exc.code == 404:
                         logger.warning(
-                            "Gemini model %s returned 404. Trying next candidate model.",
+                            "Gemini model %s returned 404. Cascading to next candidate model.",
                             model_candidate,
                         )
                         last_error = exc
                         break
-                    if exc.code in (429, 403):
-                        logger.warning(
-                            "Gemini API returned %d (quota/auth) on key %d. Rotating to next key.",
-                            exc.code,
-                            (start_idx + key_idx_offset) % num_keys if num_keys else 0,
+                    elif exc.code in (401, 403):
+                        self.key_pool.report_key_failure(
+                            key_attempt, error_code=exc.code, reason=sanitized_body
                         )
-                        if num_keys > 0:
-                            _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
                         last_error = exc
                         continue
-                    if exc.code >= 500:
-                        logger.warning(
-                            "Gemini API returned server error (HTTP %d) for %s. "
-                            "Rotating key/model.",
-                            exc.code,
-                            model_candidate,
+                    elif exc.code == 429:
+                        self.key_pool.report_key_failure(
+                            key_attempt, error_code=429, reason=sanitized_body
+                        )
+                        last_error = exc
+                        continue
+                    elif exc.code == 503:
+                        self.key_pool.report_key_failure(
+                            key_attempt, error_code=503, reason=sanitized_body
+                        )
+                        last_error = AIServiceUnavailableError(
+                            "Gemini service unavailable (HTTP 503)."
+                        )
+                        break
+                    elif exc.code == 400:
+                        if (
+                            "API_KEY" in sanitized_body.upper()
+                            or "KEY_EXPIRED" in sanitized_body.upper()
+                        ):
+                            self.key_pool.report_key_failure(
+                                key_attempt, error_code=400, reason=sanitized_body
+                            )
+                            last_error = exc
+                            continue
+                        else:
+                            last_error = AIError(
+                                f"Gemini API request rejected with status 400: {sanitized_body}"
+                            )
+                            raise last_error from exc
+                    elif exc.code >= 500:
+                        self.key_pool.report_key_failure(
+                            key_attempt, error_code=exc.code, reason=sanitized_body
                         )
                         last_error = AIServiceUnavailableError(
                             f"Gemini service unavailable (HTTP {exc.code})."
                         )
-                        if num_keys > 0:
-                            _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
                         continue
-                    logger.error(
-                        "Gemini API returned client error HTTP %d: %s. "
-                        "Failing fast without fallback.",
-                        exc.code,
-                        exc.reason,
-                    )
-                    last_error = AIError(f"Gemini API request failed with status {exc.code}.")
-                    raise last_error from exc
+                    else:
+                        last_error = AIError(
+                            f"Gemini API request failed with status {exc.code}: {sanitized_body}"
+                        )
+                        raise last_error from exc
                 except (urllib.error.URLError, TimeoutError) as exc:
-                    logger.warning("Gemini API connection error: %s. Rotating key.", exc)
+                    sanitized_exc = mask_api_key(str(exc))
+                    logger.warning("Gemini API connection error: %s. Rotating key.", sanitized_exc)
+                    self.key_pool.report_key_failure(
+                        key_attempt, error_code=502, reason=sanitized_exc
+                    )
                     last_error = AIServiceUnavailableError("Gemini API is currently unreachable.")
-                    if num_keys > 0:
-                        _ACTIVE_KEY_INDEX = (start_idx + key_idx_offset + 1) % num_keys
                     continue
                 except json.JSONDecodeError as exc:
                     logger.error("Failed to parse Gemini API response as JSON: %s", exc)
                     raise AIError("Malformed response received from Gemini API.") from exc
 
         if last_error:
-            if isinstance(last_error, urllib.error.HTTPError) and last_error.code == 429:
-                raise AIQuotaExceededError(
-                    "Gemini API quota exceeded. Please try again shortly."
-                ) from last_error
+            if isinstance(last_error, urllib.error.HTTPError):
+                if last_error.code == 429:
+                    raise AIQuotaExceededError(
+                        "Gemini API quota exceeded. Please try again shortly."
+                    ) from last_error
+                if last_error.code == 503:
+                    raise AIServiceUnavailableError(
+                        "Gemini API returned HTTP 503 Service Unavailable."
+                    ) from last_error
             if isinstance(last_error, (AIError, AIServiceUnavailableError, AIQuotaExceededError)):
                 raise last_error
             status_code = getattr(last_error, "code", "unknown")
@@ -956,24 +1203,26 @@ def get_gemini_client() -> GeminiClientBase:
     try:
         is_testing = current_app.config.get("TESTING", False)
         api_key = current_app.config.get("GEMINI_API_KEY")
-        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-3.8-flash")
+        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-3.6-flash")
         timeout_seconds = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 15)
     except RuntimeError:
         is_testing = True
         api_key = None
-        model_name = "gemini-3.8-flash"
+        model_name = "gemini-3.6-flash"
         timeout_seconds = 15
 
-    if not api_key:
-        file_keys = load_api_keys_from_keyfile()
-        if file_keys:
-            api_key = file_keys[0]
+    pool = get_key_pool()
+    if api_key:
+        pool._add_key(api_key)
 
-    if is_testing or not api_key:
+    active_key = pool.get_current_key() or api_key
+
+    if is_testing or not active_key:
         return MockGeminiClient()
 
     return RealGeminiClient(
-        api_key=api_key,
+        api_key=active_key,
         model_name=model_name,
         timeout_seconds=timeout_seconds,
+        key_pool=pool,
     )

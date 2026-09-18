@@ -231,15 +231,15 @@ def test_admin_audit_log_detail_flow(
 
 
 def test_web_session_audit_logs_interface(client: FlaskClient, admin_user: User) -> None:
-    """Web admin session can view audit logs via HTML template at /admin/audit-logs."""
+    """Web admin session can view audit logs at /admin/audit-logs."""
     login_web_user(client, admin_user)
 
     resp = client.get("/admin/audit-logs")
     assert resp.status_code == 200
-    assert "text/html" in resp.headers["Content-Type"]
-    html_content = resp.get_data(as_text=True)
-    assert "Nhật ký Kiểm toán Hệ thống" in html_content
-    assert "APPEND-ONLY AUDIT TRAIL" in html_content
+    assert resp.is_json
+    data = resp.get_json()
+    assert "items" in data
+    assert "total" in data
 
 
 def test_web_session_csrf_protection_on_admin_actions(

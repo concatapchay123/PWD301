@@ -18,7 +18,8 @@ The System Specification contains system-level database summaries. The **only ca
 `docs/database/PWD301_DATABASE_ARCHITECTURE/`.
 Do not create or maintain a second SQL/schema copy elsewhere.
 
-The prototype in `frontend-preview/` is the **canonical frontend reference** for all UI designs, layouts, styling (`app.css`), icons, user flows and defensive UX patterns (> 70% of frontend already resolved). When implementing Flask Jinja templates (`src/pwd301/templates/`), static scripts, or connected endpoints, agents must refer to `frontend-preview/` while separating views into role-based blueprints (`auth`, `student`, `instructor`, `admin`) and enforcing server-authoritative Flask session authentication and CSRF protection.
+**Platform Architecture Notice (Headless Transition)**:
+PWD301 is a **Pure Headless Backend & REST API Platform**. All legacy frontend UI layers (Jinja templates `src/pwd301/templates/`, static web assets `src/pwd301/static/`, and mock preview prototypes `frontend-preview/`) have been removed. All role-based blueprints (`auth`, `student`, `instructor`, `admin`, `api_*`) serve standardized, machine-readable JSON envelopes. Client applications consume these endpoints via session authentication (Web SPA/AJAX) or JWT (REST API clients).
 
 ## 2. Mandatory reading before changing code
 
@@ -31,8 +32,7 @@ Always:
 5. Read `docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md`.
 6. Read domain-specific System Specification files related to the task.
 7. For database work, read the canonical Database Architecture and relevant DDL before editing models/migrations.
-8. For UI, frontend templates, and connected routes, inspect `frontend-preview/` (`views/`, `components.js`, `app.css`) as the canonical UI reference.
-9. Inspect repository-wide existing code for reuse before adding abstractions, dependencies or duplicate logic.
+8. Inspect repository-wide existing code for reuse before adding abstractions, dependencies or duplicate logic.
 
 ## 3. Scope discipline
 
@@ -162,6 +162,10 @@ Quy tắc này có hiệu lực vĩnh viễn và bắt buộc cho mọi coding a
   - Không tạo abstraction thừa thãi, không sinh boilerplate cho tương lai, chủ động loại bỏ sự cồng kềnh (over-engineering).
 - **Full Output Enforcement** (`full-output-enforcement` / `output-skill`):
   - Luôn sinh mã nguồn đầy đủ 100%, cấm tuyệt đối viết tắt, cấm dùng placeholder như `// TODO`, `// code cũ giữ nguyên` hoặc cắt xén code khi chỉnh sửa/tạo file.
+- **Open Code Review** (`open-code-review` / `open-code-review-delegate`):
+  - Áp dụng triết lý kiến trúc hybrid và bộ tiêu chuẩn review khắt khe của Alibaba Open Code Review cho mọi thay đổi mã nguồn.
+  - Luôn rà soát chuyên sâu theo ruleset đa ngôn ngữ tích hợp: triệt tiêu NullPointerException/nil dereference, race condition, goroutine/memory leak, SQL injection, XSS, sai sót logic điều kiện/biên và lỗi quản lý tài nguyên.
+  - Sử dụng chế độ delegation mode (`ocr delegate preview`, `ocr delegate rule` hoặc trực tiếp đối soát với ruleset chuẩn) để đạt độ chính xác từng dòng (line-level precision) và bảo toàn tính toàn vẹn đa file (cross-file context) trước khi hoàn tất hoặc commit.
 
 ## 2. Bắt buộc sử dụng cho các nhiệm vụ liên quan tới Design & UI/UX
 Đối với mọi tác vụ liên quan đến thiết kế, giao diện người dùng, styling CSS/HTML, layout, typography, animation, tái thiết kế (redesign), đánh giá UI/UX critique hoặc audit chất lượng giao diện (a11y, performance, responsive), agent LUÔN LUÔN PHẢI sử dụng:
@@ -175,6 +179,6 @@ Mỗi khi hoàn thành xong 1 công việc, nhiệm vụ hoặc ở cuối mỗi
 `Đã dùng x skill gồm: ...`
 
 Ví dụ:
-`Đã dùng 4 skill gồm: superpowers (test-driven-development), ponytail, task-observer, full-output-enforcement`
+`Đã dùng 5 skill gồm: superpowers (test-driven-development), ponytail, task-observer, full-output-enforcement, open-code-review`
 hoặc
-`Đã dùng 5 skill gồm: superpowers (brainstorming, writing-plans), ponytail, task-observer, full-output-enforcement, impeccable`
+`Đã dùng 6 skill gồm: superpowers (brainstorming, writing-plans), ponytail, task-observer, full-output-enforcement, impeccable, open-code-review`

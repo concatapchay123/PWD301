@@ -1,13 +1,13 @@
-# BRIEFING — 2026-09-11T15:27:07Z
+# BRIEFING — 2026-09-16T05:16:14Z
 
 ## Mission
-Coordinate full codebase audit, invariant checking, vulnerability analysis, and bug reporting for PWD301.
+Coordinate comprehensive frontend integration from 33 Stitch screens (frontend-preview/) into Flask Web (src/pwd301/templates, src/pwd301/static), preserving Flask session auth, CSRF, RBAC, Timezone, i18n, and passing 100% test suite.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: e:\PWD301\.agents\sentinel_1
-- Orchestrator: f988befe-feec-4b97-b0f5-97b2a93553a8
-- Victory Auditor: fe0b9594-8d35-464d-a763-0b17274b4ff1
+- Orchestrator: ebbe1ae6-5ba3-416c-a025-e0178c543130 (teamwork_preview_orchestrator_6)
+- Victory Auditor: [to be spawned on victory claim]
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
@@ -16,23 +16,25 @@ Coordinate full codebase audit, invariant checking, vulnerability analysis, and 
 - Keep context ultra-light; never write code or perform direct technical implementation
 
 ## User Context
-- **Last user request**: Comprehensive audit and identification of all bugs, errors, security vulnerabilities, business logic violations, and test failures across the PWD301 codebase.
+- **Last user request**: Quota has been reset. Please resume execution of teamwork preview from Milestone 2 verification and proceed through Milestone 3, 4, 5.
 - **Pending clarifications**: none
-- **Delivered results**: none
+- **Delivered results**: Milestone 1 (App Shell) and Milestone 2 (Student Portal) complete & verified with 100% tests passing.
 
 ## Project Status
-- **Phase**: complete
-- **Orchestrator ID**: f988befe-feec-4b97-b0f5-97b2a93553a8 (completed)
-- **Victory Auditor ID**: fe0b9594-8d35-464d-a763-0b17274b4ff1 (completed)
+- **Phase**: in progress (Milestone 1 DONE; Milestone 2 DONE; Milestone 3 Instructor Portal Integration active)
+- **Route**: General (`teamwork_preview_orchestrator`)
+- **Active Orchestrator**: teamwork_preview_orchestrator_6 (ebbe1ae6-5ba3-416c-a025-e0178c543130)
 
 ## Victory Audit Status
-- **Triggered**: yes
-- **Verdict**: VICTORY CONFIRMED
+- **Triggered**: no
+- **Verdict**: pending
 - **Retry count**: 0
 
 ## Artifact Index
-- e:\PWD301\.agents\ORIGINAL_REQUEST.md — Authoritative record of user request
-- e:\PWD301\ORIGINAL_REQUEST.md — Root workspace duplicate of user request
-- e:\PWD301\.agents\AUDIT_REPORT.md — Canonical Master Audit Report
-- e:\PWD301\.agents\teamwork_preview_victory_auditor_1\handoff.md — Independent Victory Audit Report
-- e:\PWD301\.agents\teamwork_preview_orchestrator_1 — Orchestrator workspace
+- e:\PWD301\.agents\ORIGINAL_REQUEST.md — Authoritative record of user requests
+- e:\PWD301\ORIGINAL_REQUEST.md — Root workspace user request record
+- e:\PWD301\.agents\sentinel_1\BRIEFING.md — Sentinel memory and status
+- e:\PWD301\.agents\teamwork_preview_orchestrator_6 — Active Orchestrator workspace (Round 6)
+- e:\PWD301\.agents\sentinel_1\BRIEFING.md — Sentinel memory and status
+- e:\PWD301\.agents\teamwork_preview_orchestrator_5 — Active Orchestrator workspace (Round 5)
+

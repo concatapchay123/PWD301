@@ -28,6 +28,11 @@ from pwd301.services.assessment_service import (
     update_assessment,
     update_question_assignment,
 )
+from pwd301.services.attempt_service import (
+    get_attempt_delivery,
+    list_student_assessment_attempts,
+    start_assessment_attempt,
+)
 from pwd301.services.authorization_service import (
     instructor_required,
     require_authenticated_actor,
@@ -80,6 +85,8 @@ def patch_assessment_route(assessment_id: str) -> tuple[Response, int] | Respons
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or {}
+    if "row_version" not in payload and request.headers.get("If-Match"):
+        payload["row_version"] = request.headers.get("If-Match")
     assessment = update_assessment(actor, assessment_id, payload, session=db.session)
 
     return jsonify(_serialize_assessment(assessment, full=False)), 200
@@ -309,3 +316,64 @@ def regrade_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     result = trigger_assessment_regrade(actor, assessment_id, payload=payload, session=db.session)
     return jsonify(result), 200
+
+
+@api_assessment_bp.route("/<assessment_id>/attempts", methods=["POST"])
+@jwt_required
+def start_assessment_attempt_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """Start an eligible assessment attempt for the authenticated student.
+
+    POST /api/assessments/<assessment_id>/attempts
+    """
+    actor = require_authenticated_actor()
+
+    attempt, raw_lease_token = start_assessment_attempt(
+        student_actor=actor,
+        assessment_id=assessment_id,
+        session=db.session,
+    )
+
+    delivery = get_attempt_delivery(
+        student_actor=actor,
+        attempt_id=str(attempt.public_id),
+        session=db.session,
+    )
+
+    response_payload = {
+        "attempt_id": str(attempt.public_id),
+        "assessment_id": delivery["assessment_id"],
+        "attempt_number": attempt.attempt_number,
+        "status": attempt.status,
+        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
+        "deadline_at": attempt.deadline_at.isoformat() if attempt.deadline_at else None,
+        "server_time": delivery["server_time"],
+        "remaining_seconds": delivery["remaining_seconds"],
+        "raw_lease_token": raw_lease_token,
+        "lease_token": raw_lease_token,
+        "lease_expires_at": (
+            attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
+        ),
+        "lease_epoch": attempt.lease_epoch or 1,
+        "total_questions": delivery["total_questions"],
+        "total_points": delivery["total_points"],
+        "delivery": delivery,
+        "questions": delivery["questions"],
+    }
+    return jsonify(response_payload), 201
+
+
+@api_assessment_bp.route("/<assessment_id>/attempts", methods=["GET"])
+@jwt_required
+def list_student_assessment_attempts_route(assessment_id: str) -> tuple[Response, int] | Response:
+    """List history of attempts taken by the authenticated student for an assessment.
+
+    GET /api/assessments/<assessment_id>/attempts
+    """
+    actor = require_authenticated_actor()
+
+    attempts = list_student_assessment_attempts(
+        student_actor=actor,
+        assessment_id=assessment_id,
+        session=db.session,
+    )
+    return jsonify({"attempts": attempts, "total": len(attempts)}), 200

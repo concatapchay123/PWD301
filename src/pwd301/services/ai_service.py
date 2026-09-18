@@ -173,7 +173,6 @@ def draft_course_questions(
         "MULTIPLE_CHOICE",
         "TRUE_FALSE",
         "SHORT_ANSWER",
-        "ESSAY",
     )
     selected_types = [qt.upper() for qt in (question_types or ["SINGLE_CHOICE"])]
     for qt in selected_types:
@@ -562,6 +561,27 @@ def create_conversation(
             pass
         if target_lesson is None or target_lesson.deleted_at is not None:
             raise ResourceNotFoundError(f"Lesson '{lesson_id}' not found.")
+
+    if c_type == "COURSE" and target_course is None:
+        raise AIValidationError("course_id is required when context_type is COURSE.")
+    if c_type == "LESSON" and target_lesson is None:
+        raise AIValidationError("lesson_id is required when context_type is LESSON.")
+
+    if target_lesson:
+        lesson_course = sess.query(Course).filter(Course.id == target_lesson.course_id).first()
+        if lesson_course is None or lesson_course.deleted_at is not None:
+            raise ResourceNotFoundError(f"Course for lesson '{lesson_id}' not found.")
+        if target_course and target_course.id != lesson_course.id:
+            raise AIValidationError("Lesson does not belong to the specified course.")
+        if not target_course:
+            target_course = lesson_course
+
+    if (
+        target_course
+        and not can_manage_course(actor, target_course, session=sess)
+        and target_course.status != "PUBLISHED"
+    ):
+        raise ForbiddenError("You do not have access to this unpublished course.")
 
     inactivity_secs = _get_inactivity_seconds()
     now = utc_now()

@@ -549,6 +549,11 @@ class InstructorApplication(Base):
         }
         return classes.get(self.status, "badge-secondary")
 
+    @property
+    def public_id(self) -> uuid.UUID:
+        """Deterministic public UUIDv5 per ADR-002 Zero Internal PK Leakage."""
+        return uuid.uuid5(uuid.NAMESPACE_OID, f"instructor_application:{self.id}")
+
 
 class SecurityEvent(Base):
     """Security audit and rate-limiting event model mapping to 'security_events' table."""

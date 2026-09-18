@@ -16,6 +16,7 @@ Implements canonical schema tables from sql/006_files_import.sql:
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
@@ -214,6 +215,119 @@ class FileAsset(Base):
     def owner_id(self, value: int) -> None:
         self.created_by_user_id = value
 
+    def _effective_revision(self) -> Any:
+        """Resolve current revision or fallback to latest available revision."""
+        if self.current_revision is not None:
+            return self.current_revision
+        if self.revisions:
+            return self.revisions[-1]
+        return None
+
+    @property
+    def original_filename(self) -> str:
+        """Original uploaded filename or fallback to display_name."""
+        rev = self._effective_revision()
+        if rev and getattr(rev, "original_filename", None):
+            return rev.original_filename
+        return self.display_name
+
+    @property
+    def original_file_name(self) -> str:
+        """Alias for original_filename."""
+        return self.original_filename
+
+    @property
+    def file_name(self) -> str:
+        """Alias for display_name."""
+        return self.display_name
+
+    @property
+    def size_bytes(self) -> int:
+        """Total size in bytes from effective revision."""
+        rev = self._effective_revision()
+        if rev and getattr(rev, "size_bytes", None) is not None:
+            return rev.size_bytes
+        return 0
+
+    @property
+    def file_size_bytes(self) -> int:
+        """Alias for size_bytes."""
+        return self.size_bytes
+
+    @property
+    def mime_type(self) -> str:
+        """Detected or declared MIME type from effective revision."""
+        rev = self._effective_revision()
+        if rev:
+            return (
+                getattr(rev, "detected_mime_type", None)
+                or getattr(rev, "declared_mime_type", None)
+                or "application/octet-stream"
+            )
+        return "application/octet-stream"
+
+    @property
+    def detected_mime_type(self) -> str:
+        """Alias for mime_type."""
+        return self.mime_type
+
+    @property
+    def virus_scan_status(self) -> str:
+        """Consolidated virus scan status ('CLEAN', 'INFECTED', 'PENDING', 'BLOCKED').
+
+        Enforces Fail-Closed invariant: a file is only CLEAN when both the
+        logical FileAsset and its effective FileRevision are strictly ACTIVE.
+        """
+        rev = self._effective_revision()
+        rev_status = getattr(rev, "status", None) if rev else None
+
+        # 1. Blocked or error states
+        if self.status == "BLOCKED" or rev_status == "BLOCKED":
+            return "BLOCKED"
+        if (
+            rev
+            and getattr(rev, "scan_results", None)
+            and any(getattr(sr, "status", None) == "ERROR" for sr in rev.scan_results)
+        ):
+            return "BLOCKED"
+
+        # 2. Infected or rejected states
+        if self.status in ("REJECTED", "INFECTED") or rev_status in ("REJECTED", "INFECTED"):
+            return "INFECTED"
+
+        # 3. Unresolved, scanning, validating, or quarantined states
+        if (
+            rev is None
+            or self.status in ("PENDING", "QUARANTINED", "VALIDATING", "SCANNING")
+            or rev_status in ("PENDING", "QUARANTINED", "VALIDATING", "SCANNING")
+        ):
+            return "PENDING"
+
+        # 4. Clean only if BOTH are strictly ACTIVE
+        if self.status == "ACTIVE" and rev_status == "ACTIVE":
+            return "CLEAN"
+
+        # 5. Fail-closed fallback
+        return "PENDING"
+
+    @property
+    def is_video(self) -> bool:
+        """Determine if asset represents a playable video file."""
+        mime = (self.mime_type or "").lower()
+        if mime.startswith("video/"):
+            return True
+        name = (self.original_filename or "").lower()
+        return any(name.endswith(ext) for ext in (".mp4", ".webm", ".mkv", ".mov", ".avi"))
+
+    @property
+    def is_pdf(self) -> bool:
+        """Determine if asset represents a PDF document."""
+        mime = (self.mime_type or "").lower()
+        if mime == "application/pdf":
+            return True
+        name = (self.original_filename or "").lower()
+        return name.endswith(".pdf")
+
 
 class FileRevision(Base):
     """Versioned file instance mapping to 'file_revisions' table."""
@@ -404,13 +518,82 @@ class LessonResource(Base):
         sa.CheckConstraint("position > 0", name="ck_lesson_resources_1"),
     )
 
-    lesson = relationship("Lesson", foreign_keys=[lesson_id])
+    lesson = relationship("Lesson", back_populates="resources", foreign_keys=[lesson_id])
     file_asset = relationship("FileAsset", foreign_keys=[file_asset_id])
 
     @property
     def public_id(self) -> uuid.UUID:
         """Synthetic public UUIDv5 identifier conforming to ADR-002."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.lesson_resource.{self.id}")
+
+    @property
+    def title(self) -> str:
+        """Resource display title from label or underlying file asset."""
+        if self.label:
+            return self.label
+        if self.file_asset:
+            return self.file_asset.display_name or self.file_asset.original_filename or "Resource"
+        return "Resource"
+
+    @property
+    def file_name(self) -> str:
+        """Original or display filename."""
+        if self.file_asset:
+            return self.file_asset.original_filename or self.file_asset.display_name or ""
+        return ""
+
+    @property
+    def file_size_bytes(self) -> int:
+        """Resource file size in bytes."""
+        if self.file_asset:
+            return self.file_asset.file_size_bytes
+        return 0
+
+    @property
+    def mime_type(self) -> str:
+        """Resource MIME type."""
+        if self.file_asset and self.file_asset.mime_type:
+            return self.file_asset.mime_type
+        return "application/octet-stream"
+
+    @property
+    def is_video(self) -> bool:
+        """Whether resource is a playable video file."""
+        return bool(self.file_asset and self.file_asset.is_video)
+
+    @property
+    def is_pdf(self) -> bool:
+        """Whether resource is a PDF document."""
+        return bool(self.file_asset and self.file_asset.is_pdf)
+
+    @property
+    def resource_type(self) -> str:
+        """Classified resource category: VIDEO, PDF, DOCX, PPTX, ARCHIVE, or DOCUMENT."""
+        if self.is_video:
+            return "VIDEO"
+        if self.is_pdf:
+            return "PDF"
+        fn = (self.file_name or "").lower()
+        mt = (self.mime_type or "").lower()
+        if fn.endswith((".docx", ".doc")) or "word" in mt:
+            return "DOCX"
+        if fn.endswith((".pptx", ".ppt")) or "presentation" in mt or "powerpoint" in mt:
+            return "PPTX"
+        if fn.endswith((".zip", ".rar", ".tar", ".gz", ".7z")) or "zip" in mt or "compressed" in mt:
+            return "ARCHIVE"
+        return "DOCUMENT"
+
+    @property
+    def file_size_formatted(self) -> str:
+        """Formatted human-readable file size."""
+        size = self.file_size_bytes
+        if not size:
+            return "0 B"
+        if size >= 1048576:
+            return f"{size / (1024 * 1024):.1f} MB"
+        if size >= 1024:
+            return f"{size / 1024:.1f} KB"
+        return f"{size} B"
 
 
 class QuestionRevisionResource(Base):
