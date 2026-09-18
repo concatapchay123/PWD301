@@ -691,3 +691,138 @@ def set_timezone() -> Any:
         samesite="Lax",
     )
     return resp
+
+
+# ==============================================================================
+# Unified Session Notifications (Cross-Role: Student, Instructor, Admin)
+# ==============================================================================
+
+
+@auth_bp.route("/notifications", methods=["GET"])
+def auth_notifications_center() -> Any:
+    """Retrieve in-app notifications for authenticated session user across all roles."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import (
+        get_unread_count,
+        get_user_preferences,
+        list_user_notifications,
+    )
+
+    try:
+        page = int(request.args.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", 20))
+    except (ValueError, TypeError):
+        per_page = 20
+
+    status = request.args.get("status")
+    unread_only_arg = request.args.get("unread_only", "").strip().lower()
+    unread_only = unread_only_arg in ("true", "1", "yes")
+    category = request.args.get("category")
+
+    items, total = list_user_notifications(
+        actor=current_user,
+        status=status,
+        unread_only=unread_only,
+        category=category,
+        page=page,
+        per_page=per_page,
+        session=db.session,
+    )
+    prefs = get_user_preferences(actor=current_user, session=db.session)
+    unread = get_unread_count(actor=current_user, session=db.session)
+
+    return (
+        jsonify(
+            {
+                "items": items,
+                "total": total,
+                "unread_count": unread,
+                "preferences": prefs,
+                "page": max(1, page),
+                "per_page": min(max(1, per_page), 100),
+            }
+        ),
+        200,
+    )
+
+
+@auth_bp.route("/notifications/unread-count", methods=["GET"])
+def auth_notifications_unread_count() -> Any:
+    """Fast unread notification count for authenticated web session topbar badge."""
+    if not current_user.is_authenticated:
+        return jsonify({"unread_count": 0}), 200
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import get_unread_count
+
+    unread = get_unread_count(actor=current_user, session=db.session)
+    return jsonify({"unread_count": unread}), 200
+
+
+@auth_bp.route("/notifications/<notification_id>/read", methods=["POST"])
+def auth_mark_notification_read(notification_id: str) -> Any:
+    """Mark a notification as read for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import mark_notification_as_read
+
+    result = mark_notification_as_read(
+        actor=current_user,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    return jsonify(result), 200
+
+
+@auth_bp.route("/notifications/mark-all-read", methods=["POST"])
+def auth_mark_all_notifications_read() -> Any:
+    """Mark all unread notifications of the current actor as read."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import mark_all_as_read
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    category = payload.get("category") or request.args.get("category")
+    count = mark_all_as_read(actor=current_user, category=category, session=db.session)
+    return jsonify({"marked_count": count}), 200
+

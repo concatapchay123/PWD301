@@ -300,20 +300,33 @@ class ApiClient {
   }
 
   static async getStudentNotifications() {
-    return await ApiClient.request('/student/notifications');
+    return await ApiClient.getNotifications();
   }
 
   static async markNotificationRead(notificationId) {
-    return await ApiClient.request(`/student/notifications/${notificationId}/read`, {
-      method: 'POST'
-    });
+    try {
+      return await ApiClient.request(`/auth/notifications/${notificationId}/read`, {
+        method: 'POST'
+      });
+    } catch {
+      return await ApiClient.request(`/student/notifications/${notificationId}/read`, {
+        method: 'POST'
+      });
+    }
   }
 
   static async markAllNotificationsRead(category = null) {
-    return await ApiClient.request('/student/notifications/mark-all-read', {
-      method: 'POST',
-      body: category ? { category } : {}
-    });
+    try {
+      return await ApiClient.request('/auth/notifications/mark-all-read', {
+        method: 'POST',
+        body: category ? { category } : {}
+      });
+    } catch {
+      return await ApiClient.request('/student/notifications/mark-all-read', {
+        method: 'POST',
+        body: category ? { category } : {}
+      });
+    }
   }
 
   static async getLessonNotes(lessonId) {
@@ -875,28 +888,38 @@ class ApiClient {
   // =========================================================================
   // 5. Notifications
   // =========================================================================
-  static async getNotifications() {
+  static async getNotifications(options = {}) {
+    const params = new URLSearchParams();
+    if (options.category && options.category !== 'ALL') params.append('category', options.category);
+    if (options.unread_only) params.append('unread_only', 'true');
+    if (options.page) params.append('page', options.page);
+    if (options.per_page) params.append('per_page', options.per_page);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
     try {
-      return await ApiClient.request('/student/notifications');
+      return await ApiClient.request(`/auth/notifications${qs}`);
     } catch {
       try {
-        return await ApiClient.request('/api/notifications');
+        return await ApiClient.request(`/student/notifications${qs}`);
       } catch {
-        return { items: [], total: 0, unread_count: 0 };
+        try {
+          return await ApiClient.request(`/api/notifications${qs}`);
+        } catch {
+          return { items: [], total: 0, unread_count: 0 };
+        }
       }
     }
   }
 
-  static async markNotificationRead(id) {
-    return await ApiClient.request(`/student/notifications/${id}/read`, {
-      method: 'POST'
-    });
-  }
-
-  static async markAllNotificationsRead() {
-    return await ApiClient.request('/student/notifications/mark-all-read', {
-      method: 'POST'
-    });
+  static async getUnreadNotificationCount() {
+    try {
+      const res = await ApiClient.request('/auth/notifications/unread-count');
+      if (res && typeof res.unread_count !== 'undefined') return res.unread_count;
+    } catch {
+      // Fallback
+    }
+    const list = await ApiClient.getNotifications();
+    return list.unread_count ?? (list.items || []).filter(i => !i.is_read && !i.read).length;
   }
 }
 

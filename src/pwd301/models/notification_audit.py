@@ -192,15 +192,26 @@ class Notification(Base):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert notification to dictionary conforming strictly to ADR-002 Zero PK Leakage."""
+        action_url = None
+        if self.event and self.event.payload_json:
+            try:
+                payload = json.loads(self.event.payload_json)
+                action_url = payload.get("action_url") or payload.get("target_url")
+            except Exception:
+                pass
+
         return {
             "id": str(self.public_id),
             "category": self.category,
             "title": self.title,
             "body": self.body,
             "read": self.is_read,
+            "is_read": self.is_read,
             "read_at": self.read_at.isoformat() if self.read_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "action_url": action_url,
+            "target_url": action_url,
         }
 
 

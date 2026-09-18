@@ -182,6 +182,7 @@ def seed_demo(session: Session | scoped_session[Any]) -> dict[str, Any]:
     student1 = users_by_email["student1@pwd301.local"]
     student2 = users_by_email["student2@pwd301.local"]
     student3 = users_by_email["student3@pwd301.local"]
+    student4 = users_by_email["student4@pwd301.local"]
     # student4 left unenrolled for live enrollment demo
 
     session.flush()
@@ -1180,66 +1181,317 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             )
         )
 
-    # 12. Sample In-App Notifications
-    notif_event = (
-        session.query(NotificationEvent)
-        .filter(
-            NotificationEvent.actor_user_id == instructor1.id,
-            NotificationEvent.target_type == "COURSE",
-            NotificationEvent.target_id == course1.id,
-            NotificationEvent.event_type == "COURSE_ANNOUNCEMENT",
-        )
-        .first()
-    )
-    if not notif_event:
-        notif_event = NotificationEvent(
-            event_type="COURSE_ANNOUNCEMENT",
-            actor_user_id=instructor1.id,
-            target_type="COURSE",
-            target_id=course1.id,
-            payload_json=json.dumps({"title": "Chào mừng các bạn đến với khóa học CS101!"}),
-        )
-        session.add(notif_event)
-        session.flush()
+    # 12. Sample In-App Notifications (Enriched & Personalized per User & Role)
+    demo_notification_configs = [
+        # Admin User (admin@pwd301.local)
+        (
+            admin_user,
+            instructor1.id,
+            "SYSTEM_SECURITY_ALERT",
+            "SECURITY",
+            "Cảnh báo bảo mật: Phiên đăng nhập mới",
+            (
+                "Phát hiện phiên đăng nhập quản trị từ IP lạ (192.168.1.105). "
+                "Vui lòng kiểm tra nhật ký kiểm toán."
+            ),
+            {
+                "target_url": "#/admin/governance?tab=security",
+                "action_url": "#/admin/governance?tab=security",
+            },
+            False,
+        ),
+        (
+            admin_user,
+            instructor2.id,
+            "COURSE_APPROVAL_REQUEST",
+            "COURSE",
+            "Yêu cầu xét duyệt khóa học: CS301",
+            (
+                "Giảng viên ThS. Trần Thị B đã gửi yêu cầu xuất bản khóa học CS301. "
+                "Đang chờ bạn phê duyệt."
+            ),
+            {
+                "target_url": "#/admin/governance?tab=courses",
+                "action_url": "#/admin/governance?tab=courses",
+            },
+            False,
+        ),
+        (
+            admin_user,
+            admin_user.id,
+            "SYSTEM_BACKUP_COMPLETED",
+            "SYSTEM",
+            "Sao lưu cơ sở dữ liệu định kỳ hoàn tất",
+            (
+                "Bản sao lưu tự động lúc 00:00 UTC đã được lưu trữ an toàn "
+                "(Dung lượng 142 MB, toàn vẹn 100%)."
+            ),
+            {"target_url": "#/admin/operations", "action_url": "#/admin/operations"},
+            True,
+        ),
+        (
+            admin_user,
+            instructor1.id,
+            "ASSESSMENT_MONITORING",
+            "ASSESSMENT",
+            "Báo cáo kết thúc kỳ thi CS101 Midterm",
+            (
+                "Kỳ thi giữa kỳ CS101 đã kết thúc thời gian làm bài. "
+                "2 học viên đã nộp bài, 0 trường hợp vi phạm."
+            ),
+            {"target_url": "#/admin/operations", "action_url": "#/admin/operations"},
+            True,
+        ),
+        # Instructor 1 (instructor1@pwd301.local)
+        (
+            instructor1,
+            student2.id,
+            "ASSESSMENT_SUBMITTED",
+            "ASSESSMENT",
+            "Có bài thi tự luận mới cần chấm",
+            (
+                "Sinh viên Phạm Minh Tuấn đã nộp bài thi MIDTERM môn CS101. "
+                "Vui lòng chấm điểm câu hỏi tự luận."
+            ),
+            {"target_url": "#/instructor/grading", "action_url": "#/instructor/grading"},
+            False,
+        ),
+        (
+            instructor1,
+            admin_user.id,
+            "COURSE_PUBLISHED",
+            "COURSE",
+            "Khóa học CS101 đã được phê duyệt xuất bản",
+            (
+                "Quản trị viên đã phê duyệt khóa học CS101: Lập trình Python & "
+                "Flask Web Nâng Cao lên cổng công khai."
+            ),
+            {"target_url": "#/instructor/courses", "action_url": "#/instructor/courses"},
+            False,
+        ),
+        (
+            instructor1,
+            instructor1.id,
+            "GRADE_REPORT",
+            "GRADE",
+            "Báo cáo phổ điểm giữa kỳ môn CS101",
+            (
+                "Thống kê sơ bộ: Điểm trung bình đạt 18.5/20.0 (92.5%). "
+                "Có 1 học viên đạt điểm tối đa 20.0."
+            ),
+            {"target_url": "#/instructor/analytics", "action_url": "#/instructor/analytics"},
+            True,
+        ),
+        (
+            instructor1,
+            admin_user.id,
+            "SYSTEM_ANNOUNCEMENT",
+            "SYSTEM",
+            "Lịch bảo trì máy chủ khảo thí cuối tuần",
+            (
+                "Hệ thống thi trắc nghiệm sẽ bảo trì định kỳ từ 02:00 đến 03:00 "
+                "Chủ nhật. Giảng viên vui lòng lưu ý."
+            ),
+            {"target_url": "#/instructor/dashboard", "action_url": "#/instructor/dashboard"},
+            True,
+        ),
+        # Instructor 2 (instructor2@pwd301.local)
+        (
+            instructor2,
+            admin_user.id,
+            "COURSE_STATUS_UPDATE",
+            "COURSE",
+            "Hồ sơ xét duyệt CS301 đang được thụ lý",
+            (
+                "Đề cương chi tiết và ngân hàng bài giảng CS301 đã được chuyển "
+                "đến ban khảo thí xem xét."
+            ),
+            {"target_url": "#/instructor/courses", "action_url": "#/instructor/courses"},
+            False,
+        ),
+        (
+            instructor2,
+            instructor2.id,
+            "QUESTION_BANK_READY",
+            "ASSESSMENT",
+            "Ngân hàng câu hỏi CS301 đã sẵn sàng",
+            (
+                "Đã đồng bộ 25 câu hỏi trắc nghiệm chuẩn Azota vào ngân hàng "
+                "câu hỏi khảo thí học phần CS301."
+            ),
+            {"target_url": "#/instructor/questions", "action_url": "#/instructor/questions"},
+            False,
+        ),
+        # Student 1 (student1@pwd301.local - Lê Hoàng Long)
+        (
+            student1,
+            instructor1.id,
+            "ASSESSMENT_GRADED",
+            "ASSESSMENT",
+            "Chúc mừng bạn đạt 20.0/20.0 điểm bài thi giữa kỳ!",
+            (
+                "Bạn đã đạt điểm số tối đa trong bài kiểm tra giữa kỳ môn CS101. "
+                "Kết quả đã lưu vào hồ sơ học vụ."
+            ),
+            {"target_url": "#/student/assessments", "action_url": "#/student/assessments"},
+            False,
+        ),
+        (
+            student1,
+            instructor1.id,
+            "LESSON_UNLOCKED",
+            "COURSE",
+            "Bài giảng mới đã mở: Lesson 04 - SQLAlchemy ORM",
+            (
+                "Nội dung bài giảng mới đã sẵn sàng. "
+                "Hoàn thành bài kiểm tra nhanh để mở khóa bài tiếp theo."
+            ),
+            {"target_url": "#/student/courses", "action_url": "#/student/courses"},
+            False,
+        ),
+        (
+            student1,
+            instructor1.id,
+            "GRADE_ANNOUNCEMENT",
+            "GRADE",
+            "Bảng điểm thành phần đợt 1 đã công bố",
+            "Giảng viên ThS. Nguyễn Văn A đã công bố điểm danh và điểm bài tập Lab 01, Lab 02.",
+            {"target_url": "#/student/courses", "action_url": "#/student/courses"},
+            True,
+        ),
+        # Student 2 (student2@pwd301.local - Phạm Minh Tuấn)
+        (
+            student2,
+            instructor1.id,
+            "ASSESSMENT_SUBMITTED_CONFIRM",
+            "ASSESSMENT",
+            "Bài thi giữa kỳ CS101 nộp thành công",
+            (
+                "Bài làm của bạn đã được ghi nhận vào lúc 10:30 UTC. "
+                "Câu hỏi tự luận đang chờ Giảng viên chấm điểm."
+            ),
+            {"target_url": "#/student/assessments", "action_url": "#/student/assessments"},
+            False,
+        ),
+        (
+            student2,
+            instructor1.id,
+            "ASSIGNMENT_DUE_REMINDER",
+            "COURSE",
+            "Nhắc nhở: Hạn nộp bài tập lớn Lab 03",
+            (
+                "Hạn chót nộp bài tập lớn môn CS101 còn 2 ngày (23:59 Chủ nhật). "
+                "Hãy rà soát mã nguồn trước khi nộp."
+            ),
+            {"target_url": "#/student/courses", "action_url": "#/student/courses"},
+            False,
+        ),
+        # Student 3 (student3@pwd301.local - Vũ Thảo Nguyên)
+        (
+            student3,
+            admin_user.id,
+            "COURSE_ENROLLMENT_CONFIRM",
+            "COURSE",
+            "Đăng ký học phần CS101 thành công",
+            (
+                "Chào mừng bạn đến với khóa học CS101. "
+                "Bạn có thể bắt đầu học bài giảng mở đầu ngay bây giờ."
+            ),
+            {"target_url": "#/student/courses", "action_url": "#/student/courses"},
+            False,
+        ),
+        (
+            student3,
+            instructor1.id,
+            "ASSESSMENT_SCHEDULED",
+            "ASSESSMENT",
+            "Lịch khảo sát năng lực đầu vào",
+            (
+                "Bài kiểm tra khảo sát kiến thức nền tảng sẽ mở trong 24 giờ "
+                "tới tại Phòng chờ Khảo thí."
+            ),
+            {"target_url": "#/student/assessments", "action_url": "#/student/assessments"},
+            True,
+        ),
+        # Student 4 (student4@pwd301.local - Đặng Gia Huy)
+        (
+            student4,
+            admin_user.id,
+            "WELCOME_ONBOARDING",
+            "SYSTEM",
+            "Chào mừng bạn gia nhập Cổng Học thuật PWD301",
+            (
+                "Tài khoản học viên của bạn đã kích hoạt hoàn tất. "
+                "Hãy khám phá danh mục khóa học để bắt đầu."
+            ),
+            {"target_url": "#/student/catalog", "action_url": "#/student/catalog"},
+            False,
+        ),
+        (
+            student4,
+            admin_user.id,
+            "PROFILE_UPDATE_PROMPT",
+            "SYSTEM",
+            "Cập nhật hồ sơ học viên của bạn",
+            (
+                "Vui lòng cập nhật hình đại diện và thông tin liên hệ "
+                "để nhận các chứng chỉ học thuật hợp lệ."
+            ),
+            {"target_url": "#/student/profile", "action_url": "#/student/profile"},
+            True,
+        ),
+    ]
 
-        for student_user, cat_code, title_txt, body_txt in [
-            (
-                student1,
-                "ASSESSMENT",
-                "Chúc mừng bạn đã hoàn thành bài kiểm tra giữa kỳ!",
-                "Bạn đạt điểm tối đa 20.0/20.0 (100%) trong bài kiểm tra giữa kỳ môn CS101.",
-            ),
-            (
-                student2,
-                "ASSESSMENT",
-                "Bài thi giữa kỳ đã được nộp thành công",
-                "Bài làm của bạn đã được ghi nhận. Câu hỏi tự luận đang chờ Giảng viên chấm điểm.",
-            ),
-            (
-                instructor1,
-                "ASSESSMENT",
-                "Có bài thi mới cần chấm điểm",
-                (
-                    "Sinh viên Phạm Minh Tuấn (student2@pwd301.local) đã nộp bài thi MIDTERM "
-                    "cần bạn chấm câu hỏi tự luận."
-                ),
-            ),
-            (
-                admin_user,
-                "COURSE",
-                "Yêu cầu xét duyệt khóa học mới",
-                "Giảng viên ThS. Trần Thị B đã gửi yêu cầu xuất bản khóa học CS301.",
-            ),
-        ]:
+    for (
+        recipient_usr,
+        actor_uid,
+        ev_type,
+        cat_code,
+        title_txt,
+        body_txt,
+        payload_dict,
+        is_read_flag,
+    ) in demo_notification_configs:
+        existing_ev = (
+            session.query(NotificationEvent)
+            .filter(
+                NotificationEvent.actor_user_id == actor_uid,
+                NotificationEvent.event_type == ev_type,
+            )
+            .first()
+        )
+        if not existing_ev:
+            existing_ev = NotificationEvent(
+                event_type=ev_type,
+                actor_user_id=actor_uid,
+                target_type="USER",
+                target_id=recipient_usr.id,
+                payload_json=json.dumps(payload_dict),
+                created_at=now,
+            )
+            session.add(existing_ev)
+            session.flush()
+        else:
+            existing_ev.payload_json = json.dumps(payload_dict)
+
+        existing_notif = (
+            session.query(Notification)
+            .filter(
+                Notification.notification_event_id == existing_ev.id,
+                Notification.recipient_user_id == recipient_usr.id,
+            )
+            .first()
+        )
+        if not existing_notif:
             session.add(
                 Notification(
-                    notification_event_id=notif_event.id,
-                    recipient_user_id=student_user.id,
+                    notification_event_id=existing_ev.id,
+                    recipient_user_id=recipient_usr.id,
                     category=cat_code,
                     title=title_txt,
                     body=body_txt,
-                    read_at=None,
-                    created_at=now,
+                    read_at=now - timedelta(hours=2) if is_read_flag else None,
+                    created_at=now - timedelta(minutes=15),
                 )
             )
             summary["notifications_created"] += 1

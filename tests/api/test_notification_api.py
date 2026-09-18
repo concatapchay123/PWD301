@@ -251,3 +251,65 @@ def test_web_session_notification_center(
     data = resp.get_json()
     assert "items" in data
     assert "preferences" in data
+
+
+def test_unified_auth_notifications_web_session(
+    app: Flask, client: FlaskClient, admin_user: User, student_user: User
+) -> None:
+    """Validate unified /auth/notifications session endpoints for all roles with IDOR isolation."""
+    # 1. Unauthenticated gets 401
+    resp_unauth = client.get("/auth/notifications")
+    assert resp_unauth.status_code == 401
+
+    # 2. Dispatch notifications to Admin and Student
+    n_admin, _ = dispatch_notification(
+        admin_user,
+        "SYSTEM_SECURITY_ALERT",
+        "Admin Alert",
+        "Admin Content",
+        action_url="#/admin/security",
+        session=db.session,
+    )
+    n_student, _ = dispatch_notification(
+        student_user,
+        "ASSESSMENT_GRADED",
+        "Student Grade",
+        "Student Content",
+        action_url="#/student/assessments",
+        session=db.session,
+    )
+    db.session.commit()
+
+    # 3. Login as Admin
+    login_web_user(client, admin_user)
+
+    # Check unread count
+    resp_count = client.get("/auth/notifications/unread-count")
+    assert resp_count.status_code == 200
+    assert resp_count.get_json()["unread_count"] >= 1
+
+    # List notifications
+    resp_list = client.get("/auth/notifications")
+    assert resp_list.status_code == 200
+    data = resp_list.get_json()
+    items = data["items"]
+    # Admin only sees Admin's notification (IDOR isolation)
+    assert any(i["id"] == str(n_admin.public_id) for i in items)
+    assert not any(i["id"] == str(n_student.public_id) for i in items)
+
+    admin_item = next(i for i in items if i["id"] == str(n_admin.public_id))
+    assert admin_item["is_read"] is False
+    assert admin_item["read"] is False
+    assert admin_item["action_url"] == "#/admin/security"
+    assert admin_item["target_url"] == "#/admin/security"
+
+    # Mark single notification read
+    resp_read = client.post(f"/auth/notifications/{n_admin.public_id}/read")
+    assert resp_read.status_code == 200
+    assert resp_read.get_json()["is_read"] is True
+
+    # Mark all read
+    resp_all_read = client.post("/auth/notifications/mark-all-read")
+    assert resp_all_read.status_code == 200
+    assert "marked_count" in resp_all_read.get_json()
+

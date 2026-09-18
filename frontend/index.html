@@ -422,18 +422,32 @@
       <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
       <div class="flex items-center gap-2 shrink-0">
         
-        <!-- Notification Bell Button -->
-        <button
-          type="button"
-          id="topbar-notifications-btn"
-          class="relative w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
-          title="Thông báo học vụ"
-        >
-          <span class="material-symbols-outlined text-[17px]">notifications</span>
-          <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
-            0
-          </span>
-        </button>
+        <!-- Notification Bell Button & Dropdown Popover -->
+        <div class="relative" id="topbar-notifications-wrapper">
+          <button
+            type="button"
+            id="topbar-notifications-btn"
+            class="relative w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors select-none"
+            title="Thông báo học vụ"
+            aria-expanded="false"
+            aria-haspopup="true"
+          >
+            <span class="material-symbols-outlined text-[17px]">notifications</span>
+            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
+              0
+            </span>
+          </button>
+
+          <!-- Notifications Dropdown Menu Popover -->
+          <div
+            id="topbar-notifications-dropdown"
+            class="hidden absolute right-0 top-11 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-elevated z-50 flex flex-col text-xs overflow-hidden transition-all duration-150"
+            role="dialog"
+            aria-label="Bảng thông báo học vụ"
+          >
+            <!-- Dynamic Content Mounted by NotificationManager -->
+          </div>
+        </div>
 
         <!-- Dark/Light Theme Toggle Button -->
         <button
@@ -601,14 +615,13 @@
     </button>
   </div>
 
-  <!-- Core Application Scripts -->
-  <script src="/frontend/assets/js/ui.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/api.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/views/auth.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/views/student.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/views/instructor.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/views/admin.js?v=3.0.3"></script>
-  <script src="/frontend/assets/js/router.js?v=3.0.3"></script>
+  <script src="/frontend/assets/js/ui.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/api.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/views/auth.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/views/student.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/views/instructor.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/views/admin.js?v=3.0.4"></script>
+  <script src="/frontend/assets/js/router.js?v=3.0.4"></script>
 
   <!-- Application Bootstrap -->
   <script>

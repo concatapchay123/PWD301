@@ -198,9 +198,12 @@ def dispatch_notification(
 
     # Ensure event exists
     if event is None:
+        event_payload = dict(payload) if payload else {}
+        if action_url and "action_url" not in event_payload:
+            event_payload["action_url"] = action_url
         event = emit_event(
             event_type=event_type,
-            payload=payload,
+            payload=event_payload if event_payload else None,
             target_type="USER",
             target_id=user.id,
             session=s,
@@ -294,7 +297,8 @@ def list_user_notifications(
     offset = (safe_page - 1) * safe_per_page
 
     items = (
-        query.order_by(Notification.created_at.desc(), Notification.id.desc())
+        query.options(sa.orm.joinedload(Notification.event))
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
         .offset(offset)
         .limit(safe_per_page)
         .all()

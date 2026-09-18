@@ -73,14 +73,21 @@ class AppRouter {
 
   async refreshCurrentUser() {
     try {
+      const prevUserId = this.currentUser?.id;
       this.currentUser = await ApiClient.getCurrentUser();
       if (this.currentUser) {
         this.currentRole = this.currentUser.primary_role || (this.currentUser.role_codes && this.currentUser.role_codes[0]) || 'STUDENT';
+        if (prevUserId && prevUserId !== this.currentUser.id) {
+          this.notificationsCache = null;
+        }
+        this.loadCachedNotifications();
       } else {
         this.currentRole = 'STUDENT';
+        this.notificationsCache = null;
       }
     } catch {
       this.currentUser = null;
+      this.notificationsCache = null;
     }
     this.updateUserUI();
     this.refreshNotificationBadge();
@@ -524,6 +531,11 @@ class AppRouter {
       if (logoutBtn) {
         logoutBtn.onclick = async () => {
           roleDropdown.classList.add('hidden');
+          this.closeNotificationsDropdown();
+          if (this.currentUser && this.currentUser.id) {
+            try { sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}`); } catch {}
+          }
+          this.notificationsCache = null;
           this.currentUser = null;
           this.currentRole = null;
           this.toggleShell(false);
@@ -560,6 +572,7 @@ class AppRouter {
     if (avatarBtn && dropdown) {
       avatarBtn.onclick = (e) => {
         e.stopPropagation();
+        this.closeNotificationsDropdown();
         dropdown.classList.toggle('hidden');
       };
       document.addEventListener('click', (e) => {
@@ -570,35 +583,445 @@ class AppRouter {
     }
   }
 
-  initNotifications() {
-    const bellBtn = document.getElementById('topbar-notifications-btn');
-    if (bellBtn) {
-      bellBtn.onclick = () => {
-        if (window.StudentView && typeof StudentView.openNotificationHub === 'function') {
-          StudentView.openNotificationHub();
+  // =========================================================================
+  // 4. Instant Notification Dropdown & Cache Management (0ms SWR)
+  // =========================================================================
+
+  loadCachedNotifications() {
+    if (!this.currentUser || !this.currentUser.id) return;
+    try {
+      const raw = sessionStorage.getItem(`pwd301_notifs_${this.currentUser.id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.items)) {
+          this.notificationsCache = parsed;
+          this.updateBadgeFromCache();
         }
-      };
+      }
+    } catch {
+      // Ignore sessionStorage errors
     }
-    this.refreshNotificationBadge();
   }
 
-  async refreshNotificationBadge() {
+  saveCachedNotifications() {
+    if (!this.currentUser || !this.currentUser.id || !this.notificationsCache) return;
+    try {
+      sessionStorage.setItem(`pwd301_notifs_${this.currentUser.id}`, JSON.stringify(this.notificationsCache));
+    } catch {
+      // Ignore quota errors
+    }
+  }
+
+  updateBadgeFromCache() {
+    const badge = document.getElementById('topbar-notifications-badge');
+    if (!badge || !this.notificationsCache) return;
+    const count = this.notificationsCache.unread_count ?? (this.notificationsCache.items || []).filter(i => !i.is_read && !i.read).length;
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  initNotifications() {
+    this.activeNotificationTab = 'ALL';
+    const bellBtn = document.getElementById('topbar-notifications-btn');
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+
+    if (bellBtn && dropdown) {
+      bellBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.toggleNotificationsDropdown();
+      };
+
+      // Click outside to dismiss dropdown
+      document.addEventListener('click', (e) => {
+        const wrapper = document.getElementById('topbar-notifications-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+          this.closeNotificationsDropdown();
+        }
+      });
+
+      // Escape key to dismiss
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+          this.closeNotificationsDropdown();
+        }
+      });
+    }
+
+    // Initial load from cache or background fetch
+    this.loadCachedNotifications();
+    this.refreshNotificationBadge(true);
+  }
+
+  toggleNotificationsDropdown() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    if (!dropdown) return;
+    if (dropdown.classList.contains('hidden')) {
+      this.openNotificationsDropdown();
+    } else {
+      this.closeNotificationsDropdown();
+    }
+  }
+
+  openNotificationsDropdown() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    const bellBtn = document.getElementById('topbar-notifications-btn');
+    const roleDropdown = document.getElementById('topbar-role-dropdown');
+
+    if (roleDropdown) roleDropdown.classList.add('hidden');
+
+    if (dropdown) {
+      dropdown.classList.remove('hidden');
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
+
+      // Instant first paint from cache (0ms delay)
+      if (this.notificationsCache && Array.isArray(this.notificationsCache.items)) {
+        this.renderNotificationsDropdownContent();
+      } else {
+        this.renderNotificationsSkeleton();
+      }
+
+      // SWR: Silent background revalidation
+      this.fetchNotifications(false);
+    }
+  }
+
+  closeNotificationsDropdown() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    const bellBtn = document.getElementById('topbar-notifications-btn');
+    if (dropdown && !dropdown.classList.contains('hidden')) {
+      dropdown.classList.add('hidden');
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  formatRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (isNaN(diffSec) || diffSec < 0) return 'Vừa xong';
+      if (diffSec < 60) return 'Vừa xong';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)} phút trước`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} giờ trước`;
+      if (diffSec < 86400 * 2) return 'Hôm qua';
+      if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} ngày trước`;
+      return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
+  getCategoryMeta(cat) {
+    const c = (cat || 'SYSTEM').toUpperCase();
+    switch (c) {
+      case 'SECURITY':
+        return {
+          icon: 'security',
+          iconColor: 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40',
+          label: 'Bảo mật',
+          badgeColor: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+        };
+      case 'ASSESSMENT':
+        return {
+          icon: 'quiz',
+          iconColor: 'bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200 dark:border-purple-800/40',
+          label: 'Khảo thí',
+          badgeColor: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300'
+        };
+      case 'COURSE':
+        return {
+          icon: 'menu_book',
+          iconColor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40',
+          label: 'Khóa học',
+          badgeColor: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+        };
+      case 'GRADE':
+        return {
+          icon: 'military_tech',
+          iconColor: 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40',
+          label: 'Điểm số',
+          badgeColor: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+        };
+      default:
+        return {
+          icon: 'campaign',
+          iconColor: 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-200 dark:border-blue-800/40',
+          label: 'Hệ thống',
+          badgeColor: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+        };
+    }
+  }
+
+  renderNotificationsSkeleton() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    if (!dropdown) return;
+    dropdown.innerHTML = `
+      <div class="p-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between bg-[#FAF9F5] dark:bg-[#242423]">
+        <div class="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+        <div class="h-3 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+      </div>
+      <div class="p-3 space-y-3">
+        ${[1, 2, 3].map(() => `
+          <div class="flex items-start gap-3 p-2 rounded-xl bg-slate-50 dark:bg-[#262524] animate-pulse">
+            <div class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 shrink-0"></div>
+            <div class="flex-1 space-y-2 py-0.5">
+              <div class="h-3 w-3/4 bg-slate-200 dark:bg-slate-700 rounded"></div>
+              <div class="h-2.5 w-full bg-slate-200 dark:bg-slate-700 rounded"></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  renderNotificationsDropdownContent() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    if (!dropdown || !this.notificationsCache) return;
+
+    const items = this.notificationsCache.items || [];
+    const unreadCount = items.filter(i => !i.is_read && !i.read).length;
+    const activeTab = this.activeNotificationTab || 'ALL';
+
+    // Filter items based on active tab
+    const filtered = items.filter(item => {
+      const isRead = item.is_read ?? item.read ?? false;
+      const cat = (item.category || '').toUpperCase();
+      if (activeTab === 'UNREAD') return !isRead;
+      if (activeTab === 'ASSESSMENT') return cat === 'ASSESSMENT' || cat === 'GRADE';
+      if (activeTab === 'COURSE') return cat === 'COURSE';
+      if (activeTab === 'SYSTEM') return cat === 'SYSTEM' || cat === 'SECURITY';
+      return true;
+    });
+
+    const roleName = this.currentRole === 'ADMIN'
+      ? 'Quản trị viên'
+      : (this.currentRole === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên');
+
+    dropdown.innerHTML = `
+      <!-- Header -->
+      <div class="p-3 sm:px-4 sm:py-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423] flex items-center justify-between select-none">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB]">Thông báo</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${unreadCount > 0 ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300' : 'bg-[#E8E6DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99]'}">
+            ${unreadCount > 0 ? `${unreadCount} mới` : '0 mới'}
+          </span>
+        </div>
+        ${unreadCount > 0 ? `
+          <button
+            type="button"
+            id="notif-dropdown-mark-all"
+            class="text-[11px] font-semibold text-primary hover:text-primary-hover hover:underline inline-flex items-center gap-1 transition-colors"
+            title="Đánh dấu tất cả thông báo là đã đọc"
+          >
+            <span class="material-symbols-outlined text-[15px]">done_all</span>
+            <span>Đã đọc tất cả</span>
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="flex items-center gap-1 px-3 py-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] overflow-x-auto no-scrollbar text-[11px]">
+        <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ALL' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ALL">Tất cả</button>
+        <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'UNREAD' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="UNREAD">Chưa đọc (${unreadCount})</button>
+        <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ASSESSMENT' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ASSESSMENT">Khảo thí</button>
+        <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'COURSE' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="COURSE">Khóa học</button>
+        <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'SYSTEM' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="SYSTEM">Hệ thống</button>
+      </div>
+
+      <!-- Notifications List (Scrollable) -->
+      <div class="max-h-[360px] sm:max-h-[400px] overflow-y-auto divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B]" id="notif-dropdown-list">
+        ${filtered.length === 0 ? `
+          <div class="py-12 px-4 text-center text-[#8F8E8A]">
+            <span class="material-symbols-outlined text-3xl text-[#D3D0C8] dark:text-[#3E3D3A] mb-1.5 inline-block">notifications_off</span>
+            <p class="font-semibold text-xs text-[#5C5B57] dark:text-[#9E9D99]">Không có thông báo nào</p>
+            <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-0.5">Bạn đã xem hết các thông báo trong mục này.</p>
+          </div>
+        ` : filtered.map(item => {
+          const isRead = item.is_read ?? item.read ?? false;
+          const meta = this.getCategoryMeta(item.category);
+          const relTime = this.formatRelativeTime(item.created_at);
+          const targetUrl = item.action_url || item.target_url || '';
+
+          return `
+            <div
+              class="notif-dropdown-item p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FFFFFF] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
+              data-id="${item.id}"
+              data-link="${targetUrl ? (window.UI ? UI.escapeHtml(targetUrl) : targetUrl) : ''}"
+            >
+              <!-- Category Icon -->
+              <div class="w-8 h-8 rounded-xl ${meta.iconColor} flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                <span class="material-symbols-outlined text-[17px]">${meta.icon}</span>
+              </div>
+
+              <!-- Content -->
+              <div class="flex-1 min-w-0 space-y-1">
+                <div class="flex items-center justify-between gap-1.5">
+                  <span class="text-[10px] font-bold uppercase tracking-wider ${meta.badgeColor} px-1.5 py-0.2 rounded">
+                    ${meta.label}
+                  </span>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-[10.5px] text-[#8F8E8A] dark:text-[#6D6C68]">${relTime}</span>
+                    ${!isRead ? '<span class="w-2 h-2 rounded-full bg-rose-600 ring-2 ring-[#FAF9F5] dark:ring-[#202020] shrink-0" title="Chưa đọc"></span>' : ''}
+                  </div>
+                </div>
+
+                <div class="text-xs ${isRead ? 'font-medium text-[#222120] dark:text-[#EDEDEB]' : 'font-bold text-[#222120] dark:text-[#EDEDEB]'} leading-snug">
+                  ${window.UI ? UI.escapeHtml(item.title || '') : (item.title || '')}
+                </div>
+
+                <p class="text-[11.5px] text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed line-clamp-2">
+                  ${window.UI ? UI.escapeHtml(item.body || item.message || '') : (item.body || item.message || '')}
+                </p>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <!-- Footer with Role Context -->
+      <div class="p-2.5 px-3.5 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423] flex items-center justify-between text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] select-none">
+        <span class="flex items-center gap-1">
+          <span class="material-symbols-outlined text-[14px]">shield_person</span>
+          <span>Góc nhìn: <strong class="text-[#222120] dark:text-[#EDEDEB] font-bold">${roleName}</strong></span>
+        </span>
+        <button type="button" class="text-primary hover:underline font-semibold" onclick="window.app?.refreshNotificationBadge?.(true)">
+          Làm mới
+        </button>
+      </div>
+    `;
+
+    // Hook up tab buttons
+    dropdown.querySelectorAll('.notif-filter-tab').forEach(tabBtn => {
+      tabBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.activeNotificationTab = tabBtn.dataset.tab;
+        this.renderNotificationsDropdownContent();
+      };
+    });
+
+    // Hook up mark all read
+    const markAllBtn = document.getElementById('notif-dropdown-mark-all');
+    if (markAllBtn) {
+      markAllBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await this.handleMarkAllRead();
+      };
+    }
+
+    // Hook up item clicks
+    dropdown.querySelectorAll('.notif-dropdown-item').forEach(itemEl => {
+      itemEl.onclick = async (e) => {
+        e.stopPropagation();
+        const id = itemEl.dataset.id;
+        const link = itemEl.dataset.link;
+        await this.handleNotificationItemClick(id, link);
+      };
+    });
+  }
+
+  async handleNotificationItemClick(notifId, link) {
+    if (!notifId || !this.notificationsCache) return;
+
+    // Optimistic local update
+    const item = (this.notificationsCache.items || []).find(i => i.id === notifId);
+    if (item && !item.is_read && !item.read) {
+      item.is_read = true;
+      item.read = true;
+      if (typeof this.notificationsCache.unread_count === 'number' && this.notificationsCache.unread_count > 0) {
+        this.notificationsCache.unread_count--;
+      }
+      this.saveCachedNotifications();
+      this.updateBadgeFromCache();
+      this.renderNotificationsDropdownContent();
+
+      // Silent background API sync
+      try {
+        await ApiClient.markNotificationRead(notifId);
+      } catch (err) {
+        console.warn('Silent markNotificationRead failed:', err);
+      }
+    }
+
+    // Navigate if target URL exists
+    if (link) {
+      this.closeNotificationsDropdown();
+      if (window.location.hash === link) {
+        this.handleRoute();
+      } else {
+        window.location.hash = link;
+      }
+    }
+  }
+
+  async handleMarkAllRead() {
+    if (!this.notificationsCache) return;
+
+    // Optimistic local update
+    (this.notificationsCache.items || []).forEach(i => {
+      i.is_read = true;
+      i.read = true;
+    });
+    this.notificationsCache.unread_count = 0;
+    this.saveCachedNotifications();
+    this.updateBadgeFromCache();
+    this.renderNotificationsDropdownContent();
+
+    if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+      UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
+    }
+
+    // Silent background API sync
+    try {
+      await ApiClient.markAllNotificationsRead();
+    } catch (err) {
+      console.warn('markAllNotificationsRead background sync error:', err);
+    }
+  }
+
+  async fetchNotifications(forceRender = false) {
     if (!this.currentUser) return;
     try {
-      const res = await ApiClient.getStudentNotifications();
-      const badge = document.getElementById('topbar-notifications-badge');
-      if (badge && res) {
-        const count = res.unread_count || 0;
-        if (count > 0) {
-          badge.textContent = count > 99 ? '99+' : count;
-          badge.classList.remove('hidden');
-        } else {
-          badge.classList.add('hidden');
+      const data = await ApiClient.getNotifications();
+      if (data && Array.isArray(data.items)) {
+        const items = data.items.map(i => ({
+          ...i,
+          is_read: i.is_read ?? i.read ?? false,
+          read: i.is_read ?? i.read ?? false,
+        }));
+        const unreadCount = data.unread_count ?? items.filter(i => !i.is_read).length;
+
+        this.notificationsCache = {
+          items: items,
+          unread_count: unreadCount,
+          last_fetched: Date.now(),
+          user_id: this.currentUser.id,
+        };
+        this.saveCachedNotifications();
+        this.updateBadgeFromCache();
+
+        // If dropdown is currently open or forceRender requested, re-render
+        const dropdown = document.getElementById('topbar-notifications-dropdown');
+        if (dropdown && !dropdown.classList.contains('hidden') || forceRender) {
+          this.renderNotificationsDropdownContent();
         }
       }
     } catch (e) {
-      // ignore
+      console.warn('fetchNotifications background error:', e);
     }
+  }
+
+  async refreshNotificationBadge(forceFetch = false) {
+    if (!this.currentUser) return;
+    if (this.notificationsCache && !forceFetch) {
+      this.updateBadgeFromCache();
+      return;
+    }
+    await this.fetchNotifications(false);
   }
 }
 
