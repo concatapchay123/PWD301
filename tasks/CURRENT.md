@@ -1,3 +1,112 @@
+# TASK-060 — Fix Authentication Login Multi-Click & Stale CSRF False Credential Error
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-19  
+**Completed Date:** 2026-09-19  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để lỗi người dùng phải bấm đăng nhập 2-3 lần mới vào được hệ thống, và lần đầu tiên luôn báo lỗi "Email hoặc mật khẩu không chính xác":
+
+1. **Bảo toàn `Content-Type: application/json` trên Frontend khi Retry CSRF**:
+   - Khắc phục lỗi trong `frontend/assets/js/api.js`: Khi request retry tự động sau lỗi CSRF (HTTP 400), `options.body` đã bị biến đổi thành chuỗi JSON, khiến `typeof options.body === 'object'` trả về `false` và làm mất header `Content-Type: application/json`. Trình duyệt gửi `Content-Type: text/plain`, Backend Flask không nhận diện được JSON nên rơi về form rỗng và trả về 401 "Email hoặc mật khẩu không chính xác.".
+   - Đã xử lý với `processedBody` độc lập, luôn đảm bảo set `Content-Type: application/json` cho mọi body JSON (cả object lẫn chuỗi JSON đã qua serialize) khi retry.
+
+2. **Khắc phục Lệch pha CSRF Token Cũ trong Cookie Trình duyệt**:
+   - Khi đăng xuất (`POST /auth/logout`), server xóa session nhưng để lại cookie `csrf_token` cũ. Khi đăng nhập lại, frontend đọc cookie cũ gửi lên dẫn đến CSRF mismatch 400 -> kích hoạt retry mất Content-Type -> báo sai mật khẩu.
+   - Đã bổ sung xóa sạch cookie `csrf_token` khi đăng xuất ở cả Backend (`resp.delete_cookie("csrf_token", path="/")`) và Frontend (`ApiClient.logout()`).
+   - Đã đồng bộ `Set-Cookie: csrf_token=...` trên `GET /auth/login` và `GET /auth/register`, đồng thời lưu `res.csrf_token` vào `ApiClient._cachedCsrf` ngay khi ứng dụng khởi chạy (`getCurrentUser`).
+
+3. **Backend Fallback Parsing Phòng thủ**:
+   - Bổ sung cơ chế parse fallback an toàn `request.get_json(silent=True, force=True)` trong `POST /auth/login` và `POST /auth/register` để luôn trích xuất chính xác payload kể cả khi client hoặc proxy gửi header `text/plain`.
+
+## Test Verification Summary
+- `pytest tests/api/test_auth_web.py`: 16/16 PASSED (100%), bao gồm 3 test case TDD mới:
+  * `test_login_text_plain_json_body_fallback`: PASSED
+  * `test_get_login_sets_csrf_cookie`: PASSED
+  * `test_logout_clears_csrf_cookie`: PASSED
+- `pytest` toàn bộ 51 integration & unit tests phân hệ Auth: 51/51 PASSED (100%)
+- Chrome DevTools MCP visual automation: Xác minh thực tế trên trình duyệt, 1 click đăng nhập thành công vào Dashboard ngay lập tức mà không gặp bất kỳ lỗi nào.
+
+---
+
+# TASK-059 — Comprehensive Governance, Course Approval, Telemetry & Auth Fixes
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-19  
+**Completed Date:** 2026-09-19  
+
+---
+
+## Goal & Resolution Summary
+Giải quyết toàn diện 13 mục yêu cầu theo chỉ đạo của người dùng (`/goal` & `/grill`):
+
+1. **Duyệt khóa học**:
+   - [x] **Lưu ý Giảng viên**: Thêm thông báo và cảnh báo bắt buộc khi tạo/xuất bản khóa học: chỉ xuất bản khi đã biên soạn hoàn chỉnh tất cả bài học và bài kiểm tra, không xuất bản lắt nhắt (`frontend/assets/js/views/instructor.js`).
+   - [x] **Xem Bản sửa đổi khi Phê duyệt**: Backend trả về đầy đủ `original_data` và `diff` dữ liệu sửa đổi (`src/pwd301/blueprints/admin/routes.py`). Frontend hiển thị Modal So sánh trực quan Side-by-Side (Bản gốc vs Bản đề xuất) kèm tô màu thay đổi, nút Phê duyệt / Từ chối tức thì (`frontend/assets/js/views/admin.js`). Khi bấm duyệt khóa học chờ duyệt, hệ thống mở modal thẩm định đề cương học vụ thay vì duyệt mù.
+
+2. **Hồ sơ Giảng viên & Quản trị**:
+   - [x] **Tách biệt Tab**: Tách rời hoàn toàn 2 phân hệ "2. Duyệt Khóa học & Bản sửa đổi" và "3. Hồ sơ Giảng viên" thành các tab độc lập trong Governance Cockpit.
+   - [x] **Sửa giờ & Bỏ thời gian điều chuyển**: Bỏ hoàn toàn hiển thị giờ/thời gian trong bảng Điều chuyển phân công giảng dạy (`renderTabReassign`).
+   - [x] **Bỏ Tải giảng dạy ước tính**: Đã loại bỏ hoàn toàn nhãn và cột "Tải giảng dạy ước tính".
+   - [x] **Bỏ Tình trạng tải**: Đã loại bỏ hoàn toàn nhãn và badge "Tình trạng tải".
+   - [x] **Đọc Nội dung Thông báo**: Khắc phục lỗi bấm vào thông báo chỉ đánh dấu đã đọc; giờ đây mở Modal Đọc chi tiết tiêu đề, danh mục, thời gian và toàn bộ nội dung văn bản (`frontend/assets/js/router.js`).
+   - [x] **Bỏ chữ "toàn vẹn" / "toàn viện"**: Chuẩn hóa thành "Phát thông báo hệ thống" và đối tượng nhận là "Tất cả người dùng" (`frontend/assets/js/views/admin.js`).
+   - [x] **Sửa lỗi Thời gian Thông báo luôn "7 giờ trước"**: Chuẩn hóa định dạng chuỗi ISO UTC có hậu tố `Z` trên cả Model backend (`src/pwd301/models/notification_audit.py`) và hàm parse frontend (`UI.parseUtcDate` trong `frontend/assets/js/ui.js` & `router.js`), xử lý chuẩn xác độ lệch múi giờ UTC vs GMT+7.
+
+3. **Vận hành Hệ thống & Đăng nhập**:
+   - [x] **Tải Phần cứng Thời gian Thực khớp Docker**: Đọc và tính toán trực tiếp từ Cgroups v1 / v2 (`/sys/fs/cgroup/`): trừ `inactive_file` ra khỏi bộ nhớ hoạt động khớp chuẩn xác `docker stats` (`0.34 / 15.5 GB (2.2%)`), xử lý giới hạn `max`, tính delta CPU thực tế, loại bỏ fallback mock `18.4%` (`src/pwd301/services/operations_service.py` & `frontend/assets/js/views/admin.js`).
+   - [x] **Khắc phục Live Store (Live Restore) bị Tràn**: Giới hạn độ dài, thêm `min-w-0 flex-1 overflow-hidden`, `truncate`, `max-w-full`, `break-all` cho thẻ bản sao lưu và modal xác nhận 4 bước Live Restore. Kiểm tra DOM geometry: `isModalOverflowing: false`, `overflowingChildrenCount: 0`.
+   - [x] **Đăng nhập 1-Click tức thì**: `POST /auth/login` trả về trực tiếp thông tin người dùng (`user`, `csrf_token`), frontend đồng bộ tức thời vào `AppRouter`, giữ trạng thái disabled khi redirecting, bổ sung mutex lock `_isRouting` trong `router.js`, loại bỏ các lời gọi trùng lặp `handleRoute()`. Đã kiểm chứng trình duyệt thực tế qua Chrome DevTools MCP: 1 click đăng nhập vào hệ thống ngay lập tức.
+
+## Test Verification Summary
+- `pytest tests/unit/test_course_service.py`: 12/12 PASSED (100%)
+- `pytest tests/api/test_notification_api.py`: 8/8 PASSED (100%)
+- `pytest tests/api/test_instructor_application_web_flow.py`: 9/9 PASSED (100%)
+- `pytest tests/api/test_frontend_integration.py`: 11/11 PASSED (100%)
+- `node --check` syntax check: 7/7 files PASSED (100%)
+- Chrome DevTools MCP visual browser testing: 100% verified.
+
+---
+
+# TASK-058 — Instructor UI Redesign (Minimalist Notion/Doc Style & Zero Distraction)
+
+**Status:** DONE  
+**Assignee:** Principal UX Engineer & Senior Full-Stack Architect  
+**Started Date:** 2026-09-19  
+**Completed Date:** 2026-09-19  
+
+---
+
+## Goal
+Tái thiết kế toàn bộ giao diện phân hệ Giảng viên (`Instructor`) theo nguyên tắc cốt lõi:
+> **"Backend có thể phức tạp. Frontend phải đơn giản."**  
+> Giao diện tối giản, dễ hiểu, ít gây phân tâm, nhìn vào hiểu ngay phải làm gì, không bắt học cách sử dụng phần mềm.
+
+1. **Danh sách khóa học (`#/instructor/courses`)**:
+   - Thay thế toàn bộ layout phức tạp 7/12 & 5/12 bằng **Lưới thẻ tối giản (Clean Course Cards Grid)**.
+   - Mỗi học phần là một thẻ trực quan hiển thị Mã môn, Tên môn, Trạng thái (Pill), số lượng bài học, số lượng sinh viên và nút hành động duy nhất "Mở khóa học".
+   - Thanh tìm kiếm 1 ô kết hợp bộ lọc trạng thái và nút tạo khóa học nhanh.
+2. **Quản lý khóa học (`#/instructor/courses/manage`)**:
+   - Thay thế hệ thống 5 tab rời rạc bằng **Trang giáo án liền mạch (Single Course Page)**.
+   - Hai phân khu trực quan: *Bài giảng & Tài liệu* (+ Thêm bài) và *Bài thi & Đánh giá* (+ Soạn đề).
+   - Gom toàn bộ logic chuyên sâu (Chuẩn đầu ra ABET SLOs, Roster sinh viên, Cài đặt thông tin, Xóa/Lưu trữ môn học) vào **Modal `⚙️ Cài đặt & Học vụ`**.
+3. **Soạn bài giảng (`#/instructor/courses/.../lessons/new`)**:
+   - Xóa bỏ Wizard 3 bước rời rạc.
+   - Chuyển thành **Trình soạn thảo văn bản 1 trang tự nhiên (Notion / Google Docs style)**: Tiêu đề lớn, thanh công cụ định dạng đơn giản (In đậm, In nghiêng, Tiêu đề, Danh sách, Ghi chú), vùng gõ mở rộng, đính kèm tệp ClamAV tự động, tự động lưu nháp mỗi 30s.
+4. **Bảo toàn Soạn đề thi (`#/instructor/exams`)**:
+   - Giữ nguyên 100% phân hệ Soạn đề thi (Azota / Word parser, ma trận câu hỏi, ngân hàng câu hỏi) theo đúng chỉ đạo của người dùng.
+5. **Kiểm thử & Xác minh**:
+   - 8/8 file JavaScript frontend đạt 100% cú pháp qua `node --check`.
+   - 15/15 bài test tự động (`pytest -q tests/api/test_frontend_integration.py tests/api/test_instructor_backend_completion.py`) PASSED 100%.
+   - `python scripts/repo_check.py` PASSED 100%.
+   - Xác minh trực quan qua Chrome DevTools MCP trên trình duyệt thật (Light/Dark mode, chụp 4 ảnh màn hình nghiệm thu).
+
+---
+
 # TASK-057 — AI Backend Logic Restoration, Resilient Multi-Key Rotation Pool & Security Hardening
 
 **Status:** DONE  

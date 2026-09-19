@@ -768,11 +768,21 @@ class UI {
   // =========================================================================
   // 7. Formatting Helpers
   // =========================================================================
+  static parseUtcDate(isoString) {
+    if (!isoString) return null;
+    let s = String(isoString).trim();
+    if (s.includes('T') && !s.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(s)) {
+      s += 'Z';
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   static formatDate(isoString) {
     if (!isoString) return '—';
     try {
-      const d = new Date(isoString);
-      if (isNaN(d.getTime())) return isoString;
+      const d = UI.parseUtcDate(isoString);
+      if (!d) return isoString;
       return d.toLocaleDateString('vi-VN', {
         year: 'numeric',
         month: '2-digit',
@@ -788,8 +798,8 @@ class UI {
   static formatDateTime(isoString) {
     if (!isoString) return '—';
     try {
-      const d = new Date(isoString);
-      if (isNaN(d.getTime())) return isoString;
+      const d = UI.parseUtcDate(isoString);
+      if (!d) return isoString;
       return d.toLocaleDateString('vi-VN', {
         year: 'numeric',
         month: '2-digit',
@@ -879,14 +889,31 @@ class ExamParser {
       inExplanation = false;
     };
 
+    // Check if the document uses explicit prefixes like "Câu \d+", "Bài \d+", or "Question \d+"
+    const hasExplicitPrefix = lines.some(l => /^(?:Câu|Bài|Question)\s*\d+[:.]/i.test(l.trim()));
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const qMatch = line.match(/^(?:Câu|Bài)?\s*(\d+)[:.]\s*(.*)$/i);
-      const optMatch = line.match(/^(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*(.*)$/i);
       const expMatch = line.match(/^(?:Hướng dẫn giải|Giải thích|Lời giải)[:.]\s*(.*)$/i);
       const ansMatch = line.match(/^(?:Đáp án|Đ\/A|ĐA)[:.]\s*([A-D])/i);
+      const optMatch = line.match(/^(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*(.*)$/i);
+
+      let qMatch = null;
+      if (hasExplicitPrefix) {
+        qMatch = line.match(/^(?:Câu|Bài|Question)\s*(\d+)[:.]\s*(.*)$/i);
+      } else {
+        const rawNumMatch = line.match(/^(\d+)[:.]\s+(.*)$/i);
+        if (rawNumMatch && !optMatch && !ansMatch && !expMatch) {
+          const num = parseInt(rawNumMatch[1], 10);
+          // Only start a new question if no current question exists, or if current question
+          // already has choices and the new number is the sequential next question
+          if (!currentQ || (currentQ.choices.length >= 2 && num === currentQ.number + 1)) {
+            qMatch = rawNumMatch;
+          }
+        }
+      }
 
       if (qMatch && !optMatch && !ansMatch && !expMatch) {
         commitQuestion();
@@ -907,21 +934,37 @@ class ExamParser {
       } else if (ansMatch && currentQ) {
         currentQ.pending_correct_label = ansMatch[1].toUpperCase();
       } else if (optMatch && currentQ && !inExplanation) {
-        let rawPrefix = optMatch[1].trim();
-        let content = optMatch[2] ? optMatch[2].trim() : '';
+        // Check for horizontal choices on the same line: e.g. "A. Đúng  B. Sai  *C. Khác"
+        const inlineChoices = [...line.matchAll(/(?:^|\s+)(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*([^\n]*?)(?=(?:\s+[*]?\s*(?:<u>)?[A-D](?:<\/u>)?[:.)\]\s])|$)/gi)];
+        if (inlineChoices.length > 1) {
+          inlineChoices.forEach(match => {
+            const rawPrefix = match[1].trim();
+            const content = match[2] ? match[2].trim() : '';
+            const isCorrect = rawPrefix.includes('*') || rawPrefix.includes('<u>') || content.includes('(đúng)') || content.includes('(chính xác)');
+            const cleanLabel = rawPrefix.replace(/[^A-D]/gi, '').toUpperCase();
+            currentQ.choices.push({
+              label: cleanLabel || String.fromCharCode(65 + currentQ.choices.length),
+              content: content,
+              is_correct: isCorrect
+            });
+          });
+        } else {
+          let rawPrefix = optMatch[1].trim();
+          let content = optMatch[2] ? optMatch[2].trim() : '';
 
-        let isCorrect = false;
-        if (rawPrefix.includes('*') || rawPrefix.includes('<u>') || content.includes('(đúng)') || content.includes('(chính xác)')) {
-          isCorrect = true;
+          let isCorrect = false;
+          if (rawPrefix.includes('*') || rawPrefix.includes('<u>') || content.includes('(đúng)') || content.includes('(chính xác)')) {
+            isCorrect = true;
+          }
+
+          const cleanLabel = rawPrefix.replace(/[^A-D]/gi, '').toUpperCase();
+
+          currentQ.choices.push({
+            label: cleanLabel || String.fromCharCode(65 + currentQ.choices.length),
+            content: content,
+            is_correct: isCorrect
+          });
         }
-
-        const cleanLabel = rawPrefix.replace(/[^A-D]/gi, '').toUpperCase();
-
-        currentQ.choices.push({
-          label: cleanLabel || String.fromCharCode(65 + currentQ.choices.length),
-          content: content,
-          is_correct: isCorrect
-        });
       } else if (currentQ) {
         if (inExplanation) {
           currentExplanation += '\n' + line;
@@ -1250,7 +1293,7 @@ class FloatingAITutor {
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce"></span>
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce [animation-delay:0.2s]"></span>
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce [animation-delay:0.4s]"></span>
-        <span class="ml-1">Gia sư AI đang suy nghĩ...</span>
+        <span class="ml-1">Bạch tuộc đang suy nghĩ...</span>
       </div>
     `;
     box.appendChild(div);

@@ -268,3 +268,52 @@ def test_list_and_get_applications(app, student_user, valid_application_data):
 
         approved_apps = list_instructor_applications(status="APPROVED", session=db.session)
         assert not any(a.id == app_record.id for a in approved_apps)
+
+
+def test_submit_instructor_application_freelancer_niche_success(app, student_user):
+    """Freelancer/student with niche expertise submits application without institution_name."""
+    with app.app_context():
+        freelance_payload = {
+            "specialization": "Figma UI/UX & Design Systems cho Startup",
+            "statement_of_purpose": (
+                "Tôi có 5 năm làm freelance UI/UX designer và muốn chia sẻ kiến thức."
+            ),
+            "portfolio_url": "https://behance.net/niche-designer",
+            "phone_number": "0901234567",
+            "id_card_number": "079199999999",
+            "attached_files": [
+                {
+                    "original_name": "CV_Freelancer.pdf",
+                    "saved_filename": "cv_123.pdf",
+                    "doc_type": "CV_PORTFOLIO",
+                }
+            ],
+        }
+
+        app_record = submit_instructor_application(
+            user_id=student_user,
+            application_data=freelance_payload,
+            session=db.session,
+        )
+
+        assert app_record.id is not None
+        assert app_record.status == "PENDING"
+        details = app_record.parsed_details
+        assert details["institution_name"] == "Hoạt động tự do / Độc lập"
+        assert details["specialization"] == "Figma UI/UX & Design Systems cho Startup"
+        assert details["portfolio_url"] == "https://behance.net/niche-designer"
+        assert len(details["attached_files"]) == 1
+        assert details["attached_files"][0]["doc_type"] == "CV_PORTFOLIO"
+
+
+def test_submit_instructor_application_missing_specialization(app, student_user):
+    """Submitting application without specialization raises ValidationError."""
+    with app.app_context(), pytest.raises(
+        ValidationError, match="Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy hoặc ngành ngách"
+    ):
+        submit_instructor_application(
+            user_id=student_user,
+            application_data={"institution_name": "Freelance", "specialization": ""},
+            session=db.session,
+        )
+

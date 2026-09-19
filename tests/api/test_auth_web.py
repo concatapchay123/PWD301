@@ -326,3 +326,42 @@ class TestWebAuth:
             assert post_resp.get_json()["status"] == "ok"
         finally:
             app.config["WTF_CSRF_ENABLED"] = False
+
+    def test_login_text_plain_json_body_fallback(
+        self, client: FlaskClient, web_user: User
+    ) -> None:
+        """POST /auth/login with JSON body under text/plain content-type succeeds defensively."""
+        import json
+
+        resp = client.post(
+            "/auth/login",
+            data=json.dumps({
+                "email": "student@demo.local",
+                "password": "Password123!",
+            }),
+            content_type="text/plain;charset=UTF-8",
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+        assert data["user"]["email"] == "student@demo.local"
+
+    def test_get_login_sets_csrf_cookie(self, client: FlaskClient) -> None:
+        """GET /auth/login sets csrf_token cookie in addition to returning it in JSON."""
+        resp = client.get("/auth/login")
+        assert resp.status_code == 200
+        set_cookies = resp.headers.getlist("Set-Cookie")
+        assert any("csrf_token=" in c for c in set_cookies)
+
+    def test_logout_clears_csrf_cookie(self, client: FlaskClient, web_user: User) -> None:
+        """POST /auth/logout deletes csrf_token cookie to prevent stale tokens."""
+        # Log in first
+        client.post(
+            "/auth/login",
+            json={"email": "student@demo.local", "password": "Password123!"},
+        )
+        resp = client.post("/auth/logout", json={})
+        assert resp.status_code == 200
+        set_cookies = resp.headers.getlist("Set-Cookie")
+        assert any("csrf_token=" in c and ("Max-Age=0" in c or "Expires=" in c) for c in set_cookies)
+

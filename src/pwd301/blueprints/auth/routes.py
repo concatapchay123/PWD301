@@ -73,20 +73,25 @@ def login() -> Any:
 
         token = generate_csrf()
         if current_user.is_authenticated:
-            return jsonify(
-                {
-                    "status": "authenticated",
-                    "csrf_token": token,
-                    "user": {
-                        "id": str(getattr(current_user, "public_id", current_user.id)),
-                        "email": current_user.email,
-                        "display_name": getattr(current_user, "display_name", ""),
-                        "primary_role": getattr(current_user, "primary_role", "STUDENT"),
-                        "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
-                    },
-                }
-            ), 200
-        return (
+            resp = make_response(
+                jsonify(
+                    {
+                        "status": "authenticated",
+                        "csrf_token": token,
+                        "user": {
+                            "id": str(getattr(current_user, "public_id", current_user.id)),
+                            "email": current_user.email,
+                            "display_name": getattr(current_user, "display_name", ""),
+                            "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+                            "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+                        },
+                    }
+                ),
+                200,
+            )
+            resp.set_cookie("csrf_token", token, samesite="Lax")
+            return resp
+        resp = make_response(
             jsonify(
                 {
                     "status": "ok",
@@ -96,10 +101,20 @@ def login() -> Any:
             ),
             200,
         )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
 
     # POST processing
+    data: dict[str, Any] = {}
     if request.is_json:
-        data: dict[str, Any] = request.get_json() or {}
+        data = request.get_json() or {}
+    else:
+        try:
+            data = request.get_json(silent=True, force=True) or {}
+        except Exception:
+            data = {}
+
+    if data:
         email = str(data.get("email", "")).strip()
         password = str(data.get("password", ""))
         remember = bool(data.get("remember", False))
@@ -216,9 +231,12 @@ def login() -> Any:
                     "csrf_token": new_csrf_token,
                     "redirect_url": target_url,
                     "user": {
+                        "id": str(user.public_id),
                         "public_id": str(user.public_id),
                         "email": user.email,
                         "display_name": user.display_name,
+                        "primary_role": getattr(user, "primary_role", "STUDENT"),
+                        "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
                     },
                 }
             ),
@@ -343,31 +361,51 @@ def logout() -> Any:
     session.clear()
 
     if _is_json_request():
-        return jsonify({"status": "ok", "message": "Đăng xuất thành công."}), 200
+        resp = make_response(jsonify({"status": "ok", "message": "Đăng xuất thành công."}), 200)
+        resp.delete_cookie("csrf_token", path="/")
+        return resp
 
     flash("Bạn đã đăng xuất thành công.", "info")
-    return redirect(url_for("auth.login"))
+    resp_redirect = make_response(redirect(url_for("auth.login")))
+    resp_redirect.delete_cookie("csrf_token", path="/")
+    return resp_redirect
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register() -> Any:
     """Handle user registration for Web UI."""
     if request.method == "GET":
+        from flask_wtf.csrf import generate_csrf
+
+        token = generate_csrf()
         if current_user.is_authenticated:
-            return jsonify({"status": "authenticated"}), 200
-        return (
+            resp = make_response(jsonify({"status": "authenticated", "csrf_token": token}), 200)
+            resp.set_cookie("csrf_token", token, samesite="Lax")
+            return resp
+        resp = make_response(
             jsonify(
                 {
                     "status": "ok",
+                    "csrf_token": token,
                     "message": "PWD301 Registration Endpoint. POST name, email, password.",
                 }
             ),
             200,
         )
+        resp.set_cookie("csrf_token", token, samesite="Lax")
+        return resp
 
     # POST processing
+    data: dict[str, Any] = {}
     if request.is_json:
-        data: dict[str, Any] = request.get_json() or {}
+        data = request.get_json() or {}
+    else:
+        try:
+            data = request.get_json(silent=True, force=True) or {}
+        except Exception:
+            data = {}
+
+    if data:
         display_name = str(data.get("name", "")).strip()
         email = str(data.get("email", "")).strip()
         password = str(data.get("password", ""))

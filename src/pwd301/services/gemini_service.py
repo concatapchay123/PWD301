@@ -421,14 +421,16 @@ class MockGeminiClient(GeminiClientBase):
         self,
         messages: list[dict[str, str]],
         context: str | None = None,
+        skip_scope_check: bool = False,
     ) -> str:
         self._check_fault_injection()
         last_msg = messages[-1]["content"] if messages else ""
-        from pwd301.services.scope_classifier import classify_query_scope_hybrid
+        if not skip_scope_check:
+            from pwd301.services.scope_classifier import classify_query_scope_hybrid
 
-        eval_result = classify_query_scope_hybrid(last_msg, context=context, client=self)
-        if not eval_result.is_in_scope:
-            return eval_result.refusal_message
+            eval_result = classify_query_scope_hybrid(last_msg, context=context, client=self)
+            if not eval_result.is_in_scope:
+                return eval_result.refusal_message
 
         ctx_upper = (context or "").upper()
         if "GLOBAL" in ctx_upper or not context:
@@ -665,18 +667,16 @@ class RealGeminiClient(GeminiClientBase):
     """Production Gemini REST API client with resilience, multi-key rotation, and model fallback."""
 
     FALLBACK_MODELS = (
-        "gemini-3.6-flash",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro",
         "gemini-flash-latest",
-        "gemini-3.7-flash",
-        "gemini-3.8-flash",
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
     )
 
     def __init__(
         self,
         api_key: str | None = None,
-        model_name: str = "gemini-3.6-flash",
+        model_name: str = "gemini-1.5-flash",
         timeout_seconds: float = 15,
         key_pool: GeminiKeyPool | None = None,
     ) -> None:
@@ -689,7 +689,7 @@ class RealGeminiClient(GeminiClientBase):
             self.key_pool._add_key(api_key, allow_test_keys=True)
 
         self.api_key = api_key or self.key_pool.get_current_key() or ""
-        self.model_name = model_name or "gemini-3.6-flash"
+        self.model_name = model_name or "gemini-1.5-flash"
         # Timeout clamping per system specification (15s to 30s)
         # Allows sub-second values when explicitly supplied for unit testing
         if timeout_seconds < 1:
@@ -1056,6 +1056,7 @@ class RealGeminiClient(GeminiClientBase):
         self,
         messages: list[dict[str, str]],
         context: str | None = None,
+        skip_scope_check: bool = False,
     ) -> str:
         last_user_msg = ""
         for m in reversed(messages):
@@ -1063,15 +1064,16 @@ class RealGeminiClient(GeminiClientBase):
                 last_user_msg = m.get("content", "")
                 break
 
-        from pwd301.services.scope_classifier import classify_query_scope_hybrid
+        if not skip_scope_check:
+            from pwd301.services.scope_classifier import classify_query_scope_hybrid
 
-        eval_result = classify_query_scope_hybrid(last_user_msg, context=context, client=self)
-        if eval_result.is_malicious:
-            logger.warning("Rejecting malicious query in Gemini client: %s", eval_result.reason)
-            raise AIPromptInjectionError("Prompt contains disallowed instructions or patterns.")
-        if not eval_result.is_in_scope:
-            logger.info("Returning refusal for out-of-scope query: %s", eval_result.reason)
-            return eval_result.refusal_message
+            eval_result = classify_query_scope_hybrid(last_user_msg, context=context, client=self)
+            if eval_result.is_malicious:
+                logger.warning("Rejecting malicious query in Gemini client: %s", eval_result.reason)
+                raise AIPromptInjectionError("Prompt contains disallowed instructions or patterns.")
+            if not eval_result.is_in_scope:
+                logger.info("Returning refusal for out-of-scope query: %s", eval_result.reason)
+                return eval_result.refusal_message
 
         contents = []
         for m in messages:
@@ -1128,9 +1130,14 @@ class RealGeminiClient(GeminiClientBase):
             "gọi người dùng là 'bạn'.\n"
             "- TUYỆT ĐỐI KHÔNG tự nhận là 'AI của môn học PWD301' (PWD301 là mã đồ án/nền tảng, "
             "không phải tên môn học).\n"
-            "- Trả lời bằng tiếng Việt ngắn gọn, chuẩn xác kỹ thuật và mang tính sư phạm cao."
+            "- Trả lời bằng tiếng Việt ngắn gọn, chuẩn xác kỹ thuật, đi thẳng vào trọng tâm, súc tích và dễ hiểu."
         )
         payload["systemInstruction"] = {"parts": [{"text": system_instruction_text}]}
+        payload["generationConfig"] = {
+            "temperature": 0.3,
+            "maxOutputTokens": 1024,
+            "topP": 0.85,
+        }
         try:
             data = self._call_gemini_api(payload)
             return self._extract_text_from_response(data)
@@ -1203,12 +1210,12 @@ def get_gemini_client() -> GeminiClientBase:
     try:
         is_testing = current_app.config.get("TESTING", False)
         api_key = current_app.config.get("GEMINI_API_KEY")
-        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-3.6-flash")
+        model_name = current_app.config.get("GEMINI_MODEL_NAME", "gemini-1.5-flash")
         timeout_seconds = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 15)
     except RuntimeError:
         is_testing = True
         api_key = None
-        model_name = "gemini-3.6-flash"
+        model_name = "gemini-1.5-flash"
         timeout_seconds = 15
 
     pool = get_key_pool()

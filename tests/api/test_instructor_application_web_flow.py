@@ -453,3 +453,52 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         f"/admin/instructor-applications/{app_id}/evidence/..%2F..%2Fconfig.py"
     )
     assert traversal_resp.status_code in (404, 400)
+
+
+def test_student_freelancer_niche_submit_web_flow(client, test_users):
+    """Freelancer/niche expert student submits application without institution_name with cv_file."""
+    import io
+
+    client.post(
+        "/auth/login",
+        json={"email": test_users["student1_email"], "password": "Password123!"},
+    )
+
+    cv_bytes = b"%PDF-1.4 Fake Freelancer CV Content for Testing"
+    data = {
+        "full_name": "Nguyen Freelancer",
+        "date_of_birth": "2000-01-01",
+        "phone_number": "0988888888",
+        "contact_email": "freelancer@niche.dev",
+        "id_card_number": "079123456789",
+        "specialization": "Ngành ngách: AI Prompt Engineering & Workflow Automation",
+        "statement": "Tôi là chuyên gia độc lập chia sẻ kỹ năng thực chiến.",
+        "portfolio_url": "https://github.com/niche-freelancer",
+        "cv_file": (io.BytesIO(cv_bytes), "my_cv_freelance.pdf"),
+    }
+
+    resp = client.post(
+        "/student/become-instructor",
+        data=data,
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code in (200, 201)
+    assert resp.is_json
+    res_data = resp.get_json()
+    assert res_data.get("status") == "PENDING" or "application_id" in res_data
+
+    # Verify saved application record in database
+    with client.application.app_context():
+        app = (
+            db.session.query(InstructorApplication)
+            .filter(InstructorApplication.applicant_user_id == test_users["student1_id"])
+            .first()
+        )
+        assert app is not None
+        details = app.parsed_details
+        expected_spec = "Ngành ngách: AI Prompt Engineering & Workflow Automation"
+        assert details["specialization"] == expected_spec
+        assert details["portfolio_url"] == "https://github.com/niche-freelancer"
+        assert len(details["attached_files"]) == 1
+        assert details["attached_files"][0]["doc_type"] == "CV_PORTFOLIO"
+

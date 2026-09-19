@@ -62,6 +62,8 @@ try:
 except Exception:
     pass
 
+_CONTAINER_CPU_SAMPLE: dict[str, float] = {"time": 0.0, "usage_usec": 0.0}
+
 
 def _require_admin(actor: Any) -> None:
     """Validate that the provided actor is an active authenticated administrator."""
@@ -550,53 +552,139 @@ def get_real_system_telemetry() -> dict[str, Any]:
         logger.warning("psutil telemetry collection warning: %s", exc)
 
     # -----------------------------------------------------------------
-    # Container cgroup resource limit clamping (cgroups v1 & v2)
+    # Container cgroup resource limit & usage extraction (Docker stats match)
     # -----------------------------------------------------------------
     if sys.platform.startswith("linux"):
         try:
             cg_mem_limit: int | None = None
             cg_mem_usage: int | None = None
+            cg_cpu_pct: float | None = None
 
             # Cgroups v2
             v2_max = "/sys/fs/cgroup/memory.max"
             v2_cur = "/sys/fs/cgroup/memory.current"
-            if os.path.exists(v2_max) and os.path.exists(v2_cur):
-                with open(v2_max, encoding="utf-8", errors="ignore") as f:
-                    val = f.read().strip()
-                    if val.isdigit() and int(val) > 0:
-                        cg_mem_limit = int(val)
-                if cg_mem_limit is not None:
-                    with open(v2_cur, encoding="utf-8", errors="ignore") as f:
-                        c_val = f.read().strip()
-                        if c_val.isdigit():
-                            cg_mem_usage = int(c_val)
+            v2_stat = "/sys/fs/cgroup/memory.stat"
+            v2_cpu = "/sys/fs/cgroup/cpu.stat"
+            if os.path.exists(v2_cur):
+                with open(v2_cur, encoding="utf-8", errors="ignore") as f:
+                    c_val = f.read().strip()
+                    if c_val.isdigit():
+                        raw_mem = int(c_val)
+                        inactive_file = 0
+                        if os.path.exists(v2_stat):
+                            with open(v2_stat, encoding="utf-8", errors="ignore") as sf:
+                                for line in sf:
+                                    parts = line.split()
+                                    if (
+                                        len(parts) == 2
+                                        and parts[0] == "inactive_file"
+                                        and parts[1].isdigit()
+                                    ):
+                                        inactive_file = int(parts[1])
+                                        break
+                        # Docker stats active memory: memory.current - inactive_file
+                        cg_mem_usage = max(0, raw_mem - inactive_file)
+
+                if os.path.exists(v2_max):
+                    with open(v2_max, encoding="utf-8", errors="ignore") as f:
+                        val = f.read().strip()
+                        if val.isdigit() and int(val) > 0:
+                            cg_mem_limit = int(val)
+
+                if os.path.exists(v2_cpu):
+                    usage_usec = None
+                    with open(v2_cpu, encoding="utf-8", errors="ignore") as cf:
+                        for line in cf:
+                            parts = line.split()
+                            if len(parts) == 2 and parts[0] == "usage_usec" and parts[1].isdigit():
+                                usage_usec = int(parts[1])
+                                break
+                    if usage_usec is not None:
+                        now_ts = time.time()
+                        prev_time = _CONTAINER_CPU_SAMPLE.get("time", 0.0)
+                        prev_usage = _CONTAINER_CPU_SAMPLE.get("usage_usec", 0.0)
+                        if (
+                            prev_time > 0
+                            and 0.01 <= (now_ts - prev_time) <= 15.0
+                            and usage_usec >= prev_usage
+                        ):
+                            delta_time = now_ts - prev_time
+                            delta_cpu_sec = (usage_usec - prev_usage) / 1_000_000.0
+                            calc_pct = (delta_cpu_sec / delta_time) * 100.0
+                            cg_cpu_pct = round(max(0.0, min(100.0 * cpu_count, calc_pct)), 1)
+                        _CONTAINER_CPU_SAMPLE["time"] = now_ts
+                        _CONTAINER_CPU_SAMPLE["usage_usec"] = float(usage_usec)
 
             # Cgroups v1 fallback
-            if cg_mem_limit is None:
+            if cg_mem_usage is None:
                 v1_limit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
                 v1_usage = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
-                if os.path.exists(v1_limit) and os.path.exists(v1_usage):
+                v1_stat = "/sys/fs/cgroup/memory/memory.stat"
+                v1_cpu = "/sys/fs/cgroup/cpuacct/cpuacct.usage"
+                if os.path.exists(v1_usage):
+                    with open(v1_usage, encoding="utf-8", errors="ignore") as f:
+                        c_val = f.read().strip()
+                        if c_val.isdigit():
+                            raw_mem = int(c_val)
+                            cache_bytes = 0
+                            if os.path.exists(v1_stat):
+                                with open(v1_stat, encoding="utf-8", errors="ignore") as sf:
+                                    for line in sf:
+                                        parts = line.split()
+                                        if (
+                                            len(parts) == 2
+                                            and parts[0] in ("total_inactive_file", "inactive_file")
+                                            and parts[1].isdigit()
+                                        ):
+                                            cache_bytes = int(parts[1])
+                                            break
+                            cg_mem_usage = max(0, raw_mem - cache_bytes)
+
+                if os.path.exists(v1_limit):
                     with open(v1_limit, encoding="utf-8", errors="ignore") as f:
                         val = f.read().strip()
                         if val.isdigit() and int(val) < (1024**5):
                             cg_mem_limit = int(val)
-                    if cg_mem_limit is not None:
-                        with open(v1_usage, encoding="utf-8", errors="ignore") as f:
-                            c_val = f.read().strip()
-                            if c_val.isdigit():
-                                cg_mem_usage = int(c_val)
 
-            if cg_mem_limit and cg_mem_usage is not None:
-                cg_tot_gb = round(cg_mem_limit / (1024**3), 1)
-                cg_used_gb = round(cg_mem_usage / (1024**3), 1)
-                cg_avail_gb = max(0.0, round((cg_mem_limit - cg_mem_usage) / (1024**3), 1))
-                if ram_total_gb == 0.0 or cg_tot_gb < ram_total_gb:
-                    ram_total_gb = cg_tot_gb
-                    ram_used_gb = cg_used_gb
-                    ram_avail_gb = cg_avail_gb
-                    ram_percent = (
-                        round((cg_mem_usage / cg_mem_limit) * 100, 1) if cg_mem_limit else 0.0
-                    )
+                if os.path.exists(v1_cpu):
+                    with open(v1_cpu, encoding="utf-8", errors="ignore") as cf:
+                        val = cf.read().strip()
+                        if val.isdigit():
+                            usage_ns = int(val)
+                            curr_usec = usage_ns / 1000.0
+                            now_ts = time.time()
+                            prev_time = _CONTAINER_CPU_SAMPLE.get("time", 0.0)
+                            prev_usage = _CONTAINER_CPU_SAMPLE.get("usage_usec", 0.0)
+                            if (
+                                prev_time > 0
+                                and 0.01 <= (now_ts - prev_time) <= 15.0
+                                and curr_usec >= prev_usage
+                            ):
+                                delta_time = now_ts - prev_time
+                                delta_cpu_sec = (curr_usec - prev_usage) / 1_000_000.0
+                                calc_pct = (delta_cpu_sec / delta_time) * 100.0
+                                cg_cpu_pct = round(max(0.0, min(100.0 * cpu_count, calc_pct)), 1)
+                            _CONTAINER_CPU_SAMPLE["time"] = now_ts
+                            _CONTAINER_CPU_SAMPLE["usage_usec"] = curr_usec
+
+            if cg_mem_usage is not None:
+                effective_limit = (
+                    cg_mem_limit
+                    if cg_mem_limit is not None
+                    else int(ram_total_gb * (1024**3))
+                )
+                if effective_limit > 0:
+                    cg_tot_gb = round(effective_limit / (1024**3), 1)
+                    cg_used_gb = round(cg_mem_usage / (1024**3), 2)
+                    cg_avail_gb = max(0.0, round((effective_limit - cg_mem_usage) / (1024**3), 1))
+                    if ram_total_gb == 0.0 or cg_mem_limit is not None or cg_tot_gb <= ram_total_gb:
+                        ram_total_gb = cg_tot_gb
+                        ram_used_gb = cg_used_gb
+                        ram_avail_gb = cg_avail_gb
+                        ram_percent = round((cg_mem_usage / effective_limit) * 100, 1)
+
+            if cg_cpu_pct is not None:
+                cpu_percent = cg_cpu_pct
         except Exception:
             pass
 

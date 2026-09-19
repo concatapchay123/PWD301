@@ -125,13 +125,44 @@ from pwd301.services.regrade_worker import (
 )
 
 
+def _extract_video_url_from_markdown(content: str | None) -> str | None:
+    if not content:
+        return None
+    import re
+    m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", content)
+    return m.group(1) if m else None
+
+
 def _serialize_lesson(les: Lesson) -> dict[str, Any]:
+    video_url = _extract_video_url_from_markdown(les.markdown_content)
+    if not video_url and hasattr(les, "resources") and les.resources:
+        for r in les.resources:
+            if getattr(r, "is_deleted", False):
+                continue
+            if (
+                r.file_asset
+                and r.file_asset.virus_scan_status == "CLEAN"
+            ):
+                mime = r.file_asset.mime_type or ""
+                name = (r.file_asset.display_name or "").lower()
+                if mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv", ".mov")):
+                    cid = str(les.course.public_id) if les.course else ""
+                    rid = str(r.public_id)
+                    fid = str(r.file_asset.public_id)
+                    video_url = (
+                        f"/student/courses/{cid}/files/{rid}/download?disposition=inline"
+                        if cid
+                        else f"/student/files/{fid}/download?disposition=inline"
+                    )
+                    break
+
     return {
         "lesson_id": str(les.public_id),
         "course_id": str(les.course.public_id) if les.course else None,
         "title": les.title,
         "summary": les.summary,
         "markdown_content": les.markdown_content,
+        "video_url": video_url,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
@@ -472,7 +503,14 @@ def create_lesson_route(course_id: str) -> Any:
     if not raw_md or not raw_md.strip():
         title = payload.get("title", "Bài giảng")
         summary = payload.get("summary") or "Nội dung bài giảng đa phương tiện."
-        payload["markdown_content"] = f"# {title}\n\n{summary}"
+        raw_md = f"# {title}\n\n{summary}"
+
+    video_url = payload.get("video_url")
+    if video_url and str(video_url).strip():
+        import re
+        if not re.search(r"<!--\s*video_url:\s*\S+?\s*-->", raw_md):
+            raw_md = f"<!-- video_url: {str(video_url).strip()} -->\n\n" + raw_md
+    payload["markdown_content"] = raw_md
 
     try:
         # Milestone 4 Remediation: Pre-validate all uploaded files BEFORE calling create_lesson
@@ -855,6 +893,22 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
 
     course = require_course_manager(actor, lesson.course_id, session=db.session)
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    if "video_url" in payload:
+        video_url = payload.pop("video_url")
+        current_md = (
+            payload.get("markdown_content")
+            if "markdown_content" in payload
+            else (lesson.markdown_content or "")
+        )
+        import re
+        cleaned_md = re.sub(r"<!--\s*video_url:\s*\S+?\s*-->\n*", "", current_md or "").strip()
+        if video_url and str(video_url).strip():
+            payload["markdown_content"] = (
+                f"<!-- video_url: {str(video_url).strip()} -->\n\n{cleaned_md}"
+            )
+        else:
+            payload["markdown_content"] = cleaned_md
 
     # Strict Admin Approval Invariant:
     # If course is APPROVED or PUBLISHED (or lesson is already PUBLISHED), and actor is not Admin:
@@ -2726,6 +2780,97 @@ def grade_instructor_essay_route(
     return jsonify(result), 200
 
 
+@instructor_bp.route("/attempts/<attempt_id>/appeal/review", methods=["POST"])
+@instructor_required
+def review_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, int] | Response:
+    """Approve or reject a student attempt appeal with score adjustment."""
+    import json
+    from decimal import Decimal
+
+    from pwd301.models.attempt_regrade import (
+        AssessmentResult,
+        AssessmentResultHistory,
+    )
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.models.types import utc_now
+    from pwd301.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+
+    from pwd301.services.authorization_service import require_course_manager
+
+    # Check that instructor owns or manages the course
+    if attempt.assessment and attempt.assessment.course_id:
+        require_course_manager(actor, attempt.assessment.course_id, session=db.session)
+
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict() or {}
+    decision = str(payload.get("decision", "APPROVED")).upper()
+    reviewer_note = str(payload.get("reviewer_note", "")).strip()
+    score_delta = payload.get("score_delta")
+    new_raw_score = payload.get("new_score")
+
+    now = utc_now()
+    result = db.session.query(AssessmentResult).filter(AssessmentResult.attempt_id == attempt.id).first()
+
+    if decision == "APPROVED":
+        if result is not None and (score_delta is not None or new_raw_score is not None):
+            old_score = result.raw_score
+            old_pct = result.percent_score
+            if new_raw_score is not None:
+                new_score = Decimal(str(new_raw_score))
+            else:
+                new_score = old_score + Decimal(str(score_delta))
+            new_score = max(Decimal("0"), min(new_score, result.max_score))
+            new_pct = (new_score / result.max_score) * Decimal("100")
+            passing_percent = Decimal(str(attempt.assessment.passing_percent or "50.0")) if attempt.assessment else Decimal("50.0")
+            passed = new_pct >= passing_percent
+
+            result.raw_score = new_score
+            result.percent_score = new_pct
+            result.passed = passed
+            result.updated_at = now
+
+            history = AssessmentResultHistory(
+                attempt_id=attempt.id,
+                old_score=old_score,
+                new_score=new_score,
+                old_percent=old_pct,
+                new_percent=new_pct,
+                reason_code="MANUAL",
+                reason=f"Phúc khảo khảo thí: {reviewer_note}"[:1000],
+                actor_user_id=actor.id,
+                created_at=now,
+            )
+            db.session.add(history)
+
+    audit_entry = AuditEvent(
+        actor_user_id=actor.id,
+        actor_roles_snapshot="INSTRUCTOR",
+        action="INSTRUCTOR_APPEAL_DECISION",
+        target_type="ASSESSMENT_ATTEMPT",
+        target_id=attempt.id,
+        reason=f"Giảng viên {decision} đơn phúc khảo: {reviewer_note}"[:1000],
+        after_json=json.dumps(
+            {
+                "status": decision,
+                "reviewer_note": reviewer_note,
+                "score_delta": float(score_delta) if score_delta is not None else None,
+                "new_score": float(result.raw_score) if result is not None else None,
+                "reviewed_at": now.isoformat(),
+            },
+            ensure_ascii=False,
+        ),
+        created_at=now,
+    )
+    db.session.add(audit_entry)
+    db.session.commit()
+
+    return jsonify({"message": f"Đã {('phê duyệt' if decision == 'APPROVED' else 'từ chối')} đơn phúc khảo thành công.", "status": decision}), 200
+
+
 @instructor_bp.route("/assessments/<assessment_id>/regrade", methods=["POST"])
 @instructor_required
 def trigger_instructor_regrade_route(assessment_id: str) -> tuple[Response, int] | Response:
@@ -3126,3 +3271,71 @@ def instructor_reject_draft_route(draft_id: str) -> tuple[Response, int] | Respo
         ),
         200,
     )
+
+
+@instructor_bp.route("/exams/parse-file", methods=["POST"])
+@instructor_required
+def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
+    """Parse an uploaded exam document (.docx, .pdf, .txt) and extract raw text for the exam editor."""
+    import contextlib
+    import logging
+    import tempfile
+    from pathlib import Path
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.import_service import extract_text_from_docx, extract_text_from_pdf
+
+    _logger = logging.getLogger(__name__)
+    actor = require_authenticated_actor()
+    if not request.files or "file" not in request.files:
+        raise ValidationError("Vui lòng chọn tệp (.docx, .pdf, .txt) để tải lên.")
+
+    upload = request.files["file"]
+    if not upload or not upload.filename:
+        raise ValidationError("Tên tệp không hợp lệ.")
+
+    filename = upload.filename
+    ext = Path(filename).suffix.lower()
+
+    if ext not in (".docx", ".pdf", ".txt", ".md"):
+        raise ValidationError("Chỉ hỗ trợ các định dạng tệp: .docx, .pdf, .txt, .md")
+
+    if ext in (".txt", ".md"):
+        try:
+            content = upload.stream.read().decode("utf-8", errors="replace")
+            return jsonify({
+                "success": True,
+                "raw_text": content,
+                "text": content,
+                "filename": filename,
+                "format": ext.lstrip("."),
+            }), 200
+        except Exception as err:
+            raise ValidationError(f"Không thể đọc tệp văn bản: {err}") from err
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        upload.stream.seek(0)
+        tmp.write(upload.stream.read())
+
+    try:
+        if ext == ".docx":
+            lines = extract_text_from_docx(tmp_path)
+        else:
+            lines = extract_text_from_pdf(tmp_path)
+
+        raw_text = "\n".join(lines)
+        return jsonify({
+            "success": True,
+            "raw_text": raw_text,
+            "text": raw_text,
+            "filename": filename,
+            "format": ext.lstrip("."),
+            "lines_count": len(lines),
+        }), 200
+    except Exception as err:
+        _logger.warning("Error parsing uploaded exam file %s: %s", filename, err)
+        raise ValidationError(f"Lỗi khi trích xuất nội dung từ tệp {filename}: {err}") from err
+    finally:
+        with contextlib.suppress(Exception):
+            if tmp_path.exists():
+                tmp_path.unlink()

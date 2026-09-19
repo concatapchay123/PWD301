@@ -1050,11 +1050,13 @@ def submit_instructor_application(
 
     # Basic validations on required fields
     institution_name = str(application_data.get("institution_name", "")).strip()
-    specialization = str(application_data.get("specialization", "")).strip()
     if not institution_name:
-        raise ValidationError("Vui lòng cung cấp tên cơ sở giáo dục hoặc tổ chức công tác.")
+        institution_name = "Hoạt động tự do / Độc lập"
+    specialization = str(application_data.get("specialization", "")).strip()
     if not specialization:
-        raise ValidationError("Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy.")
+        raise ValidationError(
+            "Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy hoặc ngành ngách của bạn."
+        )
 
     # Experience years
     try:
@@ -1062,33 +1064,64 @@ def submit_instructor_application(
     except (ValueError, TypeError):
         exp_years = 0
 
+    contact_email = str(application_data.get("contact_email", "")).strip()
+    inst_email = str(application_data.get("institution_email", "")).strip()
+    port_url = str(application_data.get("portfolio_url", "")).strip()
+    ev_urls = str(application_data.get("evidence_urls", "")).strip()
+    sop = (
+        str(application_data.get("statement_of_purpose", "")).strip()
+        or str(application_data.get("bio", "")).strip()
+        or str(application_data.get("statement", "")).strip()
+    )
+
     attached_files = application_data.get("attached_files", [])
     clean_data: dict[str, Any] = {
+        "full_name": str(application_data.get("full_name", "")).strip(),
+        "date_of_birth": str(application_data.get("date_of_birth", "")).strip(),
+        "contact_email": contact_email or inst_email,
+        "phone_number": str(application_data.get("phone_number", "")).strip(),
+        "id_card_number": str(application_data.get("id_card_number", "")).strip(),
+        "work_address": str(application_data.get("work_address", "")).strip(),
         "institution_name": institution_name,
-        "institution_email": str(application_data.get("institution_email", "")).strip(),
+        "institution_email": inst_email or contact_email,
         "faculty_department": str(application_data.get("faculty_department", "")).strip(),
         "specialization": specialization,
         "experience_years": exp_years,
-        "phone_number": str(application_data.get("phone_number", "")).strip(),
+        "sheer_id": str(application_data.get("sheer_id", "")).strip(),
         "teaching_evidence": str(application_data.get("teaching_evidence", "")).strip(),
         "salary_proof": str(application_data.get("salary_proof", "")).strip(),
         "current_schedule": str(application_data.get("current_schedule", "")).strip(),
         "employment_contract": str(application_data.get("employment_contract", "")).strip(),
-        "evidence_urls": str(application_data.get("evidence_urls", "")).strip(),
-        "statement_of_purpose": str(application_data.get("statement_of_purpose", "")).strip(),
+        "portfolio_url": port_url or ev_urls,
+        "evidence_urls": ev_urls or port_url,
+        "statement_of_purpose": sop,
         "attached_files": attached_files if isinstance(attached_files, list) else [],
     }
 
-    # Ensure JSON fits in 2000 chars
+    # Ensure JSON fits in 2000 chars without truncating JSON syntax
     note_json = json.dumps(clean_data, ensure_ascii=False)
     if len(note_json) > 2000:
-        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:200]
-        clean_data["teaching_evidence"] = str(clean_data["teaching_evidence"])[:200]
-        clean_data["salary_proof"] = str(clean_data["salary_proof"])[:150]
-        clean_data["current_schedule"] = str(clean_data["current_schedule"])[:150]
-        clean_data["employment_contract"] = str(clean_data["employment_contract"])[:150]
-        clean_data["evidence_urls"] = str(clean_data["evidence_urls"])[:200]
-        note_json = json.dumps(clean_data, ensure_ascii=False)[:2000]
+        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:150]
+        clean_data["teaching_evidence"] = str(clean_data["teaching_evidence"])[:100]
+        clean_data["salary_proof"] = str(clean_data["salary_proof"])[:80]
+        clean_data["current_schedule"] = str(clean_data["current_schedule"])[:80]
+        clean_data["employment_contract"] = str(clean_data["employment_contract"])[:80]
+        clean_data["evidence_urls"] = str(clean_data["evidence_urls"])[:120]
+        # Compact attached_files to essential fields if too large
+        if isinstance(clean_data.get("attached_files"), list):
+            clean_data["attached_files"] = [
+                {
+                    "name": str(f.get("original_name", ""))[:40],
+                    "file": str(f.get("saved_filename", ""))[:40],
+                    "type": str(f.get("doc_type", "OTHER"))
+                }
+                for f in clean_data["attached_files"]
+                if isinstance(f, dict)
+            ][:5]
+        note_json = json.dumps(clean_data, ensure_ascii=False)
+        if len(note_json) > 2000:
+            clean_data.pop("attached_files", None)
+            note_json = json.dumps(clean_data, ensure_ascii=False)[:2000]
 
     now = utc_now()
     app_record = InstructorApplication(

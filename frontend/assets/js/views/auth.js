@@ -607,19 +607,41 @@ class AuthView {
           // Check if 2FA is required
           if (res && res.two_factor_required) {
             switchTab('twofa');
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = `
+                <span class="material-symbols-outlined text-[17px]">login</span>
+                <span>Đăng nhập hệ thống</span>
+              `;
+            }
             return;
           }
 
           UI.showToast('Đăng nhập thành công! Đang chuyển hướng...', 'success');
 
-          // Refresh current user and redirect
+          // Keep submit button disabled to prevent duplicate clicks while redirecting
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+              <span class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+              <span>Đang vào hệ thống...</span>
+            `;
+          }
+
+          // Instantly sync user state into AppRouter without an extra HTTP GET roundtrip
           if (window.app) {
-            await window.app.refreshCurrentUser();
+            if (res && res.user) {
+              window.app.currentUser = res.user;
+              window.app.currentRole = res.user.primary_role || (res.user.role_codes && res.user.role_codes[0]) || 'STUDENT';
+              window.app.updateUserUI();
+              window.app.refreshNotificationBadge();
+            } else {
+              await window.app.refreshCurrentUser();
+            }
             window.app.redirectToRoleHome();
           }
         } catch (err) {
           showError(err.message || 'Email hoặc mật khẩu không chính xác.');
-        } finally {
           if (submitBtn) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = `

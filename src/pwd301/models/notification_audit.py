@@ -200,6 +200,14 @@ class Notification(Base):
             except Exception:
                 pass
 
+        def _to_utc_iso(dt: Any) -> str | None:
+            if not dt:
+                return None
+            s = dt.isoformat()
+            if not s.endswith("Z") and "+" not in s:
+                return f"{s}Z"
+            return s
+
         return {
             "id": str(self.public_id),
             "category": self.category,
@@ -207,9 +215,9 @@ class Notification(Base):
             "body": self.body,
             "read": self.is_read,
             "is_read": self.is_read,
-            "read_at": self.read_at.isoformat() if self.read_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "read_at": _to_utc_iso(self.read_at),
+            "expires_at": _to_utc_iso(self.expires_at),
+            "created_at": _to_utc_iso(self.created_at),
             "action_url": action_url,
             "target_url": action_url,
         }

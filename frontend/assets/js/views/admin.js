@@ -57,17 +57,17 @@ class AdminView {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
           
           <!-- KPI 1: Đề cương chờ duyệt -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="AdminView.switchTab('tab-review')">
+          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="AdminView.switchTab('tab-courses-review')">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[22px]">fact_check</span>
-                Hàng đợi thẩm định đề cương
+                Duyệt khóa học & Bản sửa đổi
               </span>
               <span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-[11px] font-bold" id="kpi-courses-badge">Đang tải...</span>
             </div>
             <div class="flex items-baseline gap-3 my-2">
               <span class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono" id="kpi-courses-pending">--</span>
-              <span class="text-xs text-slate-400">Khóa học / Đề cương chờ duyệt</span>
+              <span class="text-xs text-slate-400">Khóa học / Bản sửa chờ duyệt</span>
             </div>
             <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
               <span class="text-slate-500" id="kpi-courses-subtext">Hàng đợi xét duyệt ABET CAC</span>
@@ -115,25 +115,30 @@ class AdminView {
 
         </div>
 
-        <!-- 4-Tab Control Bar -->
+        <!-- 5-Tab Control Bar (Tách riêng Khóa học & Hồ sơ Giảng viên) -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-2 shadow-sm">
           <div class="flex flex-wrap items-center gap-2" role="tablist">
             <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-users">
               <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
               <span>1. Quản trị Người dùng & Phân quyền RBAC</span>
             </button>
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-review">
+            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-courses-review">
               <span class="material-symbols-outlined text-[18px]">fact_check</span>
-              <span>2. Thẩm định Đề cương & Duyệt Giảng viên</span>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden" id="tab-review-badge">0 chờ</span>
+              <span>2. Duyệt Khóa học & Bản sửa đổi</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden" id="tab-courses-badge">0 chờ</span>
+            </button>
+            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-instructor-apps">
+              <span class="material-symbols-outlined text-[18px]">badge</span>
+              <span>3. Hồ sơ Giảng viên</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden" id="tab-apps-badge">0 chờ</span>
             </button>
             <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-reassign">
               <span class="material-symbols-outlined text-[18px]">swap_horiz</span>
-              <span>3. Điều chuyển & Phân công Giảng dạy</span>
+              <span>4. Điều chuyển Phân công Giảng dạy</span>
             </button>
             <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-security">
               <span class="material-symbols-outlined text-[18px]">policy</span>
-              <span>4. An toàn Học thuật & Nhật ký Kiểm toán</span>
+              <span>5. An toàn Học thuật & Nhật ký Kiểm toán</span>
             </button>
           </div>
         </div>
@@ -146,28 +151,55 @@ class AdminView {
 
     // Load initial KPIs
     try {
-      const [coursesRes, telemRes] = await Promise.allSettled([
+      const [coursesRes, appsRes, crRes, telemRes] = await Promise.allSettled([
         ApiClient.getPendingCourses(),
+        ApiClient.getAdminInstructorApplications('PENDING'),
+        ApiClient.getAdminChangeRequests('PENDING'),
         ApiClient.getAdminTelemetry()
       ]);
 
+      let pendingCoursesCount = 0;
       if (coursesRes.status === 'fulfilled' && coursesRes.value) {
-        const count = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
-        const el = document.getElementById('kpi-courses-pending');
-        const badge = document.getElementById('kpi-courses-badge');
-        const tabBadge = document.getElementById('tab-review-badge');
-        if (el) el.textContent = String(count).padStart(2, '0');
-        if (badge) badge.textContent = `${count} chờ duyệt`;
-        if (tabBadge && count > 0) {
-          tabBadge.textContent = `${count} chờ`;
-          tabBadge.classList.remove('hidden');
+        pendingCoursesCount = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
+      }
+      let pendingCrCount = 0;
+      if (crRes.status === 'fulfilled' && crRes.value) {
+        pendingCrCount = crRes.value.pending_count || (crRes.value.change_requests ? crRes.value.change_requests.length : 0);
+      }
+      let pendingAppsCount = 0;
+      if (appsRes.status === 'fulfilled' && appsRes.value) {
+        pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
+      }
+
+      const totalCourseWork = pendingCoursesCount + pendingCrCount;
+      const el = document.getElementById('kpi-courses-pending');
+      const badge = document.getElementById('kpi-courses-badge');
+      const tabCoursesBadge = document.getElementById('tab-courses-badge');
+      const tabAppsBadge = document.getElementById('tab-apps-badge');
+
+      if (el) el.textContent = String(totalCourseWork).padStart(2, '0');
+      if (badge) badge.textContent = `${totalCourseWork} chờ duyệt`;
+      if (tabCoursesBadge) {
+        if (totalCourseWork > 0) {
+          tabCoursesBadge.textContent = `${totalCourseWork} chờ`;
+          tabCoursesBadge.classList.remove('hidden');
+        } else {
+          tabCoursesBadge.classList.add('hidden');
+        }
+      }
+      if (tabAppsBadge) {
+        if (pendingAppsCount > 0) {
+          tabAppsBadge.textContent = `${pendingAppsCount} chờ`;
+          tabAppsBadge.classList.remove('hidden');
+        } else {
+          tabAppsBadge.classList.add('hidden');
         }
       }
 
       if (telemRes.status === 'fulfilled' && telemRes.value) {
         const data = telemRes.value;
-        const cpuPct = data.cpu ? data.cpu.percent : 18;
-        const ramUsed = data.memory ? data.memory.used_gb : '4.8';
+        const cpuPct = data.cpu?.percent ?? 0;
+        const ramUsed = data.memory?.used_gb ?? 0;
         const metricsEl = document.getElementById('kpi-telemetry-metrics');
         if (metricsEl) metricsEl.textContent = `CPU: ${cpuPct}% • RAM: ${ramUsed} GB`;
       }
@@ -190,8 +222,10 @@ class AdminView {
 
       if (tabKey === 'tab-users') {
         AdminView.renderTabUsers(contentBox);
-      } else if (tabKey === 'tab-review') {
-        AdminView.renderTabReview(contentBox, subQueue);
+      } else if (tabKey === 'tab-courses-review' || tabKey === 'tab-review') {
+        AdminView.renderTabCoursesReview(contentBox, subQueue);
+      } else if (tabKey === 'tab-instructor-apps') {
+        AdminView.renderTabInstructorApps(contentBox);
       } else if (tabKey === 'tab-reassign') {
         AdminView.renderTabReassign(contentBox);
       } else if (tabKey === 'tab-security') {
@@ -203,9 +237,16 @@ class AdminView {
       t.onclick = () => AdminView.switchTab(t.dataset.tab);
     });
 
-    const targetTab = activeTab === 'courses' || activeTab === 'applications' ? 'tab-review' : activeTab === 'security' ? 'tab-security' : activeTab === 'reassign' ? 'tab-reassign' : 'tab-users';
-    const subQueue = (activeTab === 'courses' || activeTab === 'applications') ? activeTab : null;
-    AdminView.switchTab(targetTab, subQueue);
+    const targetTab = (activeTab === 'courses' || activeTab === 'review')
+      ? 'tab-courses-review'
+      : (activeTab === 'applications' || activeTab === 'instructors')
+        ? 'tab-instructor-apps'
+        : activeTab === 'security'
+          ? 'tab-security'
+          : activeTab === 'reassign'
+            ? 'tab-reassign'
+            : 'tab-users';
+    AdminView.switchTab(targetTab);
   }
 
   // =========================================================================
@@ -649,7 +690,7 @@ class AdminView {
         <div class="space-y-1">
           <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Đối tượng nhận</label>
           <select id="broadcast-role" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
-            <option value="ALL">Tất cả người dùng (Toàn viện)</option>
+            <option value="ALL">Tất cả người dùng</option>
             <option value="STUDENT">Chỉ Sinh viên (STUDENT)</option>
             <option value="INSTRUCTOR">Chỉ Giảng viên (INSTRUCTOR)</option>
             <option value="ADMIN">Chỉ Quản trị viên (ADMIN)</option>
@@ -681,7 +722,7 @@ class AdminView {
     `;
 
     UI.openModal({
-      title: 'Phát thông báo hệ thống toàn viện',
+      title: 'Phát thông báo hệ thống',
       bodyHtml: body,
       footerHtml: footer,
       size: 'md'
@@ -715,63 +756,56 @@ class AdminView {
   }
 
   // =========================================================================
-  // Tab 2: Course Review Queue & Instructor Applications (100% Live DB)
+  // Tab 2: Duyệt Khóa học & Hàng đợi Bản sửa đổi (Course Review & Change Requests)
   // =========================================================================
-  static async renderTabReview(container, subQueue = null) {
+  static async renderTabCoursesReview(container, subQueue = null) {
     container.innerHTML = `
-      <div class="space-y-6 animate-fade-in" id="review-box">
+      <div class="space-y-6 animate-fade-in" id="courses-review-box">
         <div class="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
           <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang nạp hàng đợi thẩm định đề cương & đơn đăng ký giảng viên...</p>
+          <p class="text-sm">Đang tải hàng đợi thẩm định đề cương khóa học & yêu cầu sửa đổi...</p>
         </div>
       </div>
     `;
 
     try {
-      const [pendingCoursesRes, appsRes, changeReqsRes] = await Promise.allSettled([
+      const [pendingCoursesRes, changeReqsRes] = await Promise.allSettled([
         ApiClient.getPendingCourses(),
-        ApiClient.getAdminInstructorApplications('ALL'),
         ApiClient.getAdminChangeRequests('ALL')
       ]);
 
       const pendingCourses = (pendingCoursesRes.status === 'fulfilled' && pendingCoursesRes.value) ? (pendingCoursesRes.value.courses || []) : [];
-      const applications = (appsRes.status === 'fulfilled' && appsRes.value) ? (appsRes.value.applications || []) : [];
       const changeRequests = (changeReqsRes.status === 'fulfilled' && changeReqsRes.value) ? (changeReqsRes.value.change_requests || []) : [];
       const pendingChangeRequests = changeRequests.filter(r => r.status === 'PENDING');
 
-      // Reactively sync header KPI and Tab 2 badge with live pending count
-      const pCount = pendingCourses.length + pendingChangeRequests.length;
-      const kpiEl = document.getElementById('kpi-courses-pending');
-      const kpiBadge = document.getElementById('kpi-courses-badge');
-      const tabBadge = document.getElementById('tab-review-badge');
-      if (kpiEl) kpiEl.textContent = String(pCount).padStart(2, '0');
-      if (kpiBadge) kpiBadge.textContent = `${pCount} chờ duyệt`;
-      if (tabBadge) {
-        if (pCount > 0) {
-          tabBadge.textContent = `${pCount} chờ`;
-          tabBadge.classList.remove('hidden');
+      // Update badge
+      const totalPending = pendingCourses.length + pendingChangeRequests.length;
+      const tabCoursesBadge = document.getElementById('tab-courses-badge');
+      if (tabCoursesBadge) {
+        if (totalPending > 0) {
+          tabCoursesBadge.textContent = `${totalPending} chờ`;
+          tabCoursesBadge.classList.remove('hidden');
         } else {
-          tabBadge.textContent = '';
-          tabBadge.classList.add('hidden');
+          tabCoursesBadge.classList.add('hidden');
         }
       }
 
-      const box = document.getElementById('review-box');
+      const box = document.getElementById('courses-review-box');
       if (!box) return;
 
       box.innerHTML = `
-        <!-- Section 1: Course Approval Queue (with Side-by-Side Diff) -->
+        <!-- Section 1: Hàng đợi Thẩm định Đề cương Khóa học mới/xuất bản -->
         <div id="admin-review-courses-queue" class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
             <div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[20px]">rule</span>
-                Hàng đợi Thẩm định Đề cương Khóa học (Pending Reviews)
+                <span class="material-symbols-outlined text-primary text-[20px]">fact_check</span>
+                Hàng đợi Thẩm định Khóa học Chờ Duyệt (Pending Courses)
               </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Đối soát và phê duyệt đề cương gửi lên từ Giảng viên trước khi xuất bản.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Đối soát đề cương, chuẩn đầu ra SLO và danh mục bài học do Giảng viên hoàn thiện trước khi ban hành chính thức.</p>
             </div>
             <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-xs font-bold border border-amber-200">
-              ${pendingCourses.length} Yêu cầu chờ duyệt
+              ${pendingCourses.length} Khóa học chờ duyệt
             </span>
           </div>
 
@@ -779,7 +813,7 @@ class AdminView {
             <div class="p-8 text-center text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
               <span class="material-symbols-outlined text-emerald-500 text-3xl">task_alt</span>
               <p class="text-xs font-bold text-slate-700 dark:text-slate-300">Không có khóa học nào đang chờ thẩm định</p>
-              <p class="text-[11px] text-slate-400">Toàn bộ đề cương nộp lên đã được giải quyết hoặc chưa có đề xuất mới.</p>
+              <p class="text-[11px] text-slate-400">Toàn bộ khóa học nộp lên đã được giải quyết hoặc chưa có đề xuất xuất bản mới.</p>
             </div>
           ` : `
             <div class="space-y-4">
@@ -804,18 +838,18 @@ class AdminView {
                     </div>
                   </div>
 
-                  <!-- Course Metadata Comparison Details -->
+                  <!-- Course Metadata Details -->
                   <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono bg-slate-50/50 dark:bg-slate-950/40">
-                    <div class="p-3 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1">
-                      <div class="font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-100 dark:border-slate-800">Thông tin nộp duyệt</div>
-                      <p><strong>Mã khóa học:</strong> ${UI.escapeHtml(c.course_code)}</p>
+                    <div class="p-3 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1 font-sans">
+                      <div class="font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-100 dark:border-slate-800 font-mono">Thông tin nộp duyệt</div>
+                      <p><strong>Mã khóa học:</strong> <span class="font-mono text-primary font-bold">${UI.escapeHtml(c.course_code)}</span></p>
                       <p><strong>Tiêu đề:</strong> ${UI.escapeHtml(c.title)}</p>
                       <p><strong>Trạng thái:</strong> <span class="text-amber-600 font-bold">${c.status}</span></p>
-                      <p><strong>Mã Giảng viên chủ quản:</strong> ${c.owner_instructor_id || 'Chưa gán'}</p>
+                      <p><strong>Giảng viên chủ quản:</strong> ${UI.escapeHtml(c.owner_instructor_name || c.owner_instructor_id || 'Chưa gán')}</p>
                     </div>
                     <div class="p-3 rounded bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 space-y-1 text-emerald-900 dark:text-emerald-300 font-sans">
                       <div class="font-bold text-emerald-700 dark:text-emerald-400 uppercase text-[10px] pb-1 border-b border-emerald-200 dark:border-emerald-800 font-mono">Quy trình thẩm định học vụ</div>
-                      <p class="text-xs leading-relaxed">Đề cương đã được Giảng viên hoàn thiện và đệ trình phê duyệt. Khi ấn <strong>Phê duyệt</strong>, khóa học sẽ chuyển sang trạng thái <strong>APPROVED</strong> sẵn sàng phát hành chính thức.</p>
+                      <p class="text-xs leading-relaxed">Đề cương đã được Giảng viên hoàn thiện toàn bộ bài học và đệ trình xuất bản. Nhấn <strong>Xem đề cương & bài học</strong> để kiểm tra đầy đủ, hoặc <strong>Phê duyệt ban hành</strong> để chính thức mở khóa học cho Sinh viên đăng ký.</p>
                     </div>
                   </div>
                 </div>
@@ -824,44 +858,7 @@ class AdminView {
           `}
         </div>
 
-        <!-- Section 2: Instructor Applications Queue -->
-        <div id="admin-review-applications-queue" class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[20px]">badge</span>
-                Hồ sơ Đăng ký Giảng viên (Instructor Applications)
-              </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Thẩm định hồ sơ chuyên môn và xét chuẩn đào tạo ABET CAC trước khi kích hoạt quyền giảng viên.</p>
-            </div>
-            <div class="flex items-center gap-1.5" id="app-status-filter-group">
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${applications.length})</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="PENDING">Chờ duyệt</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối</button>
-            </div>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs sm:text-sm">
-              <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
-                <tr>
-                  <th class="px-4 py-3">Ứng viên</th>
-                  <th class="px-4 py-3">Trình độ & Chuyên môn</th>
-                  <th class="px-4 py-3">Kinh nghiệm</th>
-                  <th class="px-4 py-3">Trạng thái</th>
-                  <th class="px-4 py-3">Thời điểm nộp</th>
-                  <th class="px-4 py-3 text-right">Quyết định bổ nhiệm</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="instructor-apps-tbody">
-                <!-- Populated via JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Section 3: Course & Lesson Change Requests Queue -->
+        <!-- Section 2: Hàng đợi Phê duyệt Sửa/Xóa Bài giảng & Môn học (Change Requests) -->
         <div id="admin-review-change-requests-queue" class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div>
@@ -869,7 +866,7 @@ class AdminView {
                 <span class="material-symbols-outlined text-primary text-[20px]">edit_note</span>
                 Hàng đợi Phê duyệt Sửa/Xóa Bài giảng & Môn học (Change Requests)
               </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Xét duyệt các yêu cầu sửa đổi nội dung, xóa bài giảng hoặc môn tiên quyết từ Giảng viên đối với khóa học đã xuất bản.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Xem đối chiếu bản sửa đổi chi tiết (Side-by-Side Diff) giữa bản hiện tại và bản đề xuất trước khi phê duyệt.</p>
             </div>
             <div class="flex items-center gap-1.5" id="cr-status-filter-group">
               <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${changeRequests.length})</button>
@@ -908,19 +905,9 @@ class AdminView {
       });
 
       box.querySelectorAll('.approve-course-btn').forEach(btn => {
-        btn.onclick = async () => {
+        btn.onclick = () => {
           const courseId = btn.dataset.courseId;
-          const courseTitle = btn.dataset.courseTitle;
-          const conf = await UI.confirm('Phê duyệt đề cương', `Xác nhận phê duyệt ban hành đề cương khóa học "${courseTitle}"?`, 'Phê duyệt');
-          if (!conf) return;
-
-          try {
-            await ApiClient.reviewCourse(courseId, 'approve', 'Phê duyệt chuẩn hóa đề cương học vụ');
-            UI.showToast(`Đã phê duyệt đề cương "${courseTitle}" thành công!`, 'success');
-            AdminView.renderTabReview(container);
-          } catch (e) {
-            UI.showToast(e.message || 'Lỗi duyệt khóa học.', 'error');
-          }
+          AdminView.openCourseInspectionModal(courseId);
         };
       });
 
@@ -940,134 +927,10 @@ class AdminView {
           try {
             await ApiClient.reviewCourse(courseId, 'reject', note);
             UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${courseTitle}".`, 'info');
-            AdminView.renderTabReview(container);
+            AdminView.renderTabCoursesReview(container);
           } catch (e) {
             UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
           }
-        };
-      });
-
-      // Filter applications
-      const renderAppRows = (statusFilter = 'ALL') => {
-        const tbody = document.getElementById('instructor-apps-tbody');
-        if (!tbody) return;
-
-        const filtered = applications.filter(a => statusFilter === 'ALL' || a.status === statusFilter);
-
-        if (filtered.length === 0) {
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="6" class="py-8 text-center text-slate-400 text-xs">
-                Không có hồ sơ nào trong danh mục này.
-              </td>
-            </tr>
-          `;
-          return;
-        }
-
-        tbody.innerHTML = filtered.map(a => {
-          const details = a.details || {};
-          let statusBadge = 'bg-amber-50 text-amber-700 border-amber-200';
-          if (a.status === 'APPROVED') statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-          if (a.status === 'REJECTED') statusBadge = 'bg-rose-50 text-rose-700 border-rose-200';
-
-          return `
-            <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-              <td class="px-4 py-3.5">
-                <div class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(a.applicant_name)}</div>
-                <div class="text-xs text-slate-400 font-mono">${UI.escapeHtml(a.applicant_email)}</div>
-              </td>
-              <td class="px-4 py-3.5">
-                <div class="font-bold text-slate-800 dark:text-slate-200">${UI.escapeHtml(details.degree || 'Chưa cập nhật')}</div>
-                <div class="text-[11px] text-slate-400">${UI.escapeHtml(details.specialization || details.institution || 'CNTT')}</div>
-              </td>
-              <td class="px-4 py-3.5 text-xs">
-                ${details.years_experience ? `${details.years_experience} năm kinh nghiệm` : (details.experience || '1-3 năm')}
-              </td>
-              <td class="px-4 py-3.5">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge}">
-                  ${a.status_label || a.status}
-                </span>
-              </td>
-              <td class="px-4 py-3.5 text-xs text-slate-400 font-mono">
-                ${UI.formatDate(a.created_at)}
-              </td>
-              <td class="px-4 py-3.5 text-right space-x-1.5">
-                <button type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors view-app-btn" data-app-id="${a.id}">
-                  Xem CV
-                </button>
-                ${a.status === 'PENDING' ? `
-                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors approve-app-btn" data-app-id="${a.id}" data-name="${UI.escapeHtml(a.applicant_name)}">
-                    Bổ nhiệm
-                  </button>
-                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors reject-app-btn" data-app-id="${a.id}" data-name="${UI.escapeHtml(a.applicant_name)}">
-                    Từ chối
-                  </button>
-                ` : ''}
-              </td>
-            </tr>
-          `;
-        }).join('');
-
-        tbody.querySelectorAll('.view-app-btn').forEach(btn => {
-          btn.onclick = () => {
-            const appId = btn.dataset.appId;
-            const app = applications.find(x => String(x.id) === String(appId));
-            if (app) AdminView.openApplicationDetailModal(app, container);
-          };
-        });
-
-        tbody.querySelectorAll('.approve-app-btn').forEach(btn => {
-          btn.onclick = async () => {
-            const appId = btn.dataset.appId;
-            const name = btn.dataset.name;
-            const conf = await UI.confirm('Bổ nhiệm Giảng viên', `Xác nhận phê duyệt đơn đăng ký và cấp quyền Giảng viên (INSTRUCTOR) cho "${name}"?`, 'Phê duyệt bổ nhiệm');
-            if (!conf) return;
-
-            try {
-              await ApiClient.reviewInstructorApplication(appId, 'approve', 'Đạt chuẩn thẩm định học vụ');
-              UI.showToast(`Đã bổ nhiệm giảng viên ${name} thành công!`, 'success');
-              AdminView.renderTabReview(container);
-            } catch (e) {
-              UI.showToast(e.message || 'Lỗi phê duyệt đơn.', 'error');
-            }
-          };
-        });
-
-        tbody.querySelectorAll('.reject-app-btn').forEach(btn => {
-          btn.onclick = async () => {
-            const appId = btn.dataset.appId;
-            const name = btn.dataset.name;
-            const reason = await UI.prompt(
-              'Từ chối hồ sơ giảng viên',
-              `Nhập lý do từ chối đơn đăng ký làm giảng viên của ứng viên "${name}":`,
-              '',
-              'Nhập lý do từ chối hồ sơ (tối thiểu 5 ký tự)...',
-              5
-            );
-            if (!reason) return;
-
-            try {
-              await ApiClient.reviewInstructorApplication(appId, 'reject', reason);
-              UI.showToast(`Đã từ chối đơn của ${name}.`, 'info');
-              AdminView.renderTabReview(container);
-            } catch (e) {
-              UI.showToast(e.message || 'Lỗi từ chối đơn.', 'error');
-            }
-          };
-        });
-      };
-
-      renderAppRows('ALL');
-
-      const filterBtns = box.querySelectorAll('.app-filter-btn');
-      filterBtns.forEach(btn => {
-        btn.onclick = () => {
-          filterBtns.forEach(b => {
-            b.className = 'app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
-          });
-          btn.className = 'app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white';
-          renderAppRows(btn.dataset.status);
         };
       });
 
@@ -1145,6 +1008,9 @@ class AdminView {
                 ${UI.formatDate(r.created_at)}
               </td>
               <td class="px-4 py-3.5 text-right space-x-1.5 whitespace-nowrap">
+                <button type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-xs view-diff-cr-btn" data-req-id="${r.id}">
+                  Xem bản sửa
+                </button>
                 ${r.status === 'PENDING' ? `
                   <button type="button" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors approve-cr-btn" data-req-id="${r.id}" data-type="${typeLabel}">
                     Phê duyệt
@@ -1160,19 +1026,20 @@ class AdminView {
           `;
         }).join('');
 
-        tbody.querySelectorAll('.approve-cr-btn').forEach(btn => {
-          btn.onclick = async () => {
+        tbody.querySelectorAll('.view-diff-cr-btn').forEach(btn => {
+          btn.onclick = () => {
             const reqId = btn.dataset.reqId;
-            const typeName = btn.dataset.type;
-            const conf = await UI.confirm('Phê duyệt yêu cầu thay đổi', `Xác nhận phê duyệt yêu cầu "${typeName}" (#${reqId})? Thao tác này sẽ áp dụng thay đổi ngay lập tức.`, 'Phê duyệt');
-            if (!conf) return;
+            const r = changeRequests.find(x => String(x.id) === String(reqId));
+            if (r) AdminView.openChangeRequestDiffModal(r, () => AdminView.renderTabCoursesReview(container));
+          };
+        });
 
-            try {
-              await ApiClient.reviewAdminChangeRequest(reqId, { action: 'approve' });
-              UI.showToast(`Đã phê duyệt yêu cầu #${reqId} thành công!`, 'success');
-              AdminView.renderTabReview(container);
-            } catch (e) {
-              UI.showToast(e.message || 'Lỗi phê duyệt yêu cầu.', 'error');
+        tbody.querySelectorAll('.approve-cr-btn').forEach(btn => {
+          btn.onclick = () => {
+            const reqId = btn.dataset.reqId;
+            const r = changeRequests.find(x => String(x.id) === String(reqId));
+            if (r) {
+              AdminView.openChangeRequestDiffModal(r, () => AdminView.renderTabCoursesReview(container));
             }
           };
         });
@@ -1193,7 +1060,7 @@ class AdminView {
             try {
               await ApiClient.reviewAdminChangeRequest(reqId, { action: 'reject', reason });
               UI.showToast(`Đã từ chối yêu cầu #${reqId}.`, 'info');
-              AdminView.renderTabReview(container);
+              AdminView.renderTabCoursesReview(container);
             } catch (e) {
               UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
             }
@@ -1214,16 +1081,7 @@ class AdminView {
         };
       });
 
-      if (subQueue === 'applications') {
-        const appQueueEl = document.getElementById('admin-review-applications-queue');
-        if (appQueueEl) {
-          setTimeout(() => {
-            appQueueEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            appQueueEl.classList.add('ring-2', 'ring-primary', 'shadow-md');
-            setTimeout(() => appQueueEl.classList.remove('ring-2', 'ring-primary', 'shadow-md'), 3000);
-          }, 100);
-        }
-      } else if (subQueue === 'courses') {
+      if (subQueue === 'courses') {
         const courseQueueEl = document.getElementById('admin-review-courses-queue');
         if (courseQueueEl) {
           setTimeout(() => {
@@ -1241,7 +1099,431 @@ class AdminView {
         }
       }
     } catch (err) {
-      console.error('TabReview load error:', err);
+      console.error('TabCoursesReview load error:', err);
+    }
+  }
+
+  // Alias for backward compatibility
+  static renderTabReview(container, subQueue = null) {
+    return AdminView.renderTabCoursesReview(container, subQueue);
+  }
+
+  // =========================================================================
+  // Modal: Thẩm định & Đối chiếu Bản Sửa đổi Chi tiết (Side-by-Side Diff)
+  // =========================================================================
+  static openChangeRequestDiffModal(r, onReviewed = null) {
+    const orig = r.original_data || {};
+    const prop = r.proposed_payload || {};
+    const isDelete = prop.action === 'DELETE';
+    const isPending = r.status === 'PENDING';
+
+    const isCourse = r.target_type === 'COURSE' || (!r.target_type && (orig.course_code || prop.course_code));
+
+    const titleChanged = prop.title && prop.title !== orig.title;
+    const summaryChanged = prop.summary && prop.summary !== orig.summary;
+    const descChanged = prop.description && prop.description !== orig.description;
+    const catChanged = prop.category && prop.category !== orig.category;
+    const contentChanged = prop.markdown_content && prop.markdown_content !== orig.markdown_content;
+    const durationChanged = prop.estimated_duration_minutes && prop.estimated_duration_minutes !== orig.estimated_duration_minutes;
+
+    const body = `
+      <div class="space-y-4 text-xs">
+        <!-- Header Info -->
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-primary-subtle text-primary border border-primary/20">${UI.escapeHtml(r.course_code || orig.course_code || '')}</span>
+              <span class="font-bold text-sm text-slate-900 dark:text-white">${UI.escapeHtml(r.target_title || orig.title || 'Yêu cầu #' + r.id)}</span>
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Khóa học: <strong>${UI.escapeHtml(r.course_title || orig.title || '')}</strong> • Giảng viên đề xuất: <strong>${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}</strong>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${r.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border border-amber-200' : (r.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200')}">
+              ${r.status === 'PENDING' ? 'Chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
+            </span>
+          </div>
+        </div>
+
+        ${isDelete ? `
+          <div class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 space-y-2">
+            <div class="font-bold text-sm flex items-center gap-2 text-rose-700 dark:text-rose-400">
+              <span class="material-symbols-outlined text-[20px]">delete_forever</span>
+              Yêu cầu gỡ bỏ ${isCourse ? 'khóa học' : 'bài giảng'}
+            </div>
+            <p class="leading-relaxed">Giảng viên đề xuất gỡ bỏ ${isCourse ? 'khóa học này khỏi hệ thống' : 'bài giảng này khỏi đề cương'}.</p>
+            <div class="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 text-xs">
+              <strong>Lý do yêu cầu xóa:</strong> ${UI.escapeHtml(prop.reason || 'Không có lý do chi tiết.')}
+            </div>
+          </div>
+        ` : `
+          <!-- Side-by-Side Diff View -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h5 class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                <span class="material-symbols-outlined text-primary text-[18px]">difference</span>
+                Đối chiếu thay đổi chi tiết (Bản hiện tại vs Bản đã sửa đổi)
+              </h5>
+              <span class="text-[11px] text-slate-400">Các mục có khung màu viền sáng hiển thị nội dung được điều chỉnh</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Left: Original Version -->
+              <div class="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col">
+                <div class="bg-slate-100 dark:bg-slate-800 px-3.5 py-2 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                  <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px] text-slate-400">history</span> Bản hiện tại (Original)</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Hiện có</span>
+                </div>
+                <div class="p-3.5 space-y-3 flex-1 overflow-y-auto max-h-[350px]">
+                  ${isCourse ? `
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tên khóa học</div>
+                      <div class="font-bold text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(orig.title || 'Chưa cập nhật')}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Danh mục đào tạo</div>
+                      <div class="text-slate-600 dark:text-slate-400 mt-0.5 text-xs">${UI.escapeHtml(orig.category || 'N/A')}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mô tả khóa học</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
+                    </div>
+                  ` : `
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tiêu đề bài học</div>
+                      <div class="font-bold text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(orig.title || 'Chưa cập nhật')}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tóm tắt ngắn (Summary)</div>
+                      <div class="text-slate-600 dark:text-slate-400 mt-0.5 text-xs leading-relaxed">${UI.escapeHtml(orig.summary || '(Trống)')}</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Thời lượng dự kiến</div>
+                      <div class="font-mono text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${orig.estimated_duration_minutes || 0} phút</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nội dung bài học (Markdown)</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 font-mono text-[11px] whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300">${UI.escapeHtml(orig.markdown_content || '(Chưa có nội dung)')}</div>
+                    </div>
+                  `}
+                </div>
+              </div>
+
+              <!-- Right: Modified Version -->
+              <div class="rounded-xl border-2 border-primary/30 dark:border-primary/40 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-xs">
+                <div class="bg-primary/10 px-3.5 py-2 border-b border-primary/20 font-bold text-primary flex items-center justify-between">
+                  <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">edit_document</span> Bản đã sửa đổi (Proposed)</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary text-white font-bold">Bản mới</span>
+                </div>
+                <div class="p-3.5 space-y-3 flex-1 overflow-y-auto max-h-[350px]">
+                  ${isCourse ? `
+                    <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Tên khóa học ${titleChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="font-bold text-slate-900 dark:text-white mt-0.5 text-xs">${UI.escapeHtml(prop.title || orig.title || 'Chưa cập nhật')}</div>
+                    </div>
+                    <div class="${catChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${catChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Danh mục đào tạo ${catChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${UI.escapeHtml(prop.category || orig.category || 'N/A')}</div>
+                    </div>
+                    <div class="${descChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${descChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Mô tả khóa học ${descChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
+                    </div>
+                  ` : `
+                    <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Tiêu đề bài học ${titleChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="font-bold text-slate-900 dark:text-white mt-0.5 text-xs">${UI.escapeHtml(prop.title || orig.title || 'Chưa cập nhật')}</div>
+                    </div>
+                    <div class="${summaryChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${summaryChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Tóm tắt ngắn (Summary) ${summaryChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs leading-relaxed">${UI.escapeHtml(prop.summary || orig.summary || '(Trống)')}</div>
+                    </div>
+                    <div class="${durationChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${durationChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Thời lượng dự kiến ${durationChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="font-mono text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${prop.estimated_duration_minutes || orig.estimated_duration_minutes || 0} phút</div>
+                    </div>
+                    <div class="${contentChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${contentChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
+                        Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                      </div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 font-mono text-[11px] whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200">${UI.escapeHtml(prop.markdown_content || orig.markdown_content || '(Chưa có nội dung)')}</div>
+                    </div>
+                  `}
+                </div>
+              </div>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
+
+    const footer = `
+      <div class="flex items-center justify-between w-full">
+        <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
+        ${isPending ? `
+          <div class="flex items-center gap-2">
+            <button type="button" id="diff-reject-btn" class="px-3.5 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors">
+              Từ chối yêu cầu
+            </button>
+            <button type="button" id="diff-approve-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">check</span>
+              <span>Phê duyệt & Áp dụng thay đổi</span>
+            </button>
+          </div>
+        ` : `
+          <span class="text-xs text-slate-400 italic">${UI.escapeHtml(r.review_reason || 'Đã giải quyết')}</span>
+        `}
+      </div>
+    `;
+
+    UI.openModal({
+      title: `Thẩm định Bản Sửa đổi • #${r.id} (${r.course_code || 'Khóa học'})`,
+      bodyHtml: body,
+      footerHtml: footer,
+      size: 'xl'
+    });
+
+    if (isPending) {
+      document.getElementById('diff-approve-btn').onclick = async () => {
+        try {
+          await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
+          UI.showToast(`Đã phê duyệt và áp dụng bản sửa đổi #${r.id} thành công!`, 'success');
+          UI.closeModal();
+          if (onReviewed) onReviewed();
+        } catch (e) {
+          UI.showToast(e.message || 'Lỗi phê duyệt yêu cầu.', 'error');
+        }
+      };
+
+      document.getElementById('diff-reject-btn').onclick = async () => {
+        const reason = await UI.prompt(
+          'Từ chối bản sửa đổi',
+          `Nhập lý do từ chối yêu cầu sửa đổi #${r.id}:`,
+          '',
+          'Nhập lý do chi tiết (tối thiểu 3 ký tự)...',
+          3
+        );
+        if (!reason) return;
+        try {
+          await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });
+          UI.showToast(`Đã từ chối yêu cầu #${r.id}.`, 'info');
+          UI.closeModal();
+          if (onReviewed) onReviewed();
+        } catch (e) {
+          UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
+        }
+      };
+    }
+  }
+
+  // =========================================================================
+  // Tab 3: Hồ sơ Đăng ký Giảng viên (Instructor Applications - Tách riêng)
+  // =========================================================================
+  static async renderTabInstructorApps(container) {
+    container.innerHTML = `
+      <div class="space-y-6 animate-fade-in" id="instructor-apps-box">
+        <div class="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+          <p class="text-sm">Đang nạp hồ sơ ứng tuyển giảng viên...</p>
+        </div>
+      </div>
+    `;
+
+    try {
+      const appsRes = await ApiClient.getAdminInstructorApplications('ALL');
+      const applications = appsRes?.applications || [];
+      const pendingApps = applications.filter(a => a.status === 'PENDING');
+
+      // Update badge
+      const tabAppsBadge = document.getElementById('tab-apps-badge');
+      if (tabAppsBadge) {
+        if (pendingApps.length > 0) {
+          tabAppsBadge.textContent = `${pendingApps.length} chờ`;
+          tabAppsBadge.classList.remove('hidden');
+        } else {
+          tabAppsBadge.classList.add('hidden');
+        }
+      }
+
+      const box = document.getElementById('instructor-apps-box');
+      if (!box) return;
+
+      box.innerHTML = `
+        <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[20px]">badge</span>
+                Hồ sơ Đăng ký Giảng viên (Instructor Applications)
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">Thẩm định hồ sơ chuyên môn, văn bằng chứng chỉ và xét chuẩn đào tạo ABET CAC trước khi phê duyệt bổ nhiệm quyền giảng viên.</p>
+            </div>
+            <div class="flex items-center gap-1.5" id="app-status-filter-group">
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${applications.length})</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="PENDING">Chờ duyệt (${pendingApps.length})</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối</button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs sm:text-sm">
+              <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
+                <tr>
+                  <th class="px-4 py-3">Ứng viên</th>
+                  <th class="px-4 py-3">Trình độ & Chuyên môn</th>
+                  <th class="px-4 py-3">Kinh nghiệm</th>
+                  <th class="px-4 py-3">Trạng thái</th>
+                  <th class="px-4 py-3">Thời điểm nộp</th>
+                  <th class="px-4 py-3 text-right">Quyết định bổ nhiệm</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="instructor-apps-tbody">
+                <!-- Populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      const renderAppRows = (statusFilter = 'ALL') => {
+        const tbody = document.getElementById('instructor-apps-tbody');
+        if (!tbody) return;
+
+        const filtered = applications.filter(a => statusFilter === 'ALL' || a.status === statusFilter);
+
+        if (filtered.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="py-8 text-center text-slate-400 text-xs">
+                Không có hồ sơ nào trong danh mục này.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = filtered.map(a => {
+          const details = a.details || {};
+          let statusBadge = 'bg-amber-50 text-amber-700 border-amber-200';
+          if (a.status === 'APPROVED') statusBadge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+          if (a.status === 'REJECTED') statusBadge = 'bg-rose-50 text-rose-700 border-rose-200';
+
+          return `
+            <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+              <td class="px-4 py-3.5">
+                <div class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(a.applicant_name)}</div>
+                <div class="text-xs text-slate-400 font-mono">${UI.escapeHtml(a.applicant_email)}</div>
+              </td>
+              <td class="px-4 py-3.5">
+                <div class="font-bold text-slate-800 dark:text-slate-200">${UI.escapeHtml(details.degree || 'Chưa cập nhật')}</div>
+                <div class="text-[11px] text-slate-400">${UI.escapeHtml(details.specialization || details.institution || 'CNTT')}</div>
+              </td>
+              <td class="px-4 py-3.5 text-xs">
+                ${details.years_experience ? `${details.years_experience} năm kinh nghiệm` : (details.experience || '1-3 năm')}
+              </td>
+              <td class="px-4 py-3.5">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge}">
+                  ${a.status_label || a.status}
+                </span>
+              </td>
+              <td class="px-4 py-3.5 text-xs text-slate-400 font-mono">
+                ${UI.formatDate(a.created_at)}
+              </td>
+              <td class="px-4 py-3.5 text-right space-x-1.5 whitespace-nowrap">
+                <button type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors view-app-btn" data-app-id="${a.id}">
+                  Xem CV
+                </button>
+                ${a.status === 'PENDING' ? `
+                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors approve-app-btn" data-app-id="${a.id}" data-name="${UI.escapeHtml(a.applicant_name)}">
+                    Bổ nhiệm
+                  </button>
+                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors reject-app-btn" data-app-id="${a.id}" data-name="${UI.escapeHtml(a.applicant_name)}">
+                    Từ chối
+                  </button>
+                ` : ''}
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        tbody.querySelectorAll('.view-app-btn').forEach(btn => {
+          btn.onclick = () => {
+            const appId = btn.dataset.appId;
+            const app = applications.find(x => String(x.id) === String(appId));
+            if (app) AdminView.openApplicationDetailModal(app, container);
+          };
+        });
+
+        tbody.querySelectorAll('.approve-app-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const appId = btn.dataset.appId;
+            const name = btn.dataset.name;
+            const conf = await UI.confirm('Bổ nhiệm Giảng viên', `Xác nhận phê duyệt đơn đăng ký và cấp quyền Giảng viên (INSTRUCTOR) cho "${name}"?`, 'Phê duyệt bổ nhiệm');
+            if (!conf) return;
+
+            try {
+              await ApiClient.reviewInstructorApplication(appId, 'approve', 'Đạt chuẩn thẩm định học vụ');
+              UI.showToast(`Đã bổ nhiệm giảng viên ${name} thành công!`, 'success');
+              AdminView.renderTabInstructorApps(container);
+            } catch (e) {
+              UI.showToast(e.message || 'Lỗi phê duyệt đơn.', 'error');
+            }
+          };
+        });
+
+        tbody.querySelectorAll('.reject-app-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const appId = btn.dataset.appId;
+            const name = btn.dataset.name;
+            const reason = await UI.prompt(
+              'Từ chối hồ sơ giảng viên',
+              `Nhập lý do từ chối đơn đăng ký làm giảng viên của ứng viên "${name}":`,
+              '',
+              'Nhập lý do từ chối hồ sơ (tối thiểu 5 ký tự)...',
+              5
+            );
+            if (!reason) return;
+
+            try {
+              await ApiClient.reviewInstructorApplication(appId, 'reject', reason);
+              UI.showToast(`Đã từ chối đơn của ${name}.`, 'info');
+              AdminView.renderTabInstructorApps(container);
+            } catch (e) {
+              UI.showToast(e.message || 'Lỗi từ chối đơn.', 'error');
+            }
+          };
+        });
+      };
+
+      renderAppRows('ALL');
+
+      const filterBtns = box.querySelectorAll('.app-filter-btn');
+      filterBtns.forEach(btn => {
+        btn.onclick = () => {
+          filterBtns.forEach(b => {
+            b.className = 'app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
+          });
+          btn.className = 'app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white';
+          renderAppRows(btn.dataset.status);
+        };
+      });
+
+    } catch (err) {
+      console.error('TabInstructorApps load error:', err);
     }
   }
 
@@ -1372,14 +1654,72 @@ class AdminView {
         </div>
       `;
 
+      const isPending = course.status === 'PENDING';
+      const footerHtml = `
+        <div class="flex items-center justify-between w-full">
+          <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
+          ${isPending ? `
+            <div class="flex items-center gap-2">
+              <button type="button" id="modal-reject-course-btn" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors">
+                Yêu cầu chỉnh sửa
+              </button>
+              <button type="button" id="modal-approve-course-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">check</span>
+                <span>Phê duyệt ban hành</span>
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
       UI.openModal({
         title: `Hồ sơ Thẩm định Đề cương • ${course.course_code}`,
         bodyHtml,
-        footerHtml: `
-          <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
-        `,
+        footerHtml,
         size: 'lg'
       });
+
+      if (isPending) {
+        const approveBtn = document.getElementById('modal-approve-course-btn');
+        if (approveBtn) {
+          approveBtn.onclick = async () => {
+            const conf = await UI.confirm('Phê duyệt đề cương', `Xác nhận phê duyệt ban hành đề cương khóa học "${course.title}"?`, 'Phê duyệt');
+            if (!conf) return;
+            try {
+              await ApiClient.reviewCourse(course.course_id, 'approve', 'Phê duyệt chuẩn hóa đề cương học vụ');
+              UI.showToast(`Đã phê duyệt đề cương "${course.title}" thành công!`, 'success');
+              UI.closeModal();
+              const contentBox = document.getElementById('admin-tab-content-box');
+              if (contentBox) AdminView.renderTabCoursesReview(contentBox);
+            } catch (e) {
+              UI.showToast(e.message || 'Lỗi duyệt khóa học.', 'error');
+            }
+          };
+        }
+
+        const rejectBtn = document.getElementById('modal-reject-course-btn');
+        if (rejectBtn) {
+          rejectBtn.onclick = async () => {
+            const note = await UI.prompt(
+              'Yêu cầu chỉnh sửa đề cương',
+              `Vui lòng nhập lý do và chỉ dẫn yêu cầu giảng viên chỉnh sửa đề cương "${course.title}":`,
+              '',
+              'Nhập lý do chi tiết (tối thiểu 5 ký tự)...',
+              5
+            );
+            if (!note) return;
+            try {
+              await ApiClient.reviewCourse(course.course_id, 'reject', note);
+              UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${course.title}".`, 'info');
+              UI.closeModal();
+              const contentBox = document.getElementById('admin-tab-content-box');
+              if (contentBox) AdminView.renderTabCoursesReview(contentBox);
+            } catch (e) {
+              UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
+            }
+          };
+        }
+      }
     } catch (err) {
       UI.showToast(err.message || 'Lỗi tải hồ sơ khóa học.', 'error');
     }
@@ -1403,10 +1743,10 @@ class AdminView {
         <div class="grid grid-cols-2 gap-3">
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <span class="text-[10px] text-slate-400 font-bold uppercase">Cơ sở / Tổ chức</span>
-            <div class="font-bold text-slate-800 dark:text-slate-200 mt-0.5">${UI.escapeHtml(details.institution_name || details.institution || 'N/A')}</div>
+            <div class="font-bold text-slate-800 dark:text-slate-200 mt-0.5">${UI.escapeHtml(details.institution_name || details.institution || 'Hoạt động tự do / Độc lập')}</div>
           </div>
           <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-            <span class="text-[10px] text-slate-400 font-bold uppercase">Chuyên ngành giảng dạy</span>
+            <span class="text-[10px] text-slate-400 font-bold uppercase">Chuyên môn / Lĩnh vực ngách</span>
             <div class="font-bold text-slate-800 dark:text-slate-200 mt-0.5">${UI.escapeHtml(details.specialization || details.degree || 'N/A')}</div>
           </div>
         </div>
@@ -1418,21 +1758,25 @@ class AdminView {
           </div>
         </div>
 
-        ${(details.certificate_url || details.portfolio_url || details.evidence_urls) ? `
+        ${(details.portfolio_url || details.certificate_url || details.evidence_urls) ? `
           <div class="space-y-1">
-            <span class="text-[10px] text-slate-400 font-bold uppercase">Liên kết Bằng cấp / Chứng chỉ (Cloud)</span>
-            <div><a href="${UI.escapeHtml(details.certificate_url || details.portfolio_url || details.evidence_urls)}" target="_blank" class="text-primary font-bold hover:underline break-all">${UI.escapeHtml(details.certificate_url || details.portfolio_url || details.evidence_urls)}</a></div>
+            <span class="text-[10px] text-slate-400 font-bold uppercase">Liên kết Portfolio / GitHub / Website</span>
+            <div><a href="${UI.escapeHtml(details.portfolio_url || details.certificate_url || details.evidence_urls)}" target="_blank" class="text-primary font-bold hover:underline break-all inline-flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">link</span>${UI.escapeHtml(details.portfolio_url || details.certificate_url || details.evidence_urls)}</a></div>
           </div>
         ` : ''}
 
         ${attachedFiles.length > 0 ? `
           <div class="space-y-1.5">
-            <span class="text-[10px] text-slate-400 font-bold uppercase">Tệp minh chứng đính kèm (${attachedFiles.length})</span>
+            <span class="text-[10px] text-slate-400 font-bold uppercase">Tệp CV & Minh chứng đính kèm (${attachedFiles.length})</span>
             <div class="space-y-1">
               ${attachedFiles.map(f => `
                 <div class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-between">
-                  <span class="font-mono text-xs">${UI.escapeHtml(f.original_name || f.saved_filename)}</span>
-                  <a href="/admin/instructor-applications/${app.id}/evidence/${f.saved_filename}" target="_blank" class="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold">Tải về</a>
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="material-symbols-outlined text-[16px] ${f.doc_type === 'CV_PORTFOLIO' ? 'text-primary' : 'text-slate-400'}">${f.doc_type === 'CV_PORTFOLIO' ? 'badge' : 'attach_file'}</span>
+                    <span class="font-mono text-xs truncate">${UI.escapeHtml(f.original_name || f.saved_filename)}</span>
+                    ${f.doc_type === 'CV_PORTFOLIO' ? '<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold">CV / Portfolio</span>' : ''}
+                  </div>
+                  <a href="/admin/instructor-applications/${app.id}/evidence/${f.saved_filename}" target="_blank" class="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold shrink-0">Tải về</a>
                 </div>
               `).join('')}
             </div>
@@ -1542,9 +1886,9 @@ class AdminView {
           <div>
             <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <span class="material-symbols-outlined text-primary text-[20px]">swap_horiz</span>
-              Điều chuyển & Phân công Giảng dạy
+              Điều chuyển Phân công Giảng dạy
             </h3>
-            <p class="text-xs text-slate-400 mt-0.5">Kiểm soát định mức khối lượng giờ dạy và thực hiện điều phối khóa học giữa các Giảng viên có thẩm quyền.</p>
+            <p class="text-xs text-slate-400 mt-0.5">Quản lý phân công và thực hiện điều phối chuyển giao khóa học giữa các Giảng viên có thẩm quyền.</p>
           </div>
           <button type="button" id="open-reassign-tool-btn" class="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[16px]">sync_alt</span>
@@ -1552,42 +1896,27 @@ class AdminView {
           </button>
         </div>
 
-        <!-- Instructor Workload Table -->
+        <!-- Instructor Reassignment Table -->
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs sm:text-sm">
             <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
               <tr>
                 <th class="px-5 py-3.5">Giảng viên</th>
                 <th class="px-5 py-3.5">Email liên hệ</th>
-                <th class="px-5 py-3.5">Môn phụ trách</th>
-                <th class="px-5 py-3.5">Tải giảng dạy ước tính</th>
-                <th class="px-5 py-3.5">Tình trạng tải</th>
+                <th class="px-5 py-3.5">Số môn phụ trách</th>
+                <th class="px-5 py-3.5">Danh sách môn phụ trách</th>
                 <th class="px-5 py-3.5 text-right">Điều phối</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium">
               ${instructors.length === 0 ? `
                 <tr>
-                  <td colspan="6" class="py-8 text-center text-slate-400 text-xs">
+                  <td colspan="5" class="py-8 text-center text-slate-400 text-xs">
                     Chưa có nhân sự nào được cấp quyền Giảng viên (INSTRUCTOR).
                   </td>
                 </tr>
               ` : instructors.map(ins => {
                 const assigned = ins.courses || [];
-                const courseCount = ins.assigned_courses_count || assigned.length;
-                const estimatedHours = ins.estimated_hours || (courseCount * 60);
-                const maxHours = ins.max_hours || 300;
-                const pct = ins.workload_pct !== undefined ? ins.workload_pct : Math.min(100, Math.round((estimatedHours / maxHours) * 100));
-
-                let badge = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-                let statusText = `Còn dư tải (${pct}%)`;
-                if (ins.workload_status === 'STANDARD' || (pct >= 80 && pct <= 100)) {
-                  badge = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                  statusText = `Tải định mức (${pct}%)`;
-                } else if (ins.workload_status === 'OVERLOAD' || pct > 100) {
-                  badge = 'bg-rose-50 text-rose-700 border-rose-200';
-                  statusText = `Quá tải (${pct}%)`;
-                }
 
                 return `
                   <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
@@ -1596,6 +1925,9 @@ class AdminView {
                     </td>
                     <td class="px-5 py-4 text-xs font-mono text-slate-400">
                       ${UI.escapeHtml(ins.email)}
+                    </td>
+                    <td class="px-5 py-4 font-mono font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      ${assigned.length} môn học
                     </td>
                     <td class="px-5 py-4">
                       ${assigned.length > 0 ? `
@@ -1606,15 +1938,7 @@ class AdminView {
                             </span>
                           `).join('')}
                         </div>
-                      ` : '<span class="text-slate-400 italic">Chưa gán môn nào</span>'}
-                    </td>
-                    <td class="px-5 py-4 font-mono font-bold">
-                      ${estimatedHours} / ${maxHours} giờ
-                    </td>
-                    <td class="px-5 py-4">
-                      <span class="px-2 py-0.5 rounded-full text-xs font-bold border ${badge}">
-                        ${statusText}
-                      </span>
+                      ` : '<span class="text-slate-400 italic text-xs">Chưa gán môn nào</span>'}
                     </td>
                     <td class="px-5 py-4 text-right">
                       <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors reassign-instructor-btn" data-instructor-id="${ins.user_id}">
@@ -2356,11 +2680,11 @@ class AdminView {
           const sizeMb = b.file_size_bytes ? (b.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB' : '14.82 MB';
 
           return `
-            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div class="space-y-1">
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase">${b.backup_type || 'MANUAL'}</span>
-                  <span class="font-mono text-xs font-bold text-slate-900 dark:text-white">${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}</span>
+            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 overflow-hidden">
+              <div class="space-y-1 min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase shrink-0">${b.backup_type || 'MANUAL'}</span>
+                  <span class="font-mono text-xs font-bold text-slate-900 dark:text-white truncate block max-w-full" title="${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}">${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-mono">
                   <span>Dung lượng: ${sizeMb}</span>
@@ -2622,31 +2946,31 @@ class AdminView {
         if (!data) return;
 
         if (data.cpu) {
-          const pct = data.cpu.percent || 18.4;
+          const pct = data.cpu.percent ?? 0;
           const cpuVal = document.getElementById('telem-cpu-val');
           const cpuModel = document.getElementById('telem-cpu-model');
           const cpuBar = document.getElementById('telem-cpu-bar');
           if (cpuVal) cpuVal.textContent = `${pct}%`;
-          if (cpuModel) cpuModel.textContent = data.cpu.model || `${data.cpu.count || 4} vCPU Intel Xeon Gold`;
-          if (cpuBar) cpuBar.style.width = `${Math.min(100, pct)}%`;
+          if (cpuModel) cpuModel.textContent = data.cpu.model || `${data.cpu.count || 4} vCPU Container`;
+          if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
         }
 
         if (data.memory) {
           const ramVal = document.getElementById('telem-ram-val');
           const ramPct = document.getElementById('telem-ram-pct');
           const ramBar = document.getElementById('telem-ram-bar');
-          if (ramVal) ramVal.textContent = `${data.memory.used_gb || '4.8'} / ${data.memory.total_gb || '16.0'} GB`;
-          if (ramPct) ramPct.textContent = `${data.memory.percent || 30}% sử dụng`;
-          if (ramBar) ramBar.style.width = `${Math.min(100, data.memory.percent || 30)}%`;
+          if (ramVal) ramVal.textContent = `${data.memory.used_gb ?? '0'} / ${data.memory.total_gb ?? '0'} GB`;
+          if (ramPct) ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng`;
+          if (ramBar) ramBar.style.width = `${Math.min(100, Math.max(0, data.memory.percent ?? 0))}%`;
         }
 
         if (data.disk) {
           const diskVal = document.getElementById('telem-disk-val');
           const diskPct = document.getElementById('telem-disk-pct');
           const diskBar = document.getElementById('telem-disk-bar');
-          if (diskVal) diskVal.textContent = `${data.disk.free_gb || '184'} GB khả dụng`;
-          if (diskPct) diskPct.textContent = `Tổng ${data.disk.total_gb || '500'} GB (${data.disk.percent || 63}% dùng)`;
-          if (diskBar) diskBar.style.width = `${Math.min(100, data.disk.percent || 63)}%`;
+          if (diskVal) diskVal.textContent = `${data.disk.free_gb ?? '0'} GB khả dụng`;
+          if (diskPct) diskPct.textContent = `Tổng ${data.disk.total_gb ?? '0'} GB (${data.disk.percent ?? 0}% dùng)`;
+          if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(0, data.disk.percent ?? 0))}%`;
         }
 
         const nodeEl = document.getElementById('telem-node-id');
@@ -2751,7 +3075,7 @@ class AdminView {
             <span class="material-symbols-outlined text-base text-rose-600">warning</span>
             <span>CẢNH BÁO QUẢN TRỊ CAO CẤP: KHÔI PHỤC LIVE DATABASE</span>
           </div>
-          <p>Hành động này sẽ khôi phục dữ liệu từ bản sao lưu <strong>${UI.escapeHtml(backupName)}</strong> vào CSDL trực tiếp. Để đảm bảo an toàn tuyệt đối, hệ thống yêu cầu tuân thủ nghiêm ngặt 4 bước xác thực dưới đây.</p>
+          <p>Hành động này sẽ khôi phục dữ liệu từ bản sao lưu <strong class="break-all font-mono">${UI.escapeHtml(backupName)}</strong> vào CSDL trực tiếp. Để đảm bảo an toàn tuyệt đối, hệ thống yêu cầu tuân thủ nghiêm ngặt 4 bước xác thực dưới đây.</p>
         </div>
 
         <div class="space-y-1">
@@ -2791,8 +3115,9 @@ class AdminView {
       <button type="button" id="submit-live-restore-btn" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold">Thực thi Khôi phục Live Database</button>
     `;
 
+    const displayBackupTitle = backupName && backupName.length > 25 ? `${backupName.slice(0, 22)}...` : (backupName || '');
     UI.openModal({
-      title: `Khôi phục Cơ sở Dữ liệu Trực tiếp • ${backupName}`,
+      title: `Khôi phục CSDL Trực tiếp • ${displayBackupTitle}`,
       bodyHtml: body,
       footerHtml: footer,
       size: 'lg'

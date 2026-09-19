@@ -104,6 +104,10 @@
       color: #EDEDEB;
     }
 
+    body.fullscreen-focus-mode #app-topbar {
+      display: none !important;
+    }
+
     /* Automatic Dark Mode Guard for Pastel Light Colors & Glare Elimination */
     .dark .bg-primary-subtle {
       background-color: rgba(37, 99, 235, 0.16) !important;
@@ -414,10 +418,7 @@
         </nav>
       </div>
 
-      <!-- Center / Breadcrumb title -->
-      <div class="hidden xl:block text-xs font-medium text-[#8F8E8A] dark:text-[#9E9D99] truncate max-w-sm" id="topbar-page-title">
-        Cổng Học thuật Trực tuyến
-      </div>
+
 
       <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
       <div class="flex items-center gap-2 shrink-0">
@@ -559,7 +560,7 @@
             <span class="material-symbols-outlined text-[16px]">smart_toy</span>
           </div>
           <div>
-            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Gia sư AI Gemini</div>
+            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Bạch tuộc</div>
             <div class="text-[10px] text-[#8F8E8A] dark:text-[#9E9D99] flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
             </div>
@@ -577,7 +578,7 @@
             <span class="material-symbols-outlined text-[14px]">smart_toy</span>
           </div>
           <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
-            Xin chào! Tôi là Trợ lý AI học thuật của PWD301 LMS. Tôi có thể hỗ trợ bạn tóm tắt kiến thức, phân tích câu hỏi thi hoặc gợi ý phương pháp học tập. Bạn cần hỗ trợ bài học nào?
+            Xin chào! Tôi là Bạch tuộc - Trợ lý AI học thuật của PWD301 LMS. Tôi có thể hỗ trợ bạn tóm tắt kiến thức, phân tích câu hỏi thi hoặc gợi ý phương pháp học tập. Bạn cần hỗ trợ bài học nào?
           </div>
         </div>
       </div>
@@ -589,7 +590,7 @@
             type="text"
             id="floating-ai-input"
             class="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:border-[#222120] dark:focus:border-[#EDEDEB] placeholder-[#8F8E8A]"
-            placeholder="Đặt câu hỏi cho Gia sư AI..."
+            placeholder="Đặt câu hỏi cho Bạch tuộc..."
             autocomplete="off"
           />
           <button
@@ -608,7 +609,7 @@
       type="button"
       id="floating-ai-launcher"
       class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#FFFFFF]"
-      title="Hỏi Gia sư AI Gemini"
+      title="Hỏi Bạch tuộc"
     >
       <span class="material-symbols-outlined text-[22px]">smart_toy</span>
       <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#191919]"></span>

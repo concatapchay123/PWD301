@@ -112,6 +112,9 @@ class AppRouter {
   }
 
   async handleRoute() {
+    if (this._isRouting) return;
+    this._isRouting = true;
+
     if (typeof UI !== 'undefined' && typeof UI.startMicroLoading === 'function') {
       UI.startMicroLoading();
     }
@@ -209,6 +212,7 @@ class AppRouter {
       // Route Dispatcher
       await this.dispatchRoute(path, query);
     } finally {
+      this._isRouting = false;
       if (typeof UI !== 'undefined' && typeof UI.stopMicroLoading === 'function') {
         UI.stopMicroLoading();
       }
@@ -216,12 +220,16 @@ class AppRouter {
   }
 
   redirectToRoleHome() {
+    let target = '#/student/dashboard';
     if (this.currentRole === 'ADMIN') {
-      window.location.hash = '#/admin/governance';
+      target = '#/admin/governance';
     } else if (this.currentRole === 'INSTRUCTOR') {
-      window.location.hash = '#/instructor/dashboard';
+      target = '#/instructor/dashboard';
+    }
+    if (window.location.hash === target) {
+      this.handleRoute();
     } else {
-      window.location.hash = '#/student/dashboard';
+      window.location.hash = target;
     }
   }
 
@@ -337,12 +345,11 @@ class AppRouter {
       menu = [
         { label: 'Bàn làm việc', path: '#/instructor/dashboard', icon: 'dashboard' },
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
-        { label: 'Ngân hàng câu hỏi', path: '#/instructor/questions', icon: 'database' },
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
       ];
     } else {
       menu = [
-        { label: 'Bàn làm việc', path: '#/student/dashboard', icon: 'dashboard' },
+        { label: 'Trang chủ', path: '#/student/dashboard', icon: 'home' },
         { label: 'Khám phá Khóa học', path: '#/student/catalog', icon: 'explore' },
         { label: 'Khóa học của tôi', path: '#/student/courses', icon: 'school' },
         { label: 'Bài kiểm tra', path: '#/student/assessments', icon: 'quiz' },
@@ -401,24 +408,10 @@ class AppRouter {
 
   updateTopbarBreadcrumb(path) {
     const titleEl = document.getElementById('topbar-page-title');
-    if (!titleEl) return;
-
-    let title = 'Cổng Học tập Trực tuyến';
-    if (path.includes('dashboard')) title = 'Tổng quan Bàn làm việc';
-    else if (path.includes('catalog')) title = 'Danh mục Khóa học';
-    else if (path.includes('courses')) title = 'Khóa học & Giáo trình';
-    else if (path.includes('reader')) title = 'Phòng đọc Bài giảng Học thuật';
-    else if (path.includes('waiting-room')) title = 'Phòng chờ Khảo thí';
-    else if (path.includes('attempt')) title = 'Bàn làm bài Khảo thí';
-    else if (path.includes('results')) title = 'Kết quả & Đối chiếu Bài thi';
-    else if (path.includes('ai-assistant')) title = 'Trợ lý AI Học thuật Gemini';
-    else if (path.includes('become-instructor')) title = 'Hồ sơ Giảng viên';
-    else if (path.includes('questions')) title = 'Ngân hàng Câu hỏi Chuẩn Bloom';
-    else if (path.includes('exams')) title = 'Phân hệ Soạn đề thi PWD301 LMS';
-    else if (path.includes('governance')) title = 'Quản trị Học vụ';
-    else if (path.includes('operations')) title = 'Vận hành & An ninh';
-
-    titleEl.textContent = title;
+    if (titleEl) {
+      titleEl.textContent = '';
+      titleEl.style.display = 'none';
+    }
   }
 
   // =========================================================================
@@ -701,7 +694,11 @@ class AppRouter {
   formatRelativeTime(dateStr) {
     if (!dateStr) return '';
     try {
-      const date = new Date(dateStr);
+      let s = String(dateStr).trim();
+      if (s.includes('T') && !s.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(s)) {
+        s += 'Z';
+      }
+      const date = new Date(s);
       const now = new Date();
       const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
       if (isNaN(diffSec) || diffSec < 0) return 'Vừa xong';
@@ -947,13 +944,85 @@ class AppRouter {
       }
     }
 
-    // Navigate if target URL exists
-    if (link) {
+    // Open detailed reading modal so user can fully read notification
+    if (item) {
+      this.openNotificationModal(item, link);
+    } else if (link) {
       this.closeNotificationsDropdown();
       if (window.location.hash === link) {
         this.handleRoute();
       } else {
         window.location.hash = link;
+      }
+    }
+  }
+
+  openNotificationModal(item, link) {
+    this.closeNotificationsDropdown();
+    if (!item) return;
+
+    const meta = this.getCategoryMeta(item.category);
+    const relTime = this.formatRelativeTime(item.created_at);
+    const exactTime = window.UI ? UI.formatDateTime(item.created_at) : (item.created_at || '');
+    const targetLink = link || item.action_url || item.target_url || '';
+
+    const bodyHtml = `
+      <div class="space-y-4 text-xs">
+        <div class="flex items-center justify-between pb-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider ${meta.badgeColor} px-2 py-0.5 rounded">
+              ${meta.label}
+            </span>
+            <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] font-mono">${exactTime} (${relTime})</span>
+          </div>
+          <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[14px]">done_all</span> Đã đọc
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <h4 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+            ${window.UI ? UI.escapeHtml(item.title || '') : (item.title || '')}
+          </h4>
+          <div class="p-4 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB] leading-relaxed text-xs sm:text-sm whitespace-pre-line select-text">
+            ${window.UI ? UI.escapeHtml(item.body || item.message || '') : (item.body || item.message || '')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <div class="flex items-center justify-between w-full">
+        <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]" onclick="UI.closeModal()">
+          Đóng
+        </button>
+        ${targetLink ? `
+          <button type="button" id="notif-modal-navigate-btn" class="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
+            <span>Chuyển đến trang liên quan</span>
+            <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        ` : ''}
+      </div>
+    `;
+
+    if (window.UI && typeof UI.openModal === 'function') {
+      UI.openModal({
+        title: 'Chi tiết Thông báo Học vụ',
+        bodyHtml,
+        footerHtml,
+        size: 'md'
+      });
+
+      const navBtn = document.getElementById('notif-modal-navigate-btn');
+      if (navBtn) {
+        navBtn.onclick = () => {
+          UI.closeModal();
+          if (window.location.hash === targetLink) {
+            this.handleRoute();
+          } else {
+            window.location.hash = targetLink;
+          }
+        };
       }
     }
   }

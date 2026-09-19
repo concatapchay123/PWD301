@@ -33,7 +33,7 @@ class StudentView {
           <div class="space-y-1.5 max-w-2xl">
             <div class="flex items-center gap-2">
               <span class="text-xs font-bold uppercase tracking-wider text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">Học kỳ Hiện tại</span>
-              <span class="text-xs text-slate-400 font-medium">Bàn làm việc Sinh viên</span>
+              <span class="text-xs text-slate-400 font-medium">Trang chủ Sinh viên</span>
             </div>
             <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight" id="student-welcome-heading">
               Chào buổi sáng, Sinh viên
@@ -56,8 +56,8 @@ class StudentView {
           </div>
         </div>
 
-        <!-- 2. Actionable Metric Cards (3 Cards: Enrolled, Progress, Urgent Assessment) -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="dashboard-metric-cards">
+        <!-- 2. Actionable Metric Cards (2 Cards: Enrolled, Urgent Assessment) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5" id="dashboard-metric-cards">
           
           <!-- Card 1: Khóa học kích hoạt -->
           <a class="group c-card c-card-hover p-5 flex flex-col justify-between" href="#/student/courses">
@@ -76,24 +76,7 @@ class StudentView {
             </div>
           </a>
 
-          <!-- Card 2: Tiến độ học tập -->
-          <div class="c-card p-5 flex flex-col justify-between">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tiến độ học tập</span>
-              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary-subtle text-primary dark:bg-primary/20" id="kpi-progress-pct">0% Hoàn thành</span>
-            </div>
-            <div class="mt-3 space-y-2">
-              <div class="flex items-baseline justify-between">
-                <span class="text-2xl font-extrabold text-slate-900 dark:text-white" id="kpi-progress-ratio">0 / 0 Môn học</span>
-                <span class="text-xs font-semibold text-slate-400">Đã hoàn thành</span>
-              </div>
-              <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div class="bg-primary h-full rounded-full transition-all duration-500" id="kpi-progress-bar" style="width: 5%"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Card 3: Khảo thí trọng tâm (Urgent Assessment Ticker) -->
+          <!-- Card 2: Khảo thí trọng tâm (Urgent Assessment Ticker) -->
           <a class="c-card c-card-hover bg-amber-50/50 dark:bg-amber-950/20 border-amber-300/60 dark:border-amber-700/60 p-5 flex flex-col justify-between group" href="#/student/assessments" id="kpi-urgent-card">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -116,74 +99,115 @@ class StudentView {
 
         </div>
 
-        <!-- 3. Learning Focus: Split 60/40 (Hero Continue Card & To-Do Urgent Actions) -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- 3. Learning Workspace Layout: 8-cols Main Stream + 4-cols Sticky Right Sidebar -->
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
-          <!-- Hero Continue Card (7 Cols) -->
-          <div class="lg:col-span-7 c-card p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden" id="dashboard-hero-continue-card">
-            <div class="space-y-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="px-2.5 py-1 rounded-full bg-primary-subtle text-primary font-bold text-xs uppercase tracking-wider flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                    <span>Đang học dang dở</span>
+          <!-- Left Column (8 cols): Hero Continue Card, Enrolled Courses List, Become Instructor Banner -->
+          <div class="xl:col-span-8 space-y-6">
+            
+            <!-- Hero Continue Card -->
+            <div class="c-card p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden" id="dashboard-hero-continue-card">
+              <div class="space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-1 rounded-full bg-primary-subtle text-primary font-bold text-xs uppercase tracking-wider flex items-center gap-1">
+                      <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                      <span>Đang học dang dở</span>
+                    </span>
+                    <span class="text-xs font-mono font-bold text-slate-500" id="hero-course-code">PWD301</span>
+                  </div>
+                  <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[16px]">schedule</span>
+                    <span>Còn khoảng 45 phút học</span>
                   </span>
-                  <span class="text-xs font-mono font-bold text-slate-500" id="hero-course-code">PWD301</span>
                 </div>
-                <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[16px]">schedule</span>
-                  <span>Còn khoảng 45 phút học</span>
-                </span>
+
+                <div>
+                  <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-snug" id="hero-course-title">
+                    Khóa học học thuật CNTT
+                  </h2>
+                  <p class="text-sm text-slate-600 dark:text-slate-300 font-medium mt-1" id="hero-lesson-title">
+                    Tiếp tục nội dung bài học mới nhất
+                  </p>
+                </div>
+
+                <div class="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500" id="hero-progress-label">Tiến trình học phần</span>
+                    <span class="font-bold text-primary font-mono" id="hero-progress-val">0%</span>
+                  </div>
+                  <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div class="bg-primary h-full rounded-full transition-all duration-500" id="hero-progress-bar" style="width: 10%"></div>
+                  </div>
+                  <div class="flex items-center justify-between pt-1 text-xs text-slate-400">
+                    <span id="hero-instructor-label">GV hướng dẫn: Hội đồng Khoa học</span>
+                    <span>Giáo trình số đã phê duyệt</span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-snug" id="hero-course-title">
-                  Khóa học học thuật CNTT
-                </h2>
-                <p class="text-sm text-slate-600 dark:text-slate-300 font-medium mt-1" id="hero-lesson-title">
-                  Tiếp tục nội dung bài học mới nhất
-                </p>
-              </div>
-
-              <div class="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-slate-500" id="hero-progress-label">Tiến trình học phần</span>
-                  <span class="font-bold text-primary font-mono" id="hero-progress-val">0%</span>
-                </div>
-                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
-                  <div class="bg-primary h-full rounded-full transition-all duration-500" id="hero-progress-bar" style="width: 10%"></div>
-                </div>
-                <div class="flex items-center justify-between pt-1 text-xs text-slate-400">
-                  <span id="hero-instructor-label">GV hướng dẫn: Hội đồng Khoa học</span>
-                  <span>Giáo trình số đã phê duyệt</span>
-                </div>
+              <div class="flex flex-wrap items-center gap-3 pt-6 mt-4 border-t border-slate-100 dark:border-slate-800">
+                <a
+                  href="#/student/courses"
+                  id="hero-continue-lesson-btn"
+                  class="c-btn c-btn-primary c-btn-md shadow-xs"
+                >
+                  <span class="material-symbols-outlined text-[18px]">play_circle</span>
+                  <span>Vào bài học ngay</span>
+                </a>
+                <a
+                  href="#/student/courses"
+                  id="hero-view-syllabus-btn"
+                  class="c-btn c-btn-secondary c-btn-md"
+                >
+                  <span class="material-symbols-outlined text-[18px]">toc</span>
+                  <span>Xem đề cương chi tiết</span>
+                </a>
               </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-3 pt-6 mt-4 border-t border-slate-100 dark:border-slate-800">
-              <a
-                href="#/student/courses"
-                id="hero-continue-lesson-btn"
-                class="c-btn c-btn-primary c-btn-md shadow-xs"
-              >
-                <span class="material-symbols-outlined text-[18px]">play_circle</span>
-                <span>Vào bài học ngay</span>
-              </a>
-              <a
-                href="#/student/courses"
-                id="hero-view-syllabus-btn"
-                class="c-btn c-btn-secondary c-btn-md"
-              >
-                <span class="material-symbols-outlined text-[18px]">toc</span>
-                <span>Xem đề cương chi tiết</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- To-Do & Urgent Actions (5 Cols) -->
-          <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-7 shadow-sm flex flex-col justify-between space-y-4">
+            <!-- Enrolled Courses Master Section -->
             <div class="space-y-4">
               <div class="flex items-center justify-between">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span class="material-symbols-outlined text-primary text-[20px]">school</span>
+                  <span>Khóa học đang theo học</span>
+                </h2>
+                <a href="#/student/courses" class="text-xs font-semibold text-primary hover:underline flex items-center gap-0.5">
+                  <span>Xem toàn bộ</span>
+                  <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </a>
+              </div>
+
+              <div id="enrolled-courses-list" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div class="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-sm">
+                  <span class="inline-block animate-spin text-xl mb-2">⏳</span>
+                  <p>Đang tải danh sách khóa học...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Become Instructor Callout Banner -->
+            <div class="c-card p-6 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-transparent dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-transparent border border-blue-200 dark:border-blue-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-blue-600 dark:text-blue-400 text-[20px]">school</span>
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-white">Bạn có chuyên môn và muốn đóng góp bài giảng?</h3>
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Đăng ký trở thành Giảng viên để xây dựng học liệu, thiết kế ngân hàng câu hỏi và giảng dạy trên PWD301.</p>
+              </div>
+              <a href="#/student/become-instructor" class="c-btn c-btn-primary c-btn-md shrink-0 flex items-center gap-1.5 shadow-xs">
+                <span class="material-symbols-outlined text-[16px]">badge</span>
+                <span>Đăng ký xét duyệt</span>
+              </a>
+            </div>
+
+          </div>
+
+          <!-- Right Column (4 cols): Sticky Việc cần làm hôm nay -->
+          <div class="xl:col-span-4 xl:sticky xl:top-24 space-y-4">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div class="flex items-center gap-2">
                   <span class="material-symbols-outlined text-[20px] text-primary">checklist</span>
                   <h3 class="font-bold text-base text-slate-900 dark:text-white">Việc cần làm hôm nay</h3>
@@ -253,42 +277,6 @@ class StudentView {
             </div>
           </div>
 
-        </div>
-
-        <!-- 4. Enrolled Courses Master Section -->
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary text-[20px]">school</span>
-              <span>Khóa học đang theo học</span>
-            </h2>
-            <a href="#/student/courses" class="text-xs font-semibold text-primary hover:underline flex items-center gap-0.5">
-              <span>Xem toàn bộ</span>
-              <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-            </a>
-          </div>
-
-          <div id="enrolled-courses-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div class="col-span-full text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-sm">
-              <span class="inline-block animate-spin text-xl mb-2">⏳</span>
-              <p>Đang tải danh sách khóa học...</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- 5. Become Instructor Callout Banner -->
-        <div class="c-card p-6 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-transparent dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-transparent border border-blue-200 dark:border-blue-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-blue-600 dark:text-blue-400 text-[20px]">school</span>
-              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Bạn có chuyên môn và muốn đóng góp bài giảng?</h3>
-            </div>
-            <p class="text-xs text-slate-500 dark:text-slate-400">Đăng ký trở thành Giảng viên để xây dựng học liệu, thiết kế ngân hàng câu hỏi và giảng dạy trên PWD301.</p>
-          </div>
-          <a href="#/student/become-instructor" class="c-btn c-btn-primary c-btn-md shrink-0 flex items-center gap-1.5 shadow-xs">
-            <span class="material-symbols-outlined text-[16px]">badge</span>
-            <span>Đăng ký xét duyệt</span>
-          </a>
         </div>
 
       </div>
@@ -435,7 +423,7 @@ class StudentView {
                 <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-mono font-bold text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(e.course_code || 'CRS')}</span>
-                    ${UI.statusBadge(e.status)}
+                    ${e.status && e.status !== 'ACTIVE' ? UI.statusBadge(e.status) : ''}
                   </div>
                   <h3
                     class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer"
@@ -484,24 +472,25 @@ class StudentView {
   // =========================================================================
   static async renderCatalog(container) {
     container.innerHTML = `
-      <div class="p-6 space-y-6 max-w-7xl mx-auto animate-fade-in">
-        <!-- Page Title & Search Bar -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="p-6 space-y-8 max-w-7xl mx-auto animate-fade-in font-sans">
+        <!-- Centered Page Header & Large Search Bar -->
+        <div class="text-center max-w-3xl mx-auto space-y-4 pt-2 pb-2">
           <div>
-            <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">Danh mục Khóa học</h1>
-            <p class="text-sm text-slate-500 mt-0.5">Khám phá các khóa học công khai, tìm kiếm và đăng ký học ngay.</p>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Khám phá Khóa học</h1>
+            <p class="text-sm text-slate-500 mt-1">Khám phá các khóa học công khai, tìm kiếm và đăng ký học ngay theo chuẩn ABET.</p>
           </div>
-          <div class="flex items-center gap-3 w-full md:w-auto">
-            <div class="relative flex-1 md:w-80">
-              <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+
+          <div class="flex flex-col sm:flex-row items-center gap-3 pt-2">
+            <div class="relative flex-1 w-full">
+              <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-[22px]">search</span>
               <input
                 type="text"
                 id="catalog-search-input"
-                placeholder="Tìm tên môn học, mã khóa..."
-                class="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm outline-none focus:border-primary transition-colors"
+                placeholder="Nhập tên môn học, mã khóa (VD: PWD301, UXD101...)..."
+                class="w-full pl-12 pr-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-base outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 shadow-sm transition-all"
               />
             </div>
-            <select id="catalog-category-filter" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm outline-none focus:border-primary">
+            <select id="catalog-category-filter" class="w-full sm:w-auto h-[52px] px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm outline-none focus:border-primary shadow-sm font-medium">
               <option value="">Tất cả danh mục</option>
               <option value="Khoa học Máy tính">Khoa học Máy tính</option>
               <option value="Trí tuệ Nhân tạo">Trí tuệ Nhân tạo</option>
@@ -511,8 +500,8 @@ class StudentView {
           </div>
         </div>
 
-        <!-- Catalog Grid -->
-        <div id="catalog-courses-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Catalog Grid (Large 2-column Course Cards) -->
+        <div id="catalog-courses-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div class="col-span-full text-center py-16 text-slate-400">
             <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
             <p class="text-sm">Đang tải danh mục khóa học...</p>
@@ -526,6 +515,7 @@ class StudentView {
     const grid = document.getElementById('catalog-courses-grid');
 
     let allCourses = [];
+    let enrolledCourseIds = new Set();
 
     const renderFiltered = () => {
       const q = (searchInput?.value || '').trim().toLowerCase();
@@ -548,56 +538,75 @@ class StudentView {
         return;
       }
 
-      grid.innerHTML = filtered.map(c => `
-        <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
-          <div class="space-y-2.5">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(c.course_code)}</span>
-              ${UI.difficultyBadge(c.difficulty)}
+      grid.innerHTML = filtered.map(c => {
+        const cid = c.course_id || c.id;
+        const isEnrolled = enrolledCourseIds.has(String(cid));
+
+        return `
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-3 py-1 rounded-full">${UI.escapeHtml(c.course_code)}</span>
+                <div class="flex items-center gap-2">
+                  ${isEnrolled ? `
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                      <span>Đã đăng ký</span>
+                    </span>
+                  ` : ''}
+                  ${UI.difficultyBadge(c.difficulty)}
+                </div>
+              </div>
+              <h3 class="font-extrabold text-slate-900 dark:text-white text-lg sm:text-xl leading-snug">
+                ${UI.escapeHtml(c.title)}
+              </h3>
+              <p class="text-sm text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
+                ${UI.escapeHtml(c.description || c.summary || 'Khóa học học thuật chính quy theo chuẩn đầu ra ABET.')}
+              </p>
             </div>
-            <h3 class="font-extrabold text-slate-900 dark:text-white text-base leading-snug line-clamp-2">
-              ${UI.escapeHtml(c.title)}
-            </h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed">
-              ${UI.escapeHtml(c.description || c.summary || 'Khóa học học thuật chính quy theo chuẩn đầu ra.')}
-            </p>
+
+            <div class="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-4">
+              <div class="flex items-center justify-between text-xs text-slate-500">
+                <span class="flex items-center gap-1.5 font-medium">
+                  <span class="material-symbols-outlined text-[18px] text-primary">folder</span>
+                  <span>Danh mục: <strong>${UI.escapeHtml(c.category || 'Chung')}</strong></span>
+                </span>
+              </div>
+
+              <div class="flex items-center gap-3 pt-1">
+                ${isEnrolled ? `
+                  <a
+                    href="#/student/courses/detail?id=${cid}"
+                    class="flex-1 c-btn c-btn-primary c-btn-md flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <span>Vào khóa học</span>
+                    <span class="material-symbols-outlined text-[18px]">play_circle</span>
+                  </a>
+                ` : `
+                  <button
+                    type="button"
+                    class="flex-1 c-btn c-btn-primary c-btn-md enroll-action-btn"
+                    data-course-id="${cid}"
+                    data-course-title="${UI.escapeHtml(c.title)}"
+                  >
+                    <span>Đăng ký học ngay</span>
+                  </button>
+                `}
+                <a
+                  href="#/student/courses/detail?id=${cid}"
+                  class="c-btn c-btn-secondary c-btn-md flex items-center gap-1.5"
+                  title="Xem hồ sơ học vụ đầy đủ"
+                >
+                  <span>Hồ sơ môn</span>
+                  <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </a>
+              </div>
+            </div>
           </div>
+        `;
+      }).join('');
 
-          <div class="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-            <div class="flex items-center justify-between text-xs text-slate-500">
-              <span class="flex items-center gap-1">
-                <span class="material-symbols-outlined text-[16px]">folder</span>
-                ${UI.escapeHtml(c.category || 'Chung')}
-              </span>
-              <span class="flex items-center gap-1">
-                <span class="material-symbols-outlined text-[16px]">group</span>
-                Tối đa: ${c.capacity || 50} SV
-              </span>
-            </div>
-
-            <div class="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                class="flex-1 c-btn c-btn-primary c-btn-sm enroll-action-btn"
-                data-course-id="${c.course_id || c.id}"
-                data-course-title="${UI.escapeHtml(c.title)}"
-              >
-                Đăng ký học ngay
-              </button>
-              <a
-                href="#/student/courses/detail?id=${c.course_id || c.id}"
-                class="c-btn c-btn-secondary c-btn-sm"
-                title="Xem hồ sơ học vụ đầy đủ"
-              >
-                <span>Hồ sơ môn</span>
-                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      `).join('');
-
-      // Attach button clicks
+      // Attach button clicks for enrolling
       grid.querySelectorAll('.enroll-action-btn').forEach(btn => {
         btn.onclick = async () => {
           const cid = btn.dataset.courseId;
@@ -610,20 +619,29 @@ class StudentView {
 
           try {
             await ApiClient.enrollCourse(cid);
+            enrolledCourseIds.add(String(cid));
             UI.showToast(`Đã ghi danh thành công khóa học: ${ctitle}`, 'success');
-            window.location.hash = '#/student/courses';
+            renderFiltered();
           } catch (err) {
             UI.showToast(err.message || 'Không thể ghi danh vào khóa học này.', 'error');
             btn.disabled = false;
-            btn.innerHTML = 'Đăng ký học ngay';
+            btn.innerHTML = '<span>Đăng ký học ngay</span>';
           }
         };
       });
     };
 
     try {
-      const res = await ApiClient.getCatalogCourses();
-      allCourses = res.items || res.courses || [];
+      const [resCatalog, resEnrolled] = await Promise.all([
+        ApiClient.getCatalogCourses(),
+        ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] }))
+      ]);
+      allCourses = resCatalog.items || resCatalog.courses || [];
+      const enrolledList = resEnrolled.enrollments || resEnrolled.courses || [];
+      enrolledList.forEach(e => {
+        if (e.course_id) enrolledCourseIds.add(String(e.course_id));
+        if (e.id) enrolledCourseIds.add(String(e.id));
+      });
       renderFiltered();
     } catch (err) {
       grid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-500">Lỗi nạp danh mục: ${UI.escapeHtml(err.message)}</div>`;
@@ -787,7 +805,7 @@ class StudentView {
               <div class="space-y-2.5">
                 <div class="flex items-center justify-between">
                   <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(e.course_code)}</span>
-                  ${UI.statusBadge(e.status)}
+                  ${e.status && e.status !== 'ACTIVE' ? UI.statusBadge(e.status) : ''}
                 </div>
                 <h3
                   class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer"
@@ -958,11 +976,12 @@ class StudentView {
                     Khóa học hiện chưa có bài khảo thí nào được giao.
                   </div>
                 ` : assessments.map(a => `
-                  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${!isEnrolled ? 'opacity-85' : ''}">
                     <div class="space-y-1">
                       <div class="flex items-center gap-2">
                         <span class="text-xs font-bold uppercase tracking-wider text-purple-600 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">Khảo thí</span>
                         ${UI.statusBadge(a.status || 'PUBLISHED')}
+                        ${!isEnrolled ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">lock</span> Khóa</span>` : ''}
                       </div>
                       <h4 class="font-bold text-sm text-slate-900 dark:text-white">${UI.escapeHtml(a.title)}</h4>
                       <div class="flex items-center gap-3 text-xs text-slate-500">
@@ -972,7 +991,16 @@ class StudentView {
                       </div>
                     </div>
                     <div class="flex items-center gap-2.5 shrink-0">
-                      ${a.attempt_id ? `
+                      ${!isEnrolled ? `
+                        <button
+                          type="button"
+                          onclick="UI.showToast('Vui lòng ghi danh môn học để tham gia khảo thí.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
+                          class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-amber-600 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                        >
+                          <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
+                          <span>Cần ghi danh</span>
+                        </button>
+                      ` : (a.attempt_id ? `
                         <a href="#/student/assessments/results?id=${a.attempt_id}" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1">
                           <span class="material-symbols-outlined text-[16px]">fact_check</span>
                           <span>Xem kết quả</span>
@@ -982,7 +1010,7 @@ class StudentView {
                           <span class="material-symbols-outlined text-[16px]">lock_open</span>
                           <span>Vào phòng chờ thi</span>
                         </a>
-                      `}
+                      `)}
                     </div>
                   </div>
                 `).join('')}
@@ -1103,8 +1131,34 @@ class StudentView {
                 <span class="material-symbols-outlined text-primary text-[20px]">format_list_numbered</span>
                 Đề cương & Danh sách Bài giảng (${lessons.length} bài)
               </h3>
-              <span class="text-xs text-slate-500 font-medium">Hoàn thành: <strong>${Math.round(progressData?.progress_percent || 0)}%</strong></span>
+              ${isEnrolled ? `
+                <span class="text-xs text-slate-500 font-medium">Hoàn thành: <strong>${Math.round(progressData?.progress_percent || 0)}%</strong></span>
+              ` : `
+                <span class="text-xs font-bold text-amber-600 flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">lock</span> Chưa ghi danh</span>
+              `}
             </div>
+
+            ${!isEnrolled ? `
+              <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                    <span class="material-symbols-outlined text-[22px]">lock</span>
+                  </div>
+                  <div>
+                    <h4 class="text-xs font-bold text-slate-900 dark:text-white">Bạn chưa ghi danh khóa học này</h4>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Vui lòng ghi danh môn học để mở khóa toàn bộ bài giảng, tải tài liệu và tham gia khảo thí.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onclick="document.getElementById('dossier-enroll-btn')?.click()"
+                  class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm shrink-0 flex items-center gap-1.5"
+                >
+                  <span class="material-symbols-outlined text-[16px]">school</span>
+                  <span>Ghi danh ngay</span>
+                </button>
+              </div>
+            ` : ''}
 
             <div class="space-y-3">
               ${lessons.length === 0 ? `
@@ -1112,14 +1166,20 @@ class StudentView {
                   Khóa học này đang hoàn thiện giáo trình, chưa có bài giảng nào được công bố.
                 </div>
               ` : lessons.map((l, idx) => `
-                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${!isEnrolled ? 'opacity-85' : ''}">
                   <div class="flex items-start gap-3.5">
-                    <div class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center shrink-0 text-xs">
+                    <div class="w-8 h-8 rounded-xl ${isEnrolled ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'} font-bold flex items-center justify-center shrink-0 text-xs">
                       ${idx + 1}
                     </div>
                     <div>
-                      <h4 class="font-bold text-slate-900 dark:text-white text-sm hover:text-primary transition-colors cursor-pointer" onclick="window.location.hash = '#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}'">
-                        ${UI.escapeHtml(l.title)}
+                      <h4
+                        class="font-bold text-slate-900 dark:text-white text-sm ${isEnrolled ? 'hover:text-primary transition-colors cursor-pointer' : 'text-slate-700 dark:text-slate-300'}"
+                        ${isEnrolled ? `onclick="window.location.hash = '#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}'"` : `onclick="UI.showToast('Vui lòng ghi danh môn học trước khi bắt đầu bài học.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"`}
+                      >
+                        <span class="flex items-center gap-1.5">
+                          <span>${UI.escapeHtml(l.title)}</span>
+                          ${!isEnrolled ? `<span class="material-symbols-outlined text-[15px] text-amber-600" title="Cần ghi danh để mở khóa">lock</span>` : ''}
+                        </span>
                       </h4>
                       <p class="text-xs text-slate-500 mt-0.5 line-clamp-1">${UI.escapeHtml(l.summary || 'Bài giảng lý thuyết & thực hành kèm code mẫu')}</p>
                       <div class="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
@@ -1131,10 +1191,21 @@ class StudentView {
                   </div>
 
                   <div class="shrink-0">
-                    <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}" class="px-4 py-2 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1">
-                      <span>Vào học ngay</span>
-                      <span class="material-symbols-outlined text-[16px]">play_arrow</span>
-                    </a>
+                    ${isEnrolled ? `
+                      <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}" class="px-4 py-2 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1">
+                        <span>Vào học ngay</span>
+                        <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                      </a>
+                    ` : `
+                      <button
+                        type="button"
+                        onclick="UI.showToast('Vui lòng ghi danh môn học trước khi bắt đầu bài học.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
+                        class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-500 hover:text-amber-600 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                      >
+                        <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
+                        <span>Cần ghi danh</span>
+                      </button>
+                    `}
                   </div>
                 </div>
               `).join('')}
@@ -1161,7 +1232,7 @@ class StudentView {
               <div class="flex items-center gap-2">
                 <span class="px-3 py-1 rounded-full bg-primary-subtle text-primary font-mono font-bold text-xs">${UI.escapeHtml(course.course_code)}</span>
                 ${UI.difficultyBadge(course.difficulty)}
-                ${UI.statusBadge(course.status)}
+                ${course.status && course.status !== 'ACTIVE' ? UI.statusBadge(course.status) : ''}
                 <span class="text-xs text-slate-500">• Khoa Công nghệ Thông tin</span>
               </div>
               <div class="flex items-center gap-3">
@@ -1172,12 +1243,23 @@ class StudentView {
                   </a>
                 ` : ''}
                 ${isEnrolled ? `
-                  <div class="text-xs text-slate-500 font-medium">
-                    Tiến độ: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong>
+                  <div class="flex items-center gap-3">
+                    <div class="text-xs text-slate-500 font-medium">
+                      Tiến độ: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong>
+                    </div>
+                    ${lessons.length > 0 ? `
+                      <a
+                        href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${lessons[0].lesson_id || lessons[0].id}"
+                        class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                      >
+                        <span class="material-symbols-outlined text-[18px]">play_circle</span>
+                        <span>Vào học ngay</span>
+                      </a>
+                    ` : ''}
+                    <button type="button" id="dossier-leave-btn" class="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 transition-colors">
+                      Rút môn học
+                    </button>
                   </div>
-                  <button type="button" id="dossier-leave-btn" class="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 transition-colors">
-                    Rút môn học
-                  </button>
                 ` : `
                   <button type="button" id="dossier-enroll-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5">
                     <span class="material-symbols-outlined text-[16px]">school</span>
@@ -1196,12 +1278,8 @@ class StudentView {
               </p>
             </div>
 
-            <!-- Metadata Academic Strip -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
-              <div>
-                <span class="text-slate-400 block">Số tín chỉ:</span>
-                <span class="font-extrabold text-slate-900 dark:text-white text-sm">3 Tín chỉ (ECTS 5)</span>
-              </div>
+            <!-- Metadata Academic Strip (Credits removed per specification) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
               <div>
                 <span class="text-slate-400 block">Quy mô bài giảng:</span>
                 <span class="font-extrabold text-slate-900 dark:text-white text-sm">${lessons.length} Bài giảng</span>
@@ -1213,69 +1291,6 @@ class StudentView {
               <div>
                 <span class="text-slate-400 block">Giảng viên phụ trách:</span>
                 <span class="font-extrabold text-primary text-sm truncate block">${UI.escapeHtml(course.instructor_name || 'Hội đồng Khoa học')}</span>
-              </div>
-            </div>
-
-            <!-- Low-Tech Friendly Student Learning Outcomes (SLO) Section -->
-            <div class="p-5 sm:p-6 rounded-2xl border border-indigo-100 dark:border-indigo-950/60 bg-gradient-to-br from-indigo-50/60 to-white dark:from-indigo-950/20 dark:to-slate-900 shadow-2xs space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-indigo-100/80 dark:border-indigo-950/80">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-primary text-[22px]">verified_user</span>
-                    <h3 class="text-sm font-extrabold text-slate-900 dark:text-white">
-                      Mục tiêu & Kỹ năng bạn sẽ đạt được
-                    </h3>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary-subtle text-primary border border-primary/20 cursor-help select-none" title="Chuẩn đầu ra sinh viên theo kiểm định quốc tế ABET (Student Learning Outcomes)">
-                      ABET SLO
-                    </span>
-                  </div>
-                  <p class="text-xs text-slate-600 dark:text-slate-400">
-                    💡 <strong>Bạn sẽ làm được gì sau môn học này?</strong> Đây là các kỹ năng thực tế bạn chắc chắn sẽ thành thạo sau khi hoàn thành khóa học.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="self-start sm:self-center shrink-0 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 hover:border-primary text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs hover:text-primary"
-                  onclick="UI.openAcademicGlossaryModal()"
-                  title="Giải thích chi tiết các thuật ngữ như SLO, ABET, Prerequisites..."
-                >
-                  <span class="material-symbols-outlined text-[16px] text-primary">help</span>
-                  <span>Giải thích thuật ngữ SLO là gì?</span>
-                </button>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                ${studentSLOs.map((slo, idx) => {
-                  const title = typeof slo === 'object' ? (slo.title || `Kỹ năng ${idx + 1}`) : `Kỹ năng ${idx + 1}`;
-                  const desc = typeof slo === 'object' ? (slo.description || slo.content || '') : String(slo);
-                  const weight = typeof slo === 'object' && slo.weight ? slo.weight : null;
-                  const code = typeof slo === 'object' && slo.code ? slo.code : `SLO-${idx + 1}`;
-                  return `
-                    <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800/80 hover:border-primary/40 transition-all flex items-start gap-3 shadow-2xs">
-                      <span class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 font-mono">
-                        ${idx + 1}
-                      </span>
-                      <div class="space-y-1 min-w-0 flex-1">
-                        <div class="flex items-center justify-between gap-2">
-                          <h4 class="text-xs font-bold text-slate-900 dark:text-white leading-snug">
-                            ${UI.escapeHtml(title)}
-                          </h4>
-                          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 font-semibold shrink-0" title="Mã chuẩn đầu ra đối chiếu kiểm định ABET">
-                            ${UI.escapeHtml(code)}
-                          </span>
-                        </div>
-                        <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                          ${UI.escapeHtml(desc)}
-                        </p>
-                        ${weight ? `
-                          <div class="text-[10px] text-slate-400 font-semibold">
-                            Tỷ trọng đánh giá: <strong class="text-primary">${UI.escapeHtml(weight)}</strong>
-                          </div>
-                        ` : ''}
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
               </div>
             </div>
           </div>
@@ -1360,6 +1375,24 @@ class StudentView {
     }
   }
 
+  // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
+  static _getEmbedVideoHtml(url) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    // YouTube
+    const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    if (ytMatch && ytMatch[1]) {
+      return `<iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    }
+    // Vimeo
+    const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
+    if (vimeoMatch && vimeoMatch[1]) {
+      return `<iframe class="w-full h-full" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    }
+    // Direct file / HTML5 video
+    return `<video controls class="w-full h-full" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
+  }
+
   // =========================================================================
   // 5. Single-Column Focus Lesson Reader (Left Syllabus Drawer & Right Vault/Notes Drawer)
   // =========================================================================
@@ -1404,34 +1437,36 @@ class StudentView {
           <!-- Topbar Reader Navigation Header -->
           <div class="h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-10 select-none">
             <div class="flex items-center gap-3">
-              <a href="#/student/courses/detail?id=${courseId}" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 transition-colors" title="Quay lại khóa học">
-                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+              <a
+                href="#/student/courses/${courseId}"
+                class="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                title="Quay lại Tổng quan Khóa học"
+              >
+                <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+                <span class="hidden sm:inline">Khóa học</span>
               </a>
-              <div class="space-y-0.5">
-                <div class="text-[11px] font-mono font-bold text-primary">${UI.escapeHtml(course.course_code)}</div>
-                <div class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-xs sm:max-w-md">
-                  ${UI.escapeHtml(lesson.title)}
-                </div>
+              <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
+              <div class="truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">${UI.escapeHtml(course.title)}</span>
+                <span class="text-[11px] text-slate-400 truncate block">${UI.escapeHtml(lesson.title)}</span>
               </div>
             </div>
 
             <!-- Header Action Controls -->
-            <div class="flex items-center gap-2 sm:gap-3">
-              <!-- Left Drawer Trigger: Syllabus Outline -->
+            <div class="flex items-center gap-2">
               <button
                 type="button"
-                id="open-syllabus-drawer-btn"
+                id="toggle-syllabus-btn"
                 class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                title="Mở mục lục đề cương"
+                title="Mở Đề cương bài giảng"
               >
-                <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span>
-                <span class="hidden sm:inline">Mục lục (${currentIndex + 1}/${lessonsList.length})</span>
+                <span class="material-symbols-outlined text-[16px]">menu_book</span>
+                <span class="hidden sm:inline">Đề cương</span>
               </button>
 
-              <!-- Right Drawer Trigger: Vault & Notes -->
               <button
                 type="button"
-                id="open-vault-notes-drawer-btn"
+                id="toggle-resources-btn"
                 class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors relative"
                 title="Mở tài liệu & Sổ tay ghi chú"
               >
@@ -1496,9 +1531,7 @@ class StudentView {
               <!-- Media Player / Video Block (if present) -->
               ${lesson.video_url ? `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video border border-slate-800">
-                  <video controls class="w-full h-full" src="${lesson.video_url}" preload="metadata">
-                    Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
-                  </video>
+                  ${StudentView._getEmbedVideoHtml(lesson.video_url)}
                 </div>
               ` : ''}
 
@@ -1514,7 +1547,7 @@ class StudentView {
                     <span class="material-symbols-outlined text-[20px]">smart_toy</span>
                   </div>
                   <div>
-                    <h4 class="font-bold text-sm">Gia sư AI Học vụ (Gemini Flash)</h4>
+                    <h4 class="font-bold text-sm">Bạch tuộc (Gemini Flash)</h4>
                     <p class="text-xs text-indigo-200/80">Bạn gặp khó khăn hay cần giải thích thêm về bài giảng "${UI.escapeHtml(lesson.title)}"?</p>
                   </div>
                 </div>
@@ -1757,6 +1790,35 @@ class StudentView {
       }, 15000);
 
     } catch (err) {
+      const isForbidden = err.status === 403 || err.status_code === 403 || (err.message && (err.message.toLowerCase().includes('enrollment') || err.message.toLowerCase().includes('ghi danh') || err.message.includes('403')));
+      if (isForbidden) {
+        container.innerHTML = `
+          <div class="h-full flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-950 font-sans animate-fade-in">
+            <div class="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-xl space-y-6">
+              <div class="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                <span class="material-symbols-outlined text-3xl">lock</span>
+              </div>
+              <div class="space-y-2">
+                <h2 class="text-xl font-black text-slate-900 dark:text-white">Bài giảng chưa được mở khóa</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Bạn cần ghi danh vào khóa học này để có quyền truy cập toàn bộ nội dung bài giảng, tài liệu đính kèm và trợ lý Bạch tuộc.
+                </p>
+              </div>
+              <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <a href="#/student/courses/detail?id=${courseId}" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">school</span>
+                  <span>Xem hồ sơ & Ghi danh</span>
+                </a>
+                <a href="#/student/courses/catalog" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">explore</span>
+                  <span>Khám phá khóa học</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
       container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp bài giảng: ${UI.escapeHtml(err.message)}</div>`;
     }
   }
@@ -2074,7 +2136,7 @@ class StudentView {
                           ${c.is_selected ? 'checked' : ''}
                         />
                         <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-normal flex-1">
-                          <strong>${c.label || ''}.</strong> ${UI.escapeHtml(c.content || c.text || '')}
+                          <strong>${c.label || ''}</strong> ${UI.escapeHtml(c.content || c.text || '')}
                         </span>
                       </label>
                     `).join('')}
@@ -2469,15 +2531,17 @@ class StudentView {
                       </div>
                     </div>
 
-                    <!-- Scale conversion button -->
-                    <button
-                      type="button"
-                      id="view-scale-btn"
-                      class="px-2.5 py-1.5 text-xs font-bold text-primary bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 rounded-xl border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <span class="material-symbols-outlined text-[15px]">balance</span>
-                      <span>Thang điểm</span>
-                    </button>
+                    <!-- Scale conversion button (Chỉ Giảng viên và Admin) -->
+                    ${(window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN') ? `
+                      <button
+                        type="button"
+                        id="view-scale-btn"
+                        class="px-2.5 py-1.5 text-xs font-bold text-primary bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 rounded-xl border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                      >
+                        <span class="material-symbols-outlined text-[15px]">balance</span>
+                        <span>Thang điểm</span>
+                      </button>
+                    ` : ''}
                   </div>
 
                   <div class="h-px bg-slate-100 dark:bg-slate-800"></div>
@@ -2506,35 +2570,25 @@ class StudentView {
                     </div>
                   </div>
 
-                  <!-- Instructor Note Box -->
-                  <div class="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/60 text-xs space-y-1">
-                    <div class="flex items-center justify-between font-bold text-slate-700 dark:text-slate-300">
-                      <span class="flex items-center gap-1 text-[11px]">
-                        <span class="material-symbols-outlined text-[14px] text-primary">chat_bubble</span>
-                        <span>Nhận xét của GV:</span>
-                      </span>
-                      <span class="text-[10px] text-slate-400 font-normal">${UI.formatDate(data.submitted_at)}</span>
-                    </div>
-                    <p class="text-slate-600 dark:text-slate-400 italic leading-relaxed text-[11px]">
-                      ${isPassed
-                        ? '"Bài làm rất chắc chắn về kiến trúc Flask Factory và phân tách Blueprint. Khả năng viết test case cho RESTful API đạt chuẩn kiểm thử tự động."'
-                        : '"Cần xem lại kỹ thuật tối ưu hóa truy vấn cơ sở dữ liệu và các quy tắc phân quyền RBAC để cải thiện kết quả ở đợt thi lại."'}
-                    </p>
+                  <!-- Action Buttons: Open Audit Drawer & Request Appeal -->
+                  <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      id="sidebar-audit-drawer-btn"
+                      class="w-full py-2.5 px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-primary border border-primary/30 hover:border-primary font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">verified</span>
+                      <span>Chi tiết phúc khảo & kiểm toán</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="request-appeal-btn"
+                      class="w-full py-2 px-3 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">gavel</span>
+                      <span>Nộp đơn yêu cầu phúc khảo</span>
+                    </button>
                   </div>
-
-                  <!-- Action Button: Open Audit Drawer -->
-                  ${isFormalExam ? `
-                    <div class="space-y-2 pt-1">
-                      <button
-                        type="button"
-                        id="sidebar-audit-drawer-btn"
-                        class="w-full py-2.5 px-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-primary border border-primary/30 hover:border-primary font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                      >
-                        <span class="material-symbols-outlined text-[16px]">verified</span>
-                        <span>Xem chi tiết phúc khảo & kiểm toán (3)</span>
-                      </button>
-                    </div>
-                  ` : ''}
 
                   <!-- Digital Signature -->
                   <div class="flex items-center justify-between text-[11px] pt-1 text-slate-400">
@@ -2578,7 +2632,6 @@ class StudentView {
                     <span class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold">
                       Đề đảo
                     </span>
-                    <span class="text-xs text-slate-400 font-mono pl-1">ID: PWD-DE-64</span>
                   </div>
                 </div>
 
@@ -2609,7 +2662,7 @@ class StudentView {
                     </button>
                   </div>
                   <div class="text-slate-400 italic text-[11px] hidden sm:inline">
-                    * Bấm "Hỏi gia sư AI" để được giải thích chi tiết từng câu hỏi
+                    * Bấm "Hỏi Bạch tuộc" để được giải thích chi tiết từng câu hỏi
                   </div>
                 </div>
               </div>
@@ -2636,13 +2689,12 @@ class StudentView {
                       <div class="flex items-start justify-between gap-4">
                         <div class="flex items-center gap-2">
                           <span class="text-sm font-extrabold text-slate-900 dark:text-white font-mono">Câu ${idx + 1}</span>
-                          <span class="text-xs font-mono text-slate-400">ID: ${q.question_id || (573291780 + idx)}</span>
                           <span class="text-xs font-bold px-2 py-0.5 rounded-lg border ${isCorrect ? 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' : 'text-rose-700 bg-rose-50 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800'}">
                             ${isCorrect ? `+${awardedPts} đ` : '0 đ'}
                           </span>
                         </div>
 
-                        <!-- Ask AI Button -->
+                        <!-- Ask Octopus Button -->
                         <button
                           type="button"
                           class="ask-ai-question-btn px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
@@ -2650,7 +2702,7 @@ class StudentView {
                           data-answer="${UI.escapeHtml(correctAns)}"
                         >
                           <span class="material-symbols-outlined text-[14px]">smart_toy</span>
-                          <span>Hỏi gia sư AI câu này</span>
+                          <span>Hỏi Bạch tuộc câu này</span>
                         </button>
                       </div>
 
@@ -2674,7 +2726,7 @@ class StudentView {
 
                             return `
                               <div class="p-3 rounded-xl border ${badgeStyle} flex items-start gap-2">
-                                <strong class="font-bold ${isTheCorrect ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}">${c.label || '•'}.</strong>
+                                <strong class="font-bold ${isTheCorrect ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}">${c.label || ''}</strong>
                                 <span class="flex-1">${UI.escapeHtml(c.content || c.text || '')}</span>
                                 ${isTheCorrect ? '<span class="text-emerald-600 font-bold">✓</span>' : (isSelected && !isCorrect ? '<span class="text-rose-600 font-bold">✗</span>' : '')}
                               </div>
@@ -2732,19 +2784,6 @@ class StudentView {
                           <p class="leading-relaxed italic">${UI.escapeHtml(q.explanation)}</p>
                         </div>
                       ` : ''}
-
-                      <!-- Academic Feedback Box -->
-                      ${(q.feedback || q.teacher_feedback) ? `
-                        <div class="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/50 text-xs space-y-2">
-                          <div class="font-bold text-primary flex items-center gap-1.5">
-                            <span class="material-symbols-outlined text-[16px]">feedback</span>
-                            <span>Ghi chú phản hồi:</span>
-                          </div>
-                          <div class="text-slate-700 dark:text-slate-300 italic bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-indigo-100 dark:border-indigo-900/40">
-                            "${UI.escapeHtml(q.feedback || q.teacher_feedback)}"
-                          </div>
-                        </div>
-                      ` : ''}
                     </article>
                   `;
                 }).join('')}
@@ -2756,7 +2795,15 @@ class StudentView {
       `;
 
       // 1. Audit Drawer Handler (Review Detail Drawer)
-      const openAuditDrawer = () => {
+      // 1. Audit Drawer Handler (Review Detail Drawer)
+      const openAuditDrawer = async () => {
+        let appealData = null;
+        try {
+          appealData = await ApiClient.getAttemptAppeal(attemptId);
+        } catch {
+          // Appeal not found or not yet submitted
+        }
+
         UI.openDrawer({
           side: 'right',
           title: 'Chi Tiết Phúc Khảo & Kiểm Toán Khảo Thí',
@@ -2782,6 +2829,31 @@ class StudentView {
                   <div>Sai / Bỏ qua: <strong class="text-rose-600 font-mono">${wrongCount} câu</strong></div>
                 </div>
               </div>
+
+              ${appealData && appealData.appeal ? `
+                <!-- Appeal Status Box -->
+                <div class="p-4 rounded-xl border ${appealData.appeal.status === 'APPROVED' ? 'border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/30' : appealData.appeal.status === 'REJECTED' ? 'border-rose-300 bg-rose-50/50 dark:bg-rose-950/30' : 'border-amber-300 bg-amber-50/50 dark:bg-amber-950/30'} space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[16px]">gavel</span>
+                      <span>Đơn yêu cầu phúc khảo của thí sinh</span>
+                    </span>
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold ${appealData.appeal.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : appealData.appeal.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}">
+                      ${appealData.appeal.status === 'APPROVED' ? 'ĐÃ DUYỆT' : appealData.appeal.status === 'REJECTED' ? 'TỪ CHỐI' : 'CHỜ DUYỆT'}
+                    </span>
+                  </div>
+                  <div class="space-y-1 text-[11px]">
+                    <div><strong>Lý do:</strong> ${UI.escapeHtml(appealData.appeal.reason || 'Yêu cầu chấm lại')}</div>
+                    <div><strong>Ghi chú thí sinh:</strong> <span class="italic">${UI.escapeHtml(appealData.appeal.note || 'Không có')}</span></div>
+                    <div><strong>Thời gian gửi:</strong> ${UI.formatDateTime(appealData.appeal.created_at)}</div>
+                    ${appealData.appeal.reviewer_note ? `
+                      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <strong>Kết luận hội đồng / Giảng viên:</strong> ${UI.escapeHtml(appealData.appeal.reviewer_note)}
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              ` : ''}
 
               <!-- Immutable Revision Timeline -->
               <div>
@@ -2884,6 +2956,147 @@ class StudentView {
       const sidebarBtn = document.getElementById('sidebar-audit-drawer-btn');
       if (sidebarBtn) sidebarBtn.onclick = openAuditDrawer;
 
+      // Check existing appeal on load to update appeal button badge
+      try {
+        const existingAppeal = await ApiClient.getAttemptAppeal(attemptId);
+        const appealBtn = document.getElementById('request-appeal-btn');
+        if (appealBtn && existingAppeal && existingAppeal.appeal) {
+          if (existingAppeal.appeal.status === 'PENDING') {
+            appealBtn.innerHTML = `
+              <span class="material-symbols-outlined text-[16px] text-amber-500">pending</span>
+              <span>Đơn phúc khảo: Đang chờ duyệt</span>
+            `;
+            appealBtn.classList.remove('bg-amber-50', 'text-amber-700', 'border-amber-300');
+            appealBtn.classList.add('bg-amber-100/60', 'text-amber-800', 'border-amber-400');
+          } else if (existingAppeal.appeal.status === 'APPROVED') {
+            appealBtn.innerHTML = `
+              <span class="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
+              <span>Đã phúc khảo thành công</span>
+            `;
+            appealBtn.classList.remove('bg-amber-50', 'text-amber-700', 'border-amber-300');
+            appealBtn.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-300');
+          }
+        }
+      } catch {
+        // No existing appeal
+      }
+
+      // Handle Appeal Button Click
+      const appealBtn = document.getElementById('request-appeal-btn');
+      if (appealBtn) {
+        appealBtn.onclick = async () => {
+          let currentAppeal = null;
+          try {
+            currentAppeal = await ApiClient.getAttemptAppeal(attemptId);
+          } catch {
+            // Not found
+          }
+
+          if (currentAppeal && currentAppeal.appeal && currentAppeal.appeal.status === 'PENDING') {
+            UI.alert(
+              'Đơn phúc khảo đang chờ xử lý',
+              `Bạn đã nộp đơn yêu cầu phúc khảo vào lúc ${UI.formatDateTime(currentAppeal.appeal.created_at)}.\n` +
+              `Lý do: ${currentAppeal.appeal.reason}\n` +
+              `Ghi chú: ${currentAppeal.appeal.note || 'Không có'}\n\n` +
+              `Hội đồng Khảo thí và Giảng viên bộ môn đang tiến hành thẩm định và rà soát lại bài làm.`
+            );
+            return;
+          }
+
+          UI.openModal({
+            title: `
+              <span class="material-symbols-outlined text-amber-600 text-[20px]">gavel</span>
+              <span>Nộp Đơn Yêu Cầu Phúc Khảo Bài Thi</span>
+            `,
+            bodyHtml: `
+              <div class="space-y-3.5 text-xs text-slate-700 dark:text-slate-300">
+                <div class="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1">
+                  <div class="font-bold flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[16px]">info</span>
+                    <span>Quy chế Phúc khảo Khảo thí PWD301:</span>
+                  </div>
+                  <p class="text-[11px] leading-relaxed">
+                    Học viên có quyền gửi yêu cầu phúc khảo trong vòng 48 giờ sau khi công bố kết quả thi. Kết quả rà soát sẽ được phản hồi kèm lịch sử điều chỉnh điểm số bất biến trong hệ thống.
+                  </p>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
+                    Lý do phúc khảo <span class="text-rose-500">*</span>
+                  </label>
+                  <select id="appeal-reason-select" class="c-input">
+                    <option value="Chấm sai đáp án câu hỏi trắc nghiệm so với giáo trình">Chấm sai đáp án câu hỏi trắc nghiệm so với giáo trình</option>
+                    <option value="Hệ thống không ghi nhận câu trả lời hợp lệ khi nộp bài">Hệ thống không ghi nhận câu trả lời hợp lệ khi nộp bài</option>
+                    <option value="Điểm số công bố chưa phản ánh đúng số câu trả lời chính xác">Điểm số công bố chưa phản ánh đúng số câu trả lời chính xác</option>
+                    <option value="Khiếu nại về nội dung hoặc đáp án của đề thi">Khiếu nại về nội dung hoặc đáp án của đề thi</option>
+                    <option value="Lý do khác">Lý do khác</option>
+                  </select>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
+                    Nội dung trình bày chi tiết <span class="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    id="appeal-note-input"
+                    rows="4"
+                    class="c-input resize-none"
+                    placeholder="Vui lòng ghi rõ câu hỏi cần phúc khảo (ví dụ: Câu 3, Câu 7) và giải trình căn cứ của bạn..."
+                  ></textarea>
+                </div>
+              </div>
+            `,
+            footerHtml: `
+              <div class="flex items-center justify-end gap-2 w-full">
+                <button type="button" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100" onclick="UI.closeModal()">
+                  Hủy
+                </button>
+                <button type="button" id="submit-appeal-confirm-btn" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                  <span class="material-symbols-outlined text-[16px]">send</span>
+                  <span>Gửi đơn phúc khảo</span>
+                </button>
+              </div>
+            `
+          });
+
+          const submitConfirmBtn = document.getElementById('submit-appeal-confirm-btn');
+          if (submitConfirmBtn) {
+            submitConfirmBtn.onclick = async () => {
+              const reasonSelect = document.getElementById('appeal-reason-select');
+              const noteInput = document.getElementById('appeal-note-input');
+              const reason = reasonSelect ? reasonSelect.value.trim() : '';
+              const note = noteInput ? noteInput.value.trim() : '';
+
+              if (!note) {
+                UI.showToast('Vui lòng nhập nội dung giải trình chi tiết.', 'warning');
+                return;
+              }
+
+              submitConfirmBtn.disabled = true;
+              submitConfirmBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang gửi đơn...';
+
+              try {
+                await ApiClient.submitAttemptAppeal(attemptId, { reason, note });
+                UI.closeModal();
+                UI.showToast('Đơn phúc khảo đã được gửi thành công đến Hội đồng Khảo thí.', 'success');
+
+                // Update appeal button UI
+                appealBtn.innerHTML = `
+                  <span class="material-symbols-outlined text-[16px] text-amber-500">pending</span>
+                  <span>Đơn phúc khảo: Đang chờ duyệt</span>
+                `;
+                appealBtn.classList.remove('bg-amber-50', 'text-amber-700', 'border-amber-300');
+                appealBtn.classList.add('bg-amber-100/60', 'text-amber-800', 'border-amber-400');
+              } catch (err) {
+                UI.showToast(err.message || 'Lỗi khi gửi đơn phúc khảo.', 'error');
+                submitConfirmBtn.disabled = false;
+                submitConfirmBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">send</span><span>Gửi đơn phúc khảo</span>';
+              }
+            };
+          }
+        };
+      }
+
       // 2. Scale Information Modal
       const scaleBtn = document.getElementById('view-scale-btn');
       if (scaleBtn) {
@@ -2934,7 +3147,7 @@ class StudentView {
         btn.onclick = () => {
           const stem = btn.dataset.stem;
           const ans = btn.dataset.answer;
-          const prompt = `Gia sư hãy giải thích chi tiết giúp tôi câu hỏi thi này (vì sao đáp án đúng là "${ans}"):\n"${stem}"`;
+          const prompt = `Bạch tuộc hãy giải thích chi tiết giúp tôi câu hỏi thi này (vì sao đáp án đúng là "${ans}"):\n"${stem}"`;
           FloatingAITutor.openWithQuestion(prompt);
         };
       });
@@ -3334,87 +3547,207 @@ class StudentView {
         return;
       }
 
-      // Render fresh application form
+      // Render fresh application form with streamlined single-column layout
       box.innerHTML = `
-        <div class="space-y-1">
+        <div class="space-y-1 pb-2 border-b border-slate-100 dark:border-slate-800">
           <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">Đăng ký trở thành Giảng viên</h1>
-          <p class="text-sm text-slate-500">Cung cấp hồ sơ năng lực và chứng chỉ chuyên môn để được cấp quyền giảng dạy và quản trị khóa học.</p>
+          <p class="text-xs sm:text-sm text-slate-500">Chia sẻ kiến thức, kỹ năng thực chiến hoặc chuyên môn ngành ngách của bạn tới học viên trên nền tảng PWD301.</p>
         </div>
 
-        <form id="become-instructor-form" class="space-y-4 pt-2">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form id="become-instructor-form" class="space-y-6 pt-2 max-w-2xl" enctype="multipart/form-data">
+          
+          <!-- Section 1: Personal Information -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              <span class="material-symbols-outlined text-[18px] text-primary">person</span>
+              <span>1. Thông tin cá nhân & Định danh</span>
+            </div>
+
+            <!-- Full Name -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Cơ sở giáo dục / Tổ chức công tác <span class="text-rose-500">*</span>
+                Họ và tên đầy đủ <span class="text-rose-500">*</span>
               </label>
               <input
                 type="text"
-                name="institution_name"
+                name="full_name"
                 required
-                placeholder="VD: Trường Đại học Bách Khoa TP.HCM"
+                placeholder="VD: Nguyễn Văn A"
                 class="c-input"
               />
             </div>
+
+            <!-- Date of Birth -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Chuyên môn giảng dạy <span class="text-rose-500">*</span>
+                Ngày sinh <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                name="date_of_birth"
+                required
+                class="c-input"
+              />
+            </div>
+
+            <!-- Phone Number -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Số điện thoại liên hệ <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="tel"
+                name="phone_number"
+                required
+                placeholder="VD: 0912345678"
+                class="c-input"
+              />
+            </div>
+
+            <!-- Contact Email -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Email liên hệ <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="email"
+                name="contact_email"
+                required
+                placeholder="VD: nguyen.vana@example.com"
+                class="c-input"
+              />
+            </div>
+
+            <!-- Citizen ID (CCCD) -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Số CCCD / CMND / Hộ chiếu <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="id_card_number"
+                required
+                placeholder="VD: 079123456789"
+                class="c-input"
+              />
+              <p class="text-[11px] text-slate-400">Dùng để xác minh danh tính và hợp đồng đào tạo / thù lao khi bạn bắt đầu giảng dạy.</p>
+            </div>
+          </div>
+
+          <!-- Section 2: Specialization & Teaching Background -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              <span class="material-symbols-outlined text-[18px] text-primary">school</span>
+              <span>2. Chuyên môn & Lĩnh vực đào tạo</span>
+            </div>
+
+            <!-- Specialization -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Chuyên môn / Lĩnh vực giảng dạy chính <span class="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 name="specialization"
                 required
-                placeholder="VD: Lập trình Web Full-stack & Hệ thống phân tán"
+                placeholder="VD: Lập trình Next.js thực chiến, UI/UX Design Figma, SEO ngách, Cybersecurity..."
                 class="c-input"
               />
             </div>
-          </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Statement of Purpose / Bio -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Số năm kinh nghiệm
+                Giới thiệu bản thân & Định hướng giảng dạy <span class="text-rose-500">*</span>
               </label>
-              <input
-                type="number"
-                name="experience_years"
-                min="0"
-                max="50"
-                value="3"
-                class="c-input"
-              />
+              <textarea
+                name="statement"
+                rows="4"
+                required
+                placeholder="Tóm tắt ngắn về kinh nghiệm thực tế, các dự án nổi bật bạn từng tham gia và nội dung kiến thức bạn dự định chia sẻ tới học viên..."
+                class="c-input resize-none"
+              ></textarea>
             </div>
-            <div class="md:col-span-2 space-y-1.5">
+
+            <!-- Portfolio / GitHub / Website URL -->
+            <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Đường dẫn Hồ sơ / Bằng cấp chứng chỉ (Drive / Cloud URL) <span class="text-rose-500">*</span>
+                Đường dẫn Portfolio / GitHub / Website / Kênh chia sẻ (Tùy chọn)
               </label>
               <input
                 type="url"
-                name="certificate_url"
-                required
-                placeholder="https://drive.google.com/drive/folders/..."
+                name="portfolio_url"
+                placeholder="https://github.com/... hoặc https://behance.net/... hoặc https://myportfolio.dev"
+                class="c-input"
+              />
+            </div>
+
+            <!-- Institution Name (Optional) -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Đơn vị công tác / Trường học / Tổ chức (Tùy chọn)
+              </label>
+              <input
+                type="text"
+                name="institution_name"
+                placeholder="VD: Freelance / Độc lập, hoặc Trường ĐH / Công ty công nghệ (để trống nếu làm tự do)"
                 class="c-input"
               />
             </div>
           </div>
 
-          <div class="space-y-1.5">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-              Thư ngỏ / Định hướng giảng dạy (Statement of Purpose) <span class="text-rose-500">*</span>
-            </label>
-            <textarea
-              name="statement"
-              rows="4"
-              required
-              placeholder="Trình bày lý do, mục tiêu học thuật và môn học bạn dự định xây dựng giáo trình..."
-              class="c-input resize-none"
-            ></textarea>
+          <!-- Section 3: Evidence & Verification Uploads -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              <span class="material-symbols-outlined text-[18px] text-primary">upload_file</span>
+              <span>3. Hồ sơ năng lực & Minh chứng</span>
+            </div>
+            <p class="text-xs text-slate-500">
+              Tải lên hồ sơ để Quản trị viên đối soát năng lực. Hỗ trợ tệp PDF, Word (DOCX) hoặc hình ảnh (PNG, JPG), tối đa 50MB/file.
+            </p>
+
+            <!-- CV / Portfolio File (Required) -->
+            <div class="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-2">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                <span class="flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-primary">description</span>
+                  <span>Tệp CV hoặc Portfolio tóm tắt năng lực <span class="text-rose-500">*</span></span>
+                </span>
+                <span class="text-[10px] uppercase font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">Bắt buộc</span>
+              </label>
+              <input
+                type="file"
+                name="cv_file"
+                id="cv_file_input"
+                required
+                accept=".pdf,.docx,.png,.jpg,.jpeg"
+                class="c-input text-xs"
+              />
+              <p class="text-[11px] text-slate-500">Đính kèm bản CV, Resume hoặc Portfolio PDF thể hiện kỹ năng, dự án thực tế hoặc kinh nghiệm của bạn.</p>
+            </div>
+
+            <!-- Additional Evidence Files (Optional) -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] text-indigo-600">folder_open</span>
+                <span>Chứng chỉ, bằng cấp hoặc minh chứng năng lực bổ sung (Tùy chọn)</span>
+              </label>
+              <input
+                type="file"
+                name="evidence_files"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx"
+                class="c-input text-xs"
+              />
+            </div>
           </div>
 
-          <div class="pt-2 flex justify-end">
+          <!-- Submit Button -->
+          <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
             <button
               type="submit"
               id="submit-nomination-btn"
-              class="c-btn c-btn-primary c-btn-md flex items-center gap-1.5"
+              class="c-btn c-btn-primary c-btn-md flex items-center gap-1.5 shadow-sm"
             >
               <span>Gửi hồ sơ xét duyệt</span>
               <span class="material-symbols-outlined text-[16px]">send</span>
@@ -3428,22 +3761,30 @@ class StudentView {
         const form = e.target;
         const btn = document.getElementById('submit-nomination-btn');
 
-        btn.disabled = true;
-        btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang gửi hồ sơ...';
+        const cvInput = document.getElementById('cv_file_input');
+        if (!cvInput || !cvInput.files || cvInput.files.length === 0) {
+          UI.showToast('Vui lòng tải lên tệp CV hoặc Portfolio để hoàn tất đăng ký.', 'warning');
+          return;
+        }
 
-        const payload = {
-          institution_name: form.institution_name.value.trim(),
-          specialization: form.specialization.value.trim(),
-          experience_years: parseInt(form.experience_years.value || '0', 10),
-          teaching_experience: `${form.specialization.value.trim()} tại ${form.institution_name.value.trim()}`,
-          certificate_url: form.certificate_url.value.trim(),
-          evidence_urls: form.certificate_url.value.trim(),
-          statement: form.statement.value.trim(),
-          statement_of_purpose: form.statement.value.trim()
-        };
+        btn.disabled = true;
+        btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang tải lên và gửi hồ sơ...';
+
+        const formData = new FormData(form);
+
+        const specialization = (form.specialization?.value || '').trim();
+        const rawInstitution = (form.institution_name?.value || '').trim();
+        const institution = rawInstitution || 'Hoạt động tự do / Độc lập';
+        formData.set('institution_name', institution);
+        formData.set('teaching_experience', `${specialization} - ${institution}`);
+        formData.set('statement_of_purpose', (form.statement?.value || '').trim());
+        if (form.portfolio_url?.value) {
+          formData.set('evidence_urls', form.portfolio_url.value.trim());
+          formData.set('portfolio_url', form.portfolio_url.value.trim());
+        }
 
         try {
-          await ApiClient.submitInstructorApplication(payload);
+          await ApiClient.submitInstructorApplication(formData);
           UI.showToast('Hồ sơ ứng tuyển đã được gửi thành công đến Quản trị viên.', 'success');
           StudentView.renderBecomeInstructor(container);
         } catch (err) {

@@ -53,9 +53,12 @@ class ApiClient {
       'Accept': 'application/json',
     };
 
-    if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+    let processedBody = options.body;
+    if (processedBody && !(processedBody instanceof FormData)) {
+      if (typeof processedBody === 'object') {
+        processedBody = JSON.stringify(processedBody);
+      }
       defaultHeaders['Content-Type'] = 'application/json';
-      options.body = JSON.stringify(options.body);
     }
 
     const method = (options.method || 'GET').toUpperCase();
@@ -70,6 +73,7 @@ class ApiClient {
     const finalOptions = {
       credentials: 'same-origin',
       ...options,
+      body: processedBody,
       headers: {
         ...defaultHeaders,
         ...(options.headers || {}),
@@ -111,6 +115,11 @@ class ApiClient {
   static async getCurrentUser() {
     try {
       const res = await ApiClient.request('/auth/login', { method: 'GET' });
+      if (res && res.csrf_token) {
+        ApiClient._cachedCsrf = res.csrf_token;
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag) metaTag.setAttribute('content', res.csrf_token);
+      }
       if (res && res.status === 'authenticated') {
         return res.user;
       }
@@ -145,6 +154,10 @@ class ApiClient {
       console.warn('Logout warning:', e);
     }
     ApiClient._cachedCsrf = null;
+    document.cookie = 'csrf_token=; Max-Age=0; path=/;';
+    document.cookie = 'pwd301_csrf=; Max-Age=0; path=/;';
+    const metaTag = document.querySelector('meta[name="csrf-token"]');
+    if (metaTag) metaTag.removeAttribute('content');
     const router = window.app || window.appRouter;
     if (router) {
       router.currentUser = null;
@@ -270,6 +283,24 @@ class ApiClient {
 
   static async getAttemptResult(attemptId) {
     return await ApiClient.request(`/student/attempt/${attemptId}/result`);
+  }
+
+  static async submitAttemptAppeal(attemptId, payload) {
+    return await ApiClient.request(`/student/attempts/${attemptId}/appeal`, {
+      method: 'POST',
+      body: payload
+    });
+  }
+
+  static async getAttemptAppeal(attemptId) {
+    return await ApiClient.request(`/student/attempts/${attemptId}/appeal`);
+  }
+
+  static async reviewAttemptAppeal(attemptId, payload) {
+    return await ApiClient.request(`/instructor/attempts/${attemptId}/appeal/review`, {
+      method: 'POST',
+      body: payload
+    });
   }
 
   static async sendAIChat(message, conversationId = null, courseId = null) {
@@ -920,6 +951,15 @@ class ApiClient {
     }
     const list = await ApiClient.getNotifications();
     return list.unread_count ?? (list.items || []).filter(i => !i.is_read && !i.read).length;
+  }
+
+  static async parseExamFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return await ApiClient.request('/instructor/exams/parse-file', {
+      method: 'POST',
+      body: formData
+    });
   }
 }
 

@@ -1194,14 +1194,64 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             payload_data = {}
 
         target_title = None
+        original_data: dict[str, Any] = {}
         if r.target_type == "LESSON" and r.target_id:
             les = db.session.get(Lesson, r.target_id)
             if les:
                 target_title = les.title
+                original_data = {
+                    "id": les.id,
+                    "title": les.title,
+                    "summary": les.summary or "",
+                    "markdown_content": les.markdown_content or "",
+                    "status": les.status,
+                    "estimated_duration_minutes": les.estimated_duration_minutes,
+                    "order_index": les.order_index,
+                }
         elif r.target_type == "PREREQUISITE" and r.target_id:
             c = db.session.get(Course, r.target_id)
             if c:
                 target_title = c.title
+                original_data = {
+                    "course_id": str(c.public_id),
+                    "course_code": c.course_code,
+                    "title": c.title,
+                    "description": c.description or "",
+                }
+        elif (r.target_type == "COURSE" or r.change_type in ("COURSE_METADATA", "COURSE_UPDATE", "COURSE_STATUS")) and (r.target_id or r.course_id):
+            cid = r.target_id or r.course_id
+            c = db.session.get(Course, cid)
+            if c:
+                target_title = c.title
+                original_data = {
+                    "course_id": str(c.public_id),
+                    "course_code": c.course_code,
+                    "title": c.title,
+                    "description": c.description or "",
+                    "category": getattr(c, "category", "") or "",
+                    "status": c.status,
+                }
+
+        if not target_title and r.course:
+            target_title = r.course.title
+
+        # Check for staged lesson associated with this change request
+        staged_lesson = (
+            db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
+        )
+        if staged_lesson:
+            if not payload_data.get("title") and staged_lesson.title:
+                payload_data["title"] = staged_lesson.title
+            if not payload_data.get("summary") and staged_lesson.summary:
+                payload_data["summary"] = staged_lesson.summary
+            if not payload_data.get("markdown_content") and staged_lesson.markdown_content:
+                payload_data["markdown_content"] = staged_lesson.markdown_content
+            if (
+                not payload_data.get("estimated_duration_minutes")
+                and staged_lesson.estimated_duration_minutes
+            ):
+                dur = staged_lesson.estimated_duration_minutes
+                payload_data["estimated_duration_minutes"] = dur
 
         results.append(
             {
@@ -1215,6 +1265,7 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 "target_type": r.target_type,
                 "target_id": r.target_id,
                 "target_title": target_title,
+                "original_data": original_data,
                 "proposed_payload": payload_data,
                 "status": r.status,
                 "review_reason": r.review_reason,

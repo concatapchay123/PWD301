@@ -801,7 +801,9 @@ def send_chat_message(
     reply_text: str
 
     try:
-        reply_text = client.chat_response(messages=history, context=context_str)
+        reply_text = client.chat_response(
+            messages=history, context=context_str, skip_scope_check=True
+        )
     except Exception as exc:
         latency_ms = int((time.time() - t_start) * 1000)
         telemetry_error = type(exc).__name__

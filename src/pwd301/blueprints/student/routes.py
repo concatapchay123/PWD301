@@ -192,6 +192,12 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
     import json
 
     video_url = None
+    if les.markdown_content:
+        import re
+        m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", les.markdown_content)
+        if m:
+            video_url = m.group(1)
+
     res_list = []
     if hasattr(les, "resources") and les.resources:
         for r in les.resources:
@@ -204,10 +210,11 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                 res_list.append(ser_r)
                 mime = (r.file_asset.mime_type or "").lower()
                 name = (r.file_asset.original_filename or "").lower()
+                vid_exts = (".mp4", ".webm", ".mkv", ".mov")
                 if (
                     not video_url
                     and r.file_asset.virus_scan_status == "CLEAN"
-                    and (mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv")))
+                    and (mime.startswith("video/") or name.endswith(vid_exts))
                 ):
                     video_url = (
                         f"/student/files/{r.file_asset.public_id}/download?disposition=inline"
@@ -1450,7 +1457,18 @@ def submit_become_instructor() -> Any:
 
     # Xử lý các tệp tin minh chứng đính kèm nếu có
     attached_files = []
-    if "evidence_files" in request.files:
+    evidence_field_specs = [
+        ("cv_file", "CV_PORTFOLIO"),
+        ("portfolio_file", "CV_PORTFOLIO"),
+        ("evidence_files", "EVIDENCE"),
+        ("sheer_id_file", "SHEER_ID"),
+        ("schedule_file", "SCHEDULE"),
+        ("salary_file", "SALARY"),
+        ("contract_file", "CONTRACT"),
+    ]
+
+    has_files = any(field_name in request.files for field_name, _ in evidence_field_specs)
+    if has_files:
         import hashlib
         import shutil
 
@@ -1459,7 +1477,6 @@ def submit_become_instructor() -> Any:
         from pwd301.services.file_service import LimitingStream, get_file_quarantine_root
         from pwd301.services.scanner_service import scan_file_all_engines
 
-        files = request.files.getlist("evidence_files")
         allowed_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
         storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
         # ADR-02: Use actor.public_id instead of internal BigInt actor.id
@@ -1469,72 +1486,77 @@ def submit_become_instructor() -> Any:
         quarantine_root = get_file_quarantine_root()
         max_evidence_bytes = 50_000_000  # Enforce 50 MB ceiling (SEC-02 DoS prevention)
 
-        for f in files:
-            if not f or not f.filename or not f.filename.strip():
+        for field_name, doc_type in evidence_field_specs:
+            if field_name not in request.files:
                 continue
-            clean_original_name = sanitize_filename(f.filename)
-            ext = Path(clean_original_name).suffix.lower()
-            if ext not in allowed_extensions:
-                msg = (
-                    f"Định dạng tệp '{clean_original_name}' không được hỗ trợ. "
-                    "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel (.docx, .xlsx)."
+            files = request.files.getlist(field_name)
+            for f in files:
+                if not f or not f.filename or not f.filename.strip():
+                    continue
+                clean_original_name = sanitize_filename(f.filename)
+                ext = Path(clean_original_name).suffix.lower()
+                if ext not in allowed_extensions:
+                    msg = (
+                        f"Định dạng tệp '{clean_original_name}' không được hỗ trợ. "
+                        "Vui lòng tải file PDF, hình ảnh (PNG, JPG) hoặc Word/Excel (.docx, .xlsx)."
+                    )
+                    return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": msg}}), 400
+
+                temp_filename = f"evidence_{uuid.uuid4().hex}.tmp"
+                temp_path = quarantine_root / temp_filename
+                hasher = hashlib.sha256()
+                total_size = 0
+                stream_reader = LimitingStream(f.stream, max_bytes=max_evidence_bytes)
+
+                try:
+                    with open(temp_path, "wb") as f_out:
+                        while True:
+                            chunk = stream_reader.read(64 * 1024)
+                            if not chunk:
+                                break
+                            total_size += len(chunk)
+                            hasher.update(chunk)
+                            f_out.write(chunk)
+                except Exception as read_err:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = f"Lỗi đọc tệp '{clean_original_name}': {str(read_err)}"
+                    return jsonify({"error": {"code": "FILE_UPLOAD_ERROR", "message": msg}}), 400
+
+                if total_size <= 0:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    continue
+
+                # Multi-engine malware scanning (SEC-02 ClamAV scan)
+                scan_verdicts = scan_file_all_engines(temp_path)
+                is_clean = all(v.status == "PASS" for v in scan_verdicts)
+                if not is_clean:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = f"Tệp tin '{clean_original_name}' bị nghi ngờ chứa mã độc và đã bị từ chối."
+                    return jsonify({"error": {"code": "FILE_INFECTED", "message": msg}}), 400
+
+                safe_stem = secure_filename(Path(clean_original_name).stem) or "evidence"
+                saved_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
+                dest_path = user_storage / saved_filename
+
+                try:
+                    shutil.move(str(temp_path), str(dest_path))
+                except Exception:
+                    shutil.copy2(str(temp_path), str(dest_path))
+                    temp_path.unlink(missing_ok=True)
+
+                attached_files.append(
+                    {
+                        "original_name": clean_original_name,
+                        "saved_filename": saved_filename,
+                        "doc_type": doc_type,
+                        "size": total_size,
+                        "sha256": hasher.hexdigest(),
+                        "virus_scan_status": "CLEAN",
+                    }
                 )
-                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": msg}}), 400
-
-            temp_filename = f"evidence_{uuid.uuid4().hex}.tmp"
-            temp_path = quarantine_root / temp_filename
-            hasher = hashlib.sha256()
-            total_size = 0
-            stream_reader = LimitingStream(f.stream, max_bytes=max_evidence_bytes)
-
-            try:
-                with open(temp_path, "wb") as f_out:
-                    while True:
-                        chunk = stream_reader.read(64 * 1024)
-                        if not chunk:
-                            break
-                        total_size += len(chunk)
-                        hasher.update(chunk)
-                        f_out.write(chunk)
-            except Exception as read_err:
-                if temp_path.exists():
-                    temp_path.unlink(missing_ok=True)
-                msg = f"Lỗi đọc tệp '{clean_original_name}': {str(read_err)}"
-                return jsonify({"error": {"code": "FILE_UPLOAD_ERROR", "message": msg}}), 400
-
-            if total_size <= 0:
-                if temp_path.exists():
-                    temp_path.unlink(missing_ok=True)
-                continue
-
-            # Multi-engine malware scanning (SEC-02 ClamAV scan)
-            scan_verdicts = scan_file_all_engines(temp_path)
-            is_clean = all(v.status == "PASS" for v in scan_verdicts)
-            if not is_clean:
-                if temp_path.exists():
-                    temp_path.unlink(missing_ok=True)
-                msg = f"Tệp tin '{clean_original_name}' bị nghi ngờ chứa mã độc và đã bị từ chối."
-                return jsonify({"error": {"code": "FILE_INFECTED", "message": msg}}), 400
-
-            safe_stem = secure_filename(Path(clean_original_name).stem) or "evidence"
-            saved_filename = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
-            dest_path = user_storage / saved_filename
-
-            try:
-                shutil.move(str(temp_path), str(dest_path))
-            except Exception:
-                shutil.copy2(str(temp_path), str(dest_path))
-                temp_path.unlink(missing_ok=True)
-
-            attached_files.append(
-                {
-                    "original_name": clean_original_name,
-                    "saved_filename": saved_filename,
-                    "size": total_size,
-                    "sha256": hasher.hexdigest(),
-                    "virus_scan_status": "CLEAN",
-                }
-            )
 
     if attached_files:
         payload["attached_files"] = attached_files
@@ -1554,8 +1576,12 @@ def submit_become_instructor() -> Any:
         payload["specialization"] = str(payload.get("teaching_experience", "Công nghệ thông tin"))
     if "statement_of_purpose" not in payload and "statement" in payload:
         payload["statement_of_purpose"] = payload.get("statement", "")
+    if "statement_of_purpose" not in payload and "bio" in payload:
+        payload["statement_of_purpose"] = payload.get("bio", "")
     if "evidence_urls" not in payload and "certificate_url" in payload:
         payload["evidence_urls"] = payload.get("certificate_url", "")
+    if "evidence_urls" not in payload and "portfolio_url" in payload:
+        payload["evidence_urls"] = payload.get("portfolio_url", "")
 
     try:
         app_record = submit_instructor_application(
@@ -1577,6 +1603,107 @@ def submit_become_instructor() -> Any:
         ),
         201,
     )
+
+
+@student_bp.route("/attempts/<attempt_id>/appeal", methods=["POST"])
+@student_required
+def submit_attempt_appeal_route(attempt_id: str) -> Any:
+    """Submit an appeal / regrading request for a completed attempt."""
+    import json
+
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.models.types import utc_now
+    from pwd301.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    if attempt.student_user_id != actor.id:
+        return jsonify({"error": {"code": "FORBIDDEN", "message": "Bạn không có quyền khiếu nại bài thi này."}}), 403
+
+    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload = payload or {}
+    reason = str(payload.get("reason", "Yêu cầu phúc khảo bài thi")).strip()
+    note = str(payload.get("note", "")).strip()
+
+    now = utc_now()
+    appeal_details = {
+        "reason": reason,
+        "note": note,
+        "status": "PENDING",
+        "created_at": now.isoformat(),
+    }
+
+    audit_entry = AuditEvent(
+        actor_user_id=actor.id,
+        actor_roles_snapshot="STUDENT",
+        action="STUDENT_ATTEMPT_APPEAL",
+        target_type="ASSESSMENT_ATTEMPT",
+        target_id=attempt.id,
+        reason=f"Học viên gửi đơn phúc khảo bài thi: {reason}"[:1000],
+        after_json=json.dumps(appeal_details, ensure_ascii=False),
+        created_at=now,
+    )
+    db.session.add(audit_entry)
+    db.session.commit()
+
+    return (
+        jsonify(
+            {
+                "message": "Đơn phúc khảo đã được gửi thành công đến Hội đồng Khảo thí.",
+                "appeal": appeal_details,
+            }
+        ),
+        201,
+    )
+
+
+@student_bp.route("/attempts/<attempt_id>/appeal", methods=["GET"])
+@student_required
+def get_attempt_appeal_route(attempt_id: str) -> Any:
+    """Retrieve current appeal status for an attempt."""
+    import json
+
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.attempt_service import _resolve_attempt
+
+    actor = require_authenticated_actor()
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is None:
+        raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    if attempt.student_user_id != actor.id and not actor.is_instructor and not actor.is_admin:
+        return jsonify({"error": {"code": "FORBIDDEN", "message": "Không có quyền truy cập."}}), 403
+
+    event = (
+        db.session.query(AuditEvent)
+        .filter(
+            AuditEvent.target_type == "ASSESSMENT_ATTEMPT",
+            AuditEvent.target_id == attempt.id,
+            AuditEvent.action.in_(["STUDENT_ATTEMPT_APPEAL", "INSTRUCTOR_APPEAL_DECISION"]),
+        )
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+
+    if not event or not event.after_json:
+        return jsonify({"appeal": None}), 200
+
+    try:
+        data = json.loads(event.after_json)
+    except Exception:
+        data = {}
+
+    appeal_info = {
+        "status": data.get("status", "PENDING"),
+        "reason": data.get("reason", event.reason),
+        "note": data.get("note", ""),
+        "created_at": data.get("created_at") or event.created_at.isoformat(),
+        "reviewed_at": data.get("reviewed_at"),
+        "reviewer_note": data.get("reviewer_note"),
+        "score_delta": data.get("score_delta"),
+    }
+    return jsonify({"appeal": appeal_info}), 200
 
 
 @student_bp.route("/become-instructor/cancel", methods=["POST"])
