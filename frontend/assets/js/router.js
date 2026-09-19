@@ -336,7 +336,6 @@ class AppRouter {
     if (role === 'ADMIN') {
       menu = [
         { label: 'Bàn điều hành', path: '#/admin/governance', icon: 'admin_panel_settings' },
-        { label: 'Người dùng', path: '#/admin/governance?tab=users', icon: 'manage_accounts' },
         { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'rule' },
         { label: 'Hồ sơ giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge' },
         { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring' },
@@ -359,13 +358,16 @@ class AppRouter {
 
     // 1. Populate Desktop Topbar Navigation Items (Warm Editorial Pill Tabs)
     const topNav = document.getElementById('topbar-navigation-items');
+    const currentFullHash = window.location.hash || '#/';
     if (topNav) {
       topNav.innerHTML = menu.map(m => {
-        const isPathActive = path === m.path || (m.path.includes('?') && window.location.hash.startsWith(m.path));
+        const isPathActive = m.path.includes('?')
+          ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
+          : (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path)));
         return `
           <a
             href="${m.path}"
-            class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+            class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
               isPathActive
                 ? 'bg-[#FFFFFF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
@@ -382,7 +384,9 @@ class AppRouter {
     const mobileNav = document.getElementById('mobile-navigation-items');
     if (mobileNav) {
       mobileNav.innerHTML = menu.map(m => {
-        const isPathActive = path === m.path || (m.path.includes('?') && window.location.hash.startsWith(m.path));
+        const isPathActive = m.path.includes('?')
+          ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
+          : (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path)));
         return `
           <a
             href="${m.path}"
@@ -435,12 +439,23 @@ class AppRouter {
     const roleName = this.currentRole === 'ADMIN' ? 'QUẢN TRỊ VIÊN' : this.currentRole === 'INSTRUCTOR' ? 'GIẢNG VIÊN' : 'HỌC VIÊN';
     if (roleBadge) {
       roleBadge.textContent = roleName;
-      roleBadge.className = `px-1.5 py-0.2 rounded text-[8px] font-bold uppercase tracking-wider border ${
+      roleBadge.className = `px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border leading-none ${
         this.currentRole === 'ADMIN'
           ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300'
           : this.currentRole === 'INSTRUCTOR'
           ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
           : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+      }`;
+    }
+
+    if (avatarInitials) {
+      avatarInitials.textContent = initials || 'US';
+      avatarInitials.className = `w-7 h-7 rounded-full font-bold flex items-center justify-center text-[11px] shadow-xs transition-all border ${
+        this.currentRole === 'ADMIN'
+          ? 'bg-rose-900 text-rose-100 border-rose-400/50'
+          : this.currentRole === 'INSTRUCTOR'
+          ? 'bg-blue-900 text-blue-100 border-blue-400/50'
+          : 'bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border-[#E8E6DF] dark:border-[#3E3D3A]'
       }`;
     }
 
@@ -562,15 +577,20 @@ class AppRouter {
     // Setup Avatar Dropdown Toggle
     const avatarBtn = document.getElementById('topbar-avatar-btn');
     const dropdown = document.getElementById('topbar-role-dropdown');
+    const chevron = document.getElementById('topbar-avatar-chevron');
     if (avatarBtn && dropdown) {
       avatarBtn.onclick = (e) => {
         e.stopPropagation();
         this.closeNotificationsDropdown();
-        dropdown.classList.toggle('hidden');
+        const isHidden = dropdown.classList.toggle('hidden');
+        if (chevron) {
+          chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
       };
       document.addEventListener('click', (e) => {
-        if (!dropdown.contains(e.target) && e.target !== avatarBtn) {
+        if (!dropdown.contains(e.target) && !avatarBtn.contains(e.target)) {
           dropdown.classList.add('hidden');
+          if (chevron) chevron.style.transform = 'rotate(0deg)';
         }
       });
     }

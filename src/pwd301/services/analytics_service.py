@@ -742,14 +742,49 @@ def get_student_learning_overview(
             .all()
         )
         for a in assessments:
-            active_attempt = (
+            student_attempts = (
                 sess.query(AssessmentAttempt)
                 .filter(
                     AssessmentAttempt.assessment_id == a.id,
                     AssessmentAttempt.student_user_id == actor.id,
-                    AssessmentAttempt.status == "IN_PROGRESS",
+                    AssessmentAttempt.status != "CANCELLED",
                 )
-                .first()
+                .all()
+            )
+            attempts_count = len(student_attempts)
+            is_limit_reached = bool(
+                a.attempt_limit is not None
+                and a.attempt_limit > 0
+                and attempts_count >= a.attempt_limit
+            )
+            # If student exhausted all allowed attempts, exclude from urgent to-do
+            if is_limit_reached:
+                continue
+
+            # If student already passed an attempt with released score, exclude from urgent to-do
+            has_released_pass = False
+            for att in student_attempts:
+                if att.result and att.result.passed is True:
+                    policy = a.score_release_policy
+                    close_utc = _ensure_utc(a.close_at)
+                    now_utc = _ensure_utc(now)
+                    after_close_released = bool(
+                        policy == "AFTER_CLOSE" and close_utc and now_utc and now_utc >= close_utc
+                    )
+                    immediate_released = bool(
+                        policy == "IMMEDIATE" and att.result.status in ("FINAL", "RELEASED")
+                    )
+                    instructor_released = bool(
+                        policy == "INSTRUCTOR_RELEASE" and att.result.status == "RELEASED"
+                    )
+                    if immediate_released or after_close_released or instructor_released:
+                        has_released_pass = True
+
+            if has_released_pass:
+                continue
+
+            active_attempt = next(
+                (att for att in student_attempts if att.status == "IN_PROGRESS"), None
             )
             attempt_id = str(active_attempt.public_id) if active_attempt else None
             upcoming_assessments_data.append(
@@ -764,6 +799,13 @@ def get_student_learning_overview(
                     "open_at": a.open_at.isoformat() if a.open_at else None,
                     "close_at": a.close_at.isoformat() if a.close_at else None,
                     "time_limit_minutes": a.time_limit_minutes,
+                    "attempt_limit": a.attempt_limit,
+                    "attempts_count": attempts_count,
+                    "remaining_attempts": (
+                        max(0, a.attempt_limit - attempts_count)
+                        if (a.attempt_limit is not None and a.attempt_limit > 0)
+                        else None
+                    ),
                 }
             )
 

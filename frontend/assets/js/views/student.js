@@ -28,9 +28,9 @@ class StudentView {
     container.innerHTML = `
       <div class="p-6 sm:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in font-sans">
         
-        <!-- 1. Header & Action Hub (Greeting, Subtitle, Single Primary CTA) -->
-        <div class="c-card p-6 sm:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm">
-          <div class="space-y-1.5 max-w-2xl">
+        <!-- 1. Header & Action Hub (Greeting, Subtitle) -->
+        <div class="c-card p-6 sm:p-7 shadow-sm">
+          <div class="space-y-1.5">
             <div class="flex items-center gap-2">
               <span class="text-xs font-bold uppercase tracking-wider text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">Học kỳ Hiện tại</span>
               <span class="text-xs text-slate-400 font-medium">Trang chủ Sinh viên</span>
@@ -41,18 +41,6 @@ class StudentView {
             <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed" id="student-welcome-sub">
               Bạn có bài kiểm tra sắp tới và các nội dung bài học đang tiếp diễn. Tiếp tục hành trình học tập ngay bên dưới.
             </p>
-          </div>
-
-          <!-- Single Primary CTA -->
-          <div class="shrink-0" id="dashboard-primary-cta-container">
-            <a
-              href="#/student/catalog"
-              id="dashboard-primary-cta-btn"
-              class="c-btn c-btn-primary c-btn-lg shadow-xs"
-            >
-              <span id="primary-cta-label">Khám phá Khóa học</span>
-              <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
-            </a>
           </div>
         </div>
 
@@ -377,8 +365,6 @@ class StudentView {
         const heroInstructor = document.getElementById('hero-instructor-label');
         const heroContinueBtn = document.getElementById('hero-continue-lesson-btn');
         const heroSyllabusBtn = document.getElementById('hero-view-syllabus-btn');
-        const primaryCtaBtn = document.getElementById('dashboard-primary-cta-btn');
-        const primaryCtaLabel = document.getElementById('primary-cta-label');
 
         const prog = Math.round(heroCourse.current_progress_percent || heroCourse.progress_percent || 0);
 
@@ -391,11 +377,6 @@ class StudentView {
 
         if (heroContinueBtn) heroContinueBtn.href = `#/student/courses/detail?id=${heroCourse.course_id}`;
         if (heroSyllabusBtn) heroSyllabusBtn.href = `#/student/courses/detail?id=${heroCourse.course_id}`;
-
-        if (primaryCtaBtn) {
-          primaryCtaBtn.href = `#/student/courses/detail?id=${heroCourse.course_id}`;
-          if (primaryCtaLabel) primaryCtaLabel.textContent = `Tiếp tục học: ${heroCourse.course_code || 'Khóa học'}`;
-        }
       }
 
       // Render Enrolled Courses Grid
@@ -1000,17 +981,28 @@ class StudentView {
                           <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
                           <span>Cần ghi danh</span>
                         </button>
-                      ` : (a.attempt_id ? `
-                        <a href="#/student/assessments/results?id=${a.attempt_id}" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1">
+                      ` : (a.is_attempt_limit_reached ? `
+                        <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1">
                           <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                          <span>Xem kết quả</span>
+                          <span>Xem kết quả (${a.attempts_count || 0}/${a.attempt_limit})</span>
                         </a>
+                      ` : (a.attempts_count > 0 ? `
+                        <div class="flex items-center gap-2">
+                          <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1" title="Xem kết quả lần trước">
+                            <span class="material-symbols-outlined text-[15px]">history</span>
+                            <span>Xem điểm</span>
+                          </a>
+                          <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[15px]">play_arrow</span>
+                            <span>Làm lần ${(a.attempts_count || 0) + 1}</span>
+                          </a>
+                        </div>
                       ` : `
                         <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1">
                           <span class="material-symbols-outlined text-[16px]">lock_open</span>
                           <span>Vào phòng chờ thi</span>
                         </a>
-                      `)}
+                      `))}
                     </div>
                   </div>
                 `).join('')}
@@ -1853,22 +1845,151 @@ class StudentView {
           : null);
       const isOpen = activeAttemptId || data.is_open || remainingSec <= 0;
 
+      const isLimitReached = !!data.is_attempt_limit_reached;
+      const attemptsCount = data.attempts_count || 0;
+      const attemptLimit = data.attempt_limit;
+      const remainingAttempts = data.remaining_attempts;
+      const attempts = data.attempts || [];
+      const latestAttemptId = data.latest_attempt_id || (attempts.length ? attempts[attempts.length - 1].attempt_id : null);
+
+      // =======================================================================
+      // CASE 1: Attempt Limit Reached (Exhausted all attempts)
+      // =======================================================================
+      if (isLimitReached) {
+        card.innerHTML = `
+          <div class="space-y-2">
+            <div class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-800">
+              <span class="material-symbols-outlined text-[16px]">task_alt</span>
+              <span>Đã hoàn thành toàn bộ lượt thi (${attemptsCount}/${attemptLimit})</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
+              ${UI.escapeHtml(assess.title || data.title || 'Bài kiểm tra')}
+            </h1>
+            <p class="text-xs sm:text-sm text-slate-500">
+              Môn học: <strong class="font-mono text-primary">${UI.escapeHtml(data.assessment?.course_code || 'CRS')}</strong> • Thời lượng: <strong>${assess.time_limit_minutes || assess.duration_minutes || 60} phút</strong>
+            </p>
+          </div>
+
+          <!-- Notice Banner -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-left space-y-2">
+            <div class="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span class="material-symbols-outlined text-amber-500 text-[18px]">info</span>
+              <span>Thông báo quy chế lượt thi</span>
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Bạn đã hoàn thành tối đa <strong>${attemptsCount}/${attemptLimit}</strong> lượt làm bài được phép cho kỳ khảo thí này. Hệ thống đã khóa phiên làm bài mới và lưu giữ vĩnh viễn dữ liệu điểm thi của bạn theo chính sách <em>${UI.escapeHtml(assess.scoring_policy || 'Điểm cao nhất')}</em>.
+            </p>
+          </div>
+
+          <!-- Attempts History List -->
+          <div class="space-y-3 text-left">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 px-1">
+              <span class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] text-primary">history</span>
+                Bảng điểm các lượt thi đã thực hiện (${attempts.length})
+              </span>
+              <span class="text-[11px] text-slate-400">Giờ máy chủ: ${UI.formatDateTime(data.server_now_iso)}</span>
+            </div>
+
+            <div class="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900">
+              ${attempts.length === 0 ? `
+                <div class="p-4 text-center text-xs text-slate-400">Chưa có dữ liệu lượt thi.</div>
+              ` : attempts.map((att, idx) => `
+                <div class="p-3.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                  <div class="space-y-0.5 min-w-0">
+                    <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
+                      <span>Lần ${att.attempt_number || idx + 1}</span>
+                      ${UI.statusBadge(att.status)}
+                      ${att.passed === true ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">Đạt</span>' : (att.passed === false ? '<span class="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded">Chưa đạt</span>' : '')}
+                    </div>
+                    <div class="text-[11px] text-slate-400 flex items-center gap-2">
+                      <span>Nộp bài: ${att.submitted_at ? UI.formatDateTime(att.submitted_at) : (att.started_at ? UI.formatDateTime(att.started_at) : '—')}</span>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-3 shrink-0">
+                    <div class="text-right">
+                      ${att.is_score_released && att.raw_score !== null ? `
+                        <span class="font-mono font-bold text-base text-primary">${att.raw_score}</span><span class="text-[11px] text-slate-400">/${att.max_score || 10}đ</span>
+                      ` : `
+                        <span class="text-[11px] text-slate-400 italic">Chờ công bố điểm</span>
+                      `}
+                    </div>
+                    <a href="#/student/assessments/results?id=${att.attempt_id}" class="c-btn c-btn-sm c-btn-secondary flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[15px]">fact_check</span>
+                      <span>Chi tiết</span>
+                    </a>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="pt-3 space-y-2.5">
+            ${latestAttemptId ? `
+              <a
+                href="#/student/assessments/results?id=${latestAttemptId}"
+                class="w-full c-btn c-btn-lg c-btn-primary justify-center gap-2 shadow-lg shadow-primary/20"
+              >
+                <span class="material-symbols-outlined text-[20px]">fact_check</span>
+                <span>Xem kết quả bài thi</span>
+              </a>
+            ` : ''}
+            <a
+              href="#/student/assessments"
+              class="w-full c-btn c-btn-lg c-btn-secondary justify-center gap-2"
+            >
+              <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+              <span>Quay lại danh mục khảo thí</span>
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      // =======================================================================
+      // CASE 2 & 3: Still have attempts or 0 attempts made
+      // =======================================================================
+      const nextAttemptNo = attemptsCount + 1;
+      const attemptBadgeText = attemptsCount > 0
+        ? `Lượt thi tiếp theo: Lần ${nextAttemptNo}/${attemptLimit || '∞'} • Còn ${remainingAttempts || 1} lượt`
+        : 'Phòng chờ Khảo thí Trực tuyến';
+
       card.innerHTML = `
         <div class="space-y-2">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-subtle text-primary text-xs font-bold">
             <span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-            Phòng chờ Khảo thí Trực tuyến
+            ${attemptBadgeText}
           </div>
           <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
             ${UI.escapeHtml(assess.title || data.title || 'Bài kiểm tra')}
           </h1>
-          <p class="text-xs sm:text-sm text-slate-500">Môn học: <strong class="font-mono text-primary">${UI.escapeHtml(data.assessment?.course_code || 'CRS')}</strong> • Thời lượng: <strong>${assess.time_limit_minutes || assess.duration_minutes || 60} phút</strong></p>
+          <p class="text-xs sm:text-sm text-slate-500">
+            Môn học: <strong class="font-mono text-primary">${UI.escapeHtml(data.assessment?.course_code || 'CRS')}</strong> • Thời lượng: <strong>${assess.time_limit_minutes || assess.duration_minutes || 60} phút</strong>
+          </p>
         </div>
+
+        ${attemptsCount > 0 ? `
+          <!-- Previous Attempts Summary Pill -->
+          <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-left">
+            <div class="space-y-0.5">
+              <span class="font-bold text-slate-800 dark:text-slate-200">Đã hoàn thành ${attemptsCount}/${attemptLimit || '∞'} lượt thi</span>
+              <div class="text-[11px] text-slate-500">Bạn còn <strong>${remainingAttempts}</strong> lượt thi có thể cải thiện điểm số.</div>
+            </div>
+            ${latestAttemptId ? `
+              <a href="#/student/assessments/results?id=${latestAttemptId}" class="c-btn c-btn-sm c-btn-secondary flex items-center gap-1 shrink-0">
+                <span class="material-symbols-outlined text-[14px]">history</span>
+                <span>Xem kết quả lần ${attemptsCount}</span>
+              </a>
+            ` : ''}
+          </div>
+        ` : ''}
 
         <!-- Countdown Timer Display -->
         <div class="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2">
           <div class="text-xs font-bold uppercase tracking-wider text-slate-500" id="countdown-label">
-            ${activeAttemptId ? 'Bài thi đang diễn ra • Bấm để tiếp tục làm bài' : (isOpen ? 'Bài thi đã mở • Sẵn sàng làm bài' : 'Thời gian đếm ngược đến giờ mở đề thi (UTC)')}
+            ${activeAttemptId ? 'Bài thi đang diễn ra • Bấm để tiếp tục làm bài' : (isOpen ? (attemptsCount > 0 ? `Sẵn sàng làm bài thi lần ${nextAttemptNo}` : 'Bài thi đã mở • Sẵn sàng làm bài') : 'Thời gian đếm ngược đến giờ mở đề thi (UTC)')}
           </div>
           <div class="text-5xl sm:text-6xl font-black font-mono tracking-tight text-primary tabular-nums" id="waiting-room-countdown">
             ${activeAttemptId ? 'ĐANG THI' : UI.formatDuration(remainingSec)}
@@ -1943,7 +2064,7 @@ class StudentView {
             ${activeAttemptId || isOpen ? '' : 'disabled'}
           >
             <span class="material-symbols-outlined text-[20px]">${activeAttemptId ? 'play_arrow' : (isOpen ? 'lock_open' : 'lock')}</span>
-            <span>${activeAttemptId ? 'Tiếp tục làm bài thi (Resume)' : (isOpen ? 'Bắt đầu làm bài thi' : 'Đang chờ mở khảo thí...')}</span>
+            <span>${activeAttemptId ? 'Tiếp tục làm bài thi (Resume)' : (isOpen ? (attemptsCount > 0 ? `BẮT ĐẦU LÀM BÀI THI LẦN ${nextAttemptNo}` : 'BẮT ĐẦU LÀM BÀI THI NGAY') : 'Đang chờ mở khảo thí...')}</span>
           </button>
         </div>
       `;
@@ -1995,7 +2116,7 @@ class StudentView {
           }
           UI.showToast(err.message || 'Không thể bắt đầu bài thi.', 'error');
           startBtn.disabled = false;
-          startBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">lock_open</span> <span>BẮT ĐẦU LÀM BÀI THI NGAY</span>';
+          startBtn.innerHTML = `<span class="material-symbols-outlined text-[20px]">lock_open</span> <span>${attemptsCount > 0 ? 'BẮT ĐẦU LÀM BÀI THI LẦN ' + nextAttemptNo : 'BẮT ĐẦU LÀM BÀI THI NGAY'}</span>`;
         }
       };
 
@@ -2013,11 +2134,11 @@ class StudentView {
             if (timerEl) timerEl.textContent = UI.formatDuration(remainingSec);
           } else {
             clearInterval(interval);
-            if (labelEl) labelEl.textContent = 'Bài thi đã mở • Sẵn sàng làm bài';
+            if (labelEl) labelEl.textContent = attemptsCount > 0 ? `Bài thi đã mở • Sẵn sàng làm bài thi lần ${nextAttemptNo}` : 'Bài thi đã mở • Sẵn sàng làm bài';
             if (startBtn) {
               startBtn.disabled = false;
               startBtn.className = 'w-full py-3.5 px-6 rounded-xl font-bold text-sm bg-primary hover:bg-primary-hover text-white shadow-lg shadow-primary/30 animate-pulse transition-all flex items-center justify-center gap-2';
-              startBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">lock_open</span> <span>BẮT ĐẦU LÀM BÀI THI NGAY</span>';
+              startBtn.innerHTML = `<span class="material-symbols-outlined text-[20px]">lock_open</span> <span>${attemptsCount > 0 ? 'BẮT ĐẦU LÀM BÀI THI LẦN ' + nextAttemptNo : 'BẮT ĐẦU LÀM BÀI THI NGAY'}</span>`;
               startBtn.onclick = handleStart;
             }
           }
@@ -3209,18 +3330,27 @@ class StudentView {
               <span>Điểm tối đa: <strong>${a.max_points || 10}đ</strong></span>
             </div>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
-            ${a.attempt_id ? `
-              <a href="#/student/assessments/results?id=${a.attempt_id}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1">
+          <div class="flex items-center gap-2 shrink-0">
+            ${a.is_attempt_limit_reached ? `
+              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1">
                 <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                <span>Xem kết quả</span>
+                <span>Xem kết quả (${a.attempts_count || 0}/${a.attempt_limit})</span>
+              </a>
+            ` : (a.attempts_count > 0 ? `
+              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1" title="Xem kết quả lần trước">
+                <span class="material-symbols-outlined text-[15px]">history</span>
+                <span>Điểm</span>
+              </a>
+              <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">play_arrow</span>
+                <span>Thi lần ${(a.attempts_count || 0) + 1}</span>
               </a>
             ` : `
               <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
                 <span class="material-symbols-outlined text-[16px]">lock_open</span>
                 <span>Vào phòng chờ</span>
               </a>
-            `}
+            `)}
           </div>
         </div>
       `).join('');

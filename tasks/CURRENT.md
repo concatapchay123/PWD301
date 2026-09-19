@@ -1,3 +1,38 @@
+# TASK-061 — Redesign Waiting Room & Attempt Limit Logic (Exhausted, Multi-attempt, and Dashboard Integration)
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-19  
+**Completed Date:** 2026-09-19  
+
+---
+
+## Goal & Resolution Summary
+Tái thiết kế toàn bộ logic của phòng chờ thi (`waiting-room`), danh sách khảo thí và dashboard học viên khi đã làm bài, hoàn thành hoặc hết lượt làm bài, triệt tiêu lỗi 400 `Attempt limit (3) reached for this enrollment period.` khi người dùng bấm vào phòng chờ:
+
+1. **Tái thiết kế Phòng chờ Khảo thí (`StudentView.renderWaitingRoom`)**:
+   - **Trạng thái Hết lượt (`is_attempt_limit_reached = True`)**: Chuyển đổi thành màn hình tổng kết khảo thí trang trọng với huy hiệu "Đã hoàn thành toàn bộ lượt thi (x/x)", loại bỏ hoàn toàn đồng hồ đếm ngược 0 phút và nút bắt đầu vô nghĩa. Hiển thị bảng lịch sử điểm số chi tiết từng lần thi (thời gian làm, điểm đạt/tối đa, trạng thái đạt/không đạt). Cung cấp 2 nút hành động: "Xem kết quả bài thi" (trỏ tới lần thi có điểm cao nhất/mới nhất) và "Quay lại danh mục khảo thí".
+   - **Trạng thái Còn lượt (`attempts_count > 0` và chưa hết lượt)**: Hiển thị badge "Lượt thi tiếp theo: Lần N/M • Còn K lượt", thanh tóm tắt kết quả lần trước kèm nút "Xem kết quả lần N-1", nút chính chuyển thành "BẮT ĐẦU LÀM BÀI THI LẦN N".
+   - **Trạng thái Chưa thi lần nào (`attempts_count == 0`)**: Duy trì phòng chờ tiêu chuẩn với đồng hồ đếm ngược UTC và quy chế khảo thí.
+
+2. **Làm giàu Backend API (`src/pwd301/blueprints/student/routes.py`)**:
+   - `GET /student/assessments/<id>`: Bổ sung metadata khảo thí chuẩn xác: `attempt_limit`, `attempts_count`, `remaining_attempts`, `is_attempt_limit_reached`, `can_start`, `attempts` (mảng lịch sử từng lần thi kèm điểm số tuân thủ chính sách `score_release_policy`), `latest_attempt_id`, `best_attempt_id`.
+   - `GET /student/assessments` & `GET /student/courses/<id>`: Bổ sung `attempts_count`, `remaining_attempts`, `is_attempt_limit_reached` đồng bộ trên toàn bộ danh sách bài thi.
+
+3. **Tối ưu Dashboard Học viên (`src/pwd301/services/analytics_service.py`)**:
+   - Hàm `get_student_learning_overview`: Loại bỏ các bài thi khỏi danh sách "Bài thi cần làm" / khẩn cấp nếu học viên đã hết lượt làm bài (`is_limit_reached = True`) hoặc đã có bài thi đạt chuẩn (`passed = True`) có điểm đã được công bố theo `score_release_policy`.
+
+4. **Đồng bộ Giao diện Danh sách Bài thi Khóa học (`StudentView.renderCourseDetail`)**:
+   - Tự động chuyển đổi nút hành động: Hiển thị "Xem kết quả (x/x lượt)" khi hết lượt; hiển thị "Thi lần N" kèm nút "Điểm" khi còn lượt thi.
+
+## Test Verification Summary
+- TDD Unit & API Test mới: `tests/api/test_waiting_room_and_attempt_limit_logic.py` (3/3 PASSED 100%).
+- Bộ test liên quan đến khảo thí học sinh: 13/13 PASSED 100% (`test_waiting_room_and_attempt_limit_logic.py`, `test_student_exam_backend_remediation.py`, `test_student_backend_completion.py`).
+- Cú pháp và linter: `node --check` PASSED 100%, `ruff check` PASSED 100% không lỗi.
+- Xác minh trực quan trên trình duyệt qua Chrome DevTools MCP: Giao diện phòng chờ khi hết lượt hiển thị bảng điểm, badge hoàn tất và nút chuyển trang chuẩn Impeccable Design System.
+
+---
+
 # TASK-060 — Fix Authentication Login Multi-Click & Stale CSRF False Credential Error
 
 **Status:** DONE  

@@ -397,13 +397,12 @@
   <div id="app-root" class="w-full h-full flex flex-col overflow-hidden">
     
     <!-- Modern Warm Editorial Top Navigation Bar -->
-    <header id="app-topbar" class="h-14 px-4 sm:px-6 bg-[#FAF9F5]/90 dark:bg-[#191919]/90 backdrop-blur-md border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 z-30 select-none">
+    <header id="app-topbar" class="relative h-14 px-4 sm:px-6 bg-[#FAF9F5]/90 dark:bg-[#191919]/90 backdrop-blur-md border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 z-30 select-none">
       
-      <!-- Left: Brand Logo & Desktop Navigation Pills -->
-      <div class="flex items-center gap-5 lg:gap-7">
-        <!-- Brand Logo -->
+      <!-- Left: Brand Logo -->
+      <div class="flex items-center shrink-0 z-10">
         <a href="#/" class="flex items-center gap-2.5 shrink-0 group">
-          <div class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-transparent dark:border-[#3E3D3A] flex items-center justify-center transition-transform group-hover:scale-105">
+          <div class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-transparent dark:border-[#3E3D3A] flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
             <span class="material-symbols-outlined text-[18px]">school</span>
           </div>
           <div>
@@ -411,17 +410,15 @@
             <span class="text-[10px] font-medium text-[#8F8E8A] dark:text-[#6D6C68] block mt-0.5">Khảo thí & Học tập</span>
           </div>
         </a>
-
-        <!-- Desktop Navigation Items (Rendered dynamically as Warm Editorial Pill Tabs) -->
-        <nav id="topbar-navigation-items" class="hidden md:flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
-          <!-- Populated dynamically based on role -->
-        </nav>
       </div>
 
-
+      <!-- Center: Desktop Navigation Items (Centered across full screen) -->
+      <nav id="topbar-navigation-items" class="hidden md:flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] absolute left-1/2 -translate-x-1/2 shadow-2xs z-10 max-w-[calc(100vw-360px)] overflow-x-auto no-scrollbar">
+        <!-- Populated dynamically based on role -->
+      </nav>
 
       <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-2 shrink-0 z-10">
         
         <!-- Notification Bell Button & Dropdown Popover -->
         <div class="relative" id="topbar-notifications-wrapper">
@@ -465,17 +462,21 @@
           <button
             type="button"
             id="topbar-avatar-btn"
-            class="flex items-center gap-2 p-1 pl-2.5 rounded-lg hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-all border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020]"
+            class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-[#D3D0C8] dark:hover:border-[#3E3D3A] transition-all shadow-2xs select-none"
+            title="Hồ sơ tài khoản & Chuyển góc nhìn"
           >
-            <div class="text-right hidden sm:block">
+            <div class="text-right hidden sm:block leading-none">
               <div id="topbar-user-name" class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] max-w-[110px] truncate leading-tight">Học viên</div>
-              <div class="mt-0.5">
-                <span id="topbar-role-badge" class="px-1.5 py-0.2 rounded text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
+              <div class="mt-0.5 flex items-center justify-end">
+                <span id="topbar-role-badge" class="px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
               </div>
             </div>
-            <div class="w-7 h-7 rounded-md bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-transparent dark:border-[#3E3D3A] font-bold flex items-center justify-center text-xs" id="topbar-avatar-initials">
-              SV
+            <div class="relative">
+              <div class="w-7 h-7 rounded-full bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#3E3D3A] font-bold flex items-center justify-center text-[11px] shadow-xs transition-transform group-hover:scale-105" id="topbar-avatar-initials">
+                SV
+              </div>
             </div>
+            <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] dark:text-[#6D6C68] group-hover:text-[#222120] dark:group-hover:text-[#EDEDEB] transition-transform duration-200" id="topbar-avatar-chevron">expand_more</span>
           </button>
 
           <!-- User Dropdown & Role Switcher Popover -->

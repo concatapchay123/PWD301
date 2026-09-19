@@ -115,30 +115,30 @@ class AdminView {
 
         </div>
 
-        <!-- 5-Tab Control Bar (Tách riêng Khóa học & Hồ sơ Giảng viên) -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-2 shadow-sm">
-          <div class="flex flex-wrap items-center gap-2" role="tablist">
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-users">
-              <span class="material-symbols-outlined text-[18px]">manage_accounts</span>
-              <span>1. Quản trị Người dùng & Phân quyền RBAC</span>
+        <!-- 5-Tab Control Bar (5 phím thẳng hàng cùng nhau trên 1 hàng duy nhất) -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-sm overflow-x-auto no-scrollbar">
+          <div class="grid grid-cols-5 gap-1.5 min-w-[760px] lg:min-w-0" role="tablist">
+            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-users" title="Quản trị Người dùng & Phân quyền RBAC">
+              <span class="material-symbols-outlined text-[18px] shrink-0">manage_accounts</span>
+              <span class="truncate">Người dùng & Phân quyền</span>
             </button>
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-courses-review">
-              <span class="material-symbols-outlined text-[18px]">fact_check</span>
-              <span>2. Duyệt Khóa học & Bản sửa đổi</span>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden" id="tab-courses-badge">0 chờ</span>
+            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-courses-review" title="Duyệt Khóa học & Bản sửa đổi">
+              <span class="material-symbols-outlined text-[18px] shrink-0">fact_check</span>
+              <span class="truncate">Duyệt khóa học</span>
+              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden shrink-0" id="tab-courses-badge">0 chờ</span>
             </button>
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-instructor-apps">
-              <span class="material-symbols-outlined text-[18px]">badge</span>
-              <span>3. Hồ sơ Giảng viên</span>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden" id="tab-apps-badge">0 chờ</span>
+            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-instructor-apps" title="Hồ sơ & Đơn đăng ký Giảng viên">
+              <span class="material-symbols-outlined text-[18px] shrink-0">badge</span>
+              <span class="truncate">Duyệt giảng viên</span>
+              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden shrink-0" id="tab-apps-badge">0 chờ</span>
             </button>
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-reassign">
-              <span class="material-symbols-outlined text-[18px]">swap_horiz</span>
-              <span>4. Điều chuyển Phân công Giảng dạy</span>
+            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-reassign" title="Điều chuyển Phân công Giảng dạy">
+              <span class="material-symbols-outlined text-[18px] shrink-0">swap_horiz</span>
+              <span class="truncate">Phân công giảng dạy</span>
             </button>
-            <button type="button" class="admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" data-tab="tab-security">
-              <span class="material-symbols-outlined text-[18px]">policy</span>
-              <span>5. An toàn Học thuật & Nhật ký Kiểm toán</span>
+            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-security" title="An toàn Học thuật & Nhật ký Kiểm toán">
+              <span class="material-symbols-outlined text-[18px] shrink-0">policy</span>
+              <span class="truncate">An toàn & Kiểm toán</span>
             </button>
           </div>
         </div>
@@ -214,9 +214,9 @@ class AdminView {
     AdminView.switchTab = (tabKey, subQueue = null) => {
       tabs.forEach(t => {
         if (t.dataset.tab === tabKey) {
-          t.className = 'admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all bg-primary text-white shadow-sm';
+          t.className = 'admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-sm whitespace-nowrap';
         } else {
-          t.className = 'admin-tab-btn flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800';
+          t.className = 'admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap';
         }
       });
 
