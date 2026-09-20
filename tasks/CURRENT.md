@@ -1,3 +1,29 @@
+# TASK-065 — Formal MIT License Provisioning and Package Metadata Alignment
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Full-Stack Engineer  
+**Started Date:** 2026-09-20  
+**Completed Date:** 2026-09-20  
+
+---
+
+## Goal & Resolution Summary
+Bổ sung tệp giấy phép phần mềm MIT (`LICENSE`) chuẩn cho kho lưu trữ PWD301 và đồng bộ cấu hình metadata, khắc phục lỗi 404 khi truy cập liên kết giấy phép từ GitHub và README:
+
+1. **Khởi tạo tệp `LICENSE`**:
+   - Khởi tạo tệp `LICENSE` chuẩn quốc tế theo MIT License tại thư mục gốc repository.
+   - Ghi danh bản quyền chính thức theo quyết định phỏng vấn `/grill-me`: `Copyright (c) 2026 Phạm Nguyễn Hoàng Phúc (@concatapchay123)`.
+   - Bảo đảm tương thích 100% với liên kết giấy phép `[MIT License](LICENSE)` và badge MIT trên `README.md`.
+
+2. **Đồng bộ Metadata `pyproject.toml`**:
+   - Khai báo trường bản quyền chuẩn PEP 621: `license = { text = "MIT" }` trong `pyproject.toml`.
+
+## Test Verification Summary
+- **Repo Contract Check**: `python scripts/repo_check.py` PASSED 100%.
+- **Git Status / Presence Check**: Tệp `LICENSE` tồn tại tại thư mục gốc của repository.
+
+---
+
 # TASK-064 — Project Contributors and Comprehensive Topic 9 Academic Specifications
 
 **Status:** DONE  
