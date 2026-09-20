@@ -7,13 +7,13 @@
 ![MS SQL Server 2022](https://img.shields.io/badge/Database-MS%20SQL%20Server%202022-CC292B?logo=microsoftsqlserver&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/Container-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 ![ClamAV Antivirus](https://img.shields.io/badge/Security-ClamAV%20Fail--Closed-red)
-![Google Gemini AI](https://img.shields.io/badge/AI-Gemini%20Flash%20(93%20Keys%20Pool)-orange?logo=google&logoColor=white)
+![Google Gemini AI](https://img.shields.io/badge/AI-Gemini%20Flash%20(Multi--Key%20Pool)-orange?logo=google&logoColor=white)
 ![Tailwind Warm Editorial](https://img.shields.io/badge/Frontend-Warm%20Editorial%20SPA-38BDF8?logo=tailwindcss&logoColor=white)
 ![Test Coverage](https://img.shields.io/badge/Tests-535%2B%20PASSED%20100%25-brightgreen?logo=pytest&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 **Nền tảng Quản lý Khóa học & Khảo thí Trực tuyến Thông minh Đẳng cấp Doanh nghiệp**  
-*Kiến trúc Headless REST API Hiện đại • Single-DOM SPA Warm Editorial • Động cơ Khảo thí Server-Authoritative • Gia sư AI Tự phục hồi 93 Keys*
+*Kiến trúc Headless REST API Hiện đại • Single-DOM SPA Warm Editorial • Động cơ Khảo thí Server-Authoritative • Gia sư AI Tự phục hồi Đa khóa*
 
 [Khám phá Tính năng](#-h-sinh-thi-3-phn-h--nng-lc-nghip-v) • [Kiến trúc Kỹ thuật](#-kin-trc-h-thng-tng-th) • [Khởi chạy Nhanh](#-hng-dn-khi-to--vn-hnh-production) • [Ma trận Rubric](#-i-chiu-chun-hc-thut--ma-trn-rubric-topic-9) • [Tài liệu Chuyên sâu](#-tra-cu-ti-liu-k-thut-chuyn-su)
 
@@ -29,7 +29,7 @@
 - **Pure Headless Backend & Standardized API**: Python 3.11+ Flask application acting strictly as a headless API service. It emits standardized, machine-readable JSON envelopes (`success`, `data`, `meta`, `error`) and cleanly decouples business rules from client presentation.
 - **Single-DOM SPA (Warm Editorial / Notion Dark)**: High-performance Vanilla JavaScript Single-Page Application with hash-based routing, zero-bundle overhead, sub-100ms micro-loading, and an eye-friendly warm charcoal aesthetic.
 - **Server-Authoritative Assessment Engine**: 100% automated objective grading, Word (`.docx`) exam import studio with 50/50 split live-card parsing, strict single-active-tab lease heartbeat fencing (`lease_token`, `lease_epoch`), and immutable snapshot preservation.
-- **Resilient Multi-Key AI Ecosystem ("Bạch Tuộc AI")**: Integrated with Google Gemini Flash models via a thread-safe 93-key rotation pool, multi-model fallback cascades, zero-leak reconnaissance guardrails, and role-scoped RAG (Retrieval-Augmented Generation).
+- **Resilient Multi-Key AI Ecosystem ("Bạch Tuộc AI")**: Integrated with Google Gemini Flash models via a thread-safe multi-key rotation pool, multi-model fallback cascades, zero-leak reconnaissance guardrails, and role-scoped RAG (Retrieval-Augmented Generation).
 - **Enterprise Defense-in-Depth**: MS SQL Server 2022 normalized across 71 relational tables, RFC 4122 public UUIDs, `ROWVERSION` optimistic concurrency, ClamAV fail-closed malware quarantine, and a 4-step controlled live database restore workflow.
 
 ---
@@ -56,7 +56,7 @@ flowchart TD
     subgraph TierBackend ["  3. LÕI ỨNG DỤNG BACKEND (FLASK MODULAR MONOLITH)  "]
         SVC_LMS["📚 Phân hệ Học vụ\n(Course • Lesson • ABET SLOs)"]
         SVC_EXAM["📝 Động cơ Khảo thí\n(Exam Studio • Azota • Lease)"]
-        SVC_AI["🐙 Trợ lý AI Bạch Tuộc\n(93 Keys • Guardrails • RAG)"]
+        SVC_AI["🐙 Trợ lý AI Bạch Tuộc\n(Multi-Key Pool • Guardrails • RAG)"]
         SVC_OPS["⚙️ Vận hành & An ninh\n(Host Telemetry • Live Restore)"]
     end
 
@@ -65,7 +65,7 @@ flowchart TD
         STORE_FILE[("🛡️ An toàn Tệp & Lưu trữ\n(ClamAV Fail-Closed • Local Vault)")]
         STORE_DB[("🗄️ Microsoft SQL Server 2022\n(Lõi 71 Bảng • Public UUID • ROWVERSION)")]
         STORE_AI["☁️ Google Gemini Cloud API\n(gemini-flash-latest • Cascade)"]
-        STORE_HOST["💻 Host Telemetry Bridge\n(Physical CPU i9-14900HX • 31.7GB RAM)"]
+        STORE_HOST["💻 Host Telemetry Bridge\n(Physical Host CPU • RAM • Storage)"]
     end
 
     %% KẾT NỐI TẦNG 1 -> TẦNG 2
@@ -156,8 +156,8 @@ flowchart TD
   - Phê duyệt bản sửa đổi khóa học với **Modal So sánh Thay đổi Trực quan (Diff Side-by-Side)**: Tô màu làm nổi bật các trường thông tin thay đổi (Bản gốc vs Bản đề xuất), duyệt hoặc từ chối tức thì.
   - Xét duyệt hồ sơ đăng ký giảng viên và điều chuyển phân công giảng dạy an toàn.
 - **Trung tâm Vận hành & Giám sát Phần cứng Thật (Operations & Telemetry)**:
-  - Cầu nối Telemetry trực tiếp (`Host Telemetry Bridge`) đo lường chính xác tài nguyên máy chủ vật lý: **CPU Intel Core i9-14900HX 32 vCPU, RAM 31.7 GB, Dung lượng ổ cứng thật 551.6 GB**.
-  - Tách biệt rạch ròi giữa chỉ số máy chủ vật lý và tài nguyên ảo hóa cgroups của Docker container (0.38 GB RAM).
+  - Cầu nối Telemetry trực tiếp (`Host Telemetry Bridge`) đo lường chính xác tài nguyên máy chủ vật lý: **Tải vi xử lý CPU, Bộ nhớ RAM thực tế và Dung lượng phân vùng lưu trữ máy chủ Host**.
+  - Tách biệt rạch ròi giữa chỉ số phần cứng máy chủ vật lý Host và tài nguyên phân bổ ảo hóa cgroups của Docker container.
 - **Quy trình Khôi phục Cơ sở Dữ liệu Trực tiếp 4 Bước (Controlled Live Restore)**:
   - Kiểm tra dung lượng tệp sao lưu trước khi nạp.
   - Bắt buộc nhập cụm từ xác nhận bảo mật (`CONFIRM_LIVE_DATABASE_RESTORE`).
@@ -179,7 +179,7 @@ flowchart TD
 - **Bảo tồn Bằng chứng Lịch sử Bất biến**: Khi câu hỏi trong ngân hàng được chỉnh sửa sau khi thi, cấu trúc đề và câu trả lời của thí sinh được bảo vệ tuyệt đối qua `AttemptQuestion` và `AttemptChoiceSnapshot`. Worker chạy ngầm sẽ tái chấm điểm tự động (`idempotent regrading`) thông qua định danh phương án bền vững `choice_key`, không bao giờ ghi đè lịch sử bài làm gốc của sinh viên.
 
 ### 2. Cụm Trợ lý AI Bạch Tuộc — Resilient Multi-Key Rotation Pool
-- **Bể Chứa Khóa Tự Phục hồi Đa luồng (`GeminiKeyPool`)**: Nạp và điều phối tự động **93 API keys**. Tự động phát hiện và cô lập khóa bị lỗi (HTTP 401/403 chuyển `INVALID`, HTTP 429 chuyển `RATE_LIMITED` trong 60s, HTTP 503 chuyển `HIGH_DEMAND` trong 15s) và xoay tua liền mạch trong 0ms.
+- **Bể Chứa Khóa Tự Phục hồi Đa luồng (`GeminiKeyPool`)**: Nạp và điều phối tự động **bể chứa đa khóa API xoay vòng (Multi-Key Rotation Pool)**. Tự động phát hiện và cô lập khóa bị lỗi (HTTP 401/403 chuyển `INVALID`, HTTP 429 chuyển `RATE_LIMITED` trong 60s, HTTP 503 chuyển `HIGH_DEMAND` trong 15s) và xoay tua liền mạch trong 0ms.
 - **Chuỗi Mô hình Dự phòng Tức thời (Model Cascade)**:
   $$\text{gemini-flash-latest} \longrightarrow \text{gemini-3.6-flash} \longrightarrow \text{gemini-3.1-flash-lite}$$
 - **Hàng Rào An ninh 3 Tầng Chống Trinh sát Hệ thống (Top Secrets Guardrails)**:
@@ -427,7 +427,7 @@ Hệ thống hiện thực hóa đầy đủ 100% yêu cầu đề tài **Topic 
 | **Khảo thí Trắc nghiệm Khách quan** | Studio Soạn đề thi bóc tách trực tiếp file Word (`.docx`), 50/50 live preview, chống gian lận Fullscreen, khóa tab Lease Fencing. | Đạt chuẩn Khảo thí Azota |
 | **Phân quyền Tối thiểu 3 Roles** | 3 vai trò chuẩn mực `STUDENT`, `INSTRUCTOR`, `ADMIN` với kiểm soát truy cập ở cấp độ đối tượng (Object-level IDOR Defense). | Bảo mật Đa tầng |
 | **Dynamic UI & AJAX / Fetch** | Chuyển đổi toàn diện sang **Single-DOM SPA Warm Editorial**, chuyển trang vi mô mượt mà không tải lại toàn trang. | Trải nghiệm SaaS Hiện đại |
-| **Tích hợp Trí tuệ Nhân tạo AI** | Cụm trợ lý AI Bạch Tuộc tự xoay vòng **93 API keys**, cascade đa mô hình, hàng rào chống rò rỉ bí mật hệ thống 3 tầng, RAG phân quyền. | Đột phá Công nghệ |
+| **Tích hợp Trí tuệ Nhân tạo AI** | Cụm trợ lý AI Bạch Tuộc tự xoay vòng **bể chứa đa khóa API xoay vòng**, cascade đa mô hình, hàng rào chống rò rỉ bí mật hệ thống 3 tầng, RAG phân quyền. | Đột phá Công nghệ |
 | **Đóng gói Docker / Deployment** | Docker Compose nạp đồng thời Web Engine, SQL Server 2022 và ClamAV Antivirus chỉ với 1 lệnh khởi chạy. | Sẵn sàng Production |
 
 ---
