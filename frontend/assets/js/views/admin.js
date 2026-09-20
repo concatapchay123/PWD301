@@ -200,8 +200,9 @@ class AdminView {
         const data = telemRes.value;
         const cpuPct = data.cpu?.percent ?? 0;
         const ramUsed = data.memory?.used_gb ?? 0;
+        const ramTotal = data.memory?.total_gb ?? '--';
         const metricsEl = document.getElementById('kpi-telemetry-metrics');
-        if (metricsEl) metricsEl.textContent = `CPU: ${cpuPct}% • RAM: ${ramUsed} GB`;
+        if (metricsEl) metricsEl.textContent = `CPU: ${cpuPct}% • RAM: ${ramUsed} / ${ramTotal} GB`;
       }
     } catch (err) {
       console.warn('Initial admin KPI load warning:', err);
@@ -2951,7 +2952,7 @@ class AdminView {
           const cpuModel = document.getElementById('telem-cpu-model');
           const cpuBar = document.getElementById('telem-cpu-bar');
           if (cpuVal) cpuVal.textContent = `${pct}%`;
-          if (cpuModel) cpuModel.textContent = data.cpu.model || `${data.cpu.count || 4} vCPU Container`;
+          if (cpuModel) cpuModel.textContent = data.cpu.model || `${data.cpu.cores || 4} vCPU`;
           if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
         }
 
@@ -2960,7 +2961,13 @@ class AdminView {
           const ramPct = document.getElementById('telem-ram-pct');
           const ramBar = document.getElementById('telem-ram-bar');
           if (ramVal) ramVal.textContent = `${data.memory.used_gb ?? '0'} / ${data.memory.total_gb ?? '0'} GB`;
-          if (ramPct) ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng`;
+          if (ramPct) {
+            if (data.container && data.container.memory_used_gb != null) {
+              ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng • Container: ${data.container.memory_used_gb} GB`;
+            } else {
+              ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng`;
+            }
+          }
           if (ramBar) ramBar.style.width = `${Math.min(100, Math.max(0, data.memory.percent ?? 0))}%`;
         }
 
@@ -2975,7 +2982,11 @@ class AdminView {
 
         const nodeEl = document.getElementById('telem-node-id');
         if (nodeEl) {
-          nodeEl.textContent = data.node_label || data.hostname || data.host?.node_label || data.host?.hostname || 'Production Node';
+          if (data.container && data.host?.hostname) {
+            nodeEl.textContent = `${data.node_label || 'Docker Container'} on ${data.host.hostname}`;
+          } else {
+            nodeEl.textContent = data.node_label || data.hostname || data.host?.node_label || data.host?.hostname || 'Production Node';
+          }
         }
         if (data.network) {
           const netEl = document.getElementById('telem-net-traffic');

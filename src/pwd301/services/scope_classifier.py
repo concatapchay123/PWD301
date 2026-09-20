@@ -40,6 +40,14 @@ REFUSAL_MESSAGE_SECURITY = (
     "khai thác lỗ hổng, bẻ khóa (jailbreak) hoặc can thiệp trái phép vào hệ thống."
 )
 
+REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM = (
+    "⚠️ Thông báo an ninh: Thông tin tài khoản người dùng, cơ chế của từng vai trò (role) "
+    "và phương thức hoạt động nội bộ là bí mật cao nhất của hệ thống PWD301, tuyệt đối "
+    "không được phép tiết lộ.\n"
+    "Bạch Tuộc Trợ lý AI 🐙 chỉ phục vụ mục đích học tập và giải đáp kiến thức trong các khóa học. "
+    "Vui lòng đặt câu hỏi liên quan đến nội dung bài học để được hỗ trợ!"
+)
+
 REFUSAL_MESSAGE_OUT_OF_SCOPE = (
     "Chào bạn! Mình là Bạch Tuộc Trợ lý AI 🐙 — trợ lý học tập chuyên biệt của hệ thống LMS.\n"
     "Câu hỏi của bạn nằm ngoài phạm vi học tập và công nghệ của hệ thống (lập trình Web, "
@@ -71,6 +79,89 @@ REFUSAL_MESSAGE_AI_ABUSE = (
     "Bạn vui lòng đặt câu hỏi liên quan đến hệ thống PWD301 hoặc nội dung bài học trong khóa học "
     "của bạn nhé!"
 )
+
+
+# ---------------------------------------------------------------------------
+# Regex Patterns: Confidential System Protection (Accounts, Roles, Internals)
+# ---------------------------------------------------------------------------
+
+_CONFIDENTIAL_SYSTEM_PATTERNS: list[re.Pattern[str]] = [
+    # 1. Role mechanisms, permissions, hierarchy, and privilege escalation
+    re.compile(
+        r"(vai\s+trò\s+(người\s+dùng|user|của\s+hệ\s+thống|trong\s+hệ\s+thống)|các\s+vai\s+trò(\s+người\s+dùng|\s+trong\s+hệ\s+thống)?|vai\s+trò\s+của\s+(admin|học\s+viên|giảng\s+viên|người\s+dùng|user))",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(cơ\s+chế\s+(của\s+)?(từng\s+)?(role|vai\s+trò)|quyền\s+hạn\s+(của\s+)?(role|vai\s+trò|admin|giảng\s+viên|học\s+viên))",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(phân\s+quyền\s+(vai\s+trò|hệ\s+thống|role|người\s+dùng)|chuyển\s+vai\s+trò|switch\s+role|leo\s+thang\s+đặc\s+quyền|privilege\s+escalation)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(hệ\s+thống\s+)?(có\s+)?(những\s+|các\s+)?(role|vai\s+trò)\s+(nào|gì|trong\s+hệ\s+thống)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(admin|giảng\s+viên|học\s+viên|auditor|user).*có\s+(những\s+)?(quyền|quyền\s+hạn|chức\s+năng)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(admin|giảng\s+viên|học\s+viên|auditor|user).*quyền\s+hạn",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(quyền|quyền\s+hạn)\s+(của\s+)?(role|vai\s+trò|admin|giảng\s+viên|học\s+viên|user|người\s+dùng)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(user\s+roles?\s+in\s+system|role\s+mechanisms?|role\s+permissions?|admin\s+privileges?)\b",
+        re.IGNORECASE,
+    ),
+    # 2. Account information, user details, credentials, user lists
+    re.compile(
+        r"(thông\s+tin|danh\s+sách|dữ\s+liệu|chi\s+tiết|tra\s+cứu|xem|lấy|trích\s+xuất|leak|tìm)\s+(về\s+)?(các\s+)?(tài\s+khoản|user|người\s+dùng|admin|giảng\s+viên|học\s+viên)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"hỏi\s+về\s+(các\s+)?(thông\s+tin\s+)?(tài\s+khoản|user|người\s+dùng)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(thông\s+tin\s+)?tài\s+khoản(\s+người\s+dùng|\s+user|\s+hệ\s+thống)?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(thông\s+tin\s+tài\s+khoản|thông\s+tin\s+user|thông\s+tin\s+người\s+dùng|danh\s+sách\s+tài\s+khoản|danh\s+sách\s+user)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(cơ\s+chế|cấu\s+trúc)\s+(quản\s+lý\s+)?(tài\s+khoản|user|người\s+dùng)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(account|user)\s+(info|information|details|list|credentials|database)\b",
+        re.IGNORECASE,
+    ),
+    # 3. Internal system operations, backend architecture, schema, server workings
+    re.compile(
+        r"(cách|cơ\s+chế|nguyên\s+lý|phương\s+thức)\s+hoạt\s+động\s+(nội\s+bộ\s+)?(của\s+)?(hệ\s+thống|nền\s+tảng|pwd301|lms|server|backend)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(hệ\s+thống|nền\s+tảng|pwd301|lms)\s+(này\s+)?hoạt\s+động\s+(như\s+thế\s+nào|ra\s+sao|như\s+nào|thế\s+nào|bằng\s+cách\s+nào|bên\s+trong)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(kiến\s+trúc|cấu\s+trúc|mã\s+nguồn|source\s+code|backend|database|cơ\s+sở\s+dữ\s+liệu|bảo\s+mật\s+nội\s+bộ).*(của\s+)?(hệ\s+thống|pwd301|lms|nền\s+tảng)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(how\s+the\s+system\s+works|system\s+internals|internal\s+architecture\s+of\s+the\s+system)\b",
+        re.IGNORECASE,
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -264,19 +355,10 @@ _GLOBAL_LMS_KEYWORDS: tuple[str, ...] = (
     "hệ thống",
     "nền tảng",
     "pwd301",
-    "tài khoản",
-    "đăng ký",
-    "đăng nhập",
-    "mật khẩu",
-    "email",
-    "hồ sơ",
-    "vai trò",
-    "role",
-    "chuyển vai trò",
-    "switch role",
-    "admin",
-    "giảng viên",
-    "học viên",
+    "đăng ký khóa học",
+    "đăng ký học",
+    "tham gia khóa học",
+    "đổi mật khẩu",
     "ứng tuyển giảng viên",
     "nộp đơn",
     "trở thành giảng viên",
@@ -289,10 +371,6 @@ _GLOBAL_LMS_KEYWORDS: tuple[str, ...] = (
     "help",
     "system",
     "platform",
-    "account",
-    "password",
-    "login",
-    "register",
     "enroll",
     "enrollment",
     # Courses & Catalog Guidance ("Khóa học")
@@ -402,6 +480,10 @@ _IN_SCOPE_KEYWORDS: tuple[str, ...] = (
     "xss",
     "database",
     "cơ sở dữ liệu",
+    "csdl",
+    "connection pool",
+    "connection pooling",
+    "pooling",
     "bảng",
     "table",
     "truy vấn",
@@ -566,7 +648,23 @@ def classify_query_scope(text: str, context: str | None = None) -> ScopeResult:
             error_code="VALIDATION_ERROR",
         )
 
-    # 1. Check for Malicious / Adversarial / Prompt Injection attacks
+    # 1. Check for Confidential System Reconnaissance (Accounts, Roles, Internals)
+    for pat in _CONFIDENTIAL_SYSTEM_PATTERNS:
+        if pat.search(clean_query):
+            logger.warning("Confidential system reconnaissance attempt blocked: %s", pat.pattern)
+            return ScopeResult(
+                is_in_scope=False,
+                is_malicious=True,
+                category="SECURITY_VIOLATION",
+                reason=(
+                    "Yêu cầu hỏi về thông tin tài khoản, cơ chế của từng vai trò (role) "
+                    "hoặc phương thức hoạt động nội bộ bí mật của hệ thống."
+                ),
+                refusal_message=REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM,
+                error_code="CONFIDENTIAL_SYSTEM_DISCLOSURE_DENIED",
+            )
+
+    # 2. Check for Malicious / Adversarial / Prompt Injection attacks
     for pat in _MALICIOUS_PATTERNS:
         if pat.search(clean_query):
             logger.warning("Security violation / prompt injection pattern matched: %s", pat.pattern)
@@ -847,8 +945,22 @@ def classify_query_scope_hybrid(
     ):
         return rule_res
 
-    # 2. Definite passes for greetings and clear system/course info
-    if rule_res.category in ("IN_SCOPE_GREETING", "IN_SCOPE_LMS_GUIDANCE"):
+    # Check for subtle abuse / outsourcing indicators that require AI intent guardrail verification
+    has_subtle_abuse_indicator = bool(
+        re.search(
+            r"(làm\s+hộ|viết\s+hộ|giải\s+hộ|làm\s+giúp|viết\s+giúp|đồ\s+án|bài\s+tập\s+lớn|thi\s+hộ)",
+            text or "",
+            re.IGNORECASE,
+        )
+    )
+
+    # 2. Definite passes for greetings, academic queries, and clear system/course info
+    # (when no subtle abuse indicators)
+    if not has_subtle_abuse_indicator and rule_res.category in (
+        "IN_SCOPE_GREETING",
+        "IN_SCOPE_LMS_GUIDANCE",
+        "IN_SCOPE_ACADEMIC",
+    ):
         return rule_res
 
     # 3. If AI client provided, invoke AI intent guardrail to stop subtle 'bào AI' attempts

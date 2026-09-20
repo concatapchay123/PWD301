@@ -457,12 +457,48 @@ def get_real_system_telemetry() -> dict[str, Any]:
     cpu_count = os.cpu_count() or 1
 
     # Detect containerized environment vs bare-metal/VM host
-    is_container = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+    is_container = (
+        os.path.exists("/.dockerenv")
+        or os.path.exists("/run/.containerenv")
+        or os.environ.get("CONTAINER", "").lower() in ("true", "1")
+    )
+
+    # Attempt to load host hardware telemetry snapshot if running in a container
+    host_snapshot: dict[str, Any] | None = None
+    if is_container:
+        snapshot_paths = [
+            Path(__file__).resolve().parent / ".host_telemetry.json",
+            Path("/app/src/pwd301/.host_telemetry.json"),
+            Path(os.getcwd()) / "src" / "pwd301" / ".host_telemetry.json",
+        ]
+        for sp in snapshot_paths:
+            try:
+                if sp.is_file():
+                    with open(sp, encoding="utf-8") as sf:
+                        data = json.load(sf)
+                        if isinstance(data, dict) and "memory" in data:
+                            host_snapshot = data
+                            break
+            except Exception:
+                continue
+
+    host_name = (
+        (host_snapshot.get("hostname") if host_snapshot else None)
+        or os.environ.get("HOST_NAME")
+        or hostname
+    )
+    host_os = (
+        (host_snapshot.get("os") if host_snapshot else None)
+        or os.environ.get("HOST_OS")
+        or os_name
+    )
     node_label = f"Docker ({hostname[:12]})" if is_container else f"Host ({hostname})"
 
     # Human-readable CPU processor model resolution
     cpu_model = ""
-    if sys.platform == "win32":
+    if host_snapshot and host_snapshot.get("cpu", {}).get("model"):
+        cpu_model = host_snapshot["cpu"]["model"]
+    elif sys.platform == "win32":
         try:
             import winreg
 
@@ -484,6 +520,9 @@ def get_real_system_telemetry() -> dict[str, Any]:
             pass
     if not cpu_model:
         cpu_model = platform.processor() or f"{cpu_count} vCPU"
+
+    if host_snapshot and host_snapshot.get("cpu", {}).get("cores"):
+        cpu_count = int(host_snapshot["cpu"]["cores"])
 
     # CPU load average (available on Linux / macOS natively)
     load_avg_str = None
@@ -511,6 +550,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
     net_packets_sent = 0
     net_packets_recv = 0
     uptime_seconds = None
+    container_info: dict[str, Any] = {}
 
     try:
         import psutil
@@ -531,12 +571,52 @@ def get_real_system_telemetry() -> dict[str, Any]:
         ram_avail_gb = round(mem.available / (1024**3), 1)
         ram_percent = round(mem.percent, 1)
 
+        # Reconcile with Host RAM when running inside container
+        target_host_total = None
+        if is_container:
+            if host_snapshot and host_snapshot.get("memory", {}).get("total_gb"):
+                target_host_total = float(host_snapshot["memory"]["total_gb"])
+            elif "HOST_TOTAL_RAM_GB" in os.environ:
+                with contextlib.suppress(Exception):
+                    target_host_total = float(os.environ["HOST_TOTAL_RAM_GB"])
+
+        is_snapshot_fresh = (
+            host_snapshot is not None
+            and (time.time() - float(host_snapshot.get("updated_at", 0))) < 60
+        )
+
+        if is_snapshot_fresh and host_snapshot:
+            snap_mem = host_snapshot.get("memory", {})
+            ram_total_gb = float(snap_mem.get("total_gb", ram_total_gb))
+            ram_used_gb = float(snap_mem.get("used_gb", ram_used_gb))
+            ram_avail_gb = float(snap_mem.get("available_gb", ram_avail_gb))
+            ram_percent = float(snap_mem.get("percent", ram_percent))
+            if host_snapshot.get("cpu", {}).get("percent") is not None:
+                cpu_percent = float(host_snapshot["cpu"]["percent"])
+        elif target_host_total and target_host_total > 0:
+            ram_total_gb = round(target_host_total, 1)
+            ram_used_gb = round(ram_total_gb * (ram_percent / 100.0), 1)
+            ram_avail_gb = round(max(0.0, ram_total_gb - ram_used_gb), 1)
+
         drive = os.path.splitdrive(os.getcwd())[0] or "/"
-        disk = psutil.disk_usage(drive)
+        disk_target = drive
+        if is_container:
+            for candidate in ("/app/src", "/app", os.getcwd()):
+                if os.path.exists(candidate):
+                    disk_target = candidate
+                    break
+        disk = psutil.disk_usage(disk_target)
         disk_total_gb = round(disk.total / (1024**3), 1)
         disk_used_gb = round(disk.used / (1024**3), 1)
         disk_free_gb = round(disk.free / (1024**3), 1)
         disk_percent = round(disk.percent, 1)
+
+        if is_snapshot_fresh and host_snapshot and "disk" in host_snapshot:
+            snap_disk = host_snapshot["disk"]
+            disk_total_gb = float(snap_disk.get("total_gb", disk_total_gb))
+            disk_used_gb = float(snap_disk.get("used_gb", disk_used_gb))
+            disk_free_gb = float(snap_disk.get("free_gb", disk_free_gb))
+            disk_percent = float(snap_disk.get("percent", disk_percent))
 
         net_io = psutil.net_io_counters()
         if net_io:
@@ -559,6 +639,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
             cg_mem_limit: int | None = None
             cg_mem_usage: int | None = None
             cg_cpu_pct: float | None = None
+            container_info: dict[str, Any] = {}
 
             # Cgroups v2
             v2_max = "/sys/fs/cgroup/memory.max"
@@ -671,20 +752,39 @@ def get_real_system_telemetry() -> dict[str, Any]:
                 effective_limit = (
                     cg_mem_limit
                     if cg_mem_limit is not None
-                    else int(ram_total_gb * (1024**3))
+                    else int((ram_total_gb or 1.0) * (1024**3))
                 )
                 if effective_limit > 0:
                     cg_tot_gb = round(effective_limit / (1024**3), 1)
                     cg_used_gb = round(cg_mem_usage / (1024**3), 2)
                     cg_avail_gb = max(0.0, round((effective_limit - cg_mem_usage) / (1024**3), 1))
-                    if ram_total_gb == 0.0 or cg_mem_limit is not None or cg_tot_gb <= ram_total_gb:
+                    cg_pct = round((cg_mem_usage / effective_limit) * 100, 1)
+
+                    container_info["is_container"] = is_container
+                    container_info["container_id"] = hostname[:12] if is_container else None
+                    container_info["node_label"] = (
+                        f"Docker ({hostname[:12]})" if is_container else "Container Process"
+                    )
+                    container_info["memory_used_gb"] = cg_used_gb
+                    container_info["memory_limit_gb"] = cg_tot_gb
+                    container_info["memory_percent"] = cg_pct
+                    container_info["status"] = "HEALTHY"
+
+                    # Only overwrite top-level host RAM when NOT running in container mode
+                    if not is_container and (
+                        ram_total_gb == 0.0
+                        or cg_mem_limit is not None
+                        or cg_tot_gb <= ram_total_gb
+                    ):
                         ram_total_gb = cg_tot_gb
                         ram_used_gb = cg_used_gb
                         ram_avail_gb = cg_avail_gb
-                        ram_percent = round((cg_mem_usage / effective_limit) * 100, 1)
+                        ram_percent = cg_pct
 
             if cg_cpu_pct is not None:
-                cpu_percent = cg_cpu_pct
+                container_info["cpu_percent"] = cg_cpu_pct
+                if not is_container and not host_snapshot:
+                    cpu_percent = cg_cpu_pct
         except Exception:
             pass
 
@@ -694,7 +794,13 @@ def get_real_system_telemetry() -> dict[str, Any]:
     if not has_psutil or ram_total_gb == 0.0:
         try:
             drive = os.path.splitdrive(os.getcwd())[0] or "/"
-            d_usage = shutil.disk_usage(drive)
+            disk_target = drive
+            if is_container:
+                for candidate in ("/app/src", "/app", os.getcwd()):
+                    if os.path.exists(candidate):
+                        disk_target = candidate
+                        break
+            d_usage = shutil.disk_usage(disk_target)
             disk_total_gb = round(d_usage.total / (1024**3), 1)
             disk_used_gb = round(d_usage.used / (1024**3), 1)
             disk_free_gb = round(d_usage.free / (1024**3), 1)
@@ -916,14 +1022,15 @@ def get_real_system_telemetry() -> dict[str, Any]:
 
     traffic_str = f"Gửi: {_format_bytes(net_bytes_sent)} • Nhận: {_format_bytes(net_bytes_recv)}"
 
-    return {
-        "hostname": hostname,
-        "os": os_name,
+    report: dict[str, Any] = {
+        "hostname": host_name if (host_snapshot or is_container) else hostname,
+        "os": host_os if (host_snapshot or is_container) else os_name,
         "status": "HEALTHY",
         "node_label": node_label,
         "host": {
-            "node_label": node_label,
-            "hostname": hostname,
+            "node_label": f"Host ({host_name})" if is_container else node_label,
+            "hostname": host_name,
+            "os": host_os,
         },
         "cpu": {
             "percent": cpu_percent,
@@ -961,6 +1068,17 @@ def get_real_system_telemetry() -> dict[str, Any]:
         "uptime_seconds": uptime_seconds,
         "collected_at": utc_now().isoformat(),
     }
+    if is_container or container_info:
+        if not container_info:
+            container_info = {
+                "is_container": True,
+                "container_id": hostname[:12],
+                "node_label": f"Docker ({hostname[:12]})",
+                "status": "HEALTHY",
+            }
+        report["container"] = container_info
+
+    return report
 
 
 # =====================================================================

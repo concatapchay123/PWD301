@@ -35,6 +35,8 @@ instance/*
 src/instance/
 logs/
 *.log
+*.host_telemetry.json
+.host_telemetry.json
 
 # Generated/uploaded data and local storage
 storage/

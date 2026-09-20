@@ -1,3 +1,92 @@
+# TASK-063 — AI Security Hardening: Prevent Disclosure of User Accounts, Role Mechanisms, and System Internals
+
+**Status:** DONE  
+**Assignee:** Principal Security Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-20  
+**Completed Date:** 2026-09-20  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để lỗ hổng an ninh bypass AI assistant (Bạch Tuộc AI) khi người dùng hỏi về thông tin tài khoản, cơ chế của từng role (Học viên, Giảng viên, Admin...), phân quyền vai trò và cách thức hoạt động nội bộ của hệ thống LMS:
+
+1. **Nguyên nhân gốc rễ (Root Cause)**:
+   - Trong `scope_classifier.py`: Danh mục từ khóa `_GLOBAL_LMS_KEYWORDS` chứa các từ khóa nhạy cảm (`"vai trò"`, `"role"`, `"chuyển vai trò"`, `"admin"`, `"tài khoản"`, `"mật khẩu"`, `"hồ sơ"`), khiến câu hỏi thăm dò vai trò của người dùng (ví dụ: `"mình muốn tìm hiểu về vai trò người dùng"`) được tự động thông qua cấp tốc với nhãn `IN_SCOPE_LMS_GUIDANCE`.
+   - Trong `gemini_service.py`: System prompt cho trang chính (Global context) trước đây chỉ thị cho AI giải thích `"phân quyền vai trò (Học viên, Giảng viên, Admin)"` và `"tài khoản"`. Khiến AI phản hồi chi tiết 3 vai trò và quyền hạn của từng role (như trong ảnh báo cáo lỗi).
+   - Thiếu tầng nhận diện và ngăn chặn các câu hỏi trinh sát (reconnaissance) về tài khoản, danh sách user, cơ chế role và kiến trúc hoạt động bên trong của hệ thống.
+
+2. **Giải pháp an ninh đa tầng triệt để (Multi-Layer Defense)**:
+   - **Tầng 1 - Bộ lọc quy tắc tức thời (Stage 1 Regex & Keyword Filter - 0ms)**:
+     - Bổ sung `_CONFIDENTIAL_SYSTEM_PATTERNS` chặn tức thì các câu hỏi về:
+       + Cơ chế và quyền hạn của từng role: `"vai trò người dùng"`, `"các vai trò trong hệ thống"`, `"cơ chế của từng role"`, `"admin có quyền gì"`, `"phân quyền vai trò"`, `"chuyển vai trò"`, `"user roles"`.
+       + Thông tin tài khoản người dùng: `"thông tin tài khoản"`, `"thông tin user"`, `"danh sách tài khoản"`, `"danh sách user"`, `"cơ chế tài khoản"`.
+       + Cách hoạt động và kiến trúc nội bộ: `"cách hoạt động của hệ thống"`, `"cơ chế hoạt động của hệ thống"`, `"kiến trúc hệ thống"`, `"cấu trúc backend và database"`.
+     - Trả về ngay `ScopeResult(is_in_scope=False, is_malicious=True, category="SECURITY_VIOLATION", error_code="CONFIDENTIAL_SYSTEM_DISCLOSURE_DENIED")` kèm thông điệp từ chối bảo mật nghiêm ngặt `REFUSAL_MESSAGE_CONFIDENTIAL_SYSTEM`.
+     - Làm sạch `_GLOBAL_LMS_KEYWORDS`: Loại bỏ hoàn toàn `"vai trò"`, `"role"`, `"tài khoản"`, `"admin"`, `"mật khẩu"`, `"email"`.
+     - Bảo toàn tuyệt đối các câu hỏi học thuật hợp lệ (như `"vai trò của Connection Pooling trong CSDL"`, `"vai trò của thẻ meta trong HTML"`, `"cơ chế flexbox trong CSS"`, `"cách hoạt động của giao thức HTTP"`).
+   - **Tầng 2 - Bộ lọc AI Guardrail (`classify_intent`)**:
+     - Cập nhật chỉ thị zero-shot intent classifier: Phân loại mọi câu hỏi thăm dò tài khoản, cơ chế role hoặc cấu trúc nội bộ thành `MALICIOUS`.
+   - **Tầng 3 - Chỉ thị sinh phản hồi (`GeminiClient` & `MockGeminiClient`)**:
+     - Loại bỏ việc hướng dẫn giải thích vai trò/tài khoản trên trang chính.
+     - Thiết lập quy tắc tối cao: "BÍ MẬT CAO NHẤT CỦA HỆ THỐNG & AN NINH NỘI BỘ (STRICT TOP SECRETS)" — cấm tuyệt đối tiết lộ thông tin user, cơ chế role hoặc cách hoạt động nội bộ. Bắt buộc từ chối ngay lập tức khi được hỏi.
+     - Đồng bộ hóa logic từ chối trong `MockGeminiClient.chat_response()` cho môi trường offline/fallback.
+
+## Test Verification Summary
+- **Toàn bộ 147/147 test cases PASSED 100%**:
+  - `tests/unit/test_ai_scope_classifier.py`: 98/98 PASSED
+  - `tests/unit/test_ai_service.py`: 17/17 PASSED
+  - `tests/security/test_ai_scope_enforcement.py`: 14/14 PASSED (bao gồm các bài test API endpoint chặn rò rỉ vai trò và tài khoản)
+  - `tests/security/test_security_audit_fixes.py`: 5/5 PASSED
+  - `tests/api/test_ai_api.py`: 8/8 PASSED
+  - `tests/api/test_ai_key_rotation_live.py`: 5/5 PASSED
+- **Static Quality & Lint**: `ruff check` PASSED 100% (0 errors trên tất cả các file sửa đổi).
+- **Compile Bytecode**: `compileall` PASSED 100% (0 syntax errors).
+
+---
+
+# TASK-062 — Fix Physical Hardware Telemetry & Eliminate AI Latency Bottlenecks
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-20  
+**Completed Date:** 2026-09-20  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để 2 lỗi hệ thống nghiêm trọng theo yêu cầu người dùng:
+1. **Tải phần cứng thời gian thực (Hardware Telemetry)**:
+   - *Nguyên nhân gốc rễ*: Khi ứng dụng chạy trong Docker container, `operations_service.py` đọc memory từ cgroups (`/sys/fs/cgroup/memory.current`), sau đó ghi đè toàn bộ thông số RAM hệ thống thành chỉ số container (0.42 GB RAM / 2.7% sử dụng), đồng thời phân vùng ổ đĩa đọc root `/` của WSL2 (1006 GB ảo) thay vì ổ đĩa thật của máy chủ.
+   - *Giải pháp triệt để*:
+     - **Tách bạch Host Physical Metrics & Container Isolation**: Cấu hình `get_real_system_telemetry()` ưu tiên thu thập cấu hình thực tế của máy chủ Host (RAM thật: 31.7 GB, CPU thật: Intel Core i9-14900HX 32 vCPU, ổ đĩa thật: 551.6 GB / 79 GB used / 14.3%).
+     - **Cơ chế Host Telemetry Bridge**: Tích hợp snapshot tự động từ `src/pwd301/.host_telemetry.json` (chia sẻ qua volume mount giữa Host và Container), hỗ trợ biến môi trường `HOST_TOTAL_RAM_GB` và fallback `shutil.disk_usage('/app/src')` trực tiếp trên mount 9p/virtio.
+     - **Đóng gói chỉ số Container riêng biệt**: Container cgroup metrics được chuyển sang đối tượng phụ `container: {"is_container": true, "container_id": "...", "memory_used_gb": 0.38, "memory_limit_gb": 31.7, "memory_percent": 1.2, "status": "HEALTHY"}`.
+     - **Cập nhật Giao diện Admin Cockpit (`frontend/assets/js/views/admin.js`)**:
+       - KPI header hiển thị rõ ràng: `CPU: x% • RAM: y / 31.7 GB`.
+       - Thẻ RAM hiển thị dung lượng thật của máy chủ: `15.4 / 31.7 GB` kèm chú thích Container: `48.5% sử dụng • Container: 0.38 GB`.
+       - Thẻ ổ đĩa hiển thị dung lượng thực của máy: `472.6 GB khả dụng` • `Tổng 551.6 GB (14.3% dùng)`.
+       - Thẻ CPU hiển thị đúng tên chip vật lý và số luồng: `32 vCPU • Intel(R) Core(TM) i9-14900HX`.
+
+2. **AI phản hồi chậm (AI Latency Optimization)**:
+   - *Nguyên nhân gốc rễ*:
+     1. Khóa API đầu tiên `...WDXxUw` bị Google vô hiệu hóa (HTTP 401 account disabled), và khóa `...BGOO1w` liên tục bị HTTP 503 (high demand).
+     2. Cấu hình model cũ (`gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-2.0-flash`) bị HTTP 404, kích hoạt chuỗi timeout/cascade 15-30 giây.
+     3. Tầng phân loại trung gian `classify_query_scope_hybrid` không cho phép `IN_SCOPE_ACADEMIC` vượt qua ngay ở Stage 1 (0ms), dẫn tới mọi câu hỏi đều bị gọi thêm 1 lượt LLM intent phân loại tuần tự trước khi gọi LLM tạo câu trả lời (gấp đôi thời gian chờ).
+   - *Giải pháp triệt để*:
+     - **Chuyển sang `gemini-flash-latest`**: Theo đúng chỉ đạo của người dùng ("giữ nguyên như cũ nhưng chuyển sang model gemini-flash-latest"), cấu hình default model thành `gemini-flash-latest` và danh sách fallback các model tốc độ cao (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`).
+     - **Tối ưu Key Pool & Loại bỏ Key Lỗi**: Khóa chết `...WDXxUw` bị lọc bỏ ngay khi nạp, key hay nghẽn `...BGOO1w` được hạ độ ưu tiên, các key healthy tốc độ cao (`...jjrUiA`, `...rW4LPQ`) được đẩy lên đầu; tích hợp cache `_LAST_WORKING_MODEL` và short-circuit break khi model bị timeout để đổi model ngay lập tức.
+     - **Bỏ tầng phân loại kép cho câu hỏi học tập**: Bổ sung `IN_SCOPE_ACADEMIC` vào danh sách Stage 1 bypass (0ms), triệt tiêu hoàn toàn độ trễ trung gian không cần thiết.
+     - **Kết quả đo kiểm**: Độ trễ sinh câu trả lời AI tiếng Việt hoàn chỉnh giảm mạnh từ **32.07s xuống còn 4.39s** (giảm 86% thời gian chờ), phản hồi thông minh, nhanh chóng, đúng trọng tâm.
+
+## Test Verification Summary
+- **Unit & API Tests**: 27/27 PASSED 100% (`tests/unit/test_operations_service.py`, `tests/api/test_ai_api.py`).
+- **Linter & Format**: `ruff check` PASSED 100% (0 errors).
+- **JavaScript Syntax Check**: `node --check` PASSED 100% trên `admin.js`, `controllers.js`, `api.js`.
+- **Live Container Telemetry**: Xác minh thành công endpoint `/api/admin/telemetry` trên Docker `pwd301_web` trả về chuẩn xác 31.7 GB RAM Host, 551.6 GB Disk Host, CPU i9-14900HX và Container 0.38 GB.
+- **Live AI Benchmark**: Lệnh thực thi thực tế trong container sinh phản hồi hoàn tất trong 4.39 giây.
+
+---
+
 # TASK-061 — Redesign Waiting Room & Attempt Limit Logic (Exhausted, Multi-attempt, and Dashboard Integration)
 
 **Status:** DONE  

@@ -635,3 +635,90 @@ def test_get_real_system_telemetry_uptime_fallback_without_psutil(
         assert isinstance(telem["uptime"], str)
         assert "uptime_seconds" in telem
         assert telem["uptime_seconds"] is not None
+
+
+def test_get_real_system_telemetry_container_isolation_with_host_metrics(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that in container mode, real host metrics are preserved and container isolated."""
+    import builtins
+    import io
+    import json
+    import os
+    import sys
+    import time
+    from pathlib import Path
+    from typing import Any
+
+    from pwd301.services.operations_service import get_real_system_telemetry
+
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    host_snapshot_data = {
+        "hostname": "PROD-HOST-SERVER",
+        "os": "Windows 11 Pro",
+        "cpu": {
+            "percent": 5.0,
+            "cores": 32,
+            "model": "Intel(R) Core(TM) i9-14900HX",
+            "frequency_mhz": 2400.0,
+        },
+        "memory": {
+            "total_gb": 32.0,
+            "used_gb": 16.0,
+            "available_gb": 16.0,
+            "percent": 50.0,
+        },
+        "disk": {
+            "total_gb": 512.0,
+            "used_gb": 100.0,
+            "free_gb": 412.0,
+            "percent": 19.5,
+        },
+        "updated_at": 1789872000.0,
+    }
+
+    mock_files = {
+        "/.dockerenv": "",
+        "/sys/fs/cgroup/memory.max": "2147483648",  # 2 GB limit
+        "/sys/fs/cgroup/memory.current": "536870912",  # 512 MB used
+    }
+
+    orig_exists = os.path.exists
+    monkeypatch.setattr(os.path, "exists", lambda p: p in mock_files or orig_exists(p))
+
+    orig_is_file = Path.is_file
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda self: str(self).endswith(".host_telemetry.json") or orig_is_file(self),
+    )
+
+    orig_open = builtins.open
+
+    def mock_open(path: Any, *args: Any, **kwargs: Any) -> Any:
+        p_str = str(path)
+        if p_str in mock_files:
+            return io.StringIO(mock_files[p_str])
+        if p_str.endswith(".host_telemetry.json"):
+            return io.StringIO(json.dumps(host_snapshot_data))
+        return orig_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", mock_open)
+    monkeypatch.setattr(time, "time", lambda: 1789872010.0)  # fresh snapshot (10s old)
+
+    with app.app_context():
+        telem = get_real_system_telemetry()
+        assert telem["hostname"] == "PROD-HOST-SERVER"
+        assert telem["memory"]["total_gb"] == 32.0
+        assert telem["memory"]["used_gb"] == 16.0
+        assert telem["memory"]["percent"] == 50.0
+        assert telem["disk"]["total_gb"] == 512.0
+        assert telem["cpu"]["cores"] == 32
+        assert telem["cpu"]["model"] == "Intel(R) Core(TM) i9-14900HX"
+
+        assert "container" in telem
+        assert telem["container"]["is_container"] is True
+        assert telem["container"]["memory_limit_gb"] == 2.0
+        assert telem["container"]["memory_used_gb"] == 0.5
+        assert telem["container"]["memory_percent"] == 25.0

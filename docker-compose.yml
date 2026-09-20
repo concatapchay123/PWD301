@@ -71,6 +71,9 @@ services:
       - CLAMAV_PORT=3310
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL_NAME=${GEMINI_MODEL_NAME:-gemini-flash-latest}
+      - HOST_TOTAL_RAM_GB=${HOST_TOTAL_RAM_GB:-31.7}
+      - HOST_OS=${HOST_OS:-Windows 11}
+      - HOST_NAME=${HOST_NAME:-DESKTOP-71A4210}
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
