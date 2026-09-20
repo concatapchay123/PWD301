@@ -330,9 +330,7 @@ class Controllers {
         `;
       } else {
         msgDiv.innerHTML = `
-          <div class="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center shrink-0 text-xs shadow-sm">
-            <span class="material-symbols-outlined text-[18px]">smart_toy</span>
-          </div>
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-full object-cover shrink-0 text-xs shadow-sm border border-indigo-200" />
           <div class="max-w-[80%] rounded-2xl px-4 py-3 bg-surface-card border border-border-subtle shadow-sm text-text-primary text-sm leading-relaxed whitespace-pre-wrap">
             ${text}
           </div>

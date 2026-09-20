@@ -1266,9 +1266,7 @@ class FloatingAITutor {
     } else {
       div.className = 'flex gap-2.5 items-start';
       div.innerHTML = `
-        <div class="w-6 h-6 rounded-md bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
-          <span class="material-symbols-outlined text-[14px]">smart_toy</span>
-        </div>
+        <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
         <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] leading-relaxed text-xs border border-[#E8E6DF] dark:border-[#2E2D2B]">
           ${UI.renderMarkdown(text)}
         </div>
@@ -1286,9 +1284,7 @@ class FloatingAITutor {
     div.id = id;
     div.className = 'flex gap-2.5 items-start';
     div.innerHTML = `
-      <div class="w-6 h-6 rounded-md bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
-        <span class="material-symbols-outlined text-[14px]">smart_toy</span>
-      </div>
+      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs animate-pulse" />
       <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#8F8E8A] p-2.5 rounded-xl rounded-tl-none text-xs flex items-center gap-1.5 border border-[#E8E6DF] dark:border-[#2E2D2B]">
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce"></span>
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce [animation-delay:0.2s]"></span>

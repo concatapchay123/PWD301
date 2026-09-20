@@ -556,12 +556,13 @@
     <div id="floating-ai-drawer" class="hidden pointer-events-auto mb-3 w-96 max-w-[calc(100vw-2.5rem)] h-[520px] bg-[#FFFFFF] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
       <!-- Drawer Header -->
       <div class="px-4 py-3 bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-2">
-          <div class="w-7 h-7 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] flex items-center justify-center">
-            <span class="material-symbols-outlined text-[16px]">smart_toy</span>
-          </div>
+        <div class="flex items-center gap-2.5">
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-lg object-cover border border-[#E8E6DF] dark:border-[#3E3D3A] shadow-xs" />
           <div>
-            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Bạch tuộc</div>
+            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+              <span>Bạch tuộc</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">AI Assistant</span>
+            </div>
             <div class="text-[10px] text-[#8F8E8A] dark:text-[#9E9D99] flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
             </div>
@@ -575,9 +576,7 @@
       <!-- Drawer Chat Messages Container -->
       <div id="floating-ai-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
         <div class="flex gap-2.5 items-start">
-          <div class="w-6 h-6 rounded-md bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
-            <span class="material-symbols-outlined text-[14px]">smart_toy</span>
-          </div>
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
           <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
             Xin chào! Tôi là Bạch tuộc - Trợ lý AI học thuật của PWD301 LMS. Tôi có thể hỗ trợ bạn tóm tắt kiến thức, phân tích câu hỏi thi hoặc gợi ý phương pháp học tập. Bạn cần hỗ trợ bài học nào?
           </div>
@@ -609,10 +608,10 @@
     <button
       type="button"
       id="floating-ai-launcher"
-      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#FFFFFF]"
+      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#FFFFFF] p-1"
       title="Hỏi Bạch tuộc"
     >
-      <span class="material-symbols-outlined text-[22px]">smart_toy</span>
+      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105" />
       <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#191919]"></span>
     </button>
   </div>

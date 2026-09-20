@@ -1535,9 +1535,7 @@ class StudentView {
               <!-- Inline Contextual AI Mentor Card -->
               <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl p-6 shadow-md space-y-4 border border-indigo-800/40">
                 <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
-                    <span class="material-symbols-outlined text-[20px]">smart_toy</span>
-                  </div>
+                  <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-10 h-10 rounded-xl object-cover border border-indigo-400/40 shadow-sm" />
                   <div>
                     <h4 class="font-bold text-sm">Bạch tuộc (Gemini Flash)</h4>
                     <p class="text-xs text-indigo-200/80">Bạn gặp khó khăn hay cần giải thích thêm về bài giảng "${UI.escapeHtml(lesson.title)}"?</p>
@@ -2818,11 +2816,11 @@ class StudentView {
                         <!-- Ask Octopus Button -->
                         <button
                           type="button"
-                          class="ask-ai-question-btn px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                          class="ask-ai-question-btn px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
                           data-stem="${UI.escapeHtml(q.content || q.stem || '')}"
                           data-answer="${UI.escapeHtml(correctAns)}"
                         >
-                          <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+                          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="" class="w-4 h-4 rounded object-cover" />
                           <span>Hỏi Bạch tuộc câu này</span>
                         </button>
                       </div>
@@ -3371,12 +3369,10 @@ class StudentView {
         <!-- AI Topbar Header -->
         <div class="h-16 px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
-              <span class="material-symbols-outlined text-[20px]">smart_toy</span>
-            </div>
+            <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Trợ lý AI Bạch tuộc" class="w-10 h-10 rounded-xl object-cover shadow-sm border border-indigo-200 dark:border-indigo-900" />
             <div>
               <h1 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-                Trợ lý AI Học vụ (Gemini 3.8 Flash)
+                Trợ lý AI Bạch tuộc (Gemini 3.8 Flash)
                 <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">Online</span>
               </h1>
               <p class="text-[11px] text-slate-400">Hỗ trợ tra cứu kiến thức, giải thích thuật toán, code mẫu và ôn luyện bài thi</p>
@@ -3412,11 +3408,9 @@ class StudentView {
           
           <!-- AI Welcome Bubble -->
           <div class="flex gap-3 justify-start animate-fade-in">
-            <div class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 text-xs shadow-sm">
-              <span class="material-symbols-outlined text-[16px]">smart_toy</span>
-            </div>
+            <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Trợ lý AI Bạch tuộc" class="w-8 h-8 rounded-full object-cover shrink-0 text-xs shadow-sm border border-indigo-200 dark:border-indigo-900" />
             <div class="max-w-[85%] rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-2">
-              <p class="font-bold text-slate-900 dark:text-white">Xin chào! Tôi là Trợ lý Học vụ AI PWD301.</p>
+              <p class="font-bold text-slate-900 dark:text-white">Xin chào! Tôi là Trợ lý Học vụ AI Bạch tuộc PWD301.</p>
               <p>Tôi có thể giúp bạn giải đáp các câu hỏi học tập, phân tích cấu trúc dữ liệu, giải thích cú pháp lập trình, hoặc hỗ trợ bạn chuẩn bị cho các kỳ thi khảo thí sắp tới.</p>
               <div class="pt-2">
                 <div class="text-xs font-bold text-slate-500 mb-2">Câu hỏi gợi ý nhanh:</div>
@@ -3510,9 +3504,7 @@ class StudentView {
       const bubble = document.createElement('div');
       bubble.className = 'flex gap-3 justify-start animate-fade-in';
       bubble.innerHTML = `
-        <div class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 text-xs shadow-sm">
-          <span class="material-symbols-outlined text-[16px]">smart_toy</span>
-        </div>
+        <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Trợ lý AI Bạch tuộc" class="w-8 h-8 rounded-full object-cover shrink-0 text-xs shadow-sm border border-indigo-200 dark:border-indigo-900" />
         <div class="max-w-[85%] rounded-2xl p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-slate-800 dark:text-slate-200 text-sm leading-relaxed space-y-2">
           ${UI.renderMarkdown(markdownText)}
         </div>
