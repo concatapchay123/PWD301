@@ -417,12 +417,48 @@ Dự án áp dụng kỷ luật kỹ thuật phần mềm nghiêm ngặt với q
 
 ## 🎓 Đối chiếu Chuẩn Học thuật & Ma trận Rubric Topic 9
 
-Hệ thống hiện thực hóa đầy đủ 100% yêu cầu đề tài **Topic 9 — Online Course Management Platform** của môn học PWD301, đồng thời nâng cấp vượt bậc thành nền tảng thương mại hoàn chỉnh:
+Hệ thống được phát triển bám sát và hiện thực hóa đầy đủ 100% yêu cầu đề tài **Topic 9 — Online Course Management Platform** từ tài liệu quy chuẩn môn học `PWD301_Project.docx` (**Web Application Development with Python & Flask**), đồng thời nâng cấp vượt bậc thành nền tảng thương mại hoàn chỉnh.
+
+### 📌 Thông tin Quy chế Đồ án Môn học
+- **Khung công nghệ quy định**: Framework: **Flask (Python 3.11+)** | CSDL: **Microsoft SQL Server** | Triển khai: **Docker**
+- **Trọng số điểm**: **20% tổng điểm môn học** | **Thời lượng**: **10 tuần (60 ca học)**
+- **Quy mô nhóm**: **4–5 sinh viên** | **Bảo vệ đồ án**: **20 phút / nhóm** (Slide tổng quan + Demo ứng dụng trực tiếp + Vấn đáp Q&A)
+- **Thang điểm**: 10 | **Điều kiện qua môn**: Điểm thành phần đồ án **> 0**
+
+### 🎯 Yêu cầu Đề tài Topic 9 (Theo Đề cương Môn học)
+> **Mô tả đề tài**: *"An online course management platform where instructors create courses with lessons, students enroll, track progress, and take simple quizzes."*
+
+1. **Giảng viên tạo và quản lý khóa học**: Thiết lập tên khóa học, mô tả tổng quan và danh sách bài học sắp xếp có thứ tự logic.
+2. **Học viên duyệt và ghi danh**: Xem danh mục khóa học, đăng ký tham gia (enroll) và theo dõi tiến độ hoàn thành bài học theo tỷ lệ phần trăm trực quan.
+3. **Bài giảng định dạng Markdown**: Trình bày nội dung chi tiết bài học dưới dạng Markdown, có chức năng đánh dấu "Đã hoàn thành" (Completed).
+4. **Khảo thí trắc nghiệm tự động chấm**: Bài kiểm tra ngắn (Quiz) ở cuối mỗi bài học hoặc khóa học với câu hỏi trắc nghiệm (Multiple Choice) và hệ thống chấm điểm tự động tức thì.
+5. **Phân quyền truy cập 3 vai trò (RBAC)**:
+   - **Admin**: Phê duyệt khóa học trước khi phát hành, quản lý người dùng và giám sát an toàn hệ thống.
+   - **Instructor**: Tạo, biên soạn và quản lý khóa học, bài giảng và bài thi.
+   - **Student**: Ghi danh khóa học, học tập bài giảng và làm bài khảo thí.
+6. **Tầng REST API**: Cung cấp API trả về danh sách khóa học và tiến độ học tập của học viên.
+
+### 📋 12 Tiêu chí Chung Bắt buộc cho Tất cả các Đề tài
+Trích xuất từ mục *"GENERAL REQUIREMENTS FOR ALL TOPICS"* (`PWD301_Project.docx`):
+1. Sử dụng Framework **Flask (Python 3.11+)** với **SQL Server** là cơ sở dữ liệu quan hệ chính.
+2. Ứng dụng **Flask-SQLAlchemy ORM** với **tối thiểu 4 bảng** và ít nhất **1 quan hệ Nhiều - Nhiều (Many-to-Many)**.
+3. Sử dụng **Flask-WTF** cho tất cả các form với cơ chế bảo vệ CSRF và validation nghiêm ngặt phía server.
+4. Triển khai hệ thống xác thực người dùng (**Flask-Login**) và phân quyền **RBAC tối thiểu 3 vai trò**.
+5. Xây dựng **tối thiểu 3 endpoint REST API** trả về định dạng chuẩn JSON và xác thực qua **JWT**.
+6. Sử dụng **AJAX / Fetch API** cho **tối thiểu 1 tính năng động** không tải lại trang (no page reload).
+7. Áp dụng kế thừa giao diện Jinja2 template layout và thiết kế responsive thích ứng đa thiết bị. *(Đã nâng cấp lên Single-DOM SPA Warm Editorial hiện đại).*
+8. Quản lý thay đổi CSDL bằng **Flask-Migrate / Alembic** kèm bộ dữ liệu mẫu (**Seed Data**) phục vụ demo.
+9. Đóng gói ứng dụng trong container với **Docker** (`Dockerfile` + `docker-compose.yml`).
+10. Khuyến khích ứng dụng công cụ AI (GitHub Copilot / Gemini...) và duy trì nhật ký sử dụng AI (**AI Usage Log**).
+11. Quản lý mã nguồn trên **Git** với tài liệu `README.md` hướng dẫn cài đặt và vận hành chi tiết.
+12. Báo cáo cuối khóa: Slide thuyết trình + Demo ứng dụng thực tế trên máy + Vấn đáp Q&A (20 phút / nhóm).
+
+### 🏆 Ma trận Đối chiếu Rubric: Đề bài vs Hệ thống Thực tế PWD301
 
 | Yêu cầu Rubric Topic 9 | Hiện thực hóa tại Hệ thống PWD301 | Mức độ Nâng cấp Vượt bậc |
 |---|---|:---:|
 | **Framework Flask, Python 3.11+** | Backend Flask Modular Monolith tổ chức chuyên nghiệp, chia tầng Controller / Service / Model rõ ràng. | Chuẩn mực Doanh nghiệp |
-| **CSDL Quan hệ SQL Server** | Kiến trúc **71 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION`. | Vượt xa CRUD cơ bản |
+| **CSDL Quan hệ SQL Server** | Kiến trúc **71 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION`. | Vượt xa CRUD cơ bản (x17 lần) |
 | **Quản lý Khóa học & Bài giảng** | Khóa học có điều kiện tiên quyết DAG, bài giảng Notion-style 1 trang, đính kèm tệp quét virus ClamAV, duyệt thay đổi Diff Side-by-Side. | Đẳng cấp Notion/LMS quốc tế |
 | **Khảo thí Trắc nghiệm Khách quan** | Studio Soạn đề thi bóc tách trực tiếp file Word (`.docx`), 50/50 live preview, chống gian lận Fullscreen, khóa tab Lease Fencing. | Đạt chuẩn Khảo thí Azota |
 | **Phân quyền Tối thiểu 3 Roles** | 3 vai trò chuẩn mực `STUDENT`, `INSTRUCTOR`, `ADMIN` với kiểm soát truy cập ở cấp độ đối tượng (Object-level IDOR Defense). | Bảo mật Đa tầng |
@@ -430,12 +466,15 @@ Hệ thống hiện thực hóa đầy đủ 100% yêu cầu đề tài **Topic 
 | **Tích hợp Trí tuệ Nhân tạo AI** | Cụm trợ lý AI Bạch Tuộc tự xoay vòng **bể chứa đa khóa API xoay vòng**, cascade đa mô hình, hàng rào chống rò rỉ bí mật hệ thống 3 tầng, RAG phân quyền. | Đột phá Công nghệ |
 | **Đóng gói Docker / Deployment** | Docker Compose nạp đồng thời Web Engine, SQL Server 2022 và ClamAV Antivirus chỉ với 1 lệnh khởi chạy. | Sẵn sàng Production |
 
+> 📖 **Xem toàn văn hồ sơ học vụ**: Chi tiết toàn bộ yêu cầu, 5 cột mốc tiến độ (Milestones 1–5) và phân tích nghiệp vụ tại [`docs/TOPIC_9_SPECIFICATION_AND_TEAM.md`](docs/TOPIC_9_SPECIFICATION_AND_TEAM.md).
+
 ---
 
 ## 📚 Tra cứu Tài liệu Kỹ thuật Chuyên sâu
 
 Nhằm bảo đảm tính tinh gọn và chuẩn mực cho README chính, toàn bộ các tài liệu đặc tả kỹ thuật chi tiết được lưu trữ có hệ thống trong thư mục `docs/`:
 
+- **Hồ sơ Đề tài Topic 9 & Đội ngũ Thực hiện**: [`docs/TOPIC_9_SPECIFICATION_AND_TEAM.md`](file:///e:/PWD301/docs/TOPIC_9_SPECIFICATION_AND_TEAM.md)
 - **Đặc tả Hệ thống Toàn diện**: [`docs/system/PWD301_SYSTEM_SPECIFICATION/`](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/)
   - [Đặc tả Kiến trúc Hệ thống](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/04_SYSTEM_ARCHITECTURE.md)
   - [Danh mục 73 Quy tắc Nghiệp vụ (Business Rules)](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md)
@@ -449,8 +488,16 @@ Nhằm bảo đảm tính tinh gọn và chuẩn mực cho README chính, toàn 
 
 ---
 
-## 📄 Bản quyền & Đội ngũ Phát triển
+## 👥 📄 Bản quyền & Đội ngũ Phát triển (Project Team)
 
-Dự án được xây dựng và hoàn thiện bởi nhóm sinh viên thực hiện đồ án môn học **PWD301 — Web Application Development with Python & Flask**.
+Dự án **PWD301 LMS** được hoàn thành bởi nhóm sinh viên thực hiện đồ án môn học **PWD301 — Web Application Development with Python & Flask**:
+
+| Họ và Tên Thành viên | Email Liên hệ | Phân công Trách nhiệm Chính |
+|---|---|---|
+| **Đặng Lý Quân** | `danglyquan@gmail.com` | **Trưởng nhóm & Kỹ sư Kiến trúc Hệ thống**<br>• Thiết kế kiến trúc tổng thể Headless REST API & Modular Monolith.<br>• Xây dựng tầng CSDL 71 bảng quan hệ trên SQL Server 2022.<br>• Quản trị xác thực kép (Session + JWT) và phân quyền RBAC. |
+| **Lại Vĩnh Phú** | `vinhphu2020.nt@gmail.com` | **Kỹ sư Lập trình Backend & Hạ tầng Dữ liệu**<br>• Xây dựng các nghiệp vụ cốt lõi: Khóa học, Bài giảng, Đề cương ABET SLOs.<br>• Quản lý di trú CSDL Flask-Migrate / Alembic và bộ Seed Data mẫu.<br>• Đóng gói môi trường Docker & Docker Compose đa dịch vụ. |
+| **Phạm Nguyễn Hoàng Phúc** | `tqtphamnguyenhoangphuc@gmail.com` | **Kỹ sư Khảo thí Trực tuyến & An ninh Mạng**<br>• Xây dựng Động cơ Khảo thí Server-Authoritative 100% tự động chấm.<br>• Phát triển bộ bóc tách đề thi Azota / Word (`.docx`) trực quan 50/50.<br>• Quét virus tệp tải lên ClamAV Fail-Closed và quản lý Lease Fencing. |
+| **Trần Đặng Hữu Thắng** | `callmewin06@gmail.com` | **Kỹ sư Giao diện Người dùng & Tích hợp AI**<br>• Phát triển toàn bộ Single-DOM SPA theo phong cách Warm Editorial.<br>• Tích hợp Trợ lý Gia sư AI Bạch Tuộc với hồ chứa đa khóa Google Gemini.<br>• Xây dựng Cockpit quản trị, đo đạc phần cứng thời gian thực. |
 
 Mã nguồn được phát hành theo giấy phép [MIT License](LICENSE). Mọi đóng góp, đề xuất tính năng hoặc báo cáo lỗi xin vui lòng mở Issue hoặc gửi Pull Request qua kho lưu trữ mã nguồn của dự án.
+

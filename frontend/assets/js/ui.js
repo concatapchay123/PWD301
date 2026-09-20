@@ -270,6 +270,227 @@ class UI {
     });
   }
 
+  static openTopic9Modal() {
+    const body = `
+      <div class="space-y-4 text-xs sm:text-sm text-[#37352F] dark:text-[#EDEDEB]">
+        <!-- 1. Đội ngũ sinh viên thực hiện -->
+        <div class="p-4 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] space-y-3">
+          <div class="flex items-center justify-between border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-2">
+            <h4 class="font-bold text-xs sm:text-sm text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[17px] text-blue-600 dark:text-blue-400">groups</span>
+              Đội ngũ Sinh viên Thực hiện Dự án
+            </h4>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">Nhóm 4 thành viên</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            <div class="p-2.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#262524]">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Đặng Lý Quân</span>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">Trưởng nhóm</span>
+              </div>
+              <div class="text-[11px] text-blue-600 dark:text-blue-400 font-mono mt-0.5">danglyquan@gmail.com</div>
+              <div class="text-[10.5px] text-[#8F8E8A] mt-1 leading-snug">Kiến trúc tổng thể Headless REST API, CSDL 71 bảng SQL Server 2022, phân quyền RBAC & xác thực kép.</div>
+            </div>
+            <div class="p-2.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#262524]">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Lại Vĩnh Phú</span>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">Backend & DB</span>
+              </div>
+              <div class="text-[11px] text-blue-600 dark:text-blue-400 font-mono mt-0.5">vinhphu2020.nt@gmail.com</div>
+              <div class="text-[10.5px] text-[#8F8E8A] mt-1 leading-snug">Dịch vụ nghiệp vụ Khóa học, Bài giảng, chuẩn đầu ra ABET SLOs, Flask-Migrate & bộ Seed Data, Docker Compose.</div>
+            </div>
+            <div class="p-2.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#262524]">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Phạm Nguyễn Hoàng Phúc</span>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">Khảo thí & An ninh</span>
+              </div>
+              <div class="text-[11px] text-blue-600 dark:text-blue-400 font-mono mt-0.5">tqtphamnguyenhoangphuc@gmail.com</div>
+              <div class="text-[10.5px] text-[#8F8E8A] mt-1 leading-snug">Động cơ Khảo thí tự động chấm 100%, bộ bóc tách Word (.docx) Azota 50/50, quét virus ClamAV Fail-Closed.</div>
+            </div>
+            <div class="p-2.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#262524]">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Trần Đặng Hữu Thắng</span>
+                <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">Frontend & AI</span>
+              </div>
+              <div class="text-[11px] text-blue-600 dark:text-blue-400 font-mono mt-0.5">callmewin06@gmail.com</div>
+              <div class="text-[10.5px] text-[#8F8E8A] mt-1 leading-snug">Single-DOM SPA Warm Editorial Notion Dark, Trợ lý AI Bạch Tuộc Gemini xoay tua đa khóa, Cockpit đo đạc máy chủ.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Quy chuẩn Môn học & Topic 9 -->
+        <div class="p-4 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] space-y-3">
+          <div class="flex items-center justify-between border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-2">
+            <h4 class="font-bold text-xs sm:text-sm text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[17px] text-emerald-600 dark:text-emerald-400">menu_book</span>
+              Quy chuẩn Môn học & Đề tài Topic 9 (PWD301_Project.docx)
+            </h4>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Đồ án 20%</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Môn học</div>
+              <div class="font-bold text-[#222120] dark:text-[#EDEDEB] mt-0.5">PWD301</div>
+              <div class="text-[9px] text-[#8F8E8A]">Python & Flask</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Thời lượng</div>
+              <div class="font-bold text-[#222120] dark:text-[#EDEDEB] mt-0.5">10 Tuần</div>
+              <div class="text-[9px] text-[#8F8E8A]">60 ca học</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Quy mô nhóm</div>
+              <div class="font-bold text-[#222120] dark:text-[#EDEDEB] mt-0.5">4–5 Sinh viên</div>
+              <div class="text-[9px] text-[#8F8E8A]">Bảo vệ 20 phút</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Trọng số</div>
+              <div class="font-bold text-[#222120] dark:text-[#EDEDEB] mt-0.5">20% Tổng điểm</div>
+              <div class="text-[9px] text-[#8F8E8A]">Thang điểm 10</div>
+            </div>
+          </div>
+          <div class="p-3 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-1.5">
+            <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB]">Topic 9: Online Course Management Platform</div>
+            <p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] italic leading-relaxed">
+              "An online course management platform where instructors create courses with lessons, students enroll, track progress, and take simple quizzes."
+            </p>
+            <div class="pt-1.5 border-t border-[#F4F1EA] dark:border-[#2E2D2B] text-xs space-y-1">
+              <div class="font-semibold text-[#222120] dark:text-[#EDEDEB]">6 Tính năng cốt lõi theo đề bài:</div>
+              <ul class="list-disc list-inside space-y-0.5 text-[#5C5B57] dark:text-[#9E9D99] text-[11px]">
+                <li><strong>Giảng viên tạo khóa học</strong>: Tên, mô tả, danh mục bài giảng có thứ tự logic.</li>
+                <li><strong>Học viên duyệt & ghi danh</strong>: Xem danh sách khóa học, đăng ký (enroll), theo dõi tiến độ hoàn thành.</li>
+                <li><strong>Bài giảng Markdown</strong>: Nội dung định dạng phong phú, có đánh dấu "Đã hoàn thành".</li>
+                <li><strong>Khảo thí trắc nghiệm (Quiz)</strong>: Kiểm tra ngắn ở cuối bài với tự động chấm điểm khách quan.</li>
+                <li><strong>Phân quyền RBAC 3 vai trò</strong>: Admin (duyệt khóa học), Instructor (quản lý khóa học), Student (ghi danh & học).</li>
+                <li><strong>REST API</strong>: Endpoint trả về danh sách khóa học và tiến độ học tập của sinh viên.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 12 Tiêu chí Chung Bắt buộc -->
+        <div class="p-4 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] space-y-2.5">
+          <h4 class="font-bold text-xs sm:text-sm text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[17px] text-amber-600 dark:text-amber-400">fact_check</span>
+            12 Yêu cầu Chung Bắt buộc cho Tất cả các Đề tài (General Requirements)
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[#5C5B57] dark:text-[#9E9D99]">
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">1.</span>
+              <span><strong>Flask + SQL Server</strong>: Python 3.11+ với SQL Server làm CSDL chính.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">2.</span>
+              <span><strong>SQLAlchemy ORM</strong>: Tối thiểu 4 bảng và ít nhất 1 quan hệ Nhiều - Nhiều (M-M).</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">3.</span>
+              <span><strong>Flask-WTF</strong>: Tất cả form có CSRF protection và server-side validation.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">4.</span>
+              <span><strong>Flask-Login & RBAC</strong>: Xác thực và phân quyền tối thiểu 3 roles độc lập.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">5.</span>
+              <span><strong>REST API + JWT</strong>: Tối thiểu 3 endpoint API JSON có xác thực JWT.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">6.</span>
+              <span><strong>AJAX / Fetch API</strong>: Tối thiểu 1 tính năng tương tác động không tải lại trang.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">7.</span>
+              <span><strong>Giao diện Responsive</strong>: Kế thừa layout và thiết kế đáp ứng đa thiết bị.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">8.</span>
+              <span><strong>Flask-Migrate / Alembic</strong>: Quản lý di trú CSDL kèm dữ liệu mẫu (Seed Data).</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">9.</span>
+              <span><strong>Docker Containerization</strong>: Đóng gói Dockerfile + docker-compose.yml.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">10.</span>
+              <span><strong>AI Usage Log</strong>: Ứng dụng công cụ AI (Copilot/Gemini) và lưu nhật ký sử dụng.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">11.</span>
+              <span><strong>Quản lý Git + README</strong>: Quản lý source code trên Git và README chi tiết.</span>
+            </div>
+            <div class="flex items-start gap-1.5 p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="font-bold text-blue-600 dark:text-blue-400">12.</span>
+              <span><strong>Bảo vệ 20 phút</strong>: Slide thuyết trình + Demo ứng dụng trực tiếp + Q&A.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Thành tựu Vượt bậc tại PWD301 -->
+        <div class="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-2.5">
+          <h4 class="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[17px]">verified</span>
+            Thành tựu Hiện thực Hóa Vượt bậc tại Hệ thống PWD301 LMS
+          </h4>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Quy mô CSDL</div>
+              <div class="font-bold text-emerald-600 dark:text-emerald-400 text-sm mt-0.5">71 Bảng</div>
+              <div class="text-[9px] text-[#8F8E8A]">Yêu cầu min 4 (x17 lần)</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Kiến trúc Giao diện</div>
+              <div class="font-bold text-blue-600 dark:text-blue-400 text-sm mt-0.5">Single-DOM SPA</div>
+              <div class="text-[9px] text-[#8F8E8A]">Warm Editorial Notion Dark</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Studio Khảo thí</div>
+              <div class="font-bold text-purple-600 dark:text-purple-400 text-sm mt-0.5">Word Azota 50/50</div>
+              <div class="text-[9px] text-[#8F8E8A]">Tự chấm + Lease Fencing</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Trí tuệ Nhân tạo</div>
+              <div class="font-bold text-amber-600 dark:text-amber-400 text-sm mt-0.5">Bạch Tuộc AI</div>
+              <div class="text-[9px] text-[#8F8E8A]">Xoay tua đa khóa Gemini</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">An toàn Tệp tải lên</div>
+              <div class="font-bold text-rose-600 dark:text-rose-400 text-sm mt-0.5">ClamAV Fail-Closed</div>
+              <div class="text-[9px] text-[#8F8E8A]">Quét mã độc tự động</div>
+            </div>
+            <div class="p-2 rounded-lg bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="text-[10px] text-[#8F8E8A]">Kiểm thử Tự động</div>
+              <div class="font-bold text-emerald-600 dark:text-emerald-400 text-sm mt-0.5">535+ Tests 100%</div>
+              <div class="text-[9px] text-[#8F8E8A]">TDD & Zero Regression</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const footer = `
+      <div class="w-full flex items-center justify-between">
+        <span class="text-[11px] text-[#8F8E8A]">Đồ án môn học PWD301 • Học kỳ Fall 2026</span>
+        <button type="button" class="c-btn c-btn-primary c-btn-sm" onclick="UI.closeModal()">
+          <span class="material-symbols-outlined text-[15px]">check</span>
+          <span>Đã hiểu</span>
+        </button>
+      </div>
+    `;
+
+    UI.openModal({
+      title: `
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[20px] text-blue-600 dark:text-blue-400">school</span>
+          <span>Đồ án Môn học PWD301 — Topic 9 & Đội ngũ Phát triển</span>
+        </div>
+      `,
+      bodyHtml: body,
+      footerHtml: footer,
+      size: 'xl'
+    });
+  }
+
   // =========================================================================
   // 3. Multi-Directional Drawer System
   // =========================================================================

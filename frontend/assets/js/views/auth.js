@@ -402,9 +402,34 @@ class AuthView {
             </div>
           </div>
 
-          <!-- Footer Copyright -->
-          <div class="mt-6 text-center text-[11px] text-[#8F8E8A]">
-            <p>Hệ thống Học tập & Khảo thí PWD301 LMS</p>
+          <!-- Footer Topic 9 & Project Contributors Card -->
+          <div class="mt-6 text-xs text-[#8F8E8A] w-full select-none">
+            <div class="p-4 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF]/90 dark:bg-[#202020]/90 backdrop-blur-xs space-y-2.5 text-left shadow-2xs">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5 text-xs">
+                  <span class="material-symbols-outlined text-[16px] text-blue-600 dark:text-blue-400">school</span>
+                  Đề tài Topic 9 môn học PWD301
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Đồ án 20%</span>
+              </div>
+              <p class="text-[11px] leading-relaxed text-[#5C5B57] dark:text-[#9E9D99]">
+                <strong>Online Course Management Platform</strong> — Nền tảng Quản lý Khóa học & Khảo thí Trực tuyến chuẩn Doanh nghiệp.
+              </p>
+              <div class="pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B] text-[11px] space-y-1">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-[#8F8E8A]">Nhóm sinh viên thực hiện:</div>
+                <div class="grid grid-cols-1 gap-1 text-[11px] text-[#37352F] dark:text-[#EDEDEB]">
+                  <div>• <strong>Đặng Lý Quân</strong> — <span class="font-mono text-[10px] text-blue-600 dark:text-blue-400">danglyquan@gmail.com</span></div>
+                  <div>• <strong>Lại Vĩnh Phú</strong> — <span class="font-mono text-[10px] text-blue-600 dark:text-blue-400">vinhphu2020.nt@gmail.com</span></div>
+                  <div>• <strong>Phạm Nguyễn Hoàng Phúc</strong> — <span class="font-mono text-[10px] text-blue-600 dark:text-blue-400">tqtphamnguyenhoangphuc@gmail.com</span></div>
+                  <div>• <strong>Trần Đặng Hữu Thắng</strong> — <span class="font-mono text-[10px] text-blue-600 dark:text-blue-400">callmewin06@gmail.com</span></div>
+                </div>
+              </div>
+              <button type="button" id="btn-open-topic-modal" class="w-full mt-2 c-btn c-btn-secondary c-btn-sm justify-center text-xs">
+                <span class="material-symbols-outlined text-[15px] text-blue-600 dark:text-blue-400">menu_book</span>
+                <span>Xem Chi tiết Đề tài, Yêu cầu & Rubric</span>
+              </button>
+            </div>
+            <p class="text-center mt-3 text-[11px] text-[#8F8E8A]">Hệ thống Học tập & Khảo thí PWD301 LMS • Fall 2026</p>
           </div>
 
         </div>
@@ -771,7 +796,18 @@ class AuthView {
         }
       };
     }
+
+    // Handle Open Topic 9 & Contributors Modal
+    const btnOpenTopicModal = document.getElementById('btn-open-topic-modal');
+    if (btnOpenTopicModal) {
+      btnOpenTopicModal.onclick = () => {
+        if (typeof UI !== 'undefined' && typeof UI.openTopic9Modal === 'function') {
+          UI.openTopic9Modal();
+        }
+      };
+    }
   }
 }
 
 window.AuthView = AuthView;
+
