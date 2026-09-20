@@ -466,15 +466,12 @@ Trích xuất từ mục *"GENERAL REQUIREMENTS FOR ALL TOPICS"* (`PWD301_Projec
 | **Tích hợp Trí tuệ Nhân tạo AI** | Cụm trợ lý AI Bạch Tuộc tự xoay vòng **bể chứa đa khóa API xoay vòng**, cascade đa mô hình, hàng rào chống rò rỉ bí mật hệ thống 3 tầng, RAG phân quyền. | Đột phá Công nghệ |
 | **Đóng gói Docker / Deployment** | Docker Compose nạp đồng thời Web Engine, SQL Server 2022 và ClamAV Antivirus chỉ với 1 lệnh khởi chạy. | Sẵn sàng Production |
 
-> 📖 **Xem toàn văn hồ sơ học vụ**: Chi tiết toàn bộ yêu cầu, 5 cột mốc tiến độ (Milestones 1–5) và phân tích nghiệp vụ tại [`docs/TOPIC_9_SPECIFICATION_AND_TEAM.md`](docs/TOPIC_9_SPECIFICATION_AND_TEAM.md).
-
 ---
 
 ## 📚 Tra cứu Tài liệu Kỹ thuật Chuyên sâu
 
 Nhằm bảo đảm tính tinh gọn và chuẩn mực cho README chính, toàn bộ các tài liệu đặc tả kỹ thuật chi tiết được lưu trữ có hệ thống trong thư mục `docs/`:
 
-- **Hồ sơ Đề tài Topic 9 & Đội ngũ Thực hiện**: [`docs/TOPIC_9_SPECIFICATION_AND_TEAM.md`](file:///e:/PWD301/docs/TOPIC_9_SPECIFICATION_AND_TEAM.md)
 - **Đặc tả Hệ thống Toàn diện**: [`docs/system/PWD301_SYSTEM_SPECIFICATION/`](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/)
   - [Đặc tả Kiến trúc Hệ thống](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/04_SYSTEM_ARCHITECTURE.md)
   - [Danh mục 73 Quy tắc Nghiệp vụ (Business Rules)](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/business/01_BUSINESS_RULE_CATALOG.md)
@@ -492,12 +489,13 @@ Nhằm bảo đảm tính tinh gọn và chuẩn mực cho README chính, toàn 
 
 Dự án **PWD301 LMS** được hoàn thành bởi nhóm sinh viên thực hiện đồ án môn học **PWD301 — Web Application Development with Python & Flask**:
 
-| Họ và Tên Thành viên | Email Liên hệ | Phân công Trách nhiệm Chính |
-|---|---|---|
-| **Đặng Lý Quân** | `danglyquan@gmail.com` | **Trưởng nhóm & Kỹ sư Kiến trúc Hệ thống**<br>• Thiết kế kiến trúc tổng thể Headless REST API & Modular Monolith.<br>• Xây dựng tầng CSDL 71 bảng quan hệ trên SQL Server 2022.<br>• Quản trị xác thực kép (Session + JWT) và phân quyền RBAC. |
-| **Lại Vĩnh Phú** | `vinhphu2020.nt@gmail.com` | **Kỹ sư Lập trình Backend & Hạ tầng Dữ liệu**<br>• Xây dựng các nghiệp vụ cốt lõi: Khóa học, Bài giảng, Đề cương ABET SLOs.<br>• Quản lý di trú CSDL Flask-Migrate / Alembic và bộ Seed Data mẫu.<br>• Đóng gói môi trường Docker & Docker Compose đa dịch vụ. |
-| **Phạm Nguyễn Hoàng Phúc** | `tqtphamnguyenhoangphuc@gmail.com` | **Kỹ sư Khảo thí Trực tuyến & An ninh Mạng**<br>• Xây dựng Động cơ Khảo thí Server-Authoritative 100% tự động chấm.<br>• Phát triển bộ bóc tách đề thi Azota / Word (`.docx`) trực quan 50/50.<br>• Quét virus tệp tải lên ClamAV Fail-Closed và quản lý Lease Fencing. |
-| **Trần Đặng Hữu Thắng** | `callmewin06@gmail.com` | **Kỹ sư Giao diện Người dùng & Tích hợp AI**<br>• Phát triển toàn bộ Single-DOM SPA theo phong cách Warm Editorial.<br>• Tích hợp Trợ lý Gia sư AI Bạch Tuộc với hồ chứa đa khóa Google Gemini.<br>• Xây dựng Cockpit quản trị, đo đạc phần cứng thời gian thực. |
+| STT | Họ và Tên | Email Liên hệ | Tài khoản GitHub |
+|:---:|---|---|---|
+| 1 | **Đặng Lý Quân** | `danglyquan@gmail.com` | — |
+| 2 | **Lại Vĩnh Phú** | `vinhphu2020.nt@gmail.com` | — |
+| 3 | **Phạm Nguyễn Hoàng Phúc** | `tqtphamnguyenhoangphuc@gmail.com` | [`@concatapchay123`](https://github.com/concatapchay123) |
+| 4 | **Trần Đặng Hữu Thắng** | `callmewin06@gmail.com` | [`@callmewin06-create`](https://github.com/callmewin06-create) |
 
 Mã nguồn được phát hành theo giấy phép [MIT License](LICENSE). Mọi đóng góp, đề xuất tính năng hoặc báo cáo lỗi xin vui lòng mở Issue hoặc gửi Pull Request qua kho lưu trữ mã nguồn của dự án.
+
 

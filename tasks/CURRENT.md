@@ -8,32 +8,26 @@
 ---
 
 ## Goal & Resolution Summary
-Cập nhật toàn diện thông tin 4 thành viên hoàn thành dự án và đặc tả học thuật chuẩn của đề tài Topic 9 từ tài liệu quy chuẩn môn học `C:\Users\LENOVO\Downloads\PWD301_Project.docx` lên tài liệu dự án, hệ thống tra cứu và giao diện web SPA:
+Cập nhật thông tin đội ngũ hoàn thành dự án kèm tài khoản GitHub và thông tin đề tài Topic 9 từ tài liệu môn học `C:\Users\LENOVO\Downloads\PWD301_Project.docx` vào tệp `README.md`:
 
-1. **Thông tin Đội ngũ Thực hiện Dự án (Project Contributors)**:
-   - **Đặng Lý Quân** (`danglyquan@gmail.com`): Trưởng nhóm & Kỹ sư Kiến trúc Hệ thống (Lead Architect).
-   - **Lại Vĩnh Phú** (`vinhphu2020.nt@gmail.com`): Kỹ sư Lập trình Backend & Hạ tầng Dữ liệu (Backend & Database Engineer).
-   - **Phạm Nguyễn Hoàng Phúc** (`tqtphamnguyenhoangphuc@gmail.com`): Kỹ sư Khảo thí Trực tuyến & An ninh Mạng (Exam Engine & Security Engineer).
-   - **Trần Đặng Hữu Thắng** (`callmewin06@gmail.com`): Kỹ sư Giao diện Người dùng & Tích hợp AI (Frontend & AI Engineer).
+1. **Thông tin Đội ngũ Hoàn thành Dự án (Project Contributors)**:
+   - **Đặng Lý Quân**: `danglyquan@gmail.com`
+   - **Lại Vĩnh Phú**: `vinhphu2020.nt@gmail.com`
+   - **Phạm Nguyễn Hoàng Phúc**: `tqtphamnguyenhoangphuc@gmail.com` | GitHub: [`@concatapchay123`](https://github.com/concatapchay123)
+   - **Trần Đặng Hữu Thắng**: `callmewin06@gmail.com` | GitHub: [`@callmewin06-create`](https://github.com/callmewin06-create)
+   - Loại bỏ phần phân công trách nhiệm chi tiết của từng cá nhân theo yêu cầu tối giản.
 
-2. **Đặc tả Học thuật Đề tài Topic 9 (Course & Topic 9 Specifications)**:
-   - Trích xuất toàn văn các tham số quy chuẩn môn học PWD301: Trọng số 20% tổng kết, thời lượng 10 tuần (60 ca), quy mô 4-5 sinh viên, bảo vệ 20 phút/nhóm (Slide + Demo trực tiếp + Q&A).
-   - Chi tiết đề tài **Topic 9: Online Course Management Platform**: Mô tả đề tài, 6 tính năng cốt lõi (Key Features), Tech stack quy định, 8 bước triển khai chuẩn (Implementation Steps).
+2. **Đặc tả Học thuật Đề tài Topic 9 trên `README.md`**:
+   - Trích xuất toàn văn thông số môn học PWD301: Trọng số 20% tổng kết, thời lượng 10 tuần (60 ca), quy mô 4-5 sinh viên, bảo vệ 20 phút/nhóm (Slide + Demo trực tiếp + Q&A).
+   - Chi tiết đề tài **Topic 9: Online Course Management Platform**: Mô tả đề tài, 6 tính năng cốt lõi (Key Features), Tech stack quy định.
    - 12 Tiêu chí chung bắt buộc cho tất cả các đề tài (General Requirements for All Topics) từ `PWD301_Project.docx`.
-   - Lộ trình 5 cột mốc đồ án (Progress Report Milestones 1 - 5).
    - Bảng ma trận đối chiếu Rubric đánh giá chứng minh hệ thống PWD301 LMS đáp ứng 100% và nâng cấp vượt bậc (71 bảng DB vs min 4, Single-DOM SPA Warm Editorial vs Jinja cơ bản, Azota Word Parser Studio vs quiz đơn giản, Trợ lý AI Bạch Tuộc Gemini đa khóa xoay tua vs log AI cơ bản, ClamAV fail-closed...).
 
-3. **Cập nhật Hệ thống Tài liệu & Giao diện SPA**:
-   - `docs/TOPIC_9_SPECIFICATION_AND_TEAM.md`: Tài liệu đặc tả chuẩn hóa độc lập song ngữ đầy đủ.
-   - `README.md`: Cập nhật chi tiết mục *Đổi chiếu Chuẩn Học thuật & Ma trận Rubric Topic 9* và *Bản quyền & Đội ngũ Phát triển*.
-   - `docs/README.md`: Bổ sung liên kết điều hướng đến tài liệu Topic 9 và nhóm phát triển.
-   - `frontend/assets/js/ui.js`: Bổ sung phương thức `UI.openTopic9Modal()` hiển thị modal Warm Editorial chi tiết 4 phân khu (Nhóm sinh viên, Đề tài môn học, 12 tiêu chuẩn bắt buộc, Thành tựu vượt bậc).
-   - `frontend/index.html` & `frontend/assets/js/router.js`: Tích hợp nút `#topbar-topic-btn` trên Topbar, menu drawer trên di động và menu ngữ cảnh avatar.
-   - `frontend/assets/js/views/auth.js`: Thêm thẻ chân trang giới thiệu đề tài, 4 thành viên và nút mở Modal tra cứu trực tiếp trước khi đăng nhập.
+3. **Tinh gọn Giao diện (Zero UI Clutter)**:
+   - Giữ nguyên vẹn toàn bộ giao diện người dùng frontend, không chèn các nút hoặc modal tra cứu vào giao diện SPA để bảo đảm tính tối giản theo chỉ đạo của người dùng.
 
 ## Test Verification Summary
 - **Repo Contract Check**: `python scripts/repo_check.py` PASSED 100% (cân bằng code fences markdown, không vi phạm contract).
-- **JavaScript Syntax Check**: `node --check` PASSED 100% trên `ui.js`, `router.js`, `auth.js` (0 errors).
 - **Integration Tests**: `pytest tests/api/test_frontend_integration.py` PASSED 100% (11/11 tests).
 
 ---

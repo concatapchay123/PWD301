@@ -78,16 +78,6 @@ class AppRouter {
         close();
       }
     });
-
-    const mobileTopicBtn = document.getElementById('mobile-nav-topic-btn');
-    if (mobileTopicBtn) {
-      mobileTopicBtn.onclick = () => {
-        close();
-        if (typeof UI !== 'undefined' && typeof UI.openTopic9Modal === 'function') {
-          UI.openTopic9Modal();
-        }
-      };
-    }
   }
 
   async refreshCurrentUser() {
@@ -601,17 +591,6 @@ class AppRouter {
           </div>
         ` : ''}
 
-        <div class="p-1 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
-          <button
-            type="button"
-            id="topbar-dropdown-topic-btn"
-            class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors"
-          >
-            <span class="material-symbols-outlined text-[15px] text-blue-600 dark:text-blue-400">school</span>
-            <span>Đề tài Topic 9 & Nhóm</span>
-          </button>
-        </div>
-
         <div class="p-1">
           <button type="button" id="topbar-logout-btn" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors">
             <span class="material-symbols-outlined text-[15px]">logout</span>
@@ -640,17 +619,6 @@ class AppRouter {
           }
         };
       });
-
-      // Handle Topic Modal from Dropdown
-      const dropdownTopicBtn = document.getElementById('topbar-dropdown-topic-btn');
-      if (dropdownTopicBtn) {
-        dropdownTopicBtn.onclick = () => {
-          roleDropdown.classList.add('hidden');
-          if (typeof UI !== 'undefined' && typeof UI.openTopic9Modal === 'function') {
-            UI.openTopic9Modal();
-          }
-        };
-      }
 
       // Handle Logout
       const logoutBtn = document.getElementById('topbar-logout-btn');
@@ -691,16 +659,6 @@ class AppRouter {
     }
 
     updateThemeIcon();
-
-    // Setup Topic 9 & Project Team Info Button
-    const topicBtn = document.getElementById('topbar-topic-btn');
-    if (topicBtn) {
-      topicBtn.onclick = () => {
-        if (typeof UI !== 'undefined' && typeof UI.openTopic9Modal === 'function') {
-          UI.openTopic9Modal();
-        }
-      };
-    }
 
     // Setup Avatar Dropdown Toggle
     const avatarBtn = document.getElementById('topbar-avatar-btn');
