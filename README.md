@@ -40,48 +40,76 @@ Hệ thống tuân thủ mô hình **Modular Monolith** kết hợp nguyên tắ
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer ["Tầng Khách (Client Presentation)"]
-        SPA["Trình duyệt / Single-DOM SPA\n(Vanilla JS • Hash Router • Warm Charcoal UI)"]
-        EXT["REST API Clients / Tích hợp Ngoại vi\n(Bearer JWT Authentication)"]
+    %% TẦNG 1: TRUY CẬP (CLIENT TIER)
+    subgraph TierClient ["  1. TẦNG TRUY CẬP & GIAO DIỆN (CLIENT PRESENTATION)  "]
+        SPA["🌐 Single-DOM Web SPA\n(Vanilla JS • Hash Router • Warm Charcoal UI)"]
+        API_CLIENT["📱 REST API Clients / Ngoại vi\n(External Apps • Integration Services)"]
     end
 
-    subgraph GatewayLayer ["Tầng Cổng & Bảo mật (Gateway & Security)"]
-        PROXY["Reverse Proxy / HTTPS Gateway\n(Gunicorn WSGI Worker Pool)"]
-        AUTH_GATE["Cơ chế Xác thực Kép\n(Web Session + CSRF / API JWT Bearer)"]
+    %% TẦNG 2: CỔNG & AN NINH (GATEWAY TIER)
+    subgraph TierGateway ["  2. TẦNG CỔNG & BẢO MẬT (GATEWAY & SECURITY BOUNDARY)  "]
+        PROXY["🛡️ Reverse Proxy & WSGI Server\n(Gunicorn WSGI Pool • HTTPS Termination)"]
+        AUTH_GATE["🔐 Bộ lọc Xác thực Kép & CSRF\n(Session Cookie + CSRF • Bearer JWT Token)"]
     end
 
-    subgraph CoreBackend ["Lõi Ứng dụng Backend (Flask Headless API)"]
-        LMS_SVC["Phân hệ Học vụ & Khóa học\n(Course • Lesson • Progress • ABET SLOs)"]
-        EXAM_SVC["Động cơ Khảo thí & Chấm thi\n(Exam Studio • Lease Fencing • Regrade)"]
-        AI_SVC["Cổng Trợ lý AI (Bạch Tuộc AI)\n(Key Pool • Intent Guardrails • Scope RAG)"]
-        OPS_SVC["Quản trị Vận hành & An ninh\n(Host Telemetry • 4-Step Restore • Audit)"]
+    %% TẦNG 3: LÕI BACKEND (APPLICATION SERVICES TIER)
+    subgraph TierBackend ["  3. LÕI ỨNG DỤNG BACKEND (FLASK MODULAR MONOLITH)  "]
+        SVC_LMS["📚 Phân hệ Học vụ\n(Course • Lesson • ABET SLOs)"]
+        SVC_EXAM["📝 Động cơ Khảo thí\n(Exam Studio • Azota • Lease)"]
+        SVC_AI["🐙 Trợ lý AI Bạch Tuộc\n(93 Keys • Guardrails • RAG)"]
+        SVC_OPS["⚙️ Vận hành & An ninh\n(Host Telemetry • Live Restore)"]
     end
 
-    subgraph StorageInfra ["Tầng Hạ tầng & Lưu trữ Dữ liệu"]
-        MSSQL[("Microsoft SQL Server 2022\n(71 Tables • BigInt PK • Public UUID • ROWVERSION)")]
-        CLAMAV["ClamAV Antivirus Daemon\n(Quét tệp Fail-Closed • Port 3310)"]
-        GEMINI["Google Gemini API Cloud\n(Pool 93 Khóa xoay vòng • Cascade Fallback)"]
-        HOST_METRICS["Host Hardware Telemetry Bridge\n(Physical CPU • 31.7GB RAM • NVMe Storage)"]
-        PRIVATE_STORE[("Lưu trữ Tệp Cục bộ\n(/storage • /quarantine • /backups)")]
+    %% TẦNG 4: HẠ TẦNG & DỮ LIỆU CHUẨN (INFRASTRUCTURE & PERSISTENCE)
+    subgraph TierInfra ["  4. TẦNG HẠ TẦNG & DỮ LIỆU (INFRASTRUCTURE & PERSISTENCE)  "]
+        STORE_FILE[("🛡️ An toàn Tệp & Lưu trữ\n(ClamAV Fail-Closed • Local Vault)")]
+        STORE_DB[("🗄️ Microsoft SQL Server 2022\n(Lõi 71 Bảng • Public UUID • ROWVERSION)")]
+        STORE_AI["☁️ Google Gemini Cloud API\n(gemini-flash-latest • Cascade)"]
+        STORE_HOST["💻 Host Telemetry Bridge\n(Physical CPU i9-14900HX • 31.7GB RAM)"]
     end
 
+    %% KẾT NỐI TẦNG 1 -> TẦNG 2
     SPA -->|Session Cookie + CSRF| PROXY
-    EXT -->|Bearer JWT| PROXY
+    API_CLIENT -->|Bearer JWT Header| PROXY
     PROXY --> AUTH_GATE
-    AUTH_GATE --> LMS_SVC
-    AUTH_GATE --> EXAM_SVC
-    AUTH_GATE --> AI_SVC
-    AUTH_GATE --> OPS_SVC
 
-    LMS_SVC <--> MSSQL
-    EXAM_SVC <--> MSSQL
-    OPS_SVC <--> MSSQL
-    OPS_SVC <--> HOST_METRICS
-    OPS_SVC <--> PRIVATE_STORE
-    LMS_SVC <--> CLAMAV
-    LMS_SVC <--> PRIVATE_STORE
-    AI_SVC <--> GEMINI
-    AI_SVC <--> MSSQL
+    %% KẾT NỐI TẦNG 2 -> TẦNG 3
+    AUTH_GATE --> SVC_LMS
+    AUTH_GATE --> SVC_EXAM
+    AUTH_GATE --> SVC_AI
+    AUTH_GATE --> SVC_OPS
+
+    %% KẾT NỐI TẦNG 3 -> TẦNG 4 (ĐỐI XỨNG, THẲNG HÀNG, KHÔNG ĐAN CHÉO)
+    SVC_LMS <-->|Quét virus tệp| STORE_FILE
+    SVC_LMS <--> STORE_DB
+    SVC_EXAM <--> STORE_DB
+    SVC_AI <--> STORE_DB
+    SVC_AI <-->|Suy luận LLM| STORE_AI
+    SVC_OPS <--> STORE_DB
+    SVC_OPS <-->|Chỉ số máy thật| STORE_HOST
+
+    %% ĐỊNH NGHĨA PHONG CÁCH MÀU SẮC ĐỒNG BỘ
+    classDef clientNode fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#f8fafc;
+    classDef gatewayNode fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
+    classDef lmsNode fill:#064e3b,stroke:#34d399,stroke-width:1.5px,color:#f8fafc;
+    classDef examNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:1.5px,color:#f8fafc;
+    classDef opsNode fill:#451a03,stroke:#fbbf24,stroke-width:1.5px,color:#f8fafc;
+    classDef aiNode fill:#4c1d95,stroke:#c084fc,stroke-width:1.5px,color:#f8fafc;
+    classDef dbNode fill:#7f1d1d,stroke:#f87171,stroke-width:2.5px,color:#f8fafc;
+    classDef storageNode fill:#134e4a,stroke:#2dd4bf,stroke-width:1.5px,color:#f8fafc;
+    classDef hostNode fill:#365314,stroke:#a3e635,stroke-width:1.5px,color:#f8fafc;
+    classDef cloudNode fill:#3b0764,stroke:#d8b4fe,stroke-width:1.5px,color:#f8fafc;
+
+    class SPA,API_CLIENT clientNode;
+    class PROXY,AUTH_GATE gatewayNode;
+    class SVC_LMS lmsNode;
+    class SVC_EXAM examNode;
+    class SVC_OPS opsNode;
+    class SVC_AI aiNode;
+    class STORE_DB dbNode;
+    class STORE_FILE storageNode;
+    class STORE_HOST hostNode;
+    class STORE_AI cloudNode;
 ```
 
 ### Các Nguyên lý Kỹ thuật Bất biến
