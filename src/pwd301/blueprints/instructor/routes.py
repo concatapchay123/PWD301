@@ -3339,3 +3339,125 @@ def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
         with contextlib.suppress(Exception):
             if tmp_path.exists():
                 tmp_path.unlink()
+
+
+@instructor_bp.route("/exams/excel-template", methods=["GET"])
+@instructor_required
+def instructor_get_excel_template_route() -> Response:
+    """Download standardized Excel exam question template (.xlsx)."""
+    import io
+    from pwd301.services.excel_exam_service import generate_excel_exam_template
+
+    data = generate_excel_exam_template()
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="De_thi_mau_chuan_hoa.xlsx",
+    )
+
+
+@instructor_bp.route("/exams/parse-excel", methods=["POST"])
+@instructor_required
+def instructor_parse_excel_exam_route() -> tuple[Response, int] | Response:
+    """Parse an uploaded Excel workbook (.xlsx, .xls) into exam questions."""
+    from pwd301.services.excel_exam_service import parse_excel_exam
+    from pwd301.services.exceptions import ValidationError
+
+    if "file" not in request.files:
+        raise ValidationError("Vui lòng đính kèm tệp Excel (.xlsx) để tải lên.")
+
+    upload = request.files["file"]
+    if not upload or not upload.filename:
+        raise ValidationError("Tên tệp Excel không hợp lệ.")
+
+    try:
+        content = upload.stream.read()
+        res = parse_excel_exam(content)
+        res["filename"] = upload.filename
+        return jsonify(res), 200
+    except Exception as err:
+        raise ValidationError(f"Không thể xử lý tệp Excel: {err}") from err
+
+
+@instructor_bp.route("/exams/parse-moodle-xml", methods=["POST"])
+@instructor_required
+def instructor_parse_moodle_xml_route() -> tuple[Response, int] | Response:
+    """Parse Moodle XML into standardized exam questions."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.moodle_exam_service import parse_moodle_xml
+
+    xml_text = ""
+    if "file" in request.files:
+        upload = request.files["file"]
+        if upload and upload.filename:
+            xml_text = upload.stream.read().decode("utf-8", errors="replace")
+    else:
+        json_data = request.get_json(silent=True) or {}
+        xml_text = json_data.get("xml") or json_data.get("content") or ""
+
+    if not xml_text.strip():
+        raise ValidationError("Vui lòng cung cấp tệp Moodle XML hoặc chuỗi XML hợp lệ.")
+
+    res = parse_moodle_xml(xml_text)
+    return jsonify(res), 200
+
+
+@instructor_bp.route("/exams/parse-json", methods=["POST"])
+@instructor_required
+def instructor_parse_exam_json_route() -> tuple[Response, int] | Response:
+    """Parse JSON question data into standardized exam questions."""
+    from pwd301.services.exceptions import ValidationError
+    from pwd301.services.moodle_exam_service import parse_moodle_json
+
+    json_str = ""
+    if "file" in request.files:
+        upload = request.files["file"]
+        if upload and upload.filename:
+            json_str = upload.stream.read().decode("utf-8", errors="replace")
+    else:
+        json_data = request.get_json(silent=True)
+        if json_data is not None:
+            if isinstance(json_data, dict) and "json_content" in json_data:
+                json_str = str(json_data["json_content"])
+            else:
+                json_str = json.dumps(json_data, ensure_ascii=False)
+
+    if not json_str.strip():
+        raise ValidationError("Vui lòng cung cấp tệp JSON hoặc chuỗi JSON hợp lệ.")
+
+    res = parse_moodle_json(json_str)
+    return jsonify(res), 200
+
+
+@instructor_bp.route("/exams/samples/moodle-xml", methods=["GET"])
+@instructor_required
+def instructor_get_moodle_xml_sample_route() -> Response:
+    """Download sample Moodle XML file."""
+    import io
+    from pwd301.services.moodle_exam_service import generate_moodle_sample_xml
+
+    sample_xml = generate_moodle_sample_xml()
+    return send_file(
+        io.BytesIO(sample_xml.encode("utf-8")),
+        mimetype="application/xml",
+        as_attachment=True,
+        download_name="moodle_sample_questions.xml",
+    )
+
+
+@instructor_bp.route("/exams/samples/json", methods=["GET"])
+@instructor_required
+def instructor_get_json_sample_route() -> Response:
+    """Download sample JSON questions file."""
+    import io
+    from pwd301.services.moodle_exam_service import generate_sample_json
+
+    sample_json = generate_sample_json()
+    return send_file(
+        io.BytesIO(sample_json.encode("utf-8")),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name="exam_sample_questions.json",
+    )
+

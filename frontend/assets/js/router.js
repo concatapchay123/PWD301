@@ -15,6 +15,10 @@ class AppRouter {
     this.viewport = document.getElementById('app-viewport');
     this.sidebar = document.getElementById('app-sidebar');
     this.topbar = document.getElementById('app-topbar');
+    this.adminNavBadges = {
+      courses: 0,
+      applications: 0
+    };
   }
 
   async init() {
@@ -29,6 +33,11 @@ class AppRouter {
 
     // 4. Setup Notifications Bell & Badge Polling
     this.initNotifications();
+
+    // 4.2 Initial Admin Navigation Badges (Pending approvals)
+    if (this.currentRole === 'ADMIN') {
+      this.fetchAdminPendingCounts();
+    }
 
     // 4.5 Setup Mobile Navigation Drawer
     this.initMobileNav();
@@ -307,8 +316,20 @@ class AppRouter {
       await InstructorView.renderExtendedQuestionStudio(this.viewport, query.course);
     } else if (path === '#/instructor/questions') {
       await InstructorView.renderQuestions(this.viewport, query.course);
-    } else if (path === '#/instructor/exams') {
-      InstructorView.renderExams(this.viewport);
+    } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
+      InstructorView.renderExamsHub(this.viewport);
+    } else if (path === '#/instructor/exams/editor') {
+      InstructorView.renderExamEditor(this.viewport);
+    } else if (path === '#/instructor/exams/interactive') {
+      InstructorView.renderExamInteractive(this.viewport);
+    } else if (path === '#/instructor/exams/excel') {
+      InstructorView.renderExamExcel(this.viewport);
+    } else if (path === '#/instructor/exams/moodle') {
+      InstructorView.renderExamMoodle(this.viewport);
+    } else if (path === '#/instructor/exams/matrix') {
+      InstructorView.renderExamMatrix(this.viewport);
+    } else if (path === '#/instructor/exams/settings') {
+      InstructorView.renderExamSettings(this.viewport);
     }
 
     // --- Admin Routes ---
@@ -327,6 +348,44 @@ class AppRouter {
   // =========================================================================
   // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
   // =========================================================================
+  updateAdminNavBadges(badges = {}) {
+    this.adminNavBadges = { ...this.adminNavBadges, ...badges };
+    this.renderDynamicSidebar();
+  }
+
+  async fetchAdminPendingCounts() {
+    if (this.currentRole !== 'ADMIN') return;
+    try {
+      const [coursesRes, crRes, appsRes] = await Promise.allSettled([
+        ApiClient.getPendingCourses(),
+        ApiClient.getAdminChangeRequests('PENDING'),
+        ApiClient.getAdminInstructorApplications('PENDING')
+      ]);
+
+      let pendingCoursesCount = 0;
+      if (coursesRes.status === 'fulfilled' && coursesRes.value) {
+        pendingCoursesCount = coursesRes.value.pending_count || (coursesRes.value.courses ? coursesRes.value.courses.length : 0);
+      }
+      let pendingCrCount = 0;
+      if (crRes.status === 'fulfilled' && crRes.value) {
+        pendingCrCount = crRes.value.pending_count || (crRes.value.change_requests ? crRes.value.change_requests.length : 0);
+      }
+      let pendingAppsCount = 0;
+      if (appsRes.status === 'fulfilled' && appsRes.value) {
+        pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
+      }
+
+      this.adminNavBadges.courses = pendingCoursesCount + pendingCrCount;
+      this.adminNavBadges.applications = pendingAppsCount;
+      this.renderDynamicSidebar();
+    } catch (err) {
+      console.warn('Silent admin pending badge fetch warning:', err);
+    }
+  }
+
+  // =========================================================================
+  // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
+  // =========================================================================
   renderDynamicSidebar() {
     const role = this.currentRole;
     const { path } = this.parseHash();
@@ -335,10 +394,12 @@ class AppRouter {
 
     if (role === 'ADMIN') {
       menu = [
-        { label: 'Bàn điều hành', path: '#/admin/governance', icon: 'admin_panel_settings' },
-        { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'rule' },
-        { label: 'Hồ sơ giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge' },
-        { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring' },
+        { label: 'Người dùng & Phân quyền', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+        { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
+        { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
+        { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
+        { label: 'An toàn & Kiểm toán', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+        { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
       ];
     } else if (role === 'INSTRUCTOR') {
       menu = [
@@ -363,7 +424,10 @@ class AppRouter {
       topNav.innerHTML = menu.map(m => {
         const isPathActive = m.path.includes('?')
           ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
-          : (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path)));
+          : (m.path === '#/admin/governance'
+            ? (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users')
+            : (currentFullHash === m.path || currentFullHash === m.path + '/' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path))));
+        const badgeNum = Number(m.badge) || 0;
         return `
           <a
             href="${m.path}"
@@ -372,9 +436,15 @@ class AppRouter {
                 ? 'bg-[#FFFFFF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
             }"
+            ${badgeNum > 0 ? `title="${m.label} (${badgeNum} việc cần xử lý)"` : ''}
           >
             <span class="material-symbols-outlined text-[16px]">${m.icon}</span>
-            <span>${m.label}</span>
+            <span class="inline-flex items-center">
+              <span>${m.label}</span>
+              ${badgeNum > 0 ? `
+                <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
+              ` : ''}
+            </span>
           </a>
         `;
       }).join('');
@@ -386,18 +456,31 @@ class AppRouter {
       mobileNav.innerHTML = menu.map(m => {
         const isPathActive = m.path.includes('?')
           ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
-          : (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path)));
+          : (m.path === '#/admin/governance'
+            ? (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users')
+            : (currentFullHash === m.path || currentFullHash === m.path + '/' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path))));
+        const badgeNum = Number(m.badge) || 0;
         return `
           <a
             href="${m.path}"
-            class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+            class="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
               isPathActive
                 ? 'bg-[#222120] text-[#FAF9F5] dark:bg-[#EDEDEB] dark:text-[#191919] font-bold'
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
             }"
           >
-            <span class="material-symbols-outlined text-[17px]">${m.icon}</span>
-            <span>${m.label}</span>
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[17px]">${m.icon}</span>
+              <span class="inline-flex items-center">
+                <span>${m.label}</span>
+                ${badgeNum > 0 ? `
+                  <sup class="ml-0.5 -top-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400 select-none leading-none tracking-tight">${badgeNum > 99 ? '99+' : badgeNum}</sup>
+                ` : ''}
+              </span>
+            </div>
+            ${badgeNum > 0 ? `
+              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">${badgeNum} chờ</span>
+            ` : ''}
           </a>
         `;
       }).join('');
@@ -524,6 +607,9 @@ class AppRouter {
           try {
             await ApiClient.switchRole(target);
             this.currentRole = target;
+            if (target === 'ADMIN') {
+              this.fetchAdminPendingCounts();
+            }
             UI.showToast(`Đã chuyển sang góc nhìn ${target === 'ADMIN' ? 'Quản trị viên' : target === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên'}!`, 'info');
             this.updateUserUI();
             this.redirectToRoleHome();

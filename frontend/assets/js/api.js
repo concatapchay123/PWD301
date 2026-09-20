@@ -961,6 +961,58 @@ class ApiClient {
       body: formData
     });
   }
+
+  static async downloadExcelExamTemplate() {
+    window.location.href = '/instructor/exams/excel-template';
+  }
+
+  static async parseExcelExam(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return await ApiClient.request('/instructor/exams/parse-excel', {
+      method: 'POST',
+      body: formData
+    });
+  }
+
+  static async parseMoodleXml(fileOrText) {
+    if (fileOrText instanceof File || fileOrText instanceof Blob) {
+      const formData = new FormData();
+      formData.append('file', fileOrText);
+      return await ApiClient.request('/instructor/exams/parse-moodle-xml', {
+        method: 'POST',
+        body: formData
+      });
+    }
+    return await ApiClient.request('/instructor/exams/parse-moodle-xml', {
+      method: 'POST',
+      body: { xml: String(fileOrText) }
+    });
+  }
+
+  static async parseMoodleJson(fileOrText) {
+    if (fileOrText instanceof File || fileOrText instanceof Blob) {
+      const formData = new FormData();
+      formData.append('file', fileOrText);
+      return await ApiClient.request('/instructor/exams/parse-json', {
+        method: 'POST',
+        body: formData
+      });
+    }
+    const body = typeof fileOrText === 'object' ? fileOrText : { json_content: String(fileOrText) };
+    return await ApiClient.request('/instructor/exams/parse-json', {
+      method: 'POST',
+      body: body
+    });
+  }
+
+  static async downloadMoodleXmlSample() {
+    window.location.href = '/instructor/exams/samples/moodle-xml';
+  }
+
+  static async downloadMoodleJsonSample() {
+    window.location.href = '/instructor/exams/samples/json';
+  }
 }
 
 window.ApiClient = ApiClient;

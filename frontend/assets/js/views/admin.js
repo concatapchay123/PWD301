@@ -57,7 +57,7 @@ class AdminView {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
           
           <!-- KPI 1: Đề cương chờ duyệt -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="AdminView.switchTab('tab-courses-review')">
+          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=courses'">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[22px]">fact_check</span>
@@ -76,7 +76,7 @@ class AdminView {
           </div>
 
           <!-- KPI 2: Tài nguyên an ninh học vụ & Tệp cách ly -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-rose-400/40 shadow-sm transition-all" onclick="AdminView.switchTab('tab-security')">
+          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-rose-400/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=security'">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <span class="material-symbols-outlined text-rose-600 text-[22px]">security_update_warning</span>
@@ -115,34 +115,6 @@ class AdminView {
 
         </div>
 
-        <!-- 5-Tab Control Bar (5 phím thẳng hàng cùng nhau trên 1 hàng duy nhất) -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-sm overflow-x-auto no-scrollbar">
-          <div class="grid grid-cols-5 gap-1.5 min-w-[760px] lg:min-w-0" role="tablist">
-            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-users" title="Quản trị Người dùng & Phân quyền RBAC">
-              <span class="material-symbols-outlined text-[18px] shrink-0">manage_accounts</span>
-              <span class="truncate">Người dùng & Phân quyền</span>
-            </button>
-            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-courses-review" title="Duyệt Khóa học & Bản sửa đổi">
-              <span class="material-symbols-outlined text-[18px] shrink-0">fact_check</span>
-              <span class="truncate">Duyệt khóa học</span>
-              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden shrink-0" id="tab-courses-badge">0 chờ</span>
-            </button>
-            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-instructor-apps" title="Hồ sơ & Đơn đăng ký Giảng viên">
-              <span class="material-symbols-outlined text-[18px] shrink-0">badge</span>
-              <span class="truncate">Duyệt giảng viên</span>
-              <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hidden shrink-0" id="tab-apps-badge">0 chờ</span>
-            </button>
-            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-reassign" title="Điều chuyển Phân công Giảng dạy">
-              <span class="material-symbols-outlined text-[18px] shrink-0">swap_horiz</span>
-              <span class="truncate">Phân công giảng dạy</span>
-            </button>
-            <button type="button" class="admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap" data-tab="tab-security" title="An toàn Học thuật & Nhật ký Kiểm toán">
-              <span class="material-symbols-outlined text-[18px] shrink-0">policy</span>
-              <span class="truncate">An toàn & Kiểm toán</span>
-            </button>
-          </div>
-        </div>
-
         <!-- Tab Content Box -->
         <div id="admin-tab-content-box" class="min-h-[400px]"></div>
 
@@ -174,26 +146,16 @@ class AdminView {
       const totalCourseWork = pendingCoursesCount + pendingCrCount;
       const el = document.getElementById('kpi-courses-pending');
       const badge = document.getElementById('kpi-courses-badge');
-      const tabCoursesBadge = document.getElementById('tab-courses-badge');
-      const tabAppsBadge = document.getElementById('tab-apps-badge');
 
       if (el) el.textContent = String(totalCourseWork).padStart(2, '0');
       if (badge) badge.textContent = `${totalCourseWork} chờ duyệt`;
-      if (tabCoursesBadge) {
-        if (totalCourseWork > 0) {
-          tabCoursesBadge.textContent = `${totalCourseWork} chờ`;
-          tabCoursesBadge.classList.remove('hidden');
-        } else {
-          tabCoursesBadge.classList.add('hidden');
-        }
-      }
-      if (tabAppsBadge) {
-        if (pendingAppsCount > 0) {
-          tabAppsBadge.textContent = `${pendingAppsCount} chờ`;
-          tabAppsBadge.classList.remove('hidden');
-        } else {
-          tabAppsBadge.classList.add('hidden');
-        }
+
+      // Synchronize Real-time Superscript Exponent Badges to Topbar
+      if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
+        window.app.updateAdminNavBadges({
+          courses: totalCourseWork,
+          applications: pendingAppsCount
+        });
       }
 
       if (telemRes.status === 'fulfilled' && telemRes.value) {
@@ -208,18 +170,27 @@ class AdminView {
       console.warn('Initial admin KPI load warning:', err);
     }
 
-    // Tab Switching Logic
-    const tabs = container.querySelectorAll('.admin-tab-btn');
+    // Tab Switching Logic (URL Hash & Topbar Synchronized)
     const contentBox = document.getElementById('admin-tab-content-box');
 
-    AdminView.switchTab = (tabKey, subQueue = null) => {
-      tabs.forEach(t => {
-        if (t.dataset.tab === tabKey) {
-          t.className = 'admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-sm whitespace-nowrap';
-        } else {
-          t.className = 'admin-tab-btn flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap';
+    AdminView.switchTab = (tabKey, subQueue = null, syncHash = true) => {
+      const tabToQuery = {
+        'tab-users': '',
+        'tab-courses-review': 'courses',
+        'tab-review': 'courses',
+        'tab-instructor-apps': 'applications',
+        'tab-reassign': 'reassign',
+        'tab-security': 'security'
+      };
+
+      if (syncHash) {
+        const q = tabToQuery[tabKey];
+        const newHash = q ? `#/admin/governance?tab=${q}` : '#/admin/governance';
+        if (window.location.hash !== newHash) {
+          window.location.hash = newHash;
+          return;
         }
-      });
+      }
 
       if (tabKey === 'tab-users') {
         AdminView.renderTabUsers(contentBox);
@@ -234,10 +205,6 @@ class AdminView {
       }
     };
 
-    tabs.forEach(t => {
-      t.onclick = () => AdminView.switchTab(t.dataset.tab);
-    });
-
     const targetTab = (activeTab === 'courses' || activeTab === 'review')
       ? 'tab-courses-review'
       : (activeTab === 'applications' || activeTab === 'instructors')
@@ -247,7 +214,7 @@ class AdminView {
           : activeTab === 'reassign'
             ? 'tab-reassign'
             : 'tab-users';
-    AdminView.switchTab(targetTab);
+    AdminView.switchTab(targetTab, null, false);
   }
 
   // =========================================================================
@@ -781,15 +748,13 @@ class AdminView {
 
       // Update badge
       const totalPending = pendingCourses.length + pendingChangeRequests.length;
-      const tabCoursesBadge = document.getElementById('tab-courses-badge');
-      if (tabCoursesBadge) {
-        if (totalPending > 0) {
-          tabCoursesBadge.textContent = `${totalPending} chờ`;
-          tabCoursesBadge.classList.remove('hidden');
-        } else {
-          tabCoursesBadge.classList.add('hidden');
-        }
+      if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
+        window.app.updateAdminNavBadges({ courses: totalPending });
       }
+      const elPending = document.getElementById('kpi-courses-pending');
+      const badgePending = document.getElementById('kpi-courses-badge');
+      if (elPending) elPending.textContent = String(totalPending).padStart(2, '0');
+      if (badgePending) badgePending.textContent = `${totalPending} chờ duyệt`;
 
       const box = document.getElementById('courses-review-box');
       if (!box) return;
@@ -1349,14 +1314,8 @@ class AdminView {
       const pendingApps = applications.filter(a => a.status === 'PENDING');
 
       // Update badge
-      const tabAppsBadge = document.getElementById('tab-apps-badge');
-      if (tabAppsBadge) {
-        if (pendingApps.length > 0) {
-          tabAppsBadge.textContent = `${pendingApps.length} chờ`;
-          tabAppsBadge.classList.remove('hidden');
-        } else {
-          tabAppsBadge.classList.add('hidden');
-        }
+      if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
+        window.app.updateAdminNavBadges({ applications: pendingApps.length });
       }
 
       const box = document.getElementById('instructor-apps-box');
