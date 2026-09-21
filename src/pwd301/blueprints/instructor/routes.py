@@ -133,6 +133,21 @@ def _extract_video_url_from_markdown(content: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]]:
+    if not content:
+        return []
+    import json, re
+    m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", content, re.DOTALL)
+    if m:
+        try:
+            parsed = json.loads(m.group(1))
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    return []
+
+
 def _serialize_lesson(les: Lesson) -> dict[str, Any]:
     video_url = _extract_video_url_from_markdown(les.markdown_content)
     if not video_url and hasattr(les, "resources") and les.resources:
@@ -156,6 +171,8 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
                     )
                     break
 
+    quiz = _extract_mini_quiz_from_markdown(les.markdown_content)
+
     return {
         "lesson_id": str(les.public_id),
         "course_id": str(les.course.public_id) if les.course else None,
@@ -163,6 +180,7 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "summary": les.summary,
         "markdown_content": les.markdown_content,
         "video_url": video_url,
+        "quiz": quiz,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
@@ -188,18 +206,48 @@ def _serialize_course(c: Course) -> dict[str, Any]:
             if not getattr(les, "deleted_at", None)
         ]
     instructor_name = c.owner_instructor.display_name if c.owner_instructor else None
-    enrollments_count = len(c.enrollments) if hasattr(c, "enrollments") and c.enrollments else 0
+    instructor_email = c.owner_instructor.email if c.owner_instructor else None
+    
+    # Accurate active enrollments count (excluding soft-deleted or withdrawn)
+    active_enrollments = [
+        e for e in getattr(c, "enrollments", [])
+        if getattr(e, "status", None) == "ACTIVE" and getattr(e, "deleted_at", None) is None
+    ]
+    enrollments_count = len(active_enrollments)
+
+    # Extract dynamic contact_info if stored in course description
+    contact_info = None
+    clean_description = c.description or ""
+    if c.description and "<!-- contact_info:" in c.description:
+        m_contact = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", c.description, re.DOTALL)
+        if m_contact:
+            try:
+                contact_info = json.loads(m_contact.group(1))
+            except Exception:
+                pass
+        clean_description = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", c.description, flags=re.DOTALL).strip()
+
+    if not contact_info:
+        contact_info = {
+            "email": instructor_email or "",
+            "phone": "",
+            "group": "",
+            "office_hours": "",
+        }
+
     return {
         "course_id": str(c.public_id),
         "course_code": c.course_code,
         "title": c.title,
-        "description": c.description,
+        "description": clean_description,
         "category": c.category,
         "difficulty": c.difficulty,
         "capacity": c.capacity,
         "status": c.status,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "instructor_name": instructor_name,
+        "instructor_email": instructor_email,
+        "contact_info": contact_info,
         "enrollments_count": enrollments_count,
         "enrolled_count": enrollments_count,
         "lessons": active_lessons,
@@ -358,6 +406,14 @@ def update_course_route(course_id: str) -> Any:
         if payload.get(key) == "":
             payload[key] = None
 
+    if "contact_info" in payload:
+        contact_dict = payload.pop("contact_info")
+        if isinstance(contact_dict, dict):
+            c_inst = _resolve_course(course_id, session=db.session)
+            cur_desc = payload.get("description") if "description" in payload else (c_inst.description if c_inst else "")
+            clean_desc = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", cur_desc or "", flags=re.DOTALL).strip()
+            payload["description"] = f"{clean_desc}\n\n<!-- contact_info: {json.dumps(contact_dict, ensure_ascii=False)} -->".strip()
+
     try:
         course = update_course(actor, course_id, payload)
     except (
@@ -506,10 +562,16 @@ def create_lesson_route(course_id: str) -> Any:
         raw_md = f"# {title}\n\n{summary}"
 
     video_url = payload.get("video_url")
+    import re
     if video_url and str(video_url).strip():
-        import re
         if not re.search(r"<!--\s*video_url:\s*\S+?\s*-->", raw_md):
             raw_md = f"<!-- video_url: {str(video_url).strip()} -->\n\n" + raw_md
+
+    quiz = payload.pop("quiz", None)
+    if quiz and isinstance(quiz, list) and len(quiz) > 0:
+        if not re.search(r"<!--\s*mini_quiz:\s*.+?\s*-->", raw_md, re.DOTALL):
+            raw_md = f"{raw_md}\n\n<!-- mini_quiz: {json.dumps(quiz, ensure_ascii=False)} -->"
+
     payload["markdown_content"] = raw_md
 
     try:
@@ -667,8 +729,10 @@ def detach_lesson_resource_route(course_id: str, lesson_id: str, resource_id: st
 
     try:
         detach_resource_from_lesson(actor, lesson.id, resource_id, session=db.session)
+        db.session.commit()
         return jsonify({"status": "ok", "message": "Resource detached successfully"}), 200
     except Exception:
+        db.session.rollback()
         raise
 
 
@@ -737,6 +801,7 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
         ), 202
 
     trash_lesson(actor, lesson_id, session=db.session)
+    db.session.commit()
     return jsonify({"status": "success", "message": "Bài giảng đã được xóa thành công."}), 200
 
 
@@ -901,11 +966,25 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
             if "markdown_content" in payload
             else (lesson.markdown_content or "")
         )
-        import re
         cleaned_md = re.sub(r"<!--\s*video_url:\s*\S+?\s*-->\n*", "", current_md or "").strip()
         if video_url and str(video_url).strip():
             payload["markdown_content"] = (
                 f"<!-- video_url: {str(video_url).strip()} -->\n\n{cleaned_md}"
+            )
+        else:
+            payload["markdown_content"] = cleaned_md
+
+    if "quiz" in payload:
+        quiz_data = payload.pop("quiz")
+        current_md = (
+            payload.get("markdown_content")
+            if "markdown_content" in payload
+            else (lesson.markdown_content or "")
+        )
+        cleaned_md = re.sub(r"<!--\s*mini_quiz:\s*.+?\s*-->\n*", "", current_md or "", flags=re.DOTALL).strip()
+        if quiz_data and isinstance(quiz_data, list) and len(quiz_data) > 0:
+            payload["markdown_content"] = (
+                f"{cleaned_md}\n\n<!-- mini_quiz: {json.dumps(quiz_data, ensure_ascii=False)} -->"
             )
         else:
             payload["markdown_content"] = cleaned_md
@@ -960,6 +1039,7 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         ), 202
 
     updated_lesson = update_lesson(actor, lesson_id, payload, session=db.session)
+    db.session.commit()
     return jsonify(_serialize_lesson(updated_lesson)), 200
 
 

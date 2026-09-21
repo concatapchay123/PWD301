@@ -42,7 +42,8 @@ class UI {
   }
 
   // =========================================================================
-  // 1. Toast Notification System (Warm Editorial Style)
+  // =========================================================================
+  // 1. Toast Notification System (Warm Editorial Style - Top Right & Progress Bar)
   // =========================================================================
   static showToast(message, type = 'info', duration = 3500) {
     const container = document.getElementById('toast-container');
@@ -52,49 +53,81 @@ class UI {
     const toast = document.createElement('div');
     toast.id = toastId;
 
-    let bgClass = 'bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] border-[#E8E6DF] dark:border-[#2E2D2B]';
     let icon = 'info';
-    let iconColor = 'text-[#2563EB]';
+    let iconBadgeBg = 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
+    let progressBarColor = 'bg-blue-600 dark:bg-blue-500';
 
     if (type === 'success') {
       icon = 'check_circle';
-      iconColor = 'text-emerald-600 dark:text-emerald-400';
+      iconBadgeBg = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50';
+      progressBarColor = 'bg-emerald-600 dark:bg-emerald-500';
     } else if (type === 'error' || type === 'danger') {
       icon = 'error';
-      iconColor = 'text-rose-600 dark:text-rose-400';
+      iconBadgeBg = 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50';
+      progressBarColor = 'bg-rose-600 dark:bg-rose-500';
     } else if (type === 'warning') {
       icon = 'warning';
-      iconColor = 'text-amber-600 dark:text-amber-400';
+      iconBadgeBg = 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-100 dark:border-amber-900/50';
+      progressBarColor = 'bg-amber-600 dark:bg-amber-500';
     }
 
-    toast.className = `flex items-center gap-3 px-3.5 py-2.5 rounded-xl border shadow-subtle transition-all duration-200 transform translate-y-2 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-md ${bgClass}`;
+    toast.className = 'relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] shadow-none transition-all duration-200 transform -translate-y-3 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-sm w-full overflow-hidden';
     toast.innerHTML = `
-      <span class="material-symbols-outlined text-[18px] shrink-0 ${iconColor}">${icon}</span>
-      <span class="flex-1 leading-snug break-words">${UI.escapeHtml(message)}</span>
-      <button type="button" class="text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors p-1" onclick="document.getElementById('${toastId}')?.remove()">
+      <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
+        <span class="material-symbols-outlined text-[18px]">${icon}</span>
+      </div>
+      <div class="flex-1 min-w-0 pr-1 leading-snug break-words text-xs text-[#222120] dark:text-[#EDEDEB]">
+        ${UI.escapeHtml(message)}
+      </div>
+      <button type="button" class="text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] rounded-lg transition-colors p-1 shrink-0" onclick="UI.dismissToast('${toastId}')" title="Đóng">
         <span class="material-symbols-outlined text-[16px]">close</span>
       </button>
+      <div class="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#E8E6DF]/50 dark:bg-[#2E2D2B]/50 overflow-hidden">
+        <div id="${toastId}_progress" class="h-full ${progressBarColor} transition-all ease-linear" style="width: 100%;"></div>
+      </div>
     `;
 
     container.appendChild(toast);
 
     requestAnimationFrame(() => {
-      toast.classList.remove('translate-y-2', 'opacity-0');
+      toast.classList.remove('-translate-y-3', 'opacity-0');
       toast.classList.add('translate-y-0', 'opacity-100');
+
+      // Animate countdown progress bar to 0%
+      const progressBar = document.getElementById(`${toastId}_progress`);
+      if (progressBar) {
+        progressBar.style.transitionDuration = `${duration}ms`;
+        requestAnimationFrame(() => {
+          progressBar.style.width = '0%';
+        });
+      }
     });
 
-    setTimeout(() => {
-      if (document.getElementById(toastId)) {
-        toast.classList.add('opacity-0', 'translate-y-2');
-        setTimeout(() => toast.remove(), 200);
-      }
+    const timer = setTimeout(() => {
+      UI.dismissToast(toastId);
     }, duration);
+
+    toast._dismissTimer = timer;
+  }
+
+  static dismissToast(toastId) {
+    const toast = document.getElementById(toastId);
+    if (!toast) return;
+    if (toast._dismissTimer) {
+      clearTimeout(toast._dismissTimer);
+      toast._dismissTimer = null;
+    }
+    toast.classList.remove('translate-y-0', 'opacity-100');
+    toast.classList.add('-translate-y-3', 'opacity-0');
+    setTimeout(() => {
+      if (toast && toast.parentNode) toast.remove();
+    }, 200);
   }
 
   // =========================================================================
   // 2. Global Modal System (Warm Editorial Style)
   // =========================================================================
-  static openModal({ title, bodyHtml, footerHtml = '', size = 'md', onClose = null }) {
+  static openModal({ title, bodyHtml, footerHtml = '', size = 'md', onClose = null, noShadow = false }) {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
@@ -106,9 +139,11 @@ class UI {
     if (size === 'xl') maxWidth = 'max-w-5xl';
     if (size === 'full') maxWidth = 'max-w-[95vw] h-[90vh]';
 
+    const shadowClass = noShadow ? 'shadow-none' : 'shadow-elevated';
+
     container.innerHTML = `
       <div class="fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6" id="modal-backdrop">
-        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-elevated w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all" id="modal-dialog">
+        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all" id="modal-dialog">
           
           <!-- Modal Header -->
           <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423]">
@@ -167,44 +202,113 @@ class UI {
     }
   }
 
+  // =========================================================================
+  // 2.1. Dedicated Modern Confirmation Dialog (macOS Clean Alert - No Shadow)
+  // =========================================================================
   static confirm(title, message, confirmText = 'Xác nhận', cancelText = 'Hủy', isDanger = false) {
     return new Promise((resolve) => {
+      const container = document.getElementById('modal-container');
+      if (!container) {
+        resolve(false);
+        return;
+      }
+
       let settled = false;
+      let cleanupKeyHandler = null;
+
       const finish = (value) => {
         if (!settled) {
           settled = true;
+          if (cleanupKeyHandler) cleanupKeyHandler();
           window._modalOnClose = null;
           UI.closeModal();
           resolve(value);
         }
       };
 
-      const btnColor = isDanger ? 'c-btn-danger' : 'c-btn-primary';
+      const btnColor = isDanger
+        ? 'bg-rose-600 hover:bg-rose-700 text-white border border-rose-600'
+        : 'c-btn-primary';
 
-      const footer = `
-        <button type="button" id="confirm-cancel-btn" class="c-btn c-btn-secondary c-btn-md">
-          ${cancelText}
-        </button>
-        <button type="button" id="confirm-action-btn" class="c-btn ${btnColor} c-btn-md">
-          ${confirmText}
-        </button>
+      const icon = isDanger ? 'warning' : 'help';
+      const iconBadgeBg = isDanger
+        ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50'
+        : 'bg-blue-50 dark:bg-blue-950/50 text-primary dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
+
+      container.innerHTML = `
+        <div class="fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6" id="confirm-modal-backdrop">
+          <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
+            
+            <!-- Header: Contextual Icon Badge & Close Action -->
+            <div class="flex items-start justify-between gap-3">
+              <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
+                <span class="material-symbols-outlined text-[26px]">${icon}</span>
+              </div>
+              <button type="button" id="confirm-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors" title="Đóng">
+                <span class="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <!-- Content Area: Title & Visual Hierarchy -->
+            <div class="space-y-1.5">
+              <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+                ${UI.escapeHtml(title)}
+              </h3>
+              <div class="text-xs sm:text-sm text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed break-words">
+                ${message}
+              </div>
+            </div>
+
+            <!-- Footer: Balanced Pill Actions -->
+            <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E8E6DF]/70 dark:border-[#2E2D2B]/70 shrink-0">
+              <button type="button" id="confirm-cancel-btn" class="c-btn c-btn-secondary c-btn-md rounded-xl px-4 py-2.5 text-xs font-semibold">
+                ${UI.escapeHtml(cancelText)}
+              </button>
+              <button type="button" id="confirm-action-btn" class="c-btn ${btnColor} c-btn-md rounded-xl px-5 py-2.5 text-xs font-bold">
+                ${UI.escapeHtml(confirmText)}
+              </button>
+            </div>
+
+          </div>
+        </div>
       `;
 
-      UI.openModal({
-        title,
-        bodyHtml: `<p class="leading-relaxed text-[#37352F] dark:text-[#EDEDEB]">${message}</p>`,
-        footerHtml: footer,
-        size: 'sm',
-        onClose: () => {
-          if (!settled) {
-            settled = true;
-            resolve(false);
+      container.classList.remove('hidden');
+
+      const card = document.getElementById('confirm-dialog-card');
+      if (card) {
+        requestAnimationFrame(() => {
+          card.classList.remove('scale-95', 'opacity-0');
+          card.classList.add('scale-100', 'opacity-100');
+        });
+      }
+
+      const backdrop = document.getElementById('confirm-modal-backdrop');
+      if (backdrop) {
+        backdrop.addEventListener('click', (e) => {
+          if (e.target === backdrop) finish(false);
+        });
+      }
+
+      document.getElementById('confirm-close-x-btn')?.addEventListener('click', () => finish(false));
+      document.getElementById('confirm-cancel-btn')?.addEventListener('click', () => finish(false));
+      document.getElementById('confirm-action-btn')?.addEventListener('click', () => finish(true));
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finish(false);
+        } else if (e.key === 'Enter') {
+          if (document.activeElement && document.activeElement.id === 'confirm-cancel-btn') {
+            finish(false);
+          } else {
+            e.preventDefault();
+            finish(true);
           }
         }
-      });
-
-      document.getElementById('confirm-cancel-btn').onclick = () => finish(false);
-      document.getElementById('confirm-action-btn').onclick = () => finish(true);
+      };
+      document.addEventListener('keydown', onKeyDown);
+      cleanupKeyHandler = () => document.removeEventListener('keydown', onKeyDown);
     });
   }
 
@@ -653,44 +757,75 @@ class UI {
   }
 
   // =========================================================================
-  // 5. Lightweight Zero-Dependency Markdown Parser
+  // 5. Lightweight Markdown & Rich Document WYSIWYG Parser
   // =========================================================================
   static renderMarkdown(raw) {
     if (!raw) return '';
-    let text = UI.escapeHtml(raw);
+
+    // Strip internal storage annotations (video_url, mini_quiz, contact_info)
+    let text = String(raw)
+      .replace(/<!--\s*(?:video_url|mini_quiz|contact_info):[\s\S]*?-->/g, '')
+      .trim();
+
+    if (!text) return '';
+
+    // Check if content is already rich HTML (from Word-like WYSIWYG editor)
+    const isHtml = /<[a-z][\s\S]*>/i.test(text) && (
+      text.includes('<p') || text.includes('<div') || text.includes('<h1') ||
+      text.includes('<h2') || text.includes('<h3') || text.includes('<table') ||
+      text.includes('<ul') || text.includes('<ol') || text.includes('<strong') ||
+      text.includes('<em') || text.includes('<u') || text.includes('<span') ||
+      text.includes('<blockquote')
+    );
+
+    if (isHtml) {
+      if (typeof DOMPurify !== 'undefined') {
+        return DOMPurify.sanitize(text, {
+          ADD_ATTR: ['target', 'style', 'class', 'border', 'cellpadding', 'cellspacing'],
+          ADD_TAGS: ['iframe', 'u', 's', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'colgroup', 'col']
+        });
+      }
+      // Basic sanitization fallback
+      return text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                 .replace(/on\w+="[^"]*"/gi, '')
+                 .replace(/on\w+='[^']*'/gi, '');
+    }
+
+    // Markdown Parser
+    let escaped = UI.escapeHtml(text);
 
     // Code blocks ```language ... ```
-    text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    escaped = escaped.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
       return `<pre class="my-2 p-3 rounded-lg bg-[#222120] text-[#FAF9F5] dark:bg-[#151515] dark:text-[#EDEDEB] overflow-x-auto text-xs font-mono leading-relaxed border border-[#3E3D3A]"><code>${code.trim()}</code></pre>`;
     });
 
     // Inline code `...`
-    text = text.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.2 rounded bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-mono text-xs border border-[#E8E6DF] dark:border-[#3D3C3A]">$1</code>');
+    escaped = escaped.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.2 rounded bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-mono text-xs border border-[#E8E6DF] dark:border-[#3D3C3A]">$1</code>');
 
     // Headers
-    text = text.replace(/^### (.*$)/gim, '<h3 class="text-xs sm:text-sm font-bold text-[#222120] dark:text-[#EDEDEB] mt-3 mb-1">$1</h3>');
-    text = text.replace(/^## (.*$)/gim, '<h2 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] mt-4 mb-1.5">$1</h2>');
-    text = text.replace(/^# (.*$)/gim, '<h1 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] mt-5 mb-2">$1</h1>');
+    escaped = escaped.replace(/^### (.*$)/gim, '<h3 class="text-xs sm:text-sm font-bold text-[#222120] dark:text-[#EDEDEB] mt-3 mb-1">$1</h3>');
+    escaped = escaped.replace(/^## (.*$)/gim, '<h2 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] mt-4 mb-1.5">$1</h2>');
+    escaped = escaped.replace(/^# (.*$)/gim, '<h1 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] mt-5 mb-2">$1</h1>');
 
     // Bold & Italic
-    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    escaped = escaped.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
     // Blockquote
-    text = text.replace(/^\> (.*$)/gim, '<blockquote class="border-l-2 border-[#222120] dark:border-[#EDEDEB] pl-3 py-1 my-2 text-[#5C5B57] dark:text-[#9E9D99] italic bg-[#F4F1EA] dark:bg-[#262524] rounded-r-md">$1</blockquote>');
+    escaped = escaped.replace(/^\> (.*$)/gim, '<blockquote class="border-l-2 border-[#222120] dark:border-[#EDEDEB] pl-3 py-1 my-2 text-[#5C5B57] dark:text-[#9E9D99] italic bg-[#F4F1EA] dark:bg-[#262524] rounded-r-md">$1</blockquote>');
 
     // Lists
-    text = text.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-[#37352F] dark:text-[#EDEDEB] my-0.5">$1</li>');
-    text = text.replace(/^\s*(\d+)\.\s+(.*$)/gim, '<li class="ml-4 list-decimal text-[#37352F] dark:text-[#EDEDEB] my-0.5">$2</li>');
+    escaped = escaped.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-[#37352F] dark:text-[#EDEDEB] my-0.5">$1</li>');
+    escaped = escaped.replace(/^\s*(\d+)\.\s+(.*$)/gim, '<li class="ml-4 list-decimal text-[#37352F] dark:text-[#EDEDEB] my-0.5">$2</li>');
 
     // Horizontal rules
-    text = text.replace(/^---$/gim, '<hr class="my-3 border-[#E8E6DF] dark:border-[#2E2D2B]" />');
+    escaped = escaped.replace(/^---$/gim, '<hr class="my-3 border-[#E8E6DF] dark:border-[#2E2D2B]" />');
 
     // Links [text](url)
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-0.5">$1 <span class="material-symbols-outlined text-[13px]">open_in_new</span></a>');
+    escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-0.5">$1 <span class="material-symbols-outlined text-[13px]">open_in_new</span></a>');
 
     // Paragraphs
-    const paragraphs = text.split(/\n{2,}/).map(p => {
+    const paragraphs = escaped.split(/\n{2,}/).map(p => {
       if (p.startsWith('<h') || p.startsWith('<pre') || p.startsWith('<blockquote') || p.startsWith('<li') || p.startsWith('<hr')) {
         return p;
       }
@@ -839,7 +974,34 @@ class UI {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
+
+  // =========================================================================
+  // 8. Video URL & Embed Helpers (YouTube, Vimeo, HTML5)
+  // =========================================================================
+  static parseYouTubeId(url) {
+    if (!url) return null;
+    const str = String(url).trim();
+    // Matches:
+    // - youtu.be/ID
+    // - youtube.com/watch?v=ID or &v=ID
+    // - youtube.com/embed/ID
+    // - youtube.com/v/ID
+    // - youtube.com/shorts/ID
+    // - youtube.com/live/ID
+    // - iframe code containing youtube URL
+    const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/;
+    const match = str.match(regExp);
+    if (match && match[1]) return match[1];
+    if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
+    return null;
+  }
+
+  static getYouTubeEmbedUrl(id) {
+    if (!id) return '';
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+  }
 }
+
 
 // =========================================================================
 // 8. PWD301 LMS Exam Syntax Parser & Generator (Formerly Azota, now unified)

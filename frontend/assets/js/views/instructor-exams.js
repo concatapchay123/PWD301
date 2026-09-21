@@ -184,7 +184,7 @@
             </div>
             <button type="button" onclick="window.location.hash = '#/instructor/dashboard'" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors self-start md:self-auto">
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-              <span>Quay lại Bàn làm việc</span>
+              <span>Quay lại Trang chủ</span>
             </button>
           </div>
 
@@ -1091,7 +1091,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-500/20 transition-all flex items-center justify-center gap-1.5"
               >
                 <span class="material-symbols-outlined text-[18px]">add_circle</span>
-                <span>+ Thêm câu hỏi tương tác này vào đề thi</span>
+                <span>Thêm câu hỏi tương tác này vào đề thi</span>
               </button>
 
             </div>

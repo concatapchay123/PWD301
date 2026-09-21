@@ -403,7 +403,7 @@ class AppRouter {
       ];
     } else if (role === 'INSTRUCTOR') {
       menu = [
-        { label: 'Bàn làm việc', path: '#/instructor/dashboard', icon: 'dashboard' },
+        { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
       ];

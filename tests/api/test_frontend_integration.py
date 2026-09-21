@@ -105,6 +105,20 @@ def test_frontend_spa_and_assets_allow_sameorigin_framing(client: FlaskClient) -
     assert "frame-ancestors 'none'" in health_csp
 
 
+def test_frontend_video_embed_csp_directives(client: FlaskClient) -> None:
+    """Verify CSP headers permit embedding external videos (YouTube, Vimeo) and media."""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    csp = resp.headers.get("Content-Security-Policy", "")
+    assert "frame-src" in csp
+    assert "https://www.youtube.com" in csp
+    assert "https://www.youtube-nocookie.com" in csp
+    assert "https://player.vimeo.com" in csp
+    assert "media-src" in csp
+    assert "https://cdnjs.cloudflare.com" in csp
+
+
+
 def test_frontend_admin_views_and_api_assets(client: FlaskClient) -> None:
     """Verify admin view and api JS assets are served with proper headers and complete contracts."""
     # 1. admin.js view asset

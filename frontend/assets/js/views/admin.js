@@ -2005,9 +2005,30 @@ class AdminView {
   // =========================================================================
   // Tab 4: Academic Security & Immutable Audit Trail (100% Live DB & SHA-256)
   // =========================================================================
+  static async copyToClipboard(text, successMsg = 'Đã sao chép vào bộ nhớ tạm!') {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      UI.showToast(successMsg, 'success', 2000);
+    } catch (err) {
+      console.warn('Clipboard copy failed:', err);
+      UI.showToast('Không thể tự động sao chép, vui lòng copy thủ công.', 'warning', 2500);
+    }
+  }
+
   static async renderTabSecurity(container) {
     container.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5 animate-fade-in" id="security-box">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-none space-y-5 animate-fade-in" id="security-box">
         <div class="p-12 text-center text-slate-400">
           <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
           <p class="text-sm">Đang truy vấn chuỗi nhật ký kiểm toán bất biến...</p>
@@ -2023,50 +2044,78 @@ class AdminView {
       const box = document.getElementById('security-box');
       if (!box) return;
 
+      const ACTION_META = {
+        USER_SUSPEND: { label: 'Khóa tài khoản', icon: 'lock', bg: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40' },
+        USER_UNSUSPEND: { label: 'Mở khóa tài khoản', icon: 'lock_open', bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40' },
+        USER_ROLE_ASSIGN: { label: 'Phân quyền tài khoản', icon: 'badge', bg: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-900/40' },
+        ROLE_ASSIGNED: { label: 'Bổ nhiệm vai trò', icon: 'badge', bg: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-900/40' },
+        SESSIONS_REVOKED: { label: 'Thu hồi phiên đăng nhập', icon: 'logout', bg: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40' },
+        COURSE_STATUS_CHANGE: { label: 'Đổi trạng thái môn', icon: 'school', bg: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/40' },
+        COURSE_REASSIGN: { label: 'Chuyển giao quyền môn', icon: 'swap_horiz', bg: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-900/40' },
+        DATABASE_BACKUP: { label: 'Sao lưu CSDL', icon: 'backup', bg: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 border border-sky-200 dark:border-sky-900/40' },
+        DATABASE_RESTORE: { label: 'Khôi phục CSDL', icon: 'restore', bg: 'bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 border border-orange-200 dark:border-orange-900/40' },
+        QUARANTINE_OVERRIDE: { label: 'Giải phóng tệp cách ly', icon: 'health_and_safety', bg: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40' },
+        ASSESSMENT_PUBLISH: { label: 'Xuất bản bài thi', icon: 'quiz', bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40' },
+        ASSESSMENT_REGRADE: { label: 'Tái chấm điểm bài thi', icon: 'grade', bg: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-900/40' },
+      };
+
+      const getActionMeta = (act) => {
+        if (!act) return { label: 'Tác vụ hệ thống', icon: 'policy', bg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700' };
+        if (ACTION_META[act]) return ACTION_META[act];
+        for (const [k, v] of Object.entries(ACTION_META)) {
+          if (act.includes(k) || k.includes(act)) return v;
+        }
+        return {
+          label: act.replace(/_/g, ' '),
+          icon: 'shield',
+          bg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+        };
+      };
+
       box.innerHTML = `
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-rose-600 text-[22px]">policy</span>
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-200 dark:border-rose-900/40 shrink-0">
+                <span class="material-symbols-outlined text-[18px]">policy</span>
+              </div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white">
                 Nhật ký Kiểm toán Bất biến & Chuỗi Bút lục Toàn vẹn (${totalLogs} bản ghi)
               </h3>
             </div>
-            <p class="text-xs text-slate-400 mt-0.5">Mọi tác vụ quản trị, thay đổi điểm số, phong tỏa tài khoản được ghi vết vĩnh viễn kèm chữ ký băm SHA-256 đối soát.</p>
+            <p class="text-xs text-slate-500 mt-1">Mọi tác vụ quản trị, thay đổi điểm số, phong tỏa tài khoản được ghi vết vĩnh viễn kèm chữ ký băm SHA-256 đối soát.</p>
           </div>
-          <div class="flex items-center gap-2">
-            <select id="audit-action-filter" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 font-bold focus:outline-none">
-              <option value="ALL">Tất cả tác vụ</option>
-              <option value="USER_SUSPEND">USER_SUSPEND</option>
-              <option value="USER_UNSUSPEND">USER_UNSUSPEND</option>
-              <option value="USER_ROLE_ASSIGN">USER_ROLE_ASSIGN</option>
-              <option value="SESSIONS_REVOKED">SESSIONS_REVOKED</option>
-              <option value="COURSE_STATUS_CHANGE">COURSE_STATUS_CHANGE</option>
-              <option value="COURSE_REASSIGN">COURSE_REASSIGN</option>
-              <option value="DATABASE_BACKUP">DATABASE_BACKUP</option>
-              <option value="DATABASE_RESTORE">DATABASE_RESTORE</option>
+          <div class="flex flex-wrap items-center gap-2">
+            <select id="audit-action-filter" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer">
+              <option value="ALL">Tất cả tác vụ (${logs.length})</option>
+              <option value="USER_SUSPEND">Khóa tài khoản</option>
+              <option value="USER_UNSUSPEND">Mở khóa tài khoản</option>
+              <option value="ROLE">Bổ nhiệm & Phân quyền</option>
+              <option value="SESSIONS_REVOKED">Thu hồi phiên đăng nhập</option>
+              <option value="COURSE">Quản trị môn học</option>
+              <option value="DATABASE">Sao lưu & Khôi phục</option>
+              <option value="QUARANTINE">Giải phóng tệp cách ly</option>
             </select>
-            <button type="button" id="quarantine-override-tool-btn" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors flex items-center gap-1 shadow-xs">
+            <button type="button" id="quarantine-override-tool-btn" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-none">
               <span class="material-symbols-outlined text-[16px]">health_and_safety</span>
               <span>Giải phóng Tệp Cách ly</span>
             </button>
           </div>
         </div>
 
-        <!-- Audit Trail Table -->
+        <!-- Audit Trail Table (Human-Readable First) -->
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs sm:text-sm">
+          <table class="w-full text-left text-xs sm:text-sm border-collapse">
             <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
               <tr>
-                <th class="px-4 py-3">Mã Audit & Thời gian</th>
-                <th class="px-4 py-3">Chủ thể (Actor)</th>
-                <th class="px-4 py-3">Tác vụ (Action)</th>
-                <th class="px-4 py-3">Đối tượng (Target)</th>
-                <th class="px-4 py-3">Khóa SHA-256 Hash</th>
-                <th class="px-4 py-3 text-right">Siêu dữ liệu</th>
+                <th class="px-4 py-3 min-w-[280px]">Tác vụ & Nội dung Sự kiện</th>
+                <th class="px-4 py-3 min-w-[150px]">Đối tượng (Target)</th>
+                <th class="px-4 py-3 min-w-[150px]">Người thực hiện (Actor)</th>
+                <th class="px-4 py-3 min-w-[140px]">Thời gian & Toàn vẹn</th>
+                <th class="px-4 py-3 text-right min-w-[100px]">Thao tác</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-mono text-xs" id="audit-table-tbody">
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-xs" id="audit-table-tbody">
               <!-- Populated via JS -->
             </tbody>
           </table>
@@ -2077,12 +2126,21 @@ class AdminView {
         const tbody = document.getElementById('audit-table-tbody');
         if (!tbody) return;
 
-        const filtered = logs.filter(l => actionFilter === 'ALL' || (l.action && l.action.includes(actionFilter)));
+        const filtered = logs.filter(l => {
+          if (actionFilter === 'ALL') return true;
+          const act = (l.action || '').toUpperCase();
+          if (actionFilter === 'ROLE') return act.includes('ROLE') || act.includes('ASSIGN');
+          if (actionFilter === 'COURSE') return act.includes('COURSE');
+          if (actionFilter === 'DATABASE') return act.includes('DATABASE') || act.includes('BACKUP') || act.includes('RESTORE');
+          if (actionFilter === 'QUARANTINE') return act.includes('QUARANTINE');
+          return act.includes(actionFilter);
+        });
 
         if (filtered.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="6" class="py-8 text-center text-slate-400 font-sans text-xs">
+              <td colspan="5" class="py-10 text-center text-slate-400 font-sans text-xs">
+                <span class="material-symbols-outlined text-3xl block mb-1 text-slate-300">search_off</span>
                 Không tìm thấy bản ghi kiểm toán phù hợp.
               </td>
             </tr>
@@ -2092,33 +2150,135 @@ class AdminView {
 
         tbody.innerHTML = filtered.map(l => {
           const rawSha = l.event_hash || l.sha256 || 'e8f2a17088b63dc4e9a3efd8e23910c22934ef02604bb49d74e578c7';
-          const displaySha = rawSha.length > 20 ? `${rawSha.slice(0, 10)}...${rawSha.slice(-8)}` : rawSha;
           const logId = l.event_id || l.id || 'AUD-LOG';
+          const meta = getActionMeta(l.action);
+
+          // 1. Reason / Event summary
+          let eventSummary = l.reason || '';
+          if (!eventSummary) {
+            if (l.target_type) {
+              eventSummary = `Thực hiện tác vụ ${meta.label.toLowerCase()} trên ${l.target_type}`;
+            } else {
+              eventSummary = `Tác vụ hệ thống ${meta.label}`;
+            }
+          }
+
+          // 2. Target display
+          const tType = l.target_type || '';
+          const tId = l.target_id || '';
+          let targetIcon = 'inventory_2';
+          let targetLabel = tType || 'Toàn viện';
+          let targetColor = 'text-slate-600 dark:text-slate-300';
+          if (tType === 'USER') {
+            targetIcon = 'person'; targetLabel = 'Người dùng'; targetColor = 'text-blue-600 dark:text-blue-400';
+          } else if (tType === 'COURSE') {
+            targetIcon = 'school'; targetLabel = 'Khóa học'; targetColor = 'text-indigo-600 dark:text-indigo-400';
+          } else if (tType === 'ASSESSMENT') {
+            targetIcon = 'quiz'; targetLabel = 'Bài thi'; targetColor = 'text-emerald-600 dark:text-emerald-400';
+          } else if (tType === 'FILE' || tType === 'FILE_ASSET') {
+            targetIcon = 'attach_file'; targetLabel = 'Tệp tin'; targetColor = 'text-amber-600 dark:text-amber-400';
+          } else if (tType === 'DATABASE' || tType === 'SYSTEM') {
+            targetIcon = 'database'; targetLabel = 'Hạ tầng'; targetColor = 'text-sky-600 dark:text-sky-400';
+          }
+
+          const rawTargetIdStr = String(tId);
+          const shortTargetId = rawTargetIdStr.length > 14
+            ? `${rawTargetIdStr.slice(0, 6)}...${rawTargetIdStr.slice(-4)}`
+            : rawTargetIdStr;
+
+          // 3. Actor display (Simplified per user request)
+          const actorEmail = l.actor_email || '';
+          const actorName = l.actor_name || (l.actor_id ? `User #${l.actor_id}` : 'Quản trị viên');
+          const actorRole = l.actor_roles || (l.performed_as_admin ? 'ADMIN' : 'SYSTEM');
+          let displayActor = 'Quản trị viên';
+          if (actorRole.includes('INSTRUCTOR') && !l.performed_as_admin) {
+            displayActor = 'Giảng viên';
+          } else if (actorRole.includes('SYSTEM') && !l.performed_as_admin && !l.actor_email) {
+            displayActor = 'Hệ thống';
+          } else {
+            displayActor = 'Quản trị viên';
+          }
+
+          // 4. Time display
+          let friendlyTime = '--';
+          if (l.created_at) {
+            try {
+              const d = new Date(l.created_at);
+              const diffMs = Date.now() - d.getTime();
+              const diffSec = Math.floor(diffMs / 1000);
+              const diffMin = Math.floor(diffSec / 60);
+              const diffHours = Math.floor(diffMin / 60);
+              const diffDays = Math.floor(diffHours / 24);
+
+              if (diffSec < 60) friendlyTime = 'Vừa xong';
+              else if (diffMin < 60) friendlyTime = `${diffMin} phút trước`;
+              else if (diffHours < 24) friendlyTime = `${diffHours} giờ trước`;
+              else if (diffDays === 1) friendlyTime = 'Hôm qua';
+              else if (diffDays < 7) friendlyTime = `${diffDays} ngày trước`;
+              else friendlyTime = UI.formatDate(l.created_at);
+            } catch {
+              friendlyTime = UI.formatDate(l.created_at);
+            }
+          }
 
           return `
             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+              <!-- Column 1: Action & Human-Readable Content -->
               <td class="px-4 py-3.5 font-sans">
-                <div class="font-bold text-primary font-mono">${logId}</div>
-                <div class="text-[11px] text-slate-400">${UI.formatDateTime(l.created_at)}</div>
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold ${meta.bg}">
+                    <span class="material-symbols-outlined text-[14px]">${meta.icon}</span>
+                    <span>${meta.label}</span>
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-mono" title="Mã log: ${logId}">
+                    #${String(logId).slice(0, 8)}
+                  </span>
+                </div>
+                <div class="text-xs font-medium text-slate-900 dark:text-slate-100 mt-1.5 leading-snug line-clamp-2" title="${UI.escapeHtml(eventSummary)}">
+                  ${UI.escapeHtml(eventSummary)}
+                </div>
               </td>
-              <td class="px-4 py-3.5 font-sans font-bold text-slate-900 dark:text-white">
-                ${UI.escapeHtml(l.actor_email || l.actor_name || (l.actor_id ? `User #${l.actor_id}` : 'Hệ thống'))}
+
+              <!-- Column 2: Target (Clean Tag & Shortened ID) -->
+              <td class="px-4 py-3.5 font-sans">
+                <div class="flex flex-col gap-1 items-start">
+                  <span class="inline-flex items-center gap-1 text-[11px] font-semibold ${targetColor}">
+                    <span class="material-symbols-outlined text-[13px]">${targetIcon}</span>
+                    <span>${targetLabel}</span>
+                  </span>
+                  ${rawTargetIdStr ? `
+                  <button type="button" class="group inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-[11px] border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer" onclick="AdminView.copyToClipboard('${rawTargetIdStr}', 'Đã sao chép mã đối tượng!')" title="Nhấp để sao chép: ${rawTargetIdStr}">
+                    <span>${shortTargetId}</span>
+                    <span class="material-symbols-outlined text-[12px] text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-opacity">content_copy</span>
+                  </button>
+                  ` : '<span class="text-[11px] text-slate-400">Toàn viện</span>'}
+                </div>
               </td>
-              <td class="px-4 py-3.5">
-                <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]">
-                  ${l.action}
+
+              <!-- Column 3: Actor (Simplified to Quản trị viên) -->
+              <td class="px-4 py-3.5 font-sans">
+                <span class="text-xs font-semibold text-slate-800 dark:text-slate-200" title="${UI.escapeHtml(actorName || actorEmail || displayActor)}">
+                  ${displayActor}
                 </span>
-                ${l.reason ? `<div class="text-[11px] text-slate-400 font-sans mt-0.5 truncate max-w-[200px]" title="${UI.escapeHtml(l.reason)}">${UI.escapeHtml(l.reason)}</div>` : ''}
               </td>
-              <td class="px-4 py-3.5 font-sans text-xs text-slate-500">
-                ${l.target_type ? `<strong>${l.target_type}</strong>: ${l.target_id || ''}` : '--'}
+
+              <!-- Column 4: Time & Integrity Badge -->
+              <td class="px-4 py-3.5 font-sans">
+                <div class="text-xs font-semibold text-slate-800 dark:text-slate-200">${friendlyTime}</div>
+                <div class="text-[10px] text-slate-400 font-mono mt-0.5" title="${UI.formatDateTime(l.created_at)}">
+                  ${UI.formatDateTime(l.created_at)}
+                </div>
+                <div class="inline-flex items-center gap-1 mt-1 px-1.5 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 text-[10px] font-bold cursor-pointer" onclick="AdminView.copyToClipboard('${rawSha}', 'Đã sao chép mã băm SHA-256!')" title="SHA-256: ${rawSha} (Nhấp để sao chép)">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>SHA-256</span>
+                </div>
               </td>
-              <td class="px-4 py-3.5 text-[11px] text-slate-500 truncate max-w-[150px]" title="${rawSha}">
-                ${displaySha}
-              </td>
+
+              <!-- Column 5: Action Button -->
               <td class="px-4 py-3.5 text-right font-sans">
-                <button type="button" class="text-primary hover:underline text-xs font-bold inspect-log-btn" data-log-id="${logId}">
-                  Chi tiết →
+                <button type="button" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shadow-none inspect-log-btn cursor-pointer" data-log-id="${logId}">
+                  <span>Chi tiết</span>
+                  <span class="material-symbols-outlined text-[14px]">open_in_new</span>
                 </button>
               </td>
             </tr>
@@ -2161,9 +2321,10 @@ class AdminView {
               </div>
             `,
             footerHtml: `
-              <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600" onclick="UI.closeModal()">Hủy</button>
+              <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300" onclick="UI.closeModal()">Hủy</button>
               <button type="button" id="confirm-override-btn" class="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">Xác nhận Giải phóng</button>
-            `
+            `,
+            noShadow: true
           });
 
           document.getElementById('confirm-override-btn').onclick = async () => {
@@ -2197,36 +2358,159 @@ class AdminView {
 
   static openMetadataDrawer(logItem) {
     const safePayload = JSON.parse(JSON.stringify(logItem));
-    // Redact sensitive tokens or secrets
     if (safePayload.token) safePayload.token = '***REDACTED_SESSION_JWT***';
     if (safePayload.password) safePayload.password = '***REDACTED_SECRET***';
 
     const logId = logItem.event_id || logItem.id || 'AUD-EVENT';
     const sha = logItem.event_hash || logItem.sha256 || 'e8f2a17088b63dc4e9a3efd8e23910c22934ef02604bb49d74e578c7';
+    const action = logItem.action || 'TÁC VỤ KIỂM TOÁN';
+    const actorName = logItem.actor_name || (logItem.actor_id ? `User #${logItem.actor_id}` : 'Hệ thống');
+    const actorEmail = logItem.actor_email || '--';
+    const actorRoles = logItem.actor_roles || (logItem.performed_as_admin ? 'ADMIN' : 'SYSTEM');
+    const targetType = logItem.target_type || '--';
+    const targetId = logItem.target_id || '--';
+    const reason = logItem.reason || 'Không có lý do giải trình đi kèm.';
+    const ip = logItem.ip_address || '127.0.0.1';
+    const createdAt = logItem.created_at ? UI.formatDateTime(logItem.created_at) : '--';
 
     const body = `
-      <div class="space-y-4 font-mono text-xs">
-        <div class="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-          <strong class="text-slate-900 dark:text-white block mb-1">Chính sách Bảo mật Thông tin (Redaction Policy Active):</strong>
-          Mọi khóa phiên bí mật (Session Tokens), khóa riêng và mật khẩu băm đã được tự động che giấu dạng <span class="bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded font-bold text-slate-900 dark:text-white">***REDACTED***</span>.
+      <div class="space-y-4 font-sans text-xs">
+        
+        <!-- Redaction & Security Banner -->
+        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-start gap-3">
+          <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200 dark:border-emerald-800/60">
+            <span class="material-symbols-outlined text-[18px]">verified_user</span>
+          </div>
+          <div class="space-y-0.5">
+            <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Bút lục Kiểm toán Bất biến (ADR-010 Immutable Audit Proof)</span>
+              <span class="px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 text-[10px] font-bold">HỢP LỆ</span>
+            </div>
+            <p class="text-slate-500 dark:text-slate-400 leading-relaxed text-[11px]">
+              Bản ghi được ghi vết theo nguyên tắc Append-Only và bảo vệ bằng chữ ký mật mã SHA-256. Mọi bí mật nhạy cảm (JWT, mật khẩu) được tự động che giấu theo chính sách Zero PK Leakage.
+            </p>
+          </div>
         </div>
 
-        <div class="p-3 rounded-xl bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-[11px] border border-emerald-200 dark:border-emerald-800">
-          <strong>Chữ ký Băm SHA-256 Hợp lệ:</strong> <span class="break-all font-mono">${sha}</span>
+        <!-- Section 1: Overview Cards Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Actor Card -->
+          <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2">
+            <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span class="material-symbols-outlined text-[14px]">person</span>
+              <span>Chủ thể Thực hiện (Actor)</span>
+            </div>
+            <div class="space-y-1">
+              <div class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(actorName)}</div>
+              <div class="text-slate-500 text-[11px]">${UI.escapeHtml(actorEmail)}</div>
+              <div class="flex items-center gap-2 pt-1 text-[11px]">
+                <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-mono font-bold">${actorRoles}</span>
+                <span class="text-slate-400 font-mono">IP: ${ip}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Target Card -->
+          <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2">
+            <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span class="material-symbols-outlined text-[14px]">target</span>
+              <span>Đối tượng Tác động (Target)</span>
+            </div>
+            <div class="space-y-1">
+              <div class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(targetType)}</div>
+              <div class="flex items-center gap-1.5 pt-1">
+                <span class="font-mono text-xs text-slate-700 dark:text-slate-300 break-all bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-600">${targetId}</span>
+                <button type="button" class="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors" onclick="AdminView.copyToClipboard('${targetId}', 'Đã sao chép mã đối tượng!')" title="Sao chép">
+                  <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                </button>
+              </div>
+              <div class="text-[11px] text-slate-400 pt-0.5">Thời điểm: ${createdAt}</div>
+            </div>
+          </div>
         </div>
 
-        <div class="space-y-1">
-          <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Payload Raw JSON (Bản ghi ${logId})</div>
-          <pre class="p-3.5 rounded-xl bg-slate-950 text-slate-200 text-[11px] overflow-x-auto leading-relaxed max-h-[300px]">${UI.escapeHtml(JSON.stringify(safePayload, null, 2))}</pre>
+        <!-- Section 2: Reason & Content Card -->
+        <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-1.5">
+          <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            <span class="material-symbols-outlined text-[14px]">notes</span>
+            <span>Nội dung & Lý do Giải trình (Reason)</span>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 text-xs font-medium leading-relaxed">
+            ${UI.escapeHtml(reason)}
+          </div>
         </div>
+
+        <!-- Section 3: State Mutation (Before vs After) if present -->
+        ${(logItem.before || logItem.after) ? `
+        <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2">
+          <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            <span class="material-symbols-outlined text-[14px]">swap_horiz</span>
+            <span>Đột biến Trạng thái (Before vs. After State)</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase text-slate-400">Trạng thái Trước (Before)</span>
+              <pre class="p-2.5 rounded-xl bg-slate-950 text-slate-300 text-[11px] overflow-x-auto max-h-[140px] font-mono leading-relaxed">${UI.escapeHtml(JSON.stringify(logItem.before || 'Không có', null, 2))}</pre>
+            </div>
+            <div class="space-y-1">
+              <span class="text-[10px] font-bold uppercase text-slate-400">Trạng thái Sau (After)</span>
+              <pre class="p-2.5 rounded-xl bg-slate-950 text-slate-300 text-[11px] overflow-x-auto max-h-[140px] font-mono leading-relaxed">${UI.escapeHtml(JSON.stringify(logItem.after || 'Không có', null, 2))}</pre>
+            </div>
+          </div>
+        </div>
+        ` : ''}
+
+        <!-- Section 4: Cryptographic Proof & Correlation ID -->
+        <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-2.5">
+          <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            <span class="material-symbols-outlined text-[14px]">key</span>
+            <span>Chứng chỉ Mật mã & Truy vết Phân tán</span>
+          </div>
+          <div class="space-y-2 font-mono text-[11px]">
+            <div>
+              <span class="text-slate-400 block text-[10px] uppercase font-sans font-bold">Mã Sự kiện Kiểm toán (Event UUID):</span>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 break-all flex-1 select-all">${logId}</span>
+                <button type="button" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer" onclick="AdminView.copyToClipboard('${logId}', 'Đã sao chép Event UUID!')" title="Sao chép">
+                  <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                </button>
+              </div>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[10px] uppercase font-sans font-bold">Chữ ký Khóa Băm SHA-256 (Hash Chain Seal):</span>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 break-all flex-1 select-all font-bold">${sha}</span>
+                <button type="button" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer" onclick="AdminView.copyToClipboard('${sha}', 'Đã sao chép SHA-256 Hash!')" title="Sao chép">
+                  <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 5: Raw JSON with Copy Action -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Payload Raw JSON Đầy đủ</span>
+            <button type="button" class="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer" onclick="AdminView.copyToClipboard(JSON.stringify(${UI.escapeHtml(JSON.stringify(safePayload))}, null, 2), 'Đã sao chép Raw JSON!')">
+              <span class="material-symbols-outlined text-[13px]">content_copy</span>
+              <span>Sao chép JSON</span>
+            </button>
+          </div>
+          <pre class="p-3.5 rounded-2xl bg-slate-950 text-slate-200 text-[11px] font-mono overflow-x-auto leading-relaxed max-h-[200px] border border-slate-800">${UI.escapeHtml(JSON.stringify(safePayload, null, 2))}</pre>
+        </div>
+
       </div>
     `;
 
     UI.openModal({
-      title: `Siêu dữ liệu Kiểm toán Chi tiết • ${logId}`,
+      title: `Bản ghi Kiểm toán Toàn vẹn • ${action}`,
       bodyHtml: body,
-      footerHtml: `<button type="button" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold" onclick="UI.closeModal()">Đóng</button>`,
-      size: 'lg'
+      footerHtml: `
+        <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold transition-colors cursor-pointer" onclick="UI.closeModal()">Đóng</button>
+      `,
+      size: 'lg',
+      noShadow: true
     });
   }
 

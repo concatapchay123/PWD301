@@ -1,3 +1,119 @@
+# TASK-068 — Optimize UI Toast, Confirm Dialog & Restructure Immutable Audit Trail Table
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-21  
+**Completed Date:** 2026-09-21  
+
+---
+
+## Goal & Resolution Summary
+Giải quyết toàn diện các bất cập giao diện người dùng và tái cấu trúc bảng nhật ký kiểm toán bất biến theo mô hình Human-Readable First:
+
+1. **Popup Thông báo (Toast Notification)**:
+   - Di chuyển container `#toast-container` từ góc dưới phải (`bottom-5 right-5`) lên phía trên góc phải màn hình (`fixed top-5 right-5 z-[9999]`), loại bỏ triệt để xung đột không gian với Floating AI Tutor Widget.
+   - Thiết kế phẳng Warm Editorial, viền tinh tế, bo góc mềm mại (`rounded-2xl`), **không có bóng đổ** (`shadow-none`).
+   - Tích hợp thanh đếm ngược tự đóng (Countdown Progress Bar) co dần từ 100% về 0% theo thời lượng hiển thị (`duration`).
+
+2. **Popup Thông báo Xác nhận (Confirm Dialog - `UI.confirm`)**:
+   - Tái thiết kế giao diện alert dialog: bo góc mềm mại `rounded-2xl`, phẳng hoàn toàn không bóng đổ (`shadow-none`).
+   - Huy hiệu biểu tượng ngữ cảnh (Contextual Icon Badge): Tự động đổi màu và biểu tượng (Đỏ cho hành động nguy hiểm/khóa/xóa; Xanh/Chàm cho xác nhận nghiệp vụ thông thường).
+   - Cặp nút bấm cân bằng chuẩn Jakob's Law: Nút Hủy bên trái, Xác nhận bên phải.
+   - Bổ sung phím tắt bàn phím: Phím `Enter` kích hoạt xác nhận, phím `Escape` hủy thao tác an toàn.
+
+3. **Bảng Nhật ký Kiểm toán Bất biến & Chuỗi Bút lục Toàn vẹn (64 Bản ghi)**:
+   - Tái cấu trúc theo mô hình **Human-Readable First**:
+     + **Cột 1 (Tác vụ & Nội dung Sự kiện)**: Tên tác vụ tiếng Việt trực quan kèm icon và màu nhận diện; dòng nguyên nhân/lý do sự kiện (Reason) được đưa lên làm trọng tâm, chữ to rõ ràng ngay dòng đầu để người quản trị nhìn vào là nắm bắt ngay lý do.
+     + **Cột 2 (Đối tượng Tác động)**: Phân loại đối tượng (Người dùng, Khóa học, Bài thi, Tệp tin, Hạ tầng) kèm mã ID rút gọn dạng tag chip có nút sao chép 1-chạm `copyToClipboard`.
+     + **Cột 3 (Người thực hiện)**: Tinh giản tối đa thành nhãn text súc tích **"Quản trị viên"** (hoặc "Giảng viên" / "Hệ thống"), loại bỏ avatar và role badge rườm rà; thông tin chi tiết được tích hợp vào tooltip và modal chi tiết.
+     + **Cột 4 (Thời gian & Toàn vẹn)**: Thời gian tương đối ("30 phút trước", "Hôm qua") kèm mốc giờ chuẩn xác và badge `● SHA-256 Hợp lệ`.
+     + **Cột 5 (Nút "Chi tiết ↗")**: Mở **Modal Kiểm toán Chuyên sâu** hiển thị toàn bộ 5 khu vực siêu dữ liệu (Chủ thể & Đối tượng, Thẻ Lý do giải trình, Thẻ Đột biến Trạng thái Before vs. After, Chữ ký băm SHA-256 nguyên bản 64 ký tự và Payload Raw JSON kèm nút copy).
+
+---
+
+# TASK-067 — Redesign Lesson Mini-Quiz Studio and Flexible Multi-Type Question Engine
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-21  
+**Completed Date:** 2026-09-21  
+
+---
+
+## Goal & Resolution Summary
+Tái thiết kế toàn diện giao diện và cơ chế quản trị câu hỏi mini-quiz trong bài giảng (`frontend/assets/js/views/instructor.js`), giải phóng hệ thống khỏi sự gò bó của mô hình trắc nghiệm cố định 4 đáp án và 1 đáp án đúng duy nhất:
+
+1. **Studio Quản trị Đa dạng Loại câu hỏi (Authoring Experience)**:
+   - Hỗ trợ 4 định dạng câu hỏi linh hoạt với thanh chọn phân đoạn (segmented tabs):
+     + **Trắc nghiệm (Multiple Choice)**: Cho phép chuyển đổi linh hoạt giữa Chọn 1 đáp án (Single choice / Radio) hoặc Chọn nhiều đáp án (Multi-select / Checkbox). Giảng viên có thể tùy ý thêm hoặc xóa số lượng phương án (không giới hạn ở 4 lựa chọn, tối thiểu 2).
+     + **Điền khuyết (Fill in the Blank)**: Hỗ trợ cú pháp placeholder `[___]` trong nội dung câu hỏi với nút tắt tiện lợi `[+ Chèn [___]]`. Quản lý danh sách chỗ trống linh hoạt, mỗi chỗ trống hỗ trợ nhiều đáp án chấp nhận được (phân cách bằng dấu phẩy) và không phân biệt hoa thường khi chấm.
+     + **Nối từ (Matching Pairs)**: Hỗ trợ tạo các cặp giá trị ghép đôi Cột A $\leftrightarrow$ Cột B linh hoạt, thêm/xóa cặp tùy ý (tối thiểu 2 cặp).
+     + **Đúng / Sai (True / False)**: Giao diện thẻ trực quan chọn phương án Đúng hoặc Sai.
+   - Thao tác thẻ câu hỏi mượt mà: Di chuyển lên / xuống (Move Up / Move Down), xóa thẻ, bổ sung trường Giải thích chi tiết (Explanation).
+   - Tinh chỉnh giao diện nút bấm: Loại bỏ hoàn toàn dấu cộng thừa trước nhãn text (`+ Thêm câu hỏi`, `+ Thêm lựa chọn`, `+ Thêm chỗ trống`, `+ Thêm cặp nối`) để kết hợp hoàn hảo với icon Material Symbols mà không bị lặp ký tự.
+   - Chuẩn hóa dữ liệu `normalizeQuizQuestion()` bảo đảm tương thích ngược 100% với các bài giảng cũ mang định dạng trắc nghiệm truyền thống.
+
+2. **Trải nghiệm Làm bài & Chấm điểm Tương tác của Học viên (`frontend/assets/js/views/student.js`)**:
+   - Giao diện làm bài được thiết kế riêng cho từng dạng câu hỏi: huy hiệu phân loại, ô nhập liệu điền khuyết gắn nhãn số thứ tự, dropdown chọn vế nối cho dạng matching, checkbox/radio trực quan.
+   - Bộ chấm điểm thông minh (`#mini-quiz-check-btn`):
+     + Trắc nghiệm đơn / đa đáp án: Kiểm tra tập hợp lựa chọn chính xác.
+     + Điền khuyết: Chuẩn hóa khoảng trắng, chữ hoa/thường, đối chiếu với danh sách các đáp án hợp lệ.
+     + Nối từ: Kiểm tra liên kết chính xác giữa Cột A và Cột B.
+     + Đúng / Sai: Đối chiếu giá trị boolean.
+     + Hiển thị trạng thái Đúng/Sai kèm giải thích chi tiết cho từng câu hỏi và tổng điểm đạt được.
+   - Nút làm lại (`#mini-quiz-reset-btn`) dọn sạch toàn bộ trạng thái nhập liệu cho mọi loại câu hỏi.
+
+3. **Gia cố Bộ phân tích Dữ liệu Backend**:
+   - Khắc phục regex trích xuất `<!-- mini_quiz: [...] -->` trong `src/pwd301/blueprints/instructor/routes.py` và `src/pwd301/blueprints/student/routes.py` bằng regex an toàn `r"<!--\s*mini_quiz:\s*(.+?)\s*-->"` (`re.DOTALL`), ngăn chặn xung đột với các ký tự ngoặc vuông `[___]` trong nội dung bài học.
+
+4. **Kiểm thử Toàn diện**:
+   - Xây dựng bộ test API `tests/api/test_lesson_mini_quiz_api.py` kiểm chứng toàn bộ chu trình tạo mới bài giảng với 4 loại câu hỏi, trích xuất cho giảng viên, học viên tham gia học và làm bài, kiểm thử tương thích ngược với bài giảng cũ, và cập nhật bài giảng (`PUT /instructor/lessons/<id>`).
+
+---
+
+# TASK-066 — Fix YouTube Video URL Paste, CSP Frame Directive, and Universal Embed Parsing
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-21  
+**Completed Date:** 2026-09-21  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để sự cố không thể dán link video YouTube vào bài giảng (hiển thị biểu tượng tài liệu hỏng 🚫 do vi phạm Content Security Policy):
+
+1. **Nguyên nhân gốc rễ (Root Cause)**:
+   - Trong `src/pwd301/__init__.py`, tiêu đề `Content-Security-Policy` hoàn toàn thiếu chỉ thị `frame-src`.
+   - Theo chuẩn W3C CSP Level 3, trình duyệt tự động fallback về `default-src 'self'`. Khi nhúng `<iframe>` chứa video từ `https://www.youtube-nocookie.com/embed/...`, trình duyệt Chromium/Edge chặn nạp iframe và hiển thị biểu tượng tài liệu bị hỏng với dấu cấm đỏ 🚫 (Refused to frame 'https://www.youtube-nocookie.com/' because it violates default-src 'self').
+   - Đồng thời, thiếu chỉ thị `media-src` (gây chặn các video HTML5 tải từ nguồn `blob:`, `data:`, `https:`) và thiếu `https://cdnjs.cloudflare.com` trong `script-src` (khiến thư viện khử khuẩn bảo mật DOMPurify bị chặn nạp).
+
+2. **Giải pháp Đa tầng Triệt để (Multi-Layer Defense & Remediation)**:
+   - **Cấu hình CSP Backend (`src/pwd301/__init__.py`)**:
+     + Bổ sung chỉ thị `frame-src 'self' https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com https://*.youtube.com https://*.youtube-nocookie.com https://player.vimeo.com https://*.vimeo.com;`.
+     + Bổ sung chỉ thị `media-src 'self' data: blob: https:;`.
+     + Bổ sung `https://cdnjs.cloudflare.com` vào `script-src`.
+     + Bảo toàn 100% rào chắn chống clickjacking `frame-ancestors 'self'` (frontend) và `'none'` (non-frontend).
+   - **Chuẩn hóa Phân tích URL Dùng chung (`frontend/assets/js/ui.js`)**:
+     + Bổ sung helper `UI.parseYouTubeId(url)` hỗ trợ đầy đủ các định dạng: `youtu.be/ID`, `youtube.com/watch?v=ID`, `youtube.com/embed/ID`, `youtube.com/v/ID`, `youtube.com/shorts/ID`, `youtube.com/live/ID`, mã nhúng iframe raw `<iframe src="...">`, các query parameters phức tạp (`?list=...`, `&t=...`, `&feature=...`) và ID 11 ký tự thuần.
+     + Bổ sung helper `UI.getYouTubeEmbedUrl(id)` trả về URL nhúng bảo mật `https://www.youtube-nocookie.com/embed/...`.
+   - **Tối ưu Tương tác Studio Giảng viên (`frontend/assets/js/views/instructor.js`)**:
+     + Chuẩn hóa URL lưu trữ bài giảng thành dạng URL chuẩn `https://www.youtube.com/watch?v=${ytId}`.
+     + Hỗ trợ phím `Enter` trong ô nhập link để áp dụng ngay lập tức (Jakob's Law).
+     + Tự động nhận diện và bắt URL từ ô input nếu giảng viên dán link nhưng quên bấm nút "Áp dụng" trước khi bấm "Lưu bản nháp" / "Xuất bản".
+     + Tự động chuyển sang tab "Dán link video" khi mở bài giảng đã có video URL.
+     + Gỡ video an toàn và dọn sạch state khi bấm nút "Gỡ video".
+   - **Đồng bộ Không gian Đọc Học viên (`frontend/assets/js/views/student.js`)**:
+     + Đồng bộ `StudentView._getEmbedVideoHtml` sử dụng `UI.parseYouTubeId` và `UI.getYouTubeEmbedUrl`.
+
+## Test Verification Summary
+- **Unit & Integration Tests**: 14/14 tests PASSED 100% (`tests/api/test_frontend_integration.py`, `tests/api/test_lesson_video_integration.py`).
+- **JS Unit Tests**: 13/13 test cases PASSED 100% trên toàn bộ các định dạng link YouTube (`test_ui_youtube.js`).
+- **Linter & Contract**: `ruff check` PASSED 100% (0 errors), `node --check` PASSED 100% trên cả 3 file JS, `python scripts/repo_check.py` PASSED 100%.
+- **Live Browser Automation (Chrome DevTools MCP)**: Xác minh trực tiếp trên trình duyệt thật tại `127.0.0.1:5000`: 0 lỗi CSP trong console, video YouTube hiển thị mượt mà với đầy đủ thumbnail và trình phát chuẩn.
+
+---
+
 # TASK-065 — Formal MIT License Provisioning and Package Metadata Alignment
 
 **Status:** DONE  

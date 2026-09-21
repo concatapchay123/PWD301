@@ -540,8 +540,8 @@
 
   </div>
 
-  <!-- Global Floating Toast Notification Container -->
-  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none max-w-sm"></div>
+  <!-- Global Floating Toast Notification Container (Top Right) -->
+  <div id="toast-container" class="fixed top-5 right-5 z-[9999] flex flex-col gap-2.5 pointer-events-none max-w-sm w-full"></div>
 
   <!-- Global Modal Container -->
   <div id="modal-container" class="hidden z-50"></div>
@@ -616,6 +616,8 @@
     </button>
   </div>
 
+  <!-- DOMPurify for Safe WYSIWYG HTML Rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
   <script src="/frontend/assets/js/ui.js?v=3.0.4"></script>
   <script src="/frontend/assets/js/api.js?v=3.0.4"></script>
   <script src="/frontend/assets/js/exam-store.js?v=3.0.4"></script>

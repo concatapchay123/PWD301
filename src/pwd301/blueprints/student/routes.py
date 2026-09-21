@@ -231,6 +231,18 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         except Exception:
             pass
 
+    quiz = []
+    if les.markdown_content:
+        import re
+        m_quiz = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", les.markdown_content, re.DOTALL)
+        if m_quiz:
+            try:
+                parsed_quiz = json.loads(m_quiz.group(1))
+                if isinstance(parsed_quiz, list):
+                    quiz = parsed_quiz
+            except Exception:
+                pass
+
     return {
         "lesson_id": str(les.public_id),
         "course_id": str(les.course.public_id) if les.course else None,
@@ -242,6 +254,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": float(les.viewed_fraction_required),
         "video_url": video_url,
+        "quiz": quiz,
         "personal_notes": personal_notes,
         "notes_saved_at": notes_saved_at,
         "progress": {
@@ -1501,6 +1514,27 @@ def student_course_detail(course_id: str) -> Any:
             }
         )
 
+    contact_info = None
+    clean_desc = course.description or ""
+    if course.description and "<!-- contact_info:" in course.description:
+        import json, re
+        m_contact = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", course.description, re.DOTALL)
+        if m_contact:
+            try:
+                contact_info = json.loads(m_contact.group(1))
+            except Exception:
+                pass
+        clean_desc = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", course.description, flags=re.DOTALL).strip()
+
+    instructor_email = course.owner_instructor.email if course.owner_instructor else None
+    if not contact_info:
+        contact_info = {
+            "email": instructor_email or "",
+            "phone": "",
+            "group": "",
+            "office_hours": "",
+        }
+
     return jsonify(
         {
             "course": {
@@ -1509,7 +1543,7 @@ def student_course_detail(course_id: str) -> Any:
                 "code": course.course_code,
                 "course_code": course.course_code,
                 "title": course.title,
-                "description": course.description,
+                "description": clean_desc,
                 "category": course.category,
                 "difficulty": course.difficulty,
                 "learning_objectives": course.learning_objectives,
@@ -1524,6 +1558,8 @@ def student_course_detail(course_id: str) -> Any:
                     if course.owner_instructor
                     else "Hội đồng Khoa học Khoa CNTT"
                 ),
+                "instructor_email": instructor_email,
+                "contact_info": contact_info,
             },
             "enrollment": (
                 {

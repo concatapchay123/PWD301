@@ -901,7 +901,8 @@ class StudentView {
       const lessons = courseData?.lessons || course.lessons || [];
       const assessments = courseData?.assessments || course.assessments || [];
       const resources = courseData?.resources || course.resources || [];
-      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined);
+      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
+      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined) || isPreview;
 
       // Parse or provide student-friendly Learning Outcomes (SLOs)
       let studentSLOs = [];
@@ -1059,22 +1060,77 @@ class StudentView {
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 space-y-2 border border-slate-100 dark:border-slate-800">
-                  <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-primary text-[18px]">person_apron</span>
-                    <span>Giảng viên chủ nhiệm:</span>
+                <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 space-y-3.5 border border-slate-200/80 dark:border-slate-800">
+                  <div class="flex items-center justify-between">
+                    <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-primary text-[20px]">person_apron</span>
+                      <span class="text-sm">Thông tin Giảng viên Phụ trách:</span>
+                    </div>
+                    <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                      Chính thức
+                    </span>
                   </div>
-                  <div class="text-sm font-extrabold text-primary">${UI.escapeHtml(course.instructor_name || 'Hội đồng Khoa học Khoa CNTT')}</div>
-                  <div class="text-slate-500">Email học vụ: <code class="font-mono bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700">instructor@pwd301.edu.vn</code></div>
-                  <div class="text-slate-500">Giờ tiếp sinh viên: Thứ 3 & Thứ 5 (14:00 - 16:30)</div>
+
+                  <div>
+                    <div class="text-base font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(course.instructor_name || 'Hội đồng Khoa học Khoa CNTT')}</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Giảng viên / Chủ nhiệm học phần môn học</div>
+                  </div>
+
+                  <div class="space-y-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
+                    <div class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                      <span class="material-symbols-outlined text-slate-400 text-[16px]">mail</span>
+                      <span>Email học vụ:</span>
+                      <a href="mailto:${UI.escapeHtml(course.contact_info?.email || course.instructor_email || 'instructor@pwd301.edu.vn')}" class="font-mono text-primary font-bold hover:underline">
+                        ${UI.escapeHtml(course.contact_info?.email || course.instructor_email || 'instructor@pwd301.edu.vn')}
+                      </a>
+                    </div>
+
+                    ${course.contact_info?.phone ? `
+                      <div class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span class="material-symbols-outlined text-slate-400 text-[16px]">call</span>
+                        <span>Số điện thoại:</span>
+                        <a href="tel:${UI.escapeHtml(course.contact_info.phone)}" class="font-mono font-bold text-slate-800 dark:text-slate-200 hover:text-primary">
+                          ${UI.escapeHtml(course.contact_info.phone)}
+                        </a>
+                      </div>
+                    ` : ''}
+
+                    ${course.contact_info?.office_hours ? `
+                      <div class="flex items-start gap-2 text-slate-700 dark:text-slate-300">
+                        <span class="material-symbols-outlined text-slate-400 text-[16px] mt-0.5">schedule</span>
+                        <div>
+                          <span>Giờ tiếp sinh viên:</span>
+                          <span class="font-medium text-slate-800 dark:text-slate-200 ml-1">${UI.escapeHtml(course.contact_info.office_hours)}</span>
+                        </div>
+                      </div>
+                    ` : `
+                      <div class="flex items-start gap-2 text-slate-700 dark:text-slate-300">
+                        <span class="material-symbols-outlined text-slate-400 text-[16px] mt-0.5">schedule</span>
+                        <div>
+                          <span>Giờ tiếp sinh viên:</span>
+                          <span class="font-medium text-slate-800 dark:text-slate-200 ml-1">Thứ 3 & Thứ 5 (14:00 - 16:30)</span>
+                        </div>
+                      </div>
+                    `}
+
+                    ${course.contact_info?.group ? `
+                      <div class="pt-2">
+                        <a href="${UI.escapeHtml(course.contact_info.group)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary text-white hover:bg-primary-hover font-bold text-xs transition-colors shadow-2xs">
+                          <span class="material-symbols-outlined text-[16px]">groups</span>
+                          <span>Tham gia Group trao đổi học tập (Zalo / Teams / Telegram)</span>
+                          <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                        </a>
+                      </div>
+                    ` : ''}
+                  </div>
                 </div>
 
-                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 space-y-2 border border-slate-100 dark:border-slate-800">
+                <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 space-y-3.5 border border-slate-200/80 dark:border-slate-800">
                   <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-indigo-600 text-[18px]">account_tree</span>
-                    <span>Điều kiện tiên quyết (Cần học trước):</span>
+                    <span class="material-symbols-outlined text-indigo-600 text-[20px]">account_tree</span>
+                    <span class="text-sm">Điều kiện tiên quyết (Cần học trước):</span>
                   </div>
-                  <div class="text-slate-600 dark:text-slate-400 leading-relaxed">
+                  <div class="text-slate-600 dark:text-slate-400 leading-relaxed text-xs">
                     ${course.prerequisites ? UI.escapeHtml(course.prerequisites) : 'Không yêu cầu môn học tiên quyết bắt buộc. Khuyến nghị sinh viên nắm vững cấu trúc dữ liệu và giải thuật cơ sở.'}
                   </div>
                 </div>
@@ -1175,9 +1231,8 @@ class StudentView {
                       </h4>
                       <p class="text-xs text-slate-500 mt-0.5 line-clamp-1">${UI.escapeHtml(l.summary || 'Bài giảng lý thuyết & thực hành kèm code mẫu')}</p>
                       <div class="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                        <span>Thời lượng: ~${l.estimated_duration_minutes || 45} phút</span>
-                        <span>•</span>
                         <span>Tài liệu: ${(l.resources || []).length} tệp đính kèm</span>
+                        ${l.quiz && l.quiz.length ? `<span>•</span><span class="text-indigo-600 dark:text-indigo-400 font-semibold">${l.quiz.length} câu trắc nghiệm</span>` : ''}
                       </div>
                     </div>
                   </div>
@@ -1208,11 +1263,27 @@ class StudentView {
 
       container.innerHTML = `
         <div class="p-6 space-y-6 max-w-6xl mx-auto animate-fade-in">
+          ${isPreview ? `
+            <div class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
+              <div class="flex items-center gap-2.5 text-amber-900 dark:text-amber-200">
+                <span class="material-symbols-outlined text-[20px] text-amber-600">visibility</span>
+                <div>
+                  <span class="font-bold">Chế độ Xem trước của Giảng viên:</span>
+                  <span class="text-slate-600 dark:text-slate-300 ml-1">Bạn đang xem khóa học này dưới góc nhìn của Học sinh. Toàn bộ bài học và tài liệu đã được mở khóa để xem thử.</span>
+                </div>
+              </div>
+              <a href="#/instructor/courses/${courseId}/manage" class="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold transition-all shadow-sm shrink-0 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">arrow_back</span>
+                <span>Quản lý môn học</span>
+              </a>
+            </div>
+          ` : ''}
+
           <!-- Navigation Breadcrumb -->
           <div class="flex items-center gap-2 text-xs text-slate-500">
-            <a href="#/student/courses" class="hover:underline flex items-center gap-1">
+            <a href="${isPreview ? `#/instructor/courses/${courseId}/manage` : '#/student/courses'}" class="hover:underline flex items-center gap-1">
               <span class="material-symbols-outlined text-[14px]">arrow_back</span>
-              Khóa học của tôi
+              ${isPreview ? 'Quay lại Quản lý môn học' : 'Khóa học của tôi'}
             </a>
             <span>/</span>
             <span class="text-slate-900 dark:text-white font-bold">${UI.escapeHtml(course.course_code)}</span>
@@ -1225,20 +1296,16 @@ class StudentView {
                 <span class="px-3 py-1 rounded-full bg-primary-subtle text-primary font-mono font-bold text-xs">${UI.escapeHtml(course.course_code)}</span>
                 ${UI.difficultyBadge(course.difficulty)}
                 ${course.status && course.status !== 'ACTIVE' ? UI.statusBadge(course.status) : ''}
-                <span class="text-xs text-slate-500">• Khoa Công nghệ Thông tin</span>
+                <span class="text-xs text-slate-500">• ${UI.escapeHtml(course.category || 'Chung')}</span>
               </div>
               <div class="flex items-center gap-3">
-                ${(window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN') ? `
-                  <a href="#/instructor/courses/${courseId}/manage" class="px-3.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs" title="Quay lại Cổng Giảng viên">
-                    <span class="material-symbols-outlined text-[16px]">edit_note</span>
-                    <span>Quản lý môn học (Giảng viên)</span>
-                  </a>
-                ` : ''}
                 ${isEnrolled ? `
                   <div class="flex items-center gap-3">
-                    <div class="text-xs text-slate-500 font-medium">
-                      Tiến độ: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong>
-                    </div>
+                    ${!isPreview ? `
+                      <div class="text-xs text-slate-500 font-medium">
+                        Tiến độ: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong>
+                      </div>
+                    ` : ''}
                     ${lessons.length > 0 ? `
                       <a
                         href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${lessons[0].lesson_id || lessons[0].id}"
@@ -1248,9 +1315,11 @@ class StudentView {
                         <span>Vào học ngay</span>
                       </a>
                     ` : ''}
-                    <button type="button" id="dossier-leave-btn" class="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 transition-colors">
-                      Rút môn học
-                    </button>
+                    ${!isPreview ? `
+                      <button type="button" id="dossier-leave-btn" class="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-50 transition-colors">
+                        Rút môn học
+                      </button>
+                    ` : ''}
                   </div>
                 ` : `
                   <button type="button" id="dossier-enroll-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5">
@@ -1371,18 +1440,18 @@ class StudentView {
   static _getEmbedVideoHtml(url) {
     if (!url) return '';
     const trimmed = String(url).trim();
-    // YouTube
-    const ytMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-    if (ytMatch && ytMatch[1]) {
-      return `<iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
+    const ytId = UI.parseYouTubeId(trimmed);
+    if (ytId) {
+      return `<iframe class="w-full h-full aspect-video rounded-xl" src="${UI.getYouTubeEmbedUrl(ytId)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
     }
     // Vimeo
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe class="w-full h-full" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      return `<iframe class="w-full h-full aspect-video rounded-xl" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
     // Direct file / HTML5 video
-    return `<video controls class="w-full h-full" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
+    return `<video controls class="w-full h-full aspect-video rounded-xl" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
   }
 
   // =========================================================================
@@ -1408,6 +1477,7 @@ class StudentView {
       const lessonsList = courseData?.lessons || course.lessons || [];
       const resources = lesson.resources || [];
       const isCompleted = lesson.progress?.is_completed || false;
+      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
 
       // Find prev and next lesson
       const currentIndex = lessonsList.findIndex(l => (l.lesson_id || l.id) === lessonId);
@@ -1430,16 +1500,19 @@ class StudentView {
           <div class="h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-10 select-none">
             <div class="flex items-center gap-3">
               <a
-                href="#/student/courses/${courseId}"
+                href="${isPreview ? `#/instructor/courses/${courseId}/manage` : `#/student/courses/${courseId}`}"
                 class="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-                title="Quay lại Tổng quan Khóa học"
+                title="${isPreview ? 'Quay lại Quản lý môn học' : 'Quay lại Tổng quan Khóa học'}"
               >
                 <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-                <span class="hidden sm:inline">Khóa học</span>
+                <span class="hidden sm:inline">${isPreview ? 'Quản lý' : 'Khóa học'}</span>
               </a>
               <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
               <div class="truncate max-w-[200px] sm:max-w-xs md:max-w-md">
-                <span class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">${UI.escapeHtml(course.title)}</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">${UI.escapeHtml(course.title)}</span>
+                  ${isPreview ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-200 dark:border-amber-800 shrink-0">Xem trước</span>` : ''}
+                </div>
                 <span class="text-[11px] text-slate-400 truncate block">${UI.escapeHtml(lesson.title)}</span>
               </div>
             </div>
@@ -1503,8 +1576,6 @@ class StudentView {
                 <div class="flex items-center gap-2 text-xs text-slate-400">
                   <span class="font-mono text-primary font-bold">BÀI ${currentIndex + 1} / ${lessonsList.length}</span>
                   <span>•</span>
-                  <span>Thời lượng: ~${lesson.estimated_duration_minutes || 45} phút</span>
-                  <span>•</span>
                   <span class="flex items-center gap-1">
                     <span>Mục tiêu kỹ năng: Thiết kế & Hiện thực hóa</span>
                     <button type="button" onclick="UI.openAcademicGlossaryModal()" class="cursor-pointer text-[10px] bg-slate-100 hover:bg-primary-subtle hover:text-primary dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono transition-colors" title="Bấm để xem giải thích chuẩn đầu ra (SLO)">SLO (?)</button>
@@ -1531,6 +1602,153 @@ class StudentView {
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">
                 ${UI.renderMarkdown(lesson.markdown_content || 'Nội dung bài giảng đang được hoàn thiện.')}
               </div>
+
+              <!-- Mini-Quiz Interactive Section (Item 7) -->
+              ${lesson.quiz && Array.isArray(lesson.quiz) && lesson.quiz.length > 0 ? `
+                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6" id="lesson-mini-quiz-section">
+                  <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center gap-2.5">
+                      <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[20px]">quiz</span>
+                      <div>
+                        <h3 class="font-black text-slate-900 dark:text-white text-base">Bài kiểm tra Củng cố Kiến thức (Mini-Quiz)</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Kiểm tra mức độ tiếp thu bài giảng với ${lesson.quiz.length} câu hỏi tương tác</p>
+                      </div>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-900/50">
+                      ${lesson.quiz.length} câu hỏi
+                    </span>
+                  </div>
+
+                  <div class="space-y-6" id="mini-quiz-questions-list">
+                    ${lesson.quiz.map((q, qIdx) => {
+                      const qType = q.type || 'MULTIPLE_CHOICE';
+                      const isMulti = qType === 'MULTIPLE_CHOICE' && (Boolean(q.allow_multiple) || (Array.isArray(q.correct_answers) && q.correct_answers.length > 1));
+                      const choices = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
+
+                      let typeBadge = '';
+                      if (qType === 'MULTIPLE_CHOICE') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">${isMulti ? 'Trắc nghiệm (Chọn nhiều)' : 'Trắc nghiệm (Chọn 1)'}</span>`;
+                      } else if (qType === 'FILL_BLANK') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">Điền khuyết</span>`;
+                      } else if (qType === 'MATCHING') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">Nối từ</span>`;
+                      } else if (qType === 'TRUE_FALSE') {
+                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">Đúng / Sai</span>`;
+                      }
+
+                      return `
+                        <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3.5 mini-quiz-card" data-qidx="${qIdx}" data-qtype="${qType}">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-start gap-2.5 flex-1">
+                              <span class="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-mono font-bold text-xs shrink-0 mt-0.5">Câu ${qIdx + 1}</span>
+                              <div class="font-bold text-slate-900 dark:text-white text-sm sm:text-base leading-snug">
+                                ${qType === 'FILL_BLANK'
+                                  ? UI.escapeHtml(q.question).replace(/\[___\]/g, '<span class="inline-block px-2 py-0.5 mx-1 rounded bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold font-mono text-xs border border-indigo-200 dark:border-indigo-800">[ ... ]</span>')
+                                  : UI.escapeHtml(q.question)}
+                              </div>
+                            </div>
+                            <div class="shrink-0">
+                              ${typeBadge}
+                            </div>
+                          </div>
+
+                          <!-- Question interaction body -->
+                          ${qType === 'MULTIPLE_CHOICE' ? `
+                            <div class="space-y-2 pt-1">
+                              ${choices.map((ch, chIdx) => `
+                                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-indigo-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-choice-label" data-chidx="${chIdx}">
+                                  ${isMulti ? `
+                                    <input type="checkbox" name="mini-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 rounded cursor-pointer mini-quiz-chk" />
+                                  ` : `
+                                    <input type="radio" name="mini-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-radio" />
+                                  `}
+                                  <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge">
+                                    ${String.fromCharCode(65 + chIdx)}
+                                  </span>
+                                  <span class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 flex-1 leading-relaxed choice-text">${UI.escapeHtml(ch)}</span>
+                                </label>
+                              `).join('')}
+                            </div>
+                          ` : ''}
+
+                          ${qType === 'FILL_BLANK' ? `
+                            <div class="space-y-2.5 pt-1">
+                              ${(q.blanks || [{ accepted_answers: [] }]).map((b, bIdx) => `
+                                <div class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mini-quiz-blank-row">
+                                  <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                    #${bIdx + 1}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    class="mini-quiz-blank-input flex-1 px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-emerald-500 transition-all"
+                                    data-qidx="${qIdx}"
+                                    data-bidx="${bIdx}"
+                                    placeholder="Nhập câu trả lời cho chỗ trống #${bIdx + 1}..."
+                                  />
+                                </div>
+                              `).join('')}
+                            </div>
+                          ` : ''}
+
+                          ${qType === 'MATCHING' ? `
+                            <div class="space-y-2.5 pt-1">
+                              ${(q.pairs || []).map((p, pIdx) => `
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mini-quiz-matching-row" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                  <div class="flex items-center gap-2 sm:w-1/2 font-medium text-xs sm:text-sm text-slate-800 dark:text-slate-200">
+                                    <span class="w-5 h-5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center justify-center shrink-0">${pIdx + 1}</span>
+                                    <span>${UI.escapeHtml(p.left)}</span>
+                                  </div>
+                                  <div class="flex items-center gap-1.5 sm:w-1/2">
+                                    <span class="material-symbols-outlined text-slate-400 text-[16px] hidden sm:inline">arrow_forward</span>
+                                    <select class="mini-quiz-matching-select w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-amber-500 transition-all cursor-pointer" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                      <option value="">-- Chọn vế ghép tương ứng --</option>
+                                      ${(q.pairs || []).map(optPair => `
+                                        <option value="${UI.escapeHtml(optPair.right)}">${UI.escapeHtml(optPair.right)}</option>
+                                      `).join('')}
+                                    </select>
+                                  </div>
+                                </div>
+                              `).join('')}
+                            </div>
+                          ` : ''}
+
+                          ${qType === 'TRUE_FALSE' ? `
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-emerald-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-tf-label" data-qidx="${qIdx}" data-val="true">
+                                <input type="radio" name="mini-quiz-tf-${qIdx}" value="true" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-tf-radio" />
+                                <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Đúng (True)</span>
+                              </label>
+                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-rose-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-tf-label" data-qidx="${qIdx}" data-val="false">
+                                <input type="radio" name="mini-quiz-tf-${qIdx}" value="false" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-tf-radio" />
+                                <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
+                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Sai (False)</span>
+                              </label>
+                            </div>
+                          ` : ''}
+
+                          <div class="mini-quiz-explanation hidden p-3.5 rounded-xl text-xs space-y-1"></div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+
+                  <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div id="mini-quiz-score-banner" class="text-xs text-slate-500 font-medium">
+                      Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button type="button" id="mini-quiz-check-btn" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer">
+                        <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                        <span>Kiểm tra đáp án</span>
+                      </button>
+                      <button type="button" id="mini-quiz-reset-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-colors hidden cursor-pointer">
+                        Làm lại
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
 
               <!-- Inline Contextual AI Mentor Card -->
               <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl p-6 shadow-md space-y-4 border border-indigo-800/40">
@@ -1581,7 +1799,7 @@ class StudentView {
       `;
 
       // 1. Left Drawer Handler: Syllabus Outline
-      const syllabusBtn = document.getElementById('open-syllabus-drawer-btn');
+      const syllabusBtn = document.getElementById('open-syllabus-drawer-btn') || document.getElementById('toggle-syllabus-btn');
       if (syllabusBtn) {
         syllabusBtn.onclick = () => {
           UI.openDrawer({
@@ -1622,7 +1840,7 @@ class StudentView {
       }
 
       // 2. Right Drawer Handler: Resource Vault & Personal Notepad
-      const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn');
+      const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn') || document.getElementById('toggle-resources-btn');
       if (vaultNotesBtn) {
         vaultNotesBtn.onclick = () => {
           UI.openDrawer({
@@ -1763,6 +1981,10 @@ class StudentView {
       const completeBtn = document.getElementById('complete-lesson-btn');
       if (completeBtn) {
         completeBtn.onclick = async () => {
+          if (isPreview) {
+            UI.showToast('Bạn đang xem thử bài giảng với quyền Giảng viên. Tiến độ học thử không ghi nhận vào CSDL sinh viên.', 'info');
+            return;
+          }
           try {
             await ApiClient.recordLessonProgress(lessonId, 30, 1.0, true);
             completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5';
@@ -1774,10 +1996,235 @@ class StudentView {
         };
       }
 
-      // 5. Heartbeat progress tracking
-      const progressHeartbeat = setInterval(() => {
-        ApiClient.recordLessonProgress(lessonId, 15, 0.5, false).catch(() => {});
-      }, 15000);
+      // 5. Heartbeat progress tracking (only for enrolled students, not preview mode)
+      let progressHeartbeat;
+      if (!isPreview) {
+        progressHeartbeat = setInterval(() => {
+          ApiClient.recordLessonProgress(lessonId, 15, 0.5, false).catch(() => {});
+        }, 15000);
+      }
+
+      // 6. Mini-Quiz interactive checker (Supports all question types)
+      const checkQuizBtn = document.getElementById('mini-quiz-check-btn');
+      const resetQuizBtn = document.getElementById('mini-quiz-reset-btn');
+      const quizSection = document.getElementById('lesson-mini-quiz-section');
+
+      if (checkQuizBtn && quizSection && lesson.quiz && lesson.quiz.length) {
+        checkQuizBtn.onclick = () => {
+          let correctCount = 0;
+          const cards = quizSection.querySelectorAll('.mini-quiz-card');
+
+          cards.forEach((card, qIdx) => {
+            const qData = lesson.quiz[qIdx];
+            if (!qData) return;
+
+            const qType = qData.type || 'MULTIPLE_CHOICE';
+            const explDiv = card.querySelector('.mini-quiz-explanation');
+            let isCorrect = false;
+            let feedbackDetail = '';
+
+            if (qType === 'MULTIPLE_CHOICE') {
+              const expectedSet = new Set(
+                Array.isArray(qData.correct_answers)
+                  ? qData.correct_answers
+                  : (typeof qData.correct_index === 'number' ? [qData.correct_index] : [0])
+              );
+
+              const selectedInputs = card.querySelectorAll(`input[name="mini-quiz-q-${qIdx}"]:checked`);
+              const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
+
+              const choiceLabels = card.querySelectorAll('.mini-quiz-choice-label');
+              choiceLabels.forEach(lbl => {
+                const chIdx = parseInt(lbl.dataset.chidx, 10);
+                lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                const badge = lbl.querySelector('.choice-badge');
+
+                if (expectedSet.has(chIdx)) {
+                  lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                  if (badge) badge.className = 'w-6 h-6 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                } else if (selectedSet.has(chIdx)) {
+                  lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                  if (badge) badge.className = 'w-6 h-6 rounded-lg bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                }
+              });
+
+              const hasSelected = selectedSet.size > 0;
+              const setsEqual = expectedSet.size === selectedSet.size && [...expectedSet].every(x => selectedSet.has(x));
+              isCorrect = hasSelected && setsEqual;
+
+              const correctLetters = [...expectedSet].sort((a, b) => a - b).map(idx => String.fromCharCode(65 + idx)).join(', ');
+              feedbackDetail = isCorrect
+                ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Bạn đã chọn đúng tất cả đáp án.')
+                : `Đáp án đúng là: <strong>${correctLetters}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
+
+            } else if (qType === 'FILL_BLANK') {
+              const blankInputs = card.querySelectorAll('.mini-quiz-blank-input');
+              const blanks = qData.blanks || [];
+              let allBlanksCorrect = true;
+              let anyFilled = false;
+              const answerDetails = [];
+
+              blankInputs.forEach(inp => {
+                const bIdx = parseInt(inp.dataset.bidx, 10);
+                const userVal = (inp.value || '').trim().toLowerCase();
+                if (userVal) anyFilled = true;
+
+                const blankDef = blanks[bIdx] || {};
+                const rawAccepted = Array.isArray(blankDef.accepted_answers)
+                  ? blankDef.accepted_answers
+                  : (blankDef.accepted_answers ? [blankDef.accepted_answers] : []);
+                const acceptedList = rawAccepted.map(a => String(a).trim().toLowerCase()).filter(Boolean);
+
+                const blankMatches = userVal.length > 0 && acceptedList.includes(userVal);
+                inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                if (blankMatches) {
+                  inp.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                } else {
+                  inp.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                  allBlanksCorrect = false;
+                }
+
+                const displayAnswers = rawAccepted.filter(Boolean).join(' / ');
+                answerDetails.push(`Ô #${bIdx + 1}: <strong>${UI.escapeHtml(displayAnswers || '(chưa thiết lập)')}</strong>`);
+              });
+
+              isCorrect = anyFilled && allBlanksCorrect && blankInputs.length > 0;
+              feedbackDetail = `
+                <div>${isCorrect ? 'Tuyệt vời! Bạn đã điền chính xác tất cả chỗ trống.' : 'Đáp án được chấp nhận:'}</div>
+                <div class="mt-1 space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${answerDetails.join(' | ')}</div>
+                ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
+              `;
+
+            } else if (qType === 'MATCHING') {
+              const selectInputs = card.querySelectorAll('.mini-quiz-matching-select');
+              const pairs = qData.pairs || [];
+              let allPairsCorrect = true;
+              let anySelected = false;
+              const correctPairsDisplay = [];
+
+              selectInputs.forEach(sel => {
+                const pIdx = parseInt(sel.dataset.pidx, 10);
+                const userVal = sel.value;
+                if (userVal) anySelected = true;
+
+                const expectedRight = pairs[pIdx]?.right;
+                const row = sel.closest('.mini-quiz-matching-row');
+
+                if (row) {
+                  row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                  if (userVal && userVal === expectedRight) {
+                    row.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                  } else {
+                    row.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                    allPairsCorrect = false;
+                  }
+                }
+
+                if (pairs[pIdx]) {
+                  correctPairsDisplay.push(`<li><strong>${UI.escapeHtml(pairs[pIdx].left)}</strong> &rarr; ${UI.escapeHtml(pairs[pIdx].right)}</li>`);
+                }
+              });
+
+              isCorrect = anySelected && allPairsCorrect && selectInputs.length > 0;
+              feedbackDetail = `
+                <div>${isCorrect ? 'Xuất sắc! Bạn đã ghép đúng tất cả các cặp.' : 'Các cặp ghép chính xác:'}</div>
+                <ul class="mt-1 list-disc list-inside space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${correctPairsDisplay.join('')}</ul>
+                ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
+              `;
+
+            } else if (qType === 'TRUE_FALSE') {
+              const selectedRadio = card.querySelector(`input[name="mini-quiz-tf-${qIdx}"]:checked`);
+              const expectedVal = Boolean(qData.correct_value);
+              const labels = card.querySelectorAll('.mini-quiz-tf-label');
+
+              labels.forEach(lbl => {
+                const lblVal = lbl.dataset.val === 'true';
+                lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                if (lblVal === expectedVal) {
+                  lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                } else if (selectedRadio && (selectedRadio.value === 'true') === lblVal) {
+                  lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                }
+              });
+
+              if (selectedRadio) {
+                const userVal = selectedRadio.value === 'true';
+                isCorrect = userVal === expectedVal;
+              } else {
+                isCorrect = false;
+              }
+
+              feedbackDetail = isCorrect
+                ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Mệnh đề này là ' + (expectedVal ? 'Đúng.' : 'Sai.'))
+                : `Đáp án đúng là: <strong>${expectedVal ? 'Đúng (True)' : 'Sai (False)'}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
+            }
+
+            if (isCorrect) correctCount++;
+
+            if (explDiv) {
+              explDiv.classList.remove('hidden', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'text-emerald-800', 'dark:text-emerald-200', 'border-emerald-200', 'bg-rose-50', 'dark:bg-rose-950/40', 'text-rose-800', 'dark:text-rose-200', 'border-rose-200');
+              explDiv.classList.add('border', isCorrect ? 'bg-emerald-50' : 'bg-rose-50', isCorrect ? 'dark:bg-emerald-950/40' : 'dark:bg-rose-950/40', isCorrect ? 'text-emerald-900' : 'text-rose-900', isCorrect ? 'dark:text-emerald-200' : 'dark:text-rose-200', isCorrect ? 'border-emerald-200' : 'border-rose-200');
+              explDiv.innerHTML = `
+                <div class="font-bold flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[16px]">${isCorrect ? 'check_circle' : 'cancel'}</span>
+                  <span>${isCorrect ? 'Chính xác!' : 'Chưa chính xác.'}</span>
+                </div>
+                <div class="mt-1 leading-relaxed">${feedbackDetail}</div>
+              `;
+            }
+          });
+
+          const banner = document.getElementById('mini-quiz-score-banner');
+          if (banner) {
+            const percent = Math.round((correctCount / lesson.quiz.length) * 100);
+            banner.innerHTML = `
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded-xl ${percent >= 70 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'} font-bold">
+                  Kết quả: ${correctCount}/${lesson.quiz.length} câu đúng (${percent}%)
+                </span>
+                <span class="text-slate-600 dark:text-slate-300">
+                  ${percent === 100 ? 'Xuất sắc! Bạn đã nắm vững toàn bộ kiến thức bài học.' : percent >= 70 ? 'Khá tốt! Bạn đã hiểu phần lớn nội dung.' : 'Hãy xem lại bài giảng và làm lại để củng cố kiến thức nhé.'}
+                </span>
+              </div>
+            `;
+          }
+
+          if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+        };
+
+        if (resetQuizBtn) {
+          resetQuizBtn.onclick = () => {
+            quizSection.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
+            quizSection.querySelectorAll('.mini-quiz-blank-input').forEach(inp => {
+              inp.value = '';
+              inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+            });
+            quizSection.querySelectorAll('.mini-quiz-matching-select').forEach(sel => {
+              sel.value = '';
+            });
+            quizSection.querySelectorAll('.mini-quiz-matching-row').forEach(row => {
+              row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+            });
+            quizSection.querySelectorAll('.mini-quiz-explanation').forEach(e => {
+              e.classList.add('hidden');
+              e.innerHTML = '';
+            });
+            quizSection.querySelectorAll('.mini-quiz-choice-label').forEach(lbl => {
+              lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+              const badge = lbl.querySelector('.choice-badge');
+              if (badge) badge.className = 'w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge';
+            });
+            quizSection.querySelectorAll('.mini-quiz-tf-label').forEach(lbl => {
+              lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+            });
+            const banner = document.getElementById('mini-quiz-score-banner');
+            if (banner) {
+              banner.innerHTML = 'Hãy chọn đáp án cho tất cả câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.';
+            }
+            resetQuizBtn.classList.add('hidden');
+          };
+        }
+      }
 
     } catch (err) {
       const isForbidden = err.status === 403 || err.status_code === 403 || (err.message && (err.message.toLowerCase().includes('enrollment') || err.message.toLowerCase().includes('ghi danh') || err.message.includes('403')));
@@ -3605,10 +4052,10 @@ class StudentView {
               <span class="material-symbols-outlined text-[32px]">verified</span>
             </div>
             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Bạn đã là Giảng viên (Instructor)</h2>
-            <p class="text-sm text-slate-500 max-w-md mx-auto">Tài khoản của bạn đã được cấp quyền Giảng viên. Sử dụng bộ chuyển vai trò trên thanh Topbar để chuyển sang Bàn làm việc Giảng viên.</p>
+            <p class="text-sm text-slate-500 max-w-md mx-auto">Tài khoản của bạn đã được cấp quyền Giảng viên. Sử dụng bộ chuyển vai trò trên thanh Topbar để chuyển sang Trang chủ Giảng viên.</p>
             <div class="pt-2">
               <button type="button" id="go-to-instructor-desk-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm">
-                Đến Bàn làm việc Giảng viên
+                Đến Trang chủ Giảng viên
               </button>
             </div>
           </div>
