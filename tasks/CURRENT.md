@@ -1,3 +1,82 @@
+# TASK-070 — Admin Sub-role Delegation, Approval Direct Routing, Evidence Previews, Topbar Zoom Collisions & Student Settings
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-25  
+**Completed Date:** 2026-09-25  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để và toàn diện 6 hạng mục khiếm khuyết và nâng cấp hệ thống PWD301:
+
+1. **Admin - Người dùng & Phân quyền Sub-roles**:
+   - Xác lập 5 nhóm quyền Quản trị viên rõ ràng dưới quyền Admin chính:
+     - `ADMIN_PRIMARY`: Admin chính (Toàn quyền quản trị hệ thống, cấp/thu hồi quyền admin khác).
+     - `ADMIN_COURSE_REVIEW`: Admin duyệt khóa học (Duyệt đề cương, duyệt yêu cầu sửa/xóa bài giảng và môn học).
+     - `ADMIN_INSTRUCTOR_REVIEW`: Admin duyệt giảng viên (Xem xét hồ sơ, thẩm định minh chứng CV/bằng cấp).
+     - `ADMIN_TEACHING_ASSIGNMENT`: Admin phân công giảng dạy (Điều phối, gán và chuyển giao giảng viên phụ trách môn).
+     - `ADMIN_SYSTEM_MONITORING`: Admin giám sát hệ thống (Theo dõi hạ tầng CPU/RAM và Audit Log).
+   - Cơ chế lưu trữ: Định dạng `SUB_ROLE:<CODE> | <reason>` trong `UserRole.assignment_reason`, bảo toàn 100% ràng buộc CSDL MSSQL `ck_roles_1: code IN ('STUDENT','INSTRUCTOR','ADMIN')` mà không cần migration rủi ro.
+   - Kiểm soát bảo mật: Chỉ Admin chính (`is_primary_admin`) mới được phép phân quyền hoặc sửa đổi vai trò (chặn cả frontend và trả về HTTP 403 ở backend). Các sub-admin chỉ thấy và thao tác các tab/chức năng thuộc phạm vi phân quyền của mình.
+
+2. **Duyệt khóa học & Hàng đợi Yêu cầu thay đổi**:
+   - Khi click thông báo duyệt khóa học/giảng viên ở chuông thông báo: Cung cấp nút CTA "Chuyển đến duyệt ngay" dẫn trực tiếp vào tab tương ứng (`#/admin/governance?tab=courses` hoặc `?tab=applications`).
+   - Tái cân đối bảng hàng đợi phê duyệt sửa/xóa bài giảng & môn học (Section 2 - Change Requests): Thiết lập `min-w-[1060px]`, chiều rộng cố định từng cột (`w-[150px]`, `w-[200px]`, `min-w-[280px]`, `w-[140px]`, `w-[110px]`, `w-[130px]`, `w-[230px]`), huy hiệu và mã số `#id` trên cùng 1 hàng, tiêu đề có `truncate` và tooltip, triệt tiêu hoàn toàn hiện tượng chữ bị ép xuống nhiều dòng.
+
+3. **Duyệt giảng viên & Xem tài liệu minh chứng (CV / Bằng cấp)**:
+   - Tự động kích hoạt chuông thông báo in-app `INSTRUCTOR_APPLICATION_SUBMITTED` gửi tới các admin có quyền duyệt giảng viên kèm đường dẫn trực tiếp `#/admin/governance?tab=applications`.
+   - Bổ sung tham số `?preview=1` cho endpoint `/admin/instructor-applications/<app_id>/evidence/<filename>`, trả về `Content-Disposition: inline` kèm nhận diện MIME type chính xác (PDF, PNG, JPG, WebP, Text).
+   - Trên giao diện: Mỗi tài liệu đính kèm hiển thị cả nút **"Xem trước"** (mở modal tích hợp xem tài liệu trực tiếp) và nút **"Tải về"** (tải tệp gốc về máy).
+
+4. **Vận hành hệ thống & Khắc phục va chạm giao diện khi phóng to (CTRL + +)**:
+   - Thay thế cơ chế định vị tuyệt đối `absolute left-1/2 -translate-x-1/2` trên menu điều hướng topbar bằng flexbox giữa co giãn linh hoạt `<div class="hidden md:flex items-center justify-center flex-1 min-w-0 mx-2 z-10">` kèm `max-w-full overflow-x-auto no-scrollbar whitespace-nowrap`. Logo thương hiệu bên trái và chuông thông báo / avatar bên phải không bao giờ bị đè hoặc dính vào nhau dù ở bất kỳ mức zoom nào.
+
+5. **Trang Cài đặt Người dùng (Student Settings - `#/student/settings`)**:
+   - Giữ nguyên bố cục bảng điều khiển theo thỏa thuận với người dùng.
+   - Xây dựng trang Cài đặt tài khoản với 3 tab hoàn chỉnh:
+     - **Hồ sơ cá nhân**: Cập nhật tên hiển thị, xem email định danh (readonly kèm huy hiệu an toàn), quản lý avatar URL kèm xem trước tức thì, nút đặt lại chữ cái viết tắt và tạo avatar ngẫu nhiên.
+     - **Bảo mật & Mật khẩu**: Đổi mật khẩu với nút bật/tắt hiển thị mật khẩu và danh sách kiểm tra tiêu chuẩn thời gian thực (Realtime Checklist: 8+ ký tự, có chữ cái, có chữ số, đối soát trùng khớp).
+     - **Tùy chọn thông báo**: Bảng công tắc chuyển đổi (toggle switches) cho 4 danh mục: Khóa học, Khảo thí & Bài thi, Kết quả điểm số, Tin tức & Sự kiện.
+   - Thêm liên kết vào menu sinh viên và dropdown avatar người dùng.
+
+---
+
+# TASK-069 — Resolve 12 Instructor Deficiencies Across Academic Governance, Lesson Authoring & Exam Studio
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-09-25  
+**Completed Date:** 2026-09-25  
+
+---
+
+## Goal & Resolution Summary
+Khắc phục triệt để và toàn diện 12 lỗi và khiếm khuyết nghiệp vụ cho vai trò Giảng viên (Instructor):
+
+1. **Cài đặt học vụ khóa học (Academic Governance)**:
+   - **Sửa lỗi bấm Giải thích SLO**: Nâng cấp `UI.openModal`, `UI.closeModal`, `UI.confirm` hỗ trợ cơ chế xếp chồng đa tầng (Modal Stacking `UI._modalStack`). Bảng tra cứu SLO mở trên tầng `z-[60]` mà không hủy form cài đặt môn học bên dưới.
+   - **Lưu các chuẩn SLO**: `CourseService.update_course` và `create_course` chuẩn hóa mảng/chuỗi SLO thành JSON string `Course.learning_objectives`. Route tuần tự hóa trả về `learning_objectives` để form luôn nạp đúng.
+   - **Lưu quy chuẩn đạt được (Tiêu chí hoàn thành môn & Chứng chỉ)**: `CompletionService` lưu `minimum_grade_score`, `allow_certificate`, `completion_grace_days` vào trường JSON `Course.completion_requirements` và ghi nhận kiểm toán.
+
+2. **Soạn khóa học & Bài giảng (Curriculum & Lesson Studio)**:
+   - **Lưu thời lượng, tóm tắt, mô tả bài giảng**: Bổ sung trường nhập thời lượng `#studio-input-duration` vào header của studio; lưu và khôi phục `estimated_duration_minutes`. Mở khóa route `update_lesson_route` cho phép sửa bài giảng trực tiếp khi khóa học đang ở trạng thái `DRAFT` hoặc `REJECTED`.
+   - **Gán link YouTube linh hoạt**: `saveLessonData` tự động bắt giá trị trong `#studio-input-video-url` ngay cả khi giảng viên không nhấn nút "Nạp thử".
+   - **Khuyến nghị Full HD 1080p**: Bổ sung banner khuyến nghị độ phân giải 1080p, định dạng .mp4, dung lượng < 1 GB tại tab tải video.
+
+3. **Khảo thí & Điểm số (Gradebook & Submissions)**:
+   - **Sửa lỗi 404 Bảng điểm & Bài nộp**: Khắc phục lệch signature trong `openAssessmentResultsModal` tự động nhận diện `(cId, asmId)` hoặc `(asmId, title)`, gọi đúng endpoint `/instructor/assessments/<id>/results`.
+
+4. **Exam Studio & Soạn thảo Đề thi (Exam Studio)**:
+   - **Nút "Chia điểm"**: Tính toán $100.0 / N$ điểm chia đều cho $N$ câu hỏi, dồn phần dư làm tròn vào câu cuối cùng để đảm bảo tổng đúng $100.00$ điểm. Cập nhật xem trước và lưu nháp.
+   - **Nút "Đến" chuyển câu**: Cuộn mượt đến card câu hỏi tương ứng kèm hiệu ứng viền nổi bật, đồng thời định vị và cuộn khung textarea mã nguồn đến câu hỏi đó.
+   - **Nút "Chèn công thức" (LaTeX Formula Picker)**: Mở modal tương tác chọn nhanh công thức phân theo 5 chuyên đề khoa học và chèn vào vị trí con trỏ hiện tại dưới dạng `$công_thức$`.
+   - **Môn học mặc định & Nơi chọn môn**: Bổ sung thẻ chọn môn học `#hub-course-select` tại Step 1; tự động gán môn đầu tiên (`courses[0]`) trong danh sách quản lý; tự động chọn môn khi điều hướng từ môn học với query `?course_id=...`; đồng bộ sang Step 3.
+   - **Đồng bộ 2 chiều Card $\leftrightarrow$ Mã nguồn**: Nhấp card câu hỏi nhảy đến mã nguồn câu đó; di chuyển con trỏ hoặc gõ phím trong textarea tự động làm nổi bật card câu hỏi đang soạn thảo và cuộn vào màn hình.
+   - **Bỏ mật khẩu đề thi**: Loại bỏ hoàn toàn checkbox và ô nhập mật khẩu `#cfg-require-pwd`, `#cfg-pwd-box` khỏi Step 4.
+
+---
+
 # TASK-068 — Optimize UI Toast, Confirm Dialog & Restructure Immutable Audit Trail Table
 
 **Status:** DONE  

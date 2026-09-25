@@ -235,11 +235,28 @@ def _serialize_course(c: Course) -> dict[str, Any]:
             "office_hours": "",
         }
 
+    lo_data = None
+    if c.learning_objectives:
+        try:
+            lo_data = json.loads(c.learning_objectives)
+        except Exception:
+            lo_data = c.learning_objectives
+
+    cr_data = None
+    if c.completion_requirements:
+        try:
+            cr_data = json.loads(c.completion_requirements)
+        except Exception:
+            cr_data = c.completion_requirements
+
     return {
         "course_id": str(c.public_id),
         "course_code": c.course_code,
         "title": c.title,
         "description": clean_description,
+        "learning_objectives": lo_data,
+        "target_audience": c.target_audience,
+        "completion_requirements": cr_data,
         "category": c.category,
         "difficulty": c.difficulty,
         "capacity": c.capacity,
@@ -990,10 +1007,8 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
             payload["markdown_content"] = cleaned_md
 
     # Strict Admin Approval Invariant:
-    # If course is APPROVED or PUBLISHED (or lesson is already PUBLISHED), and actor is not Admin:
-    if not actor.is_admin and (
-        course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") or lesson.status == "PUBLISHED"
-    ):
+    # If course is APPROVED or PUBLISHED (or live course curriculum alteration), and actor is not Admin:
+    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
         req = CourseChangeRequest(
             course_id=course.id,
             requested_by_user_id=actor.id,
@@ -1596,6 +1611,15 @@ def review_instructor_prerequisite_request_route(req_id: int) -> tuple[Response,
 
 
 def _serialize_completion_rule(course: Course, rule: Any) -> dict[str, Any]:
+    req_data: dict[str, Any] = {}
+    if course.completion_requirements:
+        try:
+            parsed = json.loads(course.completion_requirements)
+            if isinstance(parsed, dict):
+                req_data = parsed
+        except Exception:
+            req_data = {}
+
     return {
         "course_id": str(course.public_id),
         "course_code": course.course_code,
@@ -1607,6 +1631,9 @@ def _serialize_completion_rule(course: Course, rule: Any) -> dict[str, Any]:
             if rule.minimum_progress_percent is not None
             else None
         ),
+        "minimum_grade_score": req_data.get("minimum_grade_score", 5.0),
+        "allow_certificate": req_data.get("allow_certificate", True),
+        "completion_grace_days": req_data.get("completion_grace_days", 14),
         "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
     }
 
@@ -2886,7 +2913,8 @@ def review_instructor_attempt_appeal_route(attempt_id: str) -> tuple[Response, i
     if attempt.assessment and attempt.assessment.course_id:
         require_course_manager(actor, attempt.assessment.course_id, session=db.session)
 
-    payload = request.get_json(silent=True) if request.is_json else request.form.to_dict() or {}
+    raw_payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
     decision = str(payload.get("decision", "APPROVED")).upper()
     reviewer_note = str(payload.get("reviewer_note", "")).strip()
     score_delta = payload.get("score_delta")

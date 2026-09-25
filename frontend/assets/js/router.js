@@ -290,6 +290,8 @@ class AppRouter {
       window.location.hash = '#/student/dashboard';
     } else if (path === '#/student/become-instructor') {
       await StudentView.renderBecomeInstructor(this.viewport);
+    } else if (path === '#/student/settings' || path === '#/settings') {
+      await StudentView.renderSettings(this.viewport);
     }
 
     // --- Instructor Routes ---
@@ -317,7 +319,7 @@ class AppRouter {
     } else if (path === '#/instructor/questions') {
       await InstructorView.renderQuestions(this.viewport, query.course);
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
-      InstructorView.renderExamsHub(this.viewport);
+      await InstructorView.renderExamsHub(this.viewport, query);
     } else if (path === '#/instructor/exams/editor') {
       InstructorView.renderExamEditor(this.viewport);
     } else if (path === '#/instructor/exams/interactive') {
@@ -393,14 +395,37 @@ class AppRouter {
     let menu = [];
 
     if (role === 'ADMIN') {
-      menu = [
-        { label: 'Người dùng & Phân quyền', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
-        { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
-        { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
-        { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
-        { label: 'An toàn & Kiểm toán', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
-        { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
-      ];
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      if (subRole === 'ADMIN_COURSE_REVIEW') {
+        menu = [
+          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+          { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
+        ];
+      } else if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
+        menu = [
+          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+          { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
+        ];
+      } else if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
+        menu = [
+          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+          { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
+        ];
+      } else if (subRole === 'ADMIN_SYSTEM_MONITORING') {
+        menu = [
+          { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
+        ];
+      } else {
+        // ADMIN_PRIMARY / Super Admin
+        menu = [
+          { label: 'Người dùng & Phân quyền', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
+          { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
+          { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
+          { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
+          { label: 'An toàn & Kiểm toán', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+          { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
+        ];
+      }
     } else if (role === 'INSTRUCTOR') {
       menu = [
         { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
@@ -414,6 +439,7 @@ class AppRouter {
         { label: 'Khóa học của tôi', path: '#/student/courses', icon: 'school' },
         { label: 'Bài kiểm tra', path: '#/student/assessments', icon: 'quiz' },
         { label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge' },
+        { label: 'Cài đặt', path: '#/student/settings', icon: 'settings' },
       ];
     }
 
@@ -519,7 +545,9 @@ class AppRouter {
     const initials = displayName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
     if (avatarInitials) avatarInitials.textContent = initials || 'US';
 
-    const roleName = this.currentRole === 'ADMIN' ? 'QUẢN TRỊ VIÊN' : this.currentRole === 'INSTRUCTOR' ? 'GIẢNG VIÊN' : 'HỌC VIÊN';
+    const roleName = this.currentRole === 'ADMIN'
+      ? (user.admin_sub_role_label ? user.admin_sub_role_label.toUpperCase() : 'QUẢN TRỊ VIÊN')
+      : this.currentRole === 'INSTRUCTOR' ? 'GIẢNG VIÊN' : 'HỌC VIÊN';
     if (roleBadge) {
       roleBadge.textContent = roleName;
       roleBadge.className = `px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border leading-none ${
@@ -590,6 +618,17 @@ class AppRouter {
             </a>
           </div>
         ` : ''}
+
+        <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+          <a
+            href="#/student/settings"
+            class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors"
+            onclick="document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+          >
+            <span class="material-symbols-outlined text-[16px]">settings</span>
+            <span>Cài đặt tài khoản</span>
+          </a>
+        </div>
 
         <div class="p-1">
           <button type="button" id="topbar-logout-btn" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors">
@@ -1103,8 +1142,8 @@ class AppRouter {
           Đóng
         </button>
         ${targetLink ? `
-          <button type="button" id="notif-modal-navigate-btn" class="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
-            <span>Chuyển đến trang liên quan</span>
+          <button type="button" id="notif-modal-navigate-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all">
+            <span>${(targetLink.includes('courses') || targetLink.includes('applications') || targetLink.includes('review') || targetLink.includes('governance')) ? 'Chuyển đến duyệt ngay' : 'Chuyển đến trang liên quan'}</span>
             <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         ` : ''}

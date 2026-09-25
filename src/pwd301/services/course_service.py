@@ -76,12 +76,26 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 UPDATABLE_FIELDS = {
     "title",
     "description",
+    "learning_objectives",
+    "target_audience",
+    "completion_requirements",
     "category",
     "difficulty",
     "capacity",
     "storage_quota_bytes",
     "thumbnail_file_asset_id",
 }
+
+
+def _normalize_json_or_text(val: Any) -> str | None:
+    """Normalize input value to JSON string if dict/list, or trimmed string."""
+    if val is None:
+        return None
+    if isinstance(val, (list, dict)):
+        return json.dumps(val, ensure_ascii=False)
+    if isinstance(val, str):
+        return val.strip()
+    return str(val)
 
 
 def _record_audit_event(
@@ -268,9 +282,9 @@ def create_course(
         title=title,
         title_normalized=norm_title,
         description=data.get("description"),
-        learning_objectives=data.get("learning_objectives"),
+        learning_objectives=_normalize_json_or_text(data.get("learning_objectives")),
         target_audience=data.get("target_audience"),
-        completion_requirements=data.get("completion_requirements"),
+        completion_requirements=_normalize_json_or_text(data.get("completion_requirements")),
         category=data.get("category"),
         difficulty=difficulty,
         capacity=capacity,
@@ -401,7 +415,7 @@ def update_course(
 
     if "learning_objectives" in data:
         lo = data["learning_objectives"]
-        course.learning_objectives = lo.strip() if isinstance(lo, str) else lo
+        course.learning_objectives = _normalize_json_or_text(lo)
 
     if "target_audience" in data:
         ta = data["target_audience"]
@@ -409,7 +423,7 @@ def update_course(
 
     if "completion_requirements" in data:
         cr = data["completion_requirements"]
-        course.completion_requirements = cr.strip() if isinstance(cr, str) else cr
+        course.completion_requirements = _normalize_json_or_text(cr)
 
     if "category" in data:
         cat = data["category"]
@@ -694,11 +708,13 @@ def change_course_status(
                     "Quản trị viên phê duyệt. Khóa học đã sẵn sàng để xuất bản "
                     "hoặc cập nhật nội dung bài giảng."
                 ),
+                action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,
                     "reason": reason or "",
+                    "action_url": f"#/instructor/courses/manage?id={course.public_id}",
                 },
                 session=sess,
             )
@@ -723,16 +739,52 @@ def change_course_status(
                     f"Quản trị viên từ chối phê duyệt. Lý do kiểm toán: {reason}. "
                     "Vui lòng cập nhật đề cương và gửi lại thẩm định."
                 ),
+                action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,
                     "reason": reason or "",
+                    "action_url": f"#/instructor/courses/manage?id={course.public_id}",
                 },
                 session=sess,
             )
         except Exception as exc:
             logger.warning("Failed to dispatch course rejection notification: %s", exc)
+
+    elif target_status == "SUBMITTED_FOR_REVIEW":
+        try:
+            from pwd301.models.identity import Role, User
+            from pwd301.services.notification_service import dispatch_notification
+
+            admin_role = sess.query(Role).filter(Role.code == "ADMIN").first()
+            if admin_role:
+                admin_users = (
+                    sess.query(User)
+                    .filter(User.roles.contains(admin_role), User.status == "ACTIVE")
+                    .all()
+                )
+                for adm in admin_users:
+                    if adm.has_admin_permission("COURSE_REVIEW"):
+                        dispatch_notification(
+                            recipient_user=adm.id,
+                            event_type="COURSE_SUBMITTED_FOR_REVIEW",
+                            title=f"Đề cương môn học {course.course_code} đã được gửi duyệt",
+                            body=(
+                                f"Giảng viên {actor.display_name} đã nộp đề cương khóa học "
+                                f"'{course.title}' ({course.course_code}) để thẩm định xuất bản."
+                            ),
+                            action_url="#/admin/governance?tab=courses",
+                            category="COURSE",
+                            payload={
+                                "course_id": str(course.public_id),
+                                "course_code": course.course_code,
+                                "action_url": "#/admin/governance?tab=courses",
+                            },
+                            session=sess,
+                        )
+        except Exception as exc:
+            logger.warning("Failed to dispatch course submission notification to admins: %s", exc)
 
     try:
         sess.commit()

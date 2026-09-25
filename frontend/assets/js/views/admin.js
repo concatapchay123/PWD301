@@ -347,9 +347,15 @@ class AdminView {
                 <div class="flex flex-wrap gap-1">
                   ${(u.roles || []).map(r => {
                     let rClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
-                    if (r === 'ADMIN') rClass = 'bg-primary-subtle text-primary border border-primary/20 font-bold';
+                    let rLabel = r;
+                    if (r === 'ADMIN') {
+                      rClass = 'bg-primary-subtle text-primary border border-primary/20 font-bold';
+                      if (u.admin_sub_role_label) {
+                        rLabel = `ADMIN (${u.admin_sub_role_label})`;
+                      }
+                    }
                     if (r === 'INSTRUCTOR') rClass = 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 font-bold';
-                    return `<span class="px-2 py-0.5 rounded text-[10px] ${rClass}">${r}</span>`;
+                    return `<span class="px-2 py-0.5 rounded text-[10px] ${rClass}">${rLabel}</span>`;
                   }).join('')}
                 </div>
               </td>
@@ -372,7 +378,7 @@ class AdminView {
               </td>
               <td class="py-4 px-3 align-middle text-right">
                 <div class="inline-flex items-center gap-1.5">
-                  <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors manage-role-btn" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}" data-roles="${(u.roles || []).join(',')}">
+                  <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors manage-role-btn ${!window.app?.currentUser?.is_primary_admin ? 'opacity-60 cursor-not-allowed' : ''}" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}" data-roles="${(u.roles || []).join(',')}" data-admin-sub-role="${u.admin_sub_role || 'ADMIN_PRIMARY'}" title="${!window.app?.currentUser?.is_primary_admin ? 'Chỉ Admin chính mới có quyền phân quyền' : 'Phân quyền tài khoản'}">
                     Phân quyền
                   </button>
                   ${isSuspended ? `
@@ -396,8 +402,12 @@ class AdminView {
         // Attach action events
         tbody.querySelectorAll('.manage-role-btn').forEach(btn => {
           btn.onclick = () => {
+            if (!window.app?.currentUser?.is_primary_admin) {
+              UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền phân quyền người dùng.', 'warning');
+              return;
+            }
             const currentRoles = (btn.dataset.roles || '').split(',').filter(Boolean);
-            AdminView.openRoleModal(btn.dataset.userId, btn.dataset.userName, currentRoles);
+            AdminView.openRoleModal(btn.dataset.userId, btn.dataset.userName, currentRoles, btn.dataset.adminSubRole);
           };
         });
 
@@ -490,7 +500,12 @@ class AdminView {
     }
   }
 
-  static openRoleModal(userId, userName, currentRoles = []) {
+  static openRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY') {
+    if (!window.app?.currentUser?.is_primary_admin) {
+      UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền phân quyền người dùng.', 'error');
+      return;
+    }
+
     const body = `
       <div class="space-y-4 text-xs">
         <p class="text-slate-600 dark:text-slate-300">
@@ -515,10 +530,58 @@ class AdminView {
         <div class="space-y-1">
           <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Vai trò mục tiêu</label>
           <select id="modal-role-code" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
-            <option value="INSTRUCTOR">INSTRUCTOR (Giảng viên)</option>
             <option value="ADMIN">ADMIN (Quản trị viên)</option>
+            <option value="INSTRUCTOR">INSTRUCTOR (Giảng viên)</option>
             <option value="STUDENT">STUDENT (Sinh viên)</option>
           </select>
+        </div>
+
+        <!-- Phân quyền chi tiết Admin dưới quyền Admin chính -->
+        <div id="admin-sub-role-container" class="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+          <div class="flex items-center justify-between">
+            <label class="block font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-primary text-[16px]">shield_person</span>
+              Phân nhóm quyền Quản trị (Dưới quyền Admin chính)
+            </label>
+            <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Thẩm quyền rõ ràng</span>
+          </div>
+          <div class="space-y-2 pt-1">
+            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_PRIMARY" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_PRIMARY' ? 'checked' : ''}>
+              <div>
+                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin chính (Toàn quyền hệ thống)</div>
+                <div class="text-[11px] text-slate-500">Toàn quyền cao nhất: phân quyền admin khác, duyệt khóa học, duyệt GV, phân công, giám sát.</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
+              <div>
+                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt khóa học</div>
+                <div class="text-[11px] text-slate-500">Phê duyệt đề cương khóa học mới, duyệt yêu cầu sửa/xóa bài giảng và môn học.</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
+              <div>
+                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt giảng viên</div>
+                <div class="text-[11px] text-slate-500">Thẩm định hồ sơ, xem trực tiếp file CV, bằng cấp và phê duyệt/từ chối đơn ứng tuyển.</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
+              <div>
+                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin phân công giảng dạy</div>
+                <div class="text-[11px] text-slate-500">Điều phối, gán và chuyển giao giảng viên phụ trách các khóa học đào tạo.</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
+              <div>
+                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
+                <div class="text-[11px] text-slate-500">Theo dõi tài nguyên phần cứng CPU/RAM, nhật ký kiểm toán bất biến (Audit Log) & Telemetry.</div>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div class="space-y-1">
@@ -540,6 +603,24 @@ class AdminView {
       size: 'md'
     });
 
+    const actionSelect = document.getElementById('modal-role-action');
+    const roleSelect = document.getElementById('modal-role-code');
+    const subRoleContainer = document.getElementById('admin-sub-role-container');
+
+    const updateSubRoleVisibility = () => {
+      if (subRoleContainer) {
+        if (actionSelect.value === 'assign' && roleSelect.value === 'ADMIN') {
+          subRoleContainer.classList.remove('hidden');
+        } else {
+          subRoleContainer.classList.add('hidden');
+        }
+      }
+    };
+
+    if (actionSelect) actionSelect.onchange = updateSubRoleVisibility;
+    if (roleSelect) roleSelect.onchange = updateSubRoleVisibility;
+    updateSubRoleVisibility();
+
     document.getElementById('submit-role-btn').onclick = async () => {
       const action = document.getElementById('modal-role-action').value;
       const role = document.getElementById('modal-role-code').value;
@@ -550,9 +631,15 @@ class AdminView {
         return;
       }
 
+      let adminSubRole = null;
+      if (action === 'assign' && role === 'ADMIN') {
+        const checkedRadio = document.querySelector('input[name="admin-sub-role-radio"]:checked');
+        adminSubRole = checkedRadio ? checkedRadio.value : 'ADMIN_PRIMARY';
+      }
+
       try {
         if (action === 'assign') {
-          await ApiClient.assignRole(userId, role, reason);
+          await ApiClient.assignRole(userId, role, reason, adminSubRole);
           UI.showToast(`Đã cấp quyền ${role} cho ${userName} thành công!`, 'success');
         } else {
           await ApiClient.removeRole(userId, role, reason);
@@ -843,16 +930,16 @@ class AdminView {
           </div>
 
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs sm:text-sm">
+            <table class="w-full text-left text-xs sm:text-sm min-w-[1060px]">
               <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
                 <tr>
-                  <th class="px-4 py-3">Loại yêu cầu</th>
-                  <th class="px-4 py-3">Khóa học</th>
-                  <th class="px-4 py-3">Đối tượng & Nội dung đề xuất</th>
-                  <th class="px-4 py-3">Người gửi</th>
-                  <th class="px-4 py-3">Trạng thái</th>
-                  <th class="px-4 py-3">Thời điểm</th>
-                  <th class="px-4 py-3 text-right">Quyết định phê duyệt</th>
+                  <th class="px-3.5 py-3 w-[150px] whitespace-nowrap">Loại yêu cầu</th>
+                  <th class="px-3.5 py-3 w-[200px] whitespace-nowrap">Khóa học</th>
+                  <th class="px-3.5 py-3 min-w-[280px]">Đối tượng & Đề xuất</th>
+                  <th class="px-3.5 py-3 w-[140px] whitespace-nowrap">Người gửi</th>
+                  <th class="px-3.5 py-3 w-[110px] whitespace-nowrap">Trạng thái</th>
+                  <th class="px-3.5 py-3 w-[130px] whitespace-nowrap">Thời điểm</th>
+                  <th class="px-3.5 py-3 w-[230px] whitespace-nowrap text-right">Quyết định phê duyệt</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="change-requests-tbody">
@@ -940,40 +1027,42 @@ class AdminView {
 
           return `
             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-              <td class="px-4 py-3.5">
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${typeBadge}">
-                  ${typeLabel}
-                </span>
-                <div class="text-[10px] text-slate-400 font-mono mt-0.5">#${r.id}</div>
+              <td class="px-3.5 py-3.5 whitespace-nowrap align-middle">
+                <div class="inline-flex items-center gap-1.5">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${typeBadge}">
+                    ${typeLabel}
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-mono">#${r.id}</span>
+                </div>
               </td>
-              <td class="px-4 py-3.5">
-                <div class="font-bold text-slate-900 dark:text-white font-mono text-xs">${UI.escapeHtml(r.course_code || '')}</div>
-                <div class="text-xs text-slate-500 line-clamp-1">${UI.escapeHtml(r.course_title || '')}</div>
+              <td class="px-3.5 py-3.5 align-middle">
+                <div class="font-bold text-slate-900 dark:text-white font-mono text-xs whitespace-nowrap">${UI.escapeHtml(r.course_code || '')}</div>
+                <div class="text-xs text-slate-500 truncate max-w-[190px]" title="${UI.escapeHtml(r.course_title || '')}">${UI.escapeHtml(r.course_title || '')}</div>
               </td>
-              <td class="px-4 py-3.5 max-w-xs">
-                <div class="font-bold text-slate-800 dark:text-slate-200 text-xs">${UI.escapeHtml(r.target_title || 'Mục tiêu #' + (r.target_id || ''))}</div>
+              <td class="px-3.5 py-3.5 align-middle">
+                <div class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[320px]" title="${UI.escapeHtml(r.target_title || '')}">${UI.escapeHtml(r.target_title || 'Mục tiêu #' + (r.target_id || ''))}</div>
                 ${payload.action === 'DELETE' ? `
-                  <div class="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5">
+                  <div class="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5 truncate max-w-[320px]" title="${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}">
                     <strong>Lý do xóa:</strong> ${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}
                   </div>
                 ` : payload.title ? `
-                  <div class="text-[11px] text-slate-500 mt-0.5">
+                  <div class="text-[11px] text-slate-500 mt-0.5 truncate max-w-[320px]" title="${UI.escapeHtml(payload.title)}">
                     <strong>Tiêu đề mới:</strong> ${UI.escapeHtml(payload.title)}
                   </div>
                 ` : ''}
               </td>
-              <td class="px-4 py-3.5 text-xs text-slate-700 dark:text-slate-300">
-                ${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}
+              <td class="px-3.5 py-3.5 text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap align-middle">
+                <span class="truncate block max-w-[130px]" title="${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}">${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}</span>
               </td>
-              <td class="px-4 py-3.5">
+              <td class="px-3.5 py-3.5 whitespace-nowrap align-middle">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge}">
                   ${r.status === 'PENDING' ? 'Chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
                 </span>
               </td>
-              <td class="px-4 py-3.5 text-xs text-slate-400 font-mono">
+              <td class="px-3.5 py-3.5 text-xs text-slate-400 font-mono whitespace-nowrap align-middle">
                 ${UI.formatDate(r.created_at)}
               </td>
-              <td class="px-4 py-3.5 text-right space-x-1.5 whitespace-nowrap">
+              <td class="px-3.5 py-3.5 text-right space-x-1.5 whitespace-nowrap align-middle">
                 <button type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-xs view-diff-cr-btn" data-req-id="${r.id}">
                   Xem bản sửa
                 </button>
@@ -1729,16 +1818,31 @@ class AdminView {
           <div class="space-y-1.5">
             <span class="text-[10px] text-slate-400 font-bold uppercase">Tệp CV & Minh chứng đính kèm (${attachedFiles.length})</span>
             <div class="space-y-1">
-              ${attachedFiles.map(f => `
-                <div class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-between">
+              ${attachedFiles.map(f => {
+                const fileKey = f.saved_filename || f.file || f.name || '';
+                const fileName = f.original_name || f.saved_filename || f.name || f.file || 'Tài liệu minh chứng';
+                const fileSize = f.size ? ` • ${UI.formatBytes(f.size)}` : '';
+                return `
+                <div class="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span class="material-symbols-outlined text-[16px] ${f.doc_type === 'CV_PORTFOLIO' ? 'text-primary' : 'text-slate-400'}">${f.doc_type === 'CV_PORTFOLIO' ? 'badge' : 'attach_file'}</span>
-                    <span class="font-mono text-xs truncate">${UI.escapeHtml(f.original_name || f.saved_filename)}</span>
-                    ${f.doc_type === 'CV_PORTFOLIO' ? '<span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold">CV / Portfolio</span>' : ''}
+                    <span class="material-symbols-outlined text-[18px] ${f.doc_type === 'CV_PORTFOLIO' ? 'text-primary' : 'text-slate-400'}">${f.doc_type === 'CV_PORTFOLIO' ? 'badge' : 'attach_file'}</span>
+                    <div class="min-w-0">
+                      <div class="font-medium text-xs text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(fileName)}</div>
+                      <div class="text-[10px] text-slate-400 font-mono">${f.doc_type === 'CV_PORTFOLIO' ? '<span class="text-primary font-bold">CV / Portfolio</span>' : 'Minh chứng'}${fileSize}</div>
+                    </div>
                   </div>
-                  <a href="/admin/instructor-applications/${app.id}/evidence/${f.saved_filename}" target="_blank" class="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold shrink-0">Tải về</a>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" class="preview-evidence-btn px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[10px] font-bold transition-colors flex items-center gap-1" data-url="/admin/instructor-applications/${app.id}/evidence/${encodeURIComponent(fileKey)}?preview=1" data-name="${UI.escapeHtml(fileName)}">
+                      <span class="material-symbols-outlined text-[13px]">visibility</span>
+                      <span>Xem trước</span>
+                    </button>
+                    <a href="/admin/instructor-applications/${app.id}/evidence/${encodeURIComponent(fileKey)}" download="${UI.escapeHtml(fileName)}" class="px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 text-[10px] font-bold transition-colors flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[13px]">download</span>
+                      <span>Tải về</span>
+                    </a>
+                  </div>
                 </div>
-              `).join('')}
+              `;}).join('')}
             </div>
           </div>
         ` : ''}
@@ -1772,6 +1876,13 @@ class AdminView {
       bodyHtml: body,
       footerHtml: footer,
       size: 'lg'
+    });
+
+    // Attach preview event handlers for CV / Evidence files
+    document.querySelectorAll('.preview-evidence-btn').forEach(btn => {
+      btn.onclick = () => {
+        AdminView.openEvidencePreviewModal(btn.dataset.url, btn.dataset.name);
+      };
     });
 
     if (isPending) {
@@ -1813,6 +1924,53 @@ class AdminView {
         };
       }
     }
+  }
+
+  static openEvidencePreviewModal(fileUrl, fileName) {
+    const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+    const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(fileName || '');
+    
+    let previewContent = '';
+    if (isPdf) {
+      previewContent = `
+        <div class="w-full h-[72vh] bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
+          <iframe src="${fileUrl}" class="w-full h-full border-0" title="${UI.escapeHtml(fileName)}"></iframe>
+        </div>
+      `;
+    } else if (isImage) {
+      previewContent = `
+        <div class="max-h-[72vh] flex items-center justify-center bg-slate-950/20 dark:bg-slate-950/60 rounded-xl p-4 overflow-auto border border-slate-200 dark:border-slate-800">
+          <img src="${fileUrl}" alt="${UI.escapeHtml(fileName)}" class="max-h-[68vh] object-contain rounded-lg shadow-sm" />
+        </div>
+      `;
+    } else {
+      previewContent = `
+        <div class="w-full h-[65vh] bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner">
+          <iframe src="${fileUrl}" class="w-full h-full border-0" title="${UI.escapeHtml(fileName)}"></iframe>
+        </div>
+      `;
+    }
+
+    const downloadUrl = fileUrl.replace('?preview=1', '');
+
+    UI.openModal({
+      title: `Xem trước tài liệu: ${UI.escapeHtml(fileName)}`,
+      bodyHtml: `
+        <div class="space-y-3">
+          ${previewContent}
+          <div class="flex items-center justify-between text-xs text-slate-500 pt-1">
+            <span>Trình xem tài liệu học vụ tích hợp (PDF / Ảnh / Văn bản).</span>
+            <a href="${downloadUrl}" download="${UI.escapeHtml(fileName)}" class="text-primary font-bold hover:underline flex items-center gap-1">
+              <span class="material-symbols-outlined text-[15px]">download</span> Tải tệp về máy
+            </a>
+          </div>
+        </div>
+      `,
+      footerHtml: `
+        <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
+      `,
+      size: 'xl'
+    });
   }
 
   // =========================================================================

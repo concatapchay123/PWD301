@@ -412,10 +412,12 @@
         </a>
       </div>
 
-      <!-- Center: Desktop Navigation Items (Centered across full screen) -->
-      <nav id="topbar-navigation-items" class="hidden md:flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] absolute left-1/2 -translate-x-1/2 shadow-2xs z-10 max-w-[calc(100vw-360px)] overflow-x-auto no-scrollbar">
-        <!-- Populated dynamically based on role -->
-      </nav>
+      <!-- Center: Desktop Navigation Items (Responsive flex center, prevents overlap with bell or logo on zoom) -->
+      <div class="hidden md:flex items-center justify-center flex-1 min-w-0 mx-2 z-10">
+        <nav id="topbar-navigation-items" class="flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs max-w-full overflow-x-auto no-scrollbar whitespace-nowrap">
+          <!-- Populated dynamically based on role -->
+        </nav>
+      </div>
 
       <!-- Right: Controls (Notifications, Theme, User Avatar & Role Switcher, Mobile Menu) -->
       <div class="flex items-center gap-2 shrink-0 z-10">

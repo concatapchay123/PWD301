@@ -84,6 +84,11 @@ def login() -> Any:
                             "display_name": getattr(current_user, "display_name", ""),
                             "primary_role": getattr(current_user, "primary_role", "STUDENT"),
                             "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+                            "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+                            "admin_sub_role_label": (
+                                getattr(current_user, "admin_sub_role_label", "")
+                            ),
+                            "is_primary_admin": getattr(current_user, "is_primary_admin", False),
                         },
                     }
                 ),
@@ -237,6 +242,9 @@ def login() -> Any:
                         "display_name": user.display_name,
                         "primary_role": getattr(user, "primary_role", "STUDENT"),
                         "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
+                        "admin_sub_role": getattr(user, "admin_sub_role", None),
+                        "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
+                        "is_primary_admin": getattr(user, "is_primary_admin", False),
                     },
                 }
             ),
@@ -863,4 +871,132 @@ def auth_mark_all_notifications_read() -> Any:
     category = payload.get("category") or request.args.get("category")
     count = mark_all_as_read(actor=current_user, category=category, session=db.session)
     return jsonify({"marked_count": count}), 200
+
+
+@auth_bp.route("/profile", methods=["GET", "PUT", "POST"])
+def auth_profile() -> Any:
+    """Retrieve or update profile of authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access profile.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+
+    if request.method in ("PUT", "POST"):
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+        display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
+        if display_name:
+            if len(display_name) < 2 or len(display_name) > 150:
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "VALIDATION_ERROR",
+                                "message": "Tên hiển thị phải từ 2 đến 150 ký tự.",
+                            }
+                        }
+                    ),
+                    400,
+                )
+            current_user.display_name = display_name
+            db.session.commit()
+
+    user_payload = {
+        "id": str(getattr(current_user, "public_id", current_user.id)),
+        "public_id": str(getattr(current_user, "public_id", current_user.id)),
+        "email": current_user.email,
+        "display_name": current_user.display_name,
+        "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+        "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+        "roles": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
+        "admin_sub_role": getattr(current_user, "admin_sub_role", None),
+        "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
+        "is_primary_admin": getattr(current_user, "is_primary_admin", False),
+        "avatar_url": getattr(current_user, "avatar_url", None),
+        "created_at": (
+            current_user.created_at.isoformat() if current_user.created_at else None
+        ),
+    }
+
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "user": user_payload,
+                "profile": user_payload,
+            }
+        ),
+        200,
+    )
+
+
+@auth_bp.route("/preferences", methods=["GET", "PUT", "PATCH"])
+def auth_preferences() -> Any:
+    """Retrieve or update notification preferences of authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to access preferences.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import (
+        get_user_preferences,
+        update_user_preferences,
+    )
+
+    if request.method in ("PUT", "PATCH"):
+        payload = request.get_json(silent=True) or request.form.to_dict() or {}
+        raw_prefs = payload.get("preferences", payload)
+        if isinstance(raw_prefs, dict):
+            mapped_prefs: dict[str, bool] = {}
+            for k, v in raw_prefs.items():
+                cat_key = k.upper().replace("EMAIL_", "")
+                mapped_prefs[cat_key] = bool(v)
+            raw_prefs = mapped_prefs
+
+        try:
+            updated_prefs = update_user_preferences(
+                actor=current_user,
+                preferences_payload=raw_prefs,
+                session=db.session,
+            )
+            map_dict = {
+                f"email_{p['category'].lower()}": p["email_enabled"]
+                for p in updated_prefs
+            }
+            res_dict: dict[str, Any] = {
+                "status": "ok",
+                "preferences": updated_prefs,
+                "preferences_map": map_dict,
+            }
+            res_dict.update(map_dict)
+            return jsonify(res_dict), 200
+        except Exception as exc:
+            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
+
+    prefs = get_user_preferences(actor=current_user, session=db.session)
+    map_dict = {
+        f"email_{p['category'].lower()}": p["email_enabled"]
+        for p in prefs
+    }
+    res_dict = {"status": "ok", "preferences": prefs, "preferences_map": map_dict}
+    res_dict.update(map_dict)
+    return jsonify(res_dict), 200
 

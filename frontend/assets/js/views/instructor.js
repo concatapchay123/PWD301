@@ -755,7 +755,7 @@ class InstructorView {
               </div>
 
               <a
-                href="#/instructor/exams"
+                href="#/instructor/exams?course_id=${cId}"
                 class="px-4 py-2 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1.5 shadow-2xs"
               >
                 <span class="material-symbols-outlined text-[16px]">assignment_add</span>
@@ -771,7 +771,7 @@ class InstructorView {
                   <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Chưa có bài thi nào cho khóa học này</p>
                   <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-3">Tạo bài thi trắc nghiệm để đánh giá kết quả học tập của sinh viên.</p>
                   <a
-                    href="#/instructor/exams"
+                    href="#/instructor/exams?course_id=${cId}"
                     class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
                   >
                     <span class="material-symbols-outlined text-[15px]">add</span>
@@ -980,8 +980,7 @@ class InstructorView {
       container.querySelectorAll('.btn-asm-results').forEach(btn => {
         btn.onclick = () => {
           const asmId = btn.dataset.asmId;
-          const asmTitle = btn.dataset.asmTitle;
-          InstructorView.openAssessmentResultsModal(asmId, asmTitle);
+          InstructorView.openAssessmentResultsModal(cId, asmId);
         };
       });
 
@@ -1933,7 +1932,7 @@ class InstructorView {
             <p class="text-xs text-slate-500 mt-0.5">Danh sách các bài Quiz, Giữa kỳ và Cuối kỳ của khóa học.</p>
           </div>
           <a
-            href="#/instructor/exams"
+            href="#/instructor/exams?course_id=${cId}"
             class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-1.5"
           >
             <span class="material-symbols-outlined text-[16px]">add_circle</span>
@@ -1963,7 +1962,7 @@ class InstructorView {
             <span class="material-symbols-outlined text-4xl mb-2 text-slate-300">quiz</span>
             <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">Chưa có đề thi/bài kiểm tra nào trong khóa học này.</p>
             <p class="text-xs text-slate-400 mt-1">Hãy tạo bài kiểm tra hoặc soạn đề thi tự động chuẩn PWD301 LMS.</p>
-            <a href="#/instructor/exams" class="inline-flex items-center gap-1.5 px-4 py-2 mt-4 rounded-xl bg-primary text-white text-xs font-bold shadow-sm">
+            <a href="#/instructor/exams?course_id=${cId}" class="inline-flex items-center gap-1.5 px-4 py-2 mt-4 rounded-xl bg-primary text-white text-xs font-bold shadow-sm">
               <span class="material-symbols-outlined text-[16px]">add_circle</span>
               <span>Tạo đề thi ngay</span>
             </a>
@@ -2010,7 +2009,7 @@ class InstructorView {
                 <span>Bảng điểm & Bài nộp</span>
               </button>
               <a
-                href="#/instructor/exams"
+                href="#/instructor/exams?course_id=${cId}"
                 class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
               >
                 Soạn đề
@@ -2046,7 +2045,18 @@ class InstructorView {
     }
   }
 
-  static async openAssessmentResultsModal(courseId, assessmentId) {
+  static async openAssessmentResultsModal(arg1, arg2) {
+    // Robust argument resolution: supports both (courseId, assessmentId) and (assessmentId, optionalTitle)
+    let assessmentId = arg1;
+    const isIdPattern = (v) => typeof v === 'string' && (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || /^\d+$/.test(v));
+    if (isIdPattern(arg1) && isIdPattern(arg2)) {
+      assessmentId = arg2;
+    } else if (arg2 && isIdPattern(arg2)) {
+      assessmentId = arg2;
+    } else {
+      assessmentId = arg1;
+    }
+
     const modalId = 'modal-assessment-results';
     let modal = document.getElementById(modalId);
     if (!modal) {
@@ -2803,14 +2813,28 @@ class InstructorView {
               />
             </div>
 
-            <!-- Quick Metadata Bar (Duration removed per specification) -->
-            <div class="pb-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
+            <!-- Quick Metadata Bar (Summary & Duration) -->
+            <div class="pb-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <input
                 type="text"
                 id="studio-input-summary"
-                class="w-full h-9 px-3.5 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] text-xs text-[#222120] dark:text-[#EDEDEB] placeholder:text-[#8F8E8A] dark:placeholder:text-[#6D6C68] border border-[#E8E6DF] dark:border-[#2E2D2B] outline-none focus:border-primary"
+                class="flex-1 h-9 px-3.5 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] text-xs text-[#222120] dark:text-[#EDEDEB] placeholder:text-[#8F8E8A] dark:placeholder:text-[#6D6C68] border border-[#E8E6DF] dark:border-[#2E2D2B] outline-none focus:border-primary"
                 placeholder="Mô tả tóm tắt mục tiêu bài học (1 câu ngắn)..."
               />
+              <div class="flex items-center gap-1.5 px-3 h-9 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] text-xs shrink-0" title="Thời lượng ước tính bài giảng">
+                <span class="material-symbols-outlined text-[16px] text-primary">schedule</span>
+                <span class="text-[#5C5B57] dark:text-[#9E9D99] text-[11px] font-semibold">Thời lượng:</span>
+                <input
+                  type="number"
+                  id="studio-input-duration"
+                  min="1"
+                  max="600"
+                  class="w-12 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none font-bold text-center"
+                  placeholder="15"
+                  value="15"
+                />
+                <span class="text-[#8F8E8A] text-[11px]">phút</span>
+              </div>
             </div>
 
             <!-- Word-like WYSIWYG Formatting Toolbar -->
@@ -2962,6 +2986,10 @@ class InstructorView {
                   accept="video/mp4,video/webm,video/x-matroska,video/quicktime,.mp4,.webm,.mkv,.mov"
                   class="hidden"
                 />
+                <p class="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50 flex items-center gap-1.5 font-medium">
+                  <span class="material-symbols-outlined text-[16px] text-amber-600 shrink-0">hd</span>
+                  <span>Khuyến nghị: Tải lên video độ phân giải <strong>1080p (Full HD)</strong>, định dạng MP4, dung lượng &lt; 1GB để đạt chất lượng bài giảng chuẩn.</span>
+                </p>
                 <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                   <button
                     type="button"
@@ -3274,11 +3302,13 @@ class InstructorView {
             const editorEl = document.getElementById('studio-content-editor');
             const mdContent = editorEl ? editorEl.innerHTML : '';
 
+            const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
             const draftRes = await ApiClient.createLesson(courseId, {
               title,
               summary,
               markdown_content: mdContent,
-              status: 'DRAFT'
+              status: 'DRAFT',
+              estimated_duration_minutes: !isNaN(durationVal) && durationVal > 0 ? durationVal : 15
             });
             if (draftRes && (draftRes.lesson_id || draftRes.id)) {
               lessonId = draftRes.lesson_id || draftRes.id;
@@ -4244,6 +4274,8 @@ class InstructorView {
         if (existingLesson) {
           document.getElementById('studio-input-title').value = existingLesson.title || '';
           document.getElementById('studio-input-summary').value = existingLesson.summary || '';
+          const durEl = document.getElementById('studio-input-duration');
+          if (durEl) durEl.value = existingLesson.estimated_duration_minutes || 15;
 
           if (existingLesson.markdown_content) {
             const editorEl = document.getElementById('studio-content-editor');
@@ -4398,14 +4430,17 @@ class InstructorView {
           return item;
         });
 
-      // Auto-capture URL from input field if instructor entered a link but forgot to click "Áp dụng"
+      // Auto-capture URL from input field if instructor entered a link
       const typedUrl = document.getElementById('studio-input-video-url')?.value.trim() || '';
       let finalVideoUrl = currentVideoUrl;
-      if (!finalVideoUrl && typedUrl) {
+      if (typedUrl) {
         const parsedYt = UI.parseYouTubeId(typedUrl);
         finalVideoUrl = parsedYt ? `https://www.youtube.com/watch?v=${parsedYt}` : typedUrl;
         currentVideoUrl = finalVideoUrl;
       }
+
+      const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
+      const estDuration = !isNaN(durationVal) && durationVal > 0 ? durationVal : 15;
 
       const payload = {
         title,
@@ -4414,7 +4449,8 @@ class InstructorView {
         video_url: finalVideoUrl || '',
         quiz: validQuiz,
         status: publish ? 'PUBLISHED' : 'DRAFT',
-        resources: attachedResources
+        resources: attachedResources,
+        estimated_duration_minutes: estDuration
       };
 
       try {

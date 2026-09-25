@@ -188,6 +188,16 @@ def set_course_completion_rule(
 
     rule = get_or_create_default_completion_rule(course.id, session=sess)
 
+    # Parse existing course completion requirements JSON
+    req_dict: dict[str, Any] = {}
+    if course.completion_requirements:
+        try:
+            parsed_req = json.loads(course.completion_requirements)
+            if isinstance(parsed_req, dict):
+                req_dict = parsed_req
+        except Exception:
+            req_dict = {}
+
     before_json = json.dumps(
         {
             "require_all_required_lessons": rule.require_all_required_lessons,
@@ -197,6 +207,8 @@ def set_course_completion_rule(
                 if rule.minimum_progress_percent is not None
                 else None
             ),
+            "minimum_grade_score": req_dict.get("minimum_grade_score"),
+            "allow_certificate": req_dict.get("allow_certificate"),
         }
     )
 
@@ -208,6 +220,23 @@ def set_course_completion_rule(
 
     if "minimum_progress_percent" in payload:
         rule.minimum_progress_percent = min_pct
+
+    if "minimum_grade_score" in payload:
+        try:
+            req_dict["minimum_grade_score"] = float(payload["minimum_grade_score"])
+        except (ValueError, TypeError):
+            pass
+
+    if "allow_certificate" in payload:
+        req_dict["allow_certificate"] = bool(payload["allow_certificate"])
+
+    if "completion_grace_days" in payload:
+        try:
+            req_dict["completion_grace_days"] = int(payload["completion_grace_days"])
+        except (ValueError, TypeError):
+            pass
+
+    course.completion_requirements = json.dumps(req_dict, ensure_ascii=False)
 
     now = utc_now()
     rule.updated_by_user_id = actor.id
@@ -222,6 +251,8 @@ def set_course_completion_rule(
                 if rule.minimum_progress_percent is not None
                 else None
             ),
+            "minimum_grade_score": req_dict.get("minimum_grade_score"),
+            "allow_certificate": req_dict.get("allow_certificate"),
         }
     )
 

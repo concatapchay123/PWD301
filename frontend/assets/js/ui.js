@@ -125,11 +125,25 @@ class UI {
   }
 
   // =========================================================================
-  // 2. Global Modal System (Warm Editorial Style)
+  // 2. Global Modal System (Warm Editorial Style with Stack Support)
   // =========================================================================
+  static _modalStack = [];
+
   static openModal({ title, bodyHtml, footerHtml = '', size = 'md', onClose = null, noShadow = false }) {
     const container = document.getElementById('modal-container');
     if (!container) return;
+
+    if (!UI._modalStack) UI._modalStack = [];
+
+    // If an existing modal is open, push it to stack and hide it temporarily
+    const activeLayer = container.querySelector('.modal-layer:last-child');
+    if (activeLayer) {
+      activeLayer.style.display = 'none';
+      UI._modalStack.push({
+        element: activeLayer,
+        onClose: window._modalOnClose
+      });
+    }
 
     window._modalOnClose = onClose;
 
@@ -141,44 +155,41 @@ class UI {
 
     const shadowClass = noShadow ? 'shadow-none' : 'shadow-elevated';
 
-    container.innerHTML = `
-      <div class="fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6" id="modal-backdrop">
-        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all" id="modal-dialog">
-          
-          <!-- Modal Header -->
-          <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423]">
-            <h3 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
-              ${title}
-            </h3>
-            <button type="button" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors" onclick="UI.closeModal()">
-              <span class="material-symbols-outlined text-[18px]">close</span>
-            </button>
-          </div>
-
-          <!-- Modal Body -->
-          <div class="px-5 py-4 overflow-y-auto flex-1 text-[#5C5B57] dark:text-[#9E9D99] text-xs sm:text-sm space-y-3 leading-relaxed">
-            ${bodyHtml}
-          </div>
-
-          <!-- Modal Footer (Optional) -->
-          ${footerHtml ? `
-          <div class="px-5 py-3 bg-[#FAF9F5] dark:bg-[#242423] border-t border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-end gap-2 shrink-0">
-            ${footerHtml}
-          </div>
-          ` : ''}
-
+    const modalLayer = document.createElement('div');
+    modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+    modalLayer.innerHTML = `
+      <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
+        <!-- Modal Header -->
+        <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423]">
+          <h3 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
+            ${title}
+          </h3>
+          <button type="button" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors btn-modal-close" title="Đóng">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
         </div>
+
+        <!-- Modal Body -->
+        <div class="px-5 py-4 overflow-y-auto flex-1 text-[#5C5B57] dark:text-[#9E9D99] text-xs sm:text-sm space-y-3 leading-relaxed">
+          ${bodyHtml}
+        </div>
+
+        <!-- Modal Footer (Optional) -->
+        ${footerHtml ? `
+        <div class="px-5 py-3 bg-[#FAF9F5] dark:bg-[#242423] border-t border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-end gap-2 shrink-0">
+          ${footerHtml}
+        </div>
+        ` : ''}
       </div>
     `;
 
-    container.classList.remove('hidden');
+    modalLayer.querySelector('.btn-modal-close')?.addEventListener('click', () => UI.closeModal());
+    modalLayer.addEventListener('click', (e) => {
+      if (e.target === modalLayer) UI.closeModal();
+    });
 
-    const backdrop = document.getElementById('modal-backdrop');
-    if (backdrop) {
-      backdrop.addEventListener('click', (e) => {
-        if (e.target === backdrop) UI.closeModal();
-      });
-    }
+    container.appendChild(modalLayer);
+    container.classList.remove('hidden');
 
     const onEsc = (e) => {
       if (e.key === 'Escape') {
@@ -191,14 +202,29 @@ class UI {
 
   static closeModal() {
     const container = document.getElementById('modal-container');
-    if (container) {
-      container.innerHTML = '';
-      container.classList.add('hidden');
-    }
+    if (!container) return;
+
     const onClose = window._modalOnClose;
     window._modalOnClose = null;
     if (typeof onClose === 'function') {
-      onClose();
+      try { onClose(); } catch (err) { console.error('Error in modal onClose:', err); }
+    }
+
+    const currentLayer = container.querySelector('.modal-layer:last-child');
+    if (currentLayer) {
+      currentLayer.remove();
+    }
+
+    // Check if there are stacked modals behind
+    if (UI._modalStack && UI._modalStack.length > 0) {
+      const prev = UI._modalStack.pop();
+      if (prev && prev.element) {
+        prev.element.style.display = '';
+        window._modalOnClose = prev.onClose;
+      }
+    } else {
+      container.innerHTML = '';
+      container.classList.add('hidden');
     }
   }
 
@@ -211,6 +237,16 @@ class UI {
       if (!container) {
         resolve(false);
         return;
+      }
+
+      if (!UI._modalStack) UI._modalStack = [];
+      const activeLayer = container.querySelector('.modal-layer:last-child');
+      if (activeLayer) {
+        activeLayer.style.display = 'none';
+        UI._modalStack.push({
+          element: activeLayer,
+          onClose: window._modalOnClose
+        });
       }
 
       let settled = false;
@@ -235,47 +271,46 @@ class UI {
         ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50'
         : 'bg-blue-50 dark:bg-blue-950/50 text-primary dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
 
-      container.innerHTML = `
-        <div class="fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6" id="confirm-modal-backdrop">
-          <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
-            
-            <!-- Header: Contextual Icon Badge & Close Action -->
-            <div class="flex items-start justify-between gap-3">
-              <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
-                <span class="material-symbols-outlined text-[26px]">${icon}</span>
-              </div>
-              <button type="button" id="confirm-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors" title="Đóng">
-                <span class="material-symbols-outlined text-[20px]">close</span>
-              </button>
+      const confirmLayer = document.createElement('div');
+      confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+      confirmLayer.innerHTML = `
+        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
+          <!-- Header: Contextual Icon Badge & Close Action -->
+          <div class="flex items-start justify-between gap-3">
+            <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
+              <span class="material-symbols-outlined text-[26px]">${icon}</span>
             </div>
+            <button type="button" id="confirm-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors" title="Đóng">
+              <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
 
-            <!-- Content Area: Title & Visual Hierarchy -->
-            <div class="space-y-1.5">
-              <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
-                ${UI.escapeHtml(title)}
-              </h3>
-              <div class="text-xs sm:text-sm text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed break-words">
-                ${message}
-              </div>
+          <!-- Content Area: Title & Visual Hierarchy -->
+          <div class="space-y-1.5">
+            <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+              ${UI.escapeHtml(title)}
+            </h3>
+            <div class="text-xs sm:text-sm text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed break-words">
+              ${message}
             </div>
+          </div>
 
-            <!-- Footer: Balanced Pill Actions -->
-            <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E8E6DF]/70 dark:border-[#2E2D2B]/70 shrink-0">
-              <button type="button" id="confirm-cancel-btn" class="c-btn c-btn-secondary c-btn-md rounded-xl px-4 py-2.5 text-xs font-semibold">
-                ${UI.escapeHtml(cancelText)}
-              </button>
-              <button type="button" id="confirm-action-btn" class="c-btn ${btnColor} c-btn-md rounded-xl px-5 py-2.5 text-xs font-bold">
-                ${UI.escapeHtml(confirmText)}
-              </button>
-            </div>
-
+          <!-- Footer: Balanced Pill Actions -->
+          <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E8E6DF]/70 dark:border-[#2E2D2B]/70 shrink-0">
+            <button type="button" id="confirm-cancel-btn" class="c-btn c-btn-secondary c-btn-md rounded-xl px-4 py-2.5 text-xs font-semibold">
+              ${UI.escapeHtml(cancelText)}
+            </button>
+            <button type="button" id="confirm-action-btn" class="c-btn ${btnColor} c-btn-md rounded-xl px-5 py-2.5 text-xs font-bold">
+              ${UI.escapeHtml(confirmText)}
+            </button>
           </div>
         </div>
       `;
 
+      container.appendChild(confirmLayer);
       container.classList.remove('hidden');
 
-      const card = document.getElementById('confirm-dialog-card');
+      const card = confirmLayer.querySelector('#confirm-dialog-card');
       if (card) {
         requestAnimationFrame(() => {
           card.classList.remove('scale-95', 'opacity-0');
@@ -283,16 +318,13 @@ class UI {
         });
       }
 
-      const backdrop = document.getElementById('confirm-modal-backdrop');
-      if (backdrop) {
-        backdrop.addEventListener('click', (e) => {
-          if (e.target === backdrop) finish(false);
-        });
-      }
+      confirmLayer.addEventListener('click', (e) => {
+        if (e.target === confirmLayer) finish(false);
+      });
 
-      document.getElementById('confirm-close-x-btn')?.addEventListener('click', () => finish(false));
-      document.getElementById('confirm-cancel-btn')?.addEventListener('click', () => finish(false));
-      document.getElementById('confirm-action-btn')?.addEventListener('click', () => finish(true));
+      confirmLayer.querySelector('#confirm-close-x-btn')?.addEventListener('click', () => finish(false));
+      confirmLayer.querySelector('#confirm-cancel-btn')?.addEventListener('click', () => finish(false));
+      confirmLayer.querySelector('#confirm-action-btn')?.addEventListener('click', () => finish(true));
 
       const onKeyDown = (e) => {
         if (e.key === 'Escape') {
@@ -963,6 +995,14 @@ class UI {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  static formatBytes(bytes) {
+    const b = parseInt(bytes, 10);
+    if (isNaN(b) || b <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(b) / Math.log(1024));
+    return `${(b / Math.pow(1024, i)).toFixed(1)} ${units[i] || 'MB'}`;
   }
 
   static escapeHtml(str) {

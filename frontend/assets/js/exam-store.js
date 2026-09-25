@@ -20,6 +20,8 @@ class ExamStore {
       title: 'De_thi_moi.docx',
       rawText: '',
       courseId: '',
+      courseCode: '',
+      courseTitle: '',
       academicMode: 'independent',
       lessonId: '',
       questions: [],

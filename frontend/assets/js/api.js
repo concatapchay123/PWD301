@@ -174,6 +174,39 @@ class ApiClient {
     });
   }
 
+  static async getProfile() {
+    return await ApiClient.request('/auth/profile', { method: 'GET' });
+  }
+
+  static async updateProfile(data) {
+    return await ApiClient.request('/auth/profile', {
+      method: 'PUT',
+      body: data,
+    });
+  }
+
+  static async changePassword(currentPassword, newPassword, confirmPassword) {
+    return await ApiClient.request('/auth/change-password', {
+      method: 'POST',
+      body: {
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      },
+    });
+  }
+
+  static async getPreferences() {
+    return await ApiClient.request('/auth/preferences', { method: 'GET' });
+  }
+
+  static async updatePreferences(data) {
+    return await ApiClient.request('/auth/preferences', {
+      method: 'PUT',
+      body: data,
+    });
+  }
+
   // =========================================================================
   // 2. Student Role Endpoints
   // =========================================================================
@@ -673,15 +706,17 @@ class ApiClient {
     return await ApiClient.request(url);
   }
 
-  static async manageUserRole(userId, action, role, reason = '') {
+  static async manageUserRole(userId, action, role, reason = '', adminSubRole = null) {
+    const body = { action, role, reason };
+    if (adminSubRole) body.admin_sub_role = adminSubRole;
     return await ApiClient.request(`/admin/users/${userId}/roles`, {
       method: 'POST',
-      body: { action, role, reason }
+      body,
     });
   }
 
-  static async assignRole(userId, role, reason = '') {
-    return await ApiClient.manageUserRole(userId, 'assign', role, reason);
+  static async assignRole(userId, role, reason = '', adminSubRole = null) {
+    return await ApiClient.manageUserRole(userId, 'assign', role, reason, adminSubRole);
   }
 
   static async removeRole(userId, role, reason = '') {

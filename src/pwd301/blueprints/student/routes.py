@@ -190,35 +190,47 @@ def course_progress(course_id: str) -> Any:
 
 def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str, Any]:
     import json
+    import re
 
+    cleaned_markdown = les.markdown_content or ""
     video_url = None
-    if les.markdown_content:
-        import re
-        m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", les.markdown_content)
+    if cleaned_markdown:
+        m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", cleaned_markdown)
         if m:
             video_url = m.group(1)
+            # Remove comment so raw video URL is not leaked into student markdown text
+            cleaned_markdown = re.sub(
+                r"<!--\s*video_url:\s*(\S+?)\s*-->", "", cleaned_markdown
+            ).strip()
 
     res_list = []
+    primary_video_asset_id = None
     if hasattr(les, "resources") and les.resources:
         for r in les.resources:
-            if (
-                r.file_asset
-                and r.file_asset.status in ("ACTIVE", "PENDING_SCAN", "QUARANTINED")
-                and r.file_asset.virus_scan_status == "CLEAN"
-            ):
-                ser_r = _serialize_lesson_resource(r)
-                res_list.append(ser_r)
-                mime = (r.file_asset.mime_type or "").lower()
-                name = (r.file_asset.original_filename or "").lower()
-                vid_exts = (".mp4", ".webm", ".mkv", ".mov")
-                if (
-                    not video_url
-                    and r.file_asset.virus_scan_status == "CLEAN"
-                    and (mime.startswith("video/") or name.endswith(vid_exts))
-                ):
-                    video_url = (
-                        f"/student/files/{r.file_asset.public_id}/download?disposition=inline"
-                    )
+            fa = r.file_asset
+            if not fa:
+                continue
+            is_scan_ok = getattr(fa, "virus_scan_status", "CLEAN") in ("CLEAN", "UNSCANNED")
+            is_status_ok = fa.status in ("ACTIVE", "PENDING_SCAN")
+            if not (is_scan_ok and is_status_ok):
+                continue
+
+            mime = (fa.mime_type or "").lower()
+            name = (fa.original_filename or "").lower()
+            vid_exts = (".mp4", ".webm", ".mkv", ".mov")
+            is_video = mime.startswith("video/") or name.endswith(vid_exts)
+
+            if not video_url and is_video:
+                video_url = f"/student/files/{fa.public_id}/download?disposition=inline"
+                primary_video_asset_id = str(fa.public_id)
+                # Primary video is played inline and NOT listed in downloadable resource list
+                continue
+
+            if primary_video_asset_id and str(fa.public_id) == primary_video_asset_id:
+                continue
+
+            ser_r = _serialize_lesson_resource(r)
+            res_list.append(ser_r)
 
     personal_notes = ""
     notes_saved_at = None
@@ -233,7 +245,6 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
     quiz = []
     if les.markdown_content:
-        import re
         m_quiz = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", les.markdown_content, re.DOTALL)
         if m_quiz:
             try:
@@ -248,7 +259,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "course_id": str(les.course.public_id) if les.course else None,
         "title": les.title,
         "summary": les.summary,
-        "markdown_content": les.markdown_content,
+        "markdown_content": cleaned_markdown,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
@@ -925,13 +936,10 @@ def assessment_detail_view(assessment_id: str) -> Any:
             .first()
         )
 
-    attempts_query = (
-        db.session.query(AssessmentAttempt)
-        .filter(
-            AssessmentAttempt.assessment_id == assess_obj.id,
-            AssessmentAttempt.student_user_id == actor.id,
-            AssessmentAttempt.status != "CANCELLED",
-        )
+    attempts_query = db.session.query(AssessmentAttempt).filter(
+        AssessmentAttempt.assessment_id == assess_obj.id,
+        AssessmentAttempt.student_user_id == actor.id,
+        AssessmentAttempt.status != "CANCELLED",
     )
     if current_period is not None:
         attempts_query = attempts_query.filter(
@@ -994,10 +1002,7 @@ def assessment_detail_view(assessment_id: str) -> Any:
     best_attempt_id = str(best_att.public_id) if best_att else latest_attempt_id
 
     can_start = bool(
-        is_open
-        and not is_closed
-        and not is_attempt_limit_reached
-        and active_attempt is None
+        is_open and not is_closed and not is_attempt_limit_reached and active_attempt is None
     )
 
     return (
@@ -1419,9 +1424,7 @@ def student_course_detail(course_id: str) -> Any:
             a_limit is not None and a_limit > 0 and a_attempts_count >= a_limit
         )
         a_remaining = (
-            max(0, a_limit - a_attempts_count)
-            if (a_limit is not None and a_limit > 0)
-            else None
+            max(0, a_limit - a_attempts_count) if (a_limit is not None and a_limit > 0) else None
         )
         existing_attempt = attempts_for_a[-1] if attempts_for_a else None
 
@@ -1517,14 +1520,19 @@ def student_course_detail(course_id: str) -> Any:
     contact_info = None
     clean_desc = course.description or ""
     if course.description and "<!-- contact_info:" in course.description:
-        import json, re
-        m_contact = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", course.description, re.DOTALL)
+        import contextlib
+        import json
+        import re
+
+        m_contact = re.search(
+            r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", course.description, re.DOTALL
+        )
         if m_contact:
-            try:
+            with contextlib.suppress(Exception):
                 contact_info = json.loads(m_contact.group(1))
-            except Exception:
-                pass
-        clean_desc = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", course.description, flags=re.DOTALL).strip()
+        clean_desc = re.sub(
+            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", course.description, flags=re.DOTALL
+        ).strip()
 
     instructor_email = course.owner_instructor.email if course.owner_instructor else None
     if not contact_info:

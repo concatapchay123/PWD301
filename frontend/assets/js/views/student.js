@@ -587,27 +587,11 @@ class StudentView {
         `;
       }).join('');
 
-      // Attach button clicks for enrolling
+      // Attach button clicks for enrolling -> Open large dedicated Enrollment Modal
       grid.querySelectorAll('.enroll-action-btn').forEach(btn => {
-        btn.onclick = async () => {
+        btn.onclick = () => {
           const cid = btn.dataset.courseId;
-          const ctitle = btn.dataset.courseTitle;
-          const confirmed = await UI.confirm('Xác nhận đăng ký môn học', `Bạn có muốn ghi danh vào khóa học: <strong>${ctitle}</strong> không?`);
-          if (!confirmed) return;
-
-          btn.disabled = true;
-          btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang đăng ký...';
-
-          try {
-            await ApiClient.enrollCourse(cid);
-            enrolledCourseIds.add(String(cid));
-            UI.showToast(`Đã ghi danh thành công khóa học: ${ctitle}`, 'success');
-            renderFiltered();
-          } catch (err) {
-            UI.showToast(err.message || 'Không thể ghi danh vào khóa học này.', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<span>Đăng ký học ngay</span>';
-          }
+          StudentView.openEnrollmentModal(cid, () => renderFiltered());
         };
       });
     };
@@ -632,53 +616,155 @@ class StudentView {
     if (categorySelect) categorySelect.onchange = renderFiltered;
   }
 
-  static async openCourseDetailModal(courseId) {
+  static async openEnrollmentModal(courseOrId, onEnrolledCallback = null) {
     try {
-      const course = await ApiClient.getCourseDetail(courseId);
+      const course = (typeof courseOrId === 'object' && courseOrId !== null)
+        ? courseOrId
+        : await ApiClient.getCourseDetail(courseOrId);
       if (!course) return;
 
+      const courseId = course.id || course.public_id || (typeof courseOrId === 'string' ? courseOrId : '');
+
+      const lessons = course.lessons || [];
+      const lessonCount = lessons.length;
+      const capacityText = course.capacity ? `${course.capacity} sinh viên` : 'Không giới hạn';
+      const instructorName = course.instructor_name || 'Hội đồng Khoa học & Bộ môn';
+
       const body = `
-        <div class="space-y-4">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-            <span class="font-mono text-xs font-bold text-primary">${UI.escapeHtml(course.course_code)}</span>
-            ${UI.statusBadge(course.status)}
+        <div class="space-y-5">
+          <!-- Course Hero Info Bar -->
+          <div class="p-5 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded-md bg-primary text-white font-mono text-xs font-bold">${UI.escapeHtml(course.course_code || 'PWD301')}</span>
+                <span class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold">${UI.escapeHtml(course.category || 'Chuyên ngành')}</span>
+                ${UI.statusBadge(course.status)}
+              </div>
+              <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">${UI.escapeHtml(course.title)}</h2>
+            </div>
+            <div class="text-right sm:shrink-0">
+              <span class="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">Độ khó</span>
+              <span class="font-bold text-sm text-slate-800 dark:text-slate-200">${UI.escapeHtml(course.difficulty || 'Tiêu chuẩn')}</span>
+            </div>
           </div>
-          <p class="text-sm leading-relaxed">${UI.escapeHtml(course.description || course.summary || 'Không có mô tả chi tiết.')}</p>
-          <div class="grid grid-cols-2 gap-3 text-xs bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800">
-            <div><strong>Danh mục:</strong> ${UI.escapeHtml(course.category || 'Đại cương')}</div>
-            <div><strong>Độ khó:</strong> ${UI.escapeHtml(course.difficulty || 'Cơ bản')}</div>
-            <div><strong>Sĩ số:</strong> ${course.capacity ? course.capacity + ' sinh viên' : 'Không giới hạn'}</div>
-            <div><strong>Giảng viên:</strong> ${UI.escapeHtml(course.instructor_name || 'Bộ môn Phụ trách')}</div>
+
+          <!-- Description -->
+          <div class="space-y-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">Mô tả khóa học</h4>
+            <p class="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+              ${UI.escapeHtml(course.description || course.summary || 'Khóa học cung cấp hệ thống kiến thức toàn diện, bám sát thực tế cùng các bài tập thực hành chuyên sâu.')}
+            </p>
+          </div>
+
+          <!-- 3-Column Highlights Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1">
+              <div class="flex items-center gap-1.5 text-slate-400 text-xs">
+                <span class="material-symbols-outlined text-[16px] text-primary">person</span>
+                <span>Giảng viên</span>
+              </div>
+              <div class="font-bold text-xs text-slate-900 dark:text-white truncate">${UI.escapeHtml(instructorName)}</div>
+            </div>
+
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1">
+              <div class="flex items-center gap-1.5 text-slate-400 text-xs">
+                <span class="material-symbols-outlined text-[16px] text-primary">menu_book</span>
+                <span>Chương trình học</span>
+              </div>
+              <div class="font-bold text-xs text-slate-900 dark:text-white">${lessonCount} bài giảng & tài liệu</div>
+            </div>
+
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1">
+              <div class="flex items-center gap-1.5 text-slate-400 text-xs">
+                <span class="material-symbols-outlined text-[16px] text-primary">group</span>
+                <span>Sĩ số lớp học</span>
+              </div>
+              <div class="font-bold text-xs text-slate-900 dark:text-white">${capacityText}</div>
+            </div>
+          </div>
+
+          <!-- Syllabus Preview Highlights -->
+          ${lessons.length > 0 ? `
+            <div class="space-y-2">
+              <div class="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider">
+                <span>Nội dung bài học tiêu biểu</span>
+                <span>${lessons.length} bài học</span>
+              </div>
+              <div class="border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 max-h-44 overflow-y-auto bg-white dark:bg-slate-900">
+                ${lessons.slice(0, 6).map((les, idx) => `
+                  <div class="p-2.5 flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2.5 truncate">
+                      <span class="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-mono text-[10px] font-bold text-slate-500">${idx + 1}</span>
+                      <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(les.title)}</span>
+                    </div>
+                    <span class="text-[11px] text-slate-400 shrink-0 font-mono">${les.estimated_duration_minutes || 45} phút</span>
+                  </div>
+                `).join('')}
+                ${lessons.length > 6 ? `
+                  <div class="p-2 text-center text-xs text-slate-400 font-medium bg-slate-50/50 dark:bg-slate-800/30">
+                    và ${lessons.length - 6} bài giảng bổ trợ khác...
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Enrollment Benefit Note -->
+          <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+            <span class="material-symbols-outlined text-[18px] text-amber-600 shrink-0">info</span>
+            <span>Sau khi ghi danh, khóa học sẽ xuất hiện ngay trong <strong>Khóa học của tôi</strong> để bạn bắt đầu học tập và làm bài kiểm tra.</span>
           </div>
         </div>
       `;
 
       const footer = `
-        <button type="button" class="c-btn c-btn-secondary c-btn-sm" onclick="UI.closeModal()">Đóng</button>
-        <a href="#/student/courses/detail?id=${courseId}" class="c-btn c-btn-ghost c-btn-sm text-primary" onclick="UI.closeModal()">Xem hồ sơ môn học đầy đủ</a>
-        <button type="button" class="c-btn c-btn-primary c-btn-sm" id="modal-enroll-btn">Đăng ký môn học</button>
+        <button type="button" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors" onclick="UI.closeModal()">
+          Để sau
+        </button>
+        <a href="#/student/courses/detail?id=${courseId}" class="px-4 py-2.5 rounded-xl text-xs font-bold text-primary hover:bg-primary/10 transition-colors" onclick="UI.closeModal()">
+          Xem chi tiết môn học
+        </a>
+        <button type="button" class="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-md shadow-primary/20 flex items-center gap-1.5 cursor-pointer" id="modal-confirm-enroll-btn">
+          <span class="material-symbols-outlined text-[16px]">school</span>
+          <span>Xác nhận ghi danh môn học</span>
+        </button>
       `;
 
       UI.openModal({
-        title: course.title,
+        title: `Ghi danh khóa học: ${course.title}`,
         bodyHtml: body,
         footerHtml: footer,
-        size: 'md'
+        size: 'lg'
       });
 
-      document.getElementById('modal-enroll-btn').onclick = async () => {
-        try {
-          await ApiClient.enrollCourse(courseId);
-          UI.closeModal();
-          UI.showToast(`Đã ghi danh thành công khóa học: ${course.title}`, 'success');
-          window.location.hash = '#/student/courses';
-        } catch (err) {
-          UI.showToast(err.message || 'Không thể ghi danh môn học.', 'error');
-        }
-      };
+      const confirmBtn = document.getElementById('modal-confirm-enroll-btn');
+      if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+          confirmBtn.disabled = true;
+          confirmBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
+          try {
+            await ApiClient.enrollCourse(courseId);
+            UI.closeModal();
+            UI.showToast(`Đã ghi danh thành công khóa học: ${course.title}`, 'success');
+            if (typeof onEnrolledCallback === 'function') {
+              onEnrolledCallback();
+            } else {
+              window.location.hash = '#/student/courses';
+            }
+          } catch (err) {
+            UI.showToast(err.message || 'Không thể ghi danh môn học.', 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">school</span> <span>Xác nhận ghi danh môn học</span>';
+          }
+        };
+      }
     } catch (e) {
       UI.showToast('Không thể nạp thông tin chi tiết môn học.', 'error');
     }
+  }
+
+  static async openCourseDetailModal(courseId) {
+    await StudentView.openEnrollmentModal(courseId);
   }
 
   // =========================================================================
@@ -985,17 +1071,17 @@ class StudentView {
                       ` : (a.is_attempt_limit_reached ? `
                         <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1">
                           <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                          <span>Xem kết quả (${a.attempts_count || 0}/${a.attempt_limit})</span>
+                          <span>Xem kết quả chính thức</span>
                         </a>
                       ` : (a.attempts_count > 0 ? `
                         <div class="flex items-center gap-2">
-                          <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1" title="Xem kết quả lần trước">
-                            <span class="material-symbols-outlined text-[15px]">history</span>
-                            <span>Xem điểm</span>
+                          <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1" title="Xem kết quả chính thức">
+                            <span class="material-symbols-outlined text-[15px]">fact_check</span>
+                            <span>Xem kết quả</span>
                           </a>
                           <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1">
                             <span class="material-symbols-outlined text-[15px]">play_arrow</span>
-                            <span>Làm lần ${(a.attempts_count || 0) + 1}</span>
+                            <span>Làm bài thi</span>
                           </a>
                         </div>
                       ` : `
@@ -1443,15 +1529,17 @@ class StudentView {
     // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
     const ytId = UI.parseYouTubeId(trimmed);
     if (ytId) {
-      return `<iframe class="w-full h-full aspect-video rounded-xl" src="${UI.getYouTubeEmbedUrl(ytId)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
+      const glue = baseEmbed.includes('?') ? '&' : '?';
+      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
     }
     // Vimeo
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe class="w-full h-full aspect-video rounded-xl" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
-    // Direct file / HTML5 video
-    return `<video controls class="w-full h-full aspect-video rounded-xl" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
+    // Direct file / HTML5 video (No download button, no playback rate change, no right click menu)
+    return `<video id="lesson-stream-player" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
   }
 
   // =========================================================================
@@ -1475,8 +1563,20 @@ class StudentView {
 
       const course = courseData?.course || courseData;
       const lessonsList = courseData?.lessons || course.lessons || [];
-      const resources = lesson.resources || [];
-      const isCompleted = lesson.progress?.is_completed || false;
+      const lessonResources = lesson.resources || [];
+      const courseResources = courseData?.resources || course.resources || [];
+
+      // Consolidate all materials into a unified resources array
+      const allDocuments = [...lessonResources];
+      courseResources.forEach(cr => {
+        const crId = cr.resource_id || cr.id;
+        if (crId && !allDocuments.some(d => (d.resource_id || d.id) === crId)) {
+          allDocuments.push({ ...cr, is_course_level: true });
+        }
+      });
+      const resources = allDocuments;
+      let isCompleted = lesson.progress?.is_completed || false;
+      const hasVideo = Boolean(lesson.video_url);
       const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
 
       // Find prev and next lesson
@@ -1521,21 +1621,11 @@ class StudentView {
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                id="toggle-syllabus-btn"
-                class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                title="Mở Đề cương bài giảng"
-              >
-                <span class="material-symbols-outlined text-[16px]">menu_book</span>
-                <span class="hidden sm:inline">Đề cương</span>
-              </button>
-
-              <button
-                type="button"
                 id="toggle-resources-btn"
-                class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors relative"
-                title="Mở tài liệu & Sổ tay ghi chú"
+                class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors relative cursor-pointer"
+                title="Mở tài liệu đính kèm & Sổ tay ghi chú bài học"
               >
-                <span class="material-symbols-outlined text-[16px]">edit_note</span>
+                <span class="material-symbols-outlined text-[17px] text-primary">folder_open</span>
                 <span class="hidden sm:inline">Ghi chú & Tài liệu</span>
                 ${resources.length > 0 ? `
                   <span class="w-4 h-4 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">${resources.length}</span>
@@ -1559,10 +1649,11 @@ class StudentView {
               <button
                 type="button"
                 id="complete-lesson-btn"
-                class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-primary hover:bg-primary-hover text-white shadow-sm'}"
+                class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-primary hover:bg-primary-hover text-white shadow-sm cursor-pointer')}"
+                ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
               >
-                <span class="material-symbols-outlined text-[16px]">${isCompleted ? 'check_circle' : 'check'}</span>
-                <span class="hidden sm:inline">${isCompleted ? 'Đã hoàn thành' : 'Đánh dấu hoàn thành'}</span>
+                <span class="material-symbols-outlined text-[16px]" id="complete-btn-icon">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
+                <span class="hidden sm:inline" id="complete-btn-text">${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
               </button>
             </div>
           </div>
@@ -1798,51 +1889,11 @@ class StudentView {
         </div>
       `;
 
-      // 1. Left Drawer Handler: Syllabus Outline
-      const syllabusBtn = document.getElementById('open-syllabus-drawer-btn') || document.getElementById('toggle-syllabus-btn');
-      if (syllabusBtn) {
-        syllabusBtn.onclick = () => {
-          UI.openDrawer({
-            side: 'left',
-            title: 'Mục lục Đề cương Khóa học',
-            width: 'max-w-sm',
-            headerBadge: `<span class="px-2 py-0.5 rounded-full bg-primary-subtle text-primary text-[10px] font-bold">${currentIndex + 1}/${lessonsList.length}</span>`,
-            bodyHtml: `
-              <div class="space-y-1.5">
-                <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider pb-2">Danh sách bài học</div>
-                ${lessonsList.map((l, i) => {
-                  const isActive = (l.lesson_id || l.id) === lessonId;
-                  return `
-                    <a
-                      href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}"
-                      class="flex items-center gap-3 p-3 rounded-xl text-xs transition-colors ${isActive ? 'bg-primary text-white font-bold shadow-sm' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}"
-                      onclick="UI.closeDrawer()"
-                    >
-                      <span class="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}">
-                        ${i + 1}
-                      </span>
-                      <span class="truncate flex-1">${UI.escapeHtml(l.title)}</span>
-                      ${isActive ? '<span class="material-symbols-outlined text-[16px]">play_arrow</span>' : ''}
-                    </a>
-                  `;
-                }).join('')}
-              </div>
-            `,
-            footerHtml: `
-              <div class="flex justify-end w-full">
-                <button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold" onclick="UI.closeDrawer()">
-                  Đóng mục lục
-                </button>
-              </div>
-            `
-          });
-        };
-      }
-
-      // 2. Right Drawer Handler: Resource Vault & Personal Notepad
+      // 1. Right Drawer Handler: Resource Vault & Personal Notepad (Syllabus removed, all files consolidated)
       const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn') || document.getElementById('toggle-resources-btn');
       if (vaultNotesBtn) {
         vaultNotesBtn.onclick = () => {
+          const hasFiles = resources.length > 0;
           UI.openDrawer({
             side: 'right',
             title: 'Tài liệu & Sổ tay Ghi chú',
@@ -1852,18 +1903,68 @@ class StudentView {
               <div class="space-y-4">
                 <!-- Dual Tabs -->
                 <div class="flex items-center border-b border-slate-200 dark:border-slate-800 text-xs font-bold" id="drawer-subtabs">
-                  <button type="button" id="drawer-tab-notes" class="px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[16px]">edit_note</span>
-                    <span>Sổ tay Ghi chú</span>
-                  </button>
-                  <button type="button" id="drawer-tab-vault" class="px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5">
+                  <button type="button" id="drawer-tab-vault" class="px-4 py-2.5 border-b-2 ${hasFiles ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'} flex items-center gap-1.5 cursor-pointer">
                     <span class="material-symbols-outlined text-[16px]">folder_open</span>
                     <span>Tài liệu đính kèm (${resources.length})</span>
                   </button>
+                  <button type="button" id="drawer-tab-notes" class="px-4 py-2.5 border-b-2 ${hasFiles ? 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200' : 'border-primary text-primary'} flex items-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-outlined text-[16px]">edit_note</span>
+                    <span>Sổ tay Ghi chú</span>
+                  </button>
+                </div>
+
+                <!-- Panel: Resource Vault (Default when files exist) -->
+                <div id="drawer-panel-vault" class="space-y-3 ${hasFiles ? '' : 'hidden'}">
+                  ${resources.length === 0 ? `
+                    <div class="text-center py-12 text-slate-400 text-xs space-y-2">
+                      <span class="material-symbols-outlined text-3xl text-slate-300">folder_off</span>
+                      <p>Bài học này hiện chưa có tệp tài liệu đính kèm nào.</p>
+                    </div>
+                  ` : `
+                    <div class="space-y-2.5">
+                      ${resources.map(r => {
+                        const filename = r.filename || r.title || r.label || 'Tài liệu bài học';
+                        const ext = filename.split('.').pop().toLowerCase();
+                        let fileIcon = 'description';
+                        if (['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext)) fileIcon = 'image';
+                        else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) fileIcon = 'folder_zip';
+                        else if (['py', 'js', 'html', 'css', 'json', 'sql'].includes(ext)) fileIcon = 'code';
+                        else if (['xlsx', 'xls', 'csv'].includes(ext)) fileIcon = 'table_chart';
+
+                        const fileSizeStr = r.byte_size ? UI.formatBytes(r.byte_size) : (r.file_size_formatted || (r.file_asset?.size_bytes ? UI.formatBytes(r.file_asset.size_bytes) : 'Tài liệu học tập'));
+
+                        return `
+                          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 space-y-2.5 text-xs">
+                            <div class="flex items-start justify-between gap-2">
+                              <div class="flex items-center gap-2 min-w-0">
+                                <span class="material-symbols-outlined text-[20px] text-primary shrink-0">${fileIcon}</span>
+                                <div class="font-bold text-slate-900 dark:text-white truncate" title="${UI.escapeHtml(filename)}">
+                                  ${UI.escapeHtml(filename)}
+                                </div>
+                              </div>
+                              <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5 shrink-0">
+                                <span class="material-symbols-outlined text-[12px]">verified</span> ClamAV Sạch
+                              </span>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                              <span class="flex items-center gap-1.5">
+                                <span>Kích thước: <strong>${fileSizeStr}</strong></span>
+                                ${r.is_course_level ? '<span class="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-semibold">Toàn khóa học</span>' : '<span class="px-1.5 py-0.2 rounded bg-primary/10 text-primary text-[9px] font-semibold">Bài học này</span>'}
+                              </span>
+                              <a href="${r.download_url || `/student/courses/${courseId}/files/${r.resource_id || r.id}/download`}" target="_blank" class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-colors flex items-center gap-1 shadow-2xs">
+                                <span>Tải về</span>
+                                <span class="material-symbols-outlined text-[13px]">download</span>
+                              </a>
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  `}
                 </div>
 
                 <!-- Panel: Personal Notes -->
-                <div id="drawer-panel-notes" class="space-y-3">
+                <div id="drawer-panel-notes" class="space-y-3 ${hasFiles ? 'hidden' : ''}">
                   <div class="flex items-center justify-between text-[11px] text-slate-400">
                     <span>Ghi chú cá nhân (tự động lưu vào máy chủ):</span>
                     <span id="notes-status-text" class="text-emerald-600 font-bold hidden flex items-center gap-1">
@@ -1877,41 +1978,12 @@ class StudentView {
                     class="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-primary transition-all resize-none leading-relaxed"
                   >${UI.escapeHtml(savedNote)}</textarea>
                 </div>
-
-                <!-- Panel: Resource Vault -->
-                <div id="drawer-panel-vault" class="space-y-3 hidden">
-                  ${resources.length === 0 ? `
-                    <div class="text-center py-12 text-slate-400 text-xs space-y-2">
-                      <span class="material-symbols-outlined text-3xl text-slate-300">folder_off</span>
-                      <p>Bài học này không có tệp tài liệu đính kèm nào.</p>
-                    </div>
-                  ` : `
-                    <div class="space-y-2.5">
-                      ${resources.map(r => `
-                        <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 space-y-2 text-xs">
-                          <div class="flex items-center justify-between gap-2">
-                            <div class="font-bold text-slate-900 dark:text-white truncate flex-1">${UI.escapeHtml(r.label || r.filename)}</div>
-                            <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                              <span class="material-symbols-outlined text-[12px]">verified</span> ClamAV Sạch
-                            </span>
-                          </div>
-                          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
-                            <span>Kích thước: ${r.file_size_formatted || 'Tệp giáo trình'}</span>
-                            <a href="${r.download_url || `/student/courses/${courseId}/files/${r.resource_id || r.id}/download`}" target="_blank" class="text-primary font-bold hover:underline flex items-center gap-0.5">
-                              Tải về <span class="material-symbols-outlined text-[14px]">download</span>
-                            </a>
-                          </div>
-                        </div>
-                      `).join('')}
-                    </div>
-                  `}
-                </div>
               </div>
             `,
             footerHtml: `
               <div class="flex items-center justify-between w-full">
                 <span class="text-[11px] text-slate-400">Bảo mật chuẩn PWD301 fail-closed</span>
-                <button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold" onclick="UI.closeDrawer()">
+                <button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer" onclick="UI.closeDrawer()">
                   Đóng
                 </button>
               </div>
@@ -1926,14 +1998,14 @@ class StudentView {
 
           if (tabNotes && tabVault) {
             tabNotes.onclick = () => {
-              tabNotes.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5';
-              tabVault.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5';
+              tabNotes.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5 cursor-pointer';
+              tabVault.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5 cursor-pointer';
               panelNotes.classList.remove('hidden');
               panelVault.classList.add('hidden');
             };
             tabVault.onclick = () => {
-              tabVault.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5';
-              tabNotes.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5';
+              tabVault.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5 cursor-pointer';
+              tabNotes.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5 cursor-pointer';
               panelVault.classList.remove('hidden');
               panelNotes.classList.add('hidden');
             };
@@ -1969,7 +2041,7 @@ class StudentView {
         };
       }
 
-      // 3. AI Prompt Chips handler
+      // 2. AI Prompt Chips handler
       container.querySelectorAll('#reader-ai-chips .ai-chip').forEach(chip => {
         chip.onclick = () => {
           const query = chip.dataset.query;
@@ -1977,7 +2049,7 @@ class StudentView {
         };
       });
 
-      // 4. Mark lesson completed handler
+      // 3. Mark lesson completed handler (Enforces 100% video watch)
       const completeBtn = document.getElementById('complete-lesson-btn');
       if (completeBtn) {
         completeBtn.onclick = async () => {
@@ -1985,15 +2057,64 @@ class StudentView {
             UI.showToast('Bạn đang xem thử bài giảng với quyền Giảng viên. Tiến độ học thử không ghi nhận vào CSDL sinh viên.', 'info');
             return;
           }
+          if (hasVideo && !isCompleted) {
+            UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
+            return;
+          }
           try {
             await ApiClient.recordLessonProgress(lessonId, 30, 1.0, true);
-            completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5';
-            completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành bài học</span>';
+            isCompleted = true;
+            completeBtn.disabled = false;
+            completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
+            completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành</span>';
             UI.showToast('Chúc mừng bạn đã hoàn thành bài học này!', 'success');
           } catch (e) {
             UI.showToast('Không thể lưu trạng thái bài học.', 'error');
           }
         };
+      }
+
+      // 4. Video Player Anti-Seek & 100% Watch Completion Guard
+      const videoEl = document.getElementById('lesson-stream-player');
+      if (videoEl && videoEl.tagName === 'VIDEO' && hasVideo && !isPreview) {
+        let maxWatchedTime = Math.max(0, lesson.progress?.seconds_spent || 0);
+
+        videoEl.addEventListener('timeupdate', () => {
+          if (videoEl.currentTime > maxWatchedTime + 1.5) {
+            videoEl.currentTime = maxWatchedTime;
+            UI.showToast('Khóa tua nhanh: Bạn cần xem tuần tự video bài học và không thể tua trước.', 'warning');
+          } else {
+            maxWatchedTime = Math.max(maxWatchedTime, videoEl.currentTime);
+            if (videoEl.duration > 0 && !isCompleted) {
+              const pct = Math.min(100, Math.floor((maxWatchedTime / videoEl.duration) * 100));
+              const txtEl = document.getElementById('complete-btn-text');
+              if (txtEl) txtEl.textContent = `Đã xem ${pct}% (Cần xem 100%)`;
+            }
+          }
+        });
+
+        videoEl.addEventListener('seeking', () => {
+          if (videoEl.currentTime > maxWatchedTime + 1.5) {
+            videoEl.currentTime = maxWatchedTime;
+            UI.showToast('Không thể tua trước: Bạn chỉ có thể xem lại đoạn đã học.', 'warning');
+          }
+        });
+
+        videoEl.addEventListener('ended', async () => {
+          if (isCompleted) return;
+          isCompleted = true;
+          try {
+            await ApiClient.recordLessonProgress(lessonId, Math.ceil(videoEl.duration || 60), 1.0, true);
+            if (completeBtn) {
+              completeBtn.disabled = false;
+              completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 shadow-sm cursor-default';
+              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span>Đã hoàn thành</span>';
+            }
+            UI.showToast('Chúc mừng! Bạn đã xem đủ 100% video và bài giảng đã hoàn thành.', 'success');
+          } catch (err) {
+            console.error('Error auto-completing lesson', err);
+          }
+        });
       }
 
       // 5. Heartbeat progress tracking (only for enrolled students, not preview mode)
@@ -2326,48 +2447,18 @@ class StudentView {
             </p>
           </div>
 
-          <!-- Attempts History List -->
-          <div class="space-y-3 text-left">
-            <div class="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 px-1">
+          <!-- Official Result Policy Card (Replaces Attempts List) -->
+          <div class="p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-left space-y-2">
+            <div class="flex items-center justify-between text-xs font-bold text-indigo-900 dark:text-indigo-300">
               <span class="flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px] text-primary">history</span>
-                Bảng điểm các lượt thi đã thực hiện (${attempts.length})
+                <span class="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400">verified</span>
+                <span>Kết quả Khảo thí Chính thức</span>
               </span>
-              <span class="text-[11px] text-slate-400">Giờ máy chủ: ${UI.formatDateTime(data.server_now_iso)}</span>
+              <span class="text-[11px] text-slate-500 font-normal">Quy chế: ${UI.escapeHtml(assess.scoring_policy === 'LATEST' ? 'Lần thi gần nhất' : 'Điểm cao nhất')}</span>
             </div>
-
-            <div class="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900">
-              ${attempts.length === 0 ? `
-                <div class="p-4 text-center text-xs text-slate-400">Chưa có dữ liệu lượt thi.</div>
-              ` : attempts.map((att, idx) => `
-                <div class="p-3.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                  <div class="space-y-0.5 min-w-0">
-                    <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                      <span>Lần ${att.attempt_number || idx + 1}</span>
-                      ${UI.statusBadge(att.status)}
-                      ${att.passed === true ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">Đạt</span>' : (att.passed === false ? '<span class="text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded">Chưa đạt</span>' : '')}
-                    </div>
-                    <div class="text-[11px] text-slate-400 flex items-center gap-2">
-                      <span>Nộp bài: ${att.submitted_at ? UI.formatDateTime(att.submitted_at) : (att.started_at ? UI.formatDateTime(att.started_at) : '—')}</span>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-3 shrink-0">
-                    <div class="text-right">
-                      ${att.is_score_released && att.raw_score !== null ? `
-                        <span class="font-mono font-bold text-base text-primary">${att.raw_score}</span><span class="text-[11px] text-slate-400">/${att.max_score || 10}đ</span>
-                      ` : `
-                        <span class="text-[11px] text-slate-400 italic">Chờ công bố điểm</span>
-                      `}
-                    </div>
-                    <a href="#/student/assessments/results?id=${att.attempt_id}" class="c-btn c-btn-sm c-btn-secondary flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[15px]">fact_check</span>
-                      <span>Chi tiết</span>
-                    </a>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Hệ thống lưu giữ điểm số chính thức theo quy chế của Giảng viên. Bấm nút bên dưới để mở toàn bộ bảng điểm và phiếu làm bài chi tiết.
+            </p>
           </div>
 
           <!-- Actions -->
@@ -3164,15 +3255,15 @@ class StudentView {
                 </div>
               </div>
 
-              <!-- Exam Attempts Pagination Card -->
-              <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-3.5 flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-700 dark:text-slate-300">
-                  Xem các lần Thi: <strong class="text-slate-900 dark:text-white font-bold ml-1">Lần 1</strong> <span class="text-slate-400 font-normal">/ 1</span>
-                </span>
-                <div class="flex items-center gap-1">
-                  <button class="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-300 cursor-not-allowed flex items-center justify-center text-xs" disabled>&lt;</button>
-                  <button class="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-300 cursor-not-allowed flex items-center justify-center text-xs" disabled>&gt;</button>
+              <!-- Official Result Policy Card (Replaces Attempts Pagination) -->
+              <div class="bg-indigo-50/70 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900/60 p-4 text-xs space-y-1.5 shadow-2xs">
+                <div class="flex items-center gap-1.5 font-bold text-indigo-900 dark:text-indigo-300">
+                  <span class="material-symbols-outlined text-[17px] text-indigo-600 dark:text-indigo-400">verified</span>
+                  <span>Kết quả Khảo thí Chính thức</span>
                 </div>
+                <p class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Kết quả hiển thị được ghi nhận theo quy chế: <strong class="text-slate-900 dark:text-white">${data.scoring_policy === 'LATEST' ? 'Lượt làm bài thi gần nhất' : 'Lượt thi đạt điểm cao nhất'}</strong> theo quy định khảo thí của Giảng viên.
+                </p>
               </div>
 
             </aside>
@@ -3779,16 +3870,16 @@ class StudentView {
             ${a.is_attempt_limit_reached ? `
               <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1">
                 <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                <span>Xem kết quả (${a.attempts_count || 0}/${a.attempt_limit})</span>
+                <span>Xem kết quả chính thức</span>
               </a>
             ` : (a.attempts_count > 0 ? `
-              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1" title="Xem kết quả lần trước">
-                <span class="material-symbols-outlined text-[15px]">history</span>
-                <span>Điểm</span>
+              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1" title="Xem kết quả chính thức">
+                <span class="material-symbols-outlined text-[15px]">fact_check</span>
+                <span>Xem kết quả</span>
               </a>
               <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
                 <span class="material-symbols-outlined text-[15px]">play_arrow</span>
-                <span>Thi lần ${(a.attempts_count || 0) + 1}</span>
+                <span>Làm bài thi</span>
               </a>
             ` : `
               <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
@@ -4116,26 +4207,35 @@ class StudentView {
         return;
       }
 
-      // Render fresh application form with streamlined single-column layout
+      // State for files
+      let cvSelectedFile = null;
+      let evidenceSelectedFiles = [];
+
+      // Render fresh application form with Warm Editorial single-column layout
       box.innerHTML = `
-        <div class="space-y-1 pb-2 border-b border-slate-100 dark:border-slate-800">
-          <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">Đăng ký trở thành Giảng viên</h1>
-          <p class="text-xs sm:text-sm text-slate-500">Chia sẻ kiến thức, kỹ năng thực chiến hoặc chuyên môn ngành ngách của bạn tới học viên trên nền tảng PWD301.</p>
+        <div class="space-y-1.5 pb-4 border-b border-slate-200/80 dark:border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[11px] font-bold tracking-wide uppercase">Cổng Học Viên</span>
+            <span class="text-xs text-slate-400">•</span>
+            <span class="text-xs text-slate-500">Gia nhập đội ngũ Giảng viên</span>
+          </div>
+          <h1 class="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">Đăng Ký Trở Thành Giảng Viên</h1>
+          <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Chia sẻ kiến thức chuyên môn, kỹ năng thực chiến và đồng hành cùng cộng đồng học viên PWD301.</p>
         </div>
 
-        <form id="become-instructor-form" class="space-y-6 pt-2 max-w-2xl" enctype="multipart/form-data">
+        <form id="become-instructor-form" class="space-y-7 pt-2 max-w-2xl" enctype="multipart/form-data">
           
           <!-- Section 1: Personal Information -->
           <div class="space-y-4">
-            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            <div class="flex items-center gap-2 pb-1.5 border-b border-slate-200/80 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               <span class="material-symbols-outlined text-[18px] text-primary">person</span>
               <span>1. Thông tin cá nhân & Định danh</span>
             </div>
 
             <!-- Full Name -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Họ và tên đầy đủ <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Họ và tên đầy đủ
               </label>
               <input
                 type="text"
@@ -4148,8 +4248,8 @@ class StudentView {
 
             <!-- Date of Birth -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Ngày sinh <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Ngày sinh
               </label>
               <input
                 type="date"
@@ -4161,36 +4261,36 @@ class StudentView {
 
             <!-- Phone Number -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Số điện thoại liên hệ <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Số điện thoại liên hệ
               </label>
               <input
                 type="tel"
                 name="phone_number"
                 required
-                placeholder="VD: 0912345678"
+                placeholder="VD: 0912 345 678"
                 class="c-input"
               />
             </div>
 
             <!-- Contact Email -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Email liên hệ <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Email liên hệ
               </label>
               <input
                 type="email"
                 name="contact_email"
                 required
-                placeholder="VD: nguyen.vana@example.com"
+                placeholder="VD: nguyen.vana@domain.com"
                 class="c-input"
               />
             </div>
 
             <!-- Citizen ID (CCCD) -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Số CCCD / CMND / Hộ chiếu <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Số CCCD / CMND / Hộ chiếu
               </label>
               <input
                 type="text"
@@ -4205,61 +4305,61 @@ class StudentView {
 
           <!-- Section 2: Specialization & Teaching Background -->
           <div class="space-y-4">
-            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            <div class="flex items-center gap-2 pb-1.5 border-b border-slate-200/80 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               <span class="material-symbols-outlined text-[18px] text-primary">school</span>
               <span>2. Chuyên môn & Lĩnh vực đào tạo</span>
             </div>
 
             <!-- Specialization -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Chuyên môn / Lĩnh vực giảng dạy chính <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Chuyên môn / Lĩnh vực giảng dạy chính
               </label>
               <input
                 type="text"
                 name="specialization"
                 required
-                placeholder="VD: Lập trình Next.js thực chiến, UI/UX Design Figma, SEO ngách, Cybersecurity..."
+                placeholder="VD: Lập trình Python chuyên sâu, UI/UX Product Design, Cloud Architecture..."
                 class="c-input"
               />
             </div>
 
             <!-- Statement of Purpose / Bio -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Giới thiệu bản thân & Định hướng giảng dạy <span class="text-rose-500">*</span>
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Giới thiệu bản thân & Định hướng giảng dạy
               </label>
               <textarea
                 name="statement"
                 rows="4"
                 required
-                placeholder="Tóm tắt ngắn về kinh nghiệm thực tế, các dự án nổi bật bạn từng tham gia và nội dung kiến thức bạn dự định chia sẻ tới học viên..."
+                placeholder="Tóm tắt kinh nghiệm thực tế, dự án tiêu biểu và nội dung kiến thức bạn dự định chia sẻ tới học viên..."
                 class="c-input resize-none"
               ></textarea>
             </div>
 
             <!-- Portfolio / GitHub / Website URL -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Đường dẫn Portfolio / GitHub / Website / Kênh chia sẻ (Tùy chọn)
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Đường dẫn Portfolio / GitHub / Website <span class="text-[11px] text-slate-400 font-normal lowercase">(không bắt buộc)</span>
               </label>
               <input
                 type="url"
                 name="portfolio_url"
-                placeholder="https://github.com/... hoặc https://behance.net/... hoặc https://myportfolio.dev"
+                placeholder="https://github.com/... hoặc https://behance.net/..."
                 class="c-input"
               />
             </div>
 
             <!-- Institution Name (Optional) -->
             <div class="space-y-1.5">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                Đơn vị công tác / Trường học / Tổ chức (Tùy chọn)
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Đơn vị công tác / Tổ chức <span class="text-[11px] text-slate-400 font-normal lowercase">(không bắt buộc)</span>
               </label>
               <input
                 type="text"
                 name="institution_name"
-                placeholder="VD: Freelance / Độc lập, hoặc Trường ĐH / Công ty công nghệ (để trống nếu làm tự do)"
+                placeholder="Để trống nếu hoạt động tự do / Freelancer"
                 class="c-input"
               />
             </div>
@@ -4267,7 +4367,7 @@ class StudentView {
 
           <!-- Section 3: Evidence & Verification Uploads -->
           <div class="space-y-4">
-            <div class="flex items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            <div class="flex items-center gap-2 pb-1.5 border-b border-slate-200/80 dark:border-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
               <span class="material-symbols-outlined text-[18px] text-primary">upload_file</span>
               <span>3. Hồ sơ năng lực & Minh chứng</span>
             </div>
@@ -4275,63 +4375,197 @@ class StudentView {
               Tải lên hồ sơ để Quản trị viên đối soát năng lực. Hỗ trợ tệp PDF, Word (DOCX) hoặc hình ảnh (PNG, JPG), tối đa 50MB/file.
             </p>
 
-            <!-- CV / Portfolio File (Required) -->
-            <div class="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-2">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
-                <span class="flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-[16px] text-primary">description</span>
-                  <span>Tệp CV hoặc Portfolio tóm tắt năng lực <span class="text-rose-500">*</span></span>
-                </span>
-                <span class="text-[10px] uppercase font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">Bắt buộc</span>
+            <!-- CV / Portfolio File Dropzone -->
+            <div class="space-y-2">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Tệp CV hoặc Portfolio tóm tắt năng lực
               </label>
-              <input
-                type="file"
-                name="cv_file"
-                id="cv_file_input"
-                required
-                accept=".pdf,.docx,.png,.jpg,.jpeg"
-                class="c-input text-xs"
-              />
-              <p class="text-[11px] text-slate-500">Đính kèm bản CV, Resume hoặc Portfolio PDF thể hiện kỹ năng, dự án thực tế hoặc kinh nghiệm của bạn.</p>
+              <div id="cv-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary dark:hover:border-primary rounded-2xl p-5 text-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30">
+                <input type="file" id="cv_file_input" name="cv_file" accept=".pdf,.docx,.png,.jpg,.jpeg" class="hidden" />
+                <div id="cv-empty-view" class="space-y-1 pointer-events-none">
+                  <span class="material-symbols-outlined text-[32px] text-primary">cloud_upload</span>
+                  <div class="text-xs font-bold text-slate-700 dark:text-slate-200">Bấm hoặc kéo thả tệp CV / Portfolio vào đây</div>
+                  <div class="text-[11px] text-slate-400">PDF, DOCX, PNG, JPG (Tối đa 50MB)</div>
+                </div>
+                <div id="cv-selected-view" class="hidden flex items-center justify-between p-2.5 rounded-xl bg-primary/10 border border-primary/20 text-left">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-outlined text-[20px] text-primary">description</span>
+                    <div class="min-w-0">
+                      <div id="cv-file-name" class="font-bold text-xs text-slate-900 dark:text-white truncate">cv.pdf</div>
+                      <div id="cv-file-size" class="text-[10px] text-slate-500 font-mono">0 KB</div>
+                    </div>
+                  </div>
+                  <button type="button" id="cv-remove-btn" class="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors" title="Bỏ chọn tệp">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <!-- Additional Evidence Files (Optional) -->
-            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px] text-indigo-600">folder_open</span>
-                <span>Chứng chỉ, bằng cấp hoặc minh chứng năng lực bổ sung (Tùy chọn)</span>
+            <!-- Additional Evidence Files Dropzone -->
+            <div class="space-y-2">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Chứng chỉ, bằng cấp hoặc minh chứng bổ sung <span class="text-[11px] text-slate-400 font-normal lowercase">(không bắt buộc)</span>
               </label>
-              <input
-                type="file"
-                name="evidence_files"
-                multiple
-                accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx"
-                class="c-input text-xs"
-              />
+              <div id="evidence-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary dark:hover:border-primary rounded-2xl p-4 text-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30">
+                <input type="file" id="evidence_files_input" name="evidence_files" multiple accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" class="hidden" />
+                <div class="flex items-center justify-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 pointer-events-none">
+                  <span class="material-symbols-outlined text-[20px] text-slate-400">attach_file</span>
+                  <span>Bấm hoặc kéo thả để chọn thêm tệp minh chứng</span>
+                </div>
+                <div class="text-[11px] text-slate-400 mt-0.5 pointer-events-none">Bằng tốt nghiệp, chứng chỉ nghề, hợp đồng giảng dạy...</div>
+              </div>
+              <div id="evidence-files-list" class="space-y-1.5 empty:hidden pt-1"></div>
             </div>
           </div>
 
           <!-- Submit Button -->
-          <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+          <div class="pt-6 border-t border-slate-200/80 dark:border-slate-800 flex justify-end">
             <button
               type="submit"
               id="submit-nomination-btn"
-              class="c-btn c-btn-primary c-btn-md flex items-center gap-1.5 shadow-sm"
+              class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
             >
-              <span>Gửi hồ sơ xét duyệt</span>
+              <span>Gửi Hồ Sơ Xét Duyệt</span>
               <span class="material-symbols-outlined text-[16px]">send</span>
             </button>
           </div>
         </form>
       `;
 
+      // Wire CV Dropzone
+      const cvDropzone = document.getElementById('cv-dropzone');
+      const cvInput = document.getElementById('cv_file_input');
+      const cvEmptyView = document.getElementById('cv-empty-view');
+      const cvSelectedView = document.getElementById('cv-selected-view');
+      const cvFileName = document.getElementById('cv-file-name');
+      const cvFileSize = document.getElementById('cv-file-size');
+      const cvRemoveBtn = document.getElementById('cv-remove-btn');
+
+      const setCvFile = (file) => {
+        if (!file) {
+          cvSelectedFile = null;
+          if (cvInput) cvInput.value = '';
+          cvEmptyView?.classList.remove('hidden');
+          cvSelectedView?.classList.add('hidden');
+          return;
+        }
+        cvSelectedFile = file;
+        if (cvFileName) cvFileName.textContent = file.name;
+        if (cvFileSize) cvFileSize.textContent = UI.formatBytes(file.size);
+        cvEmptyView?.classList.add('hidden');
+        cvSelectedView?.classList.remove('hidden');
+      };
+
+      cvDropzone?.addEventListener('click', (e) => {
+        if (e.target.closest('#cv-remove-btn')) return;
+        cvInput?.click();
+      });
+
+      cvInput?.addEventListener('change', () => {
+        if (cvInput.files && cvInput.files[0]) {
+          setCvFile(cvInput.files[0]);
+        }
+      });
+
+      cvRemoveBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setCvFile(null);
+      });
+
+      cvDropzone?.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        cvDropzone.classList.add('border-primary', 'bg-primary/5');
+      });
+      cvDropzone?.addEventListener('dragleave', () => {
+        cvDropzone.classList.remove('border-primary', 'bg-primary/5');
+      });
+      cvDropzone?.addEventListener('drop', (e) => {
+        e.preventDefault();
+        cvDropzone.classList.remove('border-primary', 'bg-primary/5');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          setCvFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Wire Evidence Dropzone
+      const evDropzone = document.getElementById('evidence-dropzone');
+      const evInput = document.getElementById('evidence_files_input');
+      const evList = document.getElementById('evidence-files-list');
+
+      const renderEvidenceList = () => {
+        if (!evList) return;
+        if (evidenceSelectedFiles.length === 0) {
+          evList.innerHTML = '';
+          return;
+        }
+        evList.innerHTML = evidenceSelectedFiles.map((file, idx) => `
+          <div class="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="material-symbols-outlined text-[16px] text-slate-400">attach_file</span>
+              <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(file.name)}</span>
+              <span class="text-[10px] text-slate-400 font-mono">(${UI.formatBytes(file.size)})</span>
+            </div>
+            <button type="button" data-idx="${idx}" class="remove-ev-btn p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors" title="Xóa tệp này">
+              <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        `).join('');
+
+        evList.querySelectorAll('.remove-ev-btn').forEach(btn => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx, 10);
+            evidenceSelectedFiles.splice(idx, 1);
+            renderEvidenceList();
+          };
+        });
+      };
+
+      evDropzone?.addEventListener('click', () => {
+        evInput?.click();
+      });
+
+      evInput?.addEventListener('change', () => {
+        if (evInput.files) {
+          for (let i = 0; i < evInput.files.length; i++) {
+            const f = evInput.files[i];
+            if (!evidenceSelectedFiles.some(item => item.name === f.name && item.size === f.size)) {
+              evidenceSelectedFiles.push(f);
+            }
+          }
+          renderEvidenceList();
+        }
+      });
+
+      evDropzone?.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        evDropzone.classList.add('border-primary', 'bg-primary/5');
+      });
+      evDropzone?.addEventListener('dragleave', () => {
+        evDropzone.classList.remove('border-primary', 'bg-primary/5');
+      });
+      evDropzone?.addEventListener('drop', (e) => {
+        e.preventDefault();
+        evDropzone.classList.remove('border-primary', 'bg-primary/5');
+        if (e.dataTransfer.files) {
+          for (let i = 0; i < e.dataTransfer.files.length; i++) {
+            const f = e.dataTransfer.files[i];
+            if (!evidenceSelectedFiles.some(item => item.name === f.name && item.size === f.size)) {
+              evidenceSelectedFiles.push(f);
+            }
+          }
+          renderEvidenceList();
+        }
+      });
+
+      // Submit Form
       document.getElementById('become-instructor-form').onsubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
         const btn = document.getElementById('submit-nomination-btn');
 
-        const cvInput = document.getElementById('cv_file_input');
-        if (!cvInput || !cvInput.files || cvInput.files.length === 0) {
+        if (!cvSelectedFile && (!cvInput || !cvInput.files || cvInput.files.length === 0)) {
           UI.showToast('Vui lòng tải lên tệp CV hoặc Portfolio để hoàn tất đăng ký.', 'warning');
           return;
         }
@@ -4340,6 +4574,17 @@ class StudentView {
         btn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang tải lên và gửi hồ sơ...';
 
         const formData = new FormData(form);
+
+        // Ensure cv_file is the actual selected file
+        if (cvSelectedFile) {
+          formData.set('cv_file', cvSelectedFile);
+        }
+
+        // Populate evidence_files
+        formData.delete('evidence_files');
+        for (const f of evidenceSelectedFiles) {
+          formData.append('evidence_files', f);
+        }
 
         const specialization = (form.specialization?.value || '').trim();
         const rawInstitution = (form.institution_name?.value || '').trim();
@@ -4359,12 +4604,576 @@ class StudentView {
         } catch (err) {
           UI.showToast(err.message || 'Lỗi gửi hồ sơ.', 'error');
           btn.disabled = false;
-          btn.innerHTML = '<span>Gửi hồ sơ xét duyệt</span> <span class="material-symbols-outlined text-[16px]">send</span>';
+          btn.innerHTML = '<span>Gửi Hồ Sơ Xét Duyệt</span> <span class="material-symbols-outlined text-[16px]">send</span>';
         }
       };
 
     } catch (err) {
       container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp thông tin: ${UI.escapeHtml(err.message)}</div>`;
+    }
+  }
+  // =========================================================================
+  // Settings: Profile, Password Security & Notification Preferences
+  // =========================================================================
+  static async renderSettings(container) {
+    container.innerHTML = `
+      <div class="max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
+        <div class="p-8 text-center text-slate-400">
+          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+          <p class="text-sm">Đang nạp dữ liệu hồ sơ và cài đặt tài khoản...</p>
+        </div>
+      </div>
+    `;
+
+    try {
+      const [profileRes, prefsRes] = await Promise.allSettled([
+        ApiClient.getProfile(),
+        ApiClient.getPreferences()
+      ]);
+
+      const profile = (profileRes.status === 'fulfilled' && profileRes.value?.profile) 
+        ? profileRes.value.profile 
+        : (window.app?.currentUser || {});
+
+      const preferences = (prefsRes.status === 'fulfilled' && prefsRes.value?.preferences)
+        ? prefsRes.value.preferences
+        : { email_course: true, email_assessment: true, email_grade: true, email_marketing: false };
+
+      const userInitials = (profile.display_name || profile.email || 'U')
+        .split(' ')
+        .map(w => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+
+      container.innerHTML = `
+        <div class="max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
+          
+          <!-- Page Header -->
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[24px]">settings</span>
+                <h1 class="text-xl font-bold text-slate-900 dark:text-white">Cài Đặt Tài Khoản</h1>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">Quản lý thông tin định danh cá nhân, an toàn mật khẩu và tùy chọn nhận thông báo học vụ.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>${UI.escapeHtml(profile.email || '')}</span>
+            </div>
+          </div>
+
+          <!-- Navigation Segmented Tabs -->
+          <div class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+            <button type="button" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-xs" data-tab="profile">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">person</span>
+                Hồ Sơ Cá Nhân
+              </span>
+            </button>
+            <button type="button" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" data-tab="security">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">lock</span>
+                Bảo Mật & Mật Khẩu
+              </span>
+            </button>
+            <button type="button" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" data-tab="notifications">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">notifications</span>
+                Tùy Chọn Thông Báo
+              </span>
+            </button>
+          </div>
+
+          <!-- Tab Pane 1: Profile (Hồ sơ cá nhân) -->
+          <div id="settings-pane-profile" class="settings-pane space-y-6">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              
+              <div class="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
+                <!-- Avatar Visual Box -->
+                <div class="relative group shrink-0 text-center">
+                  <div id="avatar-preview-box" class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-2xl flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-md">
+                    ${profile.avatar_url ? `
+                      <img src="${UI.escapeHtml(profile.avatar_url)}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview-img" onerror="this.remove();" />
+                    ` : `
+                      <span id="avatar-preview-initials">${userInitials}</span>
+                    `}
+                  </div>
+                  <span class="text-[10px] text-slate-400 mt-2 block font-medium">Ảnh đại diện</span>
+                </div>
+
+                <div class="flex-1 space-y-3 w-full">
+                  <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Đường dẫn ảnh đại diện (Avatar URL)</label>
+                    <input type="url" id="settings-avatar-url" placeholder="https://example.com/avatar.jpg" value="${UI.escapeHtml(profile.avatar_url || '')}" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-primary transition-colors" />
+                    <p class="text-[11px] text-slate-400 mt-1">Dán liên kết ảnh trực tiếp (PNG, JPG, WebP) hoặc sử dụng ảnh đại diện mặc định.</p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="btn-avatar-default" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors">
+                      Dùng chữ cái viết tắt
+                    </button>
+                    <button type="button" id="btn-avatar-preset" class="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition-colors">
+                      Tạo Avatar ngẫu nhiên
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Profile Fields Form -->
+              <form id="profile-settings-form" class="space-y-5">
+                <div>
+                  <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                    Họ và tên hiển thị <span class="text-rose-500">*</span>
+                  </label>
+                  <input type="text" id="settings-display-name" required minlength="2" maxlength="100" placeholder="Nhập họ và tên của bạn..." value="${UI.escapeHtml(profile.display_name || '')}" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors shadow-2xs" />
+                  <p class="text-[11px] text-slate-400 mt-1">Tên này sẽ hiển thị trên bảng điểm, chứng nhận và diễn đàn trao đổi học thuật.</p>
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Email đăng nhập & định danh
+                    </label>
+                    <span class="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Không thể sửa</span>
+                  </div>
+                  <input type="email" disabled value="${UI.escapeHtml(profile.email || '')}" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-xs sm:text-sm text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed font-mono" />
+                  <p class="text-[11px] text-slate-400 mt-1">Email là định danh bất biến phục vụ xác thực bảo mật và cấp chứng chỉ khảo thí.</p>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                    Vai trò hiện tại trong hệ thống
+                  </label>
+                  <div class="flex flex-wrap gap-2">
+                    ${(profile.roles || ['STUDENT']).map(r => `
+                      <span class="px-3 py-1 rounded-xl bg-primary-subtle text-primary border border-primary/20 text-xs font-bold flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[14px]">verified</span>
+                        ${r === 'ADMIN' ? 'Quản trị viên (ADMIN)' : (r === 'INSTRUCTOR' ? 'Giảng viên (INSTRUCTOR)' : 'Sinh viên (STUDENT)')}
+                      </span>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button type="submit" id="btn-save-profile" class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs sm:text-sm font-bold transition-all shadow-sm flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px]">save</span>
+                    <span>Lưu Thay Đổi Hồ Sơ</span>
+                  </button>
+                </div>
+              </form>
+
+            </div>
+          </div>
+
+          <!-- Tab Pane 2: Security & Password (Bảo mật & Mật khẩu) -->
+          <div id="settings-pane-security" class="settings-pane hidden space-y-6">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              
+              <div class="p-4 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 text-amber-900 dark:text-amber-300 text-xs space-y-1">
+                <div class="font-bold flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-amber-600 text-[18px]">security</span>
+                  Chính sách bảo mật mật khẩu tài khoản:
+                </div>
+                <p class="leading-relaxed text-amber-800/90 dark:text-amber-400/90">
+                  Mật khẩu mới phải có độ dài tối thiểu 8 ký tự, bao gồm cả chữ cái và chữ số. Sau khi đổi mật khẩu, phiên đăng nhập hiện tại sẽ được bảo lưu an toàn.
+                </p>
+              </div>
+
+              <form id="password-settings-form" class="space-y-5">
+                <div>
+                  <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                    Mật khẩu hiện tại <span class="text-rose-500">*</span>
+                  </label>
+                  <div class="relative">
+                    <input type="password" id="settings-curr-password" required placeholder="Nhập mật khẩu đang sử dụng..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-curr-password">
+                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                    Mật khẩu mới <span class="text-rose-500">*</span>
+                  </label>
+                  <div class="relative">
+                    <input type="password" id="settings-new-password" required minlength="8" placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-new-password">
+                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    </button>
+                  </div>
+
+                  <!-- Realtime Password Strength Checklist -->
+                  <div class="mt-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-1 text-xs">
+                    <div class="flex items-center gap-2 text-slate-500" id="pwd-check-len">
+                      <span class="material-symbols-outlined text-[14px]">cancel</span>
+                      <span>Độ dài từ 8 ký tự trở lên</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500" id="pwd-check-letter">
+                      <span class="material-symbols-outlined text-[14px]">cancel</span>
+                      <span>Chứa ít nhất một chữ cái (A-Z hoặc a-z)</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500" id="pwd-check-digit">
+                      <span class="material-symbols-outlined text-[14px]">cancel</span>
+                      <span>Chứa ít nhất một chữ số (0-9)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+                    Xác nhận mật khẩu mới <span class="text-rose-500">*</span>
+                  </label>
+                  <div class="relative">
+                    <input type="password" id="settings-conf-password" required minlength="8" placeholder="Nhập lại mật khẩu mới..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-conf-password">
+                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    </button>
+                  </div>
+                  <div id="pwd-match-feedback" class="text-[11px] font-bold mt-1 text-slate-400"></div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button type="submit" id="btn-save-password" class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs sm:text-sm font-bold transition-all shadow-sm flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px]">key</span>
+                    <span>Cập Nhật Mật Khẩu</span>
+                  </button>
+                </div>
+              </form>
+
+            </div>
+          </div>
+
+          <!-- Tab Pane 3: Notification Preferences (Tùy chọn thông báo) -->
+          <div id="settings-pane-notifications" class="settings-pane hidden space-y-6">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span class="material-symbols-outlined text-primary text-[18px]">mail</span>
+                  Kênh nhận thông báo học vụ & sự kiện
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Tùy biến các danh mục sự kiện bạn muốn nhận qua chuông thông báo hệ thống và email liên kết.</p>
+              </div>
+
+              <div class="divide-y divide-slate-100 dark:divide-slate-800 text-xs sm:text-sm">
+                
+                <!-- Pref 1: Course -->
+                <div class="py-4 flex items-center justify-between gap-4">
+                  <div class="space-y-0.5">
+                    <div class="font-bold text-slate-800 dark:text-slate-200">Thông báo tiến độ khóa học</div>
+                    <div class="text-xs text-slate-400">Nhận cập nhật khi có bài giảng mới, tài liệu bổ trợ hoặc bài đăng trao đổi từ giảng viên.</div>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" id="pref-email-course" class="sr-only peer" ${preferences.email_course !== false ? 'checked' : ''}>
+                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <!-- Pref 2: Assessment -->
+                <div class="py-4 flex items-center justify-between gap-4">
+                  <div class="space-y-0.5">
+                    <div class="font-bold text-slate-800 dark:text-slate-200">Thông báo khảo thí & bài kiểm tra</div>
+                    <div class="text-xs text-slate-400">Nhắc nhở lịch mở phòng thi, thời hạn nộp bài tập và cảnh báo đếm ngược thời gian.</div>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" id="pref-email-assessment" class="sr-only peer" ${preferences.email_assessment !== false ? 'checked' : ''}>
+                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <!-- Pref 3: Grade -->
+                <div class="py-4 flex items-center justify-between gap-4">
+                  <div class="space-y-0.5">
+                    <div class="font-bold text-slate-800 dark:text-slate-200">Kết quả đánh giá & Điểm số</div>
+                    <div class="text-xs text-slate-400">Thông báo ngay khi bài thi hoàn tất chấm điểm tự động hoặc giảng viên trả nhận xét chi tiết.</div>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" id="pref-email-grade" class="sr-only peer" ${preferences.email_grade !== false ? 'checked' : ''}>
+                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+                <!-- Pref 4: Marketing / News -->
+                <div class="py-4 flex items-center justify-between gap-4">
+                  <div class="space-y-0.5">
+                    <div class="font-bold text-slate-800 dark:text-slate-200">Bản tin học thuật & Khóa học mới</div>
+                    <div class="text-xs text-slate-400">Khám phá các khóa học gợi ý dựa trên năng lực và thông tin hội thảo công nghệ.</div>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" id="pref-email-marketing" class="sr-only peer" ${preferences.email_marketing === true ? 'checked' : ''}>
+                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+
+              </div>
+
+              <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                <button type="button" id="btn-save-preferences" class="px-6 py-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs sm:text-sm font-bold transition-all shadow-sm flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[18px]">check_circle</span>
+                  <span>Lưu Tùy Chọn Thông Báo</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      `;
+
+      // 1. Tab Switching Handlers
+      const tabBtns = container.querySelectorAll('.settings-tab-btn');
+      const panes = {
+        profile: container.querySelector('#settings-pane-profile'),
+        security: container.querySelector('#settings-pane-security'),
+        notifications: container.querySelector('#settings-pane-notifications')
+      };
+
+      tabBtns.forEach(btn => {
+        btn.onclick = () => {
+          const tabKey = btn.dataset.tab;
+          tabBtns.forEach(b => {
+            b.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700';
+          });
+          btn.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-xs';
+
+          Object.keys(panes).forEach(k => {
+            if (panes[k]) {
+              if (k === tabKey) panes[k].classList.remove('hidden');
+              else panes[k].classList.add('hidden');
+            }
+          });
+        };
+      });
+
+      // 2. Avatar Actions & Live Preview
+      const avatarInput = container.querySelector('#settings-avatar-url');
+      const avatarBox = container.querySelector('#avatar-preview-box');
+
+      const updateAvatarPreview = (url) => {
+        if (url && url.startsWith('http')) {
+          avatarBox.innerHTML = `<img src="${UI.escapeHtml(url)}" alt="Avatar" class="w-full h-full object-cover" onerror="this.remove();" />`;
+        } else {
+          avatarBox.innerHTML = `<span id="avatar-preview-initials">${userInitials}</span>`;
+        }
+      };
+
+      if (avatarInput) {
+        avatarInput.oninput = () => {
+          updateAvatarPreview(avatarInput.value.trim());
+        };
+      }
+
+      const btnAvatarDefault = container.querySelector('#btn-avatar-default');
+      if (btnAvatarDefault) {
+        btnAvatarDefault.onclick = () => {
+          if (avatarInput) avatarInput.value = '';
+          updateAvatarPreview('');
+        };
+      }
+
+      const btnAvatarPreset = container.querySelector('#btn-avatar-preset');
+      if (btnAvatarPreset) {
+        btnAvatarPreset.onclick = () => {
+          const seed = Math.random().toString(36).substring(2, 8);
+          const generatedUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}`;
+          if (avatarInput) avatarInput.value = generatedUrl;
+          updateAvatarPreview(generatedUrl);
+        };
+      }
+
+      // 3. Profile Save Handler
+      const profileForm = container.querySelector('#profile-settings-form');
+      if (profileForm) {
+        profileForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const nameInput = container.querySelector('#settings-display-name');
+          const saveBtn = container.querySelector('#btn-save-profile');
+          const newName = nameInput ? nameInput.value.trim() : '';
+          const newAvatar = avatarInput ? avatarInput.value.trim() : '';
+
+          if (!newName || newName.length < 2) {
+            UI.showToast('Vui lòng nhập họ và tên hiển thị hợp lệ (tối thiểu 2 ký tự).', 'warning');
+            return;
+          }
+
+          if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang lưu...';
+          }
+
+          try {
+            const res = await ApiClient.updateProfile({
+              display_name: newName,
+              avatar_url: newAvatar
+            });
+
+            UI.showToast('Cập nhật thông tin hồ sơ cá nhân thành công!', 'success');
+            if (window.app && window.app.currentUser) {
+              window.app.currentUser.display_name = newName;
+              if (newAvatar) window.app.currentUser.avatar_url = newAvatar;
+            }
+
+            // Synchronize topbar user display name and initials
+            const topbarNameEl = document.getElementById('topbar-user-name');
+            if (topbarNameEl) topbarNameEl.textContent = newName;
+
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi cập nhật hồ sơ.', 'error');
+          } finally {
+            if (saveBtn) {
+              saveBtn.disabled = false;
+              saveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">save</span><span>Lưu Thay Đổi Hồ Sơ</span>';
+            }
+          }
+        };
+      }
+
+      // 4. Password Toggle & Validation
+      container.querySelectorAll('.toggle-pwd-visibility').forEach(btn => {
+        btn.onclick = () => {
+          const targetId = btn.dataset.target;
+          const input = container.querySelector('#' + targetId);
+          if (input) {
+            if (input.type === 'password') {
+              input.type = 'text';
+              btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility_off</span>';
+            } else {
+              input.type = 'password';
+              btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility</span>';
+            }
+          }
+        };
+      });
+
+      const newPwdInput = container.querySelector('#settings-new-password');
+      const confPwdInput = container.querySelector('#settings-conf-password');
+      const checkLen = container.querySelector('#pwd-check-len');
+      const checkLetter = container.querySelector('#pwd-check-letter');
+      const checkDigit = container.querySelector('#pwd-check-digit');
+      const matchFeedback = container.querySelector('#pwd-match-feedback');
+
+      const validatePwdRealtime = () => {
+        const val = newPwdInput ? newPwdInput.value : '';
+        const confVal = confPwdInput ? confPwdInput.value : '';
+
+        const hasLen = val.length >= 8;
+        const hasLetter = /[a-zA-Z]/.test(val);
+        const hasDigit = /[0-9]/.test(val);
+
+        if (checkLen) {
+          checkLen.className = `flex items-center gap-2 ${hasLen ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkLen.querySelector('.material-symbols-outlined').textContent = hasLen ? 'check_circle' : 'cancel';
+        }
+        if (checkLetter) {
+          checkLetter.className = `flex items-center gap-2 ${hasLetter ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkLetter.querySelector('.material-symbols-outlined').textContent = hasLetter ? 'check_circle' : 'cancel';
+        }
+        if (checkDigit) {
+          checkDigit.className = `flex items-center gap-2 ${hasDigit ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkDigit.querySelector('.material-symbols-outlined').textContent = hasDigit ? 'check_circle' : 'cancel';
+        }
+
+        if (matchFeedback && confVal) {
+          if (val === confVal) {
+            matchFeedback.textContent = '✓ Mật khẩu xác nhận trùng khớp.';
+            matchFeedback.className = 'text-[11px] font-bold mt-1 text-emerald-600';
+          } else {
+            matchFeedback.textContent = '✕ Mật khẩu xác nhận chưa khớp.';
+            matchFeedback.className = 'text-[11px] font-bold mt-1 text-rose-500';
+          }
+        } else if (matchFeedback) {
+          matchFeedback.textContent = '';
+        }
+      };
+
+      if (newPwdInput) newPwdInput.oninput = validatePwdRealtime;
+      if (confPwdInput) confPwdInput.oninput = validatePwdRealtime;
+
+      // Password Submit
+      const passwordForm = container.querySelector('#password-settings-form');
+      if (passwordForm) {
+        passwordForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const currInput = container.querySelector('#settings-curr-password');
+          const savePwdBtn = container.querySelector('#btn-save-password');
+
+          const currVal = currInput ? currInput.value : '';
+          const newVal = newPwdInput ? newPwdInput.value : '';
+          const confVal = confPwdInput ? confPwdInput.value : '';
+
+          if (!currVal) {
+            UI.showToast('Vui lòng nhập mật khẩu hiện tại.', 'warning');
+            return;
+          }
+          if (newVal.length < 8) {
+            UI.showToast('Mật khẩu mới phải có tối thiểu 8 ký tự.', 'warning');
+            return;
+          }
+          if (newVal !== confVal) {
+            UI.showToast('Mật khẩu xác nhận không khớp.', 'warning');
+            return;
+          }
+
+          if (savePwdBtn) {
+            savePwdBtn.disabled = true;
+            savePwdBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang cập nhật...';
+          }
+
+          try {
+            await ApiClient.changePassword(currVal, newVal, confVal);
+            UI.showToast('Cập nhật mật khẩu thành công! Hãy ghi nhớ mật khẩu mới.', 'success');
+            passwordForm.reset();
+            validatePwdRealtime();
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi đổi mật khẩu.', 'error');
+          } finally {
+            if (savePwdBtn) {
+              savePwdBtn.disabled = false;
+              savePwdBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">key</span><span>Cập Nhật Mật Khẩu</span>';
+            }
+          }
+        };
+      }
+
+      // 5. Preferences Save Handler
+      const savePrefsBtn = container.querySelector('#btn-save-preferences');
+      if (savePrefsBtn) {
+        savePrefsBtn.onclick = async () => {
+          const prefCourse = container.querySelector('#pref-email-course')?.checked ?? true;
+          const prefAssessment = container.querySelector('#pref-email-assessment')?.checked ?? true;
+          const prefGrade = container.querySelector('#pref-email-grade')?.checked ?? true;
+          const prefMarketing = container.querySelector('#pref-email-marketing')?.checked ?? false;
+
+          savePrefsBtn.disabled = true;
+          savePrefsBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang lưu...';
+
+          try {
+            await ApiClient.updatePreferences({
+              email_course: prefCourse,
+              email_assessment: prefAssessment,
+              email_grade: prefGrade,
+              email_marketing: prefMarketing
+            });
+            UI.showToast('Đã lưu tùy chọn nhận thông báo học vụ thành công!', 'success');
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi cập nhật tùy chọn thông báo.', 'error');
+          } finally {
+            savePrefsBtn.disabled = false;
+            savePrefsBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check_circle</span><span>Lưu Tùy Chọn Thông Báo</span>';
+          }
+        };
+      }
+
+    } catch (err) {
+      console.error('Settings load error:', err);
+      container.innerHTML = `
+        <div class="max-w-xl mx-auto p-8 text-center text-rose-500">
+          <p class="font-bold">Lỗi nạp thông tin cài đặt: ${UI.escapeHtml(err.message || 'Lỗi hệ thống')}</p>
+          <button type="button" class="mt-4 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="StudentView.renderSettings(document.getElementById('main-content'))">Thử lại</button>
+        </div>
+      `;
     }
   }
 }

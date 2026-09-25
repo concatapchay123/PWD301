@@ -1122,15 +1122,58 @@ def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
 
     details = app_record.parsed_details
     attached_files = details.get("attached_files", [])
-    matched_meta = next((f for f in attached_files if f.get("saved_filename") == safe_name), None)
-    download_name = matched_meta.get("original_name", safe_name) if matched_meta else safe_name
+    matched_meta = next(
+        (
+            f
+            for f in attached_files
+            if (
+                f.get("saved_filename") == safe_name
+                or f.get("file") == safe_name
+                or f.get("name") == safe_name
+                or secure_filename(str(f.get("saved_filename") or f.get("file") or "")) == safe_name
+            )
+        ),
+        None,
+    )
+    download_name = (
+        matched_meta.get("original_name") or matched_meta.get("name") or safe_name
+        if matched_meta
+        else safe_name
+    )
 
     storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
-    applicant_key = str(app_record.applicant.public_id) if app_record.applicant else ""
-    app_dir = storage_root / "instructor_applications" / applicant_key
-    file_path = (app_dir / safe_name).resolve()
+    candidate_dirs: list[Path] = []
+    app_dir_base = storage_root / "instructor_applications"
+    if app_record.applicant:
+        if getattr(app_record.applicant, "public_id", None):
+            candidate_dirs.append(app_dir_base / str(app_record.applicant.public_id))
+        if getattr(app_record.applicant, "id", None):
+            candidate_dirs.append(app_dir_base / str(app_record.applicant.id))
+    if getattr(app_record, "applicant_user_id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.applicant_user_id))
+    if getattr(app_record, "public_id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.public_id))
+    if getattr(app_record, "id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.id))
 
-    if not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
+    file_path: Path | None = None
+    target_names = [safe_name]
+    if matched_meta:
+        for k in ("saved_filename", "file", "name"):
+            val = secure_filename(str(matched_meta.get(k) or ""))
+            if val and val not in target_names:
+                target_names.append(val)
+
+    for c_dir in candidate_dirs:
+        for t_name in target_names:
+            test_p = (c_dir / t_name).resolve()
+            if str(test_p).startswith(str(storage_root)) and test_p.is_file():
+                file_path = test_p
+                break
+        if file_path:
+            break
+
+    if not file_path or not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
         raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
 
     return send_file(

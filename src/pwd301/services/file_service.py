@@ -1641,13 +1641,29 @@ def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
         if course_id
         else f"/student/files/{file_asset_id}/download"
     )
+    serialized_fa = _serialize_file_asset(fa) if fa else None
+    orig_filename = (
+        (serialized_fa.get("original_filename") or serialized_fa.get("filename") or res.label)
+        if serialized_fa
+        else (res.label or "Tài liệu bài học")
+    )
+    byte_sz = serialized_fa.get("byte_size", 0) if serialized_fa else 0
+    mime = (
+        serialized_fa.get("mime_type", "application/octet-stream")
+        if serialized_fa
+        else "application/octet-stream"
+    )
+
     return {
         "resource_id": str(res.public_id),
         "lesson_id": str(res.lesson.public_id) if res.lesson else None,
-        "title": res.label or (fa.display_name if fa else None),
+        "title": res.label or (fa.display_name if fa else orig_filename),
         "label": res.label,
+        "filename": orig_filename,
+        "byte_size": byte_sz,
+        "mime_type": mime,
         "download_url": download_url,
-        "file_asset": _serialize_file_asset(fa) if fa else None,
+        "file_asset": serialized_fa,
         "position": res.position,
         "is_required": res.is_required,
         "created_at": res.created_at.isoformat() if res.created_at else None,

@@ -199,6 +199,61 @@ class User(Base, UserMixin):
         return check_password_hash(self.password_hash, password)
 
     @property
+    def admin_sub_role(self) -> str | None:
+        """Return admin sub-role code if user is admin, else None."""
+        if not self.is_admin:
+            return None
+        for link in getattr(self, "user_role_links", []):
+            role_code = getattr(getattr(link, "role", None), "code", "")
+            if role_code == "ADMIN":
+                reason = getattr(link, "assignment_reason", "") or ""
+                for part in reason.split("|"):
+                    part = part.strip()
+                    if part.startswith("SUB_ROLE:"):
+                        code = part.split(":", 1)[1].strip()
+                        if code in (
+                            "ADMIN_PRIMARY",
+                            "ADMIN_COURSE_REVIEW",
+                            "ADMIN_INSTRUCTOR_REVIEW",
+                            "ADMIN_TEACHING_ASSIGNMENT",
+                            "ADMIN_SYSTEM_MONITORING",
+                        ):
+                            return code
+        return "ADMIN_PRIMARY"
+
+    @property
+    def is_primary_admin(self) -> bool:
+        """Return True if user is the primary / super administrator."""
+        return self.is_admin and self.admin_sub_role == "ADMIN_PRIMARY"
+
+    @property
+    def admin_sub_role_label(self) -> str:
+        """Return user-friendly Vietnamese label for admin sub-role."""
+        labels = {
+            "ADMIN_PRIMARY": "Admin chính",
+            "ADMIN_COURSE_REVIEW": "Admin duyệt khóa học",
+            "ADMIN_INSTRUCTOR_REVIEW": "Admin duyệt giảng viên",
+            "ADMIN_TEACHING_ASSIGNMENT": "Admin phân công giảng dạy",
+            "ADMIN_SYSTEM_MONITORING": "Admin giám sát hệ thống",
+        }
+        return labels.get(self.admin_sub_role or "", "Admin chính")
+
+    def has_admin_permission(self, permission: str) -> bool:
+        """Check if admin user has specific sub-role permission."""
+        if not self.is_admin:
+            return False
+        sub = self.admin_sub_role or "ADMIN_PRIMARY"
+        if sub == "ADMIN_PRIMARY":
+            return True
+        perm_map = {
+            "ADMIN_COURSE_REVIEW": {"COURSE_REVIEW"},
+            "ADMIN_INSTRUCTOR_REVIEW": {"INSTRUCTOR_REVIEW"},
+            "ADMIN_TEACHING_ASSIGNMENT": {"TEACHING_ASSIGNMENT"},
+            "ADMIN_SYSTEM_MONITORING": {"SYSTEM_MONITORING"},
+        }
+        return permission in perm_map.get(sub, set())
+
+    @property
     def avatar_url(self) -> str | None:
         """Return direct download URL for user's uploaded avatar asset if present."""
         if self.avatar_file_asset_id:
@@ -223,6 +278,21 @@ class AnonymousUser(AnonymousUserMixin):
 
     @property
     def is_admin(self) -> bool:
+        return False
+
+    @property
+    def admin_sub_role(self) -> str | None:
+        return None
+
+    @property
+    def is_primary_admin(self) -> bool:
+        return False
+
+    @property
+    def admin_sub_role_label(self) -> str:
+        return ""
+
+    def has_admin_permission(self, permission: str) -> bool:
         return False
 
     @property

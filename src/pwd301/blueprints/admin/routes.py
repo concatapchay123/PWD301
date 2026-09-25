@@ -23,6 +23,7 @@ from pwd301.services.course_service import (
 )
 from pwd301.services.exceptions import (
     AdminActionForbiddenError,
+    ForbiddenError,
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
     ValidationError,
@@ -201,6 +202,9 @@ def admin_users() -> tuple[Response, int] | Response | str:
                         "display_name": u.display_name,
                         "status": u.status,
                         "roles": sorted(u.role_codes),
+                        "admin_sub_role": u.admin_sub_role,
+                        "admin_sub_role_label": u.admin_sub_role_label,
+                        "is_primary_admin": u.is_primary_admin,
                         "suspended_at": u.suspended_at.isoformat() if u.suspended_at else None,
                         "created_at": u.created_at.isoformat(),
                     }
@@ -231,6 +235,9 @@ def admin_get_user(user_id: str) -> tuple[Response, int] | Response:
                 "display_name": target_user.display_name,
                 "status": target_user.status,
                 "roles": sorted(target_user.role_codes),
+                "admin_sub_role": target_user.admin_sub_role,
+                "admin_sub_role_label": target_user.admin_sub_role_label,
+                "is_primary_admin": target_user.is_primary_admin,
                 "auth_version": target_user.auth_version,
                 "suspended_at": (
                     target_user.suspended_at.isoformat() if target_user.suspended_at else None
@@ -299,6 +306,8 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
             400,
         )
 
+    admin_sub_role = payload.get("admin_sub_role")
+
     try:
         if action == "assign":
             updated_user = assign_role_to_user(
@@ -306,6 +315,7 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 role_code=role_code,
                 assigned_by_user_id=actor.id,
                 reason=reason,
+                admin_sub_role=admin_sub_role,
                 session=sess,
             )
         else:
@@ -348,6 +358,9 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
             {
                 "user_id": str(updated_user.public_id),
                 "roles": sorted(updated_user.role_codes),
+                "admin_sub_role": updated_user.admin_sub_role,
+                "admin_sub_role_label": updated_user.admin_sub_role_label,
+                "is_primary_admin": updated_user.is_primary_admin,
                 "auth_version": updated_user.auth_version,
             }
         ),
@@ -359,7 +372,9 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
 @admin_required
 def list_pending_courses() -> tuple[Response, int] | Response:
     """List all courses currently submitted for review."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
 
     sess = db.session
     pending_courses = (
@@ -384,6 +399,8 @@ def list_pending_courses() -> tuple[Response, int] | Response:
 def review_course(course_id: str) -> Any:
     """Approve or reject a submitted course (Admin only)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()
@@ -444,6 +461,8 @@ def review_course(course_id: str) -> Any:
 def reassign_course(course_id: str) -> tuple[Response, int] | Response:
     """Reassign course instructor ownership (Admin only)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("TEACHING_ASSIGNMENT"):
+        raise ForbiddenError("Bạn không có quyền phân công và điều chuyển giảng viên.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     new_instructor_id = payload.get("new_instructor_id")
@@ -958,7 +977,9 @@ def admin_maintenance_status() -> tuple[Response, int] | Response:
 @admin_required
 def admin_operations_jobs() -> tuple[Response, int] | Response:
     """List asynchronous background worker jobs with telemetry summary (Admin only)."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("SYSTEM_MONITORING"):
+        raise ForbiddenError("Bạn không có quyền giám sát và vận hành hệ thống.")
     from pwd301.services.operations_service import list_background_jobs
 
     page = request.args.get("page", 1, type=int)
@@ -980,6 +1001,8 @@ def admin_operations_jobs() -> tuple[Response, int] | Response:
 def admin_retry_job(job_id: str) -> tuple[Response, int] | Response:
     """Trigger manual re-execution of a failed or stuck background job (Admin only)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("SYSTEM_MONITORING"):
+        raise ForbiddenError("Bạn không có quyền giám sát và vận hành hệ thống.")
     from pwd301.services.operations_service import retry_background_job
 
     data = retry_background_job(admin_actor=actor, job_identifier=job_id, session=db.session)
@@ -998,7 +1021,9 @@ def admin_instructor_applications() -> tuple[Response, int] | Response | str:
     from pwd301.models.identity import InstructorApplication
     from pwd301.services.user_service import list_instructor_applications
 
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("INSTRUCTOR_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định hồ sơ giảng viên.")
     sess = db.session
 
     status_filter = request.args.get("status", "PENDING").strip().upper()
@@ -1048,7 +1073,9 @@ def admin_instructor_application_detail(app_id: str) -> tuple[Response, int] | R
     """Get detailed view of a single instructor application."""
     from pwd301.services.user_service import get_instructor_application
 
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("INSTRUCTOR_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định hồ sơ giảng viên.")
     app_record = get_instructor_application(app_id, session=db.session)
     if app_record is None:
         raise ResourceNotFoundError(f"Đơn đăng ký #{app_id} không tồn tại.")
@@ -1091,6 +1118,8 @@ def admin_review_instructor_application(app_id: str) -> Any:
     from pwd301.services.user_service import review_instructor_application
 
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("INSTRUCTOR_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định hồ sơ giảng viên.")
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()
     reason = str(payload.get("reason", "")).strip()
@@ -1143,7 +1172,9 @@ def admin_download_application_evidence(app_id: str, filename: str) -> Any:
 
     from pwd301.services.user_service import get_instructor_application
 
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("INSTRUCTOR_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền xem tài liệu hồ sơ giảng viên.")
     app_record = get_instructor_application(app_id, session=db.session)
     if app_record is None:
         raise ResourceNotFoundError(f"Đơn đăng ký #{app_id} không tồn tại.")
@@ -1155,22 +1186,72 @@ def admin_download_application_evidence(app_id: str, filename: str) -> Any:
     # Tìm original_name từ metadata
     details = app_record.parsed_details
     attached_files = details.get("attached_files", [])
-    matched_meta = next((f for f in attached_files if f.get("saved_filename") == safe_name), None)
-    download_name = matched_meta.get("original_name", safe_name) if matched_meta else safe_name
+    matched_meta = next(
+        (
+            f
+            for f in attached_files
+            if (
+                f.get("saved_filename") == safe_name
+                or f.get("file") == safe_name
+                or f.get("name") == safe_name
+                or secure_filename(str(f.get("saved_filename") or f.get("file") or "")) == safe_name
+            )
+        ),
+        None,
+    )
+    download_name = (
+        matched_meta.get("original_name") or matched_meta.get("name") or safe_name
+        if matched_meta
+        else safe_name
+    )
 
     storage_root = Path(current_app.config.get("FILE_STORAGE_ROOT", "./storage")).resolve()
-    applicant_key = str(app_record.applicant.public_id) if app_record.applicant else ""
-    app_dir = storage_root / "instructor_applications" / applicant_key
-    file_path = (app_dir / safe_name).resolve()
+    candidate_dirs: list[Path] = []
+    app_dir_base = storage_root / "instructor_applications"
+    if app_record.applicant:
+        if getattr(app_record.applicant, "public_id", None):
+            candidate_dirs.append(app_dir_base / str(app_record.applicant.public_id))
+        if getattr(app_record.applicant, "id", None):
+            candidate_dirs.append(app_dir_base / str(app_record.applicant.id))
+    if getattr(app_record, "applicant_user_id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.applicant_user_id))
+    if getattr(app_record, "public_id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.public_id))
+    if getattr(app_record, "id", None):
+        candidate_dirs.append(app_dir_base / str(app_record.id))
+
+    file_path: Path | None = None
+    target_names = [safe_name]
+    if matched_meta:
+        for k in ("saved_filename", "file", "name"):
+            val = secure_filename(str(matched_meta.get(k) or ""))
+            if val and val not in target_names:
+                target_names.append(val)
+
+    for c_dir in candidate_dirs:
+        for t_name in target_names:
+            test_p = (c_dir / t_name).resolve()
+            if str(test_p).startswith(str(storage_root)) and test_p.is_file():
+                file_path = test_p
+                break
+        if file_path:
+            break
 
     # Chống Path Traversal và kiểm tra tồn tại
-    if not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
+    if not file_path or not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
         raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
+
+    preview = request.args.get("preview", "0") in ("1", "true", "yes")
+    import mimetypes
+
+    guessed_type, _ = mimetypes.guess_type(download_name)
+    content_type = guessed_type or "application/octet-stream"
 
     return send_file(
         str(file_path),
-        as_attachment=True,
+        as_attachment=not preview,
         download_name=download_name,
+        mimetype=content_type,
     )
 
 
@@ -1178,7 +1259,9 @@ def admin_download_application_evidence(app_id: str, filename: str) -> Any:
 @admin_required
 def admin_list_change_requests() -> tuple[Response, int] | Response:
     """List all course and lesson change requests for admin review."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
 
     status_filter = request.args.get("status", "ALL").strip().upper()
     query = db.session.query(CourseChangeRequest).order_by(CourseChangeRequest.created_at.desc())
@@ -1218,7 +1301,10 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                     "title": c.title,
                     "description": c.description or "",
                 }
-        elif (r.target_type == "COURSE" or r.change_type in ("COURSE_METADATA", "COURSE_UPDATE", "COURSE_STATUS")) and (r.target_id or r.course_id):
+        elif (
+            r.target_type == "COURSE"
+            or r.change_type in ("COURSE_METADATA", "COURSE_UPDATE", "COURSE_STATUS")
+        ) and (r.target_id or r.course_id):
             cid = r.target_id or r.course_id
             c = db.session.get(Course, cid)
             if c:
@@ -1236,9 +1322,7 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             target_title = r.course.title
 
         # Check for staged lesson associated with this change request
-        staged_lesson = (
-            db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
-        )
+        staged_lesson = db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
         if staged_lesson:
             if not payload_data.get("title") and staged_lesson.title:
                 payload_data["title"] = staged_lesson.title
@@ -1287,6 +1371,8 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     from pwd301.services.notification_service import dispatch_notification
 
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()

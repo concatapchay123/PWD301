@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import re
 import uuid
 from typing import Any
@@ -38,6 +39,8 @@ from pwd301.services.exceptions import (
 )
 from pwd301.services.jwt_auth_service import revoke_all_user_tokens
 from pwd301.services.session_auth_service import revoke_all_user_sessions
+
+logger = logging.getLogger(__name__)
 
 MIN_PASSWORD_LENGTH = 8
 MAX_EMAIL_LENGTH = 320
@@ -99,9 +102,7 @@ def validate_password(password: str) -> None:
         raise InvalidPasswordError("Mật khẩu không được để trống.")
 
     if len(password) < MIN_PASSWORD_LENGTH:
-        raise InvalidPasswordError(
-            f"Mật khẩu phải có tối thiểu {MIN_PASSWORD_LENGTH} ký tự."
-        )
+        raise InvalidPasswordError(f"Mật khẩu phải có tối thiểu {MIN_PASSWORD_LENGTH} ký tự.")
 
     if not re.search(r"[A-Za-z]", password):
         raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một chữ cái.")
@@ -110,9 +111,7 @@ def validate_password(password: str) -> None:
         raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một chữ số.")
 
     if not re.search(r"[^A-Za-z0-9]", password):
-        raise InvalidPasswordError(
-            "Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*...)."
-        )
+        raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*...).")
 
 
 def register_user(
@@ -655,6 +654,7 @@ def assign_role_to_user(
     role_code: str,
     assigned_by_user_id: int | None = None,
     reason: str | None = None,
+    admin_sub_role: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> User:
     """Assign a role to a user, ensuring cumulative hierarchy per AUTH-002.
@@ -665,12 +665,14 @@ def assign_role_to_user(
     - Assigning ADMIN automatically ensures INSTRUCTOR and STUDENT are assigned.
     - Role assignment is recorded in append-only AuditEvent.
     - Increments user.auth_version by 1 and revokes tokens/sessions if needed.
+    - Only primary admin (is_primary_admin) can assign roles if caller is admin.
 
     Args:
         user_id: Primary key of user receiving role.
         role_code: Role code to assign ('STUDENT', 'INSTRUCTOR', 'ADMIN').
         assigned_by_user_id: Optional ID of the user (e.g. Admin) assigning the role.
         reason: Optional justification for the assignment.
+        admin_sub_role: Optional sub-role code for ADMIN ('ADMIN_PRIMARY', etc.).
         session: Optional SQLAlchemy session.
 
     Returns:
@@ -679,6 +681,7 @@ def assign_role_to_user(
     Raises:
         UserNotFoundError: If target user does not exist.
         InvalidRoleAssignmentError: If role_code is not one of the allowed canonical roles.
+        AdminActionForbiddenError: If non-primary admin attempts role assignment.
     """
     sess = session if session is not None else db.session
     user = sess.get(User, user_id)
@@ -688,6 +691,13 @@ def assign_role_to_user(
     norm_code = role_code.strip().upper()
     if norm_code not in ("STUDENT", "INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
+
+    if assigned_by_user_id is not None:
+        assigner = sess.get(User, assigned_by_user_id)
+        if assigner is not None and assigner.is_admin and not assigner.is_primary_admin:
+            raise AdminActionForbiddenError(
+                "Chỉ Admin chính mới có quyền phân quyền và bổ nhiệm các Admin khác."
+            )
 
     if assigned_by_user_id is not None and reason is not None:
         clean_reason = reason.strip()
@@ -722,7 +732,7 @@ def assign_role_to_user(
             user.roles.append(role_obj)
 
     sess.flush()
-    if assigned_by_user_id is not None or reason is not None:
+    if assigned_by_user_id is not None or reason is not None or admin_sub_role is not None:
         for code in target_roles:
             role_obj = sess.query(Role).filter(Role.code == code).first()
             if role_obj is not None:
@@ -733,7 +743,12 @@ def assign_role_to_user(
                 )
                 if link is not None:
                     link.assigned_by_user_id = assigned_by_user_id
-                    link.assignment_reason = reason
+                    effective_reason = reason or ""
+                    if code == "ADMIN":
+                        chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
+                        link.assignment_reason = f"SUB_ROLE:{chosen_sub} | {effective_reason}"
+                    else:
+                        link.assignment_reason = effective_reason
 
     after_roles = sorted(new_role_codes)
     user.auth_version += 1
@@ -831,6 +846,13 @@ def remove_role_from_user(
         raise InvalidRoleAssignmentError("Cannot remove baseline STUDENT role from user.")
     if norm_code not in ("INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
+
+    if removed_by_user_id is not None:
+        remover = sess.get(User, removed_by_user_id)
+        if remover is not None and remover.is_admin and not remover.is_primary_admin:
+            raise AdminActionForbiddenError(
+                "Chỉ Admin chính mới có quyền thu hồi vai trò của người dùng khác."
+            )
 
     if removed_by_user_id is not None and reason is not None:
         clean_reason = reason.strip()
@@ -1075,6 +1097,19 @@ def submit_instructor_application(
     )
 
     attached_files = application_data.get("attached_files", [])
+    clean_files: list[dict[str, Any]] = []
+    if isinstance(attached_files, list):
+        for f in attached_files:
+            if isinstance(f, dict):
+                clean_files.append(
+                    {
+                        "original_name": str(f.get("original_name") or f.get("name") or "")[:120],
+                        "saved_filename": str(f.get("saved_filename") or f.get("file") or "")[:120],
+                        "doc_type": str(f.get("doc_type") or "OTHER")[:30],
+                        "size": int(f.get("size") or f.get("file_size") or 0),
+                    }
+                )
+
     clean_data: dict[str, Any] = {
         "full_name": str(application_data.get("full_name", "")).strip(),
         "date_of_birth": str(application_data.get("date_of_birth", "")).strip(),
@@ -1095,33 +1130,34 @@ def submit_instructor_application(
         "portfolio_url": port_url or ev_urls,
         "evidence_urls": ev_urls or port_url,
         "statement_of_purpose": sop,
-        "attached_files": attached_files if isinstance(attached_files, list) else [],
+        "attached_files": clean_files[:10],
     }
 
-    # Ensure JSON fits in 2000 chars without truncating JSON syntax
+    # Ensure JSON fits in 2000 chars without truncating JSON syntax or stripping attached_files
     note_json = json.dumps(clean_data, ensure_ascii=False)
-    if len(note_json) > 2000:
-        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:150]
-        clean_data["teaching_evidence"] = str(clean_data["teaching_evidence"])[:100]
-        clean_data["salary_proof"] = str(clean_data["salary_proof"])[:80]
-        clean_data["current_schedule"] = str(clean_data["current_schedule"])[:80]
-        clean_data["employment_contract"] = str(clean_data["employment_contract"])[:80]
-        clean_data["evidence_urls"] = str(clean_data["evidence_urls"])[:120]
-        # Compact attached_files to essential fields if too large
-        if isinstance(clean_data.get("attached_files"), list):
-            clean_data["attached_files"] = [
-                {
-                    "name": str(f.get("original_name", ""))[:40],
-                    "file": str(f.get("saved_filename", ""))[:40],
-                    "type": str(f.get("doc_type", "OTHER"))
-                }
-                for f in clean_data["attached_files"]
-                if isinstance(f, dict)
-            ][:5]
+    if len(note_json) > 1950:
+        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:200]
+        clean_data["teaching_evidence"] = str(clean_data["teaching_evidence"])[:80]
+        clean_data["salary_proof"] = str(clean_data["salary_proof"])[:60]
+        clean_data["current_schedule"] = str(clean_data["current_schedule"])[:60]
+        clean_data["employment_contract"] = str(clean_data["employment_contract"])[:60]
+        clean_data["work_address"] = str(clean_data["work_address"])[:60]
+        clean_data["evidence_urls"] = str(clean_data["evidence_urls"])[:80]
+        clean_data["portfolio_url"] = str(clean_data["portfolio_url"])[:80]
         note_json = json.dumps(clean_data, ensure_ascii=False)
-        if len(note_json) > 2000:
-            clean_data.pop("attached_files", None)
-            note_json = json.dumps(clean_data, ensure_ascii=False)[:2000]
+
+    if len(note_json) > 1950:
+        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:80]
+        clean_data["teaching_evidence"] = ""
+        clean_data["salary_proof"] = ""
+        clean_data["current_schedule"] = ""
+        clean_data["employment_contract"] = ""
+        clean_data["work_address"] = ""
+        note_json = json.dumps(clean_data, ensure_ascii=False)
+
+    if len(note_json) > 1950:
+        clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:30]
+        note_json = json.dumps(clean_data, ensure_ascii=False)
 
     now = utc_now()
     app_record = InstructorApplication(
@@ -1144,6 +1180,41 @@ def submit_instructor_application(
         created_at=now,
     )
     sess.add(audit_entry)
+
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        admin_role = sess.query(Role).filter(Role.code == "ADMIN").first()
+        if admin_role:
+            admin_users = (
+                sess.query(User)
+                .filter(User.roles.contains(admin_role), User.status == "ACTIVE")
+                .all()
+            )
+            for adm in admin_users:
+                if adm.has_admin_permission("INSTRUCTOR_REVIEW"):
+                    dispatch_notification(
+                        recipient_user=adm.id,
+                        event_type="INSTRUCTOR_APPLICATION_SUBMITTED",
+                        title="Hồ sơ ứng tuyển giảng viên mới chờ duyệt",
+                        body=(
+                            f"Ứng viên {user.display_name} đã nộp hồ sơ đăng ký giảng viên "
+                            f"({institution_name} - {specialization}). "
+                            "Vui lòng xem xét hồ sơ và phê duyệt."
+                        ),
+                        action_url="#/admin/governance?tab=applications",
+                        category="SYSTEM",
+                        payload={
+                            "application_id": str(app_record.public_id),
+                            "applicant_name": user.display_name,
+                            "action_url": "#/admin/governance?tab=applications",
+                        },
+                        session=sess,
+                    )
+    except Exception as exc:
+        logger.warning(
+            "Failed to dispatch instructor application notification to admins: %s", exc
+        )
 
     try:
         sess.commit()
@@ -1314,8 +1385,9 @@ def review_instructor_application(
                     f"của bạn. Quyền Giảng viên (Instructor) đã được kích hoạt trên "
                     f"tài khoản. {clean_reason}"
                 ),
-                action_url="/instructor/dashboard",
+                action_url="#/instructor/dashboard",
                 category="SYSTEM",
+                payload={"action_url": "#/instructor/dashboard"},
                 session=sess,
             )
         except Exception:
@@ -1358,8 +1430,9 @@ def review_instructor_application(
                     f"Đơn đăng ký trở thành Giảng viên của bạn chưa được chấp thuận. "
                     f"Lý do: {clean_reason}. Bạn có thể cập nhật thông tin và nộp lại hồ sơ sau."
                 ),
-                action_url="/student/become-instructor",
+                action_url="#/student/become-instructor",
                 category="SYSTEM",
+                payload={"action_url": "#/student/become-instructor"},
                 session=sess,
             )
         except Exception:

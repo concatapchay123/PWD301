@@ -39,7 +39,7 @@
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
             </button>
 
-            <div class="flex items-center max-w-sm sm:max-w-md w-full relative">
+            <div class="flex items-center max-w-sm sm:max-w-md w-full relative gap-2">
               <input
                 type="text"
                 id="workflow-exam-title-input"
@@ -47,6 +47,9 @@
                 value="${UI.escapeHtml(currentTitle)}"
                 title="Nhấp để đổi tên đề thi"
               />
+              <span id="workflow-course-badge" class="${(draft.courseCode || draft.courseTitle) ? '' : 'hidden'} hidden sm:inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] border border-indigo-200/60 dark:border-indigo-800 shrink-0" title="Môn học đang chọn">
+                ${UI.escapeHtml(draft.courseCode || draft.courseTitle || '')}
+              </span>
             </div>
           </div>
 
@@ -162,7 +165,7 @@
   // =========================================================================
   // 2. PAGE 1: Hub & File Upload Dropzone (#/instructor/exams)
   // =========================================================================
-  InstructorView.renderExamsHub = function (container) {
+  InstructorView.renderExamsHub = function (container, query = {}) {
     const draft = window.ExamStore.getDraft();
     const hasDraft = window.ExamStore.hasDraft();
 
@@ -186,6 +189,26 @@
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
               <span>Quay lại Trang chủ</span>
             </button>
+          </div>
+
+          <!-- Course Scope Selection Card -->
+          <div class="mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[22px]">school</span>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Môn học áp dụng đề thi</h3>
+                  <p class="text-xs text-slate-500">Đề thi được khởi tạo sẽ tự động gắn kết với môn học này trong hệ thống học vụ.</p>
+                </div>
+              </div>
+              <div class="w-full sm:w-80 shrink-0">
+                <select id="hub-course-select" class="w-full h-10 px-3 text-xs sm:text-sm font-semibold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 transition-colors">
+                  <option value="">-- Đang tải danh sách môn học... --</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <!-- Draft Restore Alert Banner -->
@@ -384,6 +407,72 @@
     `;
 
     InstructorView.bindExamWorkflowHeaderEvents(1, '#/instructor/exams/editor');
+
+    // Course Loader & Auto-Scoping
+    const hubCourseSelect = document.getElementById('hub-course-select');
+    const headerCourseBadge = document.getElementById('workflow-course-badge');
+    const targetCourseId = (query && query.course_id) || new URLSearchParams(window.location.hash.split('?')[1] || '').get('course_id') || draft.courseId;
+
+    ApiClient.getInstructorCourses().then(res => {
+      const courses = res.courses || [];
+      if (!hubCourseSelect) return;
+
+      if (courses.length === 0) {
+        hubCourseSelect.innerHTML = `<option value="">Chưa có môn học nào</option>`;
+        return;
+      }
+
+      // Find matching course or default to first course in list
+      let selectedCourse = null;
+      if (targetCourseId) {
+        selectedCourse = courses.find(c => String(c.course_id || c.id || c.course_code) === String(targetCourseId));
+      }
+      if (!selectedCourse) {
+        selectedCourse = courses[0];
+      }
+
+      const activeCourseId = selectedCourse.course_id || selectedCourse.id || selectedCourse.course_code;
+
+      // Update draft and workflow header badge
+      window.ExamStore.saveDraft({
+        courseId: activeCourseId,
+        courseCode: selectedCourse.course_code,
+        courseTitle: selectedCourse.title
+      });
+
+      if (headerCourseBadge) {
+        headerCourseBadge.textContent = selectedCourse.course_code || selectedCourse.title;
+        headerCourseBadge.classList.remove('hidden');
+      }
+
+      hubCourseSelect.innerHTML = courses.map(c => {
+        const cid = c.course_id || c.id || c.course_code;
+        const isSel = String(cid) === String(activeCourseId);
+        return `<option value="${cid}" ${isSel ? 'selected' : ''}>${c.course_code} - ${c.title}</option>`;
+      }).join('');
+
+      hubCourseSelect.addEventListener('change', (e) => {
+        const chosen = courses.find(c => String(c.course_id || c.id || c.course_code) === String(e.target.value));
+        if (chosen) {
+          const chosenId = chosen.course_id || chosen.id || chosen.course_code;
+          window.ExamStore.saveDraft({
+            courseId: chosenId,
+            courseCode: chosen.course_code,
+            courseTitle: chosen.title
+          });
+          if (headerCourseBadge) {
+            headerCourseBadge.textContent = chosen.course_code || chosen.title;
+            headerCourseBadge.classList.remove('hidden');
+          }
+          UI.showToast(`Đã chọn môn học: ${chosen.course_code} - ${chosen.title}`, 'info');
+        }
+      });
+    }).catch(err => {
+      console.warn('Lỗi nạp danh sách môn học tại Hub đề thi:', err);
+      if (hubCourseSelect) {
+        hubCourseSelect.innerHTML = `<option value="">Lỗi tải danh mục môn học</option>`;
+      }
+    });
 
     // Resume / Discard draft
     document.getElementById('btn-hub-resume-draft')?.addEventListener('click', () => {
@@ -797,14 +886,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       }
 
       previewContainer.innerHTML = questions.map((q, idx) => `
-        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-soft p-4 space-y-3 transition-all hover:border-slate-300 relative group cursor-pointer" id="editor-q-card-${idx + 1}" title="Nhấp để chuyển đến vị trí trên mã nguồn">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-soft p-4 space-y-3 transition-all hover:border-indigo-400 relative group cursor-pointer" id="editor-q-card-${idx + 1}" data-q-num="${idx + 1}" title="Nhấp để chuyển đến vị trí trên mã nguồn">
           <!-- Meta Header -->
           <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800 text-xs">
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200/60 text-xs">
                 Câu ${idx + 1}.
               </span>
-              <input type="text" value="${(q.points || 1.0).toFixed(1)} điểm" class="w-20 px-2 py-0.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-300 outline-none focus:border-indigo-500" onclick="event.stopPropagation()" />
+              <input type="text" value="${(q.points || 1.0).toFixed(2)} điểm" data-q-index="${idx}" class="q-points-input w-24 px-2 py-0.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-300 outline-none focus:border-indigo-500" onclick="event.stopPropagation()" />
               <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 ${q.question_type}
               </span>
@@ -846,8 +935,36 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         </div>
       `).join('');
 
+      // Bind click on card -> jump to question in textarea
+      questions.forEach((_, idx) => {
+        const card = document.getElementById(`editor-q-card-${idx + 1}`);
+        if (card) {
+          card.onclick = (e) => {
+            if (e.target.closest('input') || e.target.closest('[contenteditable="true"]') || e.target.closest('button')) return;
+            jumpToQuestionInTextarea(idx + 1);
+          };
+        }
+      });
+
+      // Bind input on q-points-input
+      previewContainer.querySelectorAll('.q-points-input').forEach(input => {
+        input.onchange = (e) => {
+          const idx = parseInt(e.target.dataset.qIndex, 10);
+          const rawVal = parseFloat(e.target.value.replace(/[^0-9.]/g, ''));
+          if (!isNaN(rawVal) && rawVal >= 0 && questions[idx]) {
+            questions[idx].points = rawVal;
+            e.target.value = `${rawVal.toFixed(2)} điểm`;
+            saveEditorState();
+            const total = questions.reduce((sum, item) => sum + (parseFloat(item.points) || 0), 0);
+            const syncBadge = document.getElementById('workflow-sync-badge');
+            if (syncBadge) syncBadge.textContent = `${questions.length} câu • ${total.toFixed(1)}đ • Tự động lưu`;
+          }
+        };
+      });
+
       const badge = document.getElementById('workflow-sync-badge');
-      if (badge) badge.textContent = `${questions.length} câu • Tự động lưu`;
+      const totalScore = questions.reduce((sum, item) => sum + (parseFloat(item.points) || 0), 0);
+      if (badge) badge.textContent = `${questions.length} câu • ${totalScore.toFixed(1)}đ • Tự động lưu`;
     };
 
     const saveEditorState = () => {
@@ -861,6 +978,245 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         window.ExamStore.saveDraft({ rawText: raw });
       }
     };
+
+    // Helper: Jump to question in Raw Textarea
+    const jumpToQuestionInTextarea = (qNum) => {
+      if (!textarea) return;
+      const text = textarea.value;
+      if (!text) return;
+
+      const pattern = new RegExp(`(^|\\n)\\s*(?:Câu|Question|\\b)\\s*${qNum}[:.]`, 'i');
+      const match = pattern.exec(text);
+      if (match) {
+        const matchPos = match.index + (match[0].startsWith('\n') ? 1 : 0);
+        textarea.focus();
+        textarea.setSelectionRange(matchPos, matchPos + match[0].trim().length);
+        const linesBefore = text.substring(0, matchPos).split('\n').length;
+        const approxLineHeight = 22;
+        textarea.scrollTop = Math.max(0, (linesBefore - 3) * approxLineHeight);
+      }
+    };
+
+    // Helper: Jump to question on both Card and Textarea
+    const handleJumpToQuestion = (targetNum) => {
+      const qNum = parseInt(targetNum, 10);
+      if (isNaN(qNum) || qNum < 1) {
+        UI.showToast('Vui lòng nhập số thứ tự câu hỏi hợp lệ!', 'warning');
+        return;
+      }
+
+      const card = document.getElementById(`editor-q-card-${qNum}`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('ring-2', 'ring-indigo-500', 'bg-indigo-50/40', 'dark:bg-indigo-950/40');
+        setTimeout(() => {
+          card.classList.remove('ring-2', 'ring-indigo-500', 'bg-indigo-50/40', 'dark:bg-indigo-950/40');
+        }, 2200);
+      } else {
+        UI.showToast(`Không tìm thấy Câu ${qNum} trong danh sách xem trước!`, 'warning');
+      }
+
+      jumpToQuestionInTextarea(qNum);
+    };
+
+    // Bind Jump Button & Enter Key
+    const jumpInput = document.getElementById('editor-jump-input');
+    document.getElementById('editor-jump-btn')?.addEventListener('click', () => {
+      if (jumpInput) handleJumpToQuestion(jumpInput.value);
+    });
+    jumpInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleJumpToQuestion(jumpInput.value);
+      }
+    });
+
+    // Bind "Chia điểm" (100% total points evenly divided)
+    document.getElementById('editor-btn-divide-points')?.addEventListener('click', () => {
+      const draftState = window.ExamStore.getDraft();
+      let questions = (currentParsed && currentParsed.questions && currentParsed.questions.length > 0)
+        ? currentParsed.questions
+        : (draftState.questions || []);
+
+      if (!questions || questions.length === 0) {
+        UI.showToast('Chưa có câu hỏi nào để chia điểm. Vui lòng nhập nội dung đề thi trước!', 'warning');
+        return;
+      }
+
+      const N = questions.length;
+      const basePt = parseFloat((100.0 / N).toFixed(2));
+      const remainder = parseFloat((100.0 - basePt * (N - 1)).toFixed(2));
+
+      questions.forEach((q, idx) => {
+        q.points = (idx === N - 1) ? remainder : basePt;
+      });
+
+      if (currentParsed) currentParsed.questions = questions;
+      window.ExamStore.saveDraft({ questions: questions });
+      renderEditorPreview();
+      UI.showToast(`Đã chia đều 100 điểm cho ${N} câu hỏi (${basePt}đ/câu)!`, 'success');
+    });
+
+    // Bind "Chèn công thức" (LaTeX Formula Picker Modal)
+    document.getElementById('editor-btn-latex')?.addEventListener('click', () => {
+      const mathCategories = [
+        {
+          name: 'Toán học cơ bản',
+          items: [
+            { label: 'Phân số', latex: '\\frac{a}{b}', preview: 'a/b' },
+            { label: 'Căn bậc hai', latex: '\\sqrt{x}', preview: '√x' },
+            { label: 'Căn bậc n', latex: '\\sqrt[n]{x}', preview: 'ⁿ√x' },
+            { label: 'Số mũ', latex: 'x^{2}', preview: 'x²' },
+            { label: 'Chỉ số dưới', latex: 'x_{i}', preview: 'xᵢ' },
+            { label: 'Nhân & Chia', latex: 'a \\times b \\div c', preview: 'a × b ÷ c' }
+          ]
+        },
+        {
+          name: 'Giải tích & Đại số',
+          items: [
+            { label: 'Tích phân xác định', latex: '\\int_{a}^{b} f(x)dx', preview: '∫ₐᵇ f(x)dx' },
+            { label: 'Tổng xích-ma', latex: '\\sum_{i=1}^{n} x_i', preview: '∑ xᵢ' },
+            { label: 'Giới hạn', latex: '\\lim_{x \\to \\infty} f(x)', preview: 'lim f(x)' },
+            { label: 'Đạo hàm', latex: '\\frac{df}{dx}', preview: 'df/dx' },
+            { label: 'Vô cực', latex: '\\infty', preview: '∞' },
+            { label: 'Đẳng thức vector', latex: '\\vec{v}', preview: 'v⃗' }
+          ]
+        },
+        {
+          name: 'Lượng giác & Ký hiệu Hy Lạp',
+          items: [
+            { label: 'Sin & Cos', latex: '\\sin^2(x) + \\cos^2(x) = 1', preview: 'sin²(x)+cos²(x)=1' },
+            { label: 'Góc Alpha', latex: '\\alpha', preview: 'α' },
+            { label: 'Góc Beta', latex: '\\beta', preview: 'β' },
+            { label: 'Số Pi', latex: '\\pi', preview: 'π' },
+            { label: 'Góc Theta', latex: '\\theta', preview: 'θ' },
+            { label: 'Delta', latex: '\\Delta', preview: 'Δ' }
+          ]
+        },
+        {
+          name: 'Quan hệ so sánh & Tập hợp',
+          items: [
+            { label: 'Nhỏ hơn hoặc bằng', latex: '\\le', preview: '≤' },
+            { label: 'Lớn hơn hoặc bằng', latex: '\\ge', preview: '≥' },
+            { label: 'Khác', latex: '\\neq', preview: '≠' },
+            { label: 'Xấp xỉ', latex: '\\approx', preview: '≈' },
+            { label: 'Thuộc tập hợp', latex: '\\in', preview: '∈' },
+            { label: 'Tập hợp con', latex: '\\subset', preview: '⊂' },
+            { label: 'Hợp & Giao', latex: 'A \\cup B \\cap C', preview: 'A ∪ B ∩ C' }
+          ]
+        },
+        {
+          name: 'Hóa học & Phương trình phản ứng',
+          items: [
+            { label: 'Mũi tên phản ứng', latex: '\\rightarrow', preview: '→' },
+            { label: 'Phản ứng thuận nghịch', latex: '\\rightleftharpoons', preview: '⇌' },
+            { label: 'Nhiệt lượng Delta H', latex: '\\Delta H < 0', preview: 'ΔH < 0' },
+            { label: 'Kết tủa (mũi tên xuống)', latex: '\\downarrow', preview: '↓' },
+            { label: 'Bay hơi (mũi tên lên)', latex: '\\uparrow', preview: '↑' }
+          ]
+        }
+      ];
+
+      const modalHtml = `
+        <div class="space-y-5 text-xs text-slate-700 dark:text-slate-300">
+          <p class="text-slate-500">
+            Chọn công thức toán học/khoa học để chèn vào vị trí con trỏ hiện tại trong trình soạn thảo:
+          </p>
+
+          <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            ${mathCategories.map(cat => `
+              <div>
+                <h4 class="font-bold text-xs uppercase tracking-wider text-indigo-700 dark:text-indigo-400 mb-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+                  ${cat.name}
+                </h4>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  ${cat.items.map(item => `
+                    <button
+                      type="button"
+                      class="latex-insert-btn p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition text-left flex flex-col justify-between gap-1 group shadow-2xs"
+                      data-latex="${UI.escapeHtml(item.latex)}"
+                    >
+                      <div class="flex items-center justify-between w-full">
+                        <span class="font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600">${item.label}</span>
+                        <span class="text-[10px] font-mono text-slate-400 font-bold">$...$</span>
+                      </div>
+                      <div class="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-300 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200/60 dark:border-slate-700/60 truncate">
+                        ${UI.escapeHtml(item.preview)}
+                      </div>
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs text-slate-500 flex items-center justify-between">
+            <span>Bạn cũng có thể tự gõ công thức bất kỳ giữa cặp dấu <code>$...$</code></span>
+            <span class="font-mono text-indigo-600 font-bold">$E = mc^2$</span>
+          </div>
+        </div>
+      `;
+
+      UI.openModal({
+        title: 'Bảng Ký hiệu & Công thức Toán học LaTeX',
+        bodyHtml: modalHtml,
+        size: 'lg',
+        footerHtml: `
+          <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onclick="UI.closeModal()">
+            Đóng
+          </button>
+        `
+      });
+
+      document.querySelectorAll('.latex-insert-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const ltx = btn.dataset.latex;
+          if (textarea && ltx) {
+            const start = textarea.selectionStart || 0;
+            const end = textarea.selectionEnd || 0;
+            const val = textarea.value;
+            const insertText = `$${ltx}$`;
+            textarea.value = val.substring(0, start) + insertText + val.substring(end);
+            const newPos = start + insertText.length;
+            textarea.focus();
+            textarea.setSelectionRange(newPos, newPos);
+            renderEditorPreview();
+            saveEditorState();
+            UI.closeModal();
+            UI.showToast(`Đã chèn công thức: ${insertText}`, 'success');
+          }
+        });
+      });
+    });
+
+    // Bi-directional Cursor Sync: Cursor position in textarea highlights preview card
+    const syncActiveQuestionFromCursor = () => {
+      if (!textarea) return;
+      const cursorPos = textarea.selectionStart || 0;
+      const textUpToCursor = textarea.value.substring(0, cursorPos);
+      const qMatches = [...textUpToCursor.matchAll(/(?:^|\n)\s*(?:Câu|Question|\b)\s*(\d+)[:.]/gi)];
+      if (qMatches.length > 0) {
+        const lastMatch = qMatches[qMatches.length - 1];
+        const activeQNum = parseInt(lastMatch[1], 10);
+        if (!isNaN(activeQNum)) {
+          document.querySelectorAll('#editor-preview-container > [id^="editor-q-card-"]').forEach(c => {
+            c.classList.remove('ring-2', 'ring-indigo-500', 'border-indigo-500');
+          });
+          const activeCard = document.getElementById(`editor-q-card-${activeQNum}`);
+          if (activeCard) {
+            activeCard.classList.add('ring-2', 'ring-indigo-500', 'border-indigo-500');
+            const containerRect = previewContainer.getBoundingClientRect();
+            const cardRect = activeCard.getBoundingClientRect();
+            if (cardRect.top < containerRect.top || cardRect.bottom > containerRect.bottom) {
+              activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }
+        }
+      }
+    };
+
+    textarea.addEventListener('keyup', syncActiveQuestionFromCursor);
+    textarea.addEventListener('click', syncActiveQuestionFromCursor);
 
     textarea.addEventListener('input', () => {
       renderEditorPreview();
@@ -2224,11 +2580,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     ApiClient.getInstructorCourses().then(res => {
       const courses = res.courses || [];
       if (courseSelect && courses.length > 0) {
-        courseSelect.innerHTML = courses.map((c, i) => `
-          <option value="${c.course_id || c.id || c.course_code}" ${(draft.courseId === (c.course_id || c.id)) || i === 0 ? 'selected' : ''}>
+        const targetId = draft.courseId || (courses[0] ? (courses[0].course_id || courses[0].id) : '');
+        courseSelect.innerHTML = courses.map(c => {
+          const cid = c.course_id || c.id || c.course_code;
+          const isSelected = String(cid) === String(targetId);
+          return `<option value="${cid}" ${isSelected ? 'selected' : ''}>
             ${c.course_code} - ${c.title}
-          </option>
-        `).join('');
+          </option>`;
+        }).join('');
       } else if (courseSelect) {
         courseSelect.innerHTML = `<option value="">Không tìm thấy môn học nào</option>`;
       }
@@ -2278,7 +2637,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   <h3 class="text-base font-bold text-slate-900 dark:text-white">1. Thời gian & Điều kiện làm bài</h3>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-duration">
                       Thời lượng làm bài (Phút) <span class="text-rose-500">*</span>
@@ -2292,9 +2651,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     </label>
                     <select id="cfg-attempts" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
                       <option value="1" ${config.maxAttempts === 1 ? 'selected' : ''}>1 lần duy nhất</option>
-                      <option value="2" ${config.maxAttempts === 2 ? 'selected' : ''}>2 lần (Lấy điểm cao nhất)</option>
+                      <option value="2" ${config.maxAttempts === 2 ? 'selected' : ''}>2 lần</option>
                       <option value="3" ${config.maxAttempts === 3 ? 'selected' : ''}>3 lần</option>
                       <option value="999" ${config.maxAttempts > 3 ? 'selected' : ''}>Không giới hạn (Luyện tập)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-scoring-policy">
+                      Quy chế tính điểm hiển thị
+                    </label>
+                    <select id="cfg-scoring-policy" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
+                      <option value="HIGHEST" ${config.scoringPolicy === 'HIGHEST' || !config.scoringPolicy ? 'selected' : ''}>Lấy điểm cao nhất (HIGHEST)</option>
+                      <option value="LATEST" ${config.scoringPolicy === 'LATEST' ? 'selected' : ''}>Lấy lần thi mới nhất (LATEST)</option>
                     </select>
                   </div>
                 </div>
@@ -2304,15 +2673,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     <input type="checkbox" id="cfg-shuffle-all" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.shuffleQuestions !== false ? 'checked' : ''} />
                     <span>Xáo trộn ngẫu nhiên thứ tự câu hỏi và phương án đáp án cho mỗi thí sinh</span>
                   </label>
-
-                  <label class="flex items-center gap-3 cursor-pointer text-xs font-semibold select-none">
-                    <input type="checkbox" id="cfg-require-pwd" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.requirePassword ? 'checked' : ''} />
-                    <span>Yêu cầu mật khẩu vào phòng thi</span>
-                  </label>
-
-                  <div id="cfg-pwd-box" class="${config.requirePassword ? '' : 'hidden'} pl-7">
-                    <input type="password" id="cfg-exam-pwd" placeholder="Nhập mật khẩu ca thi..." class="px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 w-64" value="${config.examPassword || ''}" />
-                  </div>
                 </div>
               </div>
 
@@ -2387,13 +2747,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     InstructorView.bindExamWorkflowHeaderEvents(4, null, () => {
       document.getElementById('btn-execute-publish-exam')?.click();
-    });
-
-    // Password toggle
-    document.getElementById('cfg-require-pwd')?.addEventListener('change', (e) => {
-      const box = document.getElementById('cfg-pwd-box');
-      if (e.target.checked) box?.classList.remove('hidden');
-      else box?.classList.add('hidden');
     });
 
     // Run Pre-flight Inspection
@@ -2502,6 +2855,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         UI.showToast('Đang tạo đề thi và lưu câu hỏi vào CSDL...', 'info');
         const maxAtt = parseInt(document.getElementById('cfg-attempts')?.value || 1, 10);
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
+        const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
 
         // 1. Create Assessment
         const created = await ApiClient.createAssessment(courseId, {
@@ -2510,7 +2864,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           duration_minutes: duration,
           max_attempts: maxAtt,
           require_password: false,
-          shuffle_questions: shuffle
+          shuffle_questions: shuffle,
+          scoring_policy: scoringPolicy
         });
 
         const asmId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;
