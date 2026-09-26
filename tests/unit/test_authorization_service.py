@@ -277,14 +277,14 @@ def test_set_user_roles_lifecycle(student_user: User, admin_user: User) -> None:
     assert audit.reason == "Direct role set to instructor"
     assert audit.performed_as_admin is True
 
-    # Valid upgrade: full suite
-    updated = set_user_roles(
-        student_user.id,
-        {"STUDENT", "INSTRUCTOR", "ADMIN"},
-        assigned_by_user_id=admin_user.id,
-    )
-    assert updated.id == orig_user_id
-    assert updated.has_all_roles("STUDENT", "INSTRUCTOR", "ADMIN") is True
+    # Exact role assignment cannot create an ADMIN (which would default to ADMIN_PRIMARY).
+    with pytest.raises(InvalidRoleAssignmentError, match="ADMIN_PRIMARY"):
+        set_user_roles(
+            student_user.id,
+            {"STUDENT", "INSTRUCTOR", "ADMIN"},
+            assigned_by_user_id=admin_user.id,
+        )
+    assert student_user.has_role("ADMIN") is False
 
     # Valid downgrade: back to STUDENT
     updated = set_user_roles(
@@ -329,7 +329,9 @@ def test_assign_and_remove_role_lifecycle(student_user: User, admin_user: User) 
     assert audit.performed_as_admin is True
 
     # Promote further -> Admin
-    updated = assign_role_to_user(student_user.id, "ADMIN")
+    updated = assign_role_to_user(
+        student_user.id, "ADMIN", admin_sub_role="ADMIN_SYSTEM_MONITORING"
+    )
     assert updated.has_role("ADMIN") is True
     assert updated.has_role("INSTRUCTOR") is True
     assert updated.has_role("STUDENT") is True

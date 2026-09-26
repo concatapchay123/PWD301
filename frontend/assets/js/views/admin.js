@@ -16,12 +16,141 @@
  */
 
 class AdminView {
+  static getAuditPageState(page, perPage, total) {
+    const pageSize = Math.max(1, Number.parseInt(perPage, 10) || 50);
+    const itemCount = Math.max(0, Number.parseInt(total, 10) || 0);
+    const pageCount = Math.max(1, Math.ceil(itemCount / pageSize));
+    const currentPage = Math.min(pageCount, Math.max(1, Number.parseInt(page, 10) || 1));
+    return {
+      page: currentPage,
+      perPage: pageSize,
+      total: itemCount,
+      pageCount,
+      firstItem: itemCount ? ((currentPage - 1) * pageSize) + 1 : 0,
+      lastItem: itemCount ? Math.min(currentPage * pageSize, itemCount) : 0,
+      hasPrevious: currentPage > 1,
+      hasNext: currentPage < pageCount,
+    };
+  }
+
+  static matchesAuditActionFilter(log, actionFilter = 'ALL') {
+    if (actionFilter === 'ALL') return true;
+    const action = String(log?.action || '').toUpperCase();
+    if (actionFilter === 'ROLE') return action.includes('ROLE') || action.includes('ASSIGN');
+    if (actionFilter === 'COURSE') return action.includes('COURSE');
+    if (actionFilter === 'DATABASE') return action.includes('DATABASE') || action.includes('BACKUP') || action.includes('RESTORE');
+    if (actionFilter === 'QUARANTINE') return action.includes('QUARANTINE');
+    return action.includes(String(actionFilter).toUpperCase());
+  }
+
+  static getAuditRequestParams(page, perPage, actionFilter = 'ALL') {
+    const params = { page, per_page: perPage };
+    if (actionFilter !== 'ALL') params.action = actionFilter;
+    return params;
+  }
+
+  static getAuditActionsForRole(subRole) {
+    const allActions = [
+      'USER_SUSPEND', 'USER_UNSUSPEND', 'USER_ROLES_UPDATED', 'USER_ROLE_ASSIGNED',
+      'USER_ROLE_REVOKED', 'USER_REVOKE_SESSIONS', 'COURSE_CREATED', 'COURSE_UPDATED',
+      'COURSE_APPROVED', 'COURSE_PUBLISHED', 'COURSE_TRASHED', 'COURSE_ARCHIVED',
+      'COURSE_RESTORED_FROM_TRASH', 'COURSE_SUBMITTED_FOR_REVIEW', 'COURSE_REJECTED',
+      'COURSE_RETRACTED_TO_DRAFT', 'COURSE_OWNER_REASSIGNED', 'LESSON_CREATED',
+      'LESSON_UPDATED', 'LESSON_REORDERED', 'LESSON_TRASHED', 'LESSON_STATUS_CHANGED',
+      'TEACHING_ASSIGNMENT_CREATED', 'TEACHING_ASSIGNMENT_UPDATED', 'DATABASE_BACKUP_CREATED',
+      'DATABASE_BACKUP_VERIFIED', 'DATABASE_RESTORE_DRY_RUN', 'DATABASE_RESTORE_INITIATED',
+      'DATABASE_RESTORE_COMPLETED', 'QUARANTINE_OVERRIDE', 'ASSESSMENT_CREATED',
+      'ASSESSMENT_UPDATED', 'ASSESSMENT_PUBLISHED', 'ASSESSMENT_CANCELLED',
+      'ASSESSMENT_TRASHED', 'ASSESSMENT_RESTORED',
+      'INSTRUCTOR_APPLICATION_SUBMITTED', 'INSTRUCTOR_APPLICATION_CANCELLED',
+      'INSTRUCTOR_APPLICATION_APPROVED', 'INSTRUCTOR_APPLICATION_REJECTED',
+    ];
+    const actionsByRole = {
+      ADMIN_COURSE_REVIEW: allActions.filter(action =>
+        [
+          'COURSE_CHANGE', 'COURSE_ADMIN_EDIT', 'COURSE_APPROVED', 'COURSE_PUBLISHED',
+          'COURSE_TRASHED', 'COURSE_ARCHIVED', 'COURSE_RESTORED', 'COURSE_SUBMITTED',
+          'COURSE_REJECTED', 'COURSE_RETRACTED', 'COURSE_STATUS_TO_', 'COURSE_CREATED',
+          'COURSE_UPDATED', 'LESSON_', 'SUBJECT_',
+        ].some(prefix => action.startsWith(prefix))
+      ),
+      ADMIN_INSTRUCTOR_REVIEW: allActions.filter(action => action.startsWith('INSTRUCTOR_APPLICATION_')),
+      ADMIN_TEACHING_ASSIGNMENT: allActions.filter(action =>
+        ['TEACHING_', 'COURSE_REASSIGN', 'COURSE_OWNER_REASSIGNED', 'COURSE_ASSIGN']
+          .some(prefix => action.startsWith(prefix))
+      ),
+    };
+    return actionsByRole[subRole] || allActions;
+  }
+
+  static getAssignableAdminSubRoles() {
+    return ['ADMIN_COURSE_REVIEW', 'ADMIN_INSTRUCTOR_REVIEW', 'ADMIN_TEACHING_ASSIGNMENT', 'ADMIN_SYSTEM_MONITORING'];
+  }
+
+  static getAdminSubRoleSelectionState(currentRoles, currentAdminSubRole) {
+    const isExistingPrimary = currentRoles.includes('ADMIN') && currentAdminSubRole === 'ADMIN_PRIMARY';
+    return {
+      isExistingPrimary,
+      selectedSubRole: isExistingPrimary || !AdminView.getAssignableAdminSubRoles().includes(currentAdminSubRole)
+        ? null
+        : currentAdminSubRole,
+    };
+  }
+
+  static renderAuditActionOptions(subRole) {
+    const labels = {
+      USER_SUSPEND: 'Khóa tài khoản', USER_UNSUSPEND: 'Mở khóa tài khoản', USER_ROLES_UPDATED: 'Cập nhật tập vai trò',
+      USER_ROLE_ASSIGNED: 'Bổ nhiệm vai trò', USER_ROLE_REVOKED: 'Thu hồi vai trò', USER_REVOKE_SESSIONS: 'Thu hồi phiên đăng nhập',
+      COURSE_CREATED: 'Tạo khóa học', COURSE_UPDATED: 'Cập nhật khóa học', COURSE_APPROVED: 'Duyệt khóa học',
+      COURSE_PUBLISHED: 'Xuất bản khóa học', COURSE_TRASHED: 'Đưa khóa học vào thùng rác', COURSE_ARCHIVED: 'Lưu trữ khóa học',
+      COURSE_RESTORED_FROM_TRASH: 'Khôi phục khóa học', COURSE_SUBMITTED_FOR_REVIEW: 'Gửi khóa học xét duyệt',
+      COURSE_REJECTED: 'Từ chối khóa học', COURSE_RETRACTED_TO_DRAFT: 'Rút khóa học về bản nháp',
+      COURSE_OWNER_REASSIGNED: 'Chuyển người phụ trách khóa học', LESSON_CREATED: 'Tạo bài giảng',
+      LESSON_UPDATED: 'Cập nhật bài giảng', LESSON_REORDERED: 'Sắp xếp lại bài giảng', LESSON_TRASHED: 'Đưa bài giảng vào thùng rác',
+      LESSON_STATUS_CHANGED: 'Đổi trạng thái bài giảng', TEACHING_ASSIGNMENT_CREATED: 'Tạo phân công giảng dạy',
+      TEACHING_ASSIGNMENT_UPDATED: 'Cập nhật phân công giảng dạy', DATABASE_BACKUP_CREATED: 'Tạo bản sao lưu cơ sở dữ liệu',
+      DATABASE_BACKUP_VERIFIED: 'Xác minh bản sao lưu', DATABASE_RESTORE_DRY_RUN: 'Chạy thử khôi phục cơ sở dữ liệu',
+      DATABASE_RESTORE_INITIATED: 'Bắt đầu khôi phục cơ sở dữ liệu', DATABASE_RESTORE_COMPLETED: 'Hoàn tất khôi phục cơ sở dữ liệu',
+      QUARANTINE_OVERRIDE: 'Giải phóng tệp cách ly', ASSESSMENT_CREATED: 'Tạo bài thi', ASSESSMENT_UPDATED: 'Cập nhật bài thi',
+      ASSESSMENT_PUBLISHED: 'Xuất bản bài thi', ASSESSMENT_CANCELLED: 'Hủy bài thi', ASSESSMENT_TRASHED: 'Đưa bài thi vào thùng rác',
+      ASSESSMENT_RESTORED: 'Khôi phục bài thi',
+      INSTRUCTOR_APPLICATION_SUBMITTED: 'Nhận hồ sơ giảng viên', INSTRUCTOR_APPLICATION_CANCELLED: 'Hủy hồ sơ giảng viên',
+      INSTRUCTOR_APPLICATION_APPROVED: 'Duyệt hồ sơ giảng viên', INSTRUCTOR_APPLICATION_REJECTED: 'Từ chối hồ sơ giảng viên',
+    };
+    return ['ALL', ...AdminView.getAuditActionsForRole(subRole)].map(action =>
+      `<option value="${action}">${action === 'ALL' ? 'Tất cả tác vụ' : (labels[action] || action.replace(/_/g, ' '))}</option>`
+    ).join('');
+  }
+
+  static renderLessonMarkdown(markdown) {
+    if (typeof UI !== 'undefined' && typeof UI.renderMarkdown === 'function') {
+      return UI.renderMarkdown(String(markdown || ''));
+    }
+    return typeof UI !== 'undefined' ? UI.escapeHtml(String(markdown || '')) : '';
+  }
+
+  static getQueueSummary(subRole, counts = {}) {
+    const summary = { courses: 0, changes: 0, applications: 0, assignments: 0 };
+    if (subRole === 'ADMIN_COURSE_REVIEW') {
+      summary.courses = counts.courses || 0;
+      summary.changes = counts.changes || 0;
+    } else if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
+      summary.applications = counts.applications || 0;
+    } else if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
+      summary.assignments = counts.assignments || 0;
+    }
+    return summary;
+  }
+
   // =========================================================================
   // 1. Admin Governance Command Center (4-Tab Modular Command Center)
   // =========================================================================
-  static async renderGovernance(container, activeTab = 'users') {
+  static async renderGovernance(container, activeTab = 'users', subQueue = null) {
+    const adminSubRole = window.app?.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+    const showQueueSummary = adminSubRole === 'ADMIN_COURSE_REVIEW' || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+    const isInstructorQueue = adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
     container.innerHTML = `
-      <div class="p-6 space-y-6 max-w-7xl mx-auto animate-fade-in" id="admin-governance-root">
+        <div class="p-6 space-y-6 max-w-[1800px] mx-auto animate-fade-in" id="admin-governance-root">
         
         <!-- Header & Context Banner -->
         <section class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -54,12 +183,12 @@ class AdminView {
         </section>
 
         <!-- 3 Core KPI Cards with Deep Link Navigation -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="${showQueueSummary ? 'grid grid-cols-1 md:grid-cols-3' : 'grid grid-cols-1 md:grid-cols-2'} gap-5">
           
           <!-- KPI 1: Đề cương chờ duyệt -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=courses'">
+          <div class="${showQueueSummary ? '' : 'hidden'} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=${isInstructorQueue ? 'applications' : 'courses'}'">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
+              <span data-queue-summary-title class="text-xs font-bold text-slate-500 flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[22px]">fact_check</span>
                 Duyệt khóa học & Bản sửa đổi
               </span>
@@ -67,7 +196,7 @@ class AdminView {
             </div>
             <div class="flex items-baseline gap-3 my-2">
               <span class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono" id="kpi-courses-pending">--</span>
-              <span class="text-xs text-slate-400">Khóa học / Bản sửa chờ duyệt</span>
+              <span data-queue-summary-description class="text-xs text-slate-400">Khóa học / Bản sửa chờ duyệt</span>
             </div>
             <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
               <span class="text-slate-500" id="kpi-courses-subtext">Hàng đợi xét duyệt ABET CAC</span>
@@ -123,11 +252,14 @@ class AdminView {
 
     // Load initial KPIs
     try {
+      const isCourseReviewer = adminSubRole === 'ADMIN_COURSE_REVIEW';
+      const isInstructorReviewer = adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+      const canViewTelemetry = adminSubRole === 'ADMIN_PRIMARY' || adminSubRole === 'ADMIN_SYSTEM_MONITORING';
       const [coursesRes, appsRes, crRes, telemRes] = await Promise.allSettled([
-        ApiClient.getPendingCourses(),
-        ApiClient.getAdminInstructorApplications('PENDING'),
-        ApiClient.getAdminChangeRequests('PENDING'),
-        ApiClient.getAdminTelemetry()
+        isCourseReviewer ? ApiClient.getPendingCourses() : Promise.resolve(null),
+        isInstructorReviewer ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null),
+        isCourseReviewer ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null),
+        canViewTelemetry ? ApiClient.getAdminTelemetry() : Promise.resolve(null)
       ]);
 
       let pendingCoursesCount = 0;
@@ -143,9 +275,24 @@ class AdminView {
         pendingAppsCount = appsRes.value.pending_count || (appsRes.value.applications ? appsRes.value.applications.length : 0);
       }
 
-      const totalCourseWork = pendingCoursesCount + pendingCrCount;
+      const queueSummary = AdminView.getQueueSummary(adminSubRole, {
+        courses: pendingCoursesCount,
+        changes: pendingCrCount,
+        applications: pendingAppsCount,
+      });
+      const totalCourseWork = queueSummary.courses + queueSummary.changes + queueSummary.applications;
       const el = document.getElementById('kpi-courses-pending');
       const badge = document.getElementById('kpi-courses-badge');
+
+      if (isInstructorQueue) {
+        const queueCard = el?.closest('div[onclick]');
+        const queueTitle = queueCard?.querySelector('[data-queue-summary-title]');
+        const queueDescription = queueCard?.querySelector('[data-queue-summary-description]');
+        const queueSubtext = document.getElementById('kpi-courses-subtext');
+        if (queueTitle?.lastChild) queueTitle.lastChild.textContent = ' Hồ sơ giảng viên chờ duyệt';
+        if (queueDescription) queueDescription.textContent = 'Hồ sơ đang chờ xét duyệt';
+        if (queueSubtext) queueSubtext.textContent = 'Hàng đợi xét duyệt giảng viên';
+      }
 
       if (el) el.textContent = String(totalCourseWork).padStart(2, '0');
       if (badge) badge.textContent = `${totalCourseWork} chờ duyệt`;
@@ -153,8 +300,8 @@ class AdminView {
       // Synchronize Real-time Superscript Exponent Badges to Topbar
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
         window.app.updateAdminNavBadges({
-          courses: totalCourseWork,
-          applications: pendingAppsCount
+          courses: queueSummary.courses + queueSummary.changes,
+          applications: queueSummary.applications
         });
       }
 
@@ -214,7 +361,7 @@ class AdminView {
           : activeTab === 'reassign'
             ? 'tab-reassign'
             : 'tab-users';
-    AdminView.switchTab(targetTab, null, false);
+    AdminView.switchTab(targetTab, subQueue, false);
   }
 
   // =========================================================================
@@ -254,10 +401,10 @@ class AdminView {
               <span class="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]" aria-hidden="true">search</span>
             </div>
             <select id="user-role-filter" aria-label="Lọc người dùng theo vai trò" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 font-bold focus:outline-none">
-              <option value="ALL">Tất cả vai trò</option>
-              <option value="ADMIN">ADMIN (Quản trị viên)</option>
-              <option value="INSTRUCTOR">INSTRUCTOR (Giảng viên)</option>
-              <option value="STUDENT">STUDENT (Sinh viên)</option>
+              <option value="ALL">T&#7845;t c&#7843; ng&#432;&#7901;i d&#249;ng</option>
+              <option value="STUDENT">Sinh vi&#234;n</option>
+              <option value="INSTRUCTOR">Gi&#7843;ng vi&#234;n</option>
+              <option value="ADMIN">Qu&#7843;n tr&#7883; vi&#234;n</option>
             </select>
             <button type="button" id="btn-sync-users" class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[16px]">sync</span>
@@ -501,6 +648,7 @@ class AdminView {
   }
 
   static openRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY') {
+    const subRoleSelectionState = AdminView.getAdminSubRoleSelectionState(currentRoles, currentAdminSubRole);
     if (!window.app?.currentUser?.is_primary_admin) {
       UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền phân quyền người dùng.', 'error');
       return;
@@ -546,36 +694,34 @@ class AdminView {
             <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Thẩm quyền rõ ràng</span>
           </div>
           <div class="space-y-2 pt-1">
-            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_PRIMARY" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_PRIMARY' ? 'checked' : ''}>
-              <div>
-                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin chính (Toàn quyền hệ thống)</div>
-                <div class="text-[11px] text-slate-500">Toàn quyền cao nhất: phân quyền admin khác, duyệt khóa học, duyệt GV, phân công, giám sát.</div>
+            ${subRoleSelectionState.isExistingPrimary ? `
+              <div class="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200" role="status">
+                Tài khoản Admin chính hiện tại; không thể cấp mới hoặc đổi vai trò tại đây.
               </div>
-            </label>
+            ` : ''}
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt khóa học</div>
                 <div class="text-[11px] text-slate-500">Phê duyệt đề cương khóa học mới, duyệt yêu cầu sửa/xóa bài giảng và môn học.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt giảng viên</div>
                 <div class="text-[11px] text-slate-500">Thẩm định hồ sơ, xem trực tiếp file CV, bằng cấp và phê duyệt/từ chối đơn ứng tuyển.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin phân công giảng dạy</div>
                 <div class="text-[11px] text-slate-500">Điều phối, gán và chuyển giao giảng viên phụ trách các khóa học đào tạo.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" class="mt-0.5 text-primary focus:ring-primary" ${currentAdminSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
+              <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
                 <div class="text-[11px] text-slate-500">Theo dõi tài nguyên phần cứng CPU/RAM, nhật ký kiểm toán bất biến (Audit Log) & Telemetry.</div>
@@ -634,7 +780,11 @@ class AdminView {
       let adminSubRole = null;
       if (action === 'assign' && role === 'ADMIN') {
         const checkedRadio = document.querySelector('input[name="admin-sub-role-radio"]:checked');
-        adminSubRole = checkedRadio ? checkedRadio.value : 'ADMIN_PRIMARY';
+        if (!checkedRadio || !AdminView.getAssignableAdminSubRoles().includes(checkedRadio.value)) {
+          UI.showToast('Vui lòng chọn một vai trò admin phụ trước khi cấp quyền ADMIN.', 'warning');
+          return;
+        }
+        adminSubRole = checkedRadio.value;
       }
 
       try {
@@ -930,7 +1080,11 @@ class AdminView {
           </div>
 
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs sm:text-sm min-w-[1060px]">
+            <table class="w-full text-left text-xs sm:text-sm min-w-[1500px] table-fixed">
+              <colgroup>
+                <col style="width:160px"><col style="width:240px"><col style="width:360px">
+                <col style="width:170px"><col style="width:130px"><col style="width:150px"><col style="width:290px">
+              </colgroup>
               <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
                 <tr>
                   <th class="px-3.5 py-3 w-[150px] whitespace-nowrap">Loại yêu cầu</th>
@@ -1259,7 +1413,7 @@ class AdminView {
                     </div>
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nội dung bài học (Markdown)</div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 font-mono text-[11px] whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300">${UI.escapeHtml(orig.markdown_content || '(Chưa có nội dung)')}</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300">${AdminView.renderLessonMarkdown(orig.markdown_content || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
@@ -1314,7 +1468,7 @@ class AdminView {
                       <div class="text-[10px] font-bold ${contentChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 font-mono text-[11px] whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200">${UI.escapeHtml(prop.markdown_content || orig.markdown_content || '(Chưa có nội dung)')}</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200">${AdminView.renderLessonMarkdown(prop.markdown_content || orig.markdown_content || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
@@ -2243,9 +2397,13 @@ class AdminView {
     `;
 
     try {
-      const logsRes = await ApiClient.getAdminAuditLogs({ per_page: 50 });
-      const logs = logsRes.items || [];
-      const totalLogs = logsRes.total !== undefined ? logsRes.total : logs.length;
+      const auditAdminSubRole = window.app?.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const canManageSystemSecurity = auditAdminSubRole === 'ADMIN_PRIMARY' || auditAdminSubRole === 'ADMIN_SYSTEM_MONITORING';
+      let logsRes = await ApiClient.getAdminAuditLogs({ page: 1, per_page: 50 });
+      let logs = logsRes.items || [];
+      let totalLogs = logsRes.total !== undefined ? logsRes.total : logs.length;
+      let auditPage = logsRes.page || 1;
+      let auditActionFilter = 'ALL';
 
       const box = document.getElementById('security-box');
       if (!box) return;
@@ -2293,16 +2451,9 @@ class AdminView {
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <select id="audit-action-filter" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer">
-              <option value="ALL">Tất cả tác vụ (${logs.length})</option>
-              <option value="USER_SUSPEND">Khóa tài khoản</option>
-              <option value="USER_UNSUSPEND">Mở khóa tài khoản</option>
-              <option value="ROLE">Bổ nhiệm & Phân quyền</option>
-              <option value="SESSIONS_REVOKED">Thu hồi phiên đăng nhập</option>
-              <option value="COURSE">Quản trị môn học</option>
-              <option value="DATABASE">Sao lưu & Khôi phục</option>
-              <option value="QUARANTINE">Giải phóng tệp cách ly</option>
+              ${AdminView.renderAuditActionOptions(auditAdminSubRole)}
             </select>
-            <button type="button" id="quarantine-override-tool-btn" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-none">
+            <button type="button" id="quarantine-override-tool-btn" class="${canManageSystemSecurity ? '' : 'hidden'} px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-none">
               <span class="material-symbols-outlined text-[16px]">health_and_safety</span>
               <span>Giải phóng Tệp Cách ly</span>
             </button>
@@ -2326,21 +2477,20 @@ class AdminView {
             </tbody>
           </table>
         </div>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800" aria-label="Audit log pagination">
+          <span id="audit-page-summary" class="text-xs text-slate-500"></span>
+          <div class="flex items-center gap-2">
+            <button type="button" id="audit-page-previous" class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold disabled:opacity-40" aria-label="Previous audit page">Trang trước</button>
+            <button type="button" id="audit-page-next" class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold disabled:opacity-40" aria-label="Next audit page">Trang sau</button>
+          </div>
+        </div>
       `;
 
-      const renderAuditRows = (actionFilter = 'ALL') => {
+      const renderAuditRows = (actionFilter = auditActionFilter) => {
         const tbody = document.getElementById('audit-table-tbody');
         if (!tbody) return;
 
-        const filtered = logs.filter(l => {
-          if (actionFilter === 'ALL') return true;
-          const act = (l.action || '').toUpperCase();
-          if (actionFilter === 'ROLE') return act.includes('ROLE') || act.includes('ASSIGN');
-          if (actionFilter === 'COURSE') return act.includes('COURSE');
-          if (actionFilter === 'DATABASE') return act.includes('DATABASE') || act.includes('BACKUP') || act.includes('RESTORE');
-          if (actionFilter === 'QUARANTINE') return act.includes('QUARANTINE');
-          return act.includes(actionFilter);
-        });
+        const filtered = logs.filter(l => AdminView.matchesAuditActionFilter(l, actionFilter));
 
         if (filtered.length === 0) {
           tbody.innerHTML = `
@@ -2499,11 +2649,44 @@ class AdminView {
         });
       };
 
+      const updateAuditPagination = () => {
+        const pageState = AdminView.getAuditPageState(auditPage, 50, totalLogs);
+        const pageSummary = document.getElementById('audit-page-summary');
+        const previousButton = document.getElementById('audit-page-previous');
+        const nextButton = document.getElementById('audit-page-next');
+        if (pageSummary) pageSummary.textContent = `Hiển thị ${pageState.firstItem}-${pageState.lastItem} / ${pageState.total} bản ghi · Trang ${pageState.page}/${pageState.pageCount}`;
+        if (previousButton) previousButton.disabled = !pageState.hasPrevious;
+        if (nextButton) nextButton.disabled = !pageState.hasNext;
+      };
+
+      const loadAuditPage = async (requestedPage) => {
+        const params = AdminView.getAuditRequestParams(requestedPage, 50, auditActionFilter);
+        try {
+          logsRes = await ApiClient.getAdminAuditLogs(params);
+          logs = logsRes.items || [];
+          totalLogs = logsRes.total !== undefined ? logsRes.total : logs.length;
+          auditPage = logsRes.page || requestedPage;
+          renderAuditRows(auditActionFilter);
+          updateAuditPagination();
+        } catch (error) {
+          UI.showToast(error.message || 'Không thể tải trang nhật ký kiểm toán.', 'error');
+        }
+      };
+
       renderAuditRows('ALL');
+      updateAuditPagination();
+
+      const previousAuditPage = document.getElementById('audit-page-previous');
+      const nextAuditPage = document.getElementById('audit-page-next');
+      if (previousAuditPage) previousAuditPage.onclick = () => loadAuditPage(auditPage - 1);
+      if (nextAuditPage) nextAuditPage.onclick = () => loadAuditPage(auditPage + 1);
 
       const actionSelect = document.getElementById('audit-action-filter');
       if (actionSelect) {
-        actionSelect.onchange = () => renderAuditRows(actionSelect.value);
+        actionSelect.onchange = () => {
+          auditActionFilter = actionSelect.value;
+          loadAuditPage(1);
+        };
       }
 
       const overrideBtn = document.getElementById('quarantine-override-tool-btn');

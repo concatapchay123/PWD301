@@ -116,6 +116,11 @@ def test_validate_password():
     validate_password("Password123!")
 
 
+def test_validate_password_does_not_count_whitespace_as_special_character():
+    with pytest.raises(InvalidPasswordError):
+        validate_password("SecurePass123 ")
+
+
 # ---------------------------------------------------------------------------
 # User Registration & Management Tests
 # ---------------------------------------------------------------------------
@@ -241,6 +246,83 @@ def test_change_password_increments_auth_version(app):
         # Subsequent change increments again
         updated2 = change_password(user.id, "NewPassword@123", "ThirdPassword@123")
         assert updated2.auth_version == 3
+
+
+def test_change_password_rejects_password_without_special_character(app):
+    with app.app_context():
+        user = register_user("pwd-special@pwd301.local", "OldPassword@123", "Pwd User")
+        with pytest.raises(InvalidPasswordError):
+            change_password(user.id, "OldPassword@123", "NewPassword123")
+        assert user.auth_version == 1
+
+
+def test_role_assignment_cannot_grant_primary_admin(app):
+    from pwd301.services.exceptions import InvalidRoleAssignmentError
+    from pwd301.services.user_service import assign_role_to_user
+
+    with app.app_context():
+        user = register_user("primary-grant@pwd301.local", "Password@123!", "Role Target")
+        with pytest.raises(InvalidRoleAssignmentError, match="ADMIN_PRIMARY"):
+            assign_role_to_user(
+                user.id,
+                "ADMIN",
+                reason="Ordinary role assignment",
+                admin_sub_role="ADMIN_PRIMARY",
+            )
+        assert not user.is_admin
+
+
+def test_primary_admin_cannot_be_demoted_by_role_removal(app):
+    from pwd301.services.exceptions import AdminActionForbiddenError
+    from pwd301.services.user_service import assign_role_to_user, remove_role_from_user
+
+    with app.app_context():
+        primary = register_user("primary-kept@pwd301.local", "Password@123!", "Primary")
+        other_admin = register_user("other-admin@pwd301.local", "Password@123!", "Other Admin")
+        assign_role_to_user(primary.id, "ADMIN")
+        assign_role_to_user(other_admin.id, "ADMIN")
+        with pytest.raises(AdminActionForbiddenError):
+            remove_role_from_user(
+                primary.id,
+                "ADMIN",
+                removed_by_user_id=other_admin.id,
+                reason="Protect primary account",
+            )
+        assert primary.is_primary_admin
+
+
+def test_primary_admin_cannot_be_reassigned_to_a_subordinate_admin_role(app):
+    from pwd301.services.exceptions import AdminActionForbiddenError
+    from pwd301.services.user_service import assign_role_to_user
+
+    with app.app_context():
+        primary = register_user("primary-role-lock@pwd301.local", "Password@123!", "Primary")
+        assign_role_to_user(primary.id, "ADMIN")
+
+        with pytest.raises(AdminActionForbiddenError):
+            assign_role_to_user(
+                primary.id,
+                "ADMIN",
+                reason="Attempt to demote primary",
+                admin_sub_role="ADMIN_COURSE_REVIEW",
+            )
+
+        assert primary.is_primary_admin
+
+
+def test_exact_role_assignment_cannot_create_primary_admin(app):
+    from pwd301.services.exceptions import InvalidRoleAssignmentError
+    from pwd301.services.user_service import set_user_roles
+
+    with app.app_context():
+        user = register_user("exact-primary@pwd301.local", "Password@123!", "Role Target")
+        with pytest.raises(InvalidRoleAssignmentError, match="ADMIN_PRIMARY"):
+            set_user_roles(
+                user.id,
+                {"STUDENT", "INSTRUCTOR", "ADMIN"},
+                reason="Ordinary exact role assignment",
+            )
+        assert not user.is_admin
 
 
 def test_change_password_inactive_user_rejected(app):

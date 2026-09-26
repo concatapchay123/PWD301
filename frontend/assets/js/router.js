@@ -5,6 +5,22 @@
  */
 
 class AppRouter {
+  static getNotificationReviewTarget(item, link = '') {
+    const target = String(link || item?.action_url || item?.target_url || '');
+    if (!target.startsWith('#/admin/governance')) return null;
+
+    const [path, queryString = ''] = target.split('?');
+    const query = new URLSearchParams(queryString);
+    let tab = query.get('tab');
+    if (!tab && item?.category === 'COURSE') tab = 'courses';
+    if (!tab && String(item?.event_type || '').includes('INSTRUCTOR_APPLICATION')) tab = 'applications';
+    if (!['courses', 'applications'].includes(tab)) return null;
+
+    query.set('tab', tab);
+    if (tab === 'courses') query.set('queue', 'courses');
+    return `${path}?${query.toString()}`;
+  }
+
   static get instance() {
     return window.app || null;
   }
@@ -397,7 +413,14 @@ class AppRouter {
 
     // --- Admin Routes ---
     else if (path === '#/admin/governance') {
-      await AdminView.renderGovernance(viewport, query.tab || 'users');
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const defaultTab = {
+        ADMIN_COURSE_REVIEW: 'courses',
+        ADMIN_INSTRUCTOR_REVIEW: 'applications',
+        ADMIN_TEACHING_ASSIGNMENT: 'reassign',
+        ADMIN_SYSTEM_MONITORING: 'security',
+      }[subRole] || 'users';
+      await AdminView.renderGovernance(viewport, query.tab || defaultTab, query.queue || null);
     } else if (path === '#/admin/operations') {
       await AdminView.renderOperations(viewport);
     }
@@ -419,10 +442,13 @@ class AppRouter {
   async fetchAdminPendingCounts() {
     if (this.currentRole !== 'ADMIN') return;
     try {
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const canReviewCourses = subRole === 'ADMIN_COURSE_REVIEW';
+      const canReviewInstructors = subRole === 'ADMIN_INSTRUCTOR_REVIEW';
       const [coursesRes, crRes, appsRes] = await Promise.allSettled([
-        ApiClient.getPendingCourses(),
-        ApiClient.getAdminChangeRequests('PENDING'),
-        ApiClient.getAdminInstructorApplications('PENDING')
+        canReviewCourses ? ApiClient.getPendingCourses() : Promise.resolve(null),
+        canReviewCourses ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null),
+        canReviewInstructors ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null)
       ]);
 
       let pendingCoursesCount = 0;
@@ -1152,6 +1178,13 @@ class AppRouter {
 
     // Open detailed reading modal so user can fully read notification
     if (item) {
+      const reviewTarget = AppRouter.getNotificationReviewTarget(item, link);
+      if (reviewTarget) {
+        this.closeNotificationsDropdown();
+        if (window.location.hash === reviewTarget) this.handleRoute();
+        else window.location.hash = reviewTarget;
+        return;
+      }
       this.openNotificationModal(item, link);
     } else if (link) {
       this.closeNotificationsDropdown();

@@ -166,7 +166,9 @@ def admin_faculty_workload() -> tuple[Response, int] | Response:
 @admin_required
 def admin_users() -> tuple[Response, int] | Response | str:
     """Administrator users management listing with server-side filter and search."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.is_primary_admin:
+        raise ForbiddenError("Only the primary administrator can access the user and role matrix.")
     sess = db.session
 
     query = sess.query(User)
@@ -221,7 +223,9 @@ def admin_users() -> tuple[Response, int] | Response | str:
 @admin_required
 def admin_get_user(user_id: str) -> tuple[Response, int] | Response:
     """Retrieve detailed user profile for administrators."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.is_primary_admin:
+        raise ForbiddenError("Only the primary administrator can access the user and role matrix.")
     sess = db.session
     target_user = _resolve_user(user_id, session=sess)
     if target_user is None:

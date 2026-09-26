@@ -55,6 +55,41 @@ SENSITIVE_KEY_PATTERNS = (
     "authorization",
 )
 
+_AUDIT_ACTION_PREFIXES_BY_ADMIN_ROLE = {
+    "ADMIN_COURSE_REVIEW": (
+        "COURSE_CHANGE",
+        "COURSE_ADMIN_EDIT",
+        "COURSE_APPROVED",
+        "COURSE_PUBLISHED",
+        "COURSE_TRASHED",
+        "COURSE_ARCHIVED",
+        "COURSE_RESTORED",
+        "COURSE_SUBMITTED",
+        "COURSE_REJECTED",
+        "COURSE_RETRACTED",
+        "COURSE_STATUS_TO_",
+        "COURSE_CREATED",
+        "COURSE_UPDATED",
+        "LESSON_",
+        "SUBJECT_",
+    ),
+    "ADMIN_INSTRUCTOR_REVIEW": ("INSTRUCTOR_APPLICATION_",),
+    "ADMIN_TEACHING_ASSIGNMENT": (
+        "TEACHING_",
+        "COURSE_REASSIGN",
+        "COURSE_OWNER_REASSIGNED",
+        "COURSE_ASSIGN",
+    ),
+}
+
+
+def _audit_action_allowed(actor: User, action: str) -> bool:
+    """Return whether an administrator's sub-role may inspect this audit action."""
+    if actor.is_primary_admin or actor.has_admin_permission("SYSTEM_MONITORING"):
+        return True
+    prefixes = _AUDIT_ACTION_PREFIXES_BY_ADMIN_ROLE.get(actor.admin_sub_role or "", ())
+    return action.startswith(prefixes)
+
 
 def redact_sensitive_data(val: Any, parent_key_is_sensitive: bool = False) -> Any:
     """Recursively redact sensitive key-values in dicts, lists, tuples, or sets.
@@ -331,6 +366,15 @@ def query_audit_logs(
     sess = session if session is not None else db.session
     query = sess.query(AuditEvent)
 
+    if not actor.is_primary_admin and not actor.has_admin_permission("SYSTEM_MONITORING"):
+        prefixes = _AUDIT_ACTION_PREFIXES_BY_ADMIN_ROLE.get(actor.admin_sub_role or "", ())
+        if prefixes:
+            query = query.filter(
+                or_(*(AuditEvent.action.like(f"{prefix}%") for prefix in prefixes))
+            )
+        else:
+            query = query.filter(False)
+
     active_filters = filters or {}
 
     # 1. Filter: Action
@@ -543,7 +587,7 @@ def get_audit_log_detail(
 
     sess = session if session is not None else db.session
     event = sess.query(AuditEvent).filter(AuditEvent.event_id == audit_uuid).first()
-    if event is None:
+    if event is None or not _audit_action_allowed(actor, event.action):
         raise AuditNotFoundError(f"Audit log '{audit_id}' not found.")
 
     target_pub_id: str | None = None

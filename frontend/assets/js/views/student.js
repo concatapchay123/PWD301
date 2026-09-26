@@ -40,6 +40,43 @@ class StudentView {
       && Number(lesson.progress?.max_view_fraction || 0) >= 1;
   }
 
+  static getPasswordRequirements(password) {
+    const value = String(password || '');
+    return {
+      hasLength: value.length >= 8,
+      hasLetter: /[A-Za-z]/.test(value),
+      hasDigit: /[0-9]/.test(value),
+      hasSpecialCharacter: /[^A-Za-z0-9\s]/.test(value)
+    };
+  }
+
+  static createRandomAvatarUrl(random = Math.random) {
+    const seed = Math.floor(random() * 1_000_000_000).toString(36);
+    return `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`;
+  }
+
+  static getStoredRandomAvatarUrl(identity) {
+    const key = `pwd301:random-avatar:${String(identity || '').trim()}`;
+    if (!String(identity || '').trim()) return '';
+    try {
+      const value = window.localStorage?.getItem(key) || '';
+      return /^https:\/\/api\.dicebear\.com\/7\.x\/bottts\/svg\?seed=[a-z0-9]+$/.test(value) ? value : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  static storeRandomAvatarUrl(identity, avatarUrl) {
+    const key = `pwd301:random-avatar:${String(identity || '').trim()}`;
+    if (!String(identity || '').trim() || !/^https:\/\/api\.dicebear\.com\/7\.x\/bottts\/svg\?seed=[a-z0-9]+$/.test(avatarUrl)) return false;
+    try {
+      window.localStorage?.setItem(key, avatarUrl);
+      return Boolean(window.localStorage);
+    } catch (_error) {
+      return false;
+    }
+  }
+
   // =========================================================================
   // 0. Notification Hub (Delegates to Topbar Dropdown Menu)
   // =========================================================================
@@ -5244,6 +5281,9 @@ class StudentView {
         .join('')
         .slice(0, 2)
         .toUpperCase();
+      const profileIdentity = profile.public_id || profile.user_id || profile.id;
+      const generatedAvatar = StudentView.getStoredRandomAvatarUrl(profileIdentity);
+      const currentAvatarUrl = generatedAvatar || profile.avatar_url;
 
       container.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
@@ -5293,8 +5333,8 @@ class StudentView {
                 <!-- Avatar Visual Box -->
                 <div class="relative group shrink-0 text-center">
                   <div id="avatar-preview-box" class="w-24 h-24 rounded-2xl bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-2xl flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-md">
-                    ${profile.avatar_url ? `
-                      <img src="${UI.escapeHtml(profile.avatar_url)}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview-img" onerror="this.remove();" />
+                    ${currentAvatarUrl ? `
+                      <img src="${UI.escapeHtml(currentAvatarUrl)}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview-img" onerror="this.remove();" />
                     ` : `
                       <span id="avatar-preview-initials">${userInitials}</span>
                     `}
@@ -5303,15 +5343,7 @@ class StudentView {
                 </div>
 
                 <div class="flex-1 space-y-3 w-full">
-                  <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Đường dẫn ảnh đại diện (Avatar URL)</label>
-                    <input type="url" id="settings-avatar-url" placeholder="https://example.com/avatar.jpg" value="${UI.escapeHtml(profile.avatar_url || '')}" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-primary transition-colors" />
-                    <p class="text-[11px] text-slate-400 mt-1">Dán liên kết ảnh trực tiếp (PNG, JPG, WebP) hoặc sử dụng ảnh đại diện mặc định.</p>
-                  </div>
                   <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" id="btn-avatar-default" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors">
-                      Dùng chữ cái viết tắt
-                    </button>
                     <button type="button" id="btn-avatar-preset" class="px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition-colors">
                       Tạo Avatar ngẫu nhiên
                     </button>
@@ -5416,6 +5448,10 @@ class StudentView {
                     <div class="flex items-center gap-2 text-slate-500" id="pwd-check-digit">
                       <span class="material-symbols-outlined text-[14px]">cancel</span>
                       <span>Chứa ít nhất một chữ số (0-9)</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500" id="pwd-check-special">
+                      <span class="material-symbols-outlined text-[14px]">cancel</span>
+                      <span>Chứa ít nhất một ký tự đặc biệt (ví dụ !@#)</span>
                     </div>
                   </div>
                 </div>
@@ -5547,38 +5583,16 @@ class StudentView {
       });
 
       // 2. Avatar Actions & Live Preview
-      const avatarInput = container.querySelector('#settings-avatar-url');
       const avatarBox = container.querySelector('#avatar-preview-box');
-
-      const updateAvatarPreview = (url) => {
-        if (url && url.startsWith('http')) {
-          avatarBox.innerHTML = `<img src="${UI.escapeHtml(url)}" alt="Avatar" class="w-full h-full object-cover" onerror="this.remove();" />`;
-        } else {
-          avatarBox.innerHTML = `<span id="avatar-preview-initials">${userInitials}</span>`;
-        }
-      };
-
-      if (avatarInput) {
-        avatarInput.oninput = () => {
-          updateAvatarPreview(avatarInput.value.trim());
-        };
-      }
-
-      const btnAvatarDefault = container.querySelector('#btn-avatar-default');
-      if (btnAvatarDefault) {
-        btnAvatarDefault.onclick = () => {
-          if (avatarInput) avatarInput.value = '';
-          updateAvatarPreview('');
-        };
-      }
+      let generatedAvatarUrl = '';
 
       const btnAvatarPreset = container.querySelector('#btn-avatar-preset');
       if (btnAvatarPreset) {
         btnAvatarPreset.onclick = () => {
-          const seed = Math.random().toString(36).substring(2, 8);
-          const generatedUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}`;
-          if (avatarInput) avatarInput.value = generatedUrl;
-          updateAvatarPreview(generatedUrl);
+          generatedAvatarUrl = StudentView.createRandomAvatarUrl();
+          if (avatarBox) {
+            avatarBox.innerHTML = `<img src="${UI.escapeHtml(generatedAvatarUrl)}" alt="Avatar ngẫu nhiên" class="w-full h-full object-cover" onerror="this.remove();" />`;
+          }
         };
       }
 
@@ -5590,7 +5604,6 @@ class StudentView {
           const nameInput = container.querySelector('#settings-display-name');
           const saveBtn = container.querySelector('#btn-save-profile');
           const newName = nameInput ? nameInput.value.trim() : '';
-          const newAvatar = avatarInput ? avatarInput.value.trim() : '';
 
           if (!newName || newName.length < 2) {
             UI.showToast('Vui lòng nhập họ và tên hiển thị hợp lệ (tối thiểu 2 ký tự).', 'warning');
@@ -5604,14 +5617,19 @@ class StudentView {
 
           try {
             const res = await ApiClient.updateProfile({
-              display_name: newName,
-              avatar_url: newAvatar
+              display_name: newName
             });
+            const avatarStored = !generatedAvatarUrl
+              || StudentView.storeRandomAvatarUrl(profileIdentity, generatedAvatarUrl);
 
-            UI.showToast('Cập nhật thông tin hồ sơ cá nhân thành công!', 'success');
+            UI.showToast(
+              avatarStored
+                ? 'Cập nhật thông tin hồ sơ cá nhân thành công!'
+                : 'Đã lưu tên hiển thị, nhưng trình duyệt không lưu được avatar ngẫu nhiên.',
+              avatarStored ? 'success' : 'warning'
+            );
             if (window.app && window.app.currentUser) {
               window.app.currentUser.display_name = newName;
-              if (newAvatar) window.app.currentUser.avatar_url = newAvatar;
             }
 
             // Synchronize topbar user display name and initials
@@ -5651,27 +5669,30 @@ class StudentView {
       const checkLen = container.querySelector('#pwd-check-len');
       const checkLetter = container.querySelector('#pwd-check-letter');
       const checkDigit = container.querySelector('#pwd-check-digit');
+      const checkSpecial = container.querySelector('#pwd-check-special');
       const matchFeedback = container.querySelector('#pwd-match-feedback');
 
       const validatePwdRealtime = () => {
         const val = newPwdInput ? newPwdInput.value : '';
         const confVal = confPwdInput ? confPwdInput.value : '';
 
-        const hasLen = val.length >= 8;
-        const hasLetter = /[a-zA-Z]/.test(val);
-        const hasDigit = /[0-9]/.test(val);
+        const requirements = StudentView.getPasswordRequirements(val);
 
         if (checkLen) {
-          checkLen.className = `flex items-center gap-2 ${hasLen ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
-          checkLen.querySelector('.material-symbols-outlined').textContent = hasLen ? 'check_circle' : 'cancel';
+          checkLen.className = `flex items-center gap-2 ${requirements.hasLength ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkLen.querySelector('.material-symbols-outlined').textContent = requirements.hasLength ? 'check_circle' : 'cancel';
         }
         if (checkLetter) {
-          checkLetter.className = `flex items-center gap-2 ${hasLetter ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
-          checkLetter.querySelector('.material-symbols-outlined').textContent = hasLetter ? 'check_circle' : 'cancel';
+          checkLetter.className = `flex items-center gap-2 ${requirements.hasLetter ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkLetter.querySelector('.material-symbols-outlined').textContent = requirements.hasLetter ? 'check_circle' : 'cancel';
         }
         if (checkDigit) {
-          checkDigit.className = `flex items-center gap-2 ${hasDigit ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
-          checkDigit.querySelector('.material-symbols-outlined').textContent = hasDigit ? 'check_circle' : 'cancel';
+          checkDigit.className = `flex items-center gap-2 ${requirements.hasDigit ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkDigit.querySelector('.material-symbols-outlined').textContent = requirements.hasDigit ? 'check_circle' : 'cancel';
+        }
+        if (checkSpecial) {
+          checkSpecial.className = `flex items-center gap-2 ${requirements.hasSpecialCharacter ? 'text-emerald-600 font-bold' : 'text-slate-400'}`;
+          checkSpecial.querySelector('.material-symbols-outlined').textContent = requirements.hasSpecialCharacter ? 'check_circle' : 'cancel';
         }
 
         if (matchFeedback && confVal) {
@@ -5708,6 +5729,10 @@ class StudentView {
           }
           if (newVal.length < 8) {
             UI.showToast('Mật khẩu mới phải có tối thiểu 8 ký tự.', 'warning');
+            return;
+          }
+          if (!StudentView.getPasswordRequirements(newVal).hasSpecialCharacter) {
+            UI.showToast('Mật khẩu mới cần có ít nhất một ký tự đặc biệt (ví dụ !@#).', 'warning');
             return;
           }
           if (newVal !== confVal) {

@@ -1,3 +1,9 @@
+# Active task: TASK-072 — Admin Access Boundaries, Review Queues, Audit Logs & User Settings
+
+Status: DONE. See [TASK-072.md](TASK-072.md) for scope, acceptance criteria, verification, and completion evidence.
+
+---
+
 # Active task: TASK-071 — Learner Progress, Instructor Course Authoring, and Exam Interaction Repairs
 
 Status: DONE. See [TASK-071.md](TASK-071.md) for scope, acceptance criteria, verification, and remaining verification limits.

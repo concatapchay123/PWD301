@@ -215,6 +215,86 @@ def test_review_instructor_application_approve(
         assert "STUDENT" in user.role_codes  # Cumulative AUTH-002 preserved
 
 
+def test_instructor_reviewer_can_approve_and_is_audited(app, student_user, valid_application_data):
+    from pwd301.models.identity import Role, UserRole
+    from pwd301.models.notification_audit import AuditEvent
+
+    with app.app_context():
+        reviewer = register_user(
+            "instructor.reviewer@pwd301.edu.vn", "StrongAdminPassword123!", "Instructor Reviewer"
+        )
+        admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
+        if admin_role is None:
+            admin_role = Role(code="ADMIN", name="Administrator")
+            db.session.add(admin_role)
+            db.session.flush()
+        db.session.add(
+            UserRole(
+                user_id=reviewer.id,
+                role_id=admin_role.id,
+                assignment_reason="SUB_ROLE:ADMIN_INSTRUCTOR_REVIEW | review applications",
+            )
+        )
+        db.session.commit()
+        application = submit_instructor_application(
+            user_id=student_user, application_data=valid_application_data, session=db.session
+        )
+
+        reviewed = review_instructor_application(
+            application_id=application.id,
+            admin_user_id=reviewer.id,
+            action="approve",
+            reason="Credentials verified",
+            session=db.session,
+        )
+        db.session.flush()
+
+        assert reviewed.status == "APPROVED"
+        assert db.session.get(User, student_user).is_instructor
+        event = (
+            db.session.query(AuditEvent)
+            .filter_by(action="USER_ROLE_ASSIGNED", actor_user_id=reviewer.id)
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert event is not None
+        assert event.actor_user_id == reviewer.id
+
+
+def test_course_reviewer_cannot_approve_instructor_application(app, student_user, valid_application_data):
+    from pwd301.models.identity import Role, UserRole
+
+    with app.app_context():
+        reviewer = register_user(
+            "course.reviewer@pwd301.edu.vn", "StrongAdminPassword123!", "Course Reviewer"
+        )
+        admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
+        if admin_role is None:
+            admin_role = Role(code="ADMIN", name="Administrator")
+            db.session.add(admin_role)
+            db.session.flush()
+        db.session.add(
+            UserRole(
+                user_id=reviewer.id,
+                role_id=admin_role.id,
+                assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | course review only",
+            )
+        )
+        db.session.commit()
+        application = submit_instructor_application(
+            user_id=student_user, application_data=valid_application_data, session=db.session
+        )
+
+        with pytest.raises(ValidationError):
+            review_instructor_application(
+                application_id=application.id,
+                admin_user_id=reviewer.id,
+                action="approve",
+                reason="Not authorized",
+                session=db.session,
+            )
+
+
 def test_review_instructor_application_reject(
     app, student_user, admin_user, valid_application_data
 ):
@@ -316,4 +396,3 @@ def test_submit_instructor_application_missing_specialization(app, student_user)
             application_data={"institution_name": "Freelance", "specialization": ""},
             session=db.session,
         )
-

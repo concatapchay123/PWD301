@@ -111,7 +111,7 @@ def validate_password(password: str) -> None:
     if not re.search(r"\d", password):
         raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một chữ số.")
 
-    if not re.search(r"[^A-Za-z0-9]", password):
+    if not re.search(r"[^A-Za-z0-9\s]", password):
         raise InvalidPasswordError("Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*...).")
 
 
@@ -561,6 +561,13 @@ def set_user_roles(
     validate_role_combination(role_codes, raise_on_error=True)
     target_roles = {r.strip().upper() for r in role_codes}
 
+    if "ADMIN" in target_roles and not user.is_admin:
+        raise InvalidRoleAssignmentError(
+            "ADMIN_PRIMARY cannot be granted through exact role assignment."
+        )
+    if user.is_primary_admin and "ADMIN" not in target_roles:
+        raise AdminActionForbiddenError("The existing primary administrator role cannot be removed.")
+
     before_roles = sorted(user.role_codes)
     now = utc_now()
 
@@ -590,7 +597,8 @@ def set_user_roles(
                 )
                 if link is not None:
                     link.assigned_by_user_id = assigned_by_user_id
-                    link.assignment_reason = reason
+                    if code != "ADMIN":
+                        link.assignment_reason = reason
 
     after_roles = sorted(target_roles)
     user.auth_version += 1
@@ -657,6 +665,7 @@ def assign_role_to_user(
     reason: str | None = None,
     admin_sub_role: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    allow_instructor_application_approval: bool = False,
 ) -> User:
     """Assign a role to a user, ensuring cumulative hierarchy per AUTH-002.
 
@@ -693,9 +702,42 @@ def assign_role_to_user(
     if norm_code not in ("STUDENT", "INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
 
+    if (
+        norm_code == "ADMIN"
+        and user.is_primary_admin
+        and admin_sub_role not in (None, "ADMIN_PRIMARY")
+    ):
+        raise AdminActionForbiddenError(
+            "The existing primary administrator role cannot be changed to a subordinate role."
+        )
+
+    if norm_code == "ADMIN" and (
+        admin_sub_role == "ADMIN_PRIMARY"
+        or ((assigned_by_user_id is not None or reason is not None) and not admin_sub_role)
+    ):
+        raise InvalidRoleAssignmentError(
+            "ADMIN_PRIMARY cannot be granted through ordinary role assignment."
+        )
+    if norm_code == "ADMIN" and admin_sub_role is not None and admin_sub_role not in {
+        "ADMIN_COURSE_REVIEW",
+        "ADMIN_INSTRUCTOR_REVIEW",
+        "ADMIN_TEACHING_ASSIGNMENT",
+        "ADMIN_SYSTEM_MONITORING",
+    }:
+        raise InvalidRoleAssignmentError(f"Invalid admin sub-role: '{admin_sub_role}'.")
+
     if assigned_by_user_id is not None:
         assigner = sess.get(User, assigned_by_user_id)
-        if assigner is not None and assigner.is_admin and not assigner.is_primary_admin:
+        if (
+            assigner is not None
+            and assigner.is_admin
+            and not assigner.is_primary_admin
+            and not (
+                allow_instructor_application_approval
+                and norm_code == "INSTRUCTOR"
+                and assigner.has_admin_permission("INSTRUCTOR_REVIEW")
+            )
+        ):
             raise AdminActionForbiddenError(
                 "Chỉ Admin chính mới có quyền phân quyền và bổ nhiệm các Admin khác."
             )
@@ -847,6 +889,9 @@ def remove_role_from_user(
         raise InvalidRoleAssignmentError("Cannot remove baseline STUDENT role from user.")
     if norm_code not in ("INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
+
+    if user.is_primary_admin and norm_code in ("ADMIN", "INSTRUCTOR"):
+        raise AdminActionForbiddenError("The existing primary administrator role cannot be removed.")
 
     if removed_by_user_id is not None:
         remover = sess.get(User, removed_by_user_id)
@@ -1352,9 +1397,13 @@ def review_instructor_application(
     """Review an instructor application (approve or reject) by an administrator."""
     sess = session if session is not None else db.session
     admin = sess.get(User, admin_user_id)
-    if admin is None or not admin.is_admin:
+    if (
+        admin is None
+        or not admin.is_admin
+        or not admin.has_admin_permission("INSTRUCTOR_REVIEW")
+    ):
         raise ValidationError(
-            "Chỉ Quản trị viên (Admin) mới có quyền xét duyệt đơn đăng ký giảng viên."
+            "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền xét duyệt đơn đăng ký giảng viên."
         )
 
     clean_action = str(action).strip().lower()
@@ -1380,6 +1429,7 @@ def review_instructor_application(
             user_id=app_record.applicant_user_id,
             role_code="INSTRUCTOR",
             assigned_by_user_id=admin.id,
+            allow_instructor_application_approval=True,
             reason=(
                 f"Phê duyệt đơn đăng ký giảng viên #{app_record.id}: "
                 f"{clean_reason or 'Đạt yêu cầu chuyên môn'}"

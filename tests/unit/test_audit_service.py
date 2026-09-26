@@ -361,6 +361,60 @@ def test_get_audit_log_detail(app: Flask, admin_user: User, student_user: User) 
         get_audit_log_detail(actor=student_user, audit_id=event.event_id, session=sess)
 
 
+def test_audit_scope_filters_list_and_hides_out_of_scope_detail(app, student_user):
+    from pwd301.models.identity import Role, UserRole
+
+    with app.app_context():
+        db.session.query(AuditEvent).delete()
+        role = db.session.query(Role).filter_by(code="ADMIN").first()
+        if role is None:
+            role = Role(code="ADMIN", name="Administrator")
+            db.session.add(role)
+            db.session.flush()
+        reviewer = register_user("course.audit.reviewer@example.com", "Password@123!", "Reviewer")
+        monitor = register_user("system.audit.monitor@example.com", "Password@123!", "Monitor")
+        db.session.add(
+            UserRole(
+                user_id=reviewer.id,
+                role_id=role.id,
+                assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | reviews",
+            )
+        )
+        db.session.add(
+            UserRole(
+                user_id=monitor.id,
+                role_id=role.id,
+                assignment_reason="SUB_ROLE:ADMIN_SYSTEM_MONITORING | monitors",
+            )
+        )
+        db.session.flush()
+        db.session.query(AuditEvent).delete()
+        in_scope = record_audit_event(
+            actor=reviewer, action="COURSE_CHANGE_APPROVED", target_type="COURSE", target_id=5,
+            reason="Approved", session=db.session,
+        )
+        out_of_scope = record_audit_event(
+            actor=reviewer, action="USER_SUSPEND", target_type="USER", target_id=student_user.id,
+            reason="Suspended", session=db.session,
+        )
+        db.session.commit()
+
+        items, total, *_ = query_audit_logs(actor=reviewer, session=db.session)
+        assert total == 1
+        assert [item["action"] for item in items] == ["COURSE_CHANGE_APPROVED"]
+        assert get_audit_log_detail(actor=reviewer, audit_id=in_scope.event_id, session=db.session)
+        with pytest.raises(AuditNotFoundError):
+            get_audit_log_detail(actor=reviewer, audit_id=out_of_scope.event_id, session=db.session)
+
+        monitor_items, monitor_total, *_ = query_audit_logs(actor=monitor, session=db.session)
+        assert monitor_total == 2
+        assert {item["action"] for item in monitor_items} == {
+            "COURSE_CHANGE_APPROVED",
+            "USER_SUSPEND",
+        }
+        assert get_audit_log_detail(actor=monitor, audit_id=out_of_scope.event_id, session=db.session)
+
+
 def test_suspend_and_unsuspend_user_workflow(
     app: Flask, admin_user: User, student_user: User
 ) -> None:

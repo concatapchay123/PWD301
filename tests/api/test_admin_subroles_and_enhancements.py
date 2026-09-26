@@ -208,6 +208,68 @@ def test_admin_subrole_rbac_enforcement(app, client):
         db.session.commit()
 
 
+def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
+    with app.app_context():
+        admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
+        if admin_role is None:
+            admin_role = Role(code="ADMIN", name="Administrator")
+            db.session.add(admin_role)
+            db.session.flush()
+        sub_admin = register_user(
+            "matrix.subadmin@pwd301.local", "AdminPass1234!", "Sub Admin"
+        )
+        db.session.add(
+            UserRole(
+                user_id=sub_admin.id,
+                role_id=admin_role.id,
+                assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | reviewer",
+            )
+        )
+        target = register_user("matrix.target@pwd301.local", "StudentPass1234!", "Target")
+        primary = register_user("matrix.primary@pwd301.local", "AdminPass1234!", "Primary")
+        db.session.add(
+            UserRole(
+                user_id=primary.id,
+                role_id=admin_role.id,
+                assignment_reason="SUB_ROLE:ADMIN_PRIMARY | primary",
+            )
+        )
+        db.session.commit()
+        target_id = target.id
+
+    sub_admin_client = app.test_client()
+    sub_login = sub_admin_client.post(
+        "/auth/login", json={"email": "matrix.subadmin@pwd301.local", "password": "AdminPass1234!"}
+    )
+    assert sub_login.status_code == 200
+    assert sub_admin_client.get("/admin/users").status_code == 403
+    assert sub_admin_client.get(f"/admin/users/{target_id}").status_code == 403
+
+    primary_client = app.test_client()
+    primary_login = primary_client.post(
+        "/auth/login", json={"email": "matrix.primary@pwd301.local", "password": "AdminPass1234!"}
+    )
+    assert primary_login.status_code == 200
+    assert primary_client.get("/admin/users").status_code == 200
+    response = primary_client.post(
+        f"/admin/users/{target_id}/roles",
+        json={
+            "action": "assign",
+            "role": "ADMIN",
+            "admin_sub_role": "ADMIN_PRIMARY",
+            "reason": "Attempt primary grant",
+        },
+    )
+    assert response.status_code == 400
+    assert "ADMIN_PRIMARY" in response.get_json()["error"]["message"]
+    response_without_sub_role = primary_client.post(
+        f"/admin/users/{target_id}/roles",
+        json={"action": "assign", "role": "ADMIN", "reason": "Attempt implicit primary"},
+    )
+    assert response_without_sub_role.status_code == 400
+    assert "ADMIN_PRIMARY" in response_without_sub_role.get_json()["error"]["message"]
+
+
 def test_notifications_and_evidence_preview(app, client):
     """Test that notifications contain direct approval SPA URLs and evidence preview headers."""
     with app.app_context():
