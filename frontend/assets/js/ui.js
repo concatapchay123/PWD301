@@ -12,6 +12,12 @@
  */
 
 class UI {
+  static refreshCurrentRoute(fallback) {
+    const refresh = window.app?.handleRoute;
+    if (typeof refresh === 'function') return refresh.call(window.app);
+    if (typeof fallback === 'function') return fallback();
+  }
+
   // =========================================================================
   // 0. Minimal Instant Top Micro Progress Bar
   // =========================================================================
@@ -1098,6 +1104,12 @@ class ExamParser {
       const line = lines[i].trim();
       if (!line) continue;
 
+      const imageMarker = line.match(/^\[\[PWD301:IMAGE:([0-9a-f-]{36})\]\]$/i);
+      if (imageMarker && currentQ) {
+        currentQ.image_asset_id = imageMarker[1];
+        continue;
+      }
+
       const expMatch = line.match(/^(?:Hướng dẫn giải|Giải thích|Lời giải)[:.]\s*(.*)$/i);
       const ansMatch = line.match(/^(?:Đáp án|Đ\/A|ĐA)[:.]\s*([A-D])/i);
       const optMatch = line.match(/^(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*(.*)$/i);
@@ -1199,6 +1211,7 @@ class ExamParser {
         number: q.number || (idx + 1),
         stem: q.stem || q.question_text || `Câu hỏi ${idx + 1}`,
         question_text: q.question_text || q.stem || `Câu hỏi ${idx + 1}`,
+        image_asset_id: q.image_asset_id || null,
         choices: q.choices || [],
         explanation: q.explanation || '',
         points: q.points || pointsPerQ,

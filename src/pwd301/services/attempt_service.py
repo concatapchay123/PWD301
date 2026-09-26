@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import time
 import unicodedata
@@ -27,7 +28,7 @@ from typing import Any
 from flask import current_app
 from sqlalchemy import func
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
-from sqlalchemy.orm import Session, scoped_session
+from sqlalchemy.orm import Session, joinedload, scoped_session
 
 from pwd301.extensions import db
 from pwd301.models.assessment import (
@@ -48,6 +49,7 @@ from pwd301.models.attempt_regrade import (
     AttemptQuestionGradeHistory,
 )
 from pwd301.models.course import Enrollment, EnrollmentPeriod
+from pwd301.models.file_import import QuestionRevisionResource
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.question_bank import (
@@ -89,6 +91,102 @@ from pwd301.services.exceptions import (
 
 # Constant-time dummy digest for side-channel timing attack mitigation
 DUMMY_LEASE_HASH = hashlib.sha256(b"pwd301-timing-defense-lease-hash").digest()
+GROUPED_CHOICE_MARKER = re.compile(r"^\[\[PWD301:G:(?:DRAG|MATCH):([1-9]\d*)\]\]")
+GROUPED_CHOICE_KIND_MARKER = re.compile(r"^\[\[PWD301:G:(DRAG|MATCH):[1-9]\d*\]\]")
+GROUPED_FILL_ANSWER_MARKER = re.compile(r"^\[\[PWD301:FI:([1-9]\d*)\]\]")
+FILL_IN_CONTENT_MARKER = "[[PWD301:FI_V1]]"
+
+
+def _grouped_multiple_choice_correct(
+    revision: QuestionRevision | None,
+    selected_snapshots: list[AttemptChoiceSnapshot],
+) -> bool | None:
+    """Grade one correct choice in each tagged blank or matching group.
+
+    Return ``None`` for ordinary multiple-choice items so their exact-set
+    grading contract remains unchanged.
+    """
+    if revision is None or not revision.choices:
+        return None
+
+    if not any((choice.content or "").startswith("[[PWD301:G:") for choice in revision.choices):
+        return None
+
+    groups: dict[str, set[str]] = {}
+    correct_keys_by_group: dict[str, set[str]] = {}
+    for choice in revision.choices:
+        marker = GROUPED_CHOICE_MARKER.match(choice.content or "")
+        if marker is None:
+            return False
+        group_id = marker.group(1)
+        choice_key = str(choice.choice_key).lower()
+        groups.setdefault(group_id, set()).add(choice_key)
+        if choice.is_correct:
+            correct_keys_by_group.setdefault(group_id, set()).add(choice_key)
+
+    required_groups = set(groups)
+    if not required_groups or any(
+        not correct_keys_by_group.get(group_id)
+        for group_id in required_groups
+    ):
+        return False
+
+    selected_by_group: dict[str, list[str]] = {}
+    for snapshot in selected_snapshots:
+        marker = GROUPED_CHOICE_MARKER.match(snapshot.content_snapshot or "")
+        if marker is None or marker.group(1) not in required_groups:
+            return False
+        selected_by_group.setdefault(marker.group(1), []).append(
+            str(snapshot.choice_key_snapshot).lower()
+        )
+
+    return set(selected_by_group) == required_groups and all(
+        len(selected_keys) == 1
+        and selected_keys[0] in correct_keys_by_group.get(group_id, set())
+        for group_id, selected_keys in selected_by_group.items()
+    )
+
+
+def _grouped_fill_answer_correct(
+    revision: QuestionRevision | None,
+    answer_text: str,
+) -> bool | None:
+    """Grade ordered typed blanks with private per-blank accepted answers."""
+    if revision is None or not revision.accepted_answers:
+        return None
+
+    if not any(
+        (answer.answer_text or "").startswith("[[PWD301:FI:")
+        for answer in revision.accepted_answers
+    ):
+        return None
+
+    groups: dict[int, set[str]] = {}
+    for accepted_answer in revision.accepted_answers:
+        raw_answer = accepted_answer.answer_text or ""
+        marker = GROUPED_FILL_ANSWER_MARKER.match(raw_answer)
+        if marker is None:
+            return False
+        group_index = int(marker.group(1))
+        value = raw_answer[marker.end() :].strip()
+        if not value:
+            return False
+        groups.setdefault(group_index, set()).add(
+            unicodedata.normalize("NFKC", value).casefold()
+        )
+
+    group_indexes = sorted(groups)
+    if not group_indexes or group_indexes != list(range(1, len(group_indexes) + 1)):
+        return False
+
+    submitted_values = answer_text.split("|||")
+    if len(submitted_values) != len(group_indexes):
+        return False
+
+    return all(
+        unicodedata.normalize("NFKC", value.strip()).casefold() in groups[group_index]
+        for group_index, value in zip(group_indexes, submitted_values, strict=True)
+    )
 
 
 def _record_attempt_audit(
@@ -625,6 +723,42 @@ def get_attempt_delivery(
 
     questions_data: list[dict[str, Any]] = []
     total_points = Decimal("0")
+    image_resources_by_revision: dict[int, list[dict[str, str]]] = {}
+    revision_ids = {
+        aq.source_question_revision_id
+        for aq in attempt.attempt_questions
+        if aq.source_question_revision_id is not None
+    }
+    if revision_ids:
+        revision_resources = (
+            sess.query(QuestionRevisionResource)
+            .options(joinedload(QuestionRevisionResource.file_asset))
+            .filter(
+                QuestionRevisionResource.question_revision_id.in_(revision_ids),
+                QuestionRevisionResource.resource_role == "IMAGE",
+            )
+            .order_by(
+                QuestionRevisionResource.question_revision_id,
+                QuestionRevisionResource.position,
+            )
+            .all()
+        )
+        for resource in revision_resources:
+            asset = resource.file_asset
+            if (
+                asset is None
+                or asset.status != "ACTIVE"
+                or asset.virus_scan_status != "CLEAN"
+                or (asset.mime_type or "").lower()
+                not in {"image/jpeg", "image/png", "image/webp", "image/gif"}
+            ):
+                continue
+            image_resources_by_revision.setdefault(resource.question_revision_id, []).append(
+                {
+                    "url": f"/student/files/{asset.public_id}/download?disposition=inline",
+                    "mime_type": asset.mime_type,
+                }
+            )
 
     for aq in attempt.attempt_questions:
         total_points += aq.points_assigned
@@ -634,17 +768,55 @@ def get_attempt_delivery(
             if getattr(aq, "public_id", None)
             else str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.attempt_question.{aq.id}"))
         )
+        answer = aq.current_answer
+        selected_choice_keys = (
+            {str(choice.choice_key_snapshot) for choice in answer.selected_choices}
+            if answer
+            else set()
+        )
 
         choices_data: list[dict[str, Any]] = []
         for cs in aq.choice_snapshots:
+            choice_key = str(cs.choice_key_snapshot)
+            content = cs.content_snapshot or ""
+            interaction_group = None
+            interaction_kind = None
+            interaction_left = None
+            marker = GROUPED_CHOICE_KIND_MARKER.match(content)
+            if marker:
+                interaction_kind = marker.group(1)
+                group_match = GROUPED_CHOICE_MARKER.match(content)
+                interaction_group = int(group_match.group(1)) if group_match else None
+                content = content[marker.end() :]
+                if interaction_kind == "MATCH" and "|||" in content:
+                    interaction_left, content = content.split("|||", 1)
             choices_data.append(
                 {
-                    "choice_key": str(cs.choice_key_snapshot),
-                    "choice_id": str(cs.choice_key_snapshot),
-                    "content": cs.content_snapshot,
+                    "choice_key": choice_key,
+                    "choice_id": choice_key,
+                    "content": content,
                     "position": cs.position,
+                    "is_selected": choice_key in selected_choice_keys,
+                    "interaction_kind": interaction_kind,
+                    "interaction_group": interaction_group,
+                    "interaction_left": interaction_left,
                 }
             )
+
+        interaction_type = None
+        if aq.content_snapshot.startswith(FILL_IN_CONTENT_MARKER):
+            interaction_type = "FILL_IN"
+            delivered_content = aq.content_snapshot[len(FILL_IN_CONTENT_MARKER) :]
+        else:
+            delivered_content = aq.content_snapshot
+            if choices_data:
+                kind = choices_data[0]["interaction_kind"]
+                if kind:
+                    interaction_type = {
+                        "FILL": "FILL_IN",
+                        "DRAG": "DRAG_DROP",
+                        "MATCH": "MATCHING",
+                    }[kind]
 
         section_pub_id = None
         if aq.section_id:
@@ -658,7 +830,13 @@ def get_attempt_delivery(
                 "question_id": aq_public_id,
                 "position": aq.position,
                 "question_type": aq.question_type_snapshot,
-                "content": aq.content_snapshot,
+                "interaction_type": interaction_type,
+                "content": delivered_content,
+                "answer_text": answer.answer_text if answer else None,
+                "selected_choice_keys": sorted(selected_choice_keys),
+                "resources": image_resources_by_revision.get(
+                    aq.source_question_revision_id, []
+                ),
                 "points": float(aq.points_assigned),
                 "section_id": section_pub_id,
                 "choices": choices_data,
@@ -2077,11 +2255,16 @@ def grade_attempt_objective_questions(
                 if aq.source_question_revision_id
                 else None
             )
+            grouped_result = _grouped_multiple_choice_correct(rev, selected_snaps)
             correct_keys = (
-                {str(c.choice_key).lower() for c in rev.choices if c.is_correct} if rev else set()
+                {str(c.choice_key).lower() for c in rev.choices if c.is_correct}
+                if rev and grouped_result is None
+                else set()
             )
             selected_keys = {str(sel.choice_key_snapshot).lower() for sel in selected_snaps}
-            if len(correct_keys) > 0 and selected_keys == correct_keys:
+            if grouped_result is True or (
+                grouped_result is None and correct_keys and selected_keys == correct_keys
+            ):
                 awarded_pts = assigned_pts
         elif q_type == "SHORT_ANSWER":
             if ans and ans.answer_text:
@@ -2094,12 +2277,15 @@ def grade_attempt_objective_questions(
                 accepted = rev.accepted_answers if rev else []
                 match_mode = (rev.short_answer_match_mode if rev else None) or "NORMALIZED"
 
-                if match_mode == "EXACT":
+                grouped_fill_result = _grouped_fill_answer_correct(rev, student_text)
+                if grouped_fill_result is True:
+                    awarded_pts = assigned_pts
+                elif grouped_fill_result is None and match_mode == "EXACT":
                     for aa in accepted:
                         if student_text == aa.answer_text.strip():
                             awarded_pts = assigned_pts
                             break
-                else:
+                elif grouped_fill_result is None:
                     norm_student = unicodedata.normalize("NFKC", student_text.lower())
                     for aa in accepted:
                         cand = aa.answer_normalized or aa.answer_text

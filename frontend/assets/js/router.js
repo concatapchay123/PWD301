@@ -103,8 +103,8 @@ class AppRouter {
     return this.currentUser;
   }
 
-  parseHash() {
-    const raw = window.location.hash || '';
+  parseHash(rawHash = window.location.hash || '') {
+    const raw = rawHash;
     const qIdx = raw.indexOf('?');
     const path = qIdx !== -1 ? raw.substring(0, qIdx) : raw;
     const query = {};
@@ -120,111 +120,172 @@ class AppRouter {
     return { path: path || '#/', query };
   }
 
-  async handleRoute() {
-    if (this._isRouting) return;
+  handleRoute() {
+    if (this._isRouting) {
+      this._rerouteRequested = true;
+      return this._routingPromise;
+    }
     this._isRouting = true;
 
     if (typeof UI !== 'undefined' && typeof UI.startMicroLoading === 'function') {
       UI.startMicroLoading();
     }
 
-    try {
-      const { path, query } = this.parseHash();
-
-      // Auth Guard: If not logged in and not on auth path, redirect to auth
-      if (!this.currentUser && path !== '#/auth' && path !== '#/login') {
-        await this.refreshCurrentUser();
-        if (!this.currentUser) {
-          this.toggleShell(false);
-          this.renderAuth();
-          return;
+    this._routingPromise = (async () => {
+      try {
+        let routeHash;
+        do {
+          this._rerouteRequested = false;
+          routeHash = window.location.hash || '#/';
+          await this.renderRoute(routeHash);
+        } while (
+          this._rerouteRequested
+          || (window.location.hash || '#/') !== routeHash
+        );
+      } finally {
+        this._isRouting = false;
+        this._routingPromise = null;
+        if (typeof UI !== 'undefined' && typeof UI.stopMicroLoading === 'function') {
+          UI.stopMicroLoading();
         }
       }
+    })();
 
-      // If logged in and on #/auth or #/login, redirect to role home
-      if (this.currentUser && (path === '#/auth' || path === '#/login' || path === '#/' || path === '')) {
+    return this._routingPromise;
+  }
+
+  createRouteStagingViewport() {
+    const stagingViewport = document.createElement('div');
+    stagingViewport.className = 'route-render-stage';
+    stagingViewport.setAttribute('aria-hidden', 'true');
+    stagingViewport.inert = true;
+    Object.assign(stagingViewport.style, {
+      position: 'absolute',
+      inset: '0',
+      width: '100%',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    });
+    this.viewport.prepend(stagingViewport);
+    this.viewport.setAttribute('aria-busy', 'true');
+    return stagingViewport;
+  }
+
+  commitRouteStagingViewport(stagingViewport, path) {
+    const renderedContent = Array.from(stagingViewport.childNodes);
+    stagingViewport.remove();
+    this.viewport.replaceChildren(...renderedContent);
+    this.viewport.removeAttribute('aria-busy');
+    this.applyRouteChrome(path);
+  }
+
+  applyRouteChrome(path) {
+    if (this._needsUserUiRefresh) {
+      this.updateUserUI();
+      this._needsUserUiRefresh = false;
+    }
+    this.toggleShell(true);
+    this.renderDynamicSidebar();
+    this.updateTopbarBreadcrumb(path);
+
+    if (typeof UI !== 'undefined') {
+      if (typeof UI.closeModal === 'function') UI.closeModal();
+      if (typeof UI.closeDrawer === 'function') UI.closeDrawer();
+    }
+    document.querySelectorAll('body > .fixed.inset-0:not(#app-drawer-backdrop):not(#modal-container)').forEach(m => m.remove());
+
+    const isFocusRoute = path.includes('/attempt')
+      || path.includes('/waiting-room')
+      || path.includes('/lessons/new')
+      || (path.includes('/lessons/') && path.includes('/edit'))
+      || path.includes('/instructor/exams');
+    document.body.classList.toggle('fullscreen-focus-mode', isFocusRoute);
+
+    const isExamActive = path.includes('/attempt') || path.includes('/waiting-room');
+    const floatingAi = document.getElementById('floating-ai-container');
+    if (!floatingAi) return;
+    floatingAi.classList.toggle('hidden', isExamActive);
+    if (isExamActive && window.FloatingAITutor && typeof window.FloatingAITutor.close === 'function') {
+      window.FloatingAITutor.close();
+    }
+  }
+
+  async renderRoute(routeHash) {
+    if (!this.viewport) return;
+    const { path, query } = this.parseHash(routeHash);
+
+    // Auth Guard: If not logged in and not on auth path, redirect to auth
+    if (!this.currentUser && path !== '#/auth' && path !== '#/login') {
+      await this.refreshCurrentUser();
+      if (!this.currentUser) {
+        this.toggleShell(false);
+        this.renderAuth();
+        return;
+      }
+    }
+
+    // If logged in and on #/auth or #/login, redirect to role home
+    if (this.currentUser && (path === '#/auth' || path === '#/login' || path === '#/' || path === '')) {
+      this.redirectToRoleHome();
+      return;
+    }
+
+    // Role Permission Guard with Automatic Multi-Role Perspective Switching
+    const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+    const hasAdminRole = userRoles.includes('ADMIN');
+    const hasInstructorRole = userRoles.includes('INSTRUCTOR') || hasAdminRole;
+
+    if (path.startsWith('#/admin')) {
+      if (!hasAdminRole) {
+        UI.showToast('Bạn không có quyền truy cập khu vực Quản trị viên.', 'warning');
         this.redirectToRoleHome();
         return;
       }
-
-      // Role Permission Guard with Automatic Multi-Role Perspective Switching
-      const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
-      const hasAdminRole = userRoles.includes('ADMIN');
-      const hasInstructorRole = userRoles.includes('INSTRUCTOR') || hasAdminRole;
-
-      if (path.startsWith('#/admin')) {
-        if (!hasAdminRole) {
-          UI.showToast('Bạn không có quyền truy cập khu vực Quản trị viên.', 'warning');
-          this.redirectToRoleHome();
-          return;
+      if (this.currentRole !== 'ADMIN') {
+        try {
+          await ApiClient.switchRole('ADMIN');
+        } catch (err) {
+          console.warn('Auto switchRole to ADMIN error:', err);
         }
-        if (this.currentRole !== 'ADMIN') {
-          try {
-            await ApiClient.switchRole('ADMIN');
-          } catch (err) {
-            console.warn('Auto switchRole to ADMIN error:', err);
-          }
-          this.currentRole = 'ADMIN';
-          this.updateUserUI();
-        }
-      } else if (path.startsWith('#/instructor')) {
-        if (!hasInstructorRole) {
-          UI.showToast('Bạn không có quyền truy cập khu vực Giảng viên.', 'warning');
-          this.redirectToRoleHome();
-          return;
-        }
-        if (this.currentRole !== 'INSTRUCTOR' && this.currentRole !== 'ADMIN') {
-          try {
-            await ApiClient.switchRole('INSTRUCTOR');
-          } catch (err) {
-            console.warn('Auto switchRole to INSTRUCTOR error:', err);
-          }
-          this.currentRole = 'INSTRUCTOR';
-          this.updateUserUI();
-        }
+        this.currentRole = 'ADMIN';
+        this._needsUserUiRefresh = true;
       }
-
-      // Show Shell (Topbar + Dynamic Navigation) for authenticated views
-      this.toggleShell(true);
-      this.renderDynamicSidebar();
-      this.updateTopbarBreadcrumb(path);
-
-      // Clean up lingering modal overlays from previous views while preserving permanent shells
-      if (typeof UI !== 'undefined') {
-        if (typeof UI.closeModal === 'function') UI.closeModal();
-        if (typeof UI.closeDrawer === 'function') UI.closeDrawer();
+    } else if (path.startsWith('#/instructor')) {
+      if (!hasInstructorRole) {
+        UI.showToast('Bạn không có quyền truy cập khu vực Giảng viên.', 'warning');
+        this.redirectToRoleHome();
+        return;
       }
-      document.querySelectorAll('body > .fixed.inset-0:not(#app-drawer-backdrop):not(#modal-container)').forEach(m => m.remove());
-
-      // Fullscreen Focus Mode toggle for Exams & Dedicated Studios
-      const isFocusRoute = path.includes('/attempt') || path.includes('/waiting-room') || path.includes('/lessons/new') || (path.includes('/lessons/') && path.includes('/edit')) || path.includes('/instructor/exams');
-      if (isFocusRoute) {
-        document.body.classList.add('fullscreen-focus-mode');
-      } else {
-        document.body.classList.remove('fullscreen-focus-mode');
+      if (this.currentRole !== 'INSTRUCTOR' && this.currentRole !== 'ADMIN') {
+        try {
+          await ApiClient.switchRole('INSTRUCTOR');
+        } catch (err) {
+          console.warn('Auto switchRole to INSTRUCTOR error:', err);
+        }
+        this.currentRole = 'INSTRUCTOR';
+        this._needsUserUiRefresh = true;
       }
+    }
 
-      // Anti-Cheat & Exam Integrity: Conceal Floating AI Tutor during active exam attempts & waiting room
-      const isExamActive = path.includes('/attempt') || path.includes('/waiting-room');
-      const floatingAi = document.getElementById('floating-ai-container');
-      if (floatingAi) {
-        if (isExamActive) {
-          floatingAi.classList.add('hidden');
-          if (window.FloatingAITutor && typeof window.FloatingAITutor.close === 'function') {
-            window.FloatingAITutor.close();
-          }
+    // Route Dispatcher
+    const stagingViewport = this.createRouteStagingViewport();
+    try {
+      await this.dispatchRoute(path, query, stagingViewport);
+      if ((window.location.hash || '#/') === routeHash) {
+        if (stagingViewport.childNodes.length > 0) {
+          this.commitRouteStagingViewport(stagingViewport, path);
         } else {
-          floatingAi.classList.remove('hidden');
+          stagingViewport.remove();
+          this.viewport.removeAttribute('aria-busy');
         }
+      } else {
+        stagingViewport.remove();
+        this._rerouteRequested = true;
       }
-
-      // Route Dispatcher
-      await this.dispatchRoute(path, query);
-    } finally {
-      this._isRouting = false;
-      if (typeof UI !== 'undefined' && typeof UI.stopMicroLoading === 'function') {
-        UI.stopMicroLoading();
-      }
+    } catch (error) {
+      stagingViewport.remove();
+      this.viewport.removeAttribute('aria-busy');
+      throw error;
     }
   }
 
@@ -253,19 +314,19 @@ class AppRouter {
     AuthView.attachEvents();
   }
 
-  async dispatchRoute(path, query) {
-    if (!this.viewport) return;
+  async dispatchRoute(path, query, viewport = this.viewport) {
+    if (!viewport) return;
 
     // --- Student Routes ---
     if (path === '#/student/dashboard') {
-      await StudentView.renderDashboard(this.viewport);
+      await StudentView.renderDashboard(viewport);
     } else if (path === '#/student/catalog') {
-      await StudentView.renderCatalog(this.viewport);
+      await StudentView.renderCatalog(viewport);
     } else if (path === '#/student/courses') {
-      await StudentView.renderMyLearning(this.viewport);
+      await StudentView.renderMyLearning(viewport);
     } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/'))) {
       const courseId = query.id || path.replace('#/student/courses/', '');
-      await StudentView.renderCourseDetail(this.viewport, courseId, query.tab || 'syllabus');
+      await StudentView.renderCourseDetail(viewport, courseId, query.tab || 'syllabus');
     } else if (path === '#/student/lessons/reader' || (path.startsWith('#/student/courses/') && path.includes('/lessons/'))) {
       let cId = query.course_id;
       let lId = query.lesson_id;
@@ -274,71 +335,71 @@ class AppRouter {
         cId = m[1];
         lId = m[2];
       }
-      await StudentView.renderLessonReader(this.viewport, cId, lId);
+      await StudentView.renderLessonReader(viewport, cId, lId);
     } else if (path === '#/student/assessments') {
-      await StudentView.renderAssessmentsList(this.viewport);
+      await StudentView.renderAssessmentsList(viewport);
     } else if (path === '#/student/assessments/waiting-room' || path.endsWith('/waiting-room')) {
       const aId = query.id || path.replace('#/student/assessments/', '').replace('/waiting-room', '');
-      await StudentView.renderWaitingRoom(this.viewport, aId);
+      await StudentView.renderWaitingRoom(viewport, aId);
     } else if (path === '#/student/assessments/attempt' || (path.startsWith('#/student/assessments/attempts/') && !path.endsWith('/results'))) {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '');
-      await StudentView.renderAttemptConsole(this.viewport, attId);
+      await StudentView.renderAttemptConsole(viewport, attId);
     } else if (path === '#/student/assessments/results' || path.endsWith('/results')) {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
-      await StudentView.renderAttemptResults(this.viewport, attId);
+      await StudentView.renderAttemptResults(viewport, attId);
     } else if (path === '#/student/ai-assistant') {
       window.location.hash = '#/student/dashboard';
     } else if (path === '#/student/become-instructor') {
-      await StudentView.renderBecomeInstructor(this.viewport);
+      await StudentView.renderBecomeInstructor(viewport);
     } else if (path === '#/student/settings' || path === '#/settings') {
-      await StudentView.renderSettings(this.viewport);
+      await StudentView.renderSettings(viewport);
     }
 
     // --- Instructor Routes ---
     else if (path === '#/instructor/dashboard') {
-      await InstructorView.renderDashboard(this.viewport);
+      await InstructorView.renderDashboard(viewport);
     } else if (path === '#/instructor/courses') {
-      await InstructorView.renderCourses(this.viewport);
+      await InstructorView.renderCourses(viewport);
     } else if (path === '#/instructor/courses/manage') {
-      await InstructorView.renderCourseManage(this.viewport, query.id, query.tab || 'curriculum');
+      await InstructorView.renderCourseManage(viewport, query.id, query.tab || 'curriculum');
     } else if (path.startsWith('#/instructor/courses/') && path.endsWith('/manage')) {
       const parts = path.split('/');
       const courseId = parts[3];
-      await InstructorView.renderCourseManage(this.viewport, courseId, query.tab || 'curriculum');
+      await InstructorView.renderCourseManage(viewport, courseId, query.tab || 'curriculum');
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
       const parts = path.split('/');
       const courseId = parts[3];
-      await InstructorView.renderLessonAuthoringStudio(this.viewport, courseId, null);
+      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, null);
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && path.endsWith('/edit')) {
       const parts = path.split('/');
       const courseId = parts[3];
       const lessonId = parts[5];
-      await InstructorView.renderLessonAuthoringStudio(this.viewport, courseId, lessonId);
+      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, lessonId);
     } else if (path === '#/instructor/questions/studio' || (path === '#/instructor/questions' && query.studio)) {
-      await InstructorView.renderExtendedQuestionStudio(this.viewport, query.course);
+      await InstructorView.renderExtendedQuestionStudio(viewport, query.course);
     } else if (path === '#/instructor/questions') {
-      await InstructorView.renderQuestions(this.viewport, query.course);
+      await InstructorView.renderQuestions(viewport, query.course);
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
-      await InstructorView.renderExamsHub(this.viewport, query);
+      await InstructorView.renderExamsHub(viewport, query);
     } else if (path === '#/instructor/exams/editor') {
-      InstructorView.renderExamEditor(this.viewport);
+      InstructorView.renderExamEditor(viewport);
     } else if (path === '#/instructor/exams/interactive') {
-      InstructorView.renderExamInteractive(this.viewport);
+      InstructorView.renderExamInteractive(viewport);
     } else if (path === '#/instructor/exams/excel') {
-      InstructorView.renderExamExcel(this.viewport);
+      InstructorView.renderExamExcel(viewport);
     } else if (path === '#/instructor/exams/moodle') {
-      InstructorView.renderExamMoodle(this.viewport);
+      InstructorView.renderExamMoodle(viewport);
     } else if (path === '#/instructor/exams/matrix') {
-      InstructorView.renderExamMatrix(this.viewport);
+      InstructorView.renderExamMatrix(viewport);
     } else if (path === '#/instructor/exams/settings') {
-      InstructorView.renderExamSettings(this.viewport);
+      InstructorView.renderExamSettings(viewport);
     }
 
     // --- Admin Routes ---
     else if (path === '#/admin/governance') {
-      await AdminView.renderGovernance(this.viewport, query.tab || 'users');
+      await AdminView.renderGovernance(viewport, query.tab || 'users');
     } else if (path === '#/admin/operations') {
-      await AdminView.renderOperations(this.viewport);
+      await AdminView.renderOperations(viewport);
     }
 
     // Fallback

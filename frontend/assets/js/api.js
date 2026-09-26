@@ -277,6 +277,13 @@ class ApiClient {
     });
   }
 
+  static async completeLessonMiniQuiz(lessonId, answers) {
+    return await ApiClient.request(`/student/lessons/${lessonId}/quiz-completion`, {
+      method: 'POST',
+      body: { answers }
+    });
+  }
+
   static async getStudentAssessments() {
     return await ApiClient.request('/student/assessments');
   }
@@ -666,6 +673,13 @@ class ApiClient {
     });
   }
 
+  static async trashAssessment(assessmentId, reason = '') {
+    return await ApiClient.request(`/instructor/assessments/${assessmentId}/trash`, {
+      method: 'POST',
+      body: { reason }
+    });
+  }
+
 
   static async createAssessmentQuestion(assessmentId, data) {
     return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/create`, {
@@ -678,6 +692,16 @@ class ApiClient {
     return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/batch`, {
       method: 'POST',
       body: { questions }
+    });
+  }
+
+  static async uploadCourseFile(courseId, file, title = file.name) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    return await ApiClient.request(`/instructor/courses/${courseId}/files`, {
+      method: 'POST',
+      body: formData
     });
   }
 

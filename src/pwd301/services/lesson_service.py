@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import time
 import uuid
 from typing import Any
@@ -59,6 +60,98 @@ VALID_LESSON_STATUSES = {
     "TRASH",
     "HISTORICAL",
 }
+
+
+def _lesson_mini_quiz(lesson: Lesson) -> list[dict[str, Any]]:
+    match = re.search(
+        r"<!--\s*mini_quiz:\s*(.+?)\s*-->", lesson.markdown_content or "", re.DOTALL
+    )
+    if match is None:
+        return []
+    try:
+        questions = json.loads(match.group(1))
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(questions, list) or any(
+        not isinstance(question, dict) for question in questions
+    ):
+        return []
+    return questions
+
+
+def _lesson_quiz_answers_complete(
+    questions: list[dict[str, Any]], answers: list[Any]
+) -> bool:
+    if len(answers) != len(questions):
+        return False
+
+    for question, answer in zip(questions, answers, strict=True):
+        question_type = str(question.get("type") or "MULTIPLE_CHOICE").upper()
+        if question_type == "MULTIPLE_CHOICE":
+            options = question.get("options") or question.get("choices") or []
+            if not isinstance(options, list) or not options:
+                return False
+            multi = bool(question.get("allow_multiple")) or len(
+                question.get("correct_answers") or []
+            ) > 1
+            selected = answer if isinstance(answer, list) else [answer]
+            if not selected or (not multi and len(selected) != 1):
+                return False
+            if any(
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                or index >= len(options)
+                for index in selected
+            ):
+                return False
+        elif question_type == "FILL_BLANK":
+            blanks = question.get("blanks") or []
+            if not isinstance(blanks, list):
+                return False
+            if not blanks:
+                blanks = re.findall(r"\[_{2,}\]", str(question.get("question") or ""))
+            values = answer if isinstance(answer, list) else [answer]
+            if len(values) != len(blanks) or any(
+                not isinstance(value, str) or not value.strip() for value in values
+            ):
+                return False
+        elif question_type == "MATCHING":
+            pairs = question.get("pairs") or []
+            if not isinstance(pairs, list) or not pairs:
+                return False
+            if isinstance(answer, dict):
+                values = list(answer.values())
+                if len(answer) != len(pairs):
+                    return False
+            elif isinstance(answer, list):
+                values = answer
+                if len(values) != len(pairs):
+                    return False
+            else:
+                return False
+            if not values or any(value is None or str(value).strip() == "" for value in values):
+                return False
+        elif question_type == "TRUE_FALSE":
+            if not isinstance(answer, bool) and str(answer).lower() not in ("true", "false"):
+                return False
+        elif question_type in ("SHORT_ANSWER", "ESSAY"):
+            if answer is None or (isinstance(answer, str) and not answer.strip()):
+                return False
+        else:
+            return False
+
+    return True
+
+
+def _lesson_requires_video_watch(lesson: Lesson) -> bool:
+    if re.search(r"<!--\s*video_url:\s*\S+?\s*-->", lesson.markdown_content or ""):
+        return True
+    return any(
+        bool(getattr(resource.file_asset, "is_video", False))
+        for resource in lesson.resources
+        if resource.file_asset is not None
+    )
 
 # Mass-assignment safe writable lesson fields
 UPDATABLE_LESSON_FIELDS = {
@@ -1077,23 +1170,44 @@ def record_lesson_progress(
 
     # Evaluate completion: monotonic, idempotent
     min_completion_seconds = lesson.minimum_completion_seconds
-    viewed_fraction_required = float(lesson.viewed_fraction_required)
+    viewed_fraction_required = (
+        1.0
+        if _lesson_requires_video_watch(lesson)
+        else float(lesson.viewed_fraction_required)
+    )
 
+    progress_snapshot: dict[str, Any] = {}
+    if progress.completion_rule_snapshot_json:
+        try:
+            parsed_snapshot = json.loads(progress.completion_rule_snapshot_json)
+            if isinstance(parsed_snapshot, dict):
+                progress_snapshot = parsed_snapshot
+        except (TypeError, ValueError):
+            progress_snapshot = {}
+
+    quiz_is_configured = re.search(
+        r"<!--\s*mini_quiz:", lesson.markdown_content or ""
+    ) is not None
+    quiz_is_complete = not quiz_is_configured or bool(
+        progress_snapshot.get("mini_quiz_completed_at")
+    )
     criteria_met = (
         progress.seconds_spent >= min_completion_seconds
         and float(progress.max_view_fraction) >= viewed_fraction_required
+        and quiz_is_complete
     )
 
     newly_completed = False
     if criteria_met and progress.completed_at is None:
         progress.completed_at = now
-        progress.completion_rule_snapshot_json = json.dumps(
+        progress_snapshot.update(
             {
                 "minimum_completion_seconds": min_completion_seconds,
                 "viewed_fraction_required": viewed_fraction_required,
                 "completed_at": now.isoformat(),
             }
         )
+        progress.completion_rule_snapshot_json = json.dumps(progress_snapshot)
         newly_completed = True
 
     # Update derived progress cache on Enrollment via Algorithm 01
@@ -1117,6 +1231,106 @@ def record_lesson_progress(
             sess.rollback()
             raise
 
+    return progress
+
+
+def complete_lesson_mini_quiz(
+    actor: User,
+    lesson_id: int | uuid.UUID | str,
+    answers: list[Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> LessonProgress:
+    """Record that an enrolled student answered every question in a lesson mini-quiz."""
+    sess = session if session is not None else db.session
+    lesson = _resolve_lesson(lesson_id, session=sess)
+    if lesson is None:
+        raise LessonNotFoundError("Lesson not found.")
+    if lesson.deleted_at is not None or lesson.status != "PUBLISHED":
+        raise LessonStateViolationError("Cannot complete a quiz in an unpublished lesson.")
+
+    questions = _lesson_mini_quiz(lesson)
+    quiz_marker_exists = re.search(r"<!--\s*mini_quiz:", lesson.markdown_content or "") is not None
+    if not quiz_marker_exists or not questions:
+        raise LessonValidationError("This lesson has no valid quiz to complete.")
+    if not _lesson_quiz_answers_complete(questions, answers):
+        raise LessonValidationError("Answer every lesson quiz question before completing it.")
+
+    requires_video_watch = _lesson_requires_video_watch(lesson)
+    video_view_fraction_required = 1.0 if requires_video_watch else float(lesson.viewed_fraction_required)
+    existing_progress = get_lesson_progress(actor, lesson_id, session=sess)
+    video_watch_complete = bool(
+        existing_progress
+        and existing_progress.seconds_spent >= lesson.minimum_completion_seconds
+        and float(existing_progress.max_view_fraction)
+        >= video_view_fraction_required
+    )
+    if requires_video_watch and not video_watch_complete:
+        raise LessonStateViolationError("Watch the lesson video before answering its quiz.")
+
+    progress = record_lesson_progress(
+        actor=actor,
+        lesson_id=lesson_id,
+        seconds_increment=1,
+        view_fraction=0.0 if requires_video_watch else 1.0,
+        session=sess,
+    )
+    now = utc_now()
+    progress_snapshot: dict[str, Any] = {}
+    if progress.completion_rule_snapshot_json:
+        try:
+            parsed_snapshot = json.loads(progress.completion_rule_snapshot_json)
+            if isinstance(parsed_snapshot, dict):
+                progress_snapshot = parsed_snapshot
+        except (TypeError, ValueError):
+            progress_snapshot = {}
+
+    if not progress_snapshot.get("mini_quiz_completed_at"):
+        progress_snapshot["mini_quiz_completed_at"] = now.isoformat()
+        progress_snapshot["mini_quiz_question_count"] = len(questions)
+
+    newly_completed = False
+    if (
+        progress.completed_at is None
+        and progress.seconds_spent >= lesson.minimum_completion_seconds
+        and float(progress.max_view_fraction) >= video_view_fraction_required
+    ):
+        progress.completed_at = now
+        progress_snapshot.update(
+            {
+                "minimum_completion_seconds": lesson.minimum_completion_seconds,
+                "viewed_fraction_required": video_view_fraction_required,
+                "completed_at": now.isoformat(),
+            }
+        )
+        newly_completed = True
+
+    progress.completion_rule_snapshot_json = json.dumps(progress_snapshot)
+    if newly_completed:
+        from pwd301.services.completion_service import (
+            calculate_course_progress,
+            evaluate_course_completion,
+        )
+
+        enrollment = (
+            sess.query(Enrollment)
+            .filter(
+                Enrollment.student_user_id == actor.id,
+                Enrollment.course_id == lesson.course_id,
+                Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+            )
+            .first()
+        )
+        if enrollment is not None:
+            calculate_course_progress(enrollment.id, session=sess)
+            evaluate_course_completion(enrollment.id, session=sess)
+
+    sess.flush()
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
     return progress
 
 

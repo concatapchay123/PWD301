@@ -367,6 +367,7 @@ def test_rest_api_instructor_application_flow(client, test_users):
 def test_instructor_application_evidence_upload_and_download(client, test_users):
     """Test file upload during application submission and secure admin download."""
     import io
+    import zipfile
 
     # 1. Login as student2
     client.post(
@@ -378,8 +379,16 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
     get_form = client.get("/student/become-instructor")
     csrf_token = extract_csrf_token(get_form.text)
 
-    # 2. Submit multipart form with an attached PDF file
-    file_content = b"%PDF-1.5 Teaching Certificate and Contract Evidence"
+    # 2. Submit multipart form with an attached Word certificate.
+    docx_buffer = io.BytesIO()
+    with zipfile.ZipFile(docx_buffer, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body><w:p><w:r><w:t>Teaching Certificate Evidence</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    file_content = docx_buffer.getvalue()
     data = {
         "csrf_token": csrf_token,
         "institution_name": "Đại học Sư phạm",
@@ -393,7 +402,8 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         "current_schedule": "Thứ 3 và Thứ 5",
         "employment_contract": "Hợp đồng giảng dạy 2024-2026",
         "statement_of_purpose": "Muốn đóng góp cho cộng đồng PWD301",
-        "evidence_files": (io.BytesIO(file_content), "certificate_2024.pdf"),
+        "certificate_drive_url": "https://drive.google.com/file/d/" + "a" * 180 + "/view?usp=sharing",
+        "evidence_files": (io.BytesIO(file_content), "certificate_2024.docx"),
     }
 
     submit_resp = client.post(
@@ -416,7 +426,8 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         assert "attached_files" in details
         assert len(details["attached_files"]) == 1
         attached = details["attached_files"][0]
-        assert attached["original_name"] == "certificate_2024.pdf"
+        assert attached["original_name"] == "certificate_2024.docx"
+        assert details["certificate_drive_url"] == data["certificate_drive_url"]
         saved_filename = attached["saved_filename"]
         app_id = app.id
 
@@ -447,6 +458,21 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
     assert admin_download.status_code == 200
     assert admin_download.data == file_content
     assert "attachment" in admin_download.headers.get("Content-Disposition", "")
+
+    admin_preview = client.get(
+        f"/admin/instructor-applications/{app_id}/evidence/{saved_filename}?preview=1"
+    )
+    assert admin_preview.status_code == 200
+    assert admin_preview.data == file_content
+    assert "inline" in admin_preview.headers.get("Content-Disposition", "")
+    assert admin_preview.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in admin_preview.headers.get("Content-Security-Policy", "")
+
+    extracted_preview = client.get(
+        f"/admin/instructor-applications/{app_id}/evidence/{saved_filename}?format=text"
+    )
+    assert extracted_preview.status_code == 200
+    assert extracted_preview.get_json()["data"]["text"] == "Teaching Certificate Evidence"
 
     # 6. Path traversal attempt -> 404
     traversal_resp = client.get(
@@ -501,4 +527,3 @@ def test_student_freelancer_niche_submit_web_flow(client, test_users):
         assert details["portfolio_url"] == "https://github.com/niche-freelancer"
         assert len(details["attached_files"]) == 1
         assert details["attached_files"][0]["doc_type"] == "CV_PORTFOLIO"
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import io
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -12,9 +13,10 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
+from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
 from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course
+from pwd301.models.file_import import QuestionRevisionResource
 from pwd301.models.identity import Role, User
 from pwd301.services.assessment_service import (
     assign_question,
@@ -24,6 +26,7 @@ from pwd301.services.assessment_service import (
 )
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.enrollment_service import enroll_student
+from pwd301.services.file_service import store_file_stream
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -300,28 +303,221 @@ def test_get_attempt_delivery_api(
     client: FlaskClient,
     published_assessment: Assessment,
     student_headers: dict[str, str],
+    instructor_user: User,
 ) -> None:
-    """Test retrieving attempt delivery payload via GET /api/attempts/<attempt_id>."""
-    # Start attempt
+    """Test delivery resumes candidate answers and includes clean question images."""
+    assignment = (
+        db.session.query(AssessmentQuestionAssignment)
+        .filter(AssessmentQuestionAssignment.assessment_id == published_assessment.id)
+        .first()
+    )
+    image = store_file_stream(
+        actor=instructor_user,
+        course_id=published_assessment.course_id,
+        file_stream=io.BytesIO(b"\x89PNG\r\n\x1a\nimage-data"),
+        filename="question.png",
+        content_type="image/png",
+        asset_type="RESOURCE",
+        session=db.session,
+    )
+    image.status = "ACTIVE"
+    if image.revisions:
+        image.revisions[0].status = "ACTIVE"
+    db.session.add(
+        QuestionRevisionResource(
+            question_revision_id=assignment.question.current_revision.id,
+            file_asset_id=image.id,
+            position=1,
+            resource_role="IMAGE",
+        )
+    )
+    db.session.commit()
+
     start_res = client.post(
         f"/api/assessments/{published_assessment.public_id}/attempts",
         headers=student_headers,
     )
     assert start_res.status_code == 201
-    attempt_id = start_res.get_json()["attempt_id"]
+    started = start_res.get_json()
+    attempt_id = started["attempt_id"]
 
-    # Fetch delivery
     res = client.get(f"/api/attempts/{attempt_id}", headers=student_headers)
     assert res.status_code == 200
     data = res.get_json()
-
     assert data["attempt_id"] == attempt_id
     assert data["assessment_id"] == str(published_assessment.public_id)
     assert data["status"] == "IN_PROGRESS"
     assert data["remaining_seconds"] > 0
     assert len(data["questions"]) == 1
 
-    assert_adr002_and_security_clean(data)
+    question = data["questions"][0]
+    selected_key = question["choices"][0]["choice_key"]
+    save_res = client.put(
+        f"/api/attempts/{attempt_id}/answers/{question['attempt_question_id']}",
+        headers={**student_headers, "X-Attempt-Lease-Token": started["lease_token"]},
+        json={"selected_choice_keys": [selected_key]},
+    )
+    assert save_res.status_code == 200
+
+    resumed_res = client.get(f"/api/attempts/{attempt_id}", headers=student_headers)
+    assert resumed_res.status_code == 200
+    resumed_question = resumed_res.get_json()["questions"][0]
+    assert resumed_question["selected_choice_keys"] == [selected_key]
+    assert resumed_question["choices"][0]["is_selected"] is True
+    assert resumed_question["resources"][0]["url"].endswith("?disposition=inline")
+    assert_adr002_and_security_clean(resumed_res.get_json())
+
+
+def test_batch_created_question_keeps_course_image_in_attempt_delivery(
+    client: FlaskClient,
+    published_assessment: Assessment,
+    instructor_user: User,
+    instructor_headers: dict[str, str],
+    student_headers: dict[str, str],
+) -> None:
+    """Instructor question images must be attached and delivered only after scan success."""
+    image = store_file_stream(
+        actor=instructor_user,
+        course_id=published_assessment.course_id,
+        file_stream=io.BytesIO(b"\x89PNG\r\n\x1a\nimage-data"),
+        filename="exam-question.png",
+        content_type="image/png",
+        asset_type="RESOURCE",
+        session=db.session,
+    )
+    image.status = "ACTIVE"
+    if image.revisions:
+        image.revisions[0].status = "ACTIVE"
+    db.session.commit()
+
+    create_response = client.post(
+        f"/instructor/assessments/{published_assessment.public_id}/questions/batch",
+        headers=instructor_headers,
+        json={
+            "questions": [
+                {
+                    "question_type": "SINGLE_CHOICE",
+                    "content": "Which protocol image is attached?",
+                    "points": 1,
+                    "choices": [
+                        {"content": "HTTP", "is_correct": True},
+                        {"content": "FTP", "is_correct": False},
+                    ],
+                    "image_asset_id": str(image.public_id),
+                }
+            ]
+        },
+    )
+    assert create_response.status_code == 201
+
+    started = client.post(
+        f"/api/assessments/{published_assessment.public_id}/attempts",
+        headers=student_headers,
+    )
+    assert started.status_code == 201
+    delivery = client.get(
+        f"/api/attempts/{started.get_json()['attempt_id']}", headers=student_headers
+    )
+    assert delivery.status_code == 200
+    question = next(
+        item
+        for item in delivery.get_json()["questions"]
+        if item["content"] == "Which protocol image is attached?"
+    )
+    assert len(question["resources"]) == 1
+    assert question["resources"][0]["url"].endswith("?disposition=inline")
+    assert_adr002_and_security_clean(delivery.get_json())
+
+
+def test_interactive_question_groups_are_delivered_without_answer_keys(
+    client: FlaskClient,
+    published_assessment: Assessment,
+    instructor_headers: dict[str, str],
+    student_headers: dict[str, str],
+) -> None:
+    """Grouped drag choices and typed blanks survive authoring without leaking keys."""
+    created = client.post(
+        f"/instructor/assessments/{published_assessment.public_id}/questions/batch",
+        headers=instructor_headers,
+        json={
+            "questions": [
+                {
+                    "question_type": "MULTIPLE_CHOICE",
+                    "content": "Protocol ___ uses method ___.",
+                    "points": 2,
+                    "choices": [
+                        {"content": "[[PWD301:G:DRAG:1]]HTTP", "is_correct": True},
+                        {"content": "[[PWD301:G:DRAG:1]]FTP", "is_correct": False},
+                        {"content": "[[PWD301:G:DRAG:2]]GET", "is_correct": True},
+                        {"content": "[[PWD301:G:DRAG:2]]POST", "is_correct": False},
+                    ],
+                },
+                {
+                    "question_type": "SHORT_ANSWER",
+                    "content": "[[PWD301:FI_V1]]Protocol ___ uses method ___.",
+                    "points": 2,
+                    "accepted_answers": [
+                        "[[PWD301:FI:1]]HTTP",
+                        "[[PWD301:FI:1]]Hypertext Transfer Protocol",
+                        "[[PWD301:FI:2]]GET",
+                        "[[PWD301:FI:2]]Retrieval",
+                    ],
+                },
+                {
+                    "question_type": "MULTIPLE_CHOICE",
+                    "content": "Match each protocol to its description.",
+                    "points": 2,
+                    "choices": [
+                        {"content": "[[PWD301:G:MATCH:1]]HTTP|||Web transfer", "is_correct": True},
+                        {"content": "[[PWD301:G:MATCH:1]]FTP|||File transfer", "is_correct": False},
+                        {"content": "[[PWD301:G:MATCH:2]]FTP|||File transfer", "is_correct": True},
+                        {"content": "[[PWD301:G:MATCH:2]]HTTP|||Web transfer", "is_correct": False},
+                    ],
+                },
+            ]
+        },
+    )
+    assert created.status_code == 201
+
+    started = client.post(
+        f"/api/assessments/{published_assessment.public_id}/attempts",
+        headers=student_headers,
+    )
+    assert started.status_code == 201
+    delivery = client.get(
+        f"/api/attempts/{started.get_json()['attempt_id']}", headers=student_headers
+    )
+    assert delivery.status_code == 200
+    questions = delivery.get_json()["questions"]
+    drag_question = next(
+        question for question in questions if question["interaction_type"] == "DRAG_DROP"
+    )
+    assert drag_question["content"] == "Protocol ___ uses method ___."
+    assert sorted({choice["interaction_group"] for choice in drag_question["choices"]}) == [1, 2]
+    assert {choice["content"] for choice in drag_question["choices"]} == {
+        "HTTP",
+        "FTP",
+        "GET",
+        "POST",
+    }
+    assert all("is_correct" not in choice for choice in drag_question["choices"])
+
+    fill_question = next(
+        question for question in questions if question["interaction_type"] == "FILL_IN"
+    )
+    assert fill_question["content"] == "Protocol ___ uses method ___."
+    assert fill_question["choices"] == []
+    assert "accepted_answers" not in fill_question
+    matching_question = next(
+        question for question in questions if question["interaction_type"] == "MATCHING"
+    )
+    assert len(matching_question["choices"]) == 4
+    assert {choice["interaction_left"] for choice in matching_question["choices"]} == {
+        "HTTP",
+        "FTP",
+    }
+    assert all("is_correct" not in choice for choice in matching_question["choices"])
+    assert "[[PWD301:" not in str(delivery.get_json())
 
 
 def test_list_assessment_attempts_api(

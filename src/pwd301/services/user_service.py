@@ -15,6 +15,7 @@ import logging
 import re
 import uuid
 from typing import Any
+from urllib.parse import urlsplit
 
 from flask import current_app
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -1090,6 +1091,20 @@ def submit_instructor_application(
     inst_email = str(application_data.get("institution_email", "")).strip()
     port_url = str(application_data.get("portfolio_url", "")).strip()
     ev_urls = str(application_data.get("evidence_urls", "")).strip()
+    certificate_drive_url = str(application_data.get("certificate_drive_url", "")).strip()
+    if certificate_drive_url:
+        parsed_drive_url = urlsplit(certificate_drive_url)
+        if (
+            len(certificate_drive_url) > 512
+            or parsed_drive_url.scheme != "https"
+            or parsed_drive_url.username is not None
+            or parsed_drive_url.password is not None
+            or (parsed_drive_url.hostname or "").lower()
+            not in {"drive.google.com", "docs.google.com"}
+        ):
+            raise ValidationError(
+                "Certificate link must be a valid Google Drive or Docs HTTPS URL."
+            )
     sop = (
         str(application_data.get("statement_of_purpose", "")).strip()
         or str(application_data.get("bio", "")).strip()
@@ -1129,6 +1144,7 @@ def submit_instructor_application(
         "employment_contract": str(application_data.get("employment_contract", "")).strip(),
         "portfolio_url": port_url or ev_urls,
         "evidence_urls": ev_urls or port_url,
+        "certificate_drive_url": certificate_drive_url,
         "statement_of_purpose": sop,
         "attached_files": clean_files[:10],
     }
@@ -1158,6 +1174,9 @@ def submit_instructor_application(
     if len(note_json) > 1950:
         clean_data["statement_of_purpose"] = str(clean_data["statement_of_purpose"])[:30]
         note_json = json.dumps(clean_data, ensure_ascii=False)
+
+    if len(note_json) > 1950:
+        raise ValidationError("Application details are too long. Shorten optional descriptions and retry.")
 
     now = utc_now()
     app_record = InstructorApplication(

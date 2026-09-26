@@ -1,15 +1,13 @@
 """Verification test suite for Instructor Academic Governance & Exam Studio fixes."""
 
 import json
-from decimal import Decimal
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.assessment import Assessment
-from pwd301.models.course import Course, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import create_course
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -43,7 +41,9 @@ def test_instructor(app: Flask, setup_roles: dict[str, Role]) -> User:
     return assign_role_to_user(u.id, "INSTRUCTOR")
 
 
-def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instructor: User, app: Flask) -> None:
+def test_slo_and_completion_rules_persistence(
+    client: FlaskClient, test_instructor: User, app: Flask
+) -> None:
     """Test that SLO standards and completion rules persist and serialize correctly."""
     login_web_user(client, test_instructor)
 
@@ -61,8 +61,16 @@ def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instruct
 
     # 1. Update Course with custom SLO standards (learning_objectives)
     slo_data = [
-        {"code": "SLO-01", "name": "Hiểu kiến trúc REST", "description": "Nắm vững nguyên lý Stateless và HATEOAS"},
-        {"code": "SLO-02", "name": "Thiết kế CSDL", "description": "Thiết kế lược đồ chuẩn hóa 3NF"},
+        {
+            "code": "SLO-01",
+            "name": "Hiểu kiến trúc REST",
+            "description": "Nắm vững nguyên lý Stateless và HATEOAS",
+        },
+        {
+            "code": "SLO-02",
+            "name": "Thiết kế CSDL",
+            "description": "Thiết kế lược đồ chuẩn hóa 3NF",
+        },
     ]
     res_update = client.post(
         f"/instructor/courses/{course_id}",
@@ -72,7 +80,9 @@ def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instruct
             "completion_requirements": {"min_score": 7.5},
         },
     )
-    assert res_update.status_code in (200, 201), f"Update course failed: {res_update.get_data(as_text=True)}"
+    assert res_update.status_code in (200, 201), (
+        f"Update course failed: {res_update.get_data(as_text=True)}"
+    )
     c_info = res_update.get_json()
     assert c_info.get("learning_objectives") is not None
 
@@ -89,6 +99,32 @@ def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instruct
     else:
         assert len(retrieved_slos) == 2
 
+    # Publish course so it is viewable across public API and student views
+    course.status = "PUBLISHED"
+    db.session.commit()
+
+    # Verify GET /api/courses/<id> returns learning_objectives
+    res_api = client.get(f"/api/courses/{course_id}")
+    assert res_api.status_code == 200
+    api_course = res_api.get_json()
+    assert api_course.get("learning_objectives") is not None
+    assert len(api_course.get("learning_objectives")) == 2
+    assert api_course["learning_objectives"][0]["code"] == "SLO-01"
+
+    # Verify student course view returns parsed learning_objectives
+    stu = register_user("student_slo_chk@example.com", "Password@123", "Sinh viên SLO")
+    assign_role_to_user(stu.id, "STUDENT")
+    login_web_user(client, stu)
+    res_stu = client.get(f"/student/courses/{course_id}")
+    assert res_stu.status_code == 200
+    stu_course = res_stu.get_json()["course"]
+    assert stu_course.get("learning_objectives") is not None
+    assert len(stu_course.get("learning_objectives")) == 2
+    assert stu_course["learning_objectives"][0]["code"] == "SLO-01"
+
+    # Re-login instructor for subsequent tests
+    login_web_user(client, test_instructor)
+
     # 2. Update completion rule (minimum_grade_score, allow_certificate, grace_days)
     res_comp = client.post(
         f"/instructor/courses/{course_id}/completion-rules",
@@ -99,7 +135,9 @@ def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instruct
             "completion_grace_days": 14,
         },
     )
-    assert res_comp.status_code == 200, f"Completion rule save failed: {res_comp.get_data(as_text=True)}"
+    assert res_comp.status_code == 200, (
+        f"Completion rule save failed: {res_comp.get_data(as_text=True)}"
+    )
     comp_json = res_comp.get_json()
     assert comp_json.get("minimum_grade_score") == 6.5
     assert comp_json.get("allow_certificate") is True
@@ -113,7 +151,9 @@ def test_slo_and_completion_rules_persistence(client: FlaskClient, test_instruct
     assert comp_get_data.get("allow_certificate") is True
 
 
-def test_lesson_duration_summary_video_persistence(client: FlaskClient, test_instructor: User, app: Flask) -> None:
+def test_lesson_duration_summary_video_persistence(
+    client: FlaskClient, test_instructor: User, app: Flask
+) -> None:
     """Test that lesson duration, summary, description, and YouTube links are persisted."""
     login_web_user(client, test_instructor)
 
@@ -140,7 +180,9 @@ def test_lesson_duration_summary_video_persistence(client: FlaskClient, test_ins
             "status": "DRAFT",
         },
     )
-    assert res_create.status_code in (200, 201), f"Create lesson failed: {res_create.get_data(as_text=True)}"
+    assert res_create.status_code in (200, 201), (
+        f"Create lesson failed: {res_create.get_data(as_text=True)}"
+    )
     les_data = res_create.get_json()
     lesson_id = les_data.get("lesson_id") or les_data.get("id")
 
@@ -148,7 +190,9 @@ def test_lesson_duration_summary_video_persistence(client: FlaskClient, test_ins
     res_get = client.get(f"/instructor/lessons/{lesson_id}")
     assert res_get.status_code == 200
     lesson_info = res_get.get_json()
-    assert lesson_info["summary"] == "Tóm tắt về mô hình truyền thông Client-Server và HTTP Protocol."
+    assert (
+        lesson_info["summary"] == "Tóm tắt về mô hình truyền thông Client-Server và HTTP Protocol."
+    )
     assert lesson_info["estimated_duration_minutes"] == 25
     assert "youtube.com" in (lesson_info.get("video_url") or "")
 
@@ -162,13 +206,17 @@ def test_lesson_duration_summary_video_persistence(client: FlaskClient, test_ins
             "video_url": "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
         },
     )
-    assert res_update.status_code in (200, 201), f"Update lesson failed: {res_update.get_data(as_text=True)}"
+    assert res_update.status_code in (200, 201), (
+        f"Update lesson failed: {res_update.get_data(as_text=True)}"
+    )
     updated_info = res_update.get_json()
     assert updated_info["estimated_duration_minutes"] == 40
     assert updated_info["summary"] == "Tóm tắt nâng cao."
 
 
-def test_assessment_results_endpoint_success(client: FlaskClient, test_instructor: User, app: Flask) -> None:
+def test_assessment_results_endpoint_success(
+    client: FlaskClient, test_instructor: User, app: Flask
+) -> None:
     """Test that fetching assessment results by ID succeeds without 404."""
     login_web_user(client, test_instructor)
 
@@ -183,6 +231,7 @@ def test_assessment_results_endpoint_success(client: FlaskClient, test_instructo
     )
 
     from datetime import timedelta
+
     from pwd301.models.types import utc_now
     from pwd301.services.assessment_service import create_assessment
 
@@ -204,7 +253,9 @@ def test_assessment_results_endpoint_success(client: FlaskClient, test_instructo
 
     # Call attempts/results endpoint with assessment_id
     res = client.get(f"/instructor/assessments/{asm_id}/attempts")
-    assert res.status_code == 200, f"Expected 200 OK, got {res.status_code}: {res.get_data(as_text=True)}"
+    assert res.status_code == 200, (
+        f"Expected 200 OK, got {res.status_code}: {res.get_data(as_text=True)}"
+    )
     data = res.get_json()
     assert "attempts" in data
     assert "assessment_id" in data

@@ -1,3 +1,9 @@
+# Active task: TASK-071 — Learner Progress, Instructor Course Authoring, and Exam Interaction Repairs
+
+Status: DONE. See [TASK-071.md](TASK-071.md) for scope, acceptance criteria, verification, and remaining verification limits.
+
+---
+
 # TASK-070 — Admin Sub-role Delegation, Approval Direct Routing, Evidence Previews, Topbar Zoom Collisions & Student Settings
 
 **Status:** DONE  

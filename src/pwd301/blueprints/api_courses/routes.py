@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from flask import Response, jsonify, request
@@ -66,11 +67,26 @@ from pwd301.services.question_bank_service import (
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
+    lo_data = None
+    if c.learning_objectives:
+        try:
+            lo_data = json.loads(c.learning_objectives)
+        except Exception:
+            lo_data = c.learning_objectives
+    cr_data = None
+    if c.completion_requirements:
+        try:
+            cr_data = json.loads(c.completion_requirements)
+        except Exception:
+            cr_data = c.completion_requirements
     return {
         "course_id": str(c.public_id),
         "course_code": c.course_code,
         "title": c.title,
         "description": c.description,
+        "learning_objectives": lo_data,
+        "completion_requirements": cr_data,
+        "target_audience": c.target_audience,
         "category": c.category,
         "difficulty": c.difficulty,
         "capacity": c.capacity,

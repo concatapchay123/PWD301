@@ -751,14 +751,19 @@ def create_app(
             or request.path.startswith("/api/ui/")
             or request.path == "/"
         )
-        response.headers["X-Frame-Options"] = "SAMEORIGIN" if is_frontend else "DENY"
+        is_application_evidence_preview = (
+            request.endpoint == "admin.admin_download_application_evidence"
+            and request.args.get("preview", "0").lower() in ("1", "true", "yes")
+        )
+        allows_same_origin_frame = is_frontend or is_application_evidence_preview
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if allows_same_origin_frame else "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if is_frontend and app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" in session:
             from flask_wtf.csrf import generate_csrf
 
             response.set_cookie("csrf_token", generate_csrf(), samesite="Lax")
         if "Content-Security-Policy" not in response.headers:
-            frame_ancestors = "'self'" if is_frontend else "'none'"
+            frame_ancestors = "'self'" if allows_same_origin_frame else "'none'"
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' "

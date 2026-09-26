@@ -5,7 +5,41 @@
  * Gemini AI Academic Assistant, and Instructor Self-Nomination.
  */
 
+function parseGroupedAttemptChoices(question) {
+  const choices = Array.isArray(question?.choices) ? question.choices : [];
+  const interactionKind = {
+    DRAG_DROP: 'DRAG',
+    MATCHING: 'MATCH'
+  }[question?.interaction_type];
+  if (!choices.length || !interactionKind) return null;
+
+  const groups = new Map();
+  for (const choice of choices) {
+    if (choice.interaction_kind !== interactionKind) return null;
+    const groupIndex = Number(choice.interaction_group);
+    if (!Number.isInteger(groupIndex) || groupIndex < 1) return null;
+    if (!groups.has(groupIndex)) groups.set(groupIndex, []);
+    groups.get(groupIndex).push({
+      ...choice,
+      answerText: String(choice.content || choice.text || '').trim()
+    });
+  }
+
+  const groupIndexes = Array.from(groups.keys()).sort((a, b) => a - b);
+  if (!groupIndexes.length || groupIndexes.some((value, index) => value !== index + 1)) return null;
+  return {
+    kind: interactionKind,
+    groups: groupIndexes.map(index => ({ index, choices: groups.get(index) }))
+  };
+}
+
 class StudentView {
+  static isLessonVideoWatched(lesson) {
+    if (!lesson?.video_url) return true;
+    return Number(lesson.progress?.seconds_spent || 0) >= Number(lesson.minimum_completion_seconds || 0)
+      && Number(lesson.progress?.max_view_fraction || 0) >= 1;
+  }
+
   // =========================================================================
   // 0. Notification Hub (Delegates to Topbar Dropdown Menu)
   // =========================================================================
@@ -1473,7 +1507,8 @@ class StudentView {
       container.querySelectorAll('.tab-btn').forEach(btn => {
         btn.onclick = () => {
           const tab = btn.dataset.tab;
-          StudentView.renderCourseDetail(container, courseId, tab);
+          const nextHash = `#/student/courses/detail?id=${encodeURIComponent(courseId)}&tab=${encodeURIComponent(tab)}`;
+          if (window.location.hash !== nextHash) window.location.hash = nextHash;
         };
       });
 
@@ -1486,7 +1521,11 @@ class StudentView {
             enrollBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
             await ApiClient.enrollCourse(courseId);
             UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
-            StudentView.renderCourseDetail(container, courseId, activeTab);
+            if (window.app && typeof window.app.handleRoute === 'function') {
+              await window.app.handleRoute();
+            } else {
+              await StudentView.renderCourseDetail(container, courseId, activeTab);
+            }
           } catch (e) {
             UI.showToast(e.message || 'Không thể ghi danh.', 'error');
             enrollBtn.disabled = false;
@@ -1510,7 +1549,11 @@ class StudentView {
           try {
             await ApiClient.leaveCourse(courseId);
             UI.showToast('Đã rút khỏi môn học thành công.', 'info');
-            StudentView.renderCourseDetail(container, courseId, activeTab);
+            if (window.app && typeof window.app.handleRoute === 'function') {
+              await window.app.handleRoute();
+            } else {
+              await StudentView.renderCourseDetail(container, courseId, activeTab);
+            }
           } catch (e) {
             UI.showToast(e.message || 'Không thể rút môn.', 'error');
           }
@@ -1536,7 +1579,7 @@ class StudentView {
     // Vimeo
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
     // Direct file / HTML5 video (No download button, no playback rate change, no right click menu)
     return `<video id="lesson-stream-player" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
@@ -1575,8 +1618,10 @@ class StudentView {
         }
       });
       const resources = allDocuments;
-      let isCompleted = lesson.progress?.is_completed || false;
       const hasVideo = Boolean(lesson.video_url);
+      let videoWatched = StudentView.isLessonVideoWatched(lesson);
+      let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
+      const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
       const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
 
       // Find prev and next lesson
@@ -1594,7 +1639,7 @@ class StudentView {
       }
 
       container.innerHTML = `
-        <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
+        <div id="lesson-reader-root" data-lesson-id="${UI.escapeHtml(lessonId)}" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
           
           <!-- Topbar Reader Navigation Header -->
           <div class="h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-10 select-none">
@@ -1684,8 +1729,23 @@ class StudentView {
 
               <!-- Media Player / Video Block (if present) -->
               ${lesson.video_url ? `
-                <div class="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video border border-slate-800">
-                  ${StudentView._getEmbedVideoHtml(lesson.video_url)}
+                <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
+                  <div class="aspect-video w-full bg-black relative">
+                    ${StudentView._getEmbedVideoHtml(lesson.video_url)}
+                  </div>
+                  <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                    <div class="flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
+                        ${isCompleted ? 'verified' : 'lock_clock'}
+                      </span>
+                      <span id="anti-seek-status-label" class="font-medium text-[11px] sm:text-xs">
+                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.'}
+                      </span>
+                    </div>
+                    <span id="anti-seek-progress-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
+                      ${isCompleted ? '100%' : 'Tiến độ: 0%'}
+                    </span>
+                  </div>
                 </div>
               ` : ''}
 
@@ -1695,8 +1755,8 @@ class StudentView {
               </div>
 
               <!-- Mini-Quiz Interactive Section (Item 7) -->
-              ${lesson.quiz && Array.isArray(lesson.quiz) && lesson.quiz.length > 0 ? `
-                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6" id="lesson-mini-quiz-section">
+              ${hasMiniQuiz ? `
+                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 ${videoWatched ? '' : 'hidden'}" id="lesson-mini-quiz-section">
                   <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                     <div class="flex items-center gap-2.5">
                       <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[20px]">quiz</span>
@@ -2051,20 +2111,34 @@ class StudentView {
 
       // 3. Mark lesson completed handler (Enforces 100% video watch)
       const completeBtn = document.getElementById('complete-lesson-btn');
+      const setLessonCompleted = () => {
+        isCompleted = true;
+        if (!completeBtn) return;
+        completeBtn.disabled = true;
+        completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
+        completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành</span>';
+      };
       if (completeBtn) {
         completeBtn.onclick = async () => {
           if (isPreview) {
             UI.showToast('Bạn đang xem thử bài giảng với quyền Giảng viên. Tiến độ học thử không ghi nhận vào CSDL sinh viên.', 'info');
             return;
           }
-          if (hasVideo && !isCompleted) {
+          if (hasVideo && !videoWatched) {
             UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
             return;
           }
+          if (hasMiniQuiz) {
+            UI.showToast('Hãy trả lời tất cả câu hỏi trong bài giảng trước khi hoàn thành.', 'warning');
+            return;
+          }
           try {
-            await ApiClient.recordLessonProgress(lessonId, 30, 1.0, true);
-            isCompleted = true;
-            completeBtn.disabled = false;
+            const result = await ApiClient.recordLessonProgress(lessonId, 30, 1.0, false);
+            if (!result?.is_completed) {
+              UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
+              return;
+            }
+            setLessonCompleted();
             completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
             completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành</span>';
             UI.showToast('Chúc mừng bạn đã hoàn thành bài học này!', 'success');
@@ -2074,54 +2148,260 @@ class StudentView {
         };
       }
 
-      // 4. Video Player Anti-Seek & 100% Watch Completion Guard
+      // 4. Universal Video Anti-Seek & 100% Watch Completion Controller
+      // Supports HTML5 <video>, YouTube <iframe> (postMessage API), and Vimeo <iframe>
       const videoEl = document.getElementById('lesson-stream-player');
-      if (videoEl && videoEl.tagName === 'VIDEO' && hasVideo && !isPreview) {
-        let maxWatchedTime = Math.max(0, lesson.progress?.seconds_spent || 0);
+      if (videoEl && hasVideo) {
+        let maxWatchedTime = videoWatched ? 999999 : 0;
+        let lastToastTime = 0;
 
-        videoEl.addEventListener('timeupdate', () => {
-          if (videoEl.currentTime > maxWatchedTime + 1.5) {
-            videoEl.currentTime = maxWatchedTime;
+        const notifySeekBlocked = () => {
+          const now = Date.now();
+          if (now - lastToastTime > 2500) {
+            lastToastTime = now;
             UI.showToast('Khóa tua nhanh: Bạn cần xem tuần tự video bài học và không thể tua trước.', 'warning');
-          } else {
-            maxWatchedTime = Math.max(maxWatchedTime, videoEl.currentTime);
-            if (videoEl.duration > 0 && !isCompleted) {
-              const pct = Math.min(100, Math.floor((maxWatchedTime / videoEl.duration) * 100));
-              const txtEl = document.getElementById('complete-btn-text');
-              if (txtEl) txtEl.textContent = `Đã xem ${pct}% (Cần xem 100%)`;
+          }
+        };
+
+        const updateProgressUI = (curTime, totalDur) => {
+          if (!totalDur || totalDur <= 0 || videoWatched) return;
+          const pct = Math.min(100, Math.floor((curTime / totalDur) * 100));
+          const badge = document.getElementById('anti-seek-progress-badge');
+          if (badge) {
+            badge.textContent = `Tiến độ: ${pct}%`;
+          }
+          const txtEl = document.getElementById('complete-btn-text');
+          if (txtEl) {
+            txtEl.textContent = `Đã xem ${pct}% (Cần 100%)`;
+          }
+        };
+
+        const handleVideoCompleted = async (totalDuration) => {
+          if (videoWatched) return;
+          videoWatched = true;
+          maxWatchedTime = 999999;
+
+          const badge = document.getElementById('anti-seek-progress-badge');
+          if (badge) {
+            badge.className = 'font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+            badge.textContent = '100%';
+          }
+          const statusLabel = document.getElementById('anti-seek-status-label');
+          if (statusLabel) {
+            statusLabel.textContent = 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.';
+            const icon = statusLabel.parentElement?.querySelector('.material-symbols-outlined');
+            if (icon) {
+              icon.className = 'material-symbols-outlined text-[16px] text-emerald-400';
+              icon.textContent = 'verified';
             }
           }
-        });
-
-        videoEl.addEventListener('seeking', () => {
-          if (videoEl.currentTime > maxWatchedTime + 1.5) {
-            videoEl.currentTime = maxWatchedTime;
-            UI.showToast('Không thể tua trước: Bạn chỉ có thể xem lại đoạn đã học.', 'warning');
+          const quizSection = document.getElementById('lesson-mini-quiz-section');
+          if (quizSection) quizSection.classList.remove('hidden');
+          if (completeBtn) {
+            completeBtn.disabled = hasMiniQuiz;
+            completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer';
+            completeBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${hasMiniQuiz ? 'quiz' : 'check'}</span> <span class="hidden sm:inline">${hasMiniQuiz ? 'Trả lời Mini-Quiz' : 'Hoàn thành bài học'}</span>`;
           }
-        });
+          if (!isPreview) {
+            try {
+              const result = await ApiClient.recordLessonProgress(lessonId, Math.ceil(totalDuration || 60), 1.0, false);
+              if (result?.is_completed) setLessonCompleted();
+            } catch (err) {
+              console.error('Error saving video progress', err);
+            }
+          }
+        };
 
-        videoEl.addEventListener('ended', async () => {
-          if (isCompleted) return;
-          isCompleted = true;
+        // --- Implementation A: HTML5 Video Element ---
+        if (videoEl.tagName === 'VIDEO') {
+          // Block forward seeking hotkeys (ArrowRight, ArrowUp, 'l', 'L')
+          videoEl.addEventListener('keydown', (e) => {
+            if (!videoWatched && (e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'l' || e.key === 'L')) {
+              e.preventDefault();
+              notifySeekBlocked();
+            }
+          });
+
+          // Restrict speed manipulation
+          videoEl.addEventListener('ratechange', () => {
+            if (videoEl.playbackRate > 1.5) {
+              videoEl.playbackRate = 1.0;
+              UI.showToast('Tốc độ phát bài học tối đa là 1.5x.', 'warning');
+            }
+          });
+
+          const clampSeeking = () => {
+            if (!videoWatched && videoEl.currentTime > maxWatchedTime + 1.2) {
+              videoEl.currentTime = maxWatchedTime;
+              notifySeekBlocked();
+            }
+          };
+
+          videoEl.addEventListener('seeking', clampSeeking);
+          videoEl.addEventListener('seeked', clampSeeking);
+
+          videoEl.addEventListener('timeupdate', () => {
+            if (videoWatched) return;
+            if (videoEl.currentTime > maxWatchedTime + 1.5) {
+              videoEl.currentTime = maxWatchedTime;
+              notifySeekBlocked();
+            } else {
+              if (videoEl.currentTime > maxWatchedTime) {
+                maxWatchedTime = videoEl.currentTime;
+              }
+              if (videoEl.duration > 0) {
+                updateProgressUI(maxWatchedTime, videoEl.duration);
+                if (videoEl.currentTime >= videoEl.duration - 1.5) {
+                  handleVideoCompleted(videoEl.duration);
+                }
+              }
+            }
+          });
+
+          videoEl.addEventListener('ended', () => {
+            handleVideoCompleted(videoEl.duration);
+          });
+        }
+
+        // --- Implementation B: IFrame Video (YouTube / Vimeo) ---
+        else if (videoEl.tagName === 'IFRAME') {
+          let iframeDuration = 0;
+          let iframeOrigin = '';
           try {
-            await ApiClient.recordLessonProgress(lessonId, Math.ceil(videoEl.duration || 60), 1.0, true);
-            if (completeBtn) {
-              completeBtn.disabled = false;
-              completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 shadow-sm cursor-default';
-              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span>Đã hoàn thành</span>';
+            iframeOrigin = new URL(videoEl.src, window.location.href).origin;
+          } catch (e) {}
+
+          const onIframeMessage = (event) => {
+            if (!iframeOrigin || event.source !== videoEl.contentWindow || event.origin !== iframeOrigin) return;
+            let data = null;
+            if (typeof event.data === 'string') {
+              try {
+                data = JSON.parse(event.data);
+              } catch (e) {
+                return;
+              }
+            } else if (typeof event.data === 'object' && event.data !== null) {
+              data = event.data;
             }
-            UI.showToast('Chúc mừng! Bạn đã xem đủ 100% video và bài giảng đã hoàn thành.', 'success');
-          } catch (err) {
-            console.error('Error auto-completing lesson', err);
-          }
-        });
+
+            if (!data) return;
+
+            // YouTube API postMessage protocol
+            if (data.event === 'infoDelivery' && data.info) {
+              const info = data.info;
+              if (typeof info.duration === 'number' && info.duration > 0) {
+                iframeDuration = info.duration;
+              }
+              if (typeof info.currentTime === 'number') {
+                const cur = info.currentTime;
+                if (!videoWatched && cur > maxWatchedTime + 2.0) {
+                  // Forward seek detected! Revert back to maxWatchedTime
+                  try {
+                    videoEl.contentWindow?.postMessage(JSON.stringify({
+                      event: 'command',
+                      func: 'seekTo',
+                      args: [maxWatchedTime, true]
+                    }), iframeOrigin);
+                  } catch (err) {}
+                  notifySeekBlocked();
+                } else {
+                  if (cur > maxWatchedTime) {
+                    maxWatchedTime = cur;
+                  }
+                  if (iframeDuration > 0) {
+                    updateProgressUI(maxWatchedTime, iframeDuration);
+                    if (cur >= iframeDuration - 2.0) {
+                      handleVideoCompleted(iframeDuration);
+                    }
+                  }
+                }
+              }
+
+              // PlayerState: 0 is ENDED
+              if (info.playerState === 0) {
+                handleVideoCompleted(iframeDuration || 60);
+              }
+            }
+
+            // Vimeo API postMessage protocol
+            if (data.event === 'timeupdate' && data.data) {
+              const cur = data.data.seconds || 0;
+              const dur = data.data.duration || 0;
+              if (dur > 0) iframeDuration = dur;
+
+              if (!videoWatched && cur > maxWatchedTime + 2.0) {
+                try {
+                  videoEl.contentWindow?.postMessage(JSON.stringify({
+                    method: 'setCurrentTime',
+                    value: maxWatchedTime
+                  }), iframeOrigin);
+                } catch (err) {}
+                notifySeekBlocked();
+              } else {
+                if (cur > maxWatchedTime) {
+                  maxWatchedTime = cur;
+                }
+                if (iframeDuration > 0) {
+                  updateProgressUI(maxWatchedTime, iframeDuration);
+                  if (cur >= iframeDuration - 2.0) {
+                    handleVideoCompleted(iframeDuration);
+                  }
+                }
+              }
+            } else if (data.event === 'ended') {
+              handleVideoCompleted(iframeDuration || 60);
+            }
+          };
+
+          window.addEventListener('message', onIframeMessage);
+
+          // Tell YouTube & Vimeo iframes to send state events and start polling currentTime
+          const handshakeIframe = () => {
+            try {
+              if (!iframeOrigin) return;
+              videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), iframeOrigin);
+              videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), iframeOrigin);
+              videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), iframeOrigin);
+            } catch (err) {}
+          };
+
+          handshakeIframe();
+          videoEl.addEventListener('load', () => {
+            handshakeIframe();
+            setTimeout(handshakeIframe, 500);
+            setTimeout(handshakeIframe, 1500);
+          });
+
+          // Periodic query for YouTube position
+          const iframePoll = setInterval(() => {
+            const currentEl = document.getElementById('lesson-stream-player');
+            if (!currentEl || currentEl !== videoEl) {
+              clearInterval(iframePoll);
+              window.removeEventListener('message', onIframeMessage);
+              return;
+            }
+            try {
+              currentEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), iframeOrigin);
+              if (iframeDuration <= 0) {
+                currentEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), iframeOrigin);
+              }
+            } catch (err) {}
+          }, 800);
+        }
       }
 
       // 5. Heartbeat progress tracking (only for enrolled students, not preview mode)
       let progressHeartbeat;
       if (!isPreview) {
         progressHeartbeat = setInterval(() => {
-          ApiClient.recordLessonProgress(lessonId, 15, 0.5, false).catch(() => {});
+          const readerRoot = document.getElementById('lesson-reader-root');
+          if (!readerRoot || readerRoot.dataset.lessonId !== String(lessonId)) {
+            clearInterval(progressHeartbeat);
+            return;
+          }
+          ApiClient.recordLessonProgress(lessonId, 15, videoWatched ? 1.0 : 0.5, false)
+            .then(result => { if (result?.is_completed) setLessonCompleted(); })
+            .catch(() => {});
         }, 15000);
       }
 
@@ -2131,7 +2411,41 @@ class StudentView {
       const quizSection = document.getElementById('lesson-mini-quiz-section');
 
       if (checkQuizBtn && quizSection && lesson.quiz && lesson.quiz.length) {
-        checkQuizBtn.onclick = () => {
+        checkQuizBtn.onclick = async () => {
+          const answers = lesson.quiz.map((question, qIdx) => {
+            const card = quizSection.querySelector(`.mini-quiz-card[data-qidx="${qIdx}"]`);
+            const questionType = question.type || 'MULTIPLE_CHOICE';
+            if (questionType === 'MULTIPLE_CHOICE') {
+              return Array.from(card.querySelectorAll(`input[name="mini-quiz-q-${qIdx}"]:checked`))
+                .map(input => Number.parseInt(input.value, 10));
+            }
+            if (questionType === 'FILL_BLANK') {
+              return Array.from(card.querySelectorAll('.mini-quiz-blank-input')).map(input => input.value.trim());
+            }
+            if (questionType === 'MATCHING') {
+              return Array.from(card.querySelectorAll('.mini-quiz-matching-select')).map(input => input.value);
+            }
+            if (questionType === 'TRUE_FALSE') {
+              const selected = card.querySelector(`input[name="mini-quiz-tf-${qIdx}"]:checked`);
+              return selected ? selected.value : null;
+            }
+            return null;
+          });
+          const everyAnswerProvided = answers.every((answer, qIdx) => {
+            const questionType = lesson.quiz[qIdx].type || 'MULTIPLE_CHOICE';
+            if (questionType === 'MULTIPLE_CHOICE') return answer.length > 0;
+            if (questionType === 'FILL_BLANK' || questionType === 'MATCHING') {
+              return answer.length > 0 && answer.every(value => String(value).trim().length > 0);
+            }
+            if (questionType === 'TRUE_FALSE') return answer !== null;
+            return answer !== null && String(answer).trim().length > 0;
+          });
+          if (!everyAnswerProvided) {
+            UI.showToast('Hãy trả lời tất cả câu hỏi trước khi tiếp tục.', 'warning');
+            return;
+          }
+
+          checkQuizBtn.disabled = true;
           let correctCount = 0;
           const cards = quizSection.querySelectorAll('.mini-quiz-card');
 
@@ -2311,6 +2625,23 @@ class StudentView {
           }
 
           if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+          try {
+            if (hasVideo) {
+              await ApiClient.recordLessonProgress(lessonId, 30, 1.0, false);
+            }
+            const result = await ApiClient.completeLessonMiniQuiz(lessonId, answers);
+            if (result?.is_completed) {
+              setLessonCompleted();
+              if (banner) banner.textContent = 'Đã lưu câu trả lời và hoàn thành bài giảng.';
+              UI.showToast('Bạn đã trả lời hết câu hỏi và hoàn thành bài giảng.', 'success');
+            } else {
+              UI.showToast('Câu trả lời đã lưu. Hệ thống đang cập nhật thời lượng hoàn thành.', 'info');
+            }
+          } catch (error) {
+            UI.showToast(error.message || 'Không thể lưu câu trả lời. Vui lòng thử lại.', 'error');
+          } finally {
+            checkQuizBtn.disabled = false;
+          }
         };
 
         if (resetQuizBtn) {
@@ -2707,10 +3038,48 @@ class StudentView {
 
       const flaggedQuestions = new Set();
       const answeredQuestions = new Set();
+      const pendingAnswerSaves = new Set();
+      const answerSaveTails = new Map();
+      const failedAnswerSaves = new Set();
+      const saveAnswerInOrder = (questionId, answer) => {
+        const previous = answerSaveTails.get(questionId) || Promise.resolve();
+        const save = previous
+          .catch(() => {})
+          .then(() => ApiClient.saveAttemptAnswer(attemptId, questionId, answer, leaseToken));
+        answerSaveTails.set(questionId, save);
+        pendingAnswerSaves.add(save);
+        return save
+          .then(result => {
+            failedAnswerSaves.delete(questionId);
+            return result;
+          })
+          .catch(error => {
+            failedAnswerSaves.add(questionId);
+            throw error;
+          })
+          .finally(() => {
+            pendingAnswerSaves.delete(save);
+            if (answerSaveTails.get(questionId) === save) answerSaveTails.delete(questionId);
+          });
+      };
 
       // Check pre-selected answers
       questions.forEach((q, idx) => {
-        const hasSelected = (q.choices || []).some(c => c.is_selected);
+        const grouped = parseGroupedAttemptChoices(q);
+        const selectedKeys = new Set(
+          (Array.isArray(q.selected_choice_keys) ? q.selected_choice_keys : []).map(String)
+        );
+        const fillBlankCount = (String(q.content || '').match(/_{3,}/g) || []).length || 1;
+        const fillAnswers = String(q.answer_text || '').split('|||');
+        const hasSelected = q.interaction_type === 'FILL_IN'
+          ? fillAnswers.length === fillBlankCount && fillAnswers.every(value => value.trim())
+          : grouped
+          ? grouped.groups.every(group => group.choices.some(choice =>
+            selectedKeys.has(String(choice.choice_key || choice.choice_id || choice.id))
+          ))
+          : (q.choices || []).some(c => c.is_selected)
+            || selectedKeys.size > 0
+            || Boolean(String(q.answer_text || '').trim());
         if (hasSelected) answeredQuestions.add(idx);
       });
 
@@ -2778,19 +3147,100 @@ class StudentView {
 
                   <!-- Question Text -->
                   <div class="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-relaxed">
-                    ${UI.escapeHtml(q.content || q.stem || '')}
+                    ${(() => {
+                      const grouped = parseGroupedAttemptChoices(q);
+                      const questionText = String(q.content || q.stem || '');
+                      if (q.interaction_type === 'FILL_IN') {
+                        const answers = String(q.answer_text || '').split('|||');
+                        const placeholderCount = (questionText.match(/_{3,}/g) || []).length;
+                        let blankIndex = 0;
+                        const promptWithInputs = UI.escapeHtml(questionText).replace(/_{3,}/g, () => {
+                          const index = blankIndex++;
+                          return `<label class="inline-flex flex-col align-middle gap-1 mx-1 my-1 min-w-28">
+                            <span class="text-[10px] font-semibold text-indigo-800 dark:text-indigo-200">Blank ${index + 1}</span>
+                            <input type="text" class="assessment-fill-blank rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-sm font-medium text-slate-900 dark:text-slate-100" data-blank-index="${index}" value="${UI.escapeHtml(answers[index] || '')}" aria-label="Answer for blank ${index + 1}" autocomplete="off" />
+                          </label>`;
+                        });
+                        const remainingInputs = placeholderCount === 0
+                          ? `<label class="block mt-3 space-y-1"><span class="text-xs font-semibold">Answer</span><input type="text" class="assessment-fill-blank w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-sm font-medium text-slate-900 dark:text-slate-100" data-blank-index="0" value="${UI.escapeHtml(answers[0] || '')}" aria-label="Answer for blank 1" autocomplete="off" /></label>`
+                          : '';
+                        return `${promptWithInputs}${remainingInputs}`;
+                      }
+                      if (!grouped) return UI.escapeHtml(questionText);
+
+                      const selectedKeys = new Set(
+                        (Array.isArray(q.selected_choice_keys) ? q.selected_choice_keys : []).map(String)
+                      );
+                      const renderSlot = group => {
+                        const left = grouped.kind === 'MATCH'
+                          ? (group.choices[0]?.interaction_left || `Item ${group.index}`)
+                          : `Blank ${group.index}`;
+                        const options = group.choices.map(choice => {
+                          const key = String(choice.choice_key || choice.choice_id || choice.id);
+                          const answerText = choice.answerText;
+                          return `<option value="${UI.escapeHtml(key)}" data-answer-text="${UI.escapeHtml(answerText)}" ${selectedKeys.has(key) ? 'selected' : ''}>${UI.escapeHtml(answerText)}</option>`;
+                        }).join('');
+                        return `<span class="interactive-drop-slot inline-flex flex-col align-middle gap-1 mx-1 my-1 min-w-32 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-950/30 p-2" data-group-index="${group.index}">
+                          <label class="text-[10px] font-semibold text-indigo-800 dark:text-indigo-200">${UI.escapeHtml(left)}</label>
+                          <select class="interactive-slot-select w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-900 dark:text-slate-100" data-group-index="${group.index}" aria-label="${UI.escapeHtml(left)}">
+                            <option value="">Choose an answer</option>${options}
+                          </select>
+                        </span>`;
+                      };
+
+                      let groupCursor = 0;
+                      const escapedQuestion = UI.escapeHtml(questionText);
+                      const promptWithSlots = grouped.kind === 'MATCH'
+                        ? escapedQuestion
+                        : escapedQuestion.replace(/_{3,}/g, () => renderSlot(grouped.groups[groupCursor++] || grouped.groups[grouped.groups.length - 1]));
+                      const remainingSlots = grouped.kind === 'MATCH'
+                        ? grouped.groups.map(renderSlot).join('')
+                        : grouped.groups.slice(groupCursor).map(renderSlot).join('');
+                      const tokenLabels = grouped.kind === 'DRAG'
+                        ? Array.from(new Set(grouped.groups.flatMap(group => group.choices.map(choice => choice.answerText))))
+                        : [];
+                      const tokenBank = tokenLabels.length ? `<div class="interactive-token-bank mt-3 flex flex-wrap gap-2" aria-label="Draggable answer tokens">
+                        ${tokenLabels.map(token => `<button type="button" draggable="true" class="interactive-token cursor-grab touch-manipulation rounded-full border border-indigo-200 dark:border-indigo-800 bg-indigo-100 dark:bg-indigo-900 px-3 py-1.5 text-xs font-semibold text-indigo-950 dark:text-indigo-100" data-token="${UI.escapeHtml(token)}">${UI.escapeHtml(token)}</button>`).join('')}
+                      </div>` : '';
+                      return `<div>${promptWithSlots}${remainingSlots ? `<div class="mt-2 flex flex-wrap items-start gap-2">${remainingSlots}</div>` : ''}</div>${tokenBank}`;
+                    })()}
                   </div>
+
+                  ${(q.resources || []).length > 0 ? `
+                    <div class="space-y-3">
+                      ${(q.resources || []).map((resource, imageIndex) => `
+                        <img
+                          src="${UI.escapeHtml(resource.url)}"
+                          alt="Question ${idx + 1} illustration ${imageIndex + 1}"
+                          loading="lazy"
+                          class="max-h-80 max-w-full rounded-lg border border-slate-200 dark:border-slate-700 object-contain"
+                        />
+                      `).join('')}
+                    </div>
+                  ` : ''}
 
                   <!-- Choices List -->
                   <div class="space-y-2.5 pt-1">
-                    ${(q.choices || []).map(c => `
+                    ${q.interaction_type === 'FILL_IN' || parseGroupedAttemptChoices(q) ? '' : q.question_type === 'SHORT_ANSWER' ? `
+                      <label class="block space-y-2">
+                        <span class="block text-xs font-semibold text-slate-600 dark:text-slate-300">Câu trả lời</span>
+                        <input
+                          type="text"
+                          class="assessment-short-answer w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                          data-q-index="${idx}"
+                          value="${UI.escapeHtml(q.answer_text || '')}"
+                          placeholder="Nhập câu trả lời của bạn"
+                          autocomplete="off"
+                        />
+                      </label>
+                    ` : (q.choices || []).map(c => `
                       <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors choice-label">
                         <input
-                          type="radio"
+                          type="${q.question_type === 'MULTIPLE_CHOICE' ? 'checkbox' : 'radio'}"
                           name="q_answer_${idx}"
                           value="${c.choice_key || c.choice_id || c.id}"
                           class="mt-1 text-primary focus:ring-primary/20 cursor-pointer"
-                          ${c.is_selected ? 'checked' : ''}
+                          ${c.is_selected || (q.selected_choice_keys || []).includes(String(c.choice_key || c.choice_id || c.id)) ? 'checked' : ''}
                         />
                         <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-normal flex-1">
                           <strong>${c.label || ''}</strong> ${UI.escapeHtml(c.content || c.text || '')}
@@ -2899,15 +3349,23 @@ class StudentView {
       });
 
       // Answer selection auto-save handler
-      container.querySelectorAll('input[type="radio"]').forEach(radio => {
-        radio.onchange = async () => {
-          const card = radio.closest('.question-card');
+      container.querySelectorAll('input[type="radio"], input[type="checkbox"], select.interactive-slot-select').forEach(input => {
+        input.onchange = async () => {
+          const card = input.closest('.question-card');
           if (!card) return;
           const idx = parseInt(card.dataset.qIndex, 10);
           const qid = card.dataset.qid;
-          const choiceId = radio.value;
+          const selectedChoiceIds = Array.from(card.querySelectorAll(
+            'input[type="radio"]:checked, input[type="checkbox"]:checked, select.interactive-slot-select'
+          )).map(choice => choice.value).filter(Boolean);
+          const grouped = parseGroupedAttemptChoices(questions[idx]);
+          const hasCompleteGroupedAnswer = !grouped || (
+            card.querySelectorAll('select.interactive-slot-select').length === grouped.groups.length
+            && Array.from(card.querySelectorAll('select.interactive-slot-select')).every(select => Boolean(select.value))
+          );
 
-          answeredQuestions.add(idx);
+          if (selectedChoiceIds.length && hasCompleteGroupedAnswer) answeredQuestions.add(idx);
+          else answeredQuestions.delete(idx);
           const indicatorCount = document.getElementById('answered-count-indicator');
           if (indicatorCount) {
             indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
@@ -2916,7 +3374,9 @@ class StudentView {
           // Update Matrix cell style
           const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
           if (matrixBtn) {
-            matrixBtn.classList.add('bg-primary', 'text-white', 'border-primary');
+            matrixBtn.classList.toggle('bg-primary', selectedChoiceIds.length > 0);
+            matrixBtn.classList.toggle('text-white', selectedChoiceIds.length > 0);
+            matrixBtn.classList.toggle('border-primary', selectedChoiceIds.length > 0);
           }
 
           // Autosave indicator
@@ -2926,7 +3386,10 @@ class StudentView {
           }
 
           try {
-            await ApiClient.saveAttemptAnswer(attemptId, qid, { selected_choice_key: choiceId, selected_choice_id: choiceId }, leaseToken);
+            await saveAnswerInOrder(qid, {
+              selected_choice_keys: selectedChoiceIds,
+              selected_choice_ids: selectedChoiceIds
+            }, leaseToken);
             if (indicator) {
               indicator.innerHTML = '<span class="material-symbols-outlined text-[16px] text-emerald-500">check_circle</span> <span class="hidden sm:inline">Đã lưu tự động</span>';
             }
@@ -2936,6 +3399,119 @@ class StudentView {
             }
           }
         };
+      });
+
+      container.querySelectorAll('.interactive-token').forEach(tokenButton => {
+        tokenButton.addEventListener('dragstart', event => {
+          event.dataTransfer?.setData('text/plain', tokenButton.dataset.token || '');
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+        });
+        tokenButton.addEventListener('click', () => {
+          const card = tokenButton.closest('.question-card');
+          const selects = Array.from(card?.querySelectorAll('select.interactive-slot-select') || []);
+          const target = selects.find(select => !select.value) || selects[0];
+          if (!target) return;
+          const tokenText = (tokenButton.dataset.token || '').toLocaleLowerCase();
+          const option = Array.from(target.options).find(item =>
+            (item.dataset.answerText || '').toLocaleLowerCase() === tokenText
+          );
+          if (option) {
+            target.value = option.value;
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+      });
+
+      container.querySelectorAll('.interactive-drop-slot').forEach(dropSlot => {
+        dropSlot.addEventListener('dragover', event => {
+          event.preventDefault();
+          dropSlot.classList.add('ring-2', 'ring-indigo-400');
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        });
+        dropSlot.addEventListener('dragleave', event => {
+          if (!dropSlot.contains(event.relatedTarget)) {
+            dropSlot.classList.remove('ring-2', 'ring-indigo-400');
+          }
+        });
+        dropSlot.addEventListener('drop', event => {
+          event.preventDefault();
+          dropSlot.classList.remove('ring-2', 'ring-indigo-400');
+          const tokenText = (event.dataTransfer?.getData('text/plain') || '').toLocaleLowerCase();
+          const select = dropSlot.querySelector('select.interactive-slot-select');
+          if (!tokenText || !select) return;
+          const option = Array.from(select.options).find(item =>
+            (item.dataset.answerText || '').toLocaleLowerCase() === tokenText
+          );
+          if (option) {
+            select.value = option.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+      });
+
+      container.querySelectorAll('.assessment-short-answer').forEach(input => {
+        input.addEventListener('change', async () => {
+          const card = input.closest('.question-card');
+          if (!card) return;
+          const idx = Number(input.dataset.qIndex);
+          const qid = card.dataset.qid;
+          const answerText = input.value.trim();
+          if (answerText) answeredQuestions.add(idx);
+          else answeredQuestions.delete(idx);
+
+          const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
+          if (matrixBtn) {
+            matrixBtn.classList.toggle('bg-primary', Boolean(answerText));
+            matrixBtn.classList.toggle('text-white', Boolean(answerText));
+            matrixBtn.classList.toggle('border-primary', Boolean(answerText));
+          }
+          const indicatorCount = document.getElementById('answered-count-indicator');
+          if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
+          const indicator = document.getElementById('exam-autosave-indicator');
+          if (indicator) indicator.textContent = 'Đang lưu...';
+
+          try {
+            await saveAnswerInOrder(qid, { answer_text: answerText });
+            if (indicator) indicator.textContent = 'Đã lưu tự động';
+          } catch (err) {
+            if (indicator) indicator.textContent = 'Lỗi lưu đáp án';
+            UI.showToast(err.message || 'Không thể lưu câu trả lời.', 'error');
+          }
+        });
+      });
+
+      container.querySelectorAll('.assessment-fill-blank').forEach(input => {
+        input.addEventListener('change', async () => {
+          const card = input.closest('.question-card');
+          if (!card) return;
+          const idx = Number(card.dataset.qIndex);
+          const qid = card.dataset.qid;
+          const inputs = Array.from(card.querySelectorAll('.assessment-fill-blank'));
+          const values = inputs.map(blank => blank.value.trim());
+          const answerText = values.join('|||');
+          if (values.length && values.every(Boolean)) answeredQuestions.add(idx);
+          else answeredQuestions.delete(idx);
+
+          const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
+          if (matrixBtn) {
+            const complete = values.length > 0 && values.every(Boolean);
+            matrixBtn.classList.toggle('bg-primary', complete);
+            matrixBtn.classList.toggle('text-white', complete);
+            matrixBtn.classList.toggle('border-primary', complete);
+          }
+          const indicatorCount = document.getElementById('answered-count-indicator');
+          if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} cÃ¢u`;
+          const indicator = document.getElementById('exam-autosave-indicator');
+          if (indicator) indicator.textContent = 'Äang lÆ°u...';
+
+          try {
+            await saveAnswerInOrder(qid, { answer_text: answerText });
+            if (indicator) indicator.textContent = 'ÄÃ£ lÆ°u tá»± Ä‘á»™ng';
+          } catch (error) {
+            if (indicator) indicator.textContent = 'Lá»—i lÆ°u Ä‘Ã¡p Ã¡n';
+            UI.showToast(error.message || 'Could not save the blank answers.', 'error');
+          }
+        });
       });
 
       // Submit exam action with 2-step confirmation
@@ -2954,6 +3530,14 @@ class StudentView {
             'Kiểm tra lại'
           );
           if (!confirmed) return;
+        }
+
+        if (pendingAnswerSaves.size > 0) {
+          await Promise.allSettled(Array.from(pendingAnswerSaves));
+        }
+        if (!forced && failedAnswerSaves.size > 0) {
+          UI.showToast('Một hoặc nhiều câu trả lời chưa được lưu. Hãy thử lưu lại trước khi nộp bài.', 'error');
+          return;
         }
 
         antiCheat.stop();
@@ -4199,7 +4783,7 @@ class StudentView {
           try {
             await ApiClient.cancelInstructorApplication();
             UI.showToast('Đã hủy đơn đăng ký thành công.', 'info');
-            StudentView.renderBecomeInstructor(container);
+            UI.refreshCurrentRoute(() => StudentView.renderBecomeInstructor(container));
           } catch (e) {
             UI.showToast(e.message || 'Không thể hủy đơn.', 'error');
           }
@@ -4349,6 +4933,21 @@ class StudentView {
                 placeholder="https://github.com/... hoặc https://behance.net/..."
                 class="c-input"
               />
+            </div>
+
+            <div class="space-y-1.5">
+              <label for="certificate-drive-url" class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Link chứng chỉ, bằng cấp trên Google Drive <span class="font-normal text-slate-400">(Không bắt buộc)</span>
+              </label>
+              <input
+                id="certificate-drive-url"
+                type="url"
+                name="certificate_drive_url"
+                maxlength="512"
+                placeholder="https://drive.google.com/file/d/..."
+                class="c-input"
+              />
+              <p class="text-xs text-slate-500">Chia sẻ quyền xem cho người có liên kết để hội đồng có thể đối chiếu.</p>
             </div>
 
             <!-- Institution Name (Optional) -->
@@ -4600,7 +5199,7 @@ class StudentView {
         try {
           await ApiClient.submitInstructorApplication(formData);
           UI.showToast('Hồ sơ ứng tuyển đã được gửi thành công đến Quản trị viên.', 'success');
-          StudentView.renderBecomeInstructor(container);
+          UI.refreshCurrentRoute(() => StudentView.renderBecomeInstructor(container));
         } catch (err) {
           UI.showToast(err.message || 'Lỗi gửi hồ sơ.', 'error');
           btn.disabled = false;
@@ -5171,7 +5770,7 @@ class StudentView {
       container.innerHTML = `
         <div class="max-w-xl mx-auto p-8 text-center text-rose-500">
           <p class="font-bold">Lỗi nạp thông tin cài đặt: ${UI.escapeHtml(err.message || 'Lỗi hệ thống')}</p>
-          <button type="button" class="mt-4 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="StudentView.renderSettings(document.getElementById('main-content'))">Thử lại</button>
+          <button type="button" class="mt-4 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="UI.refreshCurrentRoute(() => StudentView.renderSettings(document.getElementById('main-content'))) ">Thử lại</button>
         </div>
       `;
     }

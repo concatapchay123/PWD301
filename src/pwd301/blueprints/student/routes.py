@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -40,6 +43,8 @@ from pwd301.services.file_service import (
     sanitize_filename,
 )
 from pwd301.services.lesson_service import (
+    _lesson_requires_video_watch,
+    complete_lesson_mini_quiz,
     get_lesson_detail,
     get_lesson_progress,
     record_lesson_progress,
@@ -210,8 +215,8 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             fa = r.file_asset
             if not fa:
                 continue
-            is_scan_ok = getattr(fa, "virus_scan_status", "CLEAN") in ("CLEAN", "UNSCANNED")
-            is_status_ok = fa.status in ("ACTIVE", "PENDING_SCAN")
+            is_scan_ok = getattr(fa, "virus_scan_status", None) == "CLEAN"
+            is_status_ok = fa.status == "ACTIVE"
             if not (is_scan_ok and is_status_ok):
                 continue
 
@@ -263,7 +268,11 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
-        "viewed_fraction_required": float(les.viewed_fraction_required),
+        "viewed_fraction_required": (
+            1.0
+            if _lesson_requires_video_watch(les)
+            else float(les.viewed_fraction_required)
+        ),
         "video_url": video_url,
         "quiz": quiz,
         "personal_notes": personal_notes,
@@ -314,7 +323,7 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
 
     view_fraction = payload.get("view_fraction")
     if view_fraction is None:
-        view_fraction = 1.0 if payload.get("completed") else 0.0
+        view_fraction = 0.0
 
     try:
         sec_int = int(str(seconds_increment or 0))
@@ -334,12 +343,6 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         view_fraction=bounded_vf,
     )
 
-    if payload.get("completed") and progress.completed_at is None:
-        now = utc_now()
-        progress.completed_at = now
-        progress.updated_at = now
-        db.session.commit()
-
     data = {
         "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
         "seconds_spent": progress.seconds_spent,
@@ -349,6 +352,32 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
     }
     return jsonify(data), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/quiz-completion", methods=["POST"])
+@student_required
+def complete_student_lesson_quiz(lesson_id: str) -> tuple[Response, int] | Response:
+    """Record answered lesson quiz questions and return authoritative completion."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("answers"), list):
+        raise LessonValidationError("answers must be a list.")
+
+    progress = complete_lesson_mini_quiz(
+        actor=actor,
+        lesson_id=lesson_id,
+        answers=payload["answers"],
+    )
+    return jsonify(
+        {
+            "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
+            "is_completed": progress.completed_at is not None,
+            "completed": progress.completed_at is not None,
+            "completed_at": progress.completed_at.isoformat()
+            if progress.completed_at
+            else None,
+        }
+    ), 200
 
 
 @student_bp.route("/lessons/<lesson_id>/notes", methods=["GET"])
@@ -1377,7 +1406,11 @@ def student_course_detail(course_id: str) -> Any:
 
     lessons = (
         db.session.query(Lesson)
-        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+        )
         .order_by(Lesson.position.asc())
         .all()
     )
@@ -1520,10 +1553,6 @@ def student_course_detail(course_id: str) -> Any:
     contact_info = None
     clean_desc = course.description or ""
     if course.description and "<!-- contact_info:" in course.description:
-        import contextlib
-        import json
-        import re
-
         m_contact = re.search(
             r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", course.description, re.DOTALL
         )
@@ -1543,6 +1572,26 @@ def student_course_detail(course_id: str) -> Any:
             "office_hours": "",
         }
 
+    lo_data = None
+    if course.learning_objectives:
+        try:
+            lo_data = json.loads(course.learning_objectives)
+            if isinstance(lo_data, str):
+                with contextlib.suppress(Exception):
+                    lo_data = json.loads(lo_data)
+        except Exception:
+            lo_data = course.learning_objectives
+
+    cr_data = None
+    if course.completion_requirements:
+        try:
+            cr_data = json.loads(course.completion_requirements)
+            if isinstance(cr_data, str):
+                with contextlib.suppress(Exception):
+                    cr_data = json.loads(cr_data)
+        except Exception:
+            cr_data = course.completion_requirements
+
     return jsonify(
         {
             "course": {
@@ -1554,9 +1603,9 @@ def student_course_detail(course_id: str) -> Any:
                 "description": clean_desc,
                 "category": course.category,
                 "difficulty": course.difficulty,
-                "learning_objectives": course.learning_objectives,
+                "learning_objectives": lo_data,
                 "target_audience": course.target_audience,
-                "completion_requirements": course.completion_requirements,
+                "completion_requirements": cr_data,
                 "status": course.status,
                 "capacity": course.capacity,
                 "is_full": is_full,

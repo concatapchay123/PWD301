@@ -12,7 +12,7 @@ from flask import Response, jsonify, request, send_file
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, CoursePrerequisite, Enrollment, Lesson
-from pwd301.models.file_import import LessonResource
+from pwd301.models.file_import import FileAsset, LessonResource, QuestionRevisionResource
 from pwd301.models.identity import Role, User
 from pwd301.models.question_bank import Question, QuestionRevision
 from pwd301.models.types import utc_now
@@ -2481,6 +2481,43 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 session=db.session,
             )
 
+            raw_image_asset_id = item.get("image_asset_id")
+            if raw_image_asset_id:
+                try:
+                    image_asset_uuid = uuid.UUID(str(raw_image_asset_id))
+                except (TypeError, ValueError) as err:
+                    raise ValidationError(
+                        f"Question #{idx}: image_asset_id must be a valid UUID."
+                    ) from err
+                image_asset = (
+                    db.session.query(FileAsset)
+                    .filter(
+                        FileAsset.public_id == image_asset_uuid,
+                        FileAsset.course_id == asm_obj.course_id,
+                        FileAsset.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if image_asset is None:
+                    raise ValidationError(f"Question #{idx}: image does not belong to this course.")
+                if (image_asset.mime_type or "").lower() not in {
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
+                    "image/gif",
+                }:
+                    raise ValidationError(
+                        f"Question #{idx}: only PNG, JPEG, WebP, or GIF images are allowed."
+                    )
+                db.session.add(
+                    QuestionRevisionResource(
+                        question_revision_id=created_q.current_revision.id,
+                        file_asset_id=image_asset.id,
+                        position=1,
+                        resource_role="IMAGE",
+                    )
+                )
+
             assignment = assign_question(
                 actor=actor,
                 assessment_id=asm_obj.id,
@@ -3568,4 +3605,3 @@ def instructor_get_json_sample_route() -> Response:
         as_attachment=True,
         download_name="exam_sample_questions.json",
     )
-

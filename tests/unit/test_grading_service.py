@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -33,6 +34,9 @@ from pwd301.services.assessment_service import (
     publish_assessment,
 )
 from pwd301.services.attempt_service import (
+    _grouped_fill_answer_correct,
+    _grouped_multiple_choice_correct,
+    get_attempt_delivery,
     grade_essay_question,
     save_attempt_answer,
     start_assessment_attempt,
@@ -398,6 +402,242 @@ def test_objective_auto_grading_multiple_choice_all_or_nothing(
     assert attempt.result is not None
     assert float(attempt.result.raw_score) == 0.0
     assert attempt.result.passed is False
+
+
+def test_grouped_multiple_choice_grades_one_correct_selection_per_group(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """Grouped choices allow one accepted answer per blank or matching group."""
+    sess: Session = db.session
+    now = datetime.now(UTC)
+    assessment = create_assessment(
+        instructor_user,
+        published_course.id,
+        {
+            "title": "Grouped Interactive Quiz",
+            "assessment_type": "QUIZ",
+            "time_limit_minutes": 30,
+            "open_at": (now - timedelta(hours=1)).isoformat(),
+            "close_at": (now + timedelta(hours=24)).isoformat(),
+        },
+        session=sess,
+    )
+    section = create_section(instructor_user, assessment.id, {"title": "S1"}, session=sess)
+    question = create_question(
+        instructor_user,
+        published_course.id,
+        {
+            "question_type": "MULTIPLE_CHOICE",
+            "difficulty": "UNDERSTAND",
+            "content": "Protocol ___ is paired with method ___.",
+            "default_points": 10.0,
+            "choices": [
+                {"content": "[[PWD301:G:DRAG:1]]HTTP", "is_correct": True, "position": 1},
+                {
+                    "content": "[[PWD301:G:DRAG:1]]Hypertext Transfer Protocol",
+                    "is_correct": True,
+                    "position": 2,
+                },
+                {"content": "[[PWD301:G:DRAG:1]]FTP", "is_correct": False, "position": 3},
+                {"content": "[[PWD301:G:DRAG:2]]GET", "is_correct": True, "position": 4},
+                {"content": "[[PWD301:G:DRAG:2]]Retrieval", "is_correct": True, "position": 5},
+                {"content": "[[PWD301:G:DRAG:2]]POST", "is_correct": False, "position": 6},
+            ],
+        },
+        session=sess,
+    )
+    assign_question(
+        instructor_user,
+        assessment.id,
+        {
+            "question_id": question.id,
+            "points_assigned": 10.0,
+            "section_id": section.id,
+        },
+        session=sess,
+    )
+    publish_assessment(instructor_user, assessment.id, session=sess)
+    sess.commit()
+
+    attempt, lease_token = start_assessment_attempt(
+        enrolled_student, assessment.id, session=sess
+    )
+    attempt_question = attempt.attempt_questions[0]
+    valid_choices = [
+        choice
+        for choice in attempt_question.choice_snapshots
+        if choice.content_snapshot
+        in ("[[PWD301:G:DRAG:1]]HTTP", "[[PWD301:G:DRAG:2]]Retrieval")
+    ]
+    save_attempt_answer(
+        actor=enrolled_student,
+        attempt_id=attempt.id,
+        attempt_question_id=attempt_question.id,
+        payload={
+            "client_sequence": 1,
+            "client_change_id": str(uuid.uuid4()),
+            "selected_choice_keys": [str(choice.choice_key_snapshot) for choice in valid_choices],
+        },
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+    submitted = submit_assessment_attempt(
+        actor=enrolled_student,
+        attempt_id=attempt.id,
+        idempotency_key=uuid.uuid4(),
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+
+    assert submitted["status"] == "GRADED"
+    sess.refresh(attempt)
+    assert attempt.result is not None
+    assert float(attempt.result.raw_score) == 10.0
+
+
+def test_grouped_multiple_choice_rejects_correct_choice_from_another_group() -> None:
+    """A choice key is correct only for the interaction group that owns it."""
+    first_correct = "choice-first-correct"
+    second_correct = "choice-second-correct"
+    revision = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                content="[[PWD301:G:MATCH:1]]HTTP|||Web transfer",
+                choice_key=first_correct,
+                is_correct=True,
+            ),
+            SimpleNamespace(
+                content="[[PWD301:G:MATCH:1]]FTP|||File transfer",
+                choice_key="choice-first-distractor",
+                is_correct=False,
+            ),
+            SimpleNamespace(
+                content="[[PWD301:G:MATCH:2]]FTP|||File transfer",
+                choice_key=second_correct,
+                is_correct=True,
+            ),
+            SimpleNamespace(
+                content="[[PWD301:G:MATCH:2]]HTTP|||Web transfer",
+                choice_key="choice-second-distractor",
+                is_correct=False,
+            ),
+        ]
+    )
+    selected_snapshots = [
+        SimpleNamespace(
+            content_snapshot="[[PWD301:G:MATCH:1]]HTTP|||Web transfer",
+            choice_key_snapshot=first_correct,
+        ),
+        SimpleNamespace(
+            content_snapshot="[[PWD301:G:MATCH:2]]FTP|||File transfer",
+            choice_key_snapshot=first_correct,
+        ),
+    ]
+
+    assert _grouped_multiple_choice_correct(revision, selected_snapshots) is False
+
+
+def test_grouped_fill_rejects_mixed_internal_and_ordinary_answer_keys() -> None:
+    """Tagged blank grading must reject partially tagged accepted-answer lists."""
+    revision = SimpleNamespace(
+        accepted_answers=[
+            SimpleNamespace(answer_text="[[PWD301:FI:1]]HTTP"),
+            SimpleNamespace(answer_text="[[PWD301:FI:2]]GET"),
+            SimpleNamespace(answer_text="legacy answer"),
+        ]
+    )
+
+    assert _grouped_fill_answer_correct(revision, "HTTP|||GET") is False
+
+
+def test_fill_in_blank_grades_each_blank_without_delivering_answer_keys(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """A typed answer can use accepted variants for every blank in order."""
+    sess: Session = db.session
+    now = datetime.now(UTC)
+    assessment = create_assessment(
+        instructor_user,
+        published_course.id,
+        {
+            "title": "Fill Blank Quiz",
+            "assessment_type": "QUIZ",
+            "time_limit_minutes": 30,
+            "open_at": (now - timedelta(hours=1)).isoformat(),
+            "close_at": (now + timedelta(hours=24)).isoformat(),
+        },
+        session=sess,
+    )
+    section = create_section(instructor_user, assessment.id, {"title": "S1"}, session=sess)
+    question = create_question(
+        instructor_user,
+        published_course.id,
+        {
+            "question_type": "SHORT_ANSWER",
+            "difficulty": "UNDERSTAND",
+            "content": "[[PWD301:FI_V1]]Protocol ___ uses method ___.",
+            "default_points": 10.0,
+            "accepted_answers": [
+                "[[PWD301:FI:1]]HTTP",
+                "[[PWD301:FI:1]]Hypertext Transfer Protocol",
+                "[[PWD301:FI:2]]GET",
+                "[[PWD301:FI:2]]Retrieval",
+            ],
+        },
+        session=sess,
+    )
+    assign_question(
+        instructor_user,
+        assessment.id,
+        {
+            "question_id": question.id,
+            "points_assigned": 10.0,
+            "section_id": section.id,
+        },
+        session=sess,
+    )
+    publish_assessment(instructor_user, assessment.id, session=sess)
+    sess.commit()
+
+    attempt, lease_token = start_assessment_attempt(
+        enrolled_student, assessment.id, session=sess
+    )
+    attempt_question = attempt.attempt_questions[0]
+    delivery = get_attempt_delivery(enrolled_student, attempt.id, session=sess)
+    delivered_question = delivery["questions"][0]
+    assert delivered_question["interaction_type"] == "FILL_IN"
+    assert delivered_question["content"] == "Protocol ___ uses method ___."
+    assert delivered_question["choices"] == []
+    save_attempt_answer(
+        actor=enrolled_student,
+        attempt_id=attempt.id,
+        attempt_question_id=attempt_question.id,
+        payload={
+            "client_sequence": 1,
+            "client_change_id": str(uuid.uuid4()),
+            "answer_text": "HTTP|||GET",
+        },
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+    submitted = submit_assessment_attempt(
+        actor=enrolled_student,
+        attempt_id=attempt.id,
+        idempotency_key=uuid.uuid4(),
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+
+    assert submitted["status"] == "GRADED"
+    sess.refresh(attempt)
+    assert attempt.result is not None
+    assert float(attempt.result.raw_score) == 10.0
 
 
 def test_objective_auto_grading_short_answer_normalization_and_exact(

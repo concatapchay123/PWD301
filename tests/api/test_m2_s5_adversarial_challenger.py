@@ -389,7 +389,7 @@ class TestM2AdversarialGatingAndLifecycle:
         # 1. Send completion update via AJAX
         post_resp = client.post(
             f"/student/lessons/{lesson_a1.public_id}/progress",
-            json={"completed": True, "time_spent_seconds": 150},
+            json={"completed": True, "time_spent_seconds": 150, "view_fraction": 1.0},
             headers={"Accept": "application/json"},
         )
         assert post_resp.status_code == 200

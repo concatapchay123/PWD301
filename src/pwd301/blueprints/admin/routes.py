@@ -1242,6 +1242,52 @@ def admin_download_application_evidence(app_id: str, filename: str) -> Any:
         raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
 
     preview = request.args.get("preview", "0") in ("1", "true", "yes")
+    preview_suffix = Path(download_name).suffix.lower()
+    if request.args.get("format") == "text" and preview_suffix in {".docx", ".xlsx"}:
+        if file_path.stat().st_size > 25_000_000:
+            raise ValidationError("Tệp vượt quá giới hạn xem trước 25 MB.")
+        try:
+            if preview_suffix == ".docx":
+                from pwd301.services.import_service import extract_text_from_docx
+
+                extracted_text = "\n".join(extract_text_from_docx(file_path))
+            else:
+                import zipfile
+
+                import openpyxl
+
+                with zipfile.ZipFile(file_path) as archive:
+                    entries = archive.infolist()
+                    if len(entries) > 1_000 or sum(item.file_size for item in entries) > 50_000_000:
+                        raise ValidationError("Bảng tính vượt quá giới hạn an toàn để xem trước.")
+                    if any(
+                        ".." in item.filename
+                        or item.filename.startswith(("/", "\\"))
+                        or (
+                            item.file_size > 1_000_000
+                            and item.file_size / max(item.compress_size, 1) > 100
+                        )
+                        for item in entries
+                    ):
+                        raise ValidationError(
+                            "Bảng tính có cấu trúc nén không an toàn để xem trước."
+                        )
+                workbook = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+                sheets = []
+                for worksheet in workbook.worksheets[:5]:
+                    rows = []
+                    for row in worksheet.iter_rows(max_row=100, max_col=30, values_only=True):
+                        cells = ["" if value is None else str(value) for value in row]
+                        rows.append("\t".join(cells).rstrip())
+                    sheets.append(f"[{worksheet.title}]\n" + "\n".join(rows))
+                workbook.close()
+                extracted_text = "\n\n".join(sheets)
+        except Exception as err:
+            if isinstance(err, ValidationError):
+                raise
+            raise ValidationError("Không thể trích xuất nội dung xem trước từ tài liệu.") from err
+        return jsonify({"success": True, "data": {"text": extracted_text}, "error": None})
+
     import mimetypes
 
     guessed_type, _ = mimetypes.guess_type(download_name)

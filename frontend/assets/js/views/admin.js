@@ -477,11 +477,11 @@ class AdminView {
       }
 
       document.getElementById('btn-sync-users').onclick = () => {
-        AdminView.renderTabUsers(container);
+        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
       };
 
       document.getElementById('btn-sync-optimistic').onclick = () => {
-        AdminView.renderTabUsers(container);
+        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
         UI.showToast('Đã đồng bộ trạng thái người dùng mới nhất từ máy chủ!', 'success');
       };
 
@@ -493,7 +493,7 @@ class AdminView {
           <div class="p-8 text-center text-rose-500 space-y-2">
             <span class="material-symbols-outlined text-4xl">error</span>
             <p class="text-sm font-bold">Không thể tải danh sách người dùng: ${UI.escapeHtml(err.message || 'Lỗi kết nối')}</p>
-            <button type="button" class="px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="AdminView.renderTabUsers(document.getElementById('admin-tab-content-box'))">Thử lại</button>
+            <button type="button" class="px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box'))) ">Thử lại</button>
           </div>
         `;
       }
@@ -646,7 +646,7 @@ class AdminView {
           UI.showToast(`Đã thu hồi quyền ${role} của ${userName} thành công!`, 'info');
         }
         UI.closeModal();
-        AdminView.renderTabUsers(document.getElementById('admin-tab-content-box'));
+        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
       } catch (e) {
         UI.showToast(e.message || 'Lỗi phân quyền.', 'error');
       }
@@ -690,7 +690,7 @@ class AdminView {
         await ApiClient.suspendUser(userId, reason);
         UI.closeModal();
         UI.showToast(`Đã tạm ngưng tài khoản ${userName} thành công! Toàn bộ phiên đã bị thu hồi.`, 'success');
-        AdminView.renderTabUsers(document.getElementById('admin-tab-content-box'));
+        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
       } catch (e) {
         UI.showToast(e.message || 'Lỗi tạm ngưng tài khoản.', 'error');
       }
@@ -708,7 +708,7 @@ class AdminView {
     try {
       await ApiClient.unsuspendUser(userId, 'Quản trị viên mở khóa tài khoản');
       UI.showToast(`Đã kích hoạt lại tài khoản của ${userName} thành công!`, 'success');
-      AdminView.renderTabUsers(document.getElementById('admin-tab-content-box'));
+      UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
     } catch (e) {
       UI.showToast(e.message || 'Lỗi mở khóa tài khoản.', 'error');
     }
@@ -980,7 +980,7 @@ class AdminView {
           try {
             await ApiClient.reviewCourse(courseId, 'reject', note);
             UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${courseTitle}".`, 'info');
-            AdminView.renderTabCoursesReview(container);
+            UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
           }
@@ -1085,7 +1085,7 @@ class AdminView {
           btn.onclick = () => {
             const reqId = btn.dataset.reqId;
             const r = changeRequests.find(x => String(x.id) === String(reqId));
-            if (r) AdminView.openChangeRequestDiffModal(r, () => AdminView.renderTabCoursesReview(container));
+            if (r) AdminView.openChangeRequestDiffModal(r, () => UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container)));
           };
         });
 
@@ -1094,7 +1094,7 @@ class AdminView {
             const reqId = btn.dataset.reqId;
             const r = changeRequests.find(x => String(x.id) === String(reqId));
             if (r) {
-              AdminView.openChangeRequestDiffModal(r, () => AdminView.renderTabCoursesReview(container));
+              AdminView.openChangeRequestDiffModal(r, () => UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container)));
             }
           };
         });
@@ -1115,7 +1115,7 @@ class AdminView {
             try {
               await ApiClient.reviewAdminChangeRequest(reqId, { action: 'reject', reason });
               UI.showToast(`Đã từ chối yêu cầu #${reqId}.`, 'info');
-              AdminView.renderTabCoursesReview(container);
+              UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
             }
@@ -1527,7 +1527,7 @@ class AdminView {
             try {
               await ApiClient.reviewInstructorApplication(appId, 'approve', 'Đạt chuẩn thẩm định học vụ');
               UI.showToast(`Đã bổ nhiệm giảng viên ${name} thành công!`, 'success');
-              AdminView.renderTabInstructorApps(container);
+              UI.refreshCurrentRoute(() => AdminView.renderTabInstructorApps(container));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi phê duyệt đơn.', 'error');
             }
@@ -1550,7 +1550,7 @@ class AdminView {
             try {
               await ApiClient.reviewInstructorApplication(appId, 'reject', reason);
               UI.showToast(`Đã từ chối đơn của ${name}.`, 'info');
-              AdminView.renderTabInstructorApps(container);
+              UI.refreshCurrentRoute(() => AdminView.renderTabInstructorApps(container));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi từ chối đơn.', 'error');
             }
@@ -1739,7 +1739,7 @@ class AdminView {
               UI.showToast(`Đã phê duyệt đề cương "${course.title}" thành công!`, 'success');
               UI.closeModal();
               const contentBox = document.getElementById('admin-tab-content-box');
-              if (contentBox) AdminView.renderTabCoursesReview(contentBox);
+              if (contentBox) UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(contentBox));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi duyệt khóa học.', 'error');
             }
@@ -1762,7 +1762,7 @@ class AdminView {
               UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${course.title}".`, 'info');
               UI.closeModal();
               const contentBox = document.getElementById('admin-tab-content-box');
-              if (contentBox) AdminView.renderTabCoursesReview(contentBox);
+              if (contentBox) UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(contentBox));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
             }
@@ -1778,6 +1778,20 @@ class AdminView {
     const details = app.details || {};
     const attachedFiles = details.attached_files || [];
     const isPending = app.status === 'PENDING';
+    let certificateDriveUrl = '';
+    try {
+      const parsedUrl = new URL(details.certificate_drive_url || '');
+      if (
+        parsedUrl.protocol === 'https:'
+        && ['drive.google.com', 'docs.google.com'].includes(parsedUrl.hostname.toLowerCase())
+        && !parsedUrl.username
+        && !parsedUrl.password
+      ) {
+        certificateDriveUrl = parsedUrl.href;
+      }
+    } catch {
+      // Hide malformed or legacy links rather than rendering an active unsafe URL.
+    }
 
     const body = `
       <div class="space-y-4 text-xs">
@@ -1811,6 +1825,13 @@ class AdminView {
           <div class="space-y-1">
             <span class="text-[10px] text-slate-400 font-bold uppercase">Liên kết Portfolio / GitHub / Website</span>
             <div><a href="${UI.escapeHtml(details.portfolio_url || details.certificate_url || details.evidence_urls)}" target="_blank" class="text-primary font-bold hover:underline break-all inline-flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">link</span>${UI.escapeHtml(details.portfolio_url || details.certificate_url || details.evidence_urls)}</a></div>
+          </div>
+        ` : ''}
+
+        ${certificateDriveUrl ? `
+          <div class="space-y-1">
+            <span class="text-[10px] text-slate-400 font-bold uppercase">Chứng chỉ / bằng cấp trên Google Drive</span>
+            <div><a href="${UI.escapeHtml(certificateDriveUrl)}" target="_blank" rel="noopener noreferrer" class="text-primary font-bold hover:underline break-all inline-flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">school</span>${UI.escapeHtml(certificateDriveUrl)}</a></div>
           </div>
         ` : ''}
 
@@ -1895,7 +1916,7 @@ class AdminView {
             await ApiClient.reviewInstructorApplication(app.id, 'approve', 'Đạt chuẩn thẩm định học vụ');
             UI.showToast(`Đã bổ nhiệm giảng viên ${app.applicant_name} thành công!`, 'success');
             UI.closeModal();
-            if (container) AdminView.renderTabReview(container);
+            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabReview(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi phê duyệt đơn.', 'error');
           }
@@ -1917,7 +1938,7 @@ class AdminView {
             await ApiClient.reviewInstructorApplication(app.id, 'reject', reason);
             UI.showToast(`Đã từ chối đơn của ${app.applicant_name}.`, 'info');
             UI.closeModal();
-            if (container) AdminView.renderTabReview(container);
+            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabReview(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi từ chối đơn.', 'error');
           }
@@ -1928,6 +1949,7 @@ class AdminView {
 
   static openEvidencePreviewModal(fileUrl, fileName) {
     const isPdf = (fileName || '').toLowerCase().endsWith('.pdf');
+    const isOfficeDocument = /\.(docx|xlsx)$/i.test(fileName || '');
     const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(fileName || '');
     
     let previewContent = '';
@@ -1941,6 +1963,13 @@ class AdminView {
       previewContent = `
         <div class="max-h-[72vh] flex items-center justify-center bg-slate-950/20 dark:bg-slate-950/60 rounded-xl p-4 overflow-auto border border-slate-200 dark:border-slate-800">
           <img src="${fileUrl}" alt="${UI.escapeHtml(fileName)}" class="max-h-[68vh] object-contain rounded-lg shadow-sm" />
+        </div>
+      `;
+    } else if (isOfficeDocument) {
+      previewContent = `
+        <div class="w-full h-[65vh] bg-slate-100 dark:bg-slate-900 rounded-xl overflow-auto border border-slate-200 dark:border-slate-800 p-5">
+          <p id="evidence-text-preview-status" class="text-sm text-slate-500">Đang trích xuất nội dung tài liệu...</p>
+          <pre id="evidence-text-preview" class="hidden whitespace-pre-wrap break-words text-sm leading-6 text-slate-800 dark:text-slate-200"></pre>
         </div>
       `;
     } else {
@@ -1971,6 +2000,25 @@ class AdminView {
       `,
       size: 'xl'
     });
+
+    if (isOfficeDocument) {
+      const status = document.getElementById('evidence-text-preview-status');
+      const textPreview = document.getElementById('evidence-text-preview');
+      const textUrl = fileUrl.replace(/\?.*$/, '?format=text');
+      fetch(textUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok || !payload.success) throw new Error(payload.error?.message || 'Không thể xem trước tài liệu.');
+          if (textPreview) {
+            textPreview.textContent = payload.data?.text || 'Tài liệu không có văn bản để hiển thị.';
+            textPreview.classList.remove('hidden');
+          }
+          if (status) status.classList.add('hidden');
+        })
+        .catch(error => {
+          if (status) status.textContent = error.message || 'Không thể xem trước tài liệu. Bạn vẫn có thể tải tệp gốc.';
+        });
+    }
   }
 
   // =========================================================================
@@ -2137,7 +2185,7 @@ class AdminView {
             await ApiClient.reassignCourse(courseId, newInstructorId, reason);
             UI.closeModal();
             UI.showToast('Đã điều chuyển môn học cho giảng viên mới thành công!', 'success');
-            AdminView.renderTabReassign(container);
+            UI.refreshCurrentRoute(() => AdminView.renderTabReassign(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi điều chuyển khóa học.', 'error');
           }
@@ -2501,7 +2549,7 @@ class AdminView {
               await ApiClient.quarantineOverride(assetId, reason);
               UI.closeModal();
               UI.showToast(`Đã giải phóng tệp cách ly ${assetId} thành công!`, 'success');
-              AdminView.renderTabSecurity(container);
+              UI.refreshCurrentRoute(() => AdminView.renderTabSecurity(container));
             } catch (e) {
               UI.showToast(e.message || 'Lỗi giải phóng tệp.', 'error');
             }

@@ -14,6 +14,7 @@ Verifies:
 from __future__ import annotations
 
 import io
+import json
 import uuid
 from typing import Any
 
@@ -391,6 +392,187 @@ def test_student_my_learning_dual_envelope_and_ai_rag_idor_defense(
         or err_body.get("status") in ("refused", "error")
         or "enroll" in str(err_body).lower()
     )
+
+
+def test_student_cannot_force_lesson_completion_from_progress_payload(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """The progress endpoint must derive completion instead of trusting client input."""
+    csrf = login_client(client, "student_stu@pwd301.local")
+    lesson_id = str(student_fixture["lesson"].public_id)
+
+    response = client.post(
+        f"/student/lessons/{lesson_id}/progress",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"seconds_increment": 1, "completed": True},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["is_completed"] is False
+
+
+def test_student_lesson_hides_unscanned_resources(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Unscanned assets must not appear as accessible learning resources."""
+    lesson = student_fixture["lesson"]
+    asset = student_fixture["clean_asset"]
+    asset.status = "PENDING"
+    db.session.commit()
+    login_client(client, "student_stu@pwd301.local")
+
+    response = client.get(
+        f"/student/courses/{student_fixture['course'].public_id}/lessons/{lesson.public_id}"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["resources"] == []
+
+
+def test_student_lesson_shows_resources_attached_to_that_lesson(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """A clean file attached to a lesson appears in that lesson's detail response."""
+    lesson = student_fixture["lesson"]
+    login_client(client, "student_stu@pwd301.local")
+
+    response = client.get(
+        f"/student/courses/{student_fixture['course'].public_id}/lessons/{lesson.public_id}"
+    )
+
+    assert response.status_code == 200
+    resources = response.get_json()["resources"]
+    assert len(resources) == 1
+    assert resources[0]["filename"] == "lecture_clean.pdf"
+    assert "/student/courses/" in resources[0]["download_url"]
+
+
+def test_student_course_detail_hides_unpublished_lessons(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Student course detail must never serialize instructor drafts."""
+    draft = create_lesson(
+        actor=student_fixture["instructor"],
+        course_id=student_fixture["course"].id,
+        data={"title": "Private draft", "markdown_content": "draft", "status": "DRAFT"},
+        session=db.session,
+    )
+    db.session.commit()
+    login_client(client, "student_stu@pwd301.local")
+
+    response = client.get(f"/student/courses/{student_fixture['course'].public_id}")
+
+    assert response.status_code == 200
+    lesson_ids = {item["lesson_id"] for item in response.get_json()["lessons"]}
+    assert str(student_fixture["lesson"].public_id) in lesson_ids
+    assert str(draft.public_id) not in lesson_ids
+
+
+def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_submitted(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Completing video progress alone must not complete a lesson that has a mini-quiz."""
+    lesson = student_fixture["lesson"]
+    quiz = [
+        {
+            "type": "MULTIPLE_CHOICE",
+            "question": "Which protocol serves a web page?",
+            "options": ["HTTP", "FTP"],
+            "correct_answers": [0],
+        }
+    ]
+    lesson.markdown_content = (
+        "# Lesson\n\n<!-- video_url: https://videos.example/lesson.mp4 -->\n\n<!-- mini_quiz: "
+        + json.dumps(quiz)
+        + " -->"
+    )
+    db.session.commit()
+    csrf = login_client(client, "student_stu@pwd301.local")
+
+    early_quiz = client.post(
+        f"/student/lessons/{lesson.public_id}/quiz-completion",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"answers": [[0]]},
+    )
+    assert early_quiz.status_code in (400, 409)
+
+    partial_progress = client.post(
+        f"/student/lessons/{lesson.public_id}/progress",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"seconds_increment": 60, "view_fraction": 0.8, "completed": True},
+    )
+
+    assert partial_progress.status_code == 200
+    assert partial_progress.get_json()["is_completed"] is False
+
+    partial_video_quiz = client.post(
+        f"/student/lessons/{lesson.public_id}/quiz-completion",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"answers": [[0]]},
+    )
+    assert partial_video_quiz.status_code in (400, 409)
+
+    full_progress = client.post(
+        f"/student/lessons/{lesson.public_id}/progress",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"seconds_increment": 60, "view_fraction": 1.0, "completed": True},
+    )
+    assert full_progress.status_code == 200
+
+    incomplete_quiz = client.post(
+        f"/student/lessons/{lesson.public_id}/quiz-completion",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"answers": []},
+    )
+    assert incomplete_quiz.status_code == 400
+
+    complete_quiz = client.post(
+        f"/student/lessons/{lesson.public_id}/quiz-completion",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"answers": [[0]]},
+    )
+    assert complete_quiz.status_code == 200
+    assert complete_quiz.get_json()["is_completed"] is True
+
+
+def test_video_only_lesson_requires_full_view_fraction_before_completion(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    lesson = student_fixture["lesson"]
+    lesson.markdown_content = "# Lesson\n\n<!-- video_url: https://videos.example/lesson.mp4 -->"
+    db.session.commit()
+    csrf = login_client(client, "student_stu@pwd301.local")
+
+    partial = client.post(
+        f"/student/lessons/{lesson.public_id}/progress",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"seconds_increment": 60, "view_fraction": 0.8},
+    )
+    assert partial.status_code == 200
+    assert partial.get_json()["is_completed"] is False
+
+    full = client.post(
+        f"/student/lessons/{lesson.public_id}/progress",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"seconds_increment": 60, "view_fraction": 1.0},
+    )
+    assert full.status_code == 200
+    assert full.get_json()["is_completed"] is True
+
+
+def test_student_cannot_complete_a_malformed_mini_quiz(student_fixture, client):
+    lesson = student_fixture["lesson"]
+    lesson.markdown_content = '# Lesson\n\n<!-- mini_quiz: [{"type":"UNSUPPORTED"},null] -->'
+    db.session.flush()
+
+    token = login_client(client, "student_stu@pwd301.local")
+    response = client.post(
+        f"/student/lessons/{lesson.public_id}/quiz-completion",
+        json={"answers": ["anything", "anything"]},
+        headers={"X-CSRFToken": token},
+    )
+
+    assert response.status_code == 400
 
 
 def test_student_become_instructor_and_utf8_integrity(

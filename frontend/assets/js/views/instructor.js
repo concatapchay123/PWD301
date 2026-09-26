@@ -516,7 +516,9 @@ class InstructorView {
   // 3. Enterprise 5-Tab Course Management Dossier (Coursera/Udemy Hybrid)
   // =========================================================================
   static async renderCourseManage(container, courseId, initialTab = 'curriculum') {
-    container.innerHTML = `
+    const existingRoot = container.querySelector('#course-manage-root');
+    const keepCurrentCourseVisible = existingRoot?.dataset.courseId === String(courseId);
+    if (!keepCurrentCourseVisible) container.innerHTML = `
       <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto animate-fade-in font-sans" id="course-manage-root">
         <div class="text-center py-24 text-[#8F8E8A] dark:text-[#6D6C68]">
           <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
@@ -536,9 +538,36 @@ class InstructorView {
       const cId = course.course_id || course.id;
       const lessons = course.lessons || [];
       const assessments = assessmentsData.assessments || assessmentsData.items || course.assessments || [];
+      const applyLessonOrder = (orderedLessons) => {
+        lessons.splice(0, lessons.length, ...orderedLessons);
+        const stack = container.querySelector('#lessons-sortable-list');
+        if (!stack) return;
+        orderedLessons.forEach((lesson, index) => {
+          const lessonId = lesson.lesson_id || lesson.id;
+          const row = stack.querySelector(`[data-lesson-id="${lessonId}"]`);
+          if (!row) return;
+          stack.appendChild(row);
+          row.dataset.idx = String(index);
+          row.querySelector('.lesson-position-label')?.replaceChildren(String(index + 1));
+          const up = row.querySelector('.btn-move-lesson-up');
+          const down = row.querySelector('.btn-move-lesson-down');
+          if (up) {
+            up.dataset.idx = String(index);
+            up.disabled = index === 0;
+            up.classList.toggle('opacity-25', index === 0);
+            up.classList.toggle('cursor-not-allowed', index === 0);
+          }
+          if (down) {
+            down.dataset.idx = String(index);
+            down.disabled = index === orderedLessons.length - 1;
+            down.classList.toggle('opacity-25', down.disabled);
+            down.classList.toggle('cursor-not-allowed', down.disabled);
+          }
+        });
+      };
 
       container.innerHTML = `
-        <div class="p-4 sm:p-6 lg:p-8 space-y-8 max-w-5xl mx-auto animate-fade-in font-sans pb-20" id="course-manage-root">
+        <div class="p-4 sm:p-6 lg:p-8 space-y-8 max-w-5xl mx-auto animate-fade-in font-sans pb-20" id="course-manage-root" data-course-id="${UI.escapeHtml(cId)}">
           
           <!-- Top Breadcrumb & Navigation -->
           <div class="flex items-center justify-between text-xs text-[#5C5B57] dark:text-[#9E9D99] font-medium">
@@ -685,7 +714,7 @@ class InstructorView {
                             <span class="lesson-drag-handle cursor-grab active:cursor-grabbing p-1 text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]" title="Kéo thả để sắp xếp">
                               <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
                             </span>
-                            <span class="w-8 h-8 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] font-bold text-xs flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
+                            <span class="lesson-position-label w-8 h-8 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] font-bold text-xs flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
                               ${idx + 1}
                             </span>
                           </div>
@@ -784,7 +813,7 @@ class InstructorView {
                     const asmId = asm.assessment_id || asm.id;
                     const qCount = (asm.questions || []).length || asm.question_count || 0;
                     return `
-                      <div class="p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors">
+                      <div class="assessment-row p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors" data-assessment-id="${asmId}">
                         <div class="flex items-center gap-3.5 min-w-0">
                           <span class="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 font-bold text-xs flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/30 material-symbols-outlined text-[18px]">
                             task_alt
@@ -807,6 +836,15 @@ class InstructorView {
                         </div>
 
                         <div class="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            class="btn-trash-asm px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors flex items-center gap-1"
+                            data-asm-id="${asmId}"
+                            data-asm-title="${UI.escapeHtml(asm.title)}"
+                          >
+                            <span class="material-symbols-outlined text-[14px]">delete</span>
+                            <span>Chuyển vào thùng rác</span>
+                          </button>
                           <button
                             type="button"
                             class="btn-asm-results px-3 py-1.5 rounded-lg bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1"
@@ -839,8 +877,8 @@ class InstructorView {
       `;
 
       // Bind Settings Modal Button
-      document.getElementById('btn-open-course-settings').onclick = () => {
-        InstructorView.openCourseSettingsModal(course, initialTab === 'curriculum' ? 'settings' : initialTab);
+      document.getElementById('btn-open-course-settings').onclick = async () => {
+        await InstructorView.openCourseSettingsModal(course, initialTab === 'curriculum' ? 'settings' : initialTab);
       };
 
       if (initialTab !== 'curriculum') {
@@ -860,7 +898,7 @@ class InstructorView {
           try {
             await ApiClient.submitCourseForReview(cId, 'Giảng viên đề xuất duyệt xuất bản.');
             UI.showToast('Đã gửi yêu cầu xét duyệt thành công.', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi gửi xét duyệt.', 'error');
           }
@@ -880,7 +918,7 @@ class InstructorView {
           try {
             await ApiClient.publishCourse(cId);
             UI.showToast('Khóa học đã được xuất bản chính thức thành công!', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi xuất bản khóa học.', 'error');
           }
@@ -900,7 +938,7 @@ class InstructorView {
           try {
             await ApiClient.reorderLessons(cId, orderedIds);
             UI.showToast('Đã di chuyển bài giảng lên!', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            applyLessonOrder(reordered);
           } catch (err) {
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
           }
@@ -920,7 +958,7 @@ class InstructorView {
           try {
             await ApiClient.reorderLessons(cId, orderedIds);
             UI.showToast('Đã di chuyển bài giảng xuống!', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            applyLessonOrder(reordered);
           } catch (err) {
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
           }
@@ -953,7 +991,7 @@ class InstructorView {
           try {
             await ApiClient.reorderLessons(cId, orderedIds);
             UI.showToast('Đã sắp xếp lại thứ tự bài giảng thành công!', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            applyLessonOrder(reordered);
           } catch (err) {
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
           }
@@ -969,7 +1007,7 @@ class InstructorView {
           try {
             await ApiClient.deleteLesson(cId, lId);
             UI.showToast('Đã xóa bài học thành công.', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi khi xóa bài học.', 'error');
           }
@@ -993,9 +1031,31 @@ class InstructorView {
           try {
             await ApiClient.publishAssessment(asmId);
             UI.showToast('Đã xuất bản đề thi thành công!', 'success');
-            InstructorView.renderCourseManage(container, cId, 'curriculum');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi khi xuất bản bài thi.', 'error');
+          }
+        };
+      });
+
+      container.querySelectorAll('.btn-trash-asm').forEach(btn => {
+        btn.onclick = async () => {
+          const assessmentId = btn.dataset.asmId;
+          const title = btn.dataset.asmTitle || 'bài thi này';
+          const confirmed = await UI.confirm(
+            'Chuyển bài thi vào thùng rác',
+            `Bài thi “${title}” sẽ được gỡ khỏi danh sách đang sử dụng. Lịch sử làm bài vẫn được bảo toàn.`,
+            'Chuyển vào thùng rác'
+          );
+          if (!confirmed) return;
+          btn.disabled = true;
+          try {
+            await ApiClient.trashAssessment(assessmentId, 'Giảng viên yêu cầu lưu trữ bài thi.');
+            btn.closest('.assessment-row')?.remove();
+            UI.showToast('Đã chuyển bài thi vào thùng rác; lịch sử bài làm được giữ lại.', 'success');
+          } catch (error) {
+            btn.disabled = false;
+            UI.showToast(error.message || 'Không thể chuyển bài thi vào thùng rác.', 'error');
           }
         };
       });
@@ -1008,8 +1068,18 @@ class InstructorView {
   // =========================================================================
   // 3.0. Course Settings & Academic Governance Modal
   // =========================================================================
-  static openCourseSettingsModal(course, defaultSubTab = 'settings') {
+  static async openCourseSettingsModal(course, defaultSubTab = 'settings') {
     const cId = course.course_id || course.id;
+
+    // Refresh course from backend to guarantee latest persistent data
+    try {
+      const freshCourse = await ApiClient.getCourseDetail(cId);
+      if (freshCourse) {
+        Object.assign(course, freshCourse);
+      }
+    } catch {
+      // Use existing course object if offline or network glitch
+    }
 
     const modalHtml = `
       <div class="space-y-4">
@@ -1287,7 +1357,7 @@ class InstructorView {
         try {
           await ApiClient.deleteLesson(cId, lId);
           UI.showToast('Đã xóa bài giảng thành công!', 'success');
-          InstructorView.renderCourseManage(document.getElementById('course-manage-root').parentElement, cId, 'curriculum');
+          UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('course-manage-root').parentElement, cId, 'curriculum'));
         } catch (e) {
           UI.showToast(e.message || 'Lỗi xóa bài giảng.', 'error');
         }
@@ -1301,22 +1371,44 @@ class InstructorView {
   static async renderTabAcademic(tabContainer, course) {
     const cId = course.course_id || course.id;
     let customSLOs = [];
-    if (course.learning_objectives) {
+    if (course.learning_objectives !== null && course.learning_objectives !== undefined) {
       if (Array.isArray(course.learning_objectives)) {
-        customSLOs = [...course.learning_objectives];
+        customSLOs = course.learning_objectives.map((item, idx) => {
+          if (typeof item === 'object' && item !== null) {
+            return {
+              title: item.title || item.name || item.code || `SLO-${idx + 1}`,
+              description: item.description || item.content || '',
+              weight: item.weight || ''
+            };
+          }
+          return { title: `SLO-${idx + 1}`, description: String(item), weight: '' };
+        });
       } else if (typeof course.learning_objectives === 'string') {
         try {
           const parsed = JSON.parse(course.learning_objectives);
-          if (Array.isArray(parsed)) customSLOs = parsed;
+          if (Array.isArray(parsed)) {
+            customSLOs = parsed.map((item, idx) => {
+              if (typeof item === 'object' && item !== null) {
+                return {
+                  title: item.title || item.name || item.code || `SLO-${idx + 1}`,
+                  description: item.description || item.content || '',
+                  weight: item.weight || ''
+                };
+              }
+              return { title: `SLO-${idx + 1}`, description: String(item), weight: '' };
+            });
+          }
         } catch {
           customSLOs = course.learning_objectives.split('\n').filter(s => s.trim()).map((s, i) => ({
             title: `SLO-${i + 1}`,
-            description: s.trim()
+            description: s.trim(),
+            weight: ''
           }));
         }
       }
     }
-    if (customSLOs.length === 0) {
+    // Only fall back to default template if the course has never configured any SLOs (null or undefined)
+    if ((course.learning_objectives === null || course.learning_objectives === undefined) && customSLOs.length === 0) {
       customSLOs = [
         { title: 'SLO-1 • Phân tích & Giải quyết Vấn đề', description: 'Sinh viên có khả năng phân tích một bài toán kỹ thuật phần mềm phức tạp và áp dụng các nguyên lý máy tính để xác định giải pháp phù hợp.', weight: '30%' },
         { title: 'SLO-2 • Thiết kế Hệ thống & Kiểm thử', description: 'Sinh viên có khả năng thiết kế, cài đặt và đánh giá giải pháp dựa trên máy tính nhằm đáp ứng tập hợp các yêu cầu điện toán xác định theo chuẩn kiến trúc RESTful & CSDL quan hệ.', weight: '50%' },
@@ -1448,6 +1540,23 @@ class InstructorView {
     const sloContainer = document.getElementById('slo-items-list');
     const colors = ['text-primary', 'text-indigo-600', 'text-purple-600', 'text-emerald-600'];
 
+    const harvestDOMtoSLOs = () => {
+      const cards = sloContainer ? sloContainer.querySelectorAll('[data-slo-idx]') : [];
+      if (!cards || cards.length === 0) return customSLOs;
+      const gathered = [];
+      cards.forEach((card, idx) => {
+        const titleInput = card.querySelector('.slo-title-input');
+        const weightInput = card.querySelector('.slo-weight-input');
+        const descInput = card.querySelector('.slo-desc-input');
+        const title = (titleInput ? titleInput.value : '').trim() || `SLO-${idx + 1}`;
+        const weight = (weightInput ? weightInput.value : '').trim();
+        const description = (descInput ? descInput.value : '').trim();
+        gathered.push({ title, description, weight });
+      });
+      customSLOs = gathered;
+      return gathered;
+    };
+
     const renderSLOList = () => {
       if (!sloContainer) return;
       if (customSLOs.length === 0) {
@@ -1482,6 +1591,7 @@ class InstructorView {
 
       sloContainer.querySelectorAll('.btn-del-slo').forEach(btn => {
         btn.onclick = () => {
+          harvestDOMtoSLOs();
           const idx = parseInt(btn.dataset.idx, 10);
           customSLOs.splice(idx, 1);
           renderSLOList();
@@ -1515,6 +1625,7 @@ class InstructorView {
     const addSloBtn = document.getElementById('btn-add-slo');
     if (addSloBtn) {
       addSloBtn.onclick = () => {
+        harvestDOMtoSLOs();
         customSLOs.push({
           title: `SLO-${customSLOs.length + 1} • Tiêu chuẩn Năng lực Mới`,
           description: '',
@@ -1530,7 +1641,16 @@ class InstructorView {
         try {
           saveSlosBtn.disabled = true;
           saveSlosBtn.innerHTML = `<span class="inline-block animate-spin text-[14px]">⏳</span> Đang lưu...`;
-          await ApiClient.updateCourse(cId, { learning_objectives: customSLOs });
+          const toSave = harvestDOMtoSLOs();
+          const res = await ApiClient.updateCourse(cId, { learning_objectives: toSave });
+
+          // Synchronize in-memory course object and local state immediately
+          course.learning_objectives = toSave;
+          customSLOs = [...toSave];
+          if (res && res.learning_objectives) {
+            course.learning_objectives = res.learning_objectives;
+          }
+
           UI.showToast('Đã lưu thành công bộ Chuẩn đầu ra ABET vào CSDL!', 'success');
         } catch (err) {
           UI.showToast('Lỗi lưu chuẩn đầu ra: ' + (err.message || err), 'error');
@@ -2029,7 +2149,7 @@ class InstructorView {
             btn.textContent = 'Đang xuất bản...';
             await ApiClient.publishAssessment(asmId);
             UI.showToast('Đã xuất bản đề thi thành công!', 'success');
-            InstructorView.renderTabAssessment(tabContainer, course);
+            UI.refreshCurrentRoute(() => InstructorView.renderTabAssessment(tabContainer, course));
           } catch (pubErr) {
             UI.showToast('Lỗi xuất bản đề thi: ' + (pubErr.message || pubErr), 'error');
             btn.disabled = false;
@@ -2196,7 +2316,7 @@ class InstructorView {
     if (!modal) {
       modal = document.createElement('div');
       modal.id = modalId;
-      modal.className = 'fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in';
+      modal.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in';
       document.body.appendChild(modal);
     }
 
@@ -2746,6 +2866,22 @@ class InstructorView {
   // 3.7. Dedicated Fullscreen Low-Tech Lesson Authoring Studio
   // =========================================================================
   static async renderLessonAuthoringStudio(container, courseId, lessonId = null) {
+    let lessonCreationPromise = null;
+    const createLessonOnce = (payload) => {
+      if (lessonId) return Promise.resolve(lessonId);
+      if (!lessonCreationPromise) {
+        lessonCreationPromise = ApiClient.createLesson(courseId, payload)
+          .then((result) => {
+            lessonId = result?.lesson_id || result?.id;
+            if (!lessonId) throw new Error('The lesson draft was not created.');
+            window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/${lessonId}/edit`);
+            return lessonId;
+          })
+          .finally(() => { lessonCreationPromise = null; });
+      }
+      return lessonCreationPromise;
+    };
+
     container.innerHTML = `
       <div class="min-h-screen bg-[#FAF9F5] dark:bg-[#191919] font-sans flex flex-col animate-fade-in" id="lesson-studio-root">
         
@@ -2829,7 +2965,7 @@ class InstructorView {
                   id="studio-input-duration"
                   min="1"
                   max="600"
-                  class="w-12 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none font-bold text-center"
+                  class="w-24 min-w-20 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none font-bold text-center"
                   placeholder="15"
                   value="15"
                 />
@@ -3303,17 +3439,13 @@ class InstructorView {
             const mdContent = editorEl ? editorEl.innerHTML : '';
 
             const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
-            const draftRes = await ApiClient.createLesson(courseId, {
+            await createLessonOnce({
               title,
               summary,
               markdown_content: mdContent,
               status: 'DRAFT',
               estimated_duration_minutes: !isNaN(durationVal) && durationVal > 0 ? durationVal : 15
             });
-            if (draftRes && (draftRes.lesson_id || draftRes.id)) {
-              lessonId = draftRes.lesson_id || draftRes.id;
-              window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/${lessonId}/edit`);
-            }
           }
 
           if (progressBar) progressBar.style.width = '60%';
@@ -4348,16 +4480,12 @@ class InstructorView {
           const editorEl = document.getElementById('studio-content-editor');
           const mdContent = editorEl ? editorEl.innerHTML : '';
 
-          const draftRes = await ApiClient.createLesson(courseId, {
+          await createLessonOnce({
             title,
             summary,
             markdown_content: mdContent,
             status: 'DRAFT'
           });
-          if (draftRes && (draftRes.lesson_id || draftRes.id)) {
-            lessonId = draftRes.lesson_id || draftRes.id;
-            window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/${lessonId}/edit`);
-          }
           const formData = new FormData();
           formData.append('file', file);
           formData.append('title', file.name);
@@ -4454,14 +4582,8 @@ class InstructorView {
       };
 
       try {
-        if (lessonId) {
-          await ApiClient.updateLesson(lessonId, payload);
-        } else {
-          const res = await ApiClient.createLesson(courseId, payload);
-          if (res && (res.lesson_id || res.id)) {
-            lessonId = res.lesson_id || res.id;
-          }
-        }
+        if (!lessonId) await createLessonOnce(payload);
+        await ApiClient.updateLesson(lessonId, payload);
         const statusEl = document.getElementById('studio-autosave-status');
         if (statusEl) {
           statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;

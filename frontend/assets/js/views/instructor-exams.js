@@ -14,6 +14,17 @@
 (function () {
   const InstructorView = window.InstructorView || {};
 
+  InstructorView.isInteractiveFillAnswerCorrect = function (submitted, acceptedAnswers) {
+    if (!Array.isArray(submitted) || !submitted.length) return false;
+    const acceptedGroups = String(acceptedAnswers || '').split(';').map(group =>
+      group.split(',').map(answer => answer.trim().normalize('NFKC').toLowerCase()).filter(Boolean)
+    );
+    return submitted.length === acceptedGroups.length
+      && submitted.every((answer, index) =>
+        acceptedGroups[index].includes(String(answer).trim().normalize('NFKC').toLowerCase())
+      );
+  };
+
   // =========================================================================
   // 1. Unified Sticky Workflow Header
   // =========================================================================
@@ -904,6 +915,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           </div>
 
           <!-- Question Content -->
+          <div class="flex items-center gap-2 text-[11px]" onclick="event.stopPropagation()">
+            <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 hover:border-indigo-500">
+              <span class="material-symbols-outlined text-[16px]">image</span>
+              <span>${q.image_asset_id ? 'Thay ảnh câu hỏi' : 'Thêm ảnh câu hỏi'}</span>
+              <input type="file" class="raw-question-image-input sr-only" data-q-index="${idx}" accept="image/png,image/jpeg,image/webp,image/gif" />
+            </label>
+            <span class="text-slate-500">${q.image_asset_id ? 'Ảnh đã gắn (đang chờ quét bảo mật)' : 'PNG, JPEG, WebP hoặc GIF; tối đa 5 MB'}</span>
+          </div>
           <div class="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 focus-within:bg-white dark:focus-within:bg-slate-800 outline-none" contenteditable="true" onclick="event.stopPropagation()">
             ${UI.escapeHtml(q.stem || q.question_text)}
           </div>
@@ -958,6 +977,60 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             const total = questions.reduce((sum, item) => sum + (parseFloat(item.points) || 0), 0);
             const syncBadge = document.getElementById('workflow-sync-badge');
             if (syncBadge) syncBadge.textContent = `${questions.length} câu • ${total.toFixed(1)}đ • Tự động lưu`;
+          }
+        };
+      });
+
+      previewContainer.querySelectorAll('.raw-question-image-input').forEach(input => {
+        input.onchange = async event => {
+          const file = event.currentTarget.files?.[0];
+          if (!file) return;
+          if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+            event.currentTarget.value = '';
+            UI.showToast('Choose a PNG, JPEG, WebP, or GIF image smaller than 5 MB.', 'warning');
+            return;
+          }
+          const draft = window.ExamStore.getDraft();
+          if (!draft.courseId) {
+            event.currentTarget.value = '';
+            UI.showToast('Choose a course before adding an image to a question.', 'warning');
+            return;
+          }
+          const questionIndex = Number(event.currentTarget.dataset.qIndex);
+          const question = currentParsed?.questions?.[questionIndex];
+          if (!question || !textarea) return;
+          event.currentTarget.disabled = true;
+          try {
+            const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
+            const assetId = uploaded?.asset_id || uploaded?.public_id;
+            if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) throw new Error('The upload did not return a valid image asset ID.');
+            const lines = textarea.value.split(/\r?\n/);
+            const marker = `[[PWD301:IMAGE:${assetId}]]`;
+            const questionNumber = Number(question.number || questionIndex + 1);
+            const headerPattern = new RegExp(`^\\s*(?:(?:Câu|Bài|Question)\\s*)?${questionNumber}[:.]`, 'i');
+            const headerIndex = lines.findIndex(line => headerPattern.test(line));
+            if (headerIndex < 0) throw new Error('Could not locate this question in the source text.');
+            let nextHeaderIndex = lines.length;
+            for (let index = headerIndex + 1; index < lines.length; index += 1) {
+              if (headerPattern.test(lines[index])) {
+                nextHeaderIndex = index;
+                break;
+              }
+            }
+            const existingMarkerIndex = lines.findIndex((line, index) =>
+              index > headerIndex && index < nextHeaderIndex
+              && /^\[\[PWD301:IMAGE:[0-9a-f-]{36}\]\]$/i.test(line.trim())
+            );
+            if (existingMarkerIndex > headerIndex) lines.splice(existingMarkerIndex, 1);
+            lines.splice(headerIndex + 1, 0, marker);
+            textarea.value = lines.join('\n');
+            renderEditorPreview();
+            saveEditorState();
+            UI.showToast('Question image uploaded and attached. It will display after the security scan.', 'success');
+          } catch (error) {
+            UI.showToast(error.message || 'Question image upload failed.', 'error');
+          } finally {
+            event.currentTarget.disabled = false;
           }
         };
       });
@@ -1279,6 +1352,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     );
 
     let activeTab = 'drag'; // 'drag' | 'fill' | 'match'
+    let pendingImageAssetId = null
+    let imageUploadInProgress = false
 
     container.innerHTML = `
       <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
@@ -1376,7 +1451,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     placeholder="Ví dụ: JWT, JSON Web Token, jwt"
                     value="JWT, JSON Web Token"
                   />
-                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Separate blank groups with semicolons. Use commas for accepted variants of one blank.</p></div>
+
               </div>
 
               <!-- FORM 3: Ghép đôi cặp tương ứng -->
@@ -1438,6 +1514,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <div>
                 <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Giải thích / Lời giải củng cố</label>
                 <input type="text" id="interactive-exp-input" class="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800" placeholder="Lời giải chi tiết sau khi sinh viên hoàn thành..." />
+              </div>
+
+              <div>
+                <label for="interactive-image-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Question image (optional)</label>
+                <input type="file" id="interactive-image-input" accept="image/png,image/jpeg,image/webp,image/gif" class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800" />
+                <p id="interactive-image-status" class="mt-1 text-[11px] text-slate-500">PNG, JPEG, WebP, or GIF up to 5 MB.</p>
               </div>
 
               <!-- Submit Button -->
@@ -1567,38 +1649,74 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       if (activeTab === 'drag') {
         const text = document.getElementById('drag-stem-input')?.value || '';
-        const tokens = [...text.matchAll(/\[(.*?)\]/g)].map(m => m[1]);
+        const tokens = [...text.matchAll(/\[(.*?)\]/g)].map(match => match[1]);
         const distractors = (document.getElementById('drag-distractors-input')?.value || '')
           .split(',')
-          .map(s => s.trim())
+          .map(value => value.trim())
           .filter(Boolean);
-
         const allPills = [...tokens, ...distractors].sort(() => Math.random() - 0.5);
-        let previewHtml = text;
-        tokens.forEach((t, i) => {
-          previewHtml = previewHtml.replace(`[${t}]`, `<span class="inline-block border-2 border-dashed border-teal-500 bg-teal-50/40 rounded-lg px-3 py-1 min-w-[60px] text-center font-bold text-teal-700 text-xs drop-slot" data-expected="${t}">___</span>`);
+        let previewHtml = UI.escapeHtml(text);
+        tokens.forEach(token => {
+          const safeToken = UI.escapeHtml(token);
+          previewHtml = previewHtml.replace(
+            `[${safeToken}]`,
+            `<button type="button" class="drop-slot inline-block border-2 border-dashed border-teal-500 bg-teal-50/40 rounded-lg px-3 py-1 min-w-[60px] text-center font-bold text-teal-700 text-xs" data-expected="${safeToken}" aria-label="Drop a word here">___</button>`
+          );
         });
 
         previewBox.innerHTML = `
           <div class="space-y-4">
-            <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-loose">
-              ${previewHtml}
-            </div>
+            <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-loose">${previewHtml}</div>
             <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-              <span class="text-[11px] font-bold text-slate-400 block mb-1.5">Các thẻ từ có thể kéo/chọn:</span>
+              <span class="text-[11px] font-bold text-slate-500 block mb-1.5">Drag or select a word:</span>
               <div class="flex flex-wrap gap-2" id="preview-drag-pills">
-                ${allPills.map(p => `
-                  <button type="button" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white font-bold text-xs shadow-xs hover:bg-teal-700 cursor-pointer drag-pill-btn" onclick="window.handlePillClick(this, '${p}')">
-                    ${p}
-                  </button>
+                ${allPills.map((word, index) => `
+                  <button type="button" draggable="true" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white font-bold text-xs cursor-grab drag-pill-btn" data-word-index="${index}" data-word="${UI.escapeHtml(word)}">${UI.escapeHtml(word)}</button>
                 `).join('')}
               </div>
             </div>
           </div>
         `;
+
+        const assignWord = (slot, wordIndex) => {
+          const previousIndex = Number(slot.dataset.wordIndex);
+          if (Number.isInteger(previousIndex)) {
+            const previousPill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${previousIndex}"]`);
+            if (previousPill) previousPill.disabled = false;
+          }
+          const pill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${wordIndex}"]`);
+          if (!pill) return;
+          slot.dataset.wordIndex = String(wordIndex);
+          slot.textContent = pill.dataset.word || '';
+          pill.disabled = true;
+        };
+        previewBox.querySelectorAll('.drag-pill-btn').forEach(pill => {
+          pill.addEventListener('click', () => {
+            const emptySlot = Array.from(previewBox.querySelectorAll('.drop-slot'))
+              .find(slot => !slot.dataset.wordIndex);
+            if (emptySlot) assignWord(emptySlot, Number(pill.dataset.wordIndex));
+          });
+          pill.addEventListener('dragstart', event => {
+            event.dataTransfer?.setData('text/plain', pill.dataset.wordIndex || '');
+          });
+        });
+        previewBox.querySelectorAll('.drop-slot').forEach(slot => {
+          slot.addEventListener('dragover', event => event.preventDefault());
+          slot.addEventListener('drop', event => {
+            event.preventDefault();
+            const rawWordIndex = event.dataTransfer?.getData('text/plain');
+            if (!rawWordIndex) return;
+            const wordIndex = Number(rawWordIndex);
+            if (Number.isInteger(wordIndex)) assignWord(slot, wordIndex);
+          });
+        });
       } else if (activeTab === 'fill') {
         const stem = document.getElementById('fill-stem-input')?.value || '';
-        const stemRendered = stem.replace('___', `<input type="text" id="live-fill-input" placeholder="Nhập đáp án..." class="inline-block px-2 py-0.5 text-xs font-bold border-b-2 border-teal-600 bg-teal-50/50 outline-none w-32 text-center" />`);
+        let liveBlankIndex = 0;
+        const stemRendered = UI.escapeHtml(stem).replace(/_{3,}/g, () => {
+          const blankIndex = liveBlankIndex++;
+          return `<input type="text" id="live-fill-input-${blankIndex}" aria-label="Answer for blank ${blankIndex + 1}" placeholder="Blank ${blankIndex + 1}" class="inline-block px-2 py-1 text-xs font-bold border-b-2 border-teal-600 bg-teal-50/50 outline-none w-32 text-center" />`;
+        });
         previewBox.innerHTML = `
           <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
             ${stemRendered}
@@ -1607,35 +1725,32 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       } else if (activeTab === 'match') {
         const stem = document.getElementById('match-stem-input')?.value || '';
         const rows = document.querySelectorAll('.match-pair-row');
-        const pairs = Array.from(rows).map(r => ({
-          left: r.querySelector('.pair-left')?.value || '',
-          right: r.querySelector('.pair-right')?.value || ''
-        })).filter(p => p.left && p.right);
+        const pairs = Array.from(rows).map(row => ({
+          left: row.querySelector('.pair-left')?.value.trim() || '',
+          right: row.querySelector('.pair-right')?.value.trim() || ''
+        })).filter(pair => pair.left && pair.right);
+        const pairChoices = pairs.flatMap((leftPair, leftIndex) => pairs.map((rightPair, rightIndex) => ({
+          left: leftPair.left,
+          right: rightPair.right,
+          isCorrect: leftIndex === rightIndex
+        })));
 
         previewBox.innerHTML = `
           <div class="space-y-3">
             <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">${UI.escapeHtml(stem)}</p>
+            <p class="text-[11px] text-slate-500">Select every correct pair:</p>
             <div class="space-y-2">
-              ${pairs.map(p => `
-                <div class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-                  <span class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(p.left)}</span>
-                  <span class="text-teal-600 font-bold">➔</span>
-                  <span class="font-medium text-slate-700 dark:text-slate-300">${UI.escapeHtml(p.right)}</span>
-                </div>
+              ${pairChoices.map((pair, index) => `
+                <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                  <input type="checkbox" class="preview-match-choice" data-correct="${pair.isCorrect}" value="${index}" />
+                  <span class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(pair.left)}</span>
+                  <span class="text-teal-600 font-bold">-&gt;</span>
+                  <span class="font-medium text-slate-700 dark:text-slate-300">${UI.escapeHtml(pair.right)}</span>
+                </label>
               `).join('')}
             </div>
           </div>
         `;
-      }
-    };
-
-    // Pill click tester handler
-    window.handlePillClick = (btn, word) => {
-      const slot = document.querySelector('.drop-slot:empty') || Array.from(document.querySelectorAll('.drop-slot')).find(s => s.textContent === '___');
-      if (slot) {
-        slot.textContent = word;
-        slot.classList.add('bg-teal-100', 'border-solid');
-        btn.classList.add('opacity-40', 'pointer-events-none');
       }
     };
 
@@ -1653,22 +1768,74 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           feedbackMsg.innerHTML = `<span class="text-amber-600 font-bold">Đúng ${correct}/${slots.length} vị trí. Thử lại!</span>`;
         }
       } else if (activeTab === 'fill') {
-        const val = document.getElementById('live-fill-input')?.value.trim() || '';
-        const accepted = (document.getElementById('fill-answers-input')?.value || '')
-          .split(',')
-          .map(s => s.trim().toLowerCase());
-        if (accepted.includes(val.toLowerCase())) {
+        const submitted = Array.from(previewBox.querySelectorAll('[id^="live-fill-input-"]'))
+          .map(input => input.value.trim());
+        const acceptedAnswers = document.getElementById('fill-answers-input')?.value || '';
+        const isCorrect = InstructorView.isInteractiveFillAnswerCorrect(submitted, acceptedAnswers);
+        if (isCorrect) {
           feedbackMsg.innerHTML = `<span class="text-emerald-600 font-bold">✓ Chính xác! Trùng khớp đáp án.</span>`;
         } else {
           feedbackMsg.innerHTML = `<span class="text-rose-600 font-bold">Chưa đúng đáp án.</span>`;
         }
       } else {
-        feedbackMsg.innerHTML = `<span class="text-emerald-600 font-bold">✓ Ghép nối hợp lệ!</span>`;
+        const choices = Array.from(previewBox.querySelectorAll('.preview-match-choice'));
+        const selected = choices.filter(input => input.checked);
+        const correctCount = choices.filter(input => input.dataset.correct === 'true').length;
+        const correctSelected = selected.filter(input => input.dataset.correct === 'true').length;
+        const isCompleteMatch = selected.length === correctCount && correctSelected === correctCount;
+        feedbackMsg.textContent = isCompleteMatch
+          ? `Correct: ${correctSelected}/${correctCount} pairs.`
+          : `Correct: ${correctSelected}/${correctCount} pairs. Select every correct pair.`;
+        feedbackMsg.className = isCompleteMatch
+          ? 'text-xs font-bold text-emerald-600'
+          : 'text-xs font-bold text-amber-600';
+      }
+    });
+
+    document.getElementById('interactive-image-input')?.addEventListener('change', async event => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      const status = document.getElementById('interactive-image-status');
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+        input.value = '';
+        UI.showToast('Choose a PNG, JPEG, WebP, or GIF image smaller than 5 MB.', 'warning');
+        return;
+      }
+      if (!draft.courseId) {
+        UI.showToast('Choose a course before adding an image to a question.', 'warning');
+        input.value = '';
+        return;
+      }
+      input.disabled = true;
+      imageUploadInProgress = true;
+      if (status) status.textContent = 'Uploading and scanning image...';
+      try {
+        const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
+        pendingImageAssetId = uploaded?.asset_id || uploaded?.public_id || null;
+        if (!pendingImageAssetId) throw new Error('The uploaded image did not return an asset ID.');
+        if (status) status.textContent = `Image added: ${file.name}`;
+        UI.showToast('Question image uploaded. It will appear after the security scan completes.', 'success');
+      } catch (error) {
+        input.value = '';
+        pendingImageAssetId = null;
+        if (status) status.textContent = 'The image could not be uploaded.';
+        UI.showToast(error.message || 'Image upload failed.', 'error');
+      } finally {
+        imageUploadInProgress = false;
+        input.disabled = false;
       }
     });
 
     // Add Interactive Question to Exam
     document.getElementById('btn-add-interactive-question')?.addEventListener('click', () => {
+      if (imageUploadInProgress) {
+        UI.showToast(
+          'Wait for the question image upload to finish before adding this question.',
+          'warning'
+        );
+        return;
+      }
       const pts = parseFloat(document.getElementById('interactive-points-input')?.value || 1.5) || 1.5;
       const bloom = document.getElementById('interactive-bloom-select')?.value || 'Thông hiểu';
       const exp = document.getElementById('interactive-exp-input')?.value.trim() || '';
@@ -1677,86 +1844,129 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       if (activeTab === 'drag') {
         const stem = document.getElementById('drag-stem-input')?.value.trim();
-        if (!stem || !stem.includes('[')) {
-          UI.showToast('Vui lòng nhập đoạn văn có ít nhất 1 từ khóa đặt trong ngoặc vuông [từ_khóa]!', 'warning');
+        if (!stem) {
+          UI.showToast('Enter a sentence with at least one [word] token.', 'warning');
           return;
         }
-        const tokens = [...stem.matchAll(/\[(.*?)\]/g)].map(m => m[1]);
+        const tokens = [...stem.matchAll(/\[(.*?)\]/g)].map(match => match[1].trim()).filter(Boolean);
+        if (!tokens.length || tokens.length > 6) {
+          UI.showToast('Use between one and six non-empty [word] tokens.', 'warning');
+          return;
+        }
         const cleanStem = stem.replace(/\[(.*?)\]/g, '___');
-
+        const distractors = (document.getElementById('drag-distractors-input')?.value || '')
+          .split(',').map(word => word.trim()).filter(Boolean);
+        const optionsByValue = new Map();
+        [...tokens, ...distractors].forEach(word => {
+          const key = word.toLocaleLowerCase();
+          if (!optionsByValue.has(key)) optionsByValue.set(key, word);
+        });
+        const options = Array.from(optionsByValue.values());
+        if (options.length > 16) {
+          UI.showToast('Use no more than sixteen answer and distractor tokens.', 'warning');
+          return;
+        }
+        const choices = tokens.flatMap((answer, blankIndex) => options.map((option, optionIndex) => ({
+          content: `[[PWD301:G:DRAG:${blankIndex + 1}]]${option}`,
+          is_correct: option.toLocaleLowerCase() === answer.toLocaleLowerCase(),
+          position: blankIndex * options.length + optionIndex + 1
+        })));
         newQuestion = {
-          stem: cleanStem,
-          question_text: cleanStem,
-          question_type: 'Kéo thả',
-          type: 'SHORT_ANSWER',
+          stem: `${cleanStem}\nDrag one token into each blank.`,
+          question_text: `${cleanStem}\nDrag one token into each blank.`,
+          question_type: 'Drag and drop',
+          type: 'MULTIPLE_CHOICE',
           points: pts,
           bloom_level: bloom,
           explanation: exp,
-          accepted_answers: tokens,
+          choices,
           is_interactive: true,
           interactive_type: 'DRAG_DROP',
-          tokens: tokens
+          tokens
         };
       } else if (activeTab === 'fill') {
         const stem = document.getElementById('fill-stem-input')?.value.trim();
         const answersStr = document.getElementById('fill-answers-input')?.value.trim();
         if (!stem || !answersStr) {
-          UI.showToast('Vui lòng nhập đề bài và đáp án được chấp nhận!', 'warning');
+          UI.showToast('Enter the sentence and accepted answers for every blank.', 'warning');
           return;
         }
-        const answers = answersStr.split(',').map(s => s.trim()).filter(Boolean);
-
+        const blankCount = (stem.match(/_{3,}/g) || []).length || 1;
+        if (blankCount > 6) {
+          UI.showToast('Use no more than six blanks in one question.', 'warning');
+          return;
+        }
+        const acceptedGroups = answersStr.split(';').map(group =>
+          group.split(',').map(answer => answer.trim()).filter(Boolean)
+        );
+        if (acceptedGroups.length !== blankCount || acceptedGroups.some(group => !group.length)) {
+          UI.showToast(`Provide one semicolon-separated answer group for each of the ${blankCount} blanks.`, 'warning');
+          return;
+        }
         newQuestion = {
-          stem: stem,
+          stem: `[[PWD301:FI_V1]]${stem}`,
           question_text: stem,
-          question_type: 'Điền từ',
+          question_type: 'Fill in the blank',
           type: 'SHORT_ANSWER',
           points: pts,
           bloom_level: bloom,
           explanation: exp,
-          accepted_answers: answers,
+          accepted_answers: acceptedGroups.flatMap((group, groupIndex) => group.map(answer =>
+            `[[PWD301:FI:${groupIndex + 1}]]${answer}`
+          )),
           is_interactive: true,
           interactive_type: 'FILL_IN'
         };
       } else if (activeTab === 'match') {
         const stem = document.getElementById('match-stem-input')?.value.trim();
         const rows = document.querySelectorAll('.match-pair-row');
-        const pairs = Array.from(rows).map(r => ({
-          left: r.querySelector('.pair-left')?.value.trim() || '',
-          right: r.querySelector('.pair-right')?.value.trim() || ''
-        })).filter(p => p.left && p.right);
-
+        const pairs = Array.from(rows).map(row => ({
+          left: row.querySelector('.pair-left')?.value.trim() || '',
+          right: row.querySelector('.pair-right')?.value.trim() || ''
+        })).filter(pair => pair.left && pair.right);
         if (!stem || pairs.length < 2) {
-          UI.showToast('Vui lòng nhập đề bài và ít nhất 2 cặp ghép hợp lệ!', 'warning');
+          UI.showToast('Enter the matching instruction and at least two complete pairs.', 'warning');
           return;
         }
-
-        const choices = pairs.map((p, i) => ({
-          label: chr(65 + i),
-          content: `${p.left} ➔ ${p.right}`,
-          is_correct: true,
-          position: i + 1
-        }));
-
+        const normalizedLefts = pairs.map(pair => pair.left.toLocaleLowerCase());
+        const normalizedRights = pairs.map(pair => pair.right.toLocaleLowerCase());
+        if (new Set(normalizedLefts).size !== pairs.length || new Set(normalizedRights).size !== pairs.length) {
+          UI.showToast('Every label in both matching columns must be unique.', 'warning');
+          return;
+        }
+        if (pairs.length > 6) {
+          UI.showToast('Limit matching questions to six pairs.', 'warning');
+          return;
+        }
+        const choices = pairs.flatMap((leftPair, leftIndex) => pairs.map((rightPair, rightIndex) => ({
+          content: `[[PWD301:G:MATCH:${leftIndex + 1}]]${leftPair.left}|||${rightPair.right}`,
+          is_correct: leftIndex === rightIndex,
+          position: leftIndex * pairs.length + rightIndex + 1
+        })));
         newQuestion = {
-          stem: stem,
+          stem,
           question_text: stem,
-          question_type: 'Ghép đôi',
+          question_type: 'Matching pairs',
           type: 'MULTIPLE_CHOICE',
           points: pts,
           bloom_level: bloom,
           explanation: exp,
-          choices: choices,
+          choices,
           is_interactive: true,
           interactive_type: 'MATCHING',
-          pairs: pairs
+          pairs
         };
       }
-
       if (newQuestion) {
+        if (pendingImageAssetId) newQuestion.image_asset_id = pendingImageAssetId;
         window.ExamStore.appendQuestions([newQuestion]);
+        pendingImageAssetId = null;
+        const imageInput = document.getElementById('interactive-image-input');
+        if (imageInput) imageInput.value = '';
+        const imageStatus = document.getElementById('interactive-image-status');
+        if (imageStatus) imageStatus.textContent = 'PNG, JPEG, WebP, or GIF up to 5 MB.';
         UI.showToast('Đã thêm câu hỏi tương tác vào đề thi!', 'success');
-        renderQuestionsList();
+        window.location.hash = '#/instructor/exams/editor';
       }
     });
 
@@ -1789,7 +1999,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <span class="text-slate-500 font-medium">${q.question_type || q.type}</span>
               <span class="text-indigo-600 font-semibold">• ${(q.points || 1.0).toFixed(1)}đ</span>
             </div>
-            <p class="font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(q.stem || q.question_text)}</p>
+            <p class="font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(String(q.stem || q.question_text || '').replace(/^\[\[PWD301:FI_V1\]\]/, ''))}</p>
           </div>
           <button type="button" class="text-slate-400 hover:text-rose-500 p-1" title="Xóa câu này" onclick="window.handleDeleteQuestion(${i})">
             <span class="material-symbols-outlined text-[18px]">delete</span>
@@ -1814,7 +2024,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     });
 
     // Form live listeners
-    ['drag-stem-input', 'drag-distractors-input', 'fill-stem-input', 'match-stem-input'].forEach(id => {
+    ['drag-stem-input', 'drag-distractors-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', renderLivePreview);
     });
 
@@ -2889,7 +3099,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               content: q.stem || q.question_text || `Câu hỏi`,
               difficulty: diff,
               points: parseFloat(q.points) || 1.0,
-              explanation: q.explanation || ''
+              explanation: q.explanation || '',
+              image_asset_id: q.image_asset_id || null
             };
 
             if (qType === 'SHORT_ANSWER') {
@@ -2956,4 +3167,3 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
   window.InstructorView = InstructorView;
 })();
-
