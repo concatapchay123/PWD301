@@ -11,11 +11,14 @@
  *    - Background Daemons Execution & Regrading Worker Progress
  *    - Isolated Danger Zone ("Never Overwrite Live Database", Staging Dry-Run & Guarded Live Restore)
  *    - System Maintenance Window Engine (Start/End Window)
- *    - Live Hardware Telemetry (CPU, RAM, Disk, Network auto-poll 10s)
  *    - Active Sessions Revocation Panel & Live Threat Stream
  */
 
 class AdminView {
+  static canReviewCourse(course) {
+    return course?.status === 'SUBMITTED_FOR_REVIEW';
+  }
+
   static getAuditPageState(page, perPage, total) {
     const pageSize = Math.max(1, Number.parseInt(perPage, 10) || 50);
     const itemCount = Math.max(0, Number.parseInt(total, 10) || 0);
@@ -183,7 +186,7 @@ class AdminView {
         </section>
 
         <!-- 3 Core KPI Cards with Deep Link Navigation -->
-        <div class="${showQueueSummary ? 'grid grid-cols-1 md:grid-cols-3' : 'grid grid-cols-1 md:grid-cols-2'} gap-5">
+        <div class="${showQueueSummary ? 'grid grid-cols-1 md:grid-cols-2' : 'grid grid-cols-1 md:grid-cols-2'} gap-5">
           
           <!-- KPI 1: Đề cương chờ duyệt -->
           <div class="${showQueueSummary ? '' : 'hidden'} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=${isInstructorQueue ? 'applications' : 'courses'}'">
@@ -223,24 +226,6 @@ class AdminView {
             </div>
           </div>
 
-          <!-- KPI 3: Giám sát hạ tầng phần cứng -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-amber-400/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/operations'">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
-                <span class="material-symbols-outlined text-amber-500 text-[22px]">dns</span>
-                Giám sát hạ tầng phần cứng
-              </span>
-              <span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-[11px] font-bold" id="kpi-telemetry-badge">Hệ thống OK</span>
-            </div>
-            <div class="flex items-baseline gap-3 my-2">
-              <span class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono" id="kpi-uptime-val">100%</span>
-              <span class="text-xs text-slate-400">Thời gian hoạt động (Uptime)</span>
-            </div>
-            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
-              <span class="text-slate-500" id="kpi-telemetry-metrics">CPU: --% • RAM: -- GB</span>
-              <span class="font-bold text-primary flex items-center gap-1">Cockpit <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
-            </div>
-          </div>
 
         </div>
 
@@ -254,12 +239,10 @@ class AdminView {
     try {
       const isCourseReviewer = adminSubRole === 'ADMIN_COURSE_REVIEW';
       const isInstructorReviewer = adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
-      const canViewTelemetry = adminSubRole === 'ADMIN_PRIMARY' || adminSubRole === 'ADMIN_SYSTEM_MONITORING';
-      const [coursesRes, appsRes, crRes, telemRes] = await Promise.allSettled([
+      const [coursesRes, appsRes, crRes] = await Promise.allSettled([
         isCourseReviewer ? ApiClient.getPendingCourses() : Promise.resolve(null),
         isInstructorReviewer ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null),
-        isCourseReviewer ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null),
-        canViewTelemetry ? ApiClient.getAdminTelemetry() : Promise.resolve(null)
+        isCourseReviewer ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null)
       ]);
 
       let pendingCoursesCount = 0;
@@ -305,14 +288,6 @@ class AdminView {
         });
       }
 
-      if (telemRes.status === 'fulfilled' && telemRes.value) {
-        const data = telemRes.value;
-        const cpuPct = data.cpu?.percent ?? 0;
-        const ramUsed = data.memory?.used_gb ?? 0;
-        const ramTotal = data.memory?.total_gb ?? '--';
-        const metricsEl = document.getElementById('kpi-telemetry-metrics');
-        if (metricsEl) metricsEl.textContent = `CPU: ${cpuPct}% • RAM: ${ramUsed} / ${ramTotal} GB`;
-      }
     } catch (err) {
       console.warn('Initial admin KPI load warning:', err);
     }
@@ -724,7 +699,7 @@ class AdminView {
               <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
-                <div class="text-[11px] text-slate-500">Theo dõi tài nguyên phần cứng CPU/RAM, nhật ký kiểm toán bất biến (Audit Log) & Telemetry.</div>
+                <div class="text-[11px] text-slate-500">Quản trị vận hành nền tảng và nhật ký kiểm toán bất biến (Audit Log).</div>
               </div>
             </label>
           </div>
@@ -1731,15 +1706,28 @@ class AdminView {
   }
 
   static async openCourseInspectionModal(courseId) {
+    const requestId = (AdminView.courseInspectionRequestId || 0) + 1;
+    AdminView.courseInspectionRequestId = requestId;
+    let replacingLoadingModal = false;
+    const invalidateRequest = () => {
+      if (!replacingLoadingModal && AdminView.courseInspectionRequestId === requestId) {
+        AdminView.courseInspectionRequestId += 1;
+      }
+    };
     try {
       UI.openModal({
         title: 'Hồ sơ Thẩm định Đề cương & Bài học',
         bodyHtml: '<div class="p-8 text-center text-slate-400"><span class="inline-block animate-spin text-xl mb-2">⏳</span><p>Đang tải chi tiết đề cương học vụ...</p></div>',
         footerHtml: '<button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>',
-        size: 'lg'
+        size: 'lg',
+        onClose: invalidateRequest,
       });
 
       const course = await ApiClient.getAdminCourseDetail(courseId);
+      if (AdminView.courseInspectionRequestId !== requestId) return;
+      replacingLoadingModal = true;
+      UI.closeModal();
+      replacingLoadingModal = false;
       const lessons = course.lessons || [];
 
       // Parse learning objectives for Admin inspection
@@ -1857,7 +1845,7 @@ class AdminView {
         </div>
       `;
 
-      const isPending = course.status === 'PENDING';
+      const isPending = AdminView.canReviewCourse(course);
       const footerHtml = `
         <div class="flex items-center justify-between w-full">
           <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
@@ -1879,7 +1867,8 @@ class AdminView {
         title: `Hồ sơ Thẩm định Đề cương • ${course.course_code}`,
         bodyHtml,
         footerHtml,
-        size: 'lg'
+        size: 'lg',
+        onClose: invalidateRequest,
       });
 
       if (isPending) {
@@ -1924,7 +1913,10 @@ class AdminView {
         }
       }
     } catch (err) {
-      UI.showToast(err.message || 'Lỗi tải hồ sơ khóa học.', 'error');
+      if (AdminView.courseInspectionRequestId === requestId) {
+        UI.closeModal();
+        UI.showToast(err.message || 'Lỗi tải hồ sơ khóa học.', 'error');
+      }
     }
   }
 
@@ -2928,10 +2920,6 @@ class AdminView {
             </p>
           </div>
           <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            <button type="button" id="refresh-telemetry-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-[16px]" id="refresh-spin-icon">refresh</span>
-              <span>Làm mới phần cứng</span>
-            </button>
             <button type="button" id="emergency-backup-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[18px]">shield</span>
               <span>Tạo bản sao lưu khẩn cấp</span>
@@ -2939,7 +2927,7 @@ class AdminView {
           </div>
         </div>
 
-        <!-- Main Cockpit Split Layout: 65% Operations / 35% Threat & Telemetry -->
+        <!-- Main operations cockpit -->
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
           <!-- LEFT COLUMN (65% -> 8 cols of 12) -->
@@ -3207,59 +3195,6 @@ class AdminView {
               </p>
               <div id="maintenance-action-box" class="pt-1">
                 <!-- Populated via JS -->
-              </div>
-            </div>
-
-            <!-- 2. Live Hardware Telemetry Cards -->
-            <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-              <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-primary text-[18px]">speed</span>
-                  <span>Tải phần cứng thời gian thực</span>
-                </h3>
-                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              </div>
-
-              <!-- CPU -->
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-slate-500 font-bold uppercase">CPU Core Load</span>
-                  <span class="font-mono font-bold text-primary" id="telem-cpu-val">0.0%</span>
-                </div>
-                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div class="bg-primary h-full rounded-full transition-all duration-500" id="telem-cpu-bar" style="width: 0%"></div>
-                </div>
-                <div class="text-[11px] text-slate-400 truncate" id="telem-cpu-model">Đang nhận diện vCPU...</div>
-              </div>
-
-              <!-- RAM -->
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-slate-500 font-bold uppercase">Bộ nhớ RAM</span>
-                  <span class="font-mono font-bold text-purple-600" id="telem-ram-val">0 / 0 GB</span>
-                </div>
-                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div class="bg-purple-600 h-full rounded-full transition-all duration-500" id="telem-ram-bar" style="width: 0%"></div>
-                </div>
-                <div class="text-[11px] text-slate-400" id="telem-ram-pct">0% sử dụng</div>
-              </div>
-
-              <!-- Disk -->
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between text-xs">
-                  <span class="text-slate-500 font-bold uppercase">Ổ cứng khả dụng</span>
-                  <span class="font-mono font-bold text-emerald-600" id="telem-disk-val">0 GB</span>
-                </div>
-                <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div class="bg-emerald-500 h-full rounded-full transition-all duration-500" id="telem-disk-bar" style="width: 0%"></div>
-                </div>
-                <div class="text-[11px] text-slate-400" id="telem-disk-pct">Đang tính toán dung lượng...</div>
-              </div>
-
-              <!-- Host Node Traffic -->
-              <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-1 text-xs">
-                <div class="font-bold text-slate-800 dark:text-slate-200" id="telem-node-id">Production Host</div>
-                <div class="text-slate-400 font-mono text-[11px]" id="telem-net-traffic">Lưu lượng: Gửi 0 KB • Nhận 0 KB</div>
               </div>
             </div>
 
@@ -3572,77 +3507,6 @@ class AdminView {
       checkJobsBtn.onclick = () => AdminView.openBackgroundJobsModal();
     }
 
-    // Polling Hardware Telemetry Function
-    const pollTelemetry = async () => {
-      try {
-        const data = await ApiClient.getAdminTelemetry();
-        if (!data) return;
-
-        if (data.cpu) {
-          const pct = data.cpu.percent ?? 0;
-          const cpuVal = document.getElementById('telem-cpu-val');
-          const cpuModel = document.getElementById('telem-cpu-model');
-          const cpuBar = document.getElementById('telem-cpu-bar');
-          if (cpuVal) cpuVal.textContent = `${pct}%`;
-          if (cpuModel) cpuModel.textContent = data.cpu.model || `${data.cpu.cores || 4} vCPU`;
-          if (cpuBar) cpuBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-        }
-
-        if (data.memory) {
-          const ramVal = document.getElementById('telem-ram-val');
-          const ramPct = document.getElementById('telem-ram-pct');
-          const ramBar = document.getElementById('telem-ram-bar');
-          if (ramVal) ramVal.textContent = `${data.memory.used_gb ?? '0'} / ${data.memory.total_gb ?? '0'} GB`;
-          if (ramPct) {
-            if (data.container && data.container.memory_used_gb != null) {
-              ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng • Container: ${data.container.memory_used_gb} GB`;
-            } else {
-              ramPct.textContent = `${data.memory.percent ?? 0}% sử dụng`;
-            }
-          }
-          if (ramBar) ramBar.style.width = `${Math.min(100, Math.max(0, data.memory.percent ?? 0))}%`;
-        }
-
-        if (data.disk) {
-          const diskVal = document.getElementById('telem-disk-val');
-          const diskPct = document.getElementById('telem-disk-pct');
-          const diskBar = document.getElementById('telem-disk-bar');
-          if (diskVal) diskVal.textContent = `${data.disk.free_gb ?? '0'} GB khả dụng`;
-          if (diskPct) diskPct.textContent = `Tổng ${data.disk.total_gb ?? '0'} GB (${data.disk.percent ?? 0}% dùng)`;
-          if (diskBar) diskBar.style.width = `${Math.min(100, Math.max(0, data.disk.percent ?? 0))}%`;
-        }
-
-        const nodeEl = document.getElementById('telem-node-id');
-        if (nodeEl) {
-          if (data.container && data.host?.hostname) {
-            nodeEl.textContent = `${data.node_label || 'Docker Container'} on ${data.host.hostname}`;
-          } else {
-            nodeEl.textContent = data.node_label || data.hostname || data.host?.node_label || data.host?.hostname || 'Production Node';
-          }
-        }
-        if (data.network) {
-          const netEl = document.getElementById('telem-net-traffic');
-          if (netEl) {
-            netEl.textContent = data.network.traffic_label
-              ? `Lưu lượng: ${data.network.traffic_label}`
-              : `Lưu lượng: Gửi ${data.network.bytes_sent_human || '0 KB'} • Nhận ${data.network.bytes_recv_human || '0 KB'}`;
-          }
-        }
-      } catch (err) {
-        console.warn('Telemetry poll error:', err);
-      }
-    };
-
-    const refreshBtn = document.getElementById('refresh-telemetry-btn');
-    const spinIcon = document.getElementById('refresh-spin-icon');
-    if (refreshBtn) {
-      refreshBtn.onclick = async () => {
-        spinIcon?.classList.add('animate-spin');
-        await Promise.allSettled([pollTelemetry(), loadBackups(), loadMaintenanceStatus(), loadHealthMatrix()]);
-        setTimeout(() => spinIcon?.classList.remove('animate-spin'), 600);
-      };
-    }
-
     document.getElementById('emergency-backup-btn').onclick = () => {
       AdminView.openCreateBackupModal(() => loadBackups());
     };
@@ -3651,15 +3515,7 @@ class AdminView {
     loadBackups();
     loadMaintenanceStatus();
     loadHealthMatrix();
-    pollTelemetry();
 
-    const timer = setInterval(() => {
-      if (!document.getElementById('telem-cpu-val')) {
-        clearInterval(timer);
-        return;
-      }
-      pollTelemetry();
-    }, 10000);
   }
 
   static openCreateBackupModal(onSuccess = null) {

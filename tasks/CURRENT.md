@@ -1,3 +1,9 @@
+# Active task: TASK-073 — Course Review, Lesson Media, Exam Images & Visual Clarity
+
+Status: DONE. See [TASK-073.md](TASK-073.md) for scope, acceptance criteria, verification, and remaining verification limits.
+
+---
+
 # Active task: TASK-072 — Admin Access Boundaries, Review Queues, Audit Logs & User Settings
 
 Status: DONE. See [TASK-072.md](TASK-072.md) for scope, acceptance criteria, verification, and completion evidence.

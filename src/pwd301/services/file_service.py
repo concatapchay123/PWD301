@@ -1089,6 +1089,15 @@ def attach_resource_to_lesson(
     lesson = _resolve_lesson(lesson_id, session=sess)
     if lesson is None:
         raise ResourceNotFoundError("Lesson not found.")
+    lesson = (
+        sess.query(Lesson)
+        .filter(Lesson.id == lesson.id)
+        .with_for_update()
+        .with_hint(Lesson, "WITH (UPDLOCK, ROWLOCK)", dialect_name="mssql")
+        .first()
+    )
+    if lesson is None:
+        raise ResourceNotFoundError("Lesson not found.")
 
     require_course_manager(actor, lesson.course_id, session=sess)
 
@@ -1117,6 +1126,35 @@ def attach_resource_to_lesson(
             sess.rollback()
             raise
         return existing
+
+    if asset.is_video:
+        markdown = lesson.markdown_content or ""
+        links_match = re.search(r"<!--\s*video_urls:\s*(.+?)\s*-->", markdown, re.DOTALL)
+        video_links: list[str] = []
+        if links_match:
+            try:
+                raw_links = json.loads(links_match.group(1))
+                if isinstance(raw_links, list):
+                    video_links = list(
+                        dict.fromkeys(
+                            str(url).strip()
+                            for url in raw_links
+                            if str(url).strip()
+                        )
+                    )
+            except (TypeError, ValueError):
+                raise FileValidationError("Lesson video metadata is invalid.") from None
+        else:
+            legacy_match = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", markdown)
+            if legacy_match:
+                video_links = [legacy_match.group(1)]
+        attached_video_count = sum(
+            1
+            for resource in lesson.resources
+            if resource.file_asset is not None and resource.file_asset.is_video
+        )
+        if len(video_links) + attached_video_count >= 5:
+            raise FileValidationError("A lesson may contain at most 5 videos.")
 
     max_pos = (
         sess.query(sa.func.max(LessonResource.position))

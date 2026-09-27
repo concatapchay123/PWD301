@@ -77,18 +77,18 @@ class UI {
       progressBarColor = 'bg-amber-600 dark:bg-amber-500';
     }
 
-    toast.className = 'relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] shadow-none transition-all duration-200 transform -translate-y-3 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-sm w-full overflow-hidden';
+    toast.className = 'relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card text-text-primary dark:text-dark-text-primary shadow-none transition-all duration-200 transform -translate-y-3 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-sm w-full overflow-hidden';
     toast.innerHTML = `
       <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
         <span class="material-symbols-outlined text-[18px]">${icon}</span>
       </div>
-      <div class="flex-1 min-w-0 pr-1 leading-snug break-words text-xs text-[#222120] dark:text-[#EDEDEB]">
+      <div class="flex-1 min-w-0 pr-1 leading-snug break-words text-xs text-text-primary dark:text-dark-text-primary">
         ${UI.escapeHtml(message)}
       </div>
-      <button type="button" class="text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] rounded-lg transition-colors p-1 shrink-0" onclick="UI.dismissToast('${toastId}')" title="Đóng">
+      <button type="button" class="text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F3F1EB] dark:hover:bg-[#302F2D] rounded-lg transition-colors p-1 shrink-0" onclick="UI.dismissToast('${toastId}')" title="Đóng">
         <span class="material-symbols-outlined text-[16px]">close</span>
       </button>
-      <div class="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#E8E6DF]/50 dark:bg-[#2E2D2B]/50 overflow-hidden">
+      <div class="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#D6D3CA]/50 dark:bg-[#403F3A]/50 overflow-hidden">
         <div id="${toastId}_progress" class="h-full ${progressBarColor} transition-all ease-linear" style="width: 100%;"></div>
       </div>
     `;
@@ -162,27 +162,27 @@ class UI {
     const shadowClass = noShadow ? 'shadow-none' : 'shadow-elevated';
 
     const modalLayer = document.createElement('div');
-    modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+    modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/50 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6';
     modalLayer.innerHTML = `
-      <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
+      <div class="bg-surface-card dark:bg-dark-card border border-border-subtle dark:border-dark-border rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
         <!-- Modal Header -->
-        <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423]">
-          <h3 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
+        <div class="px-5 py-3.5 border-b border-border-subtle dark:border-dark-border flex items-center justify-between shrink-0 bg-surface-subtle dark:bg-dark-surface">
+          <h3 class="text-sm sm:text-base font-bold text-text-primary dark:text-dark-text-primary flex items-center gap-2">
             ${title}
           </h3>
-          <button type="button" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors btn-modal-close" title="Đóng">
+          <button type="button" class="p-1 rounded-md text-text-muted dark:text-dark-text-muted hover:text-text-primary dark:hover:text-dark-text-primary hover:bg-surface-muted dark:hover:bg-dark-raised transition-colors btn-modal-close" title="Đóng">
             <span class="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
         <!-- Modal Body -->
-        <div class="px-5 py-4 overflow-y-auto flex-1 text-[#5C5B57] dark:text-[#9E9D99] text-xs sm:text-sm space-y-3 leading-relaxed">
+        <div class="px-5 py-4 overflow-y-auto flex-1 text-text-secondary dark:text-dark-text-secondary text-xs sm:text-sm space-y-3 leading-relaxed">
           ${bodyHtml}
         </div>
 
         <!-- Modal Footer (Optional) -->
         ${footerHtml ? `
-        <div class="px-5 py-3 bg-[#FAF9F5] dark:bg-[#242423] border-t border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-end gap-2 shrink-0">
+        <div class="px-5 py-3 bg-surface-subtle dark:bg-dark-surface border-t border-border-subtle dark:border-dark-border flex items-center justify-end gap-2 shrink-0">
           ${footerHtml}
         </div>
         ` : ''}
@@ -237,6 +237,16 @@ class UI {
   // =========================================================================
   // 2.1. Dedicated Modern Confirmation Dialog (macOS Clean Alert - No Shadow)
   // =========================================================================
+  static alert(title, message, closeText = 'Đóng') {
+    const escapedMessage = UI.escapeHtml(message).replace(/\r?\n/g, '<br>');
+    UI.openModal({
+      title: UI.escapeHtml(title),
+      bodyHtml: `<p class="whitespace-normal leading-relaxed">${escapedMessage}</p>`,
+      footerHtml: `<button type="button" class="c-btn c-btn-primary c-btn-md" onclick="UI.closeModal()">${UI.escapeHtml(closeText)}</button>`,
+      size: 'sm'
+    });
+  }
+
   static confirm(title, message, confirmText = 'Xác nhận', cancelText = 'Hủy', isDanger = false) {
     return new Promise((resolve) => {
       const container = document.getElementById('modal-container');
@@ -278,31 +288,31 @@ class UI {
         : 'bg-blue-50 dark:bg-blue-950/50 text-primary dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
 
       const confirmLayer = document.createElement('div');
-      confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+      confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/50 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6';
       confirmLayer.innerHTML = `
-        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
+        <div class="bg-surface-raised dark:bg-dark-raised border border-border-subtle dark:border-dark-border rounded-2xl shadow-elevated w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
           <!-- Header: Contextual Icon Badge & Close Action -->
           <div class="flex items-start justify-between gap-3">
             <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
               <span class="material-symbols-outlined text-[26px]">${icon}</span>
             </div>
-            <button type="button" id="confirm-close-x-btn" class="p-1 rounded-lg text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors" title="Đóng">
+            <button type="button" id="confirm-close-x-btn" class="p-1 rounded-lg text-text-muted dark:text-dark-text-muted hover:text-text-primary dark:hover:text-dark-text-primary hover:bg-surface-subtle dark:hover:bg-dark-surface transition-colors" title="Đóng">
               <span class="material-symbols-outlined text-[20px]">close</span>
             </button>
           </div>
 
           <!-- Content Area: Title & Visual Hierarchy -->
           <div class="space-y-1.5">
-            <h3 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
+            <h3 class="text-base sm:text-lg font-bold text-text-primary dark:text-dark-text-primary leading-snug">
               ${UI.escapeHtml(title)}
             </h3>
-            <div class="text-xs sm:text-sm text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed break-words">
+            <div class="text-xs sm:text-sm text-text-secondary dark:text-dark-text-secondary leading-relaxed break-words">
               ${message}
             </div>
           </div>
 
           <!-- Footer: Balanced Pill Actions -->
-          <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E8E6DF]/70 dark:border-[#2E2D2B]/70 shrink-0">
+          <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[#D6D3CA]/70 dark:border-[#403F3A]/70 shrink-0">
             <button type="button" id="confirm-cancel-btn" class="c-btn c-btn-secondary c-btn-md rounded-xl px-4 py-2.5 text-xs font-semibold">
               ${UI.escapeHtml(cancelText)}
             </button>
@@ -420,7 +430,7 @@ class UI {
     if (!backdrop) {
       backdrop = document.createElement('div');
       backdrop.id = 'app-drawer-backdrop';
-      backdrop.className = 'hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-xs z-50 transition-opacity duration-150';
+      backdrop.className = 'hidden fixed inset-0 bg-[#222120]/50 backdrop-blur-md z-50 transition-opacity duration-150';
       document.body.appendChild(backdrop);
     }
     let container = document.getElementById('app-drawer-container');
@@ -436,22 +446,22 @@ class UI {
     backdrop.classList.remove('hidden');
     container.classList.remove('hidden', 'left-0', 'right-0');
 
-    const sideClass = side === 'left' ? 'left-0 border-r border-[#E8E6DF] dark:border-[#2E2D2B]' : 'right-0 border-l border-[#E8E6DF] dark:border-[#2E2D2B]';
+    const sideClass = side === 'left' ? 'left-0 border-r border-border-subtle dark:border-dark-border' : 'right-0 border-l border-border-subtle dark:border-dark-border';
 
-    container.className = `fixed inset-y-0 z-50 flex flex-col bg-[#FFFFFF] dark:bg-[#202020] shadow-elevated ${sideClass} ${width}`;
+    container.className = `fixed inset-y-0 z-50 flex flex-col bg-surface-card dark:bg-dark-card shadow-elevated ${sideClass} ${width}`;
 
     container.innerHTML = `
       <!-- Drawer Header -->
-      <div class="h-14 px-5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423] select-none">
+      <div class="h-14 px-5 border-b border-border-subtle dark:border-dark-border flex items-center justify-between shrink-0 bg-surface-subtle dark:bg-dark-surface select-none">
         <div class="flex items-center gap-2 min-w-0">
-          <h3 class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB] truncate">
+          <h3 class="font-bold text-sm text-text-primary dark:text-dark-text-primary truncate">
             ${title}
           </h3>
-          ${headerBadge ? `<span class="px-2 py-0.2 rounded text-[9px] font-bold bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">${headerBadge}</span>` : ''}
+          ${headerBadge ? `<span class="px-2 py-0.2 rounded text-[9px] font-bold bg-[#ECE8DF] dark:bg-[#403F3A] text-[#5C5B57] dark:text-[#EDEDEB]">${headerBadge}</span>` : ''}
         </div>
         <button
           type="button"
-          class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors"
+          class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#D6D3CA] dark:hover:bg-[#403F3A] transition-colors"
           onclick="UI.closeDrawer()"
           title="Đóng"
         >
@@ -460,13 +470,13 @@ class UI {
       </div>
 
       <!-- Drawer Body -->
-      <div class="flex-1 overflow-y-auto p-5 text-[#37352F] dark:text-[#EDEDEB] text-xs space-y-3" id="drawer-body-content">
+      <div class="flex-1 overflow-y-auto p-5 text-[#403F3A] dark:text-[#EDEDEB] text-xs space-y-3" id="drawer-body-content">
         ${bodyHtml}
       </div>
 
       <!-- Drawer Footer (Optional) -->
       ${footerHtml ? `
-      <div class="p-3.5 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423] shrink-0">
+      <div class="p-3.5 border-t border-border-subtle dark:border-dark-border bg-surface-subtle dark:bg-dark-surface shrink-0">
         ${footerHtml}
       </div>
       ` : ''}
@@ -600,15 +610,15 @@ class UI {
     return `
       <div class="c-card ${hoverClass} ${className} flex flex-col overflow-hidden">
         ${(title || action || icon || badge) ? `
-          <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-3 shrink-0 bg-[#FAF9F5]/50 dark:bg-[#242423]/50">
+          <div class="px-5 py-3.5 border-b border-border-subtle dark:border-dark-border flex items-center justify-between gap-3 shrink-0 bg-[#F3F1EB]/50 dark:bg-[#302F2D]/50">
             <div class="flex items-center gap-2.5 min-w-0">
               ${icon ? `
-                <div class="w-8 h-8 rounded-lg bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-center shrink-0">
+                <div class="w-8 h-8 rounded-lg bg-[#ECE8DF] dark:bg-[#403F3A] text-text-primary dark:text-dark-text-primary flex items-center justify-center shrink-0">
                   <span class="material-symbols-outlined text-[18px]">${icon}</span>
                 </div>
               ` : ''}
               <div class="min-w-0">
-                ${title ? `<h3 class="text-xs sm:text-sm font-bold text-[#222120] dark:text-[#EDEDEB] truncate">${title}</h3>` : ''}
+                ${title ? `<h3 class="text-xs sm:text-sm font-bold text-text-primary dark:text-dark-text-primary truncate">${title}</h3>` : ''}
                 ${subtitle ? `<p class="text-[11px] text-[#8F8E8A] truncate">${subtitle}</p>` : ''}
               </div>
               ${badge ? badge : ''}
@@ -617,12 +627,12 @@ class UI {
           </div>
         ` : ''}
 
-        <div class="p-5 flex-1 text-xs sm:text-sm text-[#37352F] dark:text-[#EDEDEB]">
+        <div class="p-5 flex-1 text-xs sm:text-sm text-[#403F3A] dark:text-[#EDEDEB]">
           ${bodyHtml}
         </div>
 
         ${footerHtml ? `
-          <div class="px-5 py-3 bg-[#FAF9F5] dark:bg-[#242423] border-t border-[#E8E6DF] dark:border-[#2E2D2B] text-xs shrink-0">
+          <div class="px-5 py-3 bg-surface-subtle dark:bg-dark-surface border-t border-border-subtle dark:border-dark-border text-xs shrink-0">
             ${footerHtml}
           </div>
         ` : ''}
@@ -642,12 +652,12 @@ class UI {
       <div class="c-card c-card-hover p-4 flex flex-col justify-between">
         <div class="flex items-center justify-between gap-2 mb-2">
           <span class="text-[11px] font-bold text-[#8F8E8A] uppercase tracking-wider truncate">${label}</span>
-          <div class="w-7 h-7 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
+          <div class="w-7 h-7 rounded-lg bg-[#EAE7DF] dark:bg-[#302F2D] text-text-primary dark:text-dark-text-primary flex items-center justify-center shrink-0 border border-border-subtle dark:border-dark-border">
             <span class="material-symbols-outlined text-[16px]">${icon}</span>
           </div>
         </div>
         <div>
-          <div class="text-xl sm:text-2xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">
+          <div class="text-xl sm:text-2xl font-bold text-text-primary dark:text-dark-text-primary tracking-tight">
             ${value}
           </div>
           ${(change || subtext) ? `
@@ -684,7 +694,7 @@ class UI {
         ` : ''}
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 class="text-lg sm:text-xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">${title}</h1>
+            <h1 class="text-lg sm:text-xl font-bold text-text-primary dark:text-dark-text-primary tracking-tight">${title}</h1>
             ${subtitle ? `<p class="text-xs text-[#8F8E8A] mt-0.5">${subtitle}</p>` : ''}
           </div>
           ${(primaryAction || secondaryActions) ? `
@@ -696,7 +706,7 @@ class UI {
         </div>
 
         ${tabs && tabs.length > 0 ? `
-          <div class="flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] overflow-x-auto w-max">
+          <div class="flex items-center gap-1 bg-[#EAE7DF] dark:bg-[#211F1D] p-1 rounded-xl border border-border-subtle dark:border-dark-border overflow-x-auto w-max">
             ${tabs.map(tab => {
               const isActive = tab.id === activeTab;
               return `
@@ -704,7 +714,7 @@ class UI {
                   type="button"
                   class="px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all ${
                     isActive
-                      ? 'bg-[#FFFFFF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
+                      ? 'bg-[#FDFBF7] dark:bg-[#403F3A] text-text-primary dark:text-dark-text-primary font-bold shadow-2xs'
                       : 'text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
                   }"
                   ${onTabChange ? `onclick="${onTabChange}('${tab.id}')"` : ''}
@@ -712,7 +722,7 @@ class UI {
                 >
                   ${tab.icon ? `<span class="material-symbols-outlined text-[15px] mr-1 align-middle">${tab.icon}</span>` : ''}
                   ${tab.label}
-                  ${tab.count !== undefined ? `<span class="ml-1.5 px-1.5 py-0.2 rounded text-[10px] ${isActive ? 'bg-[#222120] text-white dark:bg-white dark:text-black' : 'bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]'}">${tab.count}</span>` : ''}
+                  ${tab.count !== undefined ? `<span class="ml-1.5 px-1.5 py-0.2 rounded text-[10px] ${isActive ? 'bg-[#222120] text-white dark:bg-white dark:text-black' : 'bg-[#ECE8DF] dark:bg-[#403F3A] text-[#5C5B57] dark:text-[#EDEDEB]'}">${tab.count}</span>` : ''}
                 </button>
               `;
             }).join('')}
@@ -732,10 +742,10 @@ class UI {
   }) {
     return `
       <div class="c-card p-10 text-center flex flex-col items-center justify-center">
-        <div class="w-12 h-12 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] text-[#8F8E8A] flex items-center justify-center mb-3 border border-[#E8E6DF] dark:border-[#2E2D2B]">
+        <div class="w-12 h-12 rounded-xl bg-[#EAE7DF] dark:bg-[#302F2D] text-[#8F8E8A] flex items-center justify-center mb-3 border border-border-subtle dark:border-dark-border">
           <span class="material-symbols-outlined text-[24px]">${icon}</span>
         </div>
-        <h4 class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB]">${title}</h4>
+        <h4 class="text-sm font-bold text-text-primary dark:text-dark-text-primary">${title}</h4>
         <p class="text-xs text-[#8F8E8A] max-w-sm mt-1 leading-relaxed">${description}</p>
         ${actionText && onAction ? `
           <div class="mt-4">
@@ -834,30 +844,30 @@ class UI {
 
     // Code blocks ```language ... ```
     escaped = escaped.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
-      return `<pre class="my-2 p-3 rounded-lg bg-[#222120] text-[#FAF9F5] dark:bg-[#151515] dark:text-[#EDEDEB] overflow-x-auto text-xs font-mono leading-relaxed border border-[#3E3D3A]"><code>${code.trim()}</code></pre>`;
+      return `<pre class="my-2 p-3 rounded-lg bg-[#222120] text-[#F3F1EB] dark:bg-[#151515] dark:text-[#EDEDEB] overflow-x-auto text-xs font-mono leading-relaxed border border-[#57554F]"><code>${code.trim()}</code></pre>`;
     });
 
     // Inline code `...`
-    escaped = escaped.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.2 rounded bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-mono text-xs border border-[#E8E6DF] dark:border-[#3D3C3A]">$1</code>');
+    escaped = escaped.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.2 rounded bg-[#ECE8DF] dark:bg-[#403F3A] text-text-primary dark:text-dark-text-primary font-mono text-xs border border-[#D6D3CA] dark:border-[#3D3C3A]">$1</code>');
 
     // Headers
-    escaped = escaped.replace(/^### (.*$)/gim, '<h3 class="text-xs sm:text-sm font-bold text-[#222120] dark:text-[#EDEDEB] mt-3 mb-1">$1</h3>');
-    escaped = escaped.replace(/^## (.*$)/gim, '<h2 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] mt-4 mb-1.5">$1</h2>');
-    escaped = escaped.replace(/^# (.*$)/gim, '<h1 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] mt-5 mb-2">$1</h1>');
+    escaped = escaped.replace(/^### (.*$)/gim, '<h3 class="text-xs sm:text-sm font-bold text-text-primary dark:text-dark-text-primary mt-3 mb-1">$1</h3>');
+    escaped = escaped.replace(/^## (.*$)/gim, '<h2 class="text-sm sm:text-base font-bold text-text-primary dark:text-dark-text-primary mt-4 mb-1.5">$1</h2>');
+    escaped = escaped.replace(/^# (.*$)/gim, '<h1 class="text-base sm:text-lg font-bold text-text-primary dark:text-dark-text-primary mt-5 mb-2">$1</h1>');
 
     // Bold & Italic
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     escaped = escaped.replace(/\*(.*?)\*/g, '<em>$1</em>');
 
     // Blockquote
-    escaped = escaped.replace(/^\> (.*$)/gim, '<blockquote class="border-l-2 border-[#222120] dark:border-[#EDEDEB] pl-3 py-1 my-2 text-[#5C5B57] dark:text-[#9E9D99] italic bg-[#F4F1EA] dark:bg-[#262524] rounded-r-md">$1</blockquote>');
+    escaped = escaped.replace(/^\> (.*$)/gim, '<blockquote class="border-l-2 border-[#222120] dark:border-[#EDEDEB] pl-3 py-1 my-2 text-[#5C5B57] dark:text-[#9E9D99] italic bg-[#EAE7DF] dark:bg-[#302F2D] rounded-r-md">$1</blockquote>');
 
     // Lists
-    escaped = escaped.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-[#37352F] dark:text-[#EDEDEB] my-0.5">$1</li>');
-    escaped = escaped.replace(/^\s*(\d+)\.\s+(.*$)/gim, '<li class="ml-4 list-decimal text-[#37352F] dark:text-[#EDEDEB] my-0.5">$2</li>');
+    escaped = escaped.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-[#403F3A] dark:text-[#EDEDEB] my-0.5">$1</li>');
+    escaped = escaped.replace(/^\s*(\d+)\.\s+(.*$)/gim, '<li class="ml-4 list-decimal text-[#403F3A] dark:text-[#EDEDEB] my-0.5">$2</li>');
 
     // Horizontal rules
-    escaped = escaped.replace(/^---$/gim, '<hr class="my-3 border-[#E8E6DF] dark:border-[#2E2D2B]" />');
+    escaped = escaped.replace(/^---$/gim, '<hr class="my-3 border-border-subtle dark:border-dark-border" />');
 
     // Links [text](url)
     escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-0.5">$1 <span class="material-symbols-outlined text-[13px]">open_in_new</span></a>');
@@ -879,7 +889,7 @@ class UI {
   static statusBadge(status) {
     const s = String(status || '').toUpperCase();
     let label = s;
-    let colorClass = 'bg-[#F4F1EA] text-[#5C5B57] dark:bg-[#262524] dark:text-[#9E9D99] border-[#E8E6DF] dark:border-[#2E2D2B]';
+    let colorClass = 'bg-[#EAE7DF] text-[#5C5B57] dark:bg-[#302F2D] dark:text-[#9E9D99] border-border-subtle dark:border-dark-border';
 
     switch (s) {
       case 'PUBLISHED':
@@ -899,7 +909,7 @@ class UI {
         break;
       case 'DRAFT':
         label = 'Bản thảo';
-        colorClass = 'bg-[#ECE8DF] text-[#5C5B57] border-[#E8E6DF] dark:bg-[#2E2D2B] dark:text-[#9E9D99] dark:border-[#3D3C3A]';
+        colorClass = 'bg-[#ECE8DF] text-[#5C5B57] border-[#D6D3CA] dark:bg-[#403F3A] dark:text-[#9E9D99] dark:border-[#3D3C3A]';
         break;
       case 'REJECTED':
       case 'FAILED':
@@ -917,7 +927,7 @@ class UI {
       case 'ARCHIVED':
       case 'CLOSED':
         label = s === 'ARCHIVED' ? 'Đã lưu trữ' : 'Đã đóng';
-        colorClass = 'bg-[#ECE8DF] text-[#8F8E8A] border-[#E8E6DF] dark:bg-[#2E2D2B] dark:text-[#6D6C68] dark:border-[#3D3C3A]';
+        colorClass = 'bg-[#ECE8DF] text-[#8F8E8A] border-[#D6D3CA] dark:bg-[#403F3A] dark:text-[#6D6C68] dark:border-[#3D3C3A]';
         break;
       default:
         break;
@@ -935,7 +945,7 @@ class UI {
     } else if (d === 'ADVANCED') {
       return '<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">Nâng cao</span>';
     }
-    return `<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-[#F4F1EA] text-[#5C5B57] dark:bg-[#262524] dark:text-[#9E9D99] border border-[#E8E6DF] dark:border-[#2E2D2B]">${diff || 'Khác'}</span>`;
+    return `<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-[#EAE7DF] text-[#5C5B57] dark:bg-[#302F2D] dark:text-[#9E9D99] border border-border-subtle dark:border-dark-border">${diff || 'Khác'}</span>`;
   }
 
   // =========================================================================
@@ -1106,7 +1116,8 @@ class ExamParser {
 
       const imageMarker = line.match(/^\[\[PWD301:IMAGE:([0-9a-f-]{36})\]\]$/i);
       if (imageMarker && currentQ) {
-        currentQ.image_asset_id = imageMarker[1];
+        currentQ.image_asset_ids.push(imageMarker[1]);
+        currentQ.image_asset_id ||= imageMarker[1];
         continue;
       }
 
@@ -1138,6 +1149,8 @@ class ExamParser {
           question_text: cleanStem || rawStem,
           stem: cleanStem || rawStem,
           choices: [],
+          image_asset_ids: [],
+          image_asset_id: null,
           explanation: '',
           points: 1.0,
           type: 'MULTIPLE_CHOICE'
@@ -1211,7 +1224,8 @@ class ExamParser {
         number: q.number || (idx + 1),
         stem: q.stem || q.question_text || `Câu hỏi ${idx + 1}`,
         question_text: q.question_text || q.stem || `Câu hỏi ${idx + 1}`,
-        image_asset_id: q.image_asset_id || null,
+        image_asset_id: q.image_asset_id || q.image_asset_ids?.[0] || null,
+        image_asset_ids: [...new Set(q.image_asset_ids || (q.image_asset_id ? [q.image_asset_id] : []))],
         choices: q.choices || [],
         explanation: q.explanation || '',
         points: q.points || pointsPerQ,
@@ -1226,11 +1240,40 @@ class ExamParser {
     };
   }
 
+  static insertImageMarkers(rawText, cursorPosition, assetIds) {
+    const source = String(rawText || '');
+    const lines = source.split(/\r?\n/);
+    const prefix = source.slice(0, Math.max(0, cursorPosition));
+    const cursorLine = prefix.split(/\r?\n/).length - 1;
+    const questionHeader = /^\s*(?:(?:C\u00e2u|C\u00c3\u00a2u|B\u00e0i|B\u00c3\u00a0i|Question)\s*)?\d+[:.]\s*/i;
+    let headerIndex = -1;
+    for (let index = 0; index <= Math.min(cursorLine, lines.length - 1); index += 1) {
+      if (questionHeader.test(lines[index])) headerIndex = index;
+    }
+    if (headerIndex < 0) throw new Error('Place the cursor inside a question before pasting an image.');
+
+    const markers = [...new Set((assetIds || []).map(String))]
+      .filter(assetId => /^[0-9a-f-]{36}$/i.test(assetId))
+      .map(assetId => `[[PWD301:IMAGE:${assetId}]]`);
+    if (!markers.length) return source;
+
+    let insertIndex = headerIndex + 1;
+    while (insertIndex < lines.length && /^\s*\[\[PWD301:IMAGE:[0-9a-f-]{36}\]\]\s*$/i.test(lines[insertIndex])) {
+      insertIndex += 1;
+    }
+    lines.splice(insertIndex, 0, ...markers);
+    return lines.join('\n');
+  }
+
   static generateRawFromQuestions(questions) {
     if (!Array.isArray(questions) || questions.length === 0) return '';
     return questions.map((q, idx) => {
       const qNum = idx + 1;
+      const imageIds = [...new Set(q.image_asset_ids || (q.image_asset_id ? [q.image_asset_id] : []))];
       let out = `Câu ${qNum}. ${q.stem || q.question_text}\n`;
+      imageIds.forEach(assetId => {
+        if (/^[0-9a-f-]{36}$/i.test(assetId)) out += `[[PWD301:IMAGE:${assetId}]]\n`;
+      });
       if (q.choices && Array.isArray(q.choices)) {
         q.choices.forEach(c => {
           const star = c.is_correct ? '*' : '';
@@ -1474,15 +1517,15 @@ class FloatingAITutor {
     if (sender === 'user') {
       div.className = 'flex justify-end';
       div.innerHTML = `
-        <div class="bg-[#222120] text-[#FAF9F5] dark:bg-[#EDEDEB] dark:text-[#191919] p-3 rounded-xl rounded-tr-none max-w-[85%] leading-relaxed text-xs">
+        <div class="bg-[#222120] text-[#F3F1EB] dark:bg-[#EDEDEB] dark:text-[#151514] p-3 rounded-xl rounded-tr-none max-w-[85%] leading-relaxed text-xs">
           ${UI.escapeHtml(text)}
         </div>
       `;
     } else {
       div.className = 'flex gap-2.5 items-start';
       div.innerHTML = `
-        <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
-        <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] leading-relaxed text-xs border border-[#E8E6DF] dark:border-[#2E2D2B]">
+        <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-border-subtle dark:border-dark-border shadow-2xs" />
+        <div class="bg-[#EAE7DF] dark:bg-[#302F2D] text-text-primary dark:text-dark-text-primary p-3 rounded-xl rounded-tl-none max-w-[85%] leading-relaxed text-xs border border-border-subtle dark:border-dark-border">
           ${UI.renderMarkdown(text)}
         </div>
       `;
@@ -1499,8 +1542,8 @@ class FloatingAITutor {
     div.id = id;
     div.className = 'flex gap-2.5 items-start';
     div.innerHTML = `
-      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs animate-pulse" />
-      <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#8F8E8A] p-2.5 rounded-xl rounded-tl-none text-xs flex items-center gap-1.5 border border-[#E8E6DF] dark:border-[#2E2D2B]">
+      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-6 h-6 rounded-md object-cover shrink-0 border border-border-subtle dark:border-dark-border shadow-2xs animate-pulse" />
+      <div class="bg-[#EAE7DF] dark:bg-[#302F2D] text-[#8F8E8A] p-2.5 rounded-xl rounded-tl-none text-xs flex items-center gap-1.5 border border-border-subtle dark:border-dark-border">
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce"></span>
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce [animation-delay:0.2s]"></span>
         <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-bounce [animation-delay:0.4s]"></span>

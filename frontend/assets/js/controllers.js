@@ -27,7 +27,7 @@ class Controllers {
         errorAlert.innerHTML = `<span class="material-symbols-outlined text-[18px]">error</span> <span>${msg}</span>`;
         errorAlert.classList.remove('hidden');
       } else {
-        alert(msg);
+        UI.alert('Không thể đăng nhập', msg);
       }
     };
 
@@ -173,7 +173,7 @@ class Controllers {
           // Attempt enrollment
           window.location.hash = '#/student/courses';
         } catch (e) {
-          alert('Không thể đăng ký: ' + e.message);
+          UI.alert('Không thể đăng ký', e.message || 'Vui lòng thử lại sau.');
         } finally {
           enrollBtn.disabled = false;
         }
@@ -267,8 +267,14 @@ class Controllers {
     });
 
     if (submitBtn) {
-      submitBtn.onclick = () => {
-        const confirmed = confirm('Bạn có chắc chắn muốn nộp bài thi khảo thí này không? Sau khi nộp, hệ thống sẽ chốt kết quả và tính điểm tự động.');
+      submitBtn.onclick = async () => {
+        const confirmed = await UI.confirm(
+          'Nộp bài thi khảo thí',
+          'Sau khi nộp, hệ thống sẽ chốt kết quả và tính điểm tự động.',
+          'Nộp bài thi',
+          'Tiếp tục làm bài',
+          true
+        );
         if (confirmed) {
           submitBtn.disabled = true;
           submitBtn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Đang chấm điểm...';
@@ -441,52 +447,6 @@ class Controllers {
   }
 
   // =========================================================================
-  // 9. Admin Operations & Server Telemetry Controller
-  // =========================================================================
-  static async initAdminOperations(container) {
-    const cpuPercentEl = container.querySelector('#telem-cpu-percent, .cpu-metric');
-    const ramLabelEl = container.querySelector('#telem-ram-label, .ram-metric');
-    const diskLabelEl = container.querySelector('#telem-disk-free, .disk-metric');
-    const nodeLabelEl = container.querySelector('#telem-node-label, .node-metric');
-    const refreshBtn = container.querySelector('.refresh-telemetry-btn') || Array.from(container.querySelectorAll('button')).find(b => b.textContent.includes('Làm mới'));
-
-    const updateTelemetry = async () => {
-      try {
-        const data = await ApiClient.getAdminTelemetry();
-        if (!data) return;
-
-        if (cpuPercentEl && data.cpu) {
-          cpuPercentEl.textContent = `${data.cpu.percent}%`;
-        }
-        if (ramLabelEl && data.memory) {
-          ramLabelEl.textContent = `${data.memory.used_gb} / ${data.memory.total_gb} GB (${data.memory.percent}%)`;
-        }
-        if (diskLabelEl && data.disk) {
-          diskLabelEl.textContent = `${data.disk.free_gb} GB còn trống`;
-        }
-        if (nodeLabelEl && data.host) {
-          nodeLabelEl.textContent = data.host.node_label || data.host.hostname || 'Host Node';
-        }
-      } catch (e) {
-        console.log('[AdminOperations] Telemetry poll fallback:', e);
-      }
-    };
-
-    if (refreshBtn) {
-      refreshBtn.onclick = updateTelemetry;
-    }
-
-    updateTelemetry();
-    const interval = setInterval(() => {
-      if (!document.body.contains(container)) {
-        clearInterval(interval);
-        return;
-      }
-      updateTelemetry();
-    }, 15000);
-  }
-
-  // =========================================================================
   // Dispatcher: Attach appropriate controller based on screen ID
   // =========================================================================
   static attach(screenId, container) {
@@ -508,8 +468,6 @@ class Controllers {
       Controllers.initAIAssistant(container);
     } else if (screenId.includes('preview_editor')) {
       Controllers.initAzotaEditor(container);
-    } else if (screenId.includes('admin_operations')) {
-      Controllers.initAdminOperations(container);
     }
   }
 }

@@ -6,12 +6,17 @@ converting LMS format into PWD301 standardized question schema.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import json
+import mimetypes
 import re
 from typing import Any
 
 import defusedxml.ElementTree as ET
+
+MAX_EMBEDDED_IMAGE_BYTES = 10_000_000
 
 
 def _clean_html_text(raw_html: str | None) -> str:
@@ -27,6 +32,76 @@ def _clean_html_text(raw_html: str | None) -> str:
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
     clean_lines = [l for l in lines if l]
     return "\n".join(clean_lines).strip()
+
+
+def _extract_image_sources(raw_html: str | None) -> list[str]:
+    if not raw_html:
+        return []
+    return re.findall(
+        r"<img\b[^>]*\bsrc\s*=\s*[\"']([^\"']+)[\"']",
+        str(raw_html),
+        flags=re.IGNORECASE,
+    )
+
+
+def _extract_question_images(question: ET.Element, raw_html: str | None) -> list[dict[str, Any]]:
+    """Return only bounded embedded Moodle image bytes; never fetch remote image URLs."""
+    embedded_files: dict[str, list[ET.Element]] = {}
+    for file_node in question.findall("./questiontext/file"):
+        filename = (file_node.attrib.get("name") or "").strip()
+        if filename:
+            path = (file_node.attrib.get("path") or "/").strip("/")
+            relative_path = "/".join(part for part in (path, filename.lstrip("/")) if part)
+            keys = {relative_path.casefold(), filename.rsplit("/", 1)[-1].casefold()}
+            for key in keys:
+                embedded_files.setdefault(key, []).append(file_node)
+
+    images: list[dict[str, Any]] = []
+    for source in _extract_image_sources(raw_html):
+        source_path = html.unescape(source.split("?", 1)[0].split("#", 1)[0])
+        placeholder = "@@PLUGINFILE@@/"
+        relative_path = (
+            source_path.split(placeholder, 1)[1].lstrip("/")
+            if placeholder in source_path
+            else ""
+        )
+        filename = relative_path.rsplit("/", 1)[-1]
+        matched_files = embedded_files.get(relative_path.casefold(), [])
+        if not matched_files and filename:
+            matched_files = embedded_files.get(filename.casefold(), [])
+        file_node = matched_files[0] if len(matched_files) == 1 else None
+        mime_type = mimetypes.guess_type(filename)[0] or ""
+        supported = mime_type in {"image/png", "image/jpeg", "image/webp", "image/gif"}
+        encoded = re.sub(r"\s+", "", file_node.text or "") if file_node is not None else ""
+        decoded: bytes | None = None
+        maximum_encoded_chars = ((MAX_EMBEDDED_IMAGE_BYTES + 2) // 3) * 4
+        padding = len(encoded) - len(encoded.rstrip("="))
+        decoded_size = (len(encoded) // 4) * 3 - padding
+        encoded_size_is_valid = (
+            bool(encoded)
+            and len(encoded) % 4 == 0
+            and padding <= 2
+            and 0 < decoded_size <= MAX_EMBEDDED_IMAGE_BYTES
+        )
+        if (
+            supported
+            and file_node is not None
+            and file_node.attrib.get("encoding", "").casefold() == "base64"
+            and len(encoded) <= maximum_encoded_chars
+            and encoded_size_is_valid
+        ):
+            try:
+                decoded = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                decoded = None
+        valid = decoded is not None and 0 < len(decoded) <= MAX_EMBEDDED_IMAGE_BYTES
+        images.append({
+            "filename": filename or "question-image",
+            "mime_type": mime_type if supported else "",
+            "data_base64": encoded if valid else "",
+            "broken": not valid,
+        })
+    return images
 
 
 def generate_moodle_sample_xml() -> str:
@@ -252,6 +327,12 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             raw_stem = name_node.text if name_node is not None and name_node.text else ""
 
         stem = _clean_html_text(raw_stem)
+        images = _extract_question_images(node, raw_stem)
+        if not stem:
+            name_node = node.find("./name/text")
+            stem = _clean_html_text(name_node.text if name_node is not None else "")
+        if not stem and images:
+            stem = "Question based on the attached image."
         if not stem:
             warnings.append(f"Bỏ qua câu hỏi #{q_counter} vì không tìm thấy nội dung câu hỏi.")
             continue
@@ -367,6 +448,11 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
                 mapped_type = "SHORT_ANSWER"
                 accepted_answers = ["Đáp án tự luận"]
 
+        if any(image["broken"] for image in images):
+            warnings.append(
+                f"Câu {q_counter}: Có hình ảnh thiếu, không hỗ trợ hoặc vượt quá giới hạn; cần kiểm tra trước khi dùng."
+            )
+
         q_obj: dict[str, Any] = {
             "id": q_counter,
             "number": q_counter,
@@ -383,6 +469,7 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             "bloom_level": "Thông hiểu",
             "explanation": explanation,
             "choices": choices,
+            "images": images,
         }
 
         if mapped_type == "SHORT_ANSWER":

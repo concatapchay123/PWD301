@@ -102,6 +102,14 @@ test('primary-admin summary omits subordinate queues while assigned roles retain
   assert.deepEqual({ ...AdminView.getQueueSummary('ADMIN_INSTRUCTOR_REVIEW', counts) }, { courses: 0, changes: 0, applications: 6, assignments: 0 });
 });
 
+test('course review actions are available only for the canonical submitted state', () => {
+  const AdminView = loadView('../../frontend/assets/js/views/admin.js', 'AdminView');
+
+  assert.equal(AdminView.canReviewCourse({ status: 'SUBMITTED_FOR_REVIEW' }), true);
+  assert.equal(AdminView.canReviewCourse({ status: 'PENDING' }), false);
+  assert.equal(AdminView.canReviewCourse({ status: 'APPROVED' }), false);
+});
+
 test('role assignment choices exclude ADMIN_PRIMARY and retain existing primary status', () => {
   const AdminView = loadView('../../frontend/assets/js/views/admin.js', 'AdminView');
 
@@ -127,6 +135,67 @@ test('audit action options are limited to each review admin role', () => {
     'INSTRUCTOR_APPLICATION_REJECTED',
   ]);
   assert.equal(AdminView.getAuditActionsForRole('ADMIN_COURSE_REVIEW').every(action => /^(COURSE_|LESSON_|SUBJECT_)/.test(action)), true);
+});
+
+test('operations view keeps service health without requesting or polling hardware telemetry', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8');
+  const renderStart = source.indexOf('static async renderOperations(container)');
+  const renderEnd = source.indexOf('static openCreateBackupModal(', renderStart);
+  const operationsSource = source.slice(renderStart, renderEnd);
+
+  assert.notEqual(renderStart, -1);
+  assert.notEqual(renderEnd, -1);
+  assert.doesNotMatch(source, /getAdminTelemetry|pollTelemetry|telem-(?:cpu|ram|disk|node|net)|refresh-telemetry/i);
+  assert.doesNotMatch(operationsSource, /getAdminTelemetry|pollTelemetry|telem-(?:cpu|ram|disk|node|net)|refresh-telemetry/i);
+  assert.match(operationsSource, /getAdminHealth\(\)/);
+  assert.match(operationsSource, /loadHealthMatrix/);
+});
+
+test('shared dialogs and shell overlays use blur while toast stays outside the backdrop system', () => {
+  const uiSource = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/ui.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.resolve(__dirname, '../../frontend/index.html'), 'utf8');
+
+  assert.match(uiSource, /modalLayer\.className\s*=\s*['"][^'"]*backdrop-blur-(?:sm|md|lg)/);
+  assert.match(uiSource, /confirmLayer\.className\s*=\s*['"][^'"]*backdrop-blur-(?:sm|md|lg)/);
+  assert.match(uiSource, /backdrop\.className\s*=\s*['"][^'"]*backdrop-blur-(?:sm|md|lg)/);
+  assert.match(shellSource, /id="mobile-nav-backdrop"[^>]*backdrop-blur-(?:sm|md|lg)/);
+  assert.match(shellSource, /id="app-drawer-backdrop"[^>]*backdrop-blur-(?:sm|md|lg)/);
+  assert.doesNotMatch(uiSource.match(/static showToast\([\s\S]*?static dismissToast\(/)?.[0] || '', /backdrop-blur/);
+});
+
+test('interactive SPA modules do not invoke native browser dialogs', () => {
+  const files = [
+    '../../frontend/assets/js/controllers.js',
+    '../../frontend/assets/js/views/admin.js',
+    '../../frontend/assets/js/views/student.js',
+    '../../frontend/assets/js/views/instructor.js',
+    '../../frontend/assets/js/views/instructor-exams.js',
+  ];
+
+  for (const relativePath of files) {
+    const source = fs.readFileSync(path.resolve(__dirname, relativePath), 'utf8');
+    assert.doesNotMatch(source, /(?<![\w$.])(?:window\s*\.\s*)?(?:alert|confirm|prompt)\s*\(/, relativePath);
+  }
+});
+
+test('shared UI exposes an informational dialog that uses the shared modal layer', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/ui.js'), 'utf8');
+
+  assert.match(source, /static alert\(/);
+  assert.match(source, /static alert\([\s\S]*?UI\.openModal\(/);
+  assert.match(source, /UI\.escapeHtml\(message\)/);
+});
+
+test('light and dark theme tokens separate canvas, card, raised surface, and border roles', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../frontend/index.html'), 'utf8');
+
+  for (const token of ['surface-canvas', 'surface-card', 'surface-raised', 'border-subtle', 'dark-canvas', 'dark-card', 'dark-raised', 'dark-border']) {
+    assert.match(source, new RegExp(`"${token}": "#[0-9A-Fa-f]{6}"`), `${token} should have a concrete palette value`);
+  }
+  assert.match(source, /bg-surface-canvas dark:bg-dark-canvas/);
+  assert.match(source, /bg-surface-card dark:bg-dark-card/);
+  assert.match(source, /"primary-contrast": "#FDFBF7"/);
+  assert.doesNotMatch(source, /"primary-contrast": "#FFFFFF"/);
 });
 
 test('audit action filters use canonical actions emitted by the backend', () => {

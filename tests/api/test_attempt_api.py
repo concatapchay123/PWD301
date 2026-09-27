@@ -388,6 +388,18 @@ def test_batch_created_question_keeps_course_image_in_attempt_delivery(
     image.status = "ACTIVE"
     if image.revisions:
         image.revisions[0].status = "ACTIVE"
+    second_image = store_file_stream(
+        actor=instructor_user,
+        course_id=published_assessment.course_id,
+        file_stream=io.BytesIO(b"\x89PNG\r\n\x1a\nsecond-image"),
+        filename="exam-question-second.png",
+        content_type="image/png",
+        asset_type="RESOURCE",
+        session=db.session,
+    )
+    second_image.status = "ACTIVE"
+    if second_image.revisions:
+        second_image.revisions[0].status = "ACTIVE"
     db.session.commit()
 
     create_response = client.post(
@@ -403,7 +415,7 @@ def test_batch_created_question_keeps_course_image_in_attempt_delivery(
                         {"content": "HTTP", "is_correct": True},
                         {"content": "FTP", "is_correct": False},
                     ],
-                    "image_asset_id": str(image.public_id),
+                    "image_asset_ids": [str(image.public_id), str(second_image.public_id)],
                 }
             ]
         },
@@ -424,7 +436,7 @@ def test_batch_created_question_keeps_course_image_in_attempt_delivery(
         for item in delivery.get_json()["questions"]
         if item["content"] == "Which protocol image is attached?"
     )
-    assert len(question["resources"]) == 1
+    assert len(question["resources"]) == 2
     assert question["resources"][0]["url"].endswith("?disposition=inline")
     assert_adr002_and_security_clean(delivery.get_json())
 

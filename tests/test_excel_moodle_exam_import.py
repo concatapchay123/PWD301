@@ -88,6 +88,36 @@ def test_moodle_xml_parsing():
     assert "JWT" in q4["accepted_answers"]
 
 
+def test_moodle_xml_preserves_embedded_question_images_for_safe_upload():
+    sample_xml = """<quiz>
+      <question type="multichoice">
+        <name><text>Geometry</text></name>
+        <questiontext format="html">
+          <text><![CDATA[<p>Which angle is shown?</p><img src="@@PLUGINFILE@@/triangle.png"/>]]></text>
+          <file name="triangle.png" path="/" encoding="base64">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yRnkAAAAASUVORK5CYII=</file>
+        </questiontext>
+        <defaultgrade>1</defaultgrade>
+        <single>true</single>
+        <answer fraction="100"><text>A</text></answer>
+        <answer fraction="0"><text>B</text></answer>
+      </question>
+    </quiz>"""
+
+    result = parse_moodle_xml(sample_xml)
+
+    assert result["success"] is True
+    question = result["questions"][0]
+    assert question["stem"] == "Which angle is shown?"
+    assert question["images"] == [
+        {
+            "filename": "triangle.png",
+            "mime_type": "image/png",
+            "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yRnkAAAAASUVORK5CYII=",
+            "broken": False,
+        }
+    ]
+
+
 def test_moodle_json_parsing():
     """Verify standardized JSON question bank parsing."""
     sample_json = generate_sample_json()

@@ -89,6 +89,7 @@ from pwd301.services.file_service import (
     rescan_file_asset,
     sanitize_filename,
     store_file_stream,
+    trash_file_asset,
     validate_file_metadata,
 )
 from pwd301.services.import_service import (
@@ -104,6 +105,8 @@ from pwd301.services.lesson_service import (
     trash_lesson,
     update_lesson,
 )
+
+MAX_LESSON_VIDEOS = 5
 from pwd301.services.question_bank_service import (
     _serialize_question,
     _serialize_question_correction,
@@ -133,6 +136,57 @@ def _extract_video_url_from_markdown(content: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def _extract_video_urls_from_markdown(content: str | None) -> list[str]:
+    if not content:
+        return []
+    urls: list[str] = []
+    plural = re.search(r"<!--\s*video_urls:\s*(.+?)\s*-->", content, re.DOTALL)
+    if plural:
+        try:
+            parsed = json.loads(plural.group(1))
+            if isinstance(parsed, list):
+                urls.extend(str(value).strip() for value in parsed if str(value).strip())
+        except (TypeError, ValueError):
+            pass
+    legacy = _extract_video_url_from_markdown(content)
+    if legacy and legacy not in urls:
+        urls.append(legacy)
+    return list(dict.fromkeys(urls))
+
+
+def _normalize_video_urls(value: Any, legacy_value: Any = None) -> list[str]:
+    values = value if isinstance(value, list) else ([] if value is None else [value])
+    if legacy_value:
+        values = [*values, legacy_value]
+    urls: list[str] = []
+    for item in values:
+        if not isinstance(item, str):
+            raise ValidationError("Each lesson video URL must be text.")
+        url = item.strip()
+        if url and url not in urls:
+            urls.append(url)
+    if len(urls) > MAX_LESSON_VIDEOS:
+        raise ValidationError(f"A lesson may contain at most {MAX_LESSON_VIDEOS} videos.")
+    return urls
+
+
+def _video_resource_count(lesson: Lesson) -> int:
+    return sum(
+        1
+        for resource in lesson.resources
+        if resource.file_asset is not None and resource.file_asset.is_video
+    )
+
+
+def _replace_video_metadata(markdown: str, urls: list[str]) -> str:
+    clean_markdown = re.sub(
+        r"<!--\s*video_urls?:\s*.+?\s*-->\s*", "", markdown, flags=re.DOTALL
+    ).strip()
+    if not urls:
+        return clean_markdown
+    return f"<!-- video_urls: {json.dumps(urls, ensure_ascii=False)} -->\n\n{clean_markdown}"
+
+
 def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]]:
     if not content:
         return []
@@ -149,7 +203,8 @@ def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]
 
 
 def _serialize_lesson(les: Lesson) -> dict[str, Any]:
-    video_url = _extract_video_url_from_markdown(les.markdown_content)
+    video_urls = _extract_video_urls_from_markdown(les.markdown_content)
+    video_url = video_urls[0] if video_urls else None
     if not video_url and hasattr(les, "resources") and les.resources:
         for r in les.resources:
             if getattr(r, "is_deleted", False):
@@ -180,6 +235,7 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "summary": les.summary,
         "markdown_content": les.markdown_content,
         "video_url": video_url,
+        "video_urls": video_urls,
         "quiz": quiz,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
@@ -578,11 +634,12 @@ def create_lesson_route(course_id: str) -> Any:
         summary = payload.get("summary") or "Nội dung bài giảng đa phương tiện."
         raw_md = f"# {title}\n\n{summary}"
 
-    video_url = payload.get("video_url")
-    import re
-    if video_url and str(video_url).strip():
-        if not re.search(r"<!--\s*video_url:\s*\S+?\s*-->", raw_md):
-            raw_md = f"<!-- video_url: {str(video_url).strip()} -->\n\n" + raw_md
+    video_urls = _normalize_video_urls(
+        payload.pop("video_urls", None), payload.pop("video_url", None)
+    )
+    if not video_urls:
+        video_urls = _normalize_video_urls(_extract_video_urls_from_markdown(raw_md))
+    raw_md = _replace_video_metadata(raw_md, video_urls)
 
     quiz = payload.pop("quiz", None)
     if quiz and isinstance(quiz, list) and len(quiz) > 0:
@@ -609,6 +666,15 @@ def create_lesson_route(course_id: str) -> Any:
                 if f.filename:
                     clean_fn = sanitize_filename(f.filename)
                     validate_file_metadata(clean_fn, getattr(f, "content_type", None))
+
+            uploaded_video_count = sum(
+                1
+                for file in files_to_validate
+                if (file.content_type or "").lower().startswith("video/")
+                or file.filename.lower().endswith((".mp4", ".webm", ".mkv", ".mov", ".avi"))
+            )
+            if len(video_urls) + uploaded_video_count > MAX_LESSON_VIDEOS:
+                raise ValidationError(f"A lesson may contain at most {MAX_LESSON_VIDEOS} videos.")
 
         lesson = create_lesson(actor, course.id, payload)
         attached_count = 0
@@ -694,36 +760,79 @@ def attach_lesson_resource_route(course_id: str, lesson_id: str) -> Any:
     if lesson is None or lesson.course_id != course.id:
         raise ResourceNotFoundError("Lesson not found.")
 
-    file = (
-        request.files.get("file")
-        or request.files.get("resource_file")
-        or request.files.get("media_file")
-    )
-    if not file or not file.filename:
+    files = []
+    for key in ("files", "file", "resource_files", "resource_file", "media_file"):
+        files.extend(
+            file
+            for file in request.files.getlist(key)
+            if file and file.filename and file.filename.strip() and file not in files
+        )
+    if not files:
         raise ValidationError("No file provided.")
 
-    label = request.form.get("label") or file.filename
+    video_upload_count = sum(
+        1
+        for file in files
+        if (file.content_type or "").lower().startswith("video/")
+        or file.filename.lower().endswith((".mp4", ".webm", ".mkv", ".mov", ".avi"))
+    )
+    existing_video_count = _video_resource_count(lesson) + len(
+        _extract_video_urls_from_markdown(lesson.markdown_content)
+    )
+    if existing_video_count + video_upload_count > MAX_LESSON_VIDEOS:
+        raise ValidationError(f"A lesson may contain at most {MAX_LESSON_VIDEOS} videos.")
+
+    for file in files:
+        validate_file_metadata(sanitize_filename(file.filename), file.content_type)
+
+    uploaded_assets: list[FileAsset] = []
+    attached_resources: list[LessonResource] = []
     try:
-        asset = store_file_stream(
-            actor=actor,
-            course_id=course.id,
-            file_stream=file.stream,
-            filename=file.filename,
-            content_type=file.content_type,
-            asset_type="RESOURCE",
-            title=label,
-            session=db.session,
-        )
-        resource = attach_resource_to_lesson(
-            actor=actor,
-            lesson_id=lesson.id,
-            asset_id=asset.id,
-            is_downloadable=True,
-            label=label,
-            session=db.session,
-        )
-        return jsonify(_serialize_lesson_resource(resource)), 201
+        resources = []
+        for file in files:
+            label = request.form.get("label") or file.filename
+            asset = store_file_stream(
+                actor=actor,
+                course_id=course.id,
+                file_stream=file.stream,
+                filename=file.filename,
+                content_type=file.content_type,
+                asset_type="RESOURCE",
+                title=label,
+                session=db.session,
+            )
+            uploaded_assets.append(asset)
+            resource = attach_resource_to_lesson(
+                actor=actor,
+                lesson_id=lesson.id,
+                asset_id=asset.id,
+                is_downloadable=True,
+                label=label,
+                session=db.session,
+            )
+            attached_resources.append(resource)
+            resources.append(_serialize_lesson_resource(resource))
+        if len(resources) == 1:
+            return jsonify(resources[0]), 201
+        return jsonify({"resources": resources}), 201
     except Exception:
+        db.session.rollback()
+        for resource in attached_resources:
+            with contextlib.suppress(Exception):
+                detach_resource_from_lesson(
+                    actor,
+                    lesson.id,
+                    resource.id,
+                    session=db.session,
+                )
+        for asset in uploaded_assets:
+            with contextlib.suppress(Exception):
+                trash_file_asset(
+                    actor=actor,
+                    asset_id=asset.id,
+                    reason="Rolled back incomplete multi-file lesson upload",
+                    session=db.session,
+                )
         raise
 
 
@@ -976,20 +1085,19 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     course = require_course_manager(actor, lesson.course_id, session=db.session)
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
 
-    if "video_url" in payload:
-        video_url = payload.pop("video_url")
-        current_md = (
-            payload.get("markdown_content")
-            if "markdown_content" in payload
-            else (lesson.markdown_content or "")
+    has_video_payload = "video_urls" in payload or "video_url" in payload
+    video_urls_value = payload.pop("video_urls", None)
+    legacy_video_url = payload.pop("video_url", None)
+    current_md = payload.get("markdown_content", lesson.markdown_content or "")
+    if has_video_payload or _extract_video_urls_from_markdown(current_md):
+        video_urls = (
+            _normalize_video_urls(video_urls_value, legacy_video_url)
+            if has_video_payload
+            else _normalize_video_urls(_extract_video_urls_from_markdown(current_md))
         )
-        cleaned_md = re.sub(r"<!--\s*video_url:\s*\S+?\s*-->\n*", "", current_md or "").strip()
-        if video_url and str(video_url).strip():
-            payload["markdown_content"] = (
-                f"<!-- video_url: {str(video_url).strip()} -->\n\n{cleaned_md}"
-            )
-        else:
-            payload["markdown_content"] = cleaned_md
+        if _video_resource_count(lesson) + len(video_urls) > MAX_LESSON_VIDEOS:
+            raise ValidationError(f"A lesson may contain at most {MAX_LESSON_VIDEOS} videos.")
+        payload["markdown_content"] = _replace_video_metadata(current_md, video_urls)
 
     if "quiz" in payload:
         quiz_data = payload.pop("quiz")
@@ -2481,14 +2589,24 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 session=db.session,
             )
 
-            raw_image_asset_id = item.get("image_asset_id")
-            if raw_image_asset_id:
+            raw_image_asset_ids = item.get("image_asset_ids")
+            if raw_image_asset_ids is None:
+                raw_image_asset_ids = [item.get("image_asset_id")] if item.get("image_asset_id") else []
+            if not isinstance(raw_image_asset_ids, list):
+                raise ValidationError(f"Question #{idx}: image_asset_ids must be a list.")
+            seen_image_asset_ids: set[uuid.UUID] = set()
+            for image_position, raw_image_asset_id in enumerate(raw_image_asset_ids, start=1):
+                if raw_image_asset_id in (None, ""):
+                    continue
                 try:
                     image_asset_uuid = uuid.UUID(str(raw_image_asset_id))
                 except (TypeError, ValueError) as err:
                     raise ValidationError(
-                        f"Question #{idx}: image_asset_id must be a valid UUID."
+                        f"Question #{idx}: image_asset_ids must contain valid UUIDs."
                     ) from err
+                if image_asset_uuid in seen_image_asset_ids:
+                    continue
+                seen_image_asset_ids.add(image_asset_uuid)
                 image_asset = (
                     db.session.query(FileAsset)
                     .filter(
@@ -2513,7 +2631,7 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                     QuestionRevisionResource(
                         question_revision_id=created_q.current_revision.id,
                         file_asset_id=image_asset.id,
-                        position=1,
+                        position=len(seen_image_asset_ids),
                         resource_role="IMAGE",
                     )
                 )

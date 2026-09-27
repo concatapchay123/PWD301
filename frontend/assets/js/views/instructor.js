@@ -11,6 +11,23 @@
  */
 
 class InstructorView {
+  static createLessonSaveQueue() {
+    let pending = Promise.resolve();
+    return (save) => {
+      const next = pending.then(save, save);
+      pending = next.catch(() => {});
+      return next;
+    };
+  }
+
+  static isVideoFile(file) {
+    return Boolean(file && ((file.type || '').toLowerCase().startsWith('video/') || /\.(mp4|webm|mkv|mov|avi)$/i.test(file.name || '')));
+  }
+
+  static isVideoResource(resource) {
+    return Boolean(resource && ((resource.mime_type || '').toLowerCase().startsWith('video/') || InstructorView.isVideoFile({ name: resource.filename, type: resource.mime_type })));
+  }
+
   // =========================================================================
   // 1. Instructor Dashboard
   // =========================================================================
@@ -1789,7 +1806,13 @@ class InstructorView {
         prereqBox.querySelectorAll('.btn-reject-prereq').forEach(btn => {
           btn.onclick = async () => {
             const reqId = btn.dataset.reqId;
-            const reason = prompt('Nhập lý do từ chối yêu cầu môn tiên quyết:');
+            const reason = await UI.prompt(
+              'Từ chối yêu cầu môn tiên quyết',
+              'Nhập lý do từ chối yêu cầu môn tiên quyết:',
+              '',
+              'Nhập lý do',
+              1
+            );
             if (reason === null) return;
             try {
               btn.disabled = true;
@@ -2182,7 +2205,7 @@ class InstructorView {
     if (!modal) {
       modal = document.createElement('div');
       modal.id = modalId;
-      modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in';
+      modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in';
       document.body.appendChild(modal);
     }
 
@@ -2316,7 +2339,7 @@ class InstructorView {
     if (!modal) {
       modal = document.createElement('div');
       modal.id = modalId;
-      modal.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in';
+      modal.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in';
       document.body.appendChild(modal);
     }
 
@@ -2841,8 +2864,12 @@ class InstructorView {
     };
 
     document.getElementById('trash-course-btn').onclick = async () => {
-      const confirmed = window.confirm(
-        `Bạn có chắc chắn muốn xóa/lưu trữ khóa học "${course.title}" (${course.course_code || ''})?\n\nKhóa học sẽ được chuyển vào thùng rác.`
+      const confirmed = await UI.confirm(
+        'Chuyển khóa học vào thùng rác',
+        `Bạn có chắc chắn muốn chuyển khóa học "${course.title}" (${course.course_code || ''}) vào thùng rác?`,
+        'Chuyển vào thùng rác',
+        'Giữ khóa học',
+        true
       );
       if (!confirmed) return;
 
@@ -3119,6 +3146,7 @@ class InstructorView {
                 <input
                   type="file"
                   id="studio-video-file-input"
+                  multiple
                   accept="video/mp4,video/webm,video/x-matroska,video/quicktime,.mp4,.webm,.mkv,.mov"
                   class="hidden"
                 />
@@ -3186,6 +3214,7 @@ class InstructorView {
                   </button>
                 </div>
               </div>
+              <div id="studio-video-links-list" class="space-y-2" aria-live="polite"></div>
             </div>
 
             <!-- Attachment Section (Tài liệu đính kèm) -->
@@ -3203,11 +3232,11 @@ class InstructorView {
                   <span class="material-symbols-outlined text-[15px]">upload</span>
                   <span>Đính kèm tệp</span>
                 </button>
-                <input type="file" id="studio-hidden-file-input" class="hidden" />
+                <input type="file" id="studio-hidden-file-input" class="hidden" multiple />
               </div>
 
               <!-- Attachments List Container -->
-              <div id="studio-attachments-list" class="space-y-2">
+              <div id="studio-attachments-list" class="space-y-2 rounded-xl border border-dashed border-[#D8D5CC] dark:border-[#454440] p-3" aria-label="Thả nhiều tệp tài liệu hoặc video vào đây">
                 <div class="p-4 rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B] text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68]">
                   Chưa có tài liệu đính kèm. Bấm "Đính kèm tệp" để tải lên tài liệu học tập (được quét an toàn qua ClamAV).
                 </div>
@@ -3256,6 +3285,33 @@ class InstructorView {
 
     let attachedResources = [];
     let currentVideoUrl = '';
+    let videoUrls = [];
+    const enqueueLessonSave = InstructorView.createLessonSaveQueue();
+    const getLessonVideoCount = () => videoUrls.length
+      + attachedResources.filter(InstructorView.isVideoResource).length;
+    const renderVideoLinks = () => {
+      const linksEl = document.getElementById('studio-video-links-list');
+      if (!linksEl) return;
+      linksEl.innerHTML = `
+        <div class="text-xs font-semibold text-[#5C5B57] dark:text-[#C4C2BC]">Video trong bài học: ${getLessonVideoCount()}/5</div>
+        ${videoUrls.map((url, index) => `
+          <div class="flex items-center justify-between gap-3 rounded-lg border border-[#E8E6DF] dark:border-[#454440] px-3 py-2 text-xs">
+            <span class="min-w-0 truncate text-[#222120] dark:text-[#EDEDEB]">${UI.escapeHtml(url)}</span>
+            <button type="button" class="studio-remove-video-link shrink-0 text-rose-700 dark:text-rose-300" data-video-index="${index}">Gỡ liên kết</button>
+          </div>
+        `).join('')}
+      `;
+      linksEl.querySelectorAll('.studio-remove-video-link').forEach(button => {
+        button.onclick = () => {
+          const removed = videoUrls.splice(Number(button.dataset.videoIndex), 1)[0];
+          if (currentVideoUrl === removed) {
+            currentVideoUrl = videoUrls[0] || '';
+            renderVideoPreview(currentVideoUrl);
+          }
+          renderVideoLinks();
+        };
+      });
+    };
     let miniQuizQuestions = [];
 
     // Video Section Tab Switcher
@@ -3357,13 +3413,20 @@ class InstructorView {
         return;
       }
       const ytId = UI.parseYouTubeId(inputUrl);
-      if (ytId) {
-        currentVideoUrl = `https://www.youtube.com/watch?v=${ytId}`;
-        if (inputEl) inputEl.value = currentVideoUrl;
-      } else {
-        currentVideoUrl = inputUrl;
+      const normalizedUrl = ytId ? `https://www.youtube.com/watch?v=${ytId}` : inputUrl;
+      if (videoUrls.includes(normalizedUrl)) {
+        UI.showToast('Liên kết video này đã được thêm.', 'info');
+        return;
       }
+      if (getLessonVideoCount() >= 5) {
+        UI.showToast('Mỗi bài học chỉ được phép có tối đa 5 video.', 'error');
+        return;
+      }
+      videoUrls.push(normalizedUrl);
+      currentVideoUrl = normalizedUrl;
+      if (inputEl) inputEl.value = '';
       renderVideoPreview(currentVideoUrl);
+      renderVideoLinks();
       UI.showToast('Đã áp dụng link video vào bài giảng!', 'success');
     };
 
@@ -3385,6 +3448,10 @@ class InstructorView {
     const removeVideoBtn = document.getElementById('btn-remove-current-video');
     if (removeVideoBtn) {
       removeVideoBtn.onclick = () => {
+        if (currentVideoUrl && videoUrls.includes(currentVideoUrl)) {
+          videoUrls = videoUrls.filter(url => url !== currentVideoUrl);
+          renderVideoLinks();
+        }
         currentVideoUrl = '';
         renderVideoPreview('');
         const urlInputEl = document.getElementById('studio-input-video-url');
@@ -3405,18 +3472,24 @@ class InstructorView {
       chooseVideoBtn.onclick = () => videoFileInput.click();
 
       videoFileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
 
         // Invariant: Video size must be strictly < 1 GB
-        if (file.size >= 1000000000) {
+        if (files.some(file => file.size >= 1000000000)) {
           UI.showToast('Dung lượng tệp vượt quá giới hạn 1GB theo quy định.', 'error');
+          videoFileInput.value = '';
+          return;
+        }
+        if (getLessonVideoCount() + files.length > 5) {
+          UI.showToast('Mỗi bài học chỉ được phép có tối đa 5 video.', 'error');
+          videoFileInput.value = '';
           return;
         }
 
         const fnLabel = document.getElementById('studio-video-filename');
         if (fnLabel) {
-          fnLabel.textContent = `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
+          fnLabel.textContent = `${files.length} video đã chọn`;
         }
 
         const progressBox = document.getElementById('studio-video-progress-box');
@@ -3453,30 +3526,38 @@ class InstructorView {
           if (progressText) progressText.textContent = 'Đang tải tệp video lên máy chủ (ClamAV scan)...';
 
           const formData = new FormData();
-          formData.append('file', file);
-          formData.append('title', file.name);
+          for (const file of files) formData.append('files', file);
 
           const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
           if (progressBar) progressBar.style.width = '100%';
           if (progressPercent) progressPercent.textContent = '100%';
           if (progressText) progressText.textContent = 'Tải lên hoàn tất!';
 
-          const videoUrl = res.download_url || res.file_url || `/student/courses/${courseId}/files/${res.resource_id}/download?disposition=inline`;
-          currentVideoUrl = videoUrl;
-          renderVideoPreview(videoUrl);
-
-          attachedResources.push({
-            resource_id: res.resource_id,
-            title: file.name,
-            filename: file.name,
-            file_url: videoUrl,
-            download_url: videoUrl
-          });
+          const uploadedResources = res.resources || [res];
+          for (const resource of uploadedResources) {
+            const resourceUrl = resource.download_url || resource.file_url || '';
+            attachedResources.push({
+              ...resource,
+              resource_id: resource.resource_id,
+              title: resource.title || resource.filename,
+              filename: resource.filename,
+              file_url: resourceUrl,
+              download_url: resourceUrl
+            });
+          }
+          const firstSafeVideo = uploadedResources.find(resource => (resource.virus_scan_status || resource.file_asset?.virus_scan_status) === 'CLEAN');
+          if (firstSafeVideo?.download_url) {
+            currentVideoUrl = firstSafeVideo.download_url;
+            renderVideoPreview(currentVideoUrl);
+          }
           renderAttachments();
-          UI.showToast(`Đã tải lên video ${file.name} thành công!`, 'success');
+          renderVideoLinks();
+          UI.showToast(`Đã tải lên ${uploadedResources.length} video thành công!`, 'success');
         } catch (err) {
           if (progressBox) progressBox.classList.add('hidden');
           UI.showToast(err.message || 'Lỗi tải video lên máy chủ.', 'error');
+        } finally {
+          videoFileInput.value = '';
         }
       };
     }
@@ -3558,6 +3639,7 @@ class InstructorView {
     function renderAttachments() {
       const containerEl = document.getElementById('studio-attachments-list');
       if (!containerEl) return;
+      renderVideoLinks();
 
       if (attachedResources.length === 0) {
         containerEl.innerHTML = `
@@ -3576,7 +3658,7 @@ class InstructorView {
               <span class="font-bold text-[#222120] dark:text-[#EDEDEB] truncate block">
                 ${UI.escapeHtml(res.title || res.filename || 'Tài liệu')}
               </span>
-              <span class="text-[10px] text-emerald-600 font-semibold block">✓ Đã quét sạch ClamAV - An toàn</span>
+              <span class="text-[10px] ${(res.virus_scan_status || res.file_asset?.virus_scan_status) === 'CLEAN' ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-300'} font-semibold block">${(res.virus_scan_status || res.file_asset?.virus_scan_status) === 'CLEAN' ? 'Đã quét sạch - An toàn' : 'Đang chờ kiểm tra an toàn'}</span>
             </div>
           </div>
           <button
@@ -3613,6 +3695,7 @@ class InstructorView {
 
           attachedResources.splice(idx, 1);
           renderAttachments();
+          renderVideoLinks();
         };
       });
     }
@@ -4433,10 +4516,17 @@ class InstructorView {
             }
           }
 
+          if (Array.isArray(existingLesson.video_urls)) {
+            videoUrls = [...new Set(existingLesson.video_urls.filter(url => typeof url === 'string' && url.trim()))];
+          } else if (existingLesson.video_url && !existingLesson.video_url.startsWith('/')) {
+            videoUrls = [existingLesson.video_url];
+          }
+
           if (existingLesson.resources && Array.isArray(existingLesson.resources)) {
             attachedResources = existingLesson.resources;
             renderAttachments();
           }
+          renderVideoLinks();
 
           if (existingLesson.quiz && Array.isArray(existingLesson.quiz)) {
             miniQuizQuestions = existingLesson.quiz.map(normalizeQuizQuestion).filter(Boolean);
@@ -4452,60 +4542,64 @@ class InstructorView {
     const fileInput = document.getElementById('studio-hidden-file-input');
     document.getElementById('btn-trigger-upload').onclick = () => fileInput.click();
 
-    fileInput.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      if (lessonId) {
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('title', file.name);
-          const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
-          attachedResources.push({
-            resource_id: res.resource_id,
-            title: file.name,
-            filename: file.name,
-            file_url: res.file_url || res.download_url || '#'
-          });
-          UI.showToast(`Đã đính kèm tệp ${file.name} thành công!`, 'success');
-          renderAttachments();
-        } catch (err) {
-          UI.showToast(err.message || 'Lỗi tải tệp lên máy chủ.', 'error');
-        }
-      } else {
-        try {
+    const uploadLessonResources = async (files) => {
+      if (files.length === 0) return;
+      if (getLessonVideoCount() + files.filter(InstructorView.isVideoFile).length > 5) {
+        UI.showToast('Mỗi bài học chỉ được phép có tối đa 5 video.', 'error');
+        return;
+      }
+      try {
+        if (!lessonId) {
           const title = document.getElementById('studio-input-title')?.value.trim() || 'Bài giảng mới';
           const summary = document.getElementById('studio-input-summary')?.value.trim() || '';
           const editorEl = document.getElementById('studio-content-editor');
-          const mdContent = editorEl ? editorEl.innerHTML : '';
-
           await createLessonOnce({
             title,
             summary,
-            markdown_content: mdContent,
+            markdown_content: editorEl ? editorEl.innerHTML : '',
             status: 'DRAFT'
           });
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('title', file.name);
-          const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
-          attachedResources.push({
-            resource_id: res.resource_id,
-            title: file.name,
-            filename: file.name,
-            file_url: res.file_url || res.download_url || '#'
-          });
-          UI.showToast(`Đã đính kèm tệp ${file.name} thành công!`, 'success');
-          renderAttachments();
-        } catch (err) {
-          UI.showToast(err.message || 'Lỗi tải tệp lên máy chủ.', 'error');
         }
+        const formData = new FormData();
+        for (const file of files) formData.append('files', file);
+        const result = await ApiClient.attachLessonResource(courseId, lessonId, formData);
+        const resources = result.resources || [result];
+        attachedResources.push(...resources.map(resource => ({
+          ...resource,
+          resource_id: resource.resource_id,
+          title: resource.title || resource.filename,
+          filename: resource.filename,
+          file_url: resource.file_url || resource.download_url || '#'
+        })));
+        renderAttachments();
+        renderVideoLinks();
+        UI.showToast(`Đã đính kèm ${resources.length} tệp thành công!`, 'success');
+      } catch (err) {
+        UI.showToast(err.message || 'Lỗi tải tệp lên máy chủ.', 'error');
+      } finally {
+        fileInput.value = '';
       }
     };
 
+    fileInput.onchange = async (e) => {
+      await uploadLessonResources(Array.from(e.target.files || []));
+    };
+    const resourceDropzone = document.getElementById('studio-attachments-list');
+    if (resourceDropzone) {
+      resourceDropzone.ondragover = (event) => {
+        event.preventDefault();
+        resourceDropzone.classList.add('ring-2', 'ring-primary');
+      };
+      resourceDropzone.ondragleave = () => resourceDropzone.classList.remove('ring-2', 'ring-primary');
+      resourceDropzone.ondrop = (event) => {
+        event.preventDefault();
+        resourceDropzone.classList.remove('ring-2', 'ring-primary');
+        void uploadLessonResources(Array.from(event.dataTransfer?.files || []));
+      };
+    }
+
     // Save & Publish Logic
-    const saveLessonData = async (publish = false) => {
+    const saveLessonData = (publish = false) => {
       const title = document.getElementById('studio-input-title').value.trim();
       const summary = document.getElementById('studio-input-summary').value.trim();
       const editorEl = document.getElementById('studio-content-editor');
@@ -4558,13 +4652,20 @@ class InstructorView {
           return item;
         });
 
-      // Auto-capture URL from input field if instructor entered a link
+      // Keep a typed link when the instructor saves without pressing Apply.
       const typedUrl = document.getElementById('studio-input-video-url')?.value.trim() || '';
-      let finalVideoUrl = currentVideoUrl;
       if (typedUrl) {
         const parsedYt = UI.parseYouTubeId(typedUrl);
-        finalVideoUrl = parsedYt ? `https://www.youtube.com/watch?v=${parsedYt}` : typedUrl;
-        currentVideoUrl = finalVideoUrl;
+        const normalizedUrl = parsedYt ? `https://www.youtube.com/watch?v=${parsedYt}` : typedUrl;
+        if (!videoUrls.includes(normalizedUrl)) {
+          if (getLessonVideoCount() >= 5) {
+            UI.showToast('Mỗi bài học chỉ được phép có tối đa 5 video.', 'error');
+            return Promise.resolve(false);
+          }
+          videoUrls.push(normalizedUrl);
+          renderVideoLinks();
+        }
+        currentVideoUrl = normalizedUrl;
       }
 
       const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
@@ -4574,25 +4675,28 @@ class InstructorView {
         title,
         summary,
         markdown_content: mdContent,
-        video_url: finalVideoUrl || '',
+        video_urls: [...videoUrls],
         quiz: validQuiz,
         status: publish ? 'PUBLISHED' : 'DRAFT',
         resources: attachedResources,
         estimated_duration_minutes: estDuration
       };
 
-      try {
-        if (!lessonId) await createLessonOnce(payload);
-        await ApiClient.updateLesson(lessonId, payload);
-        const statusEl = document.getElementById('studio-autosave-status');
-        if (statusEl) {
-          statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;
+      return enqueueLessonSave(async () => {
+        try {
+          if (!lessonId) await createLessonOnce(payload);
+          if (!lessonId) throw new Error('Không thể xác định mã bài học cần lưu.');
+          await ApiClient.updateLesson(lessonId, payload);
+          const statusEl = document.getElementById('studio-autosave-status');
+          if (statusEl) {
+            statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;
+          }
+          return true;
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi lưu bài giảng.', 'error');
+          return false;
         }
-        return true;
-      } catch (err) {
-        UI.showToast(err.message || 'Lỗi lưu bài giảng.', 'error');
-        return false;
-      }
+      });
     };
 
     document.getElementById('studio-save-draft-btn').onclick = async () => {
@@ -5936,7 +6040,13 @@ class InstructorView {
       const btnTrash = document.getElementById('insp-btn-trash');
       if (btnTrash) {
         btnTrash.onclick = async () => {
-          const ok = confirm(`Chuyển câu hỏi ${String(q.id).substring(0, 12)} vào thùng rác?`);
+          const ok = await UI.confirm(
+            'Chuyển câu hỏi vào thùng rác',
+            `Chuyển câu hỏi ${String(q.id).substring(0, 12)} vào thùng rác?`,
+            'Chuyển vào thùng rác',
+            'Giữ câu hỏi',
+            true
+          );
           if (!ok) return;
           try {
             await ApiClient.trashQuestion(q.db_id, { reason: 'Chuyển vào thùng rác bởi Giảng viên' });

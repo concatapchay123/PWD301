@@ -199,14 +199,30 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
     cleaned_markdown = les.markdown_content or ""
     video_url = None
+    video_urls: list[str] = []
     if cleaned_markdown:
-        m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", cleaned_markdown)
-        if m:
-            video_url = m.group(1)
-            # Remove comment so raw video URL is not leaked into student markdown text
+        plural = re.search(r"<!--\s*video_urls:\s*(.+?)\s*-->", cleaned_markdown, re.DOTALL)
+        if plural:
+            try:
+                parsed_urls = json.loads(plural.group(1))
+                if isinstance(parsed_urls, list):
+                    video_urls = list(dict.fromkeys(
+                        str(url).strip() for url in parsed_urls if str(url).strip()
+                    ))
+            except (TypeError, ValueError):
+                video_urls = []
             cleaned_markdown = re.sub(
-                r"<!--\s*video_url:\s*(\S+?)\s*-->", "", cleaned_markdown
+                r"<!--\s*video_urls:\s*.+?\s*-->\s*", "", cleaned_markdown,
+                flags=re.DOTALL,
             ).strip()
+        else:
+            m = re.search(r"<!--\s*video_url:\s*(\S+?)\s*-->", cleaned_markdown)
+            if m:
+                video_urls = [m.group(1)]
+                cleaned_markdown = re.sub(
+                    r"<!--\s*video_url:\s*(\S+?)\s*-->", "", cleaned_markdown
+                ).strip()
+    video_url = video_urls[0] if video_urls else None
 
     res_list = []
     primary_video_asset_id = None
@@ -225,11 +241,16 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             vid_exts = (".mp4", ".webm", ".mkv", ".mov")
             is_video = mime.startswith("video/") or name.endswith(vid_exts)
 
-            if not video_url and is_video:
-                video_url = f"/student/files/{fa.public_id}/download?disposition=inline"
-                primary_video_asset_id = str(fa.public_id)
+            if is_video:
+                asset_url = f"/student/files/{fa.public_id}/download?disposition=inline"
+                if asset_url not in video_urls:
+                    video_urls.append(asset_url)
+                if not video_url:
+                    video_url = asset_url
+                    primary_video_asset_id = str(fa.public_id)
                 # Primary video is played inline and NOT listed in downloadable resource list
-                continue
+                if primary_video_asset_id == str(fa.public_id):
+                    continue
 
             if primary_video_asset_id and str(fa.public_id) == primary_video_asset_id:
                 continue
@@ -274,6 +295,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             else float(les.viewed_fraction_required)
         ),
         "video_url": video_url,
+        "video_urls": video_urls,
         "quiz": quiz,
         "personal_notes": personal_notes,
         "notes_saved_at": notes_saved_at,

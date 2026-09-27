@@ -1603,7 +1603,7 @@ class StudentView {
   }
 
   // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
-  static _getEmbedVideoHtml(url) {
+  static _getEmbedVideoHtml(url, playerId = 'lesson-stream-player') {
     if (!url) return '';
     const trimmed = String(url).trim();
     // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
@@ -1611,15 +1611,15 @@ class StudentView {
     if (ytId) {
       const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
       const glue = baseEmbed.includes('?') ? '&' : '?';
-      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      return `<iframe id="${UI.escapeHtml(playerId)}" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
     }
     // Vimeo
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      return `<iframe id="${UI.escapeHtml(playerId)}" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
     // Direct file / HTML5 video (No download button, no playback rate change, no right click menu)
-    return `<video id="lesson-stream-player" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
+    return `<video id="${UI.escapeHtml(playerId)}" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
   }
 
   // =========================================================================
@@ -1655,7 +1655,10 @@ class StudentView {
         }
       });
       const resources = allDocuments;
-      const hasVideo = Boolean(lesson.video_url);
+      const videoUrls = Array.isArray(lesson.video_urls) && lesson.video_urls.length
+        ? [...new Set(lesson.video_urls.filter(url => typeof url === 'string' && url.trim()))]
+        : (lesson.video_url ? [lesson.video_url] : []);
+      const hasVideo = videoUrls.length > 0;
       let videoWatched = StudentView.isLessonVideoWatched(lesson);
       let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
       const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
@@ -1765,12 +1768,13 @@ class StudentView {
               </div>
 
               <!-- Media Player / Video Block (if present) -->
-              ${lesson.video_url ? `
+              ${videoUrls.length ? videoUrls.map((videoUrl, videoIndex) => `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
                   <div class="aspect-video w-full bg-black relative">
-                    ${StudentView._getEmbedVideoHtml(lesson.video_url)}
+                    ${StudentView._getEmbedVideoHtml(videoUrl, videoIndex === 0 ? 'lesson-stream-player' : `lesson-stream-player-${videoIndex + 1}`)}
                   </div>
                   <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                    <span>${videoUrls.length > 1 ? `Video ${videoIndex + 1} / ${videoUrls.length}` : 'Video bÃ i há»c'}</span>
                     <div class="flex items-center gap-2">
                       <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
                         ${isCompleted ? 'verified' : 'lock_clock'}
@@ -1784,7 +1788,7 @@ class StudentView {
                     </span>
                   </div>
                 </div>
-              ` : ''}
+              `).join('') : ''}
 
               <!-- Clean Rendered Markdown Body -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">

@@ -14,6 +14,79 @@
 (function () {
   const InstructorView = window.InstructorView || {};
 
+  InstructorView.extractPastedImages = function (clipboardData) {
+    const fileItems = [...(clipboardData?.items || [])]
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+    if (fileItems.length) return fileItems;
+
+    const html = clipboardData?.getData('text/html') || '';
+    const dataImagePattern = /<img\b[^>]*\bsrc\s*=\s*(["'])data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)\1[^>]*>/gi;
+    const files = [];
+    for (const match of html.matchAll(dataImagePattern)) {
+      const encoded = match[3].replace(/\s+/g, '');
+      if (!encoded || encoded.length > Math.ceil(10_000_000 / 3) * 4) {
+        throw new Error('A pasted image is empty or larger than 10 MB.');
+      }
+      let binary;
+      try {
+        binary = atob(encoded);
+      } catch {
+        throw new Error('A pasted image has invalid embedded data.');
+      }
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      if (!bytes.length || bytes.length > 10_000_000) {
+        throw new Error('A pasted image is empty or larger than 10 MB.');
+      }
+      const mimeType = match[2].toLowerCase();
+      const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType.slice('image/'.length);
+      files.push(new File([bytes], `pasted-question-image-${files.length + 1}.${extension}`, { type: mimeType }));
+    }
+    return files;
+  };
+
+  InstructorView.uploadMoodleQuestionImages = async function (questions, courseId) {
+    const allImages = (questions || []).flatMap(question => question.images || []);
+    if (allImages.some(image => image.broken || !image.data_base64 || !image.mime_type)) {
+      throw new Error('Some embedded Moodle images are missing or unsafe. Fix those image references in the XML before importing.');
+    }
+    if (allImages.length && !courseId) {
+      throw new Error('Choose a course before importing embedded question images.');
+    }
+
+    const uploadedByQuestion = new Map();
+    for (const question of questions || []) {
+      const assetIds = [];
+      for (const image of question.images || []) {
+        if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(image.mime_type)) {
+          throw new Error('Embedded Moodle images must be PNG, JPEG, WebP, or GIF.');
+        }
+        const binary = atob(image.data_base64);
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        if (!bytes.length || bytes.length > 10_000_000) {
+          throw new Error('Embedded Moodle images must be smaller than 10 MB each.');
+        }
+        const file = new File([bytes], image.filename || 'question-image', { type: image.mime_type });
+        const uploaded = await ApiClient.uploadCourseFile(courseId, file);
+        const assetId = uploaded?.asset_id || uploaded?.public_id;
+        if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) {
+          throw new Error('The image upload did not return a valid image asset ID.');
+        }
+        assetIds.push(assetId);
+      }
+      if (assetIds.length) uploadedByQuestion.set(question, assetIds);
+    }
+
+    for (const question of questions || []) {
+      const assetIds = uploadedByQuestion.get(question) || [];
+      question.image_asset_ids = [...new Set([...(question.image_asset_ids || []), ...assetIds])];
+      question.image_asset_id = question.image_asset_ids[0] || null;
+      delete question.images;
+    }
+    return questions;
+  };
+
   InstructorView.isInteractiveFillAnswerCorrect = function (submitted, acceptedAnswers) {
     if (!Array.isArray(submitted) || !submitted.length) return false;
     const acceptedGroups = String(acceptedAnswers || '').split(';').map(group =>
@@ -687,7 +760,7 @@
         <!-- ================================================================ -->
         <!-- POPUP: Hướng dẫn sử dụng & Quy chuẩn soạn thảo cú pháp             -->
         <!-- ================================================================ -->
-        <div id="modal-syntax-guide" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs hidden animate-fade-in">
+        <div id="modal-syntax-guide" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md hidden animate-fade-in">
           <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             
             <!-- Modal Header -->
@@ -804,6 +877,54 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     const syntaxModal = document.getElementById('modal-syntax-guide');
     const chkDontShow = document.getElementById('chk-guide-dont-show-again');
 
+    textarea?.addEventListener('paste', async event => {
+      let images;
+      try {
+        images = InstructorView.extractPastedImages(event.clipboardData);
+      } catch (error) {
+        UI.showToast(error.message || 'Could not read pasted image data.', 'warning');
+        return;
+      }
+      if (!images.length) {
+        if (/<img\b/i.test(event.clipboardData?.getData('text/html') || '')) {
+          UI.showToast('This clipboard image is linked or unavailable. Upload the image file directly to attach it.', 'warning');
+        }
+        return;
+      }
+      event.preventDefault();
+      const courseId = window.ExamStore.getDraft()?.courseId;
+      if (!courseId) {
+        UI.showToast('Choose a course before pasting question images.', 'warning');
+        return;
+      }
+      if (images.some(file => file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type))) {
+        UI.showToast('Pasted images must be PNG, JPEG, WebP, or GIF and smaller than 5 MB each.', 'warning');
+        return;
+      }
+      const pastedText = event.clipboardData?.getData('text/plain') || '';
+      const selectionStart = textarea.selectionStart ?? textarea.value.length;
+      const selectionEnd = textarea.selectionEnd ?? selectionStart;
+      textarea.setRangeText(pastedText, selectionStart, selectionEnd, 'end');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      try {
+        const assetIds = [];
+        for (const file of images) {
+          const uploaded = await ApiClient.uploadCourseFile(courseId, file);
+          const assetId = uploaded?.asset_id || uploaded?.public_id;
+          if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) throw new Error('The upload did not return a valid image asset ID.');
+          assetIds.push(assetId);
+        }
+        const start = textarea.selectionStart ?? textarea.value.length;
+        textarea.value = ExamParser.insertImageMarkers(textarea.value, start, assetIds);
+        const position = textarea.value.indexOf(`[[PWD301:IMAGE:${assetIds[0]}]]`) + `[[PWD301:IMAGE:${assetIds[0]}]]`.length;
+        textarea.setSelectionRange(position, position);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        UI.showToast(`${assetIds.length} pasted image${assetIds.length === 1 ? '' : 's'} uploaded and attached.`, 'success');
+      } catch (error) {
+        UI.showToast(error.message || 'Could not attach pasted images.', 'error');
+      }
+    });
+
     // Auto-popup logic: If never hidden and textarea is empty, pop up automatically!
     const hideGuidePref = localStorage.getItem('pwd301_hide_syntax_guide');
     if (hideGuidePref !== 'true' && (!initialText || initialText.trim().length === 0)) {
@@ -919,7 +1040,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 hover:border-indigo-500">
               <span class="material-symbols-outlined text-[16px]">image</span>
               <span>${q.image_asset_id ? 'Thay ảnh câu hỏi' : 'Thêm ảnh câu hỏi'}</span>
-              <input type="file" class="raw-question-image-input sr-only" data-q-index="${idx}" accept="image/png,image/jpeg,image/webp,image/gif" />
+              <input type="file" class="raw-question-image-input sr-only" data-q-index="${idx}" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
             </label>
             <span class="text-slate-500">${q.image_asset_id ? 'Ảnh đã gắn (đang chờ quét bảo mật)' : 'PNG, JPEG, WebP hoặc GIF; tối đa 5 MB'}</span>
           </div>
@@ -983,11 +1104,11 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       previewContainer.querySelectorAll('.raw-question-image-input').forEach(input => {
         input.onchange = async event => {
-          const file = event.currentTarget.files?.[0];
-          if (!file) return;
-          if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+          const files = [...(event.currentTarget.files || [])];
+          if (!files.length) return;
+          if (files.some(file => file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type))) {
             event.currentTarget.value = '';
-            UI.showToast('Choose a PNG, JPEG, WebP, or GIF image smaller than 5 MB.', 'warning');
+            UI.showToast('Choose PNG, JPEG, WebP, or GIF images smaller than 5 MB each.', 'warning');
             return;
           }
           const draft = window.ExamStore.getDraft();
@@ -1001,29 +1122,22 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           if (!question || !textarea) return;
           event.currentTarget.disabled = true;
           try {
-            const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
-            const assetId = uploaded?.asset_id || uploaded?.public_id;
-            if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) throw new Error('The upload did not return a valid image asset ID.');
-            const lines = textarea.value.split(/\r?\n/);
-            const marker = `[[PWD301:IMAGE:${assetId}]]`;
-            const questionNumber = Number(question.number || questionIndex + 1);
-            const headerPattern = new RegExp(`^\\s*(?:(?:Câu|Bài|Question)\\s*)?${questionNumber}[:.]`, 'i');
-            const headerIndex = lines.findIndex(line => headerPattern.test(line));
-            if (headerIndex < 0) throw new Error('Could not locate this question in the source text.');
-            let nextHeaderIndex = lines.length;
-            for (let index = headerIndex + 1; index < lines.length; index += 1) {
-              if (headerPattern.test(lines[index])) {
-                nextHeaderIndex = index;
-                break;
-              }
+            const assetIds = [];
+            for (const file of files) {
+              const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
+              const assetId = uploaded?.asset_id || uploaded?.public_id;
+              if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) throw new Error('The upload did not return a valid image asset ID.');
+              assetIds.push(assetId);
             }
-            const existingMarkerIndex = lines.findIndex((line, index) =>
-              index > headerIndex && index < nextHeaderIndex
-              && /^\[\[PWD301:IMAGE:[0-9a-f-]{36}\]\]$/i.test(line.trim())
+            textarea.value = ExamParser.insertImageMarkers(
+              textarea.value,
+              textarea.selectionStart ?? textarea.value.length,
+              assetIds
             );
-            if (existingMarkerIndex > headerIndex) lines.splice(existingMarkerIndex, 1);
-            lines.splice(headerIndex + 1, 0, marker);
-            textarea.value = lines.join('\n');
+            const ids = new Set(question.image_asset_ids || (question.image_asset_id ? [question.image_asset_id] : []));
+            assetIds.forEach(id => ids.add(id));
+            question.image_asset_ids = [...ids];
+            question.image_asset_id = question.image_asset_ids[0] || null;
             renderEditorPreview();
             saveEditorState();
             UI.showToast('Question image uploaded and attached. It will display after the security scan.', 'success');
@@ -2577,6 +2691,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         }
 
         parsedQuestions = res.questions;
+        const courseId = window.ExamStore.getDraft()?.courseId;
+        await InstructorView.uploadMoodleQuestionImages(parsedQuestions, courseId);
         if (countBadge) countBadge.textContent = `${parsedQuestions.length} câu hỏi`;
 
         cardsList.innerHTML = parsedQuestions.map((q, i) => `
@@ -3100,7 +3216,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               difficulty: diff,
               points: parseFloat(q.points) || 1.0,
               explanation: q.explanation || '',
-              image_asset_id: q.image_asset_id || null
+              image_asset_id: q.image_asset_id || q.image_asset_ids?.[0] || null,
+              image_asset_ids: [...new Set(q.image_asset_ids || (q.image_asset_id ? [q.image_asset_id] : []))]
             };
 
             if (qType === 'SHORT_ANSWER') {

@@ -24,3 +24,10 @@ test('video quiz gate requires full progress even when a stale completion flag e
     progress: { seconds_spent: 0, max_view_fraction: 0 }
   }), true);
 });
+
+test('lesson reader renders every serialized video with a unique player id', () => {
+  const source = fs.readFileSync(sourcePath, 'utf8');
+  assert.match(source, /Array\.isArray\(lesson\.video_urls\)/);
+  assert.match(source, /videoUrls\.map\(\(videoUrl, videoIndex\)/);
+  assert.match(source, /lesson-stream-player-\$\{videoIndex \+ 1\}/);
+});

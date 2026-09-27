@@ -30,45 +30,50 @@
           colors: {
             // Remap slate palette to cohesive Warm Charcoal / Notion shades
             slate: {
-              50: '#FAF9F5',
-              100: '#F4F1EA',
-              200: '#E8E6DF',
-              300: '#D3D0C8',
-              400: '#9E9D99',
-              500: '#6D6C68',
-              600: '#3E3D3A',
-              700: '#2E2D2B',
-              800: '#262524',
-              850: '#222120',
-              900: '#202020',
-              950: '#141414',
+              50: '#F7F5EF',
+              100: '#EFEEE7',
+              200: '#E1DED5',
+              300: '#CFCBC0',
+              400: '#A8A69F',
+              500: '#6D6B64',
+              600: '#514F49',
+              700: '#403F3A',
+              800: '#302F2D',
+              850: '#272624',
+              900: '#211F1D',
+              950: '#151514',
             },
+            "white": "#FDFBF7",
             "primary": "#2563EB",
             "primary-hover": "#1D4ED8",
             "primary-subtle": "#EFF4FE",
-            "primary-contrast": "#FFFFFF",
-            "surface-canvas": "#FAF9F5",
-            "surface-card": "#FFFFFF",
-            "surface-subtle": "#F4F1EA",
-            "surface-muted": "#ECE8DF",
-            "border-subtle": "#E8E6DF",
-            "border-strong": "#D3D0C8",
+            "primary-contrast": "#FDFBF7",
+            "surface-canvas": "#F3F1EB",
+            "surface-card": "#FDFBF7",
+            "surface-raised": "#FFFEFB",
+            "surface-subtle": "#EAE7DF",
+            "surface-muted": "#E0DDD4",
+            "surface-sunken": "#ECEAE3",
+            "border-subtle": "#D6D3CA",
+            "border-strong": "#BDB9AE",
             "text-primary": "#222120",
             "text-secondary": "#5C5B57",
-            "text-muted": "#8F8E8A",
+            "text-muted": "#6D6B64",
             "success-emerald": "#15803D",
             "warning-amber": "#B45309",
             "danger-rose": "#BE123C",
             "info-sky": "#0369A1",
             // Semantic Warm Dark Tokens
-            "dark-canvas": "#191919",
-            "dark-card": "#202020",
-            "dark-surface": "#262524",
-            "dark-border": "#2E2D2B",
-            "dark-border-strong": "#3E3D3A",
+            "dark-canvas": "#151514",
+            "dark-card": "#211F1D",
+            "dark-raised": "#282725",
+            "dark-surface": "#302F2D",
+            "dark-sunken": "#191817",
+            "dark-border": "#403F3A",
+            "dark-border-strong": "#57554F",
             "dark-text-primary": "#EDEDEB",
-            "dark-text-secondary": "#9E9D99",
-            "dark-text-muted": "#6D6C68",
+            "dark-text-secondary": "#C2C0B9",
+            "dark-text-muted": "#A8A69F",
           },
           fontFamily: {
             sans: ["Plus Jakarta Sans", "Inter", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
@@ -94,13 +99,13 @@
       height: 100%;
       overflow: hidden;
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: #FAF9F5;
+      background-color: #F3F1EB;
       color: #222120;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
     .dark body {
-      background-color: #191919;
+      background-color: #151514;
       color: #EDEDEB;
     }
 
@@ -172,26 +177,26 @@
     }
     .c-btn-primary {
       background-color: #222120;
-      color: #FAF9F5;
+      color: #F3F1EB;
       border-color: #222120;
       box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.12);
     }
     .dark .c-btn-primary {
       background-color: #EDEDEB;
-      color: #191919;
+      color: #151514;
       border-color: #EDEDEB;
     }
     .c-btn-primary:hover {
-      background-color: #37352F;
-      border-color: #37352F;
+      background-color: #403F3A;
+      border-color: #403F3A;
     }
     .dark .c-btn-primary:hover {
-      background-color: #FFFFFF;
-      border-color: #FFFFFF;
+      background-color: #FDFBF7;
+      border-color: #FDFBF7;
     }
     .c-btn-accent {
       background-color: #2563EB;
-      color: #FFFFFF;
+      color: #FDFBF7;
       border-color: #2563EB;
     }
     .c-btn-accent:hover {
@@ -199,23 +204,23 @@
       border-color: #1D4ED8;
     }
     .c-btn-secondary {
-      background-color: #FFFFFF;
-      color: #37352F;
-      border-color: #E8E6DF;
+      background-color: #FDFBF7;
+      color: #403F3A;
+      border-color: #D6D3CA;
       box-shadow: 0 1px 2px 0 rgba(34, 33, 32, 0.03);
     }
     .dark .c-btn-secondary {
-      background-color: #202020;
+      background-color: #211F1D;
       color: #EDEDEB;
-      border-color: #2E2D2B;
+      border-color: #403F3A;
     }
     .c-btn-secondary:hover {
-      background-color: #F4F1EA;
-      border-color: #D3D0C8;
+      background-color: #EAE7DF;
+      border-color: #CFCBC0;
     }
     .dark .c-btn-secondary:hover {
       background-color: #282726;
-      border-color: #3E3D3A;
+      border-color: #57554F;
     }
     .c-btn-ghost {
       background-color: transparent;
@@ -226,16 +231,16 @@
       color: #9E9D99;
     }
     .c-btn-ghost:hover {
-      background-color: #F4F1EA;
+      background-color: #EAE7DF;
       color: #222120;
     }
     .dark .c-btn-ghost:hover {
-      background-color: #262524;
+      background-color: #302F2D;
       color: #EDEDEB;
     }
     .c-btn-danger {
       background-color: #BE123C;
-      color: #FFFFFF;
+      color: #FDFBF7;
       border-color: #BE123C;
     }
     .c-btn-danger:hover {
@@ -260,23 +265,23 @@
 
     /* Standard Warm Editorial Card */
     .c-card {
-      background-color: #FFFFFF;
-      border: 1px solid #E8E6DF;
+      background-color: #FDFBF7;
+      border: 1px solid #D6D3CA;
       border-radius: 0.75rem;
       box-shadow: 0 1px 3px 0 rgba(34, 33, 32, 0.02);
       transition: border-color 150ms ease, box-shadow 150ms ease;
     }
     .dark .c-card {
-      background-color: #202020;
-      border-color: #2E2D2B;
+      background-color: #211F1D;
+      border-color: #403F3A;
       box-shadow: none;
     }
     .c-card-hover:hover {
-      border-color: #D3D0C8;
+      border-color: #CFCBC0;
       box-shadow: 0 3px 8px -2px rgba(34, 33, 32, 0.06);
     }
     .dark .c-card-hover:hover {
-      border-color: #3E3D3A;
+      border-color: #57554F;
     }
 
     /* Standard Form Inputs */
@@ -285,15 +290,15 @@
       padding: 0.5rem 0.75rem;
       font-size: 0.8125rem;
       border-radius: 0.625rem;
-      border: 1px solid #E8E6DF;
-      background-color: #FFFFFF;
+      border: 1px solid #D6D3CA;
+      background-color: #FDFBF7;
       color: #222120;
       transition: border-color 120ms ease, box-shadow 120ms ease;
       outline: none;
     }
     .dark .c-input {
-      background-color: #202020;
-      border-color: #2E2D2B;
+      background-color: #211F1D;
+      border-color: #403F3A;
       color: #EDEDEB;
     }
     .c-input:focus {
@@ -315,12 +320,12 @@
     .c-table-wrapper {
       overflow-x: auto;
       border-radius: 0.75rem;
-      border: 1px solid #E8E6DF;
-      background-color: #FFFFFF;
+      border: 1px solid #D6D3CA;
+      background-color: #FDFBF7;
     }
     .dark .c-table-wrapper {
-      border-color: #2E2D2B;
-      background-color: #202020;
+      border-color: #403F3A;
+      background-color: #211F1D;
     }
     .c-table {
       width: 100%;
@@ -334,29 +339,29 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #8F8E8A;
-      background-color: #F4F1EA;
-      border-bottom: 1px solid #E8E6DF;
+      color: #6D6B64;
+      background-color: #EAE7DF;
+      border-bottom: 1px solid #D6D3CA;
     }
     .dark .c-table-th {
       color: #9E9D99;
-      background-color: #262524;
-      border-bottom-color: #2E2D2B;
+      background-color: #302F2D;
+      border-bottom-color: #403F3A;
     }
     .c-table-td {
       padding: 0.75rem 0.875rem;
-      border-bottom: 1px solid #F4F1EA;
-      color: #37352F;
+      border-bottom: 1px solid #EAE7DF;
+      color: #403F3A;
     }
     .dark .c-table-td {
       border-bottom-color: #282726;
       color: #EDEDEB;
     }
     .c-table-tr:hover .c-table-td {
-      background-color: #FAF9F5;
+      background-color: #F3F1EB;
     }
     .dark .c-table-tr:hover .c-table-td {
-      background-color: #242423;
+      background-color: #302F2D;
     }
 
     /* Subtle custom scrollbars */
@@ -386,7 +391,7 @@
     }
   </style>
 </head>
-<body class="bg-[#FAF9F5] dark:bg-[#191919] text-[#222120] dark:text-[#EDEDEB] antialiased h-full w-full flex flex-col selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
+<body class="bg-surface-canvas dark:bg-dark-canvas text-text-primary dark:text-dark-text-primary antialiased h-full w-full flex flex-col selection:bg-surface-muted selection:text-text-primary dark:selection:bg-dark-surface dark:selection:text-dark-text-primary">
 
   <!-- Minimal Instant Top Micro Progress Bar -->
   <div id="top-micro-loader" class="fixed top-0 left-0 right-0 h-[2.5px] z-50 pointer-events-none opacity-0 transition-opacity duration-150">
@@ -397,24 +402,24 @@
   <div id="app-root" class="w-full h-full flex flex-col overflow-hidden">
     
     <!-- Modern Warm Editorial Top Navigation Bar -->
-    <header id="app-topbar" class="relative h-14 px-4 sm:px-6 bg-[#FAF9F5]/90 dark:bg-[#191919]/90 backdrop-blur-md border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 z-30 select-none">
+    <header id="app-topbar" class="relative h-14 px-4 sm:px-6 bg-surface-canvas/95 dark:bg-dark-canvas/95 backdrop-blur-md border-b border-border-subtle dark:border-dark-border flex items-center justify-between shrink-0 z-30 select-none">
       
       <!-- Left: Brand Logo -->
       <div class="flex items-center shrink-0 z-10">
         <a href="#/" class="flex items-center gap-2.5 shrink-0 group">
-          <div class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-transparent dark:border-[#3E3D3A] flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
+          <div class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#2A2928] text-[#F3F1EB] dark:text-[#EDEDEB] border border-transparent dark:border-[#57554F] flex items-center justify-center transition-transform group-hover:scale-105 shadow-2xs">
             <span class="material-symbols-outlined text-[18px]">school</span>
           </div>
           <div>
             <span class="font-bold text-sm tracking-tight text-[#222120] dark:text-[#EDEDEB] block leading-none">PWD301 LMS</span>
-            <span class="text-[10px] font-medium text-[#8F8E8A] dark:text-[#6D6C68] block mt-0.5">Khảo thí & Học tập</span>
+            <span class="text-[10px] font-medium text-[#6D6B64] dark:text-[#6D6C68] block mt-0.5">Khảo thí & Học tập</span>
           </div>
         </a>
       </div>
 
       <!-- Center: Desktop Navigation Items (Responsive flex center, prevents overlap with bell or logo on zoom) -->
       <div class="hidden md:flex items-center justify-center flex-1 min-w-0 mx-2 z-10">
-        <nav id="topbar-navigation-items" class="flex items-center gap-1 bg-[#F4F1EA] dark:bg-[#202020] p-1 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs max-w-full overflow-x-auto no-scrollbar whitespace-nowrap">
+        <nav id="topbar-navigation-items" class="flex items-center gap-1 bg-surface-subtle dark:bg-dark-card p-1 rounded-xl border border-border-subtle dark:border-dark-border shadow-2xs max-w-full overflow-x-auto no-scrollbar whitespace-nowrap">
           <!-- Populated dynamically based on role -->
         </nav>
       </div>
@@ -427,13 +432,13 @@
           <button
             type="button"
             id="topbar-notifications-btn"
-            class="relative w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors select-none"
+            class="relative w-8 h-8 rounded-lg border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#EAE7DF] dark:hover:bg-dark-surface flex items-center justify-center transition-colors select-none"
             title="Thông báo học vụ"
             aria-expanded="false"
             aria-haspopup="true"
           >
             <span class="material-symbols-outlined text-[17px]">notifications</span>
-            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
+            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#F3F1EB] dark:ring-[#151514]">
               0
             </span>
           </button>
@@ -441,7 +446,7 @@
           <!-- Notifications Dropdown Menu Popover -->
           <div
             id="topbar-notifications-dropdown"
-            class="hidden absolute right-0 top-11 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-elevated z-50 flex flex-col text-xs overflow-hidden transition-all duration-150"
+            class="hidden absolute right-0 top-11 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-surface-card/95 dark:bg-dark-card/95 backdrop-blur-md border border-border-subtle dark:border-dark-border rounded-2xl shadow-elevated z-50 flex flex-col text-xs overflow-hidden transition-all duration-150"
             role="dialog"
             aria-label="Bảng thông báo học vụ"
           >
@@ -453,7 +458,7 @@
         <button
           type="button"
           id="topbar-theme-toggle"
-          class="w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
+          class="w-8 h-8 rounded-lg border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#EAE7DF] dark:hover:bg-dark-surface flex items-center justify-center transition-colors"
           title="Đổi giao diện Sáng / Tối"
         >
           <span class="material-symbols-outlined text-[17px]" id="theme-toggle-icon">dark_mode</span>
@@ -464,25 +469,25 @@
           <button
             type="button"
             id="topbar-avatar-btn"
-            class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-[#D3D0C8] dark:hover:border-[#3E3D3A] transition-all shadow-2xs select-none"
+            class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card hover:bg-[#EAE7DF] dark:hover:bg-dark-surface hover:border-[#CFCBC0] dark:hover:border-[#57554F] transition-all shadow-2xs select-none"
             title="Hồ sơ tài khoản & Chuyển góc nhìn"
           >
             <div class="text-right hidden sm:block leading-none">
               <div id="topbar-user-name" class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] max-w-[110px] truncate leading-tight">Học viên</div>
               <div class="mt-0.5 flex items-center justify-end">
-                <span id="topbar-role-badge" class="px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
+                <span id="topbar-role-badge" class="px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-[#ECE8DF] dark:bg-[#403F3A] text-[#5C5B57] dark:text-[#EDEDEB]">HỌC VIÊN</span>
               </div>
             </div>
             <div class="relative">
-              <div class="w-7 h-7 rounded-full bg-[#222120] dark:bg-[#2A2928] text-[#FAF9F5] dark:text-[#EDEDEB] border border-[#E8E6DF] dark:border-[#3E3D3A] font-bold flex items-center justify-center text-[11px] shadow-xs transition-transform group-hover:scale-105" id="topbar-avatar-initials">
+              <div class="w-7 h-7 rounded-full bg-[#222120] dark:bg-[#2A2928] text-[#F3F1EB] dark:text-[#EDEDEB] border border-border-subtle dark:border-[#57554F] font-bold flex items-center justify-center text-[11px] shadow-xs transition-transform group-hover:scale-105" id="topbar-avatar-initials">
                 SV
               </div>
             </div>
-            <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] dark:text-[#6D6C68] group-hover:text-[#222120] dark:group-hover:text-[#EDEDEB] transition-transform duration-200" id="topbar-avatar-chevron">expand_more</span>
+            <span class="material-symbols-outlined text-[16px] text-[#6D6B64] dark:text-[#6D6C68] group-hover:text-[#222120] dark:group-hover:text-[#EDEDEB] transition-transform duration-200" id="topbar-avatar-chevron">expand_more</span>
           </button>
 
           <!-- User Dropdown & Role Switcher Popover -->
-          <div id="topbar-role-dropdown" class="hidden absolute right-0 top-11 w-64 bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-xl shadow-elevated z-50 divide-y divide-[#F4F1EA] dark:divide-[#2E2D2B] text-xs">
+          <div id="topbar-role-dropdown" class="hidden absolute right-0 top-11 w-64 bg-surface-card/95 dark:bg-dark-card/95 backdrop-blur-md border border-border-subtle dark:border-dark-border rounded-xl shadow-elevated z-50 divide-y divide-[#EAE7DF] dark:divide-[#403F3A] text-xs">
             <!-- Populated dynamically by AppRouter -->
           </div>
         </div>
@@ -491,7 +496,7 @@
         <button
           type="button"
           id="topbar-mobile-menu-btn"
-          class="md:hidden w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
+          class="md:hidden w-8 h-8 rounded-lg border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#EAE7DF] dark:hover:bg-dark-surface flex items-center justify-center transition-colors"
           title="Mở menu điều hướng"
         >
           <span class="material-symbols-outlined text-[19px]">menu</span>
@@ -501,23 +506,23 @@
     </header>
 
     <!-- Mobile Navigation Drawer Overlay -->
-    <div id="mobile-nav-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-xs z-40 transition-opacity md:hidden"></div>
-    <div id="mobile-nav-drawer" class="hidden fixed inset-y-0 left-0 w-72 bg-[#FAF9F5] dark:bg-[#191919] z-50 flex flex-col shadow-elevated transition-transform md:hidden border-r border-[#E8E6DF] dark:border-[#2E2D2B]">
-      <div class="h-14 px-5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0">
+    <div id="mobile-nav-backdrop" class="hidden fixed inset-0 bg-[#222120]/45 backdrop-blur-md z-40 transition-opacity md:hidden"></div>
+    <div id="mobile-nav-drawer" class="hidden fixed inset-y-0 left-0 w-72 bg-surface-card dark:bg-dark-card z-50 flex flex-col shadow-elevated transition-transform md:hidden border-r border-border-subtle dark:border-dark-border">
+      <div class="h-14 px-5 border-b border-border-subtle dark:border-dark-border flex items-center justify-between shrink-0">
         <div class="flex items-center gap-2">
-          <div class="w-7 h-7 rounded-md bg-[#222120] dark:bg-[#EDEDEB] flex items-center justify-center text-[#FAF9F5] dark:text-[#191919] font-bold text-xs">
+          <div class="w-7 h-7 rounded-md bg-[#222120] dark:bg-[#EDEDEB] flex items-center justify-center text-[#F3F1EB] dark:text-[#151514] font-bold text-xs">
             <span class="material-symbols-outlined text-[16px]">school</span>
           </div>
           <span class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB]">PWD301 LMS</span>
         </div>
-        <button type="button" id="mobile-nav-close-btn" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]">
+        <button type="button" id="mobile-nav-close-btn" class="p-1 rounded-md text-[#6D6B64] hover:text-[#222120] dark:hover:text-[#EDEDEB]">
           <span class="material-symbols-outlined text-[18px]">close</span>
         </button>
       </div>
       <nav class="flex-1 overflow-y-auto p-3 space-y-1" id="mobile-navigation-items">
         <!-- Injected dynamically -->
       </nav>
-      <div class="p-4 border-t border-[#E8E6DF] dark:border-[#2E2D2B] shrink-0 text-xs text-[#8F8E8A] flex items-center justify-between">
+      <div class="p-4 border-t border-border-subtle dark:border-dark-border shrink-0 text-xs text-[#6D6B64] flex items-center justify-between">
         <span class="font-mono text-[11px]">v3.0.0 Unified</span>
         <span class="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Trực tuyến
@@ -531,8 +536,8 @@
     </div>
 
     <!-- Dynamic Single-DOM Viewport Mounting Target (Warm Editorial Canvas) -->
-    <main id="app-viewport" class="spa-viewport flex-1 overflow-y-auto relative bg-[#FAF9F5] dark:bg-[#191919]">
-      <div class="h-full flex items-center justify-center text-[#8F8E8A]">
+    <main id="app-viewport" class="spa-viewport flex-1 overflow-y-auto relative bg-surface-canvas dark:bg-dark-canvas">
+      <div class="h-full flex items-center justify-center text-[#6D6B64]">
         <div class="flex items-center gap-2 text-xs font-medium">
           <span class="w-2 h-2 rounded-full bg-[#222120] dark:bg-[#EDEDEB] animate-ping"></span>
           <span>Khởi tạo hệ thống...</span>
@@ -549,28 +554,28 @@
   <div id="modal-container" class="hidden z-50"></div>
 
   <!-- Global Multi-Directional Drawer -->
-  <div id="app-drawer-backdrop" class="hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-xs z-50 transition-opacity duration-150"></div>
+  <div id="app-drawer-backdrop" class="hidden fixed inset-0 bg-[#222120]/45 backdrop-blur-md z-50 transition-opacity duration-150"></div>
   <div id="app-drawer-container" class="hidden fixed inset-y-0 z-50 flex shadow-elevated transition-all duration-200"></div>
 
   <!-- Global Floating Circular AI Tutor Widget (Warm Editorial Style) -->
   <div id="floating-ai-container" class="fixed bottom-5 right-5 z-40 flex flex-col items-end pointer-events-none">
     <!-- Flyout Chat Drawer -->
-    <div id="floating-ai-drawer" class="hidden pointer-events-auto mb-3 w-96 max-w-[calc(100vw-2.5rem)] h-[520px] bg-[#FFFFFF] dark:bg-[#202020] rounded-2xl shadow-elevated border border-[#E8E6DF] dark:border-[#2E2D2B] flex flex-col overflow-hidden">
+    <div id="floating-ai-drawer" class="hidden pointer-events-auto mb-3 w-96 max-w-[calc(100vw-2.5rem)] h-[520px] bg-surface-card dark:bg-dark-card rounded-2xl shadow-elevated border border-border-subtle dark:border-dark-border flex flex-col overflow-hidden">
       <!-- Drawer Header -->
-      <div class="px-4 py-3 bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
+      <div class="px-4 py-3 bg-[#EAE7DF] dark:bg-[#302F2D] border-b border-border-subtle dark:border-dark-border text-[#222120] dark:text-[#EDEDEB] flex items-center justify-between shrink-0">
         <div class="flex items-center gap-2.5">
-          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-lg object-cover border border-[#E8E6DF] dark:border-[#3E3D3A] shadow-xs" />
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-8 h-8 rounded-lg object-cover border border-border-subtle dark:border-[#57554F] shadow-xs" />
           <div>
             <div class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
               <span>Bạch tuộc</span>
               <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">AI Assistant</span>
             </div>
-            <div class="text-[10px] text-[#8F8E8A] dark:text-[#9E9D99] flex items-center gap-1">
+            <div class="text-[10px] text-[#6D6B64] dark:text-[#9E9D99] flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
             </div>
           </div>
         </div>
-        <button type="button" id="floating-ai-close-btn" class="p-1 rounded-md text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors">
+        <button type="button" id="floating-ai-close-btn" class="p-1 rounded-md text-[#6D6B64] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-[#D6D3CA] dark:hover:bg-[#403F3A] transition-colors">
           <span class="material-symbols-outlined text-[16px]">close</span>
         </button>
       </div>
@@ -578,27 +583,27 @@
       <!-- Drawer Chat Messages Container -->
       <div id="floating-ai-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
         <div class="flex gap-2.5 items-start">
-          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
-          <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-border-subtle dark:border-dark-border shadow-2xs" />
+          <div class="bg-[#EAE7DF] dark:bg-[#302F2D] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-border-subtle dark:border-dark-border">
             Xin chào! Tôi là Bạch tuộc - Trợ lý AI học thuật của PWD301 LMS. Tôi có thể hỗ trợ bạn tóm tắt kiến thức, phân tích câu hỏi thi hoặc gợi ý phương pháp học tập. Bạn cần hỗ trợ bài học nào?
           </div>
         </div>
       </div>
 
       <!-- Drawer Input Box -->
-      <div class="p-3 border-t border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#191919] shrink-0">
+      <div class="p-3 border-t border-border-subtle dark:border-dark-border bg-surface-canvas dark:bg-dark-canvas shrink-0">
         <form id="floating-ai-form" class="flex items-center gap-2">
           <input
             type="text"
             id="floating-ai-input"
-            class="flex-1 px-3 py-1.5 rounded-lg text-xs border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:border-[#222120] dark:focus:border-[#EDEDEB] placeholder-[#8F8E8A]"
+            class="flex-1 px-3 py-1.5 rounded-lg text-xs border border-border-subtle dark:border-dark-border bg-surface-card dark:bg-dark-card text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:border-[#222120] dark:focus:border-[#EDEDEB] placeholder-[#6D6B64]"
             placeholder="Đặt câu hỏi cho Bạch tuộc..."
             autocomplete="off"
           />
           <button
             type="submit"
             id="floating-ai-send-btn"
-            class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] hover:opacity-90 flex items-center justify-center transition-opacity shrink-0"
+            class="w-8 h-8 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] text-[#F3F1EB] dark:text-[#151514] hover:opacity-90 flex items-center justify-center transition-opacity shrink-0"
           >
             <span class="material-symbols-outlined text-[15px]">send</span>
           </button>
@@ -610,11 +615,11 @@
     <button
       type="button"
       id="floating-ai-launcher"
-      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#FFFFFF] p-1"
+      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#F3F1EB] dark:text-[#151514] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#403F3A] dark:border-[#FDFBF7] p-1"
       title="Hỏi Bạch tuộc"
     >
       <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105" />
-      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#191919]"></span>
+      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#F3F1EB] dark:border-[#151514]"></span>
     </button>
   </div>
 
