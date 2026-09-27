@@ -162,7 +162,7 @@ class UI {
     const shadowClass = noShadow ? 'shadow-none' : 'shadow-elevated';
 
     const modalLayer = document.createElement('div');
-    modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+    modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
     modalLayer.innerHTML = `
       <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
         <!-- Modal Header -->
@@ -198,12 +198,14 @@ class UI {
     container.classList.remove('hidden');
 
     const onEsc = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && modalLayer.isConnected && modalLayer.style.display !== 'none'
+        && container.querySelector('.modal-layer:last-child') === modalLayer) {
         UI.closeModal();
-        document.removeEventListener('keydown', onEsc);
       }
     };
+    modalLayer._onEsc = onEsc;
     document.addEventListener('keydown', onEsc);
+    return modalLayer;
   }
 
   static closeModal() {
@@ -218,6 +220,7 @@ class UI {
 
     const currentLayer = container.querySelector('.modal-layer:last-child');
     if (currentLayer) {
+      if (currentLayer._onEsc) document.removeEventListener('keydown', currentLayer._onEsc);
       currentLayer.remove();
     }
 
@@ -278,7 +281,7 @@ class UI {
         : 'bg-blue-50 dark:bg-blue-950/50 text-primary dark:text-blue-400 border border-blue-100 dark:border-blue-900/50';
 
       const confirmLayer = document.createElement('div');
-      confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6';
+      confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
       confirmLayer.innerHTML = `
         <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
           <!-- Header: Contextual Icon Badge & Close Action -->
@@ -420,7 +423,7 @@ class UI {
     if (!backdrop) {
       backdrop = document.createElement('div');
       backdrop.id = 'app-drawer-backdrop';
-      backdrop.className = 'hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-xs z-50 transition-opacity duration-150';
+      backdrop.className = 'hidden fixed inset-0 bg-[#222120]/30 backdrop-blur-sm z-50 transition-opacity duration-150';
       document.body.appendChild(backdrop);
     }
     let container = document.getElementById('app-drawer-container');

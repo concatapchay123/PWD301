@@ -133,6 +133,72 @@ def _extract_video_url_from_markdown(content: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def _extract_video_urls_from_markdown(content: str | None) -> list[str]:
+    if not content:
+        return []
+    match = re.search(r"<!--\s*video_urls:\s*(\[.*?\])\s*-->", content, re.DOTALL)
+    if match:
+        try:
+            urls = json.loads(match.group(1))
+            if isinstance(urls, list):
+                return [url for url in urls if isinstance(url, str)]
+        except (ValueError, TypeError):
+            return []
+    legacy = _extract_video_url_from_markdown(content)
+    return [legacy] if legacy else []
+
+
+def _validate_video_urls(urls: Any) -> list[str]:
+    from urllib.parse import parse_qs, urlparse
+
+    if not isinstance(urls, list) or len(urls) > 5:
+        raise ValidationError("Bài học chỉ được có tối đa 5 video YouTube và video tải lên.")
+    validated = []
+    for raw in urls:
+        if not isinstance(raw, str):
+            raise ValidationError("Liên kết video không hợp lệ.")
+        parsed = urlparse(raw.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme == "https" and host in {"vimeo.com", "www.vimeo.com"}:
+            video_number = parsed.path.strip("/")
+            if not video_number.isdecimal():
+                raise ValidationError("Liên kết video Vimeo không hợp lệ.")
+            canonical = f"https://vimeo.com/{video_number}"
+            if canonical in validated:
+                raise ValidationError("Video bị trùng trong bài học.")
+            validated.append(canonical)
+            continue
+        video_id = ""
+        if parsed.scheme == "https" and host in {"youtube.com", "www.youtube.com"}:
+            if parsed.path == "/watch":
+                video_id = parse_qs(parsed.query).get("v", [""])[0]
+            elif parsed.path.startswith(("/shorts/", "/embed/", "/live/", "/v/")):
+                video_id = parsed.path.split("/")[2]
+        elif parsed.scheme == "https" and host == "youtu.be":
+            video_id = parsed.path.lstrip("/")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            raise ValidationError("Chỉ chấp nhận liên kết video YouTube hợp lệ.")
+        canonical = f"https://www.youtube.com/watch?v={video_id}"
+        if canonical in validated:
+            raise ValidationError("Video YouTube bị trùng trong bài học.")
+        validated.append(canonical)
+    return validated
+
+
+def _lesson_uploaded_video_count(lesson: Lesson) -> int:
+    return sum(
+        1 for resource in lesson.resources
+        if not getattr(resource, "is_deleted", False)
+        and resource.file_asset is not None
+        and (
+            (resource.file_asset.mime_type or "").lower().startswith("video/")
+            or (resource.file_asset.original_filename or "").lower().endswith(
+                (".mp4", ".webm", ".mkv", ".mov")
+            )
+        )
+    )
+
+
 def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]]:
     if not content:
         return []
@@ -149,7 +215,8 @@ def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]
 
 
 def _serialize_lesson(les: Lesson) -> dict[str, Any]:
-    video_url = _extract_video_url_from_markdown(les.markdown_content)
+    video_urls = _extract_video_urls_from_markdown(les.markdown_content)
+    video_url = video_urls[0] if video_urls else None
     if not video_url and hasattr(les, "resources") and les.resources:
         for r in les.resources:
             if getattr(r, "is_deleted", False):
@@ -180,6 +247,7 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "summary": les.summary,
         "markdown_content": les.markdown_content,
         "video_url": video_url,
+        "video_urls": video_urls,
         "quiz": quiz,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
@@ -578,9 +646,15 @@ def create_lesson_route(course_id: str) -> Any:
         summary = payload.get("summary") or "Nội dung bài giảng đa phương tiện."
         raw_md = f"# {title}\n\n{summary}"
 
-    video_url = payload.get("video_url")
+    video_urls = payload.pop("video_urls", None)
+    video_url = payload.pop("video_url", None)
     import re
-    if video_url and str(video_url).strip():
+    if video_urls is not None:
+        validated_urls = _validate_video_urls(video_urls)
+        raw_md = re.sub(r"<!--\s*video_urls?:.*?-->\s*", "", raw_md, flags=re.DOTALL)
+        if validated_urls:
+            raw_md = f"<!-- video_urls: {json.dumps(validated_urls)} -->\n\n" + raw_md
+    elif video_url and str(video_url).strip():
         if not re.search(r"<!--\s*video_url:\s*\S+?\s*-->", raw_md):
             raw_md = f"<!-- video_url: {str(video_url).strip()} -->\n\n" + raw_md
 
@@ -604,6 +678,17 @@ def create_lesson_route(course_id: str) -> Any:
                 for rf in request.files.getlist(key):
                     if rf and rf.filename and rf.filename.strip() and rf not in files_to_validate:
                         files_to_validate.append(rf)
+
+            uploaded_videos = sum(
+                1 for item in files_to_validate
+                if (item.content_type or "").lower().startswith("video/")
+                or (item.filename or "").lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+            )
+            requested_urls = (
+                validated_urls if video_urls is not None else ([video_url] if video_url else [])
+            )
+            if uploaded_videos + len(requested_urls) > 5:
+                raise ValidationError("Bài học chỉ được có tối đa 5 video.")
 
             for f in files_to_validate:
                 if f.filename:
@@ -701,6 +786,15 @@ def attach_lesson_resource_route(course_id: str, lesson_id: str) -> Any:
     )
     if not file or not file.filename:
         raise ValidationError("No file provided.")
+
+    is_video = (file.content_type or "").lower().startswith("video/") or (
+        file.filename.lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+    )
+    existing_video_count = _lesson_uploaded_video_count(lesson) + len(
+        _extract_video_urls_from_markdown(lesson.markdown_content)
+    )
+    if is_video and existing_video_count >= 5:
+        raise ValidationError("Bài học chỉ được có tối đa 5 video YouTube và video tải lên.")
 
     label = request.form.get("label") or file.filename
     try:
@@ -976,7 +1070,20 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     course = require_course_manager(actor, lesson.course_id, session=db.session)
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
 
-    if "video_url" in payload:
+    if "video_urls" in payload:
+        video_urls = _validate_video_urls(payload.pop("video_urls"))
+        payload.pop("video_url", None)
+        if len(video_urls) + _lesson_uploaded_video_count(lesson) > 5:
+            raise ValidationError("Bài học chỉ được có tối đa 5 video YouTube và video tải lên.")
+        current_md = payload.get("markdown_content", lesson.markdown_content or "")
+        cleaned_md = re.sub(
+            r"<!--\s*video_urls?:.*?-->\s*", "", current_md or "", flags=re.DOTALL
+        ).strip()
+        payload["markdown_content"] = (
+            f"<!-- video_urls: {json.dumps(video_urls)} -->\n\n{cleaned_md}"
+            if video_urls else cleaned_md
+        )
+    elif "video_url" in payload:
         video_url = payload.pop("video_url")
         current_md = (
             payload.get("markdown_content")

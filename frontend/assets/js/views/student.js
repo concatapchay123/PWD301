@@ -1603,7 +1603,7 @@ class StudentView {
   }
 
   // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
-  static _getEmbedVideoHtml(url) {
+  static _getEmbedVideoHtml(url, playerId = 'lesson-stream-player') {
     if (!url) return '';
     const trimmed = String(url).trim();
     // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
@@ -1611,15 +1611,15 @@ class StudentView {
     if (ytId) {
       const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
       const glue = baseEmbed.includes('?') ? '&' : '?';
-      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
     }
     // Vimeo
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe id="lesson-stream-player" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
     // Direct file / HTML5 video (No download button, no playback rate change, no right click menu)
-    return `<video id="lesson-stream-player" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
+    return `<video id="${playerId}" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
   }
 
   // =========================================================================
@@ -1785,6 +1785,15 @@ class StudentView {
                   </div>
                 </div>
               ` : ''}
+
+              ${(lesson.video_urls || []).filter(url => url !== lesson.video_url).map((url, index) => `
+                <section class="space-y-2" aria-label="Video bổ sung ${index + 2}">
+                  <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Video bổ sung ${index + 2}</h2>
+                  <div class="aspect-video rounded-xl overflow-hidden bg-slate-900">
+                    ${StudentView._getEmbedVideoHtml(url, `lesson-extra-video-${index}`)}
+                  </div>
+                </section>
+              `).join('')}
 
               <!-- Clean Rendered Markdown Body -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">

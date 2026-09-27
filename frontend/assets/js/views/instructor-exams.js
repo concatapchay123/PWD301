@@ -14,6 +14,16 @@
 (function () {
   const InstructorView = window.InstructorView || {};
 
+  InstructorView.resolvePastedExamImages = function (text, assetIds) {
+    return text.replace(/\[\[PWD301:PASTE_IMAGE:(\d+)\]\]/g, (_, index) => {
+      const assetId = assetIds[Number(index)];
+      if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) {
+        throw new Error('Ảnh trong đề thi chưa được tải lên hợp lệ.');
+      }
+      return `[[PWD301:IMAGE:${assetId}]]`;
+    });
+  };
+
   InstructorView.isInteractiveFillAnswerCorrect = function (submitted, acceptedAnswers) {
     if (!Array.isArray(submitted) || !submitted.length) return false;
     const acceptedGroups = String(acceptedAnswers || '').split(';').map(group =>
@@ -687,7 +697,7 @@
         <!-- ================================================================ -->
         <!-- POPUP: Hướng dẫn sử dụng & Quy chuẩn soạn thảo cú pháp             -->
         <!-- ================================================================ -->
-        <div id="modal-syntax-guide" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs hidden animate-fade-in">
+        <div id="modal-syntax-guide" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden animate-fade-in">
           <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             
             <!-- Modal Header -->
@@ -1290,6 +1300,100 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     textarea.addEventListener('keyup', syncActiveQuestionFromCursor);
     textarea.addEventListener('click', syncActiveQuestionFromCursor);
+
+    textarea.addEventListener('paste', async event => {
+      const clipboard = event.clipboardData;
+      const imageFiles = Array.from(clipboard?.items || [])
+        .filter(item => item.type.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+      const html = clipboard?.getData('text/html') || '';
+      if (!imageFiles.length && !/<img\b/i.test(html)) return;
+      event.preventDefault();
+      const courseId = window.ExamStore.getDraft().courseId;
+      if (!courseId) {
+        UI.showToast('Chọn khóa học trước khi dán đề thi có hình ảnh.', 'warning');
+        return;
+      }
+      const selectionStart = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
+
+      const images = [];
+      let pasteText = clipboard.getData('text/plain') || '';
+      if (/<img\b/i.test(html)) {
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        let clipboardImageIndex = 0;
+        const chunks = [];
+        const visit = node => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            chunks.push(node.textContent || '');
+            return;
+          }
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          const tag = node.tagName.toLowerCase();
+          if (tag === 'img') {
+            const source = node.getAttribute('src') || '';
+            const file = source.startsWith('data:image/')
+              ? null : (imageFiles[clipboardImageIndex++] || null);
+            images.push({ file, source });
+            chunks.push(`\n[[PWD301:PASTE_IMAGE:${images.length - 1}]]\n`);
+            return;
+          }
+          if (tag === 'br') {
+            chunks.push('\n');
+            return;
+          }
+          const block = /^(p|div|li|tr|h[1-6])$/.test(tag);
+          if (block) chunks.push('\n');
+          node.childNodes.forEach(visit);
+          if (block) chunks.push('\n');
+        };
+        parsed.body.childNodes.forEach(visit);
+        pasteText = chunks.join('').replace(/\n{3,}/g, '\n\n').trim();
+      } else {
+        images.push(...imageFiles.map(file => ({ file, source: '' })));
+        const headers = [...pasteText.matchAll(/^(?:Câu|Bài|Question)\s*\d+[:.].*$/gmi)];
+        if (headers.length === images.length) {
+          let offset = 0;
+          headers.forEach((header, index) => {
+            const at = header.index + header[0].length + offset;
+            const marker = `\n[[PWD301:PASTE_IMAGE:${index}]]`;
+            pasteText = pasteText.slice(0, at) + marker + pasteText.slice(at);
+            offset += marker.length;
+          });
+        } else {
+          pasteText += images.map((_, index) => `\n[[PWD301:PASTE_IMAGE:${index}]]`).join('');
+        }
+      }
+
+      try {
+        const assetIds = [];
+        for (const image of images) {
+          let file = image.file;
+          if (!file && /^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(image.source)) {
+            const response = await fetch(image.source);
+            const blob = await response.blob();
+            file = new File([blob], `hinh-de-thi-${assetIds.length + 1}.png`, { type: blob.type });
+          }
+          if (!file) throw new Error('Không đọc được ảnh trong nội dung dán. Hãy tải ảnh từ tệp gốc lên câu hỏi.');
+          if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+            throw new Error('Ảnh đề thi phải là PNG, JPEG, WebP hoặc GIF và không quá 5 MB.');
+          }
+          const uploaded = await ApiClient.uploadCourseFile(courseId, file);
+          const assetId = uploaded?.asset_id || uploaded?.public_id;
+          if (!assetId) throw new Error('Máy chủ không trả về mã ảnh đã tải lên.');
+          assetIds.push(assetId);
+        }
+        if (document.getElementById('editor-raw-textarea') !== textarea) return;
+        const resolved = InstructorView.resolvePastedExamImages(pasteText, assetIds);
+        textarea.setRangeText(resolved, selectionStart, selectionEnd, 'end');
+        renderEditorPreview();
+        saveEditorState();
+        UI.showToast(`Đã nhận diện ${assetIds.length} hình ảnh trong đề thi. Ảnh sẽ hiển thị sau khi quét an toàn.`, 'success');
+      } catch (error) {
+        UI.showToast(error.message || 'Không thể nhận diện hình ảnh trong đề thi.', 'error');
+      }
+    });
 
     textarea.addEventListener('input', () => {
       renderEditorPreview();

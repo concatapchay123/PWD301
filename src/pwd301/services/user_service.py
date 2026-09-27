@@ -711,10 +711,7 @@ def assign_role_to_user(
             "The existing primary administrator role cannot be changed to a subordinate role."
         )
 
-    if norm_code == "ADMIN" and (
-        admin_sub_role == "ADMIN_PRIMARY"
-        or ((assigned_by_user_id is not None or reason is not None) and not admin_sub_role)
-    ):
+    if norm_code == "ADMIN" and admin_sub_role == "ADMIN_PRIMARY":
         raise InvalidRoleAssignmentError(
             "ADMIN_PRIMARY cannot be granted through ordinary role assignment."
         )
@@ -788,7 +785,10 @@ def assign_role_to_user(
                     link.assigned_by_user_id = assigned_by_user_id
                     effective_reason = reason or ""
                     if code == "ADMIN":
-                        chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
+                        if assigned_by_user_id is not None and assigned_by_user_id != user.id:
+                            chosen_sub = admin_sub_role or "ADMIN_SYSTEM_MONITORING"
+                        else:
+                            chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
                         link.assignment_reason = f"SUB_ROLE:{chosen_sub} | {effective_reason}"
                     else:
                         link.assignment_reason = effective_reason
@@ -890,6 +890,12 @@ def remove_role_from_user(
     if norm_code not in ("INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
 
+    # Guard: Self-Demotion Block
+    if removed_by_user_id is not None and user.id == removed_by_user_id and norm_code == "ADMIN":
+        raise AdminActionForbiddenError(
+            "Không thể tự thu hồi quyền Quản trị viên (ADMIN) của chính mình."
+        )
+
     if user.is_primary_admin and norm_code in ("ADMIN", "INSTRUCTOR"):
         raise AdminActionForbiddenError("The existing primary administrator role cannot be removed.")
 
@@ -904,12 +910,6 @@ def remove_role_from_user(
         clean_reason = reason.strip()
         if len(clean_reason) < 5:
             raise ValidationError("Lý do thu hồi vai trò kiểm toán bắt buộc tối thiểu 5 ký tự.")
-
-    # Guard: Self-Demotion Block
-    if removed_by_user_id is not None and user.id == removed_by_user_id and norm_code == "ADMIN":
-        raise AdminActionForbiddenError(
-            "Không thể tự thu hồi quyền Quản trị viên (ADMIN) của chính mình."
-        )
 
     current_codes = set(user.role_codes)
     if norm_code not in current_codes:

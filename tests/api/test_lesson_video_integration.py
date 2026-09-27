@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from io import BytesIO
 
 import pytest
 from flask import Flask
@@ -151,6 +152,7 @@ def test_lesson_video_lifecycle_instructor_and_student(
     course_obj.status = "PUBLISHED"
 
     from pwd301.services.lesson_service import _resolve_lesson
+
     lesson_obj = _resolve_lesson(lesson_id, session=sess)
     assert lesson_obj is not None
     lesson_obj.status = "PUBLISHED"
@@ -195,3 +197,39 @@ def test_lesson_video_lifecycle_instructor_and_student(
     cleared_data = get_cleared.get_json()
     cleared_lesson = cleared_data.get("lesson", cleared_data)
     assert not cleared_lesson.get("video_url")
+
+
+def test_lesson_video_limit_covers_links_and_uploads(
+    client: FlaskClient,
+    instructor_user: User,
+    sample_course: Course,
+) -> None:
+    login_res = client.post(
+        "/auth/login",
+        json={"email": instructor_user.email, "password": "Password@123"},
+    )
+    assert login_res.status_code == 200
+    course_id = sample_course.public_id
+    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(5)]
+    created = client.post(
+        f"/instructor/courses/{course_id}/lessons",
+        json={"title": "Năm video", "status": "DRAFT", "video_urls": urls},
+    )
+    assert created.status_code in (200, 201)
+    lesson_id = created.get_json()["lesson_id"]
+
+    detail = client.get(f"/instructor/lessons/{lesson_id}")
+    assert detail.status_code == 200
+    assert detail.get_json()["video_urls"] == urls
+
+    rejected_link = client.patch(
+        f"/instructor/lessons/{lesson_id}",
+        json={"video_urls": urls + ["https://www.youtube.com/watch?v=abcde12345Z"]},
+    )
+    assert rejected_link.status_code == 400
+
+    rejected_upload = client.post(
+        f"/instructor/courses/{course_id}/lessons/{lesson_id}/resources",
+        data={"file": (BytesIO(b"video"), "sixth.mp4", "video/mp4")},
+    )
+    assert rejected_upload.status_code == 400

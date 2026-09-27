@@ -145,6 +145,8 @@ def _lesson_quiz_answers_complete(
 
 
 def _lesson_requires_video_watch(lesson: Lesson) -> bool:
+    if re.search(r"<!--\s*video_urls:\s*\[\s*\"", lesson.markdown_content or ""):
+        return True
     if re.search(r"<!--\s*video_url:\s*\S+?\s*-->", lesson.markdown_content or ""):
         return True
     return any(

@@ -703,7 +703,10 @@ class RealGeminiClient(GeminiClientBase):
             self.key_pool._add_key(api_key, allow_test_keys=True)
 
         self.api_key = api_key or self.key_pool.get_current_key() or ""
-        self.model_name = _LAST_WORKING_MODEL or model_name or "gemini-flash-latest"
+        if model_name and model_name != "gemini-flash-latest":
+            self.model_name = model_name
+        else:
+            self.model_name = _LAST_WORKING_MODEL or model_name or "gemini-flash-latest"
         # Timeout clamping per system specification (15s to 30s)
         # Allows sub-second values when explicitly supplied for unit testing
         if timeout_seconds < 1:
