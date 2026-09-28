@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flask import Response, jsonify, request
+from flask import Response, jsonify, request, send_file
 
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.extensions import db
@@ -33,6 +33,7 @@ from pwd301.services.course_service import (
     change_course_status,
     create_course,
     get_course_detail,
+    get_course_thumbnail_asset,
     list_courses,
     trash_course,
     update_course,
@@ -67,6 +68,7 @@ from pwd301.services.question_bank_service import (
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
+    thumbnail = get_course_thumbnail_asset(c)
     lo_data = None
     if c.learning_objectives:
         try:
@@ -91,6 +93,9 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "difficulty": c.difficulty,
         "capacity": c.capacity,
         "status": c.status,
+        "thumbnail_url": f"/api/courses/{c.public_id}/thumbnail"
+        if c.status == "PUBLISHED" and thumbnail
+        else None,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "published_at": c.published_at.isoformat() if c.published_at else None,
         "created_at": c.created_at.isoformat(),
@@ -144,6 +149,25 @@ def create_course_api() -> tuple[Response, int] | Response:
     payload = request.get_json(silent=True) or {}
     course = create_course(actor, payload)
     return jsonify(_serialize_course(course)), 201
+
+
+@api_course_bp.route("/<course_id>/thumbnail", methods=["GET"])
+def get_course_thumbnail_api(course_id: str) -> Response:
+    """Stream a published, scanned course cover without exposing storage paths."""
+    from pwd301.services.exceptions import ResourceNotFoundError
+    from pwd301.services.file_service import get_file_for_download
+
+    course = get_course_detail(None, course_id)
+    asset = get_course_thumbnail_asset(course)
+    if asset is None:
+        raise ResourceNotFoundError("Course cover image not found.")
+    _asset, blob, physical_path = get_file_for_download(
+        None,
+        asset,
+        session=db.session,
+        public_course_thumbnail=True,
+    )
+    return send_file(physical_path, mimetype=blob.detected_mime_type, conditional=True)
 
 
 @api_course_bp.route("/<course_id>", methods=["GET"])
@@ -213,6 +237,8 @@ def archive_course_api(course_id: str) -> tuple[Response, int] | Response:
 def _serialize_lesson_summary(les: Lesson) -> dict[str, Any]:
     return {
         "lesson_id": str(les.public_id),
+        "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+        "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
         "title": les.title,
         "summary": les.summary,
         "position": les.position,

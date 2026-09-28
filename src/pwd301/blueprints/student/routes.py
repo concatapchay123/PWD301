@@ -82,6 +82,7 @@ def attempt_view(attempt_id: str) -> Any:
                 raw_lease_token=raw_token,
                 session=db.session,
             )
+            db.session.commit()
         except Exception:
             raw_token = None
 
@@ -93,6 +94,7 @@ def attempt_view(attempt_id: str) -> Any:
                 session=db.session,
             )
             session[f"attempt_lease_{attempt_id}"] = raw_token
+            db.session.commit()
         except Exception:
             raw_token = None
 
@@ -285,9 +287,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": (
-            1.0
-            if _lesson_requires_video_watch(les)
-            else float(les.viewed_fraction_required)
+            1.0 if _lesson_requires_video_watch(les) else float(les.viewed_fraction_required)
         ),
         "video_url": video_url,
         "video_urls": video_urls,
@@ -390,9 +390,7 @@ def complete_student_lesson_quiz(lesson_id: str) -> tuple[Response, int] | Respo
             "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
             "is_completed": progress.completed_at is not None,
             "completed": progress.completed_at is not None,
-            "completed_at": progress.completed_at.isoformat()
-            if progress.completed_at
-            else None,
+            "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
         }
     ), 200
 
@@ -747,6 +745,22 @@ def takeover_student_attempt_lease(attempt_id: str) -> tuple[Response, int] | Re
     )
 
 
+@student_bp.route("/attempt/<attempt_id>/focus-events", methods=["POST"])
+@student_required
+def record_student_attempt_focus_event(attempt_id: str) -> Any:
+    """Store a browser-reported absence interval for instructor review."""
+    from pwd301.services.attempt_service import record_attempt_focus_event
+
+    result = record_attempt_focus_event(
+        require_authenticated_actor(),
+        attempt_id,
+        request.get_json(silent=True) or {},
+        session=db.session,
+    )
+    db.session.commit()
+    return jsonify(result), 200
+
+
 @student_bp.route("/attempt/<attempt_id>/submit", methods=["POST"])
 @student_required
 def submit_student_attempt(attempt_id: str) -> Any:
@@ -766,7 +780,6 @@ def submit_student_attempt(attempt_id: str) -> Any:
         or request.headers.get("X-Idempotency-Key")
         or payload.get("submission_idempotency_key")
         or payload.get("idempotency_key")
-        or uuid.uuid4()
     )
 
     result = submit_assessment_attempt(
@@ -1538,6 +1551,8 @@ def student_course_detail(course_id: str) -> Any:
                 "id": str(les.public_id),
                 "public_id": str(les.public_id),
                 "lesson_id": str(les.public_id),
+                "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+                "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
                 "title": les.title,
                 "summary": les.summary,
                 "position": les.position,

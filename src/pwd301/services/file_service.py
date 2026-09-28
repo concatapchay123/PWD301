@@ -27,7 +27,7 @@ from flask import current_app
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.file_import import (
     FileAsset,
     FileBlob,
@@ -946,6 +946,7 @@ def get_file_for_download(
     asset_id: FileAsset | int | uuid.UUID | str,
     revision_no: int | None = None,
     session: Session | scoped_session[Any] | None = None,
+    public_course_thumbnail: bool = False,
 ) -> tuple[FileAsset, FileBlob, Path]:
     """Authorize access and retrieve physical file path for streaming/download.
 
@@ -965,7 +966,7 @@ def get_file_for_download(
     if asset is None:
         raise FileAssetNotFoundError("File asset not found.")
 
-    if actor is None or not actor.is_active:
+    if not public_course_thumbnail and (actor is None or not actor.is_active):
         raise FileAccessDeniedError("Authentication required to download this file.")
 
     course = sess.get(Course, asset.course_id)
@@ -973,9 +974,22 @@ def get_file_for_download(
         raise FileAssetNotFoundError("Parent course not found.")
 
     # Ma trận phân quyền Zero-Trust
-    if actor.is_admin or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id):
+    if public_course_thumbnail:
+        is_authorized = bool(
+            course.status == "PUBLISHED"
+            and course.deleted_at is None
+            and course.thumbnail_file_asset_id == asset.id
+            and asset.asset_type == "COURSE_IMAGE"
+            and asset.deleted_at is None
+            and asset.virus_scan_status == "CLEAN"
+            and asset.has_passed_malware_scan
+            and asset.mime_type.lower() in {"image/jpeg", "image/png", "image/webp"}
+        )
+    elif actor is not None and (
+        actor.is_admin or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id)
+    ):
         is_authorized = True
-    elif actor.has_role("STUDENT"):
+    elif actor is not None and actor.has_role("STUDENT"):
         # 1. Khóa học phải ở trạng thái PUBLISHED
         if course.status != "PUBLISHED":
             raise FileAccessDeniedError("Cannot download files from an unpublished course.")
@@ -1083,6 +1097,7 @@ def attach_resource_to_lesson(
     is_downloadable: bool = True,
     label: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> LessonResource:
     """Attach a FileAsset to a Lesson as a learning resource."""
     sess = session if session is not None else db.session
@@ -1099,6 +1114,8 @@ def attach_resource_to_lesson(
     # Invariant: file_asset.course_id phải cùng lesson.course_id
     if asset.course_id != lesson.course_id:
         raise FileValidationError("File asset belongs to a different course than the lesson.")
+    if asset.asset_type != "RESOURCE":
+        raise FileValidationError("Only learning resources can be attached to a lesson.")
 
     existing = (
         sess.query(LessonResource)
@@ -1111,12 +1128,38 @@ def attach_resource_to_lesson(
     if existing is not None:
         if label:
             existing.label = label
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
+        if commit:
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
+                raise
+        else:
+            sess.flush()
         return existing
+
+    if lesson.learning_unit is not None:
+        from pwd301.services.exceptions import LessonValidationError
+        from pwd301.services.lesson_service import validate_lesson_media_limits
+
+        try:
+            unit = (
+                sess.query(LearningUnit)
+                .filter(LearningUnit.id == lesson.learning_unit_id)
+                .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+                .with_for_update()
+                .one()
+            )
+            sess.expire(unit, ["lessons"])
+            validate_lesson_media_limits(
+                unit,
+                lesson,
+                lesson.markdown_content,
+                added_uploaded_video=1 if asset.is_video else 0,
+                added_documents=0 if asset.is_video else 1,
+            )
+        except LessonValidationError as exc:
+            raise FileValidationError(str(exc)) from exc
 
     max_pos = (
         sess.query(sa.func.max(LessonResource.position))
@@ -1134,7 +1177,10 @@ def attach_resource_to_lesson(
     )
     sess.add(resource)
     try:
-        sess.commit()
+        if commit:
+            sess.commit()
+        else:
+            sess.flush()
     except Exception:
         sess.rollback()
         raise
@@ -1147,6 +1193,7 @@ def detach_resource_from_lesson(
     lesson_id: Lesson | int | uuid.UUID | str,
     resource_id: int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> bool:
     """Detach a learning resource link from a Lesson."""
     sess = session if session is not None else db.session
@@ -1174,7 +1221,10 @@ def detach_resource_from_lesson(
 
     sess.delete(res)
     try:
-        sess.commit()
+        if commit:
+            sess.commit()
+        else:
+            sess.flush()
     except Exception:
         sess.rollback()
         raise

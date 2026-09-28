@@ -21,6 +21,8 @@ from pwd301.services.lesson_service import (
     change_lesson_status,
     create_lesson,
     get_lesson_detail,
+    queue_lesson_resource_change,
+    queue_lesson_review,
     record_lesson_progress,
     trash_lesson,
     update_lesson,
@@ -30,6 +32,8 @@ from pwd301.services.lesson_service import (
 def _serialize_lesson(les: Lesson, include_content: bool = True) -> dict[str, Any]:
     data: dict[str, Any] = {
         "lesson_id": str(les.public_id),
+        "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+        "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
         "course_id": str(les.course.public_id) if les.course else None,
         "title": les.title,
         "summary": les.summary,
@@ -144,6 +148,7 @@ def attach_lesson_resource_api(lesson_id: str) -> tuple[Response, int] | Respons
     from pwd301.services.authorization_service import require_authenticated_actor
     from pwd301.services.exceptions import FileValidationError
     from pwd301.services.file_service import (
+        _resolve_file_asset,
         _serialize_lesson_resource,
         attach_resource_to_lesson,
     )
@@ -156,6 +161,24 @@ def attach_lesson_resource_api(lesson_id: str) -> tuple[Response, int] | Respons
 
     label = payload.get("label") or payload.get("title")
     is_downloadable = payload.get("is_downloadable", True)
+
+    original = get_lesson_detail(actor, lesson_id)
+    if (
+        not actor.is_admin
+        and original.status != "DRAFT"
+        and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+    ):
+        asset = _resolve_file_asset(asset_id, session=db.session)
+        review = queue_lesson_resource_change(
+            actor, original.course, original, "ATTACH", asset=asset, label=label
+        )
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": review.id,
+            }
+        ), 202
 
     resource = attach_resource_to_lesson(
         actor=actor,
@@ -178,6 +201,22 @@ def detach_lesson_resource_api(lesson_id: str, resource_id: str) -> tuple[Respon
     from pwd301.services.file_service import detach_resource_from_lesson
 
     actor = require_authenticated_actor()
+    original = get_lesson_detail(actor, lesson_id)
+    if (
+        not actor.is_admin
+        and original.status != "DRAFT"
+        and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+    ):
+        review = queue_lesson_resource_change(
+            actor, original.course, original, "DETACH", resource_id=resource_id
+        )
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": review.id,
+            }
+        ), 202
     detached = detach_resource_from_lesson(
         actor=actor,
         lesson_id=lesson_id,
@@ -208,6 +247,21 @@ def update_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Update editable lesson fields (title, content, duration, etc.) (JWT required)."""
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or {}
+    original = get_lesson_detail(actor, lesson_id)
+    if (
+        not actor.is_admin
+        and original.status != "DRAFT"
+        and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+    ):
+        review = queue_lesson_review(actor, original.course, original, "LESSON_CONTENT", payload)
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": review.id,
+                "lesson": _serialize_lesson(original),
+            }
+        ), 202
     lesson = update_lesson(actor, lesson_id, payload, session=db.session)
     return jsonify(_serialize_lesson(lesson)), 200
 
@@ -221,6 +275,29 @@ def trash_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
+    original = get_lesson_detail(actor, lesson_id)
+    if not actor.is_admin and original.status != "DRAFT" and (
+        original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        or original.status == "PUBLISHED"
+    ):
+        review = queue_lesson_review(
+            actor,
+            original.course,
+            original,
+            "LESSON_STRUCTURE",
+            {
+                "action": "DELETE",
+                "lesson_id": original.id,
+                "reason": reason or "Giảng viên yêu cầu xóa bài giảng",
+            },
+        )
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": review.id,
+            }
+        ), 202
     lesson = trash_lesson(actor, lesson_id, reason=reason, session=db.session)
     return (
         jsonify(
@@ -242,5 +319,21 @@ def change_lesson_status_api(lesson_id: str) -> tuple[Response, int] | Response:
     payload = request.get_json(silent=True) or {}
     new_status = str(payload.get("status") or payload.get("new_status") or "").strip().upper()
     reason = payload.get("reason")
+    original = get_lesson_detail(actor, lesson_id)
+    if (
+        not actor.is_admin
+        and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        and new_status != original.status
+    ):
+        review = queue_lesson_review(
+            actor, original.course, original, "LESSON_CONTENT", {"status": new_status}
+        )
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": review.id,
+            }
+        ), 202
     lesson = change_lesson_status(actor, lesson_id, new_status, reason=reason, session=db.session)
     return jsonify(_serialize_lesson(lesson)), 200

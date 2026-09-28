@@ -44,6 +44,7 @@ from pwd301.models.attempt_regrade import (
     AttemptAnswerChoice,
     AttemptAnswerEvent,
     AttemptChoiceSnapshot,
+    AttemptFocusEvent,
     AttemptQuestion,
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
@@ -89,6 +90,100 @@ from pwd301.services.exceptions import (
 # AUDIT & LEASE HELPERS
 # ============================================================================
 
+FOCUS_EVENT_TYPES = {"TAB_HIDDEN", "WINDOW_BLUR", "FULLSCREEN_EXIT"}
+
+
+def record_attempt_focus_event(
+    actor: User,
+    attempt_id: str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Record a browser observation; a retried start or end is idempotent."""
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+    if actor.id != attempt.student_user_id:
+        raise ForbiddenError("You do not own this attempt.")
+    if not attempt.assessment or not attempt.assessment.monitoring_enabled:
+        raise AttemptValidationError("Monitoring is not enabled for this assessment.")
+    try:
+        event_id = uuid.UUID(str(payload.get("event_id", "")))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise AttemptValidationError("A valid event_id is required.") from exc
+    event_type = payload.get("event_type")
+    phase = payload.get("phase")
+    if event_type not in FOCUS_EVENT_TYPES or phase not in {"START", "END"}:
+        raise AttemptValidationError("Invalid focus event.")
+
+    event = sess.query(AttemptFocusEvent).filter(AttemptFocusEvent.public_id == event_id).first()
+    if event is not None and (event.attempt_id != attempt.id or event.event_type != event_type):
+        raise AttemptValidationError("Focus event identifier was already used.")
+    if phase == "START":
+        deadline = attempt.deadline_at
+        now_utc = _normalize_dt(utc_now())
+        deadline_utc = _normalize_dt(deadline)
+        deadline_expired = deadline is not None and (
+            now_utc is None or deadline_utc is None or now_utc >= deadline_utc
+        )
+        if attempt.status != "IN_PROGRESS" or deadline_expired:
+            raise AttemptValidationError("The attempt is no longer in progress.")
+        if event is None:
+            event = AttemptFocusEvent(
+                public_id=event_id,
+                attempt_id=attempt.id,
+                event_type=event_type,
+                started_at=utc_now(),
+            )
+            sess.add(event)
+            sess.flush()
+    elif event is None:
+        raise AttemptValidationError("Focus event has not started.")
+    elif event.ended_at is None:
+        event.ended_at = utc_now()
+        sess.flush()
+
+    count = sess.query(AttemptFocusEvent).filter(AttemptFocusEvent.attempt_id == attempt.id).count()
+    return {"event_count": count, "event_id": str(event_id)}
+
+
+def get_instructor_attempt_focus_events(
+    actor: User,
+    attempt_id: str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    sess = session if session is not None else db.session
+    attempt = _resolve_attempt(attempt_id, session=sess)
+    if attempt is None or attempt.assessment is None:
+        raise AttemptNotFoundError("Assessment attempt not found.")
+    require_course_manager(actor, attempt.assessment.course_id, session=sess)
+    events = (
+        sess.query(AttemptFocusEvent)
+        .filter(AttemptFocusEvent.attempt_id == attempt.id)
+        .order_by(AttemptFocusEvent.started_at)
+        .all()
+    )
+    return {
+        "attempt_id": str(attempt.public_id),
+        "event_count": len(events),
+        "events": [
+            {
+                "event_id": str(event.public_id),
+                "event_type": event.event_type,
+                "started_at": event.started_at.isoformat(),
+                "ended_at": event.ended_at.isoformat() if event.ended_at else None,
+                "duration_seconds": max(
+                    0, round((event.ended_at - event.started_at).total_seconds())
+                )
+                if event.ended_at
+                else None,
+            }
+            for event in events
+        ],
+    }
+
+
 # Constant-time dummy digest for side-channel timing attack mitigation
 DUMMY_LEASE_HASH = hashlib.sha256(b"pwd301-timing-defense-lease-hash").digest()
 GROUPED_CHOICE_MARKER = re.compile(r"^\[\[PWD301:G:(?:DRAG|MATCH):([1-9]\d*)\]\]")
@@ -126,8 +221,7 @@ def _grouped_multiple_choice_correct(
 
     required_groups = set(groups)
     if not required_groups or any(
-        not correct_keys_by_group.get(group_id)
-        for group_id in required_groups
+        not correct_keys_by_group.get(group_id) for group_id in required_groups
     ):
         return False
 
@@ -141,8 +235,7 @@ def _grouped_multiple_choice_correct(
         )
 
     return set(selected_by_group) == required_groups and all(
-        len(selected_keys) == 1
-        and selected_keys[0] in correct_keys_by_group.get(group_id, set())
+        len(selected_keys) == 1 and selected_keys[0] in correct_keys_by_group.get(group_id, set())
         for group_id, selected_keys in selected_by_group.items()
     )
 
@@ -171,9 +264,7 @@ def _grouped_fill_answer_correct(
         value = raw_answer[marker.end() :].strip()
         if not value:
             return False
-        groups.setdefault(group_index, set()).add(
-            unicodedata.normalize("NFKC", value).casefold()
-        )
+        groups.setdefault(group_index, set()).add(unicodedata.normalize("NFKC", value).casefold())
 
     group_indexes = sorted(groups)
     if not group_indexes or group_indexes != list(range(1, len(group_indexes) + 1)):
@@ -834,9 +925,7 @@ def get_attempt_delivery(
                 "content": delivered_content,
                 "answer_text": answer.answer_text if answer else None,
                 "selected_choice_keys": sorted(selected_choice_keys),
-                "resources": image_resources_by_revision.get(
-                    aq.source_question_revision_id, []
-                ),
+                "resources": image_resources_by_revision.get(aq.source_question_revision_id, []),
                 "points": float(aq.points_assigned),
                 "section_id": section_pub_id,
                 "choices": choices_data,
@@ -848,6 +937,9 @@ def get_attempt_delivery(
         "attempt_id": str(attempt.public_id),
         "assessment_id": str(assessment.public_id) if assessment else None,
         "assessment_title": assessment.title if assessment else "",
+        "exam_layout": assessment.exam_layout if assessment else "STANDARD",
+        "monitoring_enabled": assessment.monitoring_enabled if assessment else False,
+        "request_fullscreen": assessment.request_fullscreen if assessment else False,
         "attempt_number": attempt.attempt_number,
         "status": attempt.status,
         "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
@@ -1315,14 +1407,21 @@ def save_attempt_answer(
     if aq is None:
         raise AttemptValidationError("Attempt question not found in this attempt.")
 
+    answer_record = (
+        sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
+    )
+
     # 5. Client Sequence check
     raw_seq = payload.get("client_sequence")
     if raw_seq is None:
-        raw_seq = payload.get("client_sequence_no", 0)
-    try:
-        client_seq = int(raw_seq)
-    except (ValueError, TypeError):
-        client_seq = 0
+        raw_seq = payload.get("client_sequence_no")
+    if raw_seq is not None:
+        try:
+            client_seq = int(raw_seq)
+        except (ValueError, TypeError):
+            client_seq = 0
+    else:
+        client_seq = (answer_record.last_client_sequence or 0) + 1 if answer_record else 1
     raw_change_id = payload.get("client_change_id") or payload.get("change_id")
     try:
         change_uuid = (
@@ -1332,10 +1431,6 @@ def save_attempt_answer(
         )
     except (ValueError, TypeError):
         change_uuid = uuid.uuid4()
-
-    answer_record = (
-        sess.query(AttemptAnswer).filter(AttemptAnswer.attempt_question_id == aq.id).first()
-    )
 
     # Check duplicate change_id for idempotency
     existing_event = (
@@ -1806,7 +1901,12 @@ def submit_assessment_attempt(
 
     # Parse and validate idempotency key
     if idempotency_key is None:
-        key_uuid = uuid.uuid4()
+        key_uuid = (
+            attempt.submission_idempotency_key
+            if attempt.status in ("SUBMITTED", "PENDING_GRADING", "GRADED")
+            and attempt.submission_idempotency_key is not None
+            else uuid.uuid4()
+        )
     elif isinstance(idempotency_key, uuid.UUID):
         key_uuid = idempotency_key
     else:

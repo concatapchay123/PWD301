@@ -1,5 +1,6 @@
 import contextlib
 import json
+import uuid
 from typing import Any
 
 import sqlalchemy as sa
@@ -7,7 +8,8 @@ from flask import Response, flash, jsonify, redirect, request, url_for
 
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
+from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
+from pwd301.models.file_import import FileAsset, LessonResource
 from pwd301.models.identity import User
 from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_admin_system_overview
@@ -98,7 +100,9 @@ def admin_courses() -> tuple[Response, int] | Response | str:
 @admin_required
 def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền xem hồ sơ duyệt khóa học.")
     sess = db.session
     from pwd301.services.authorization_service import _resolve_course
 
@@ -110,11 +114,23 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
     lessons_data = [
         {
             "lesson_id": str(item.public_id),
+            "learning_unit_id": str(item.learning_unit.public_id) if item.learning_unit else None,
+            "learning_unit_title": item.learning_unit.title if item.learning_unit else None,
             "title": item.title,
             "order_index": getattr(item, "order_index", getattr(item, "position", 1)),
             "position": getattr(item, "position", 1),
             "status": item.status,
             "summary": item.summary,
+            "markdown_content": item.markdown_content,
+            "resources": [
+                {
+                    "label": resource.label or resource.file_asset.display_name,
+                    "resource_type": resource.resource_type,
+                    "scan_status": resource.file_asset.virus_scan_status,
+                }
+                for resource in item.resources
+                if resource.file_asset is not None
+            ],
         }
         for item in lessons
         if getattr(item, "deleted_at", None) is None
@@ -1314,21 +1330,58 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
         raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
 
     status_filter = request.args.get("status", "ALL").strip().upper()
-    query = db.session.query(CourseChangeRequest).order_by(CourseChangeRequest.created_at.desc())
+    query = db.session.query(CourseChangeRequest).order_by(
+        CourseChangeRequest.created_at.desc(), CourseChangeRequest.id.desc()
+    )
     if status_filter != "ALL":
         query = query.filter(CourseChangeRequest.status == status_filter)
 
     records = query.all()
+    visible_records = []
+    seen_pending: set[tuple[Any, ...]] = set()
+    for record in records:
+        if record.status == "PENDING" and record.target_type == "LESSON":
+            try:
+                proposal = json.loads(record.proposed_payload_json or "{}")
+                action = proposal.get("action") if isinstance(proposal, dict) else None
+            except (TypeError, ValueError):
+                action = None
+            key = (
+                record.requested_by_user_id,
+                record.target_type,
+                record.target_id,
+                record.change_type,
+                action,
+            )
+            if key in seen_pending:
+                continue
+            seen_pending.add(key)
+        visible_records.append(record)
     results = []
-    for r in records:
+    for r in visible_records:
         try:
             payload_data = json.loads(r.proposed_payload_json) if r.proposed_payload_json else {}
         except Exception:
             payload_data = {}
+        if not isinstance(payload_data, dict):
+            payload_data = {}
 
         target_title = None
         original_data: dict[str, Any] = {}
-        if r.target_type == "LESSON" and r.target_id:
+        if payload_data.get("action") == "UPDATE_LEARNING_UNIT":
+            try:
+                unit_id = uuid.UUID(str(payload_data.get("learning_unit_id")))
+            except (TypeError, ValueError, AttributeError):
+                unit_id = None
+            unit = (
+                db.session.query(LearningUnit).filter(LearningUnit.public_id == unit_id).first()
+                if unit_id
+                else None
+            )
+            if unit and unit.course_id == r.course_id:
+                target_title = unit.title
+                original_data = {"title": unit.title}
+        elif r.target_type == "LESSON" and r.target_id:
             les = db.session.get(Lesson, r.target_id)
             if les:
                 target_title = les.title
@@ -1339,8 +1392,34 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                     "markdown_content": les.markdown_content or "",
                     "status": les.status,
                     "estimated_duration_minutes": les.estimated_duration_minutes,
+                    "minimum_completion_seconds": les.minimum_completion_seconds,
+                    "viewed_fraction_required": float(les.viewed_fraction_required),
+                    "required_for_periods_starting_at": (
+                        les.required_for_periods_starting_at.isoformat()
+                        if les.required_for_periods_starting_at
+                        else None
+                    ),
                     "order_index": les.order_index,
+                    "resources": [
+                        {
+                            "resource_id": resource.id,
+                            "title": resource.label or resource.file_asset.display_name,
+                        }
+                        for resource in les.resources
+                    ],
                 }
+                if payload_data.get("action") == "RESOURCE_CHANGES":
+                    for change in payload_data.get("changes", []):
+                        if not isinstance(change, dict):
+                            continue
+                        if change.get("action") == "ATTACH":
+                            asset = db.session.get(FileAsset, change.get("asset_id"))
+                            if asset and asset.course_id == r.course_id:
+                                change["title"] = change.get("label") or asset.display_name
+                        elif change.get("action") == "DETACH":
+                            resource = db.session.get(LessonResource, change.get("resource_id"))
+                            if resource and resource.lesson_id == les.id:
+                                change["title"] = resource.label or resource.file_asset.display_name
         elif r.target_type == "PREREQUISITE" and r.target_id:
             c = db.session.get(Course, r.target_id)
             if c:
@@ -1408,7 +1487,7 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             }
         )
 
-    pending_count = sum(1 for r in records if r.status == "PENDING")
+    pending_count = sum(1 for r in visible_records if r.status == "PENDING")
     return jsonify({"change_requests": results, "pending_count": pending_count}), 200
 
 
@@ -1438,6 +1517,20 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     if req_record.status != "PENDING":
         raise ValidationError(f"Change request is already in '{req_record.status}' status.")
 
+    if req_record.target_type == "LESSON":
+        sibling_query = db.session.query(CourseChangeRequest).filter_by(
+            requested_by_user_id=req_record.requested_by_user_id,
+            target_type="LESSON",
+            target_id=req_record.target_id,
+            change_type=req_record.change_type,
+            status="PENDING",
+        )
+        newer = sibling_query.filter(CourseChangeRequest.id > req_record.id).first()
+        if newer is not None:
+            raise ValidationError("Yêu cầu này đã được thay thế bởi bản sửa mới hơn.")
+    else:
+        sibling_query = None
+
     now = utc_now()
     try:
         p_data = (
@@ -1446,8 +1539,93 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     except Exception:
         p_data = {}
 
+    target_lesson = (
+        db.session.get(Lesson, req_record.target_id)
+        if req_record.target_type == "LESSON" and req_record.target_id
+        else None
+    )
+    if req_record.target_type == "LESSON" and target_lesson is not None:
+        lesson_title = p_data.get("title") or (
+            target_lesson.title if target_lesson else "được đề xuất"
+        )
+        subject = f"Lesson '{lesson_title}'"
+    elif req_record.change_type == "PREREQUISITE":
+        subject = f"Điều kiện tiên quyết của khóa học '{req_record.course.title}'"
+    else:
+        subject = f"Khóa học '{req_record.course.title}'"
+    action_url = f"#/instructor/courses/{req_record.course.public_id}/manage"
+
     if action == "approve":
-        if req_record.change_type == "LESSON_STRUCTURE" and p_data.get("action") == "DELETE":
+        if p_data.get("action") == "UPDATE_LEARNING_UNIT":
+            from pwd301.services.lesson_service import update_learning_unit
+
+            try:
+                public_unit_id = uuid.UUID(str(p_data.get("learning_unit_id")))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError("Mã Bài học trong yêu cầu không hợp lệ.") from None
+            unit = (
+                db.session.query(LearningUnit)
+                .filter(
+                    LearningUnit.public_id == public_unit_id,
+                    LearningUnit.course_id == req_record.course_id,
+                    LearningUnit.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if unit is None:
+                raise ValidationError("Bài học không thuộc khóa học được yêu cầu xét duyệt.")
+            update_learning_unit(
+                actor,
+                public_unit_id,
+                {"title": p_data.get("title")},
+                session=db.session,
+            )
+            msg = f"Đã phê duyệt tên Bài học #{req_record.id}."
+
+        elif p_data.get("action") == "RESOURCE_CHANGES":
+            from pwd301.services.file_service import (
+                attach_resource_to_lesson,
+                detach_resource_from_lesson,
+            )
+
+            if target_lesson is None or target_lesson.course_id != req_record.course_id:
+                raise ValidationError("Lesson không thuộc khóa học được xét duyệt.")
+            changes = p_data.get("changes")
+            if not isinstance(changes, list) or not changes:
+                raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
+            if any(not isinstance(change, dict) for change in changes):
+                raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
+            for change in sorted(changes, key=lambda item: item.get("action") != "DETACH"):
+                if change.get("action") == "DETACH":
+                    resource = db.session.get(LessonResource, change.get("resource_id"))
+                    if resource is None or resource.lesson_id != target_lesson.id:
+                        raise ValidationError("Tài liệu gỡ không thuộc Lesson này.")
+                    detach_resource_from_lesson(
+                        actor, target_lesson.id, resource.id, session=db.session, commit=False
+                    )
+                elif change.get("action") == "ATTACH":
+                    asset = db.session.get(FileAsset, change.get("asset_id"))
+                    if (
+                        asset is None
+                        or asset.course_id != req_record.course_id
+                        or asset.asset_type != "RESOURCE"
+                        or asset.status != "ACTIVE"
+                        or asset.deleted_at is not None
+                    ):
+                        raise ValidationError("Tệp đề xuất không còn hợp lệ hoặc chưa quét sạch.")
+                    attach_resource_to_lesson(
+                        actor,
+                        target_lesson.id,
+                        asset.id,
+                        label=change.get("label"),
+                        session=db.session,
+                        commit=False,
+                    )
+                else:
+                    raise ValidationError("Thao tác tài liệu Lesson không hợp lệ.")
+            msg = f"Đã phê duyệt thay đổi tài liệu Lesson #{req_record.id}."
+
+        elif req_record.change_type == "LESSON_STRUCTURE" and p_data.get("action") == "DELETE":
             lesson_id = req_record.target_id or p_data.get("lesson_id")
             if lesson_id:
                 trash_lesson(
@@ -1480,6 +1658,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                             "summary",
                             "markdown_content",
                             "estimated_duration_minutes",
+                            "minimum_completion_seconds",
+                            "viewed_fraction_required",
+                            "required_for_periods_starting_at",
                             "status",
                         )
                     }
@@ -1511,11 +1692,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                 dispatch_notification(
                     recipient_user=req_record.requested_by,
                     event_type="COURSE_CHANGE_APPROVED",
-                    title="Yêu cầu thay đổi đã được Admin phê duyệt",
-                    body=(
-                        f"Quản trị viên đã phê duyệt yêu cầu thay đổi #{req_record.id} "
-                        f"({req_record.change_type})."
-                    ),
+                    title=f"{subject} đã được phê duyệt",
+                    body=f"Quản trị viên đã phê duyệt thay đổi đối với {subject}.",
+                    action_url=action_url,
                     category="COURSE",
                     session=db.session,
                 )
@@ -1540,15 +1719,23 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                 dispatch_notification(
                     recipient_user=req_record.requested_by,
                     event_type="COURSE_CHANGE_REJECTED",
-                    title="Yêu cầu thay đổi bị Admin từ chối",
+                    title=f"{subject} cần chỉnh sửa",
                     body=(
-                        f"Quản trị viên đã từ chối yêu cầu thay đổi #{req_record.id}. "
-                        f"Lý do: {reason or 'Không có'}."
+                        f"Thay đổi đối với {subject} chưa được duyệt. "
+                        f"Lý do: {reason or 'Chưa nêu lý do'}."
                     ),
+                    action_url=action_url,
                     category="COURSE",
                     session=db.session,
                 )
         msg = f"Đã từ chối yêu cầu thay đổi #{req_record.id}."
+
+    if sibling_query is not None:
+        for superseded in sibling_query.filter(CourseChangeRequest.id < req_record.id).all():
+            superseded.status = "REJECTED"
+            superseded.reviewed_by_user_id = actor.id
+            superseded.review_reason = f"Đã được thay thế bởi yêu cầu #{req_record.id}"
+            superseded.reviewed_at = now
 
     db.session.commit()
     return jsonify({"status": req_record.status, "message": msg}), 200

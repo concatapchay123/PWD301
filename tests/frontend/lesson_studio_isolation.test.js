@@ -21,6 +21,33 @@ test('only the active lesson studio may save its form fields', () => {
   assert.equal(window.InstructorView.isActiveLessonStudio(second), false);
 });
 
+test('lesson studio reports review state and skips unchanged autosave', () => {
+  const window = {};
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, document: {} }, { filename });
+  assert.equal(window.InstructorView.lessonSaveOutcome({ pending_approval: true }, true), 'pending');
+  assert.equal(window.InstructorView.lessonSaveOutcome({ status: 'PUBLISHED' }, true), 'published');
+  assert.equal(window.InstructorView.lessonSaveOutcome({ status: 'DRAFT' }, false), 'saved');
+  assert.equal(window.InstructorView.shouldAutosaveLesson('same', 'same'), false);
+  assert.equal(window.InstructorView.shouldAutosaveLesson('changed', 'same'), true);
+});
+
+test('learning unit lesson cards open their editor when selected', () => {
+  const window = {};
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
+    window, document: {}, UI: { escapeHtml: value => String(value) },
+  }, { filename });
+  const html = window.InstructorView.renderLessonChildNavigator({
+    learning_unit_id: 'unit-1',
+    title: 'Bài học đầu',
+    lessons: [{ lesson_id: 'lesson-1', title: 'Lesson đầu', position: 1 }],
+  }, 'course-1', 'lesson-1');
+  assert.match(html, /href="#\/instructor\/courses\/course-1\/lessons\/lesson-1\/edit"/);
+  assert.match(html, /aria-current="page"/);
+  assert.match(html, /Lesson đầu/);
+});
+
 test('lesson resource batch processes every selected file independently', async () => {
   const window = {};
   const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
@@ -37,12 +64,83 @@ test('lesson resource batch processes every selected file independently', async 
   assert.equal(result.failed.length, 1);
 });
 
-test('five video slots include YouTube links and uploaded videos together', () => {
+test('files waiting for Admin approval stay out of attached Lesson resources', async () => {
   const window = {};
   const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, document: {} }, { filename });
-  const links = ['a', 'b', 'c'];
-  const resources = [{ filename: 'one.mp4' }, { filename: 'two.webm' }, { filename: 'notes.pdf' }];
+  const result = await window.InstructorView.uploadLessonFiles(
+    [{ name: 'queued.pdf' }, { name: 'active.pdf' }],
+    async file => file.name === 'queued.pdf'
+      ? { pending_approval: true, change_request_id: 9 }
+      : { resource_id: 'active', title: file.name },
+  );
+  assert.equal(result.pending.length, 1);
+  assert.equal(result.uploaded.length, 1);
+  assert.equal(result.uploaded[0].resource_id, 'active');
+});
+
+test('two video slots include YouTube links and uploaded videos together', () => {
+  const window = {};
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, document: {} }, { filename });
+  const links = ['a'];
+  const resources = [{ filename: 'one.mp4' }, { filename: 'notes.pdf' }];
   assert.equal(window.InstructorView.canAddLessonVideo(links, resources), false);
-  assert.equal(window.InstructorView.canAddLessonVideo(links.slice(1), resources), true);
+  assert.equal(window.InstructorView.canAddLessonVideo([], resources), true);
+  assert.equal(window.InstructorView.getVideoCount(links, resources), 2);
+  assert.equal(window.InstructorView.getRemainingVideoSlots(links, resources), 0);
+  assert.equal(window.InstructorView.getRemainingVideoSlots([], resources), 1);
+});
+
+test('filterVideoUploadBatch respects remaining slots and categorizes invalid files', () => {
+  const window = {};
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, document: {} }, { filename });
+
+  const files = [
+    { name: 'clip1.mp4', size: 50000000 },
+    { name: 'clip2.webm', size: 60000000 },
+    { name: 'document.pdf', size: 1000000 },
+    { name: 'giant_video.mov', size: 1000000001 },
+    { name: 'clip3.mkv', size: 70000000 },
+    { name: 'clip4.mp4', size: 80000000 }
+  ];
+
+  const res = window.InstructorView.filterVideoUploadBatch(files, 2);
+  assert.equal(res.accepted.length, 2);
+  assert.equal(res.accepted[0].name, 'clip1.mp4');
+  assert.equal(res.accepted[1].name, 'clip2.webm');
+  assert.equal(res.overflow.length, 2);
+  assert.equal(res.overflow[0].name, 'clip3.mkv');
+  assert.equal(res.overflow[1].name, 'clip4.mp4');
+  assert.equal(res.invalidType.length, 1);
+  assert.equal(res.invalidType[0].name, 'document.pdf');
+  assert.equal(res.oversized.length, 1);
+  assert.equal(res.oversized[0].name, 'giant_video.mov');
+});
+
+test('moveVideoItem reorders video list while preserving elements', () => {
+  const window = {};
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, document: {} }, { filename });
+
+  const items = [{ id: '1' }, { id: '2' }, { id: '3' }];
+  const movedDown = window.InstructorView.moveVideoItem(items, 0, 1);
+  assert.equal(JSON.stringify(movedDown.map(i => i.id)), JSON.stringify(['2', '1', '3']));
+
+  const movedUp = window.InstructorView.moveVideoItem(items, 2, 0);
+  assert.equal(JSON.stringify(movedUp.map(i => i.id)), JSON.stringify(['3', '1', '2']));
+
+  // Edge cases
+  assert.equal(JSON.stringify(window.InstructorView.moveVideoItem(items, 0, 0).map(i => i.id)), JSON.stringify(['1', '2', '3']));
+  assert.equal(JSON.stringify(window.InstructorView.moveVideoItem(items, -1, 2).map(i => i.id)), JSON.stringify(['1', '2', '3']));
+  assert.equal(JSON.stringify(window.InstructorView.moveVideoItem(items, 0, 10).map(i => i.id)), JSON.stringify(['1', '2', '3']));
+});
+
+test('instructor video studio renders draggable cards and omits arrow buttons', () => {
+  const code = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js'), 'utf8');
+  assert.ok(code.includes('video-draggable-card'));
+  assert.ok(code.includes('drag_indicator'));
+  assert.ok(!code.includes('btn-video-move-up'));
+  assert.ok(!code.includes('btn-video-move-down'));
 });

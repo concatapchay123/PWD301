@@ -210,10 +210,10 @@ def test_lesson_video_limit_covers_links_and_uploads(
     )
     assert login_res.status_code == 200
     course_id = sample_course.public_id
-    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(5)]
+    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(2)]
     created = client.post(
         f"/instructor/courses/{course_id}/lessons",
-        json={"title": "Năm video", "status": "DRAFT", "video_urls": urls},
+        json={"title": "Hai video", "status": "DRAFT", "video_urls": urls},
     )
     assert created.status_code in (200, 201)
     lesson_id = created.get_json()["lesson_id"]
@@ -230,6 +230,6 @@ def test_lesson_video_limit_covers_links_and_uploads(
 
     rejected_upload = client.post(
         f"/instructor/courses/{course_id}/lessons/{lesson_id}/resources",
-        data={"file": (BytesIO(b"video"), "sixth.mp4", "video/mp4")},
+        data={"file": (BytesIO(b"video"), "third.mp4", "video/mp4")},
     )
     assert rejected_upload.status_code == 400

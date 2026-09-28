@@ -33,8 +33,18 @@ test('random avatar generator returns an encoded Dicebear URL for its seed', () 
   const parsed = new URL(avatarUrl);
 
   assert.equal(parsed.origin, 'https://api.dicebear.com');
-  assert.equal(parsed.pathname, '/7.x/bottts/svg');
+  assert.equal(parsed.pathname, '/10.x/adventurer/svg');
   assert.equal(parsed.searchParams.has('seed'), true);
+});
+
+test('avatar choice supports several non-robot styles and rejects unknown styles', () => {
+  const styles = ['adventurer', 'lorelei', 'fun-emoji', 'pixel-art', 'thumbs'];
+  for (const style of styles) {
+    const url = window.StudentView.createRandomAvatarUrl(() => 0.5, style);
+    assert.equal(new URL(url).pathname, `/10.x/${style}/svg`);
+    assert.equal(window.StudentView.storeRandomAvatarUrl('user-123', url), true);
+  }
+  assert.equal(window.StudentView.storeRandomAvatarUrl('user-123', 'https://api.dicebear.com/10.x/unknown/svg?seed=abc'), false);
 });
 
 test('random avatar choice persists by account and rejects arbitrary URLs', () => {

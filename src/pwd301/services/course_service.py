@@ -49,6 +49,31 @@ from pwd301.services.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+
+def get_course_thumbnail_asset(
+    course: Course,
+    session: Session | scoped_session[Any] | None = None,
+) -> Any | None:
+    """Return only a scanned, course-owned image suitable for display."""
+    from pwd301.models.file_import import FileAsset
+
+    if course.thumbnail_file_asset_id is None:
+        return None
+    sess = session if session is not None else db.session
+    asset = sess.get(FileAsset, course.thumbnail_file_asset_id)
+    if (
+        asset is None
+        or asset.course_id != course.id
+        or asset.asset_type != "COURSE_IMAGE"
+        or asset.deleted_at is not None
+        or asset.virus_scan_status != "CLEAN"
+        or not asset.has_passed_malware_scan
+        or asset.mime_type.lower() not in {"image/jpeg", "image/png", "image/webp"}
+    ):
+        return None
+    return asset
+
+
 # Allowed difficulty values per database check constraint ck_courses_2
 VALID_DIFFICULTIES = {"BEGINNER", "INTERMEDIATE", "ADVANCED"}
 
@@ -227,10 +252,7 @@ def create_course(
 
     thumbnail_file_asset_id = data.get("thumbnail_file_asset_id")
     if thumbnail_file_asset_id is not None:
-        try:
-            thumbnail_file_asset_id = int(thumbnail_file_asset_id)
-        except (ValueError, TypeError):
-            raise CourseValidationError("thumbnail_file_asset_id must be an integer.") from None
+        raise CourseValidationError("Create the course before uploading its cover image.")
 
     # 3. Check uniqueness constraints (COURSE-001, COURSE-002)
     norm_code = course_code.strip().upper()
@@ -470,10 +492,24 @@ def update_course(
     if "thumbnail_file_asset_id" in data:
         thumb = data["thumbnail_file_asset_id"]
         if thumb is not None:
+            from pwd301.models.file_import import FileAsset
+
             try:
-                course.thumbnail_file_asset_id = int(thumb)
-            except (ValueError, TypeError):
-                raise CourseValidationError("thumbnail_file_asset_id must be an integer.") from None
+                asset_uuid = uuid.UUID(str(thumb))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise CourseValidationError("A valid cover image asset ID is required.") from exc
+            asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+            if (
+                asset is None
+                or asset.course_id != course.id
+                or asset.asset_type != "COURSE_IMAGE"
+                or asset.deleted_at is not None
+                or asset.virus_scan_status != "CLEAN"
+                or not asset.has_passed_malware_scan
+                or asset.mime_type.lower() not in {"image/jpeg", "image/png", "image/webp"}
+            ):
+                raise CourseValidationError("Choose a clean image uploaded for this course.")
+            course.thumbnail_file_asset_id = asset.id
         else:
             course.thumbnail_file_asset_id = None
 
@@ -702,11 +738,10 @@ def change_course_status(
             dispatch_notification(
                 recipient_user=course.owner_instructor_id,
                 event_type="COURSE_APPROVED",
-                title=f"Đề cương môn học {course.course_code} đã được phê duyệt",
+                title=f"Khóa học {course.course_code} đã được phê duyệt",
                 body=(
-                    f"Đề cương môn học '{course.title}' ({course.course_code}) đã được "
-                    "Quản trị viên phê duyệt. Khóa học đã sẵn sàng để xuất bản "
-                    "hoặc cập nhật nội dung bài giảng."
+                    f"Khóa học '{course.title}' ({course.course_code}) đã được "
+                    "Quản trị viên phê duyệt. Bạn có thể xuất bản khóa học."
                 ),
                 action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
@@ -733,11 +768,10 @@ def change_course_status(
             dispatch_notification(
                 recipient_user=course.owner_instructor_id,
                 event_type="COURSE_REJECTED",
-                title=f"Đề cương môn học {course.course_code} yêu cầu chỉnh sửa",
+                title=f"Khóa học {course.course_code} cần chỉnh sửa",
                 body=(
-                    f"Đề cương môn học '{course.title}' ({course.course_code}) đã bị "
-                    f"Quản trị viên từ chối phê duyệt. Lý do kiểm toán: {reason}. "
-                    "Vui lòng cập nhật đề cương và gửi lại thẩm định."
+                    f"Khóa học '{course.title}' ({course.course_code}) cần chỉnh sửa. "
+                    f"Lý do: {reason}. Cập nhật khóa học rồi gửi duyệt lại."
                 ),
                 action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
@@ -769,17 +803,17 @@ def change_course_status(
                         dispatch_notification(
                             recipient_user=adm.id,
                             event_type="COURSE_SUBMITTED_FOR_REVIEW",
-                            title=f"Đề cương môn học {course.course_code} đã được gửi duyệt",
+                            title=f"Khóa học {course.course_code} đã được gửi duyệt",
                             body=(
-                                f"Giảng viên {actor.display_name} đã nộp đề cương khóa học "
-                                f"'{course.title}' ({course.course_code}) để thẩm định xuất bản."
+                                f"Giảng viên {actor.display_name} đã gửi khóa học "
+                                f"'{course.title}' ({course.course_code}) để xét duyệt."
                             ),
-                            action_url="#/admin/governance?tab=courses",
+                            action_url=f"#/admin/courses/review?id={course.public_id}",
                             category="COURSE",
                             payload={
                                 "course_id": str(course.public_id),
                                 "course_code": course.course_code,
-                                "action_url": "#/admin/governance?tab=courses",
+                                "action_url": f"#/admin/courses/review?id={course.public_id}",
                             },
                             session=sess,
                         )
@@ -887,11 +921,8 @@ def reassign_course_owner(
             dispatch_notification(
                 recipient_user=old_owner_id,
                 event_type="COURSE_OWNER_REASSIGNED",
-                title=f"Thông báo điều chuyển môn học {course.course_code}",
-                body=(
-                    f"Môn học {course.course_code} - '{course.title}' đã được chuyển giao/bàn giao "
-                    f"trách nhiệm quản lý cho giảng viên khác theo quyết định của Quản trị viên."
-                ),
+                title=f"Bạn không còn phụ trách khóa học {course.course_code}",
+                body=(f"Khóa học '{course.title}' đã được giao cho giảng viên khác."),
                 category="COURSE",
                 payload={
                     "course_id": str(course.public_id),
@@ -914,11 +945,9 @@ def reassign_course_owner(
             dispatch_notification(
                 recipient_user=target_user_id,
                 event_type="COURSE_OWNER_REASSIGNED",
-                title=f"Phân công phụ trách môn học {course.course_code}",
-                body=(
-                    f"Bạn đã được phân công tiếp nhận phụ trách quản lý môn học "
-                    f"{course.course_code} - '{course.title}' từ Ban Quản trị học vụ."
-                ),
+                title=f"Bạn được giao khóa học {course.course_code}",
+                body=(f"Bạn đã được giao phụ trách khóa học '{course.title}'."),
+                action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
                 payload={
                     "course_id": str(course.public_id),

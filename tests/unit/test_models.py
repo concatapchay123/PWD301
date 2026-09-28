@@ -1,6 +1,6 @@
 """Unit tests for PWD301 domain models.
 
-Validates the 71 canonical tables, column types, constraints, computed properties,
+Validates the 73 canonical tables, column types, constraints, computed properties,
 and entity relationships across all 9 domains.
 """
 
@@ -30,6 +30,7 @@ from pwd301.models import (
     FileBlob,
     FileRevision,
     FileScanResult,
+    LearningUnit,
     Lesson,
     Question,
     QuestionRevision,
@@ -40,7 +41,7 @@ from pwd301.models import (
 )
 from pwd301.models.types import utc_now
 
-EXPECTED_71_TABLES = {
+EXPECTED_73_TABLES = {
     # 1. Identity & Auth (8)
     "users",
     "roles",
@@ -50,11 +51,12 @@ EXPECTED_71_TABLES = {
     "user_security_tokens",
     "instructor_applications",
     "security_events",
-    # 2. Course & Learning (10)
+    # 2. Course & Learning (11)
     "courses",
     "course_prerequisites",
     "course_completion_rules",
     "course_change_requests",
+    "learning_units",
     "lessons",
     "enrollments",
     "enrollment_periods",
@@ -74,13 +76,14 @@ EXPECTED_71_TABLES = {
     "assessment_blueprints",
     "assessment_blueprint_rules",
     "assessment_question_pool",
-    # 5. Assessment Attempt & Regrading (13)
+    # 5. Assessment Attempt & Regrading (14)
     "assessment_attempts",
     "attempt_questions",
     "attempt_choice_snapshots",
     "attempt_answers",
     "attempt_answer_choices",
     "attempt_answer_events",
+    "attempt_focus_events",
     "attempt_question_grades",
     "attempt_question_grade_history",
     "assessment_results",
@@ -124,11 +127,11 @@ EXPECTED_71_TABLES = {
 }
 
 
-def test_exactly_71_tables_registered():
-    """Verify exactly 71 canonical tables are registered in metadata."""
+def test_exactly_73_tables_registered():
+    """Verify exactly 73 canonical tables are registered in metadata."""
     registered = set(db.metadata.tables.keys())
-    assert len(registered) == 71
-    assert registered == EXPECTED_71_TABLES
+    assert len(registered) == 73
+    assert registered == EXPECTED_73_TABLES
 
 
 def test_user_creation_and_defaults(app):
@@ -223,6 +226,7 @@ def test_course_and_lesson_hierarchy(app):
 
         lesson1 = Lesson(
             course_id=course.id,
+            learning_unit=LearningUnit(course_id=course.id, title="Binary", position=1),
             title="Lesson 1: Binary & Logic",
             markdown_content="# Binary and Boolean Logic",
             position=1,
@@ -230,6 +234,7 @@ def test_course_and_lesson_hierarchy(app):
         )
         lesson2 = Lesson(
             course_id=course.id,
+            learning_unit=LearningUnit(course_id=course.id, title="Variables", position=2),
             title="Lesson 2: Variables & Types",
             markdown_content="# Variables and Types",
             position=2,

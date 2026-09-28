@@ -46,6 +46,20 @@ CREATE TABLE assessment_attempts (
 );
 GO
 
+CREATE TABLE attempt_focus_events (
+    id BIGINT IDENTITY(1,1) NOT NULL,
+    public_id UNIQUEIDENTIFIER NOT NULL,
+    attempt_id BIGINT NOT NULL,
+    event_type VARCHAR(24) NOT NULL,
+    started_at DATETIME2(3) NOT NULL,
+    ended_at DATETIME2(3) NULL,
+    CONSTRAINT pk_attempt_focus_events PRIMARY KEY (id),
+    CONSTRAINT uq_attempt_focus_events_public_id UNIQUE (public_id),
+    CONSTRAINT ck_attempt_focus_events_type CHECK (event_type IN ('TAB_HIDDEN','WINDOW_BLUR','FULLSCREEN_EXIT')),
+    CONSTRAINT fk_attempt_focus_events_attempt_id FOREIGN KEY (attempt_id) REFERENCES assessment_attempts (id)
+);
+GO
+
 CREATE TABLE attempt_questions (
     id BIGINT IDENTITY(1,1) NOT NULL,
     public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),

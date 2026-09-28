@@ -345,6 +345,9 @@ def _serialize_assessment(
         "title": assessment.title,
         "assessment_type": assessment.assessment_type,
         "status": assessment.status,
+        "exam_layout": assessment.exam_layout,
+        "monitoring_enabled": assessment.monitoring_enabled,
+        "request_fullscreen": assessment.request_fullscreen,
         "time_limit_minutes": assessment.time_limit_minutes,
         "attempt_limit": assessment.attempt_limit,
         "scoring_policy": assessment.scoring_policy,
@@ -399,6 +402,26 @@ def _serialize_assessment(
         )
 
     return data
+
+
+def _exam_policy_bool(payload: dict[str, Any], field: str, default: bool = False) -> bool:
+    if field not in payload:
+        return default
+    value = payload[field]
+    if isinstance(value, bool):
+        return value
+    if value in (0, "0", "false", "False"):
+        return False
+    if value in (1, "1", "true", "True"):
+        return True
+    raise AssessmentValidationError(f"Field '{field}' must be a boolean.")
+
+
+def _exam_layout(payload: dict[str, Any], default: str = "STANDARD") -> str:
+    layout = str(payload.get("exam_layout", default)).strip().upper()
+    if layout not in {"STANDARD", "FOCUS"}:
+        raise AssessmentValidationError("exam_layout must be STANDARD or FOCUS.")
+    return layout
 
 
 # ============================================================================
@@ -602,6 +625,9 @@ def create_assessment(
         shuffle_choices=bool(payload.get("shuffle_choices", False)) or is_rand_bool,
         score_release_policy=score_release_policy,
         answer_visibility_policy=answer_visibility_policy,
+        exam_layout=_exam_layout(payload),
+        monitoring_enabled=_exam_policy_bool(payload, "monitoring_enabled"),
+        request_fullscreen=_exam_policy_bool(payload, "request_fullscreen"),
         random_question_count=random_question_count,
         created_at=utc_now(),
         updated_at=utc_now(),
@@ -673,6 +699,24 @@ def update_assessment(
 
     # 2. Timing Freeze Invariant check (ASSESS-001)
     is_published = assessment.status == "PUBLISHED" or assessment.published_at is not None
+
+    for field, current in (
+        ("exam_layout", assessment.exam_layout),
+        ("monitoring_enabled", assessment.monitoring_enabled),
+        ("request_fullscreen", assessment.request_fullscreen),
+    ):
+        if field not in payload:
+            continue
+        proposed = (
+            _exam_layout(payload, current)
+            if field == "exam_layout"
+            else _exam_policy_bool(payload, field)
+        )
+        if is_published and proposed != current:
+            raise AssessmentLockedError(
+                "Exam presentation and monitoring policy is locked after publish."
+            )
+        setattr(assessment, field, proposed)
     tz_offset_str = payload.get("timezone_offset") or payload.get("author_timezone")
     if is_published:
         if "open_at" in payload:

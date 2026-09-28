@@ -111,10 +111,26 @@ CREATE TABLE course_change_requests (
 );
 GO
 
+CREATE TABLE learning_units (
+    id BIGINT IDENTITY(1,1) NOT NULL,
+    public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
+    course_id BIGINT NOT NULL,
+    title NVARCHAR(200) NOT NULL,
+    position INT NOT NULL,
+    created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+    deleted_at DATETIME2(3) NULL,
+    CONSTRAINT pk_learning_units PRIMARY KEY (id),
+    CONSTRAINT uq_learning_units_public_id UNIQUE (public_id),
+    CONSTRAINT ck_learning_units_position CHECK (position > 0),
+    CONSTRAINT fk_learning_units_course_id FOREIGN KEY (course_id) REFERENCES courses (id)
+);
+GO
+
 CREATE TABLE lessons (
     id BIGINT IDENTITY(1,1) NOT NULL,
     public_id UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWSEQUENTIALID()),
     course_id BIGINT NOT NULL,
+    learning_unit_id BIGINT NOT NULL,
     title NVARCHAR(200) NOT NULL,
     summary NVARCHAR(1000) NULL,
     markdown_content NVARCHAR(MAX) NOT NULL,
@@ -140,6 +156,7 @@ CREATE TABLE lessons (
     CONSTRAINT ck_lessons_4 CHECK (viewed_fraction_required >= 0 AND viewed_fraction_required <= 1),
     CONSTRAINT ck_lessons_5 CHECK (status IN ('DRAFT','ACTIVE','PUBLISHED','PENDING_APPROVAL','ARCHIVED','HIDDEN','TRASH','HISTORICAL')),
     CONSTRAINT fk_lessons_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
+    CONSTRAINT fk_lessons_learning_unit_id FOREIGN KEY (learning_unit_id) REFERENCES learning_units (id),
     CONSTRAINT fk_lessons_change_request_id FOREIGN KEY (change_request_id) REFERENCES course_change_requests (id) ON DELETE SET NULL,
     CONSTRAINT fk_lessons_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id) ON DELETE SET NULL
 );

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
@@ -9,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.identity import Role, User
-from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.course_service import change_course_status, create_course, update_course
+from pwd301.services.file_service import store_file_stream
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -97,6 +100,32 @@ def test_api_course_catalog_and_filtering(
     res = resp.get_json()
     assert res["pagination"]["total_items"] == 1
     assert res["items"][0]["course_code"] == "PUB-101"
+
+
+def test_published_course_thumbnail_streams_only_scanned_image(
+    client: FlaskClient, instructor_user: User, admin_user: User
+) -> None:
+    course = create_course(instructor_user, {"course_code": "COVER-101", "title": "Cover Course"})
+    asset = store_file_stream(
+        instructor_user,
+        course.id,
+        io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"a" * 64),
+        "cover.png",
+        "image/png",
+        asset_type="COURSE_IMAGE",
+        session=db.session,
+    )
+    update_course(instructor_user, course.id, {"thumbnail_file_asset_id": str(asset.public_id)})
+    assert client.get(f"/api/courses/{course.public_id}/thumbnail").status_code != 200
+    change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW")
+    change_course_status(admin_user, course.id, "APPROVED")
+    change_course_status(instructor_user, course.id, "PUBLISHED")
+
+    detail = client.get(f"/api/courses/{course.public_id}").get_json()
+    assert detail["thumbnail_url"] == f"/api/courses/{course.public_id}/thumbnail"
+    thumbnail = client.get(detail["thumbnail_url"])
+    assert thumbnail.status_code == 200
+    assert thumbnail.mimetype == "image/png"
 
 
 def test_api_update_course(client: FlaskClient, instructor_user: User) -> None:

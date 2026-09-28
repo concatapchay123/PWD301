@@ -302,6 +302,14 @@ class ApiClient {
     return await ApiClient.request(`/student/attempt/${attemptId}`);
   }
 
+  static async recordAttemptFocusEvent(attemptId, event) {
+    return await ApiClient.request(`/student/attempt/${attemptId}/focus-events`, {
+      method: 'POST',
+      keepalive: true,
+      body: event
+    });
+  }
+
   static async saveAttemptAnswer(attemptId, questionId, payload, leaseToken = '') {
     return await ApiClient.request(`/student/attempt/${attemptId}/answers/${questionId}`, {
       method: 'POST',
@@ -482,6 +490,35 @@ class ApiClient {
     return await ApiClient.request(`/instructor/courses/${courseId}/lessons`, {
       method: 'POST',
       body: data
+    });
+  }
+
+  static async getLearningUnits(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/learning-units`);
+  }
+
+  static async createLearningUnit(courseId, data) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/learning-units`, {
+      method: 'POST', body: data
+    });
+  }
+
+  static async updateLearningUnit(unitId, data) {
+    return await ApiClient.request(`/instructor/learning-units/${unitId}`, {
+      method: 'PATCH', body: data
+    });
+  }
+
+  static async deleteLearningUnit(unitId) {
+    return await ApiClient.request(`/instructor/learning-units/${unitId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  static async reorderLearningUnits(courseId, unitIds) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/learning-units/reorder`, {
+      method: 'PUT',
+      body: { unit_ids: unitIds }
     });
   }
 
@@ -695,10 +732,11 @@ class ApiClient {
     });
   }
 
-  static async uploadCourseFile(courseId, file, title = file.name) {
+  static async uploadCourseFile(courseId, file, title = file.name, assetType = 'RESOURCE') {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', title);
+    formData.append('asset_type', assetType);
     return await ApiClient.request(`/instructor/courses/${courseId}/files`, {
       method: 'POST',
       body: formData
@@ -715,6 +753,10 @@ class ApiClient {
 
   static async getInstructorAttemptResult(attemptId) {
     return await ApiClient.request(`/instructor/attempts/${attemptId}/results`);
+  }
+
+  static async getInstructorAttemptFocusEvents(attemptId) {
+    return await ApiClient.request(`/instructor/attempts/${attemptId}/focus-events`);
   }
 
   // =========================================================================

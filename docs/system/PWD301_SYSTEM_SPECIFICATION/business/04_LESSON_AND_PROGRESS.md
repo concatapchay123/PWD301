@@ -1,6 +1,8 @@
 # Lesson and Progress
 
 ## Confirmed rules
+- Instructor-facing Bài học is a parent group above Lesson. Existing Lesson IDs and progress remain unchanged when the parent groups are introduced.
+- A Bài học contains at most 10 active Lessons and 7 videos in total. A Lesson contains at most 2 videos and 5 documents. Uploaded videos and external video links share the same cap.
 - Lesson order is mutable globally; prior completion remains.
 - Completion requires meaningful minimum time and viewed-most evidence.
 - Progress cache is derived; lesson_progress/results are authoritative.
@@ -8,7 +10,7 @@
 - New lesson is optional Xem thêm for existing periods/completed learners.
 
 ## Primary persistence
-`lessons`, `lesson_progress`, `enrollments`, `enrollment_periods`, `course_completion_rules`.
+`learning_units`, `lessons`, `lesson_progress`, `enrollments`, `enrollment_periods`, `course_completion_rules`.
 
 ## Implementation obligations
 - Validate state and object authorization before mutation.

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.assessment import Assessment
 from pwd301.models.attempt_regrade import AssessmentAttempt
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.identity import AnonymousUser, Role, User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.question_bank import Question
@@ -172,12 +172,12 @@ def test_user_role_methods_cumulative(
     assert instructor_user.is_instructor is True
     assert instructor_user.is_admin is False
 
-    # Admin: ADMIN + INSTRUCTOR + STUDENT
+    # Admin: ADMIN + STUDENT (Instructor role is separate and requires explicit registration)
     assert admin_user.has_role("STUDENT") is True
-    assert admin_user.has_role("INSTRUCTOR") is True
+    assert admin_user.has_role("INSTRUCTOR") is False
     assert admin_user.has_role("ADMIN") is True
     assert admin_user.is_student is True
-    assert admin_user.is_instructor is True
+    assert admin_user.is_instructor is False
     assert admin_user.is_admin is True
 
     # Case insensitivity
@@ -188,7 +188,7 @@ def test_user_role_methods_cumulative(
     # has_any_role and has_all_roles
     assert student_user.has_any_role("STUDENT", "ADMIN") is True
     assert student_user.has_any_role("INSTRUCTOR", "ADMIN") is False
-    assert admin_user.has_all_roles("STUDENT", "INSTRUCTOR", "ADMIN") is True
+    assert admin_user.has_all_roles("STUDENT", "ADMIN") is True
     assert instructor_user.has_all_roles("STUDENT", "INSTRUCTOR") is True
     assert instructor_user.has_all_roles("STUDENT", "ADMIN") is False
 
@@ -213,16 +213,16 @@ def test_anonymous_user_safety() -> None:
 
 
 def test_validate_role_combinations() -> None:
-    """Test allowed cumulative combinations per AUTH-002."""
+    """Test allowed cumulative combinations per AUTH-002 and Admin remediation."""
     assert validate_role_combination({"STUDENT"}) is True
     assert validate_role_combination({"STUDENT", "INSTRUCTOR"}) is True
+    assert validate_role_combination({"STUDENT", "ADMIN"}) is True
     assert validate_role_combination({"STUDENT", "INSTRUCTOR", "ADMIN"}) is True
 
     # Invalid partial sets
     assert validate_role_combination(set()) is False
     assert validate_role_combination({"INSTRUCTOR"}) is False
     assert validate_role_combination({"ADMIN"}) is False
-    assert validate_role_combination({"STUDENT", "ADMIN"}) is False
     assert validate_role_combination({"GUEST"}) is False
 
     # raise_on_error flag
@@ -233,7 +233,7 @@ def test_validate_role_combinations() -> None:
         validate_role_combination({"ADMIN"}, raise_on_error=True)
 
     with pytest.raises(InvalidRoleAssignmentError, match="Invalid role combination"):
-        validate_role_combination({"STUDENT", "ADMIN"}, raise_on_error=True)
+        validate_role_combination({"STUDENT", "GUEST"}, raise_on_error=True)
 
 
 def test_set_user_roles_lifecycle(student_user: User, admin_user: User) -> None:
@@ -494,6 +494,7 @@ def test_lesson_question_assessment_management(
 
     lesson = Lesson(
         course_id=course_sample.id,
+        learning_unit=LearningUnit(course_id=course_sample.id, title="Lesson", position=1),
         title="Lesson 1",
         markdown_content="# Hello World",
         position=1,
@@ -696,6 +697,7 @@ def test_parent_child_consistency_helpers(
     # 1. Lesson <-> Course
     lesson_sample = Lesson(
         course_id=course_sample.id,
+        learning_unit=LearningUnit(course_id=course_sample.id, title="Sample", position=1),
         title="Sample Lesson",
         markdown_content="Hello",
         position=1,

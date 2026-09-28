@@ -18,7 +18,7 @@ import pytest
 from flask import Flask
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.ai_service import create_conversation
 from pwd301.services.exceptions import ForbiddenError
@@ -81,6 +81,7 @@ def auth_setup(app: Flask):
         # Lesson in public course
         lesson_pub = Lesson(
             course_id=course_pub.id,
+            learning_unit=LearningUnit(course_id=course_pub.id, title="Public", position=1),
             title="Lesson 1",
             position=1,
             status="PUBLISHED",
@@ -88,6 +89,7 @@ def auth_setup(app: Flask):
         # Lesson in draft course
         lesson_draft = Lesson(
             course_id=course_draft.id,
+            learning_unit=LearningUnit(course_id=course_draft.id, title="Draft", position=1),
             title="Lesson Draft 1",
             position=1,
             status="DRAFT",

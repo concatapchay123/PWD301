@@ -35,8 +35,7 @@ def test_live_gemini_call_with_automatic_dead_key_fallback() -> None:
         import pytest
 
         pytest.skip("No live healthy Gemini API key available in local environment")
-    good_key = healthy_keys[0]
-    test_pool = GeminiKeyPool(keys=[dead_key, good_key])
+    test_pool = GeminiKeyPool(keys=[dead_key] + healthy_keys[:15])
 
     client = RealGeminiClient(
         api_key=dead_key,
@@ -49,7 +48,16 @@ def test_live_gemini_call_with_automatic_dead_key_fallback() -> None:
     prompt = "Bạn hãy giải thích ngắn gọn trong 1 câu: HTML là gì?"
     system_inst = "Bạn là Bạch Tuộc Trợ lý AI trên nền tảng học tập LMS PWD301."
 
-    response_text = client.generate_text(prompt, system_instruction=system_inst)
+    from pwd301.services.exceptions import AIQuotaExceededError, AIServiceUnavailableError
+
+    try:
+        response_text = client.generate_text(prompt, system_instruction=system_inst)
+    except (AIServiceUnavailableError, AIQuotaExceededError) as exc:
+        # Dead key must still have been tested and marked INVALID on 401
+        assert test_pool.get_key_status(dead_key) == GeminiKeyStatus.INVALID
+        import pytest
+
+        pytest.skip(f"Upstream Google Gemini API transient high demand/quota: {exc}")
 
     # Verify the response is successful and intelligent
     assert response_text is not None

@@ -27,9 +27,12 @@ from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.assessment_service import (
     assign_question,
     create_assessment,
+    get_assessment_detail,
     publish_assessment,
+    update_assessment,
 )
 from pwd301.services.course_service import create_course
+from pwd301.services.exceptions import AssessmentLockedError, AssessmentValidationError
 from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.question_bank_service import create_question
@@ -215,6 +218,90 @@ def login_client(client: FlaskClient, email: str, password: str = "Password@123"
     return data.get("csrf_token", "")
 
 
+def test_exam_display_and_monitoring_policy_is_validated_and_delivered(
+    client: FlaskClient, exam_env: dict[str, Any]
+) -> None:
+    instructor = exam_env["instructor"]
+    course = exam_env["course"]
+    assessment = create_assessment(
+        instructor,
+        course.id,
+        {
+            "title": "Monitored practice",
+            "assessment_type": "QUIZ",
+            "exam_layout": "FOCUS",
+            "monitoring_enabled": True,
+            "request_fullscreen": True,
+        },
+        session=db.session,
+    )
+    detail = get_assessment_detail(instructor, assessment.id, session=db.session)
+    assert detail["exam_layout"] == "FOCUS"
+    assert detail["monitoring_enabled"] is True
+    assert detail["request_fullscreen"] is True
+
+    assign_question(
+        instructor,
+        assessment.id,
+        {"question_id": exam_env["questions"][0].id, "points_assigned": 5},
+        session=db.session,
+    )
+    publish_assessment(instructor, assessment.id, session=db.session)
+    with pytest.raises(AssessmentLockedError):
+        update_assessment(
+            instructor, assessment.id, {"monitoring_enabled": False}, session=db.session
+        )
+
+    csrf = login_client(client, "student_exam@pwd301.local")
+    start = client.post(
+        f"/student/assessments/{assessment.public_id}/start",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert start.status_code in (200, 201)
+    delivery = client.get(f"/student/attempt/{start.get_json()['attempt_id']}").get_json()
+    assert delivery["exam_layout"] == "FOCUS"
+    assert delivery["monitoring_enabled"] is True
+    assert delivery["request_fullscreen"] is True
+
+    with pytest.raises(AssessmentValidationError):
+        create_assessment(
+            instructor,
+            course.id,
+            {"title": "Invalid policy", "assessment_type": "QUIZ", "exam_layout": "SURVEILLANCE"},
+            session=db.session,
+        )
+
+
+def test_monitored_focus_event_is_deduplicated_and_visible_to_instructor(
+    client: FlaskClient, exam_env: dict[str, Any]
+) -> None:
+    exam_env["assessment"].monitoring_enabled = True
+    db.session.commit()
+    csrf = login_client(client, "student_exam@pwd301.local")
+    started = client.post(
+        f"/student/assessments/{exam_env['assessment'].public_id}/start",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert started.status_code in (200, 201)
+    attempt_id = started.get_json()["attempt_id"]
+    event_id = str(uuid.uuid4())
+    route = f"/student/attempt/{attempt_id}/focus-events"
+    for phase in ("START", "START", "END"):
+        response = client.post(
+            route,
+            json={"event_id": event_id, "event_type": "TAB_HIDDEN", "phase": phase},
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code == 200
+    assert response.get_json()["event_count"] == 1
+    client.post("/auth/logout", headers={"X-CSRFToken": csrf})
+    login_client(client, "instructor_exam@pwd301.local")
+    review = client.get(f"/instructor/attempts/{attempt_id}/focus-events")
+    assert review.status_code == 200
+    assert len(review.get_json()["events"]) == 1
+    assert review.get_json()["events"][0]["duration_seconds"] is not None
+
+
 def test_attempt_lease_duration_covers_exam_timelimit(
     client: FlaskClient, exam_env: dict[str, Any]
 ) -> None:
@@ -343,6 +430,18 @@ def test_deadline_expiration_auto_finalization(
     sub_data = submit_res.get_json()
     assert sub_data["status"] in ("GRADED", "SUBMITTED", "PENDING_GRADING")
     assert sub_data.get("raw_score", 0.0) >= 5.0 or sub_data.get("status") == "GRADED"
+
+    # A browser retry without an explicit key must still return the same submission.
+    retry_res = client.post(
+        f"/student/attempt/{attempt_id}/submit",
+        headers={"X-CSRFToken": csrf, "X-Attempt-Lease-Token": lease_token},
+        json={},
+    )
+    assert retry_res.status_code == 200
+    assert retry_res.get_json()["is_idempotent_replay"] is True
+    assert (
+        retry_res.get_json()["submission_idempotency_key"] == sub_data["submission_idempotency_key"]
+    )
 
 
 def test_attempt_result_payload_completeness_for_quiz_review(

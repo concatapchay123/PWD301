@@ -266,6 +266,34 @@ def dispatch_notification(
     return notification, email_delivery
 
 
+def _visible_notification_query(
+    session: Session | scoped_session, recipient_id: int
+) -> Any:
+    """Collapse duplicate lesson review alerts while retaining their audit events."""
+    newer = sa.orm.aliased(Notification)
+    newer_event = sa.orm.aliased(NotificationEvent)
+    duplicate = (
+        sa.select(newer.id)
+        .join(newer_event, newer.notification_event_id == newer_event.id)
+        .where(
+            newer.recipient_user_id == recipient_id,
+            newer_event.event_type == "LESSON_CHANGE_REQUEST",
+            newer.title == Notification.title,
+            newer.body == Notification.body,
+            newer.id > Notification.id,
+        )
+        .exists()
+    )
+    return (
+        session.query(Notification)
+        .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
+        .filter(
+            Notification.recipient_user_id == recipient_id,
+            sa.or_(NotificationEvent.event_type != "LESSON_CHANGE_REQUEST", ~duplicate),
+        )
+    )
+
+
 def list_user_notifications(
     actor: User,
     status: str | None = None,
@@ -280,7 +308,7 @@ def list_user_notifications(
     if not actor:
         raise ForbiddenError("Actor context required.")
 
-    query = s.query(Notification).filter(Notification.recipient_user_id == actor.id)
+    query = _visible_notification_query(s, actor.id)
 
     if unread_only or (status and status.lower() == "unread"):
         query = query.filter(Notification.read_at.is_(None))
@@ -316,14 +344,7 @@ def get_unread_count(
     if not actor:
         return 0
 
-    count = (
-        s.query(sa.func.count(Notification.id))
-        .filter(
-            Notification.recipient_user_id == actor.id,
-            Notification.read_at.is_(None),
-        )
-        .scalar()
-    )
+    count = _visible_notification_query(s, actor.id).filter(Notification.read_at.is_(None)).count()
     return count or 0
 
 

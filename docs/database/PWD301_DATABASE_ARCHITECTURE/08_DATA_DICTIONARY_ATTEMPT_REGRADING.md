@@ -107,6 +107,25 @@ Student-sensitive; ownership phải khớp authenticated user.
 
 ---
 
+## `attempt_focus_events`
+
+**Purpose**
+
+Ghi lại khoảng thời gian trình duyệt báo học viên rời tab, mất tiêu điểm cửa sổ hoặc thoát toàn màn hình. Đây là tín hiệu để giảng viên xem lại, không phải bằng chứng kết luận gian lận hay lý do tự động nộp bài.
+
+| Column | Type | Nullable | Description |
+|---|---|---:|---|
+| `id` | `BIGINT` | No | Khóa chính nội bộ |
+| `public_id` | `UNIQUEIDENTIFIER` | No | ID sự kiện công khai |
+| `attempt_id` | `BIGINT` | No | FK đến `assessment_attempts(id)` |
+| `event_type` | `VARCHAR(24)` | No | `TAB_HIDDEN`, `WINDOW_BLUR` hoặc `FULLSCREEN_EXIT` |
+| `started_at` | `DATETIME2(3)` | No | Thời điểm bắt đầu theo máy chủ |
+| `ended_at` | `DATETIME2(3)` | Yes | Thời điểm kết thúc theo máy chủ |
+
+`public_id` là duy nhất; `event_type` có CHECK constraint. Chỉ mục `ix_attempt_focus_events_attempt` dùng `(attempt_id, started_at)`. Không lưu hoặc suy đoán số lần chụp màn hình và thao tác touchpad vì trình duyệt không quan sát được một cách đáng tin cậy.
+
+---
+
 ## `attempt_questions`
 
 **Purpose**

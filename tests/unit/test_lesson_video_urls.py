@@ -12,13 +12,13 @@ from pwd301.services.exceptions import ValidationError
 from pwd301.services.lesson_service import _lesson_requires_video_watch
 
 
-def test_video_urls_accepts_five_youtube_links_and_preserves_order():
-    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(5)]
+def test_video_urls_accepts_two_youtube_links_and_preserves_order():
+    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(2)]
     assert _validate_video_urls(urls) == urls
 
 
-def test_video_urls_rejects_six_or_untrusted_links():
-    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(6)]
+def test_video_urls_rejects_three_or_untrusted_links():
+    urls = [f"https://www.youtube.com/watch?v=abcde1234{i}A" for i in range(3)]
     with pytest.raises(ValidationError):
         _validate_video_urls(urls)
     with pytest.raises(ValidationError):

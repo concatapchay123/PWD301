@@ -77,7 +77,7 @@ class UI {
       progressBarColor = 'bg-amber-600 dark:bg-amber-500';
     }
 
-    toast.className = 'relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] shadow-none transition-all duration-200 transform -translate-y-3 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-sm w-full overflow-hidden';
+    toast.className = 'relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] shadow-none transition-all duration-200 transform -translate-y-3 opacity-0 text-xs font-medium select-none pointer-events-auto max-w-sm w-full overflow-hidden';
     toast.innerHTML = `
       <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
         <span class="material-symbols-outlined text-[18px]">${icon}</span>
@@ -164,7 +164,7 @@ class UI {
     const modalLayer = document.createElement('div');
     modalLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
     modalLayer.innerHTML = `
-      <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
+      <div class="bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl ${shadowClass} w-full ${maxWidth} max-h-[90vh] flex flex-col overflow-hidden transform transition-all modal-dialog">
         <!-- Modal Header -->
         <div class="px-5 py-3.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between shrink-0 bg-[#FAF9F5] dark:bg-[#242423]">
           <h3 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
@@ -283,7 +283,7 @@ class UI {
       const confirmLayer = document.createElement('div');
       confirmLayer.className = 'modal-layer fixed inset-0 bg-[#222120]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6';
       confirmLayer.innerHTML = `
-        <div class="bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
+        <div class="bg-[#FAF9F5] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-none w-full max-w-md p-6 flex flex-col gap-4 transform transition-all duration-150 scale-95 opacity-0" id="confirm-dialog-card">
           <!-- Header: Contextual Icon Badge & Close Action -->
           <div class="flex items-start justify-between gap-3">
             <div class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${iconBadgeBg}">
@@ -353,7 +353,7 @@ class UI {
     });
   }
 
-  static prompt(title, message, defaultValue = '', placeholder = '', minLength = 1) {
+  static prompt(title, message, defaultValue = '', placeholder = '', minLength = 1, actionLabel = 'Lưu') {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (value) => {
@@ -377,7 +377,7 @@ class UI {
           Hủy
         </button>
         <button type="button" id="prompt-action-btn" class="c-btn c-btn-primary c-btn-md">
-          Xác nhận
+          ${UI.escapeHtml(actionLabel)}
         </button>
       `;
 
@@ -441,7 +441,7 @@ class UI {
 
     const sideClass = side === 'left' ? 'left-0 border-r border-[#E8E6DF] dark:border-[#2E2D2B]' : 'right-0 border-l border-[#E8E6DF] dark:border-[#2E2D2B]';
 
-    container.className = `fixed inset-y-0 z-50 flex flex-col bg-[#FFFFFF] dark:bg-[#202020] shadow-elevated ${sideClass} ${width}`;
+    container.className = `fixed inset-y-0 z-50 flex flex-col bg-[#FAF9F5] dark:bg-[#202020] shadow-elevated ${sideClass} ${width}`;
 
     container.innerHTML = `
       <!-- Drawer Header -->
@@ -707,7 +707,7 @@ class UI {
                   type="button"
                   class="px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all ${
                     isActive
-                      ? 'bg-[#FFFFFF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
+                      ? 'bg-[#FAF9F5] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
                       : 'text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
                   }"
                   ${onTabChange ? `onclick="${onTabChange}('${tab.id}')"` : ''}
@@ -1343,59 +1343,72 @@ Lời giải: Regression Testing (Kiểm thử hồi quy) đảm bảo các thay
 // 9. Exam Anti-Cheat & Security Manager
 // =========================================================================
 class ExamAntiCheatManager {
-  constructor({ maxViolations = 3, onViolation = null, onLimitReached = null } = {}) {
-    this.maxViolations = maxViolations;
-    this.violationCount = 0;
-    this.onViolationCb = onViolation;
-    this.onLimitReachedCb = onLimitReached;
+  constructor({ onEvent = null, onObservation = null, watchFullscreen = false } = {}) {
+    this.onEvent = onEvent;
+    this.onObservation = onObservation;
+    this.watchFullscreen = watchFullscreen;
+    this.eventCount = 0;
+    this.openEvents = new Map();
     this.isActive = false;
-    this._lastViolationTime = 0;
-
     this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
     this._handleWindowBlur = this._handleWindowBlur.bind(this);
+    this._handleWindowFocus = this._handleWindowFocus.bind(this);
+    this._handleFullscreenChange = this._handleFullscreenChange.bind(this);
   }
 
   start() {
+    if (this.isActive) return;
     this.isActive = true;
-    this.violationCount = 0;
     document.addEventListener('visibilitychange', this._handleVisibilityChange);
     window.addEventListener('blur', this._handleWindowBlur);
+    window.addEventListener('focus', this._handleWindowFocus);
+    if (this.watchFullscreen) document.addEventListener('fullscreenchange', this._handleFullscreenChange);
   }
 
   stop() {
+    if (!this.isActive) return;
+    for (const type of this.openEvents.keys()) this._end(type);
     this.isActive = false;
     document.removeEventListener('visibilitychange', this._handleVisibilityChange);
     window.removeEventListener('blur', this._handleWindowBlur);
+    window.removeEventListener('focus', this._handleWindowFocus);
+    document.removeEventListener('fullscreenchange', this._handleFullscreenChange);
   }
 
-  _triggerViolation(reason) {
-    if (!this.isActive) return;
-    const now = Date.now();
-    if (now - this._lastViolationTime < 1500) return;
-    this._lastViolationTime = now;
+  _begin(type) {
+    if (!this.isActive || this.openEvents.has(type)) return;
+    const id = window.crypto.randomUUID();
+    this.openEvents.set(type, id);
+    this.eventCount++;
+    this.onEvent?.({ event_id: id, event_type: type, phase: 'START' });
+    this.onObservation?.(this.eventCount, type);
+  }
 
-    this.violationCount++;
-    const remaining = Math.max(0, this.maxViolations - this.violationCount);
-
-    if (typeof this.onViolationCb === 'function') {
-      this.onViolationCb(this.violationCount, remaining, reason);
-    }
-
-    if (this.violationCount >= this.maxViolations) {
-      if (typeof this.onLimitReachedCb === 'function') {
-        this.onLimitReachedCb(this.violationCount);
-      }
-    }
+  _end(type) {
+    const id = this.openEvents.get(type);
+    if (!id) return;
+    this.openEvents.delete(type);
+    this.onEvent?.({ event_id: id, event_type: type, phase: 'END' });
   }
 
   _handleVisibilityChange() {
     if (document.hidden) {
-      this._triggerViolation('Rời tab thi / Ẩn cửa sổ làm bài');
-    }
+      this._end('WINDOW_BLUR');
+      this._begin('TAB_HIDDEN');
+    } else this._end('TAB_HIDDEN');
   }
 
   _handleWindowBlur() {
-    this._triggerViolation('Chuyển cửa sổ ứng dụng khác');
+    if (!document.hidden) this._begin('WINDOW_BLUR');
+  }
+
+  _handleWindowFocus() {
+    this._end('WINDOW_BLUR');
+  }
+
+  _handleFullscreenChange() {
+    if (document.fullscreenElement) this._end('FULLSCREEN_EXIT');
+    else this._begin('FULLSCREEN_EXIT');
   }
 }
 

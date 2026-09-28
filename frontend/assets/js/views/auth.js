@@ -14,7 +14,7 @@ class AuthView {
             <span class="material-symbols-outlined text-[22px]">school</span>
           </div>
           <h1 class="text-xl sm:text-2xl font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">PWD301 LMS</h1>
-          <p class="text-xs text-[#8F8E8A] mt-0.5">Cổng Học tập & Khảo thí Học thuật Trực tuyến</p>
+          <p class="text-xs text-[#8F8E8A] mt-0.5">Học tập và làm bài kiểm tra</p>
         </div>
 
         <div class="w-full max-w-sm">
@@ -33,7 +33,7 @@ class AuthView {
           <div id="auth-tab-login" class="c-card p-6 space-y-5 bg-[#FFFFFF] dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B]">
             <div>
               <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] tracking-tight">Đăng nhập tài khoản</h2>
-              <p class="text-xs text-[#8F8E8A] mt-0.5">Sử dụng tài khoản học vụ định danh của bạn để tiếp tục</p>
+              <p class="text-xs text-[#8F8E8A] mt-0.5">Dùng email và mật khẩu của bạn để tiếp tục</p>
             </div>
 
             <!-- Dynamic Error Alert -->

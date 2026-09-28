@@ -145,8 +145,8 @@ class User(Base, UserMixin):
 
     @property
     def is_instructor(self) -> bool:
-        """Return True if user has INSTRUCTOR or ADMIN role (cumulative capability)."""
-        return bool(self.role_codes & {"INSTRUCTOR", "ADMIN"})
+        """Return True if user has INSTRUCTOR role."""
+        return "INSTRUCTOR" in self.role_codes
 
     @property
     def is_student(self) -> bool:
@@ -177,7 +177,7 @@ class User(Base, UserMixin):
         if norm_code == "STUDENT":
             return bool(codes & {"STUDENT", "INSTRUCTOR", "ADMIN"})
         if norm_code == "INSTRUCTOR":
-            return bool(codes & {"INSTRUCTOR", "ADMIN"})
+            return "INSTRUCTOR" in codes
         if norm_code == "ADMIN":
             return "ADMIN" in codes
         return norm_code in codes

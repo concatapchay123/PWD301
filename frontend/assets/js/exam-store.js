@@ -31,12 +31,15 @@ class ExamStore {
         shuffleQuestions: true,
         requirePassword: false,
         examPassword: '',
-        proctoring: false,
-        lockTab: true,
+        examLayout: 'STANDARD',
+        monitoringEnabled: false,
+        requestFullscreen: false,
         scoreScale: 40.0
       },
       lastSaved: null,
-      sourceMethod: 'manual'
+      sourceMethod: 'manual',
+      methodSelected: false,
+      matrixConfirmed: false
     };
   }
 
@@ -54,7 +57,11 @@ class ExamStore {
           config: {
             ...this.getDefaultDraft().config,
             ...(parsed.config || {})
-          }
+          },
+          methodSelected: parsed.methodSelected ?? Boolean(
+            (parsed.rawText && parsed.rawText.trim()) ||
+            (Array.isArray(parsed.questions) && parsed.questions.length)
+          )
         };
         return this._memoryDraft;
       }
@@ -67,6 +74,9 @@ class ExamStore {
 
   static saveDraft(updates = {}) {
     const current = this.getDraft();
+    const invalidateMatrix = updates.questions !== undefined
+      || (updates.courseId !== undefined && updates.courseId !== current.courseId)
+      || (updates.sourceMethod !== undefined && updates.sourceMethod !== current.sourceMethod);
     this._memoryDraft = {
       ...current,
       ...updates,
@@ -74,7 +84,8 @@ class ExamStore {
         ...current.config,
         ...(updates.config || {})
       },
-      lastSaved: new Date().toISOString()
+      lastSaved: new Date().toISOString(),
+      matrixConfirmed: updates.matrixConfirmed ?? (invalidateMatrix ? false : current.matrixConfirmed)
     };
 
     try {
@@ -97,6 +108,16 @@ class ExamStore {
     } catch {
       return false;
     }
+  }
+
+  static canVisitStep(step) {
+    if (step <= 1) return true;
+    const draft = this.getDraft();
+    const methodReady = Boolean(draft.methodSelected && draft.courseId);
+    if (step === 2) return methodReady;
+    const questionsReady = methodReady && Array.isArray(draft.questions) && draft.questions.length > 0;
+    if (step === 3) return questionsReady;
+    return questionsReady && Boolean(draft.matrixConfirmed);
   }
 
   static clearDraft() {

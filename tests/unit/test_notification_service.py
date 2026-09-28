@@ -42,6 +42,25 @@ from pwd301.services.notification_service import (
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
+def test_repeated_lesson_review_notices_appear_once_for_recipient(
+    app: Flask, student_user: User
+) -> None:
+    for _ in range(3):
+        dispatch_notification(
+            recipient_user=student_user,
+            event_type="LESSON_CHANGE_REQUEST",
+            title="Yêu cầu sửa bài giảng: Bài 1",
+            body="Giảng viên gửi yêu cầu sửa Bài 1 trong khóa học C1.",
+            category="COURSE",
+            session=db.session,
+        )
+    db.session.commit()
+    notices, total = list_user_notifications(student_user, session=db.session)
+    assert total == 1
+    assert len(notices) == 1
+    assert get_unread_count(student_user, session=db.session) == 1
+
+
 @pytest.fixture
 def setup_roles(app: Flask) -> dict[str, Role]:
     """Ensure standard roles exist in test database."""

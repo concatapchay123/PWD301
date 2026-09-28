@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson
+from pwd301.models.course import Course, CourseChangeRequest, Enrollment, EnrollmentPeriod, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import change_course_status, create_course
+from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.lesson_service import change_lesson_status, create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -98,6 +101,65 @@ def test_api_get_course_lessons(
     assert len(data["lessons"]) == 1
     assert data["lessons"][0]["title"] == "Published API Lesson"
     assert data["lessons"][0]["position"] == 1
+
+
+def test_rest_lesson_edit_of_published_course_requires_review(
+    client: FlaskClient,
+    instructor_user: User,
+    published_course_and_lesson: tuple[Course, Lesson],
+) -> None:
+    _, lesson = published_course_and_lesson
+    tokens = create_token_pair(instructor_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    response = client.patch(
+        f"/api/lessons/{lesson.public_id}",
+        headers=headers,
+        json={"title": "Proposed REST title"},
+    )
+    assert response.status_code == 202
+    assert response.get_json()["pending_approval"] is True
+    db.session.refresh(lesson)
+    assert lesson.title == "Published API Lesson"
+    assert (
+        db.session.query(CourseChangeRequest)
+        .filter_by(target_type="LESSON", target_id=lesson.id, status="PENDING")
+        .count()
+        == 1
+    )
+
+
+def test_rest_lesson_resource_changes_wait_for_review(
+    client: FlaskClient,
+    instructor_user: User,
+    published_course_and_lesson: tuple[Course, Lesson],
+) -> None:
+    course, lesson = published_course_and_lesson
+    old_asset = store_file_stream(
+        instructor_user, course.id, io.BytesIO(b"old API file"),
+        "old-api.pdf", "application/pdf", session=db.session,
+    )
+    resource = attach_resource_to_lesson(
+        instructor_user, lesson.id, old_asset.id, session=db.session,
+    )
+    new_asset = store_file_stream(
+        instructor_user, course.id, io.BytesIO(b"new API file"),
+        "new-api.pdf", "application/pdf", session=db.session,
+    )
+    tokens = create_token_pair(instructor_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    attached = client.post(
+        f"/api/lessons/{lesson.public_id}/resources",
+        headers=headers, json={"file_asset_id": str(new_asset.public_id)},
+    )
+    assert attached.status_code == 202
+    removed = client.delete(
+        f"/api/lessons/{lesson.public_id}/resources/{resource.public_id}",
+        headers=headers,
+    )
+    assert removed.status_code == 202
+    assert removed.get_json()["change_request_id"] == attached.get_json()["change_request_id"]
+    db.session.refresh(lesson)
+    assert [item.file_asset_id for item in lesson.resources] == [old_asset.id]
 
 
 def test_api_get_lesson_detail_jwt(

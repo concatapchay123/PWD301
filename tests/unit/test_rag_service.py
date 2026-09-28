@@ -25,7 +25,7 @@ from pwd301.models.ai_rag import (
     KnowledgeChunk,
     KnowledgeDocument,
 )
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.file_import import (
     FileAsset,
     FileBlob,
@@ -124,6 +124,7 @@ def test_lesson(app: Flask, test_course: Course) -> Lesson:
     lesson = Lesson(
         public_id=uuid.uuid4(),
         course_id=test_course.id,
+        learning_unit=LearningUnit(course_id=test_course.id, title="RAG", position=1),
         title="Architecture of Enterprise RAG Systems",
         summary="A deep dive into indexing, vector search, and context boundaries.",
         markdown_content=content,

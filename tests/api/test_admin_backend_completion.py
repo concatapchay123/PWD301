@@ -21,7 +21,7 @@ import pytest
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
+from pwd301.models.course import Course, LearningUnit, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.models.operations import BackgroundJob
@@ -106,6 +106,7 @@ def test_admin_course_inspection_dossier(
 
     lesson1 = Lesson(
         course_id=course.id,
+        learning_unit=LearningUnit(course_id=course.id, title="Introduction", position=1),
         title="Lesson 1: Introduction",
         order_index=1,
         status="PUBLISHED",
@@ -113,6 +114,7 @@ def test_admin_course_inspection_dossier(
     )
     lesson2 = Lesson(
         course_id=course.id,
+        learning_unit=LearningUnit(course_id=course.id, title="Advanced Topics", position=2),
         title="Lesson 2: Advanced Topics",
         order_index=2,
         status="DRAFT",
@@ -136,6 +138,7 @@ def test_admin_course_inspection_dossier(
     assert len(data["lessons"]) == 2
     assert data["lessons"][0]["title"] == "Lesson 1: Introduction"
     assert data["lessons"][1]["title"] == "Lesson 2: Advanced Topics"
+    assert data["lessons"][0]["markdown_content"] == "# Lesson 1 Content"
 
     # 2. Test via JWT REST API
     headers = _admin_headers(admin_user)
@@ -318,8 +321,8 @@ def test_admin_course_reassignment_with_dual_notifications(
     )
     assert len(notifs_old) >= 1
     assert len(notifs_new) >= 1
-    assert "chuyển giao" in notifs_old[-1].body.lower() or "bàn giao" in notifs_old[-1].body.lower()
-    assert "tiếp nhận" in notifs_new[-1].body.lower() or "phụ trách" in notifs_new[-1].body.lower()
+    assert "giao cho giảng viên khác" in notifs_old[-1].body.lower()
+    assert "giao phụ trách" in notifs_new[-1].body.lower()
 
 
 def test_admin_faculty_workload_metrics(
@@ -445,6 +448,8 @@ def test_admin_review_course_approved_sends_notification(
     )
     assert len(notifs) >= 1
     latest_notif = notifs[-1]
+    assert "Khóa học" in latest_notif.title
+    assert "Đề cương" not in latest_notif.title
     assert "phê duyệt" in latest_notif.title.lower() or "approved" in latest_notif.title.lower()
     assert course.course_code in latest_notif.body or course.title in latest_notif.body
 

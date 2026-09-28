@@ -136,6 +136,9 @@ GO
 CREATE INDEX ix_attempts_student_assessment ON assessment_attempts (student_user_id, assessment_id, attempt_number);
 GO
 
+CREATE INDEX ix_attempt_focus_events_attempt ON attempt_focus_events (attempt_id, started_at);
+GO
+
 CREATE INDEX ix_attempts_assessment_status ON assessment_attempts (assessment_id, status, started_at);
 GO
 

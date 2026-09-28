@@ -56,7 +56,8 @@ NotificationEvent is fan-out; Notification and EmailDelivery are separate delive
 - `course_prerequisites` — Quan hệ N-N Course yêu cầu Course khác hoàn thành trước.
 - `course_completion_rules` — Cấu hình điều kiện hoàn thành Course theo mô hình đơn giản, không EAV.
 - `course_change_requests` — Staging tối thiểu cho thay đổi material của Course đã published để Admin duyệt trước khi áp dụng.
-- `lessons` — Lesson thuộc Course, có thứ tự, nội dung Markdown và ngưỡng hoàn thành tự động.
+- `learning_units` — Bài học cha thuộc Course, nhóm tối đa 10 Lesson và 7 video.
+- `lessons` — Lesson thuộc Bài học cha và Course, có nội dung Markdown, tối đa 2 video/5 tài liệu và ngưỡng hoàn thành tự động.
 - `enrollments` — Một logical Enrollment duy nhất cho mỗi Student-Course; re-enroll tái sử dụng row và mở period mới.
 - `enrollment_periods` — Phân đoạn các lần học bên dưới cùng logical Enrollment để reset khi re-enroll và purge đúng period.
 - `enrollment_events` — Lịch sử nhỏ, append-only cho enroll/leave/re-enroll/completion/purge.
@@ -80,6 +81,7 @@ NotificationEvent is fan-out; Notification and EmailDelivery are separate delive
 ### Attempt
 
 - `assessment_attempts` — Một lượt làm bài cụ thể của Student, chứa timer authoritative, lease tab, submit idempotency và lifecycle.
+- `attempt_focus_events` — Khoảng thời gian rời tab, mất tiêu điểm hoặc thoát toàn màn hình do trình duyệt báo để giảng viên xem lại.
 - `attempt_questions` — Snapshot đầy đủ của câu mà Student thực sự thấy; không đổi khi QuestionRevision tương lai thay đổi.
 - `attempt_choice_snapshots` — Snapshot lựa chọn đúng thứ tự Student thấy, không lưu is_correct.
 - `attempt_answers` — Trạng thái answer hiện hành của từng AttemptQuestion; source of truth để resume nhanh.
@@ -135,7 +137,7 @@ NotificationEvent is fan-out; Notification and EmailDelivery are separate delive
 - User N-N Role through `user_roles`.
 - User 1-N Course as current owner, but Course owner may be NULL.
 - Course N-N Course through `course_prerequisites`.
-- Course 1-N Lesson.
+- Course 1-N LearningUnit; LearningUnit 1-N Lesson. Lesson giữ `course_id` để bảo toàn các quan hệ và tiến độ cũ.
 - User N-N Course logically through `enrollments`; `enrollment_periods` segment lifecycle beneath one logical relationship.
 - EnrollmentPeriod 1-N LessonProgress and AssessmentAttempt.
 - Course 1-N Question; optional Lesson 1-N Question.

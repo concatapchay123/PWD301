@@ -193,7 +193,7 @@ flowchart TD
 - Quy tắc **Fail-Closed**: Bất kỳ tệp tin nào chưa hoàn tất quét virus hoặc bị phát hiện có dấu hiệu bất thường đều bị cách ly ngay lập tức vào thư mục bảo mật `/quarantine`, tuyệt đối không phân phối đến trình duyệt của học viên.
 
 ### 4. Cơ sở Dữ liệu Quan hệ Chuẩn Doanh nghiệp (MS SQL Server 2022)
-- CSDL gồm **71 bảng quan hệ** chuẩn hóa bậc cao, thiết kế chuyên biệt cho hệ thống quản lý đào tạo lớn.
+- CSDL gồm **73 bảng quan hệ** chuẩn hóa bậc cao, thiết kế chuyên biệt cho hệ thống quản lý đào tạo lớn.
 - Bảng biểu được phân định rõ ràng theo 8 phân khu nghiệp vụ: Identity, Course, Question Bank, Assessment, Attempt Regrading, File Import, AI RAG, Notification & Audit.
 - Sử dụng Filtered Unique Indexes xử lý bài toán trạng thái (ví dụ: bài học đang chờ duyệt giữ trước vị trí mà không gây xung đột với bài giảng đang phát hành).
 
@@ -397,7 +397,7 @@ Dự án áp dụng kỷ luật kỹ thuật phần mềm nghiêm ngặt với q
 | **End-to-End (E2E)** | Mô phỏng toàn trình vòng đời Học viên, Giảng viên, Khảo thí | `test_student_lifecycle_e2e.py` | **100% PASS** |
 | **Static Code Quality** | Rà soát lỗi cú pháp, PEP8, kiểu dữ liệu, bảo mật mã nguồn | `ruff check src tests` | **0 errors** |
 | **Frontend Syntax** | Thẩm định cú pháp toàn bộ tệp JavaScript SPA | `node --check` | **0 errors** |
-| **Repo Contract Check** | Thẩm định 71 bảng DDL SQL Server, Markdown fences, file contract | `python scripts/repo_check.py` | **100% PASS** |
+| **Repo Contract Check** | Thẩm định 73 bảng DDL SQL Server, Markdown fences, file contract | `python scripts/repo_check.py` | Xem kết quả chạy hiện tại |
 
 ### Lệnh Thực thi Kiểm tra Tổng thể
 - **Trên Windows PowerShell**:
@@ -458,7 +458,7 @@ Trích xuất từ mục *"GENERAL REQUIREMENTS FOR ALL TOPICS"* (`PWD301_Projec
 | Yêu cầu Rubric Topic 9 | Hiện thực hóa tại Hệ thống PWD301 | Mức độ Nâng cấp Vượt bậc |
 |---|---|:---:|
 | **Framework Flask, Python 3.11+** | Backend Flask Modular Monolith tổ chức chuyên nghiệp, chia tầng Controller / Service / Model rõ ràng. | Chuẩn mực Doanh nghiệp |
-| **CSDL Quan hệ SQL Server** | Kiến trúc **71 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION`. | Vượt xa CRUD cơ bản (x17 lần) |
+| **CSDL Quan hệ SQL Server** | Kiến trúc **73 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION`. | Vượt xa CRUD cơ bản (x17 lần) |
 | **Quản lý Khóa học & Bài giảng** | Khóa học có điều kiện tiên quyết DAG, bài giảng Notion-style 1 trang, đính kèm tệp quét virus ClamAV, duyệt thay đổi Diff Side-by-Side. | Đẳng cấp Notion/LMS quốc tế |
 | **Khảo thí Trắc nghiệm Khách quan** | Studio Soạn đề thi bóc tách trực tiếp file Word (`.docx`), 50/50 live preview, chống gian lận Fullscreen, khóa tab Lease Fencing. | Đạt chuẩn Khảo thí Azota |
 | **Phân quyền Tối thiểu 3 Roles** | 3 vai trò chuẩn mực `STUDENT`, `INSTRUCTOR`, `ADMIN` với kiểm soát truy cập ở cấp độ đối tượng (Object-level IDOR Defense). | Bảo mật Đa tầng |
@@ -497,5 +497,4 @@ Dự án **PWD301 LMS** được hoàn thành bởi nhóm sinh viên thực hi�
 | 4 | **Trần Đặng Hữu Thắng** | `callmewin06@gmail.com` | [`@callmewin06-create`](https://github.com/callmewin06-create) |
 
 Mã nguồn được phát hành theo giấy phép [MIT License](LICENSE). Mọi đóng góp, đề xuất tính năng hoặc báo cáo lỗi xin vui lòng mở Issue hoặc gửi Pull Request qua kho lưu trữ mã nguồn của dự án.
-
 

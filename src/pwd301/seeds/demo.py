@@ -50,6 +50,7 @@ from pwd301.models.course import (
     CoursePrerequisite,
     Enrollment,
     EnrollmentPeriod,
+    LearningUnit,
     Lesson,
     LessonProgress,
 )
@@ -122,6 +123,26 @@ def seed_demo(session: Session | scoped_session[Any]) -> dict[str, Any]:
         "notifications_created": 0,
         "audit_events_created": 0,
     }
+
+    def ensure_learning_unit(lesson: Lesson) -> None:
+        if lesson.learning_unit_id is not None:
+            return
+        unit = (
+            session.query(LearningUnit)
+            .filter(
+                LearningUnit.course_id == lesson.course_id,
+                LearningUnit.position == lesson.position,
+                LearningUnit.title == lesson.title,
+            )
+            .first()
+        )
+        if unit is None:
+            unit = LearningUnit(
+                course_id=lesson.course_id, title=lesson.title, position=lesson.position
+            )
+            session.add(unit)
+            session.flush()
+        lesson.learning_unit_id = unit.id
 
     # 1. Baseline initialization (Roles & Root Admin)
     seed_baseline(session)
@@ -346,9 +367,12 @@ Mọi ứng dụng web hiện đại đều vận hành trên nền tảng kiế
 - **500 Internal Server Error**: Lỗi máy chủ nội bộ.
 """,
         )
+        ensure_learning_unit(lesson1)
         session.add(lesson1)
         session.flush()
         summary["lessons_created"].append(lesson1.title)
+    else:
+        ensure_learning_unit(lesson1)
 
     lesson2 = (
         session.query(Lesson).filter(Lesson.course_id == course1.id, Lesson.position == 2).first()
@@ -395,9 +419,12 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
 - Phải luôn đóng hoặc trả session về pool bằng `session.close()` hoặc sử dụng context manager.
 """,
         )
+        ensure_learning_unit(lesson2)
         session.add(lesson2)
         session.flush()
         summary["lessons_created"].append(lesson2.title)
+    else:
+        ensure_learning_unit(lesson2)
 
     # Lessons for CS201 (DRAFT)
     lesson_cs201 = (
@@ -415,9 +442,12 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 "# Phân Tích Độ Phức Tạp Thuật Toán\n\nNội dung bài học đang được biên soạn..."
             ),
         )
+        ensure_learning_unit(lesson_cs201)
         session.add(lesson_cs201)
         session.flush()
         summary["lessons_created"].append(lesson_cs201.title)
+    else:
+        ensure_learning_unit(lesson_cs201)
 
     # Lessons for CS301 (SUBMITTED_FOR_REVIEW)
     lesson_cs301 = (
@@ -436,9 +466,12 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 "# Nguyên Lý LLM & Vector Database\n\nTổng quan về kiến trúc Transformer..."
             ),
         )
+        ensure_learning_unit(lesson_cs301)
         session.add(lesson_cs301)
         session.flush()
         summary["lessons_created"].append(lesson_cs301.title)
+    else:
+        ensure_learning_unit(lesson_cs301)
 
     # 7. Safe clean PDF file attachment to Lesson 1 (if file_service is operational)
     existing_resource = (

@@ -22,7 +22,7 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -379,6 +379,7 @@ def test_archived_course_chunks_never_leaked(
     lesson = Lesson(
         public_id=uuid.uuid4(),
         course_id=instructor_course.id,
+        learning_unit=LearningUnit(course_id=instructor_course.id, title="Security", position=1),
         title="Sensitive Security Policy",
         markdown_content="Confidential cryptographic key management rules and internal protocols.",
         position=1,
@@ -443,6 +444,7 @@ def test_rag_prompt_injection_in_retrieved_context_defused(
     lesson = Lesson(
         public_id=uuid.uuid4(),
         course_id=instructor_course.id,
+        learning_unit=LearningUnit(course_id=instructor_course.id, title="Security", position=1),
         title="Security Bypass Techniques",
         markdown_content=malicious_content,
         position=1,
@@ -496,6 +498,7 @@ def test_zero_pk_leakage_across_rag_api(
     lesson = Lesson(
         public_id=uuid.uuid4(),
         course_id=instructor_course.id,
+        learning_unit=LearningUnit(course_id=instructor_course.id, title="Security", position=1),
         title="Zero PK Leakage Architecture",
         markdown_content=(
             "ADR-002 enforces that only public UUIDv4 identifiers are exposed externally."

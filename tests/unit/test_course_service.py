@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 
 import pytest
@@ -16,6 +17,7 @@ from pwd301.services.course_service import (
     change_course_status,
     create_course,
     get_course_detail,
+    get_course_thumbnail_asset,
     list_courses,
     reassign_course_owner,
     trash_course,
@@ -30,6 +32,7 @@ from pwd301.services.exceptions import (
     InvalidRoleAssignmentError,
     UserNotFoundError,
 )
+from pwd301.services.file_service import store_file_stream
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
@@ -245,6 +248,47 @@ def test_update_course_metadata_and_mass_assignment(
     assert updated.course_code == "HIST-101"
     assert updated.status == "DRAFT"
     assert updated.owner_instructor_id == instructor_one.id
+
+
+def test_course_thumbnail_accepts_only_clean_image_from_same_course(
+    app: Flask, instructor_one: User
+) -> None:
+    course = create_course(instructor_one, {"course_code": "IMG-101", "title": "Image Course"})
+    other = create_course(instructor_one, {"course_code": "IMG-102", "title": "Other Course"})
+    image = store_file_stream(
+        instructor_one,
+        course.id,
+        io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"a" * 64),
+        "cover.png",
+        "image/png",
+        asset_type="COURSE_IMAGE",
+        session=db.session,
+    )
+    updated = update_course(
+        instructor_one,
+        course.id,
+        {"thumbnail_file_asset_id": str(image.public_id)},
+        session=db.session,
+    )
+    assert updated.thumbnail_file_asset_id == image.id
+    for scan in list(image.current_revision.scan_results):
+        db.session.delete(scan)
+    db.session.commit()
+    assert get_course_thumbnail_asset(updated) is None
+    with pytest.raises(CourseValidationError):
+        update_course(
+            instructor_one,
+            course.id,
+            {"thumbnail_file_asset_id": str(image.public_id)},
+            session=db.session,
+        )
+    with pytest.raises(CourseValidationError):
+        update_course(
+            instructor_one,
+            other.id,
+            {"thumbnail_file_asset_id": str(image.public_id)},
+            session=db.session,
+        )
 
 
 def test_get_course_detail_visibility(

@@ -9,7 +9,8 @@ erDiagram
     users ||--o{ user_roles : has
     roles ||--o{ user_roles : grants
     users ||--o{ courses : owns
-    courses ||--o{ lessons : contains
+    courses ||--o{ learning_units : groups
+    learning_units ||--o{ lessons : contains
     users ||--o{ enrollments : enrolls
     courses ||--o{ enrollments : receives
     enrollments ||--o{ enrollment_periods : segments
@@ -18,6 +19,7 @@ erDiagram
     questions ||--o{ question_revisions : versions
     courses ||--o{ assessments : owns
     assessments ||--o{ assessment_attempts : generates
+    assessment_attempts ||--o{ attempt_focus_events : observes
     assessment_attempts ||--o{ attempt_questions : freezes
     questions ||--o{ attempt_questions : sourced_from
     file_blobs ||--o{ file_revisions : stores
@@ -45,7 +47,8 @@ erDiagram
 ```mermaid
 erDiagram
     users o|--o{ courses : owns
-    courses ||--o{ lessons : contains
+    courses ||--o{ learning_units : groups
+    learning_units ||--o{ lessons : contains
     courses ||--o{ course_prerequisites : requires
     courses ||--o{ course_prerequisites : prerequisite_for
     courses ||--|| course_completion_rules : configured_by
@@ -93,6 +96,7 @@ erDiagram
 ```mermaid
 erDiagram
     assessments ||--o{ assessment_attempts : attempts
+    assessment_attempts ||--o{ attempt_focus_events : observes
     enrollment_periods ||--o{ assessment_attempts : contains
     assessment_attempts ||--o{ attempt_questions : freezes
     question_revisions ||--o{ attempt_questions : source_revision

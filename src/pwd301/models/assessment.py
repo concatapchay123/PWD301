@@ -105,6 +105,15 @@ class Assessment(Base):
         default="AFTER_CLOSE",
         server_default=sa.text("'AFTER_CLOSE'"),
     )
+    exam_layout = db.Column(
+        sa.String(16), nullable=False, default="STANDARD", server_default=sa.text("'STANDARD'")
+    )
+    monitoring_enabled = db.Column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.text("0")
+    )
+    request_fullscreen = db.Column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.text("0")
+    )
     random_question_count = db.Column(sa.Integer, nullable=True)
     published_at = db.Column(UTCDateTime, nullable=True)
     first_attempt_started_at = db.Column(UTCDateTime, nullable=True)
@@ -169,6 +178,9 @@ class Assessment(Base):
         sa.CheckConstraint(
             "open_at IS NULL OR close_at IS NULL OR open_at < close_at",
             name="ck_assessments_10",
+        ),
+        sa.CheckConstraint(
+            "exam_layout IN ('STANDARD','FOCUS')", name="ck_assessments_exam_layout"
         ),
         sa.Index("ix_assessments_course_status", "course_id", "status", "open_at", "close_at"),
         sa.Index("ix_assessments_pending_window", "status", "open_at", "close_at"),

@@ -28,7 +28,7 @@ from pwd301.models.ai_rag import (
     KnowledgeDocument,
     KnowledgeVersion,
 )
-from pwd301.models.course import Course, Lesson
+from pwd301.models.course import Course, LearningUnit, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import EmailDelivery
 from pwd301.models.operations import BackupRun
@@ -259,6 +259,7 @@ def test_prune_trash_entities_cascading_knowledge_and_drafts(app: Flask) -> None
 
         lesson = Lesson(
             course_id=course.id,
+            learning_unit=LearningUnit(course_id=course.id, title="Disposable", position=1),
             title="Disposable Lesson",
             markdown_content="# Content",
             position=1,

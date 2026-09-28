@@ -5,6 +5,20 @@
  */
 
 class AppRouter {
+  static getNotificationActionLabel(item) {
+    const event = String(item?.event_type || '');
+    if (event === 'INSTRUCTOR_APPLICATION_SUBMITTED') return 'Xem Hồ Sơ';
+    if (event === 'LESSON_CHANGE_REQUEST' || event === 'COURSE_PREREQUISITE_REQUEST') {
+      return 'Xem Yêu Cầu';
+    }
+    if (event.startsWith('COURSE_CHANGE_')
+      || event.startsWith('COURSE_PREREQUISITE_')
+      || ['COURSE_SUBMITTED_FOR_REVIEW', 'COURSE_APPROVED', 'COURSE_REJECTED', 'COURSE_OWNER_REASSIGNED'].includes(event)) {
+      return 'Xem Khóa Học';
+    }
+    return 'Mở Trang Liên Quan';
+  }
+
   static getNotificationReviewTarget(item, link = '') {
     const target = String(link || item?.action_url || item?.target_url || '');
     if (!target.startsWith('#/admin/governance')) return null;
@@ -203,6 +217,9 @@ class AppRouter {
     this.toggleShell(true);
     this.renderDynamicSidebar();
     this.updateTopbarBreadcrumb(path);
+    if (this.currentRole === 'ADMIN') {
+      this.fetchAdminPendingCounts();
+    }
 
     if (typeof UI !== 'undefined') {
       if (typeof UI.closeModal === 'function') UI.closeModal();
@@ -211,10 +228,7 @@ class AppRouter {
     document.querySelectorAll('body > .fixed.inset-0:not(#app-drawer-backdrop):not(#modal-container)').forEach(m => m.remove());
 
     const isFocusRoute = path.includes('/attempt')
-      || path.includes('/waiting-room')
-      || path.includes('/lessons/new')
-      || (path.includes('/lessons/') && path.includes('/edit'))
-      || path.includes('/instructor/exams');
+      || path.includes('/waiting-room');
     document.body.classList.toggle('fullscreen-focus-mode', isFocusRoute);
 
     const isExamActive = path.includes('/attempt') || path.includes('/waiting-room');
@@ -281,6 +295,24 @@ class AppRouter {
         this.currentRole = 'INSTRUCTOR';
         this._needsUserUiRefresh = true;
       }
+    }
+
+    const examStep = ['editor', 'interactive', 'excel', 'moodle'].some(
+      route => path === `#/instructor/exams/${route}`
+    ) ? 2 : path === '#/instructor/exams/matrix' ? 3
+      : path === '#/instructor/exams/settings' ? 4 : 1;
+    if (path.startsWith('#/instructor/exams/') && examStep > 1
+      && window.ExamStore && !window.ExamStore.canVisitStep(examStep)) {
+      const draft = window.ExamStore.getDraft?.() || {};
+      const methodRoute = ['manual', 'interactive', 'excel', 'moodle'].includes(draft.sourceMethod)
+        ? (draft.sourceMethod === 'manual' ? 'editor' : draft.sourceMethod)
+        : 'editor';
+      const allowedStep = window.ExamStore.canVisitStep(3) ? 3
+        : window.ExamStore.canVisitStep(2) ? 2 : 1;
+      window.location.hash = allowedStep === 3 ? '#/instructor/exams/matrix'
+        : allowedStep === 2 ? `#/instructor/exams/${methodRoute}` : '#/instructor/exams';
+      UI.showToast?.('Hãy hoàn thành bước hiện tại trước khi tiếp tục.', 'warning');
+      return;
     }
 
     // Route Dispatcher
@@ -385,7 +417,7 @@ class AppRouter {
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
       const parts = path.split('/');
       const courseId = parts[3];
-      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, null);
+      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, null, query.learning_unit_id);
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && path.endsWith('/edit')) {
       const parts = path.split('/');
       const courseId = parts[3];
@@ -412,7 +444,11 @@ class AppRouter {
     }
 
     // --- Admin Routes ---
-    else if (path === '#/admin/governance') {
+    else if (path === '#/admin/courses/review') {
+      await AdminView.renderCourseReviewPage(viewport, query.id);
+    } else if (path === '#/admin/change-requests/review') {
+      await AdminView.renderChangeRequestReviewPage(viewport, query.id);
+    } else if (path === '#/admin/governance') {
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
       const defaultTab = {
         ADMIN_COURSE_REVIEW: 'courses',
@@ -443,8 +479,9 @@ class AppRouter {
     if (this.currentRole !== 'ADMIN') return;
     try {
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
-      const canReviewCourses = subRole === 'ADMIN_COURSE_REVIEW';
-      const canReviewInstructors = subRole === 'ADMIN_INSTRUCTOR_REVIEW';
+      const isPrimary = !subRole || subRole === 'ADMIN_PRIMARY' || Boolean(this.currentUser?.is_primary_admin);
+      const canReviewCourses = isPrimary || subRole === 'ADMIN_COURSE_REVIEW';
+      const canReviewInstructors = isPrimary || subRole === 'ADMIN_INSTRUCTOR_REVIEW';
       const [coursesRes, crRes, appsRes] = await Promise.allSettled([
         canReviewCourses ? ApiClient.getPendingCourses() : Promise.resolve(null),
         canReviewCourses ? ApiClient.getAdminChangeRequests('PENDING') : Promise.resolve(null),
@@ -509,7 +546,7 @@ class AppRouter {
           { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
           { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
           { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
-          { label: 'An toàn & Kiểm toán', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
+          { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
           { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
         ];
       }
@@ -546,7 +583,7 @@ class AppRouter {
             href="${m.path}"
             class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
               isPathActive
-                ? 'bg-[#FFFFFF] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
+                ? 'bg-[#FAF9F5] dark:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] font-bold shadow-2xs'
                 : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB]'
             }"
             ${badgeNum > 0 ? `title="${m.label} (${badgeNum} việc cần xử lý)"` : ''}
@@ -1054,7 +1091,7 @@ class AppRouter {
       </div>
 
       <!-- Filter Tabs -->
-      <div class="flex items-center gap-1 px-3 py-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FFFFFF] dark:bg-[#202020] overflow-x-auto no-scrollbar text-[11px]">
+      <div class="flex items-center gap-1 px-3 py-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] overflow-x-auto no-scrollbar text-[11px]">
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ALL' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ALL">Tất cả</button>
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'UNREAD' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="UNREAD">Chưa đọc (${unreadCount})</button>
         <button type="button" class="notif-filter-tab px-2.5 py-1 rounded-lg font-medium transition-all ${activeTab === 'ASSESSMENT' ? 'bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] font-bold shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524]'}" data-tab="ASSESSMENT">Khảo thí</button>
@@ -1078,7 +1115,7 @@ class AppRouter {
 
           return `
             <div
-              class="notif-dropdown-item p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FFFFFF] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
+              class="notif-dropdown-item p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FAF9F5] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
               data-id="${item.id}"
               data-link="${targetUrl ? (window.UI ? UI.escapeHtml(targetUrl) : targetUrl) : ''}"
             >
@@ -1237,7 +1274,7 @@ class AppRouter {
         </button>
         ${targetLink ? `
           <button type="button" id="notif-modal-navigate-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-2 shadow-sm transition-all">
-            <span>${(targetLink.includes('courses') || targetLink.includes('applications') || targetLink.includes('review') || targetLink.includes('governance')) ? 'Chuyển đến duyệt ngay' : 'Chuyển đến trang liên quan'}</span>
+            <span>${AppRouter.getNotificationActionLabel(item)}</span>
             <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         ` : ''}
@@ -1246,7 +1283,7 @@ class AppRouter {
 
     if (window.UI && typeof UI.openModal === 'function') {
       UI.openModal({
-        title: 'Chi tiết Thông báo Học vụ',
+        title: 'Chi Tiết Thông Báo',
         bodyHtml,
         footerHtml,
         size: 'md'

@@ -340,6 +340,26 @@ Payload có thể chứa nội dung học liệu; chỉ owner/Admin.
 
 ---
 
+## `learning_units`
+
+**Purpose**
+
+Bài học là nhóm nội dung thuộc một Course; mỗi nhóm chứa tối đa 10 Lesson đang hoạt động và tối đa 7 video (tính cả video tải lên và liên kết ngoài). Lesson cũ được backfill vào nhóm một phần tử mà không đổi ID hoặc tiến độ.
+
+| Column | Type | Nullable | Default / Computed | Description |
+|---|---|---:|---|---|
+| `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
+| `public_id` | `UNIQUEIDENTIFIER` | No | `NEWSEQUENTIALID()` | ID công khai |
+| `course_id` | `BIGINT` | No |  | Course sở hữu |
+| `title` | `NVARCHAR(200)` | No |  | Tên Bài học |
+| `position` | `INT` | No |  | Thứ tự trong Course |
+| `created_at` | `DATETIME2(3)` | No | `SYSUTCDATETIME()` | UTC |
+| `deleted_at` | `DATETIME2(3)` | Yes |  | Xóa mềm |
+
+`course_id` tham chiếu `courses(id)` với `NO ACTION`. `public_id` là duy nhất; `position > 0`; index `ix_learning_units_course_position` hỗ trợ danh sách theo Course. Service kiểm tra quyền quản lý Course, giới hạn số Lesson/video và quan hệ cùng Course trong transaction.
+
+---
+
 ## `lessons`
 
 **Purpose**
@@ -357,6 +377,7 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | `id` | `BIGINT` | No | IDENTITY(1,1) | Khóa chính nội bộ |
 | `public_id` | `UNIQUEIDENTIFIER` | No | `NEWSEQUENTIALID()` | ID công khai dùng trong URL/API; không thay thế kiểm tra quyền |
 | `course_id` | `BIGINT` | No |  | Course |
+| `learning_unit_id` | `BIGINT` | No |  | Bài học cha; migration gán một nhóm cho mỗi Lesson cũ |
 | `title` | `NVARCHAR(200)` | No |  | Tên Lesson |
 | `summary` | `NVARCHAR(1000)` | Yes |  | Tóm tắt |
 | `markdown_content` | `NVARCHAR(MAX)` | No |  | Markdown source; render phải sanitize |
@@ -384,6 +405,7 @@ DRAFT → PUBLISHED; có thể HIDDEN/TRASH; Lesson có học sử sau recovery 
 | Columns | References | ON DELETE | Notes |
 |---|---|---|---|
 | `course_id` | `courses(id)` | `NO ACTION` |  |
+| `learning_unit_id` | `learning_units(id)` | `NO ACTION` | Không thay đổi Lesson ID khi chuyển nhóm |
 | `change_request_id` | `course_change_requests(id)` | `SET NULL` | Liên kết staging relational cho material changes |
 | `deleted_by_user_id` | `users(id)` | `SET NULL` |  |
 
@@ -431,6 +453,7 @@ Markdown untrusted; output phải sanitize + CSP.
 
 - Completed Student không bị uncomplete do rewrite
 - Lesson mới không làm existing period tụt progress: required_for_periods_starting_at quyết định eligibility
+- Mỗi Lesson có tối đa 2 video và 5 tài liệu; các giới hạn được kiểm tra ở service khi tạo/sửa nội dung và gắn tệp.
 
 ---
 

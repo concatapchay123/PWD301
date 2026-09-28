@@ -20,6 +20,7 @@ from pwd301.services.exceptions import (
 )
 from pwd301.services.lesson_service import (
     change_lesson_status,
+    create_learning_unit,
     create_lesson,
     get_lesson_detail,
     record_lesson_progress,
@@ -28,6 +29,99 @@ from pwd301.services.lesson_service import (
     update_lesson,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
+
+
+def test_learning_unit_keeps_existing_lesson_identity_and_limits_children(
+    app: Flask, instructor_user: User, course_sample: Course
+) -> None:
+    unit = create_learning_unit(instructor_user, course_sample.id, {"title": "Chủ đề 1"})
+    assert unit.public_id is not None
+    lessons = [
+        create_lesson(
+            instructor_user,
+            course_sample.id,
+            {
+                "title": f"Lesson {i}",
+                "markdown_content": "# Content",
+                "learning_unit_id": str(unit.public_id),
+            },
+        )
+        for i in range(10)
+    ]
+    assert all(lesson.learning_unit_id == unit.id for lesson in lessons)
+    assert db.session.get(Lesson, lessons[0].id) is lessons[0]
+    with pytest.raises(LessonValidationError, match="10"):
+        create_lesson(
+            instructor_user,
+            course_sample.id,
+            {
+                "title": "Overflow",
+                "markdown_content": "# Content",
+                "learning_unit_id": str(unit.public_id),
+            },
+        )
+
+
+def test_learning_unit_rejects_foreign_course(
+    app: Flask, instructor_user: User, course_sample: Course
+) -> None:
+    unit = create_learning_unit(instructor_user, course_sample.id, {"title": "Chủ đề 1"})
+    second = create_course(
+        instructor_user,
+        {"course_code": "LES-102", "title": "Second course", "description": "Another course."},
+    )
+    with pytest.raises(LessonValidationError):
+        create_lesson(
+            instructor_user,
+            second.id,
+            {
+                "title": "Foreign",
+                "markdown_content": "# Content",
+                "learning_unit_id": str(unit.public_id),
+            },
+        )
+
+
+def test_learning_unit_video_caps_include_external_links(
+    app: Flask, instructor_user: User, course_sample: Course
+) -> None:
+    unit = create_learning_unit(instructor_user, course_sample.id, {"title": "Video lessons"})
+    for i in range(3):
+        create_lesson(
+            instructor_user,
+            course_sample.id,
+            {
+                "title": f"Lesson {i}",
+                "learning_unit_id": str(unit.public_id),
+                "markdown_content": (
+                    '<!-- video_urls: ["https://youtu.be/11111111111", '
+                    '"https://youtu.be/22222222222"] -->\n# Content'
+                ),
+            },
+        )
+    with pytest.raises(LessonValidationError, match="7"):
+        create_lesson(
+            instructor_user,
+            course_sample.id,
+            {
+                "title": "Too many total",
+                "learning_unit_id": str(unit.public_id),
+                "markdown_content": (
+                    '<!-- video_urls: ["https://youtu.be/11111111111", '
+                    '"https://youtu.be/22222222222"] -->\n# Content'
+                ),
+            },
+        )
+    with pytest.raises(LessonValidationError, match="2"):
+        create_lesson(
+            instructor_user,
+            course_sample.id,
+            {
+                "title": "Too many in child",
+                "learning_unit_id": str(unit.public_id),
+                "markdown_content": '<!-- video_urls: ["a", "b", "c"] -->\n# Content',
+            },
+        )
 
 
 @pytest.fixture

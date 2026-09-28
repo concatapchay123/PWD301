@@ -192,6 +192,9 @@ class Course(Base):
         cascade="all, delete-orphan",
         order_by="Lesson.position",
     )
+    learning_units = relationship(
+        "LearningUnit", back_populates="course", order_by="LearningUnit.position"
+    )
     enrollments = relationship("Enrollment", back_populates="course")
 
     @property
@@ -429,6 +432,43 @@ class CourseChangeRequest(Base):
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
 
 
+class LearningUnit(Base):
+    """Instructor-facing Bài học grouping up to ten existing Lesson records."""
+
+    __tablename__ = "learning_units"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(
+        GUID,
+        nullable=False,
+        unique=True,
+        default=uuid.uuid4,
+        server_default=sa.text("NEWSEQUENTIALID()"),
+    )
+    course_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("courses.id", name="fk_learning_units_course_id"),
+        nullable=False,
+    )
+    title = db.Column(sa.Unicode(200), nullable=False)
+    position = db.Column(sa.Integer, nullable=False)
+    created_at = db.Column(
+        UTCDateTime,
+        nullable=False,
+        default=utc_now,
+        server_default=sa.text("SYSUTCDATETIME()"),
+    )
+    deleted_at = db.Column(UTCDateTime, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("position > 0", name="ck_learning_units_position"),
+        sa.Index("ix_learning_units_course_position", "course_id", "position"),
+    )
+
+    course = relationship("Course", back_populates="learning_units")
+    lessons = relationship("Lesson", back_populates="learning_unit", order_by="Lesson.position")
+
+
 class Lesson(Base):
     """Lesson content and sequence unit mapping to 'lessons' table.
 
@@ -450,6 +490,11 @@ class Lesson(Base):
     course_id = db.Column(
         sa.BigInteger,
         sa.ForeignKey("courses.id", name="fk_lessons_course_id"),
+        nullable=False,
+    )
+    learning_unit_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("learning_units.id", name="fk_lessons_learning_unit_id"),
         nullable=False,
     )
     title = db.Column(sa.Unicode(200), nullable=False)
@@ -541,6 +586,7 @@ class Lesson(Base):
     )
 
     course = relationship("Course", back_populates="lessons")
+    learning_unit = relationship("LearningUnit", back_populates="lessons")
     change_request = relationship(
         "CourseChangeRequest",
         foreign_keys=[change_request_id],

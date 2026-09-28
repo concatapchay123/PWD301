@@ -11,7 +11,9 @@ Verifies:
 
 from __future__ import annotations
 
+import io
 import re
+import uuid
 from typing import Any
 
 import pytest
@@ -28,6 +30,7 @@ from pwd301.services.attempt_service import (
     submit_assessment_attempt,
 )
 from pwd301.services.course_service import create_course
+from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
@@ -122,6 +125,92 @@ def login_session(client: FlaskClient, email: str, password: str = "Password@123
     )
     assert login_res.status_code == 200, f"Login failed: {login_res.get_data(as_text=True)}"
     return csrf_token
+
+
+def test_learning_unit_api_keeps_lessons_nested_and_private(
+    client: FlaskClient, remediation_env: dict[str, Any]
+) -> None:
+    course = remediation_env["course"]
+    instructor = remediation_env["instructor"]
+    csrf = login_session(client, instructor.email)
+    url = f"/instructor/courses/{course.public_id}/learning-units"
+    created = client.post(url, json={"title": "Chủ đề mới"}, headers={"X-CSRFToken": csrf})
+    assert created.status_code == 201
+    unit_id = created.get_json()["learning_unit_id"]
+    lesson = client.post(
+        f"/instructor/courses/{course.public_id}/lessons",
+        json={"title": "Lesson mới", "markdown_content": "# Content", "learning_unit_id": unit_id},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert lesson.status_code == 201
+    assert lesson.get_json()["learning_unit_id"] == unit_id
+    listing = client.get(url)
+    assert listing.status_code == 200
+    unit = next(item for item in listing.get_json()["items"] if item["learning_unit_id"] == unit_id)
+    assert unit["lesson_count"] == 1
+    assert unit["lessons"][0]["lesson_id"] == lesson.get_json()["lesson_id"]
+    assert_adr002(listing.get_json())
+
+
+def test_course_cover_upload_can_be_selected(
+    client: FlaskClient, remediation_env: dict[str, Any]
+) -> None:
+    instructor = remediation_env["instructor"]
+    course = create_course(
+        instructor, {"course_code": "COVER-ROUTE", "title": "Cover upload route"}
+    )
+    csrf = login_session(client, instructor.email)
+    uploaded = client.post(
+        f"/instructor/courses/{course.public_id}/files",
+        data={
+            "file": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"a" * 64), "cover.png", "image/png"),
+            "asset_type": "COURSE_IMAGE",
+        },
+        content_type="multipart/form-data",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert uploaded.status_code == 201
+    asset_id = uploaded.get_json()["asset_id"]
+    asset = db.session.query(FileAsset).filter_by(public_id=uuid.UUID(asset_id)).one()
+    assert asset.asset_type == "COURSE_IMAGE"
+    selected = client.patch(
+        f"/instructor/courses/{course.public_id}",
+        json={"thumbnail_file_asset_id": asset_id},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert selected.status_code == 200
+    assert course.thumbnail_file_asset_id == asset.id
+
+
+def test_course_upload_route_enforces_lesson_document_cap(
+    client: FlaskClient, remediation_env: dict[str, Any]
+) -> None:
+    instructor = remediation_env["instructor"]
+    course = remediation_env["course"]
+    lesson = remediation_env["lesson"]
+    for index in range(5):
+        asset = store_file_stream(
+            instructor,
+            course.id,
+            io.BytesIO(b"Document text"),
+            f"document-{index}.txt",
+            "text/plain",
+            asset_type="RESOURCE",
+            session=db.session,
+        )
+        attach_resource_to_lesson(instructor, lesson, asset, session=db.session)
+    csrf = login_session(client, instructor.email)
+    extra = client.post(
+        f"/instructor/courses/{course.public_id}/files",
+        data={
+            "file": (io.BytesIO(b"One more document"), "extra.txt", "text/plain"),
+            "lesson_id": str(lesson.public_id),
+        },
+        content_type="multipart/form-data",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert extra.status_code == 400
+    assert len(lesson.resources) == 5
 
 
 # ============================================================================
@@ -330,7 +419,7 @@ def test_batch_create_assessment_questions(
 def test_detach_lesson_resource_delete_method(
     client: FlaskClient, remediation_env: dict[str, Any]
 ) -> None:
-    """Ensure DELETE /instructor/courses/<cid>/lessons/<lid>/resources/<rid> succeeds."""
+    """Ensure DELETE stages a published Lesson resource removal for review."""
     inst = remediation_env["instructor"]
     course = remediation_env["course"]
     lesson = remediation_env["lesson"]
@@ -363,9 +452,10 @@ def test_detach_lesson_resource_delete_method(
     r_pid = resource.public_id
     url = f"/instructor/courses/{c_pid}/lessons/{l_pid}/resources/{r_pid}"
     res = client.delete(url, headers={"X-CSRFToken": csrf})
-    assert res.status_code == 200, f"Failed DELETE resource: {res.get_data(as_text=True)}"
+    assert res.status_code == 202, f"Failed DELETE resource: {res.get_data(as_text=True)}"
     data = res.get_json()
-    assert data.get("status") in ("ok", "success")
+    assert data["pending_approval"] is True
+    assert sess.get(LessonResource, resource.id) is not None
 
 
 # ============================================================================

@@ -22,10 +22,10 @@ class InstructorView {
           <div class="space-y-2">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#F4F1EA] dark:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] border border-[#E8E6DF] dark:border-[#2E2D2B] text-xs font-semibold">
               <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-              Không gian Điều phối Giảng viên • Chuẩn ABET
+              Dành cho giảng viên
             </div>
             <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#222120] dark:text-[#EDEDEB]">Trang chủ Giảng viên</h1>
-            <p class="text-[#5C5B57] dark:text-[#9E9D99] text-sm max-w-xl">Quản lý các khóa học phụ trách, biên soạn ngân hàng câu hỏi chuẩn Bloom và phát triển giáo trình học vụ trực tuyến.</p>
+            <p class="text-[#5C5B57] dark:text-[#9E9D99] text-sm max-w-xl">Quản lý khóa học, bài giảng và đề thi của bạn.</p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <button type="button" id="quick-create-course-btn" class="px-4 sm:px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white font-bold text-sm transition-colors shadow-xs flex items-center gap-2">
@@ -292,11 +292,19 @@ class InstructorView {
               <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs hover:border-primary/40 hover:shadow-subtle transition-all flex flex-col justify-between gap-5 group">
                 <div class="space-y-3">
                   <!-- Top Row: Code & Status -->
-                  <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
                     <span class="font-mono font-extrabold text-primary text-xs px-2.5 py-1 rounded-lg bg-primary-subtle border border-primary/20">
                       ${UI.escapeHtml(c.course_code)}
                     </span>
-                    ${UI.statusBadge(c.status)}
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      ${!c.thumbnail_url ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[10px] font-semibold border border-amber-200 dark:border-amber-800" title="Khóa học này chưa có ảnh bìa đại diện">
+                          <span class="material-symbols-outlined text-[13px]">add_photo_alternate</span>
+                          <span>Chưa có ảnh bìa</span>
+                        </span>
+                      ` : ''}
+                      ${UI.statusBadge(c.status)}
+                    </div>
                   </div>
 
                   <!-- Course Title -->
@@ -391,7 +399,7 @@ class InstructorView {
           <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-lg shrink-0 mt-0.5">info</span>
           <div class="leading-relaxed">
             <strong class="font-bold">Lưu ý quan trọng cho Giảng viên:</strong><br/>
-            Khi tạo xong tất cả (bài giảng, tài liệu đính kèm, đề thi/khảo thí) mới gửi duyệt và xuất bản khóa học. Không xuất bản lắt nhắt từng phần để đảm bảo tính toàn vẹn học thuật và quyền lợi của học viên.
+            Hãy hoàn tất bài giảng, tài liệu và đề thi trước khi gửi duyệt khóa học.
           </div>
         </div>
 
@@ -537,37 +545,11 @@ class InstructorView {
 
       const cId = course.course_id || course.id;
       const lessons = course.lessons || [];
+      const learningUnits = course.learning_units || [];
       const assessments = assessmentsData.assessments || assessmentsData.items || course.assessments || [];
-      const applyLessonOrder = (orderedLessons) => {
-        lessons.splice(0, lessons.length, ...orderedLessons);
-        const stack = container.querySelector('#lessons-sortable-list');
-        if (!stack) return;
-        orderedLessons.forEach((lesson, index) => {
-          const lessonId = lesson.lesson_id || lesson.id;
-          const row = stack.querySelector(`[data-lesson-id="${lessonId}"]`);
-          if (!row) return;
-          stack.appendChild(row);
-          row.dataset.idx = String(index);
-          row.querySelector('.lesson-position-label')?.replaceChildren(String(index + 1));
-          const up = row.querySelector('.btn-move-lesson-up');
-          const down = row.querySelector('.btn-move-lesson-down');
-          if (up) {
-            up.dataset.idx = String(index);
-            up.disabled = index === 0;
-            up.classList.toggle('opacity-25', index === 0);
-            up.classList.toggle('cursor-not-allowed', index === 0);
-          }
-          if (down) {
-            down.dataset.idx = String(index);
-            down.disabled = index === orderedLessons.length - 1;
-            down.classList.toggle('opacity-25', down.disabled);
-            down.classList.toggle('cursor-not-allowed', down.disabled);
-          }
-        });
-      };
 
       container.innerHTML = `
-        <div class="p-4 sm:p-6 lg:p-8 space-y-8 max-w-5xl mx-auto animate-fade-in font-sans pb-20" id="course-manage-root" data-course-id="${UI.escapeHtml(cId)}">
+        <div class="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in font-sans pb-20" id="course-manage-root" data-course-id="${UI.escapeHtml(cId)}">
           
           <!-- Top Breadcrumb & Navigation -->
           <div class="flex items-center justify-between text-xs text-[#5C5B57] dark:text-[#9E9D99] font-medium">
@@ -596,8 +578,42 @@ class InstructorView {
             </div>
           </div>
 
+          <!-- Reminder Banner: Missing Cover Photo -->
+          ${!course.thumbnail_url ? `
+            <div class="rounded-2xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-4 sm:p-5 flex items-center justify-between flex-wrap gap-4 shadow-xs">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <span class="material-symbols-outlined text-2xl">add_photo_alternate</span>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-amber-900 dark:text-amber-200">Khóa học này chưa có ảnh bìa đại diện</h4>
+                  <p class="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                    Thầy/Cô hãy tải lên ảnh bìa cho môn học để giáo trình hiển thị trực quan và thu hút sinh viên hơn khi xuất bản.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onclick="document.getElementById('course-thumbnail-input')?.click()"
+                class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <span class="material-symbols-outlined text-[16px]">upload</span>
+                <span>Tải ảnh bìa ngay</span>
+              </button>
+            </div>
+          ` : ''}
+
           <!-- Course Header Banner (Warm Surface Card) -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-6 sm:p-8 shadow-subtle space-y-4">
+            <div class="relative h-40 overflow-hidden rounded-xl bg-indigo-100 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center">
+              <span class="absolute -right-8 -top-12 h-44 w-44 rounded-full border-[28px] border-indigo-200/70 dark:border-indigo-800/70" aria-hidden="true"></span>
+              <span class="material-symbols-outlined text-6xl text-indigo-600 dark:text-indigo-300" aria-hidden="true">school</span>
+              ${course.thumbnail_url ? `<img src="${UI.escapeHtml(course.thumbnail_url)}" alt="Ảnh đại diện khóa học" class="absolute inset-0 h-full w-full object-cover" onerror="this.remove()" />` : ''}
+            </div>
+            <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+              <span class="material-symbols-outlined text-base">add_photo_alternate</span> Đổi Ảnh Đại Diện Khóa Học
+              <input id="course-thumbnail-input" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" />
+            </label>
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div class="space-y-1">
                 <div class="flex items-center gap-2">
@@ -652,121 +668,136 @@ class InstructorView {
                 <span class="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center material-symbols-outlined text-[18px]">menu_book</span>
                 <div>
                   <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB]">
-                    Bài giảng & Tài liệu (${lessons.length})
+                    Bài học (${learningUnits.length})
                   </h2>
                   <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68]">Nội dung học tập sinh viên sẽ theo dõi</p>
                 </div>
               </div>
 
-              <a
-                href="#/instructor/courses/${cId}/lessons/new"
+              <button
+                type="button"
+                id="btn-create-learning-unit"
                 class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
               >
                 <span class="material-symbols-outlined text-[16px]">add</span>
-                <span>Thêm bài học</span>
-              </a>
+                <span>Thêm Bài học</span>
+              </button>
             </div>
 
-            <!-- Lessons Stack -->
-            <div class="space-y-3" id="course-lessons-stack">
-              ${lessons.length === 0 ? `
-                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-10 text-center shadow-xs">
-                  <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-1">note_add</span>
-                  <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Khóa học chưa có bài giảng nào</p>
-                  <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-3">Thêm bài học đầu tiên để bắt đầu xây dựng giáo trình.</p>
-                  <a
-                    href="#/instructor/courses/${cId}/lessons/new"
-                    class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
-                  >
-                    <span class="material-symbols-outlined text-[15px]">add</span>
-                    <span>Soạn bài học đầu tiên</span>
-                  </a>
+            <div class="space-y-4" id="learning-units-list">
+              ${learningUnits.length === 0 ? `
+                <div class="rounded-2xl border border-dashed border-[#E8E6DF] dark:border-[#526881] bg-white dark:bg-[#223248] p-10 text-center">
+                  <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-2">menu_book</span>
+                  <p class="text-xs font-bold text-[#222120] dark:text-[#F0F5FA]">Chưa có Bài học nào trong khóa học</p>
+                  <p class="text-[11px] text-[#5C5B57] dark:text-[#C6D2E1] mt-1 mb-3">Tạo bài học đầu tiên để bắt đầu phân chia chương mục giáo trình.</p>
                 </div>
-              ` : `
-                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-xs divide-y divide-[#E8E6DF] dark:divide-[#2E2D2B] overflow-hidden" id="lessons-sortable-list">
-                  ${lessons.map((l, idx) => {
-                    const lId = l.lesson_id || l.id;
-                    return `
-                      <div class="lesson-row-card p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors" draggable="true" data-idx="${idx}" data-lesson-id="${lId}">
-                        <div class="flex items-center gap-3 min-w-0">
-                          <!-- Reorder Controls: Up/Down Arrows & Drag Handle -->
-                          <div class="flex items-center gap-1 shrink-0 select-none">
-                            <div class="flex flex-col gap-0.5">
-                              <button
-                                type="button"
-                                class="btn-move-lesson-up p-1 rounded hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] text-[#8F8E8A] hover:text-primary transition-colors ${idx === 0 ? 'opacity-25 cursor-not-allowed' : ''}"
-                                data-idx="${idx}"
-                                ${idx === 0 ? 'disabled' : ''}
-                                title="Di chuyển bài giảng lên trên"
-                              >
-                                <span class="material-symbols-outlined text-[15px]">arrow_upward</span>
-                              </button>
-                              <button
-                                type="button"
-                                class="btn-move-lesson-down p-1 rounded hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] text-[#8F8E8A] hover:text-primary transition-colors ${idx === lessons.length - 1 ? 'opacity-25 cursor-not-allowed' : ''}"
-                                data-idx="${idx}"
-                                ${idx === lessons.length - 1 ? 'disabled' : ''}
-                                title="Di chuyển bài giảng xuống dưới"
-                              >
-                                <span class="material-symbols-outlined text-[15px]">arrow_downward</span>
-                              </button>
-                            </div>
-                            <span class="lesson-drag-handle cursor-grab active:cursor-grabbing p-1 text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]" title="Kéo thả để sắp xếp">
-                              <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
-                            </span>
-                            <span class="lesson-position-label w-8 h-8 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] font-bold text-xs flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B]">
-                              ${idx + 1}
-                            </span>
+              ` : learningUnits.map((unit, unitIdx) => {
+                const children = unit.lessons || [];
+                const unitId = unit.learning_unit_id;
+                const videoCount = children.reduce((total, lesson) =>
+                  total + InstructorView.getVideoCount(lesson.video_urls || [], lesson.resources || []), 0);
+                const targetLessonId = (children[0] && (children[0].lesson_id || children[0].id)) || 'new';
+                const targetUrl = targetLessonId === 'new'
+                  ? `#/instructor/courses/${cId}/lessons/new?learning_unit_id=${unitId}`
+                  : `#/instructor/courses/${cId}/lessons/${targetLessonId}/edit`;
+                return `
+                  <section
+                    class="unit-row-card rounded-2xl border border-[#E8E6DF] dark:border-[#526881] bg-white dark:bg-[#223248] p-5 sm:p-6 transition-all hover:border-primary/40 shadow-xs"
+                    draggable="true"
+                    data-unit-id="${unitId}"
+                    data-idx="${unitIdx}"
+                  >
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div class="flex items-center gap-3.5 min-w-0 flex-1">
+                        <!-- Drag Handle & Up/Down Arrows -->
+                        <div class="flex items-center gap-1 shrink-0 select-none">
+                          <div class="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              class="btn-move-unit-up p-1 rounded hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] text-[#8F8E8A] hover:text-primary transition-colors ${unitIdx === 0 ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer'}"
+                              data-idx="${unitIdx}"
+                              ${unitIdx === 0 ? 'disabled' : ''}
+                              title="Di chuyển bài học lên trên"
+                            >
+                              <span class="material-symbols-outlined text-[15px]">arrow_upward</span>
+                            </button>
+                            <button
+                              type="button"
+                              class="btn-move-unit-down p-1 rounded hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] text-[#8F8E8A] hover:text-primary transition-colors ${unitIdx === learningUnits.length - 1 ? 'opacity-25 cursor-not-allowed' : 'cursor-pointer'}"
+                              data-idx="${unitIdx}"
+                              ${unitIdx === learningUnits.length - 1 ? 'disabled' : ''}
+                              title="Di chuyển bài học xuống dưới"
+                            >
+                              <span class="material-symbols-outlined text-[15px]">arrow_downward</span>
+                            </button>
                           </div>
-
-                          <div class="min-w-0">
-                            <h4 class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB] truncate">
-                              ${UI.escapeHtml(l.title)}
-                            </h4>
-                            <div class="flex items-center gap-2 text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-0.5">
-                              <span class="${l.status === 'PUBLISHED' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400'}">
-                                ${l.status === 'PUBLISHED' ? 'Đã xuất bản' : 'Bản nháp'}
-                              </span>
-                              ${l.quiz && Array.isArray(l.quiz) && l.quiz.length > 0 ? `
-                                <span>•</span>
-                                <span class="text-purple-600 dark:text-purple-400 font-semibold flex items-center gap-0.5">
-                                  <span class="material-symbols-outlined text-[13px]">quiz</span>
-                                  <span>${l.quiz.length} câu trắc nghiệm</span>
-                                </span>
-                              ` : ''}
-                              ${l.video_url ? `
-                                <span>•</span>
-                                <span class="text-blue-600 dark:text-blue-400 font-semibold flex items-center gap-0.5">
-                                  <span class="material-symbols-outlined text-[13px]">play_circle</span>
-                                  <span>Có video</span>
-                                </span>
-                              ` : ''}
-                            </div>
-                          </div>
+                          <span class="unit-drag-handle cursor-grab active:cursor-grabbing p-1 text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]" title="Kéo thả để sắp xếp thứ tự bài học">
+                            <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
+                          </span>
+                          <span class="w-8 h-8 rounded-xl bg-[#F4F1EA] dark:bg-[#1B2A3D] text-[#5C5B57] dark:text-[#9E9D99] font-bold text-xs flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#526881]">
+                            #${unitIdx + 1}
+                          </span>
                         </div>
 
-                        <div class="flex items-center gap-2 shrink-0">
-                          <a
-                            href="#/instructor/courses/${cId}/lessons/${lId}/edit"
-                            class="px-3 py-1.5 rounded-lg bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1"
-                          >
-                            <span class="material-symbols-outlined text-[14px]">edit</span>
-                            <span>Sửa bài</span>
+                        <!-- Title & Metadata -->
+                        <div class="min-w-0 flex-1">
+                          <a href="${targetUrl}" class="block group/title">
+                            <h3 class="text-base font-bold text-[#222120] dark:text-[#F0F5FA] group-hover/title:text-primary transition-colors truncate">
+                              ${UI.escapeHtml(unit.title)}
+                            </h3>
                           </a>
-                          <button
-                            type="button"
-                            class="btn-delete-lesson p-1.5 rounded-lg text-[#8F8E8A] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                            data-lesson-id="${lId}"
-                            title="Xóa bài học"
-                          >
-                            <span class="material-symbols-outlined text-[18px]">delete</span>
-                          </button>
+                          <div class="flex items-center gap-3 mt-1 text-xs text-[#5C5B57] dark:text-[#C6D2E1]">
+                            <span class="flex items-center gap-1">
+                              <span class="material-symbols-outlined text-[14px] text-primary">description</span>
+                              <span>${children.length}/10 Lesson</span>
+                            </span>
+                            <span>•</span>
+                            <span class="flex items-center gap-1">
+                              <span class="material-symbols-outlined text-[14px] text-blue-500">play_circle</span>
+                              <span>${videoCount}/7 video</span>
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    `;
-                  }).join('')}
-                </div>
-              `}
+
+                      <!-- Action Buttons -->
+                      <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <a
+                          href="${targetUrl}"
+                          class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                          title="Vào soạn thảo các bài giảng trong bài học này"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">edit_document</span>
+                          <span>Vào soạn thảo</span>
+                        </a>
+                        <button
+                          type="button"
+                          class="btn-rename-learning-unit px-3 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#526881] hover:bg-[#FAF9F5] dark:hover:bg-[#1B2A3D] text-[#222120] dark:text-[#F0F5FA] text-xs font-semibold transition-colors cursor-pointer"
+                          data-unit-id="${unitId}"
+                        >
+                          Đổi tên
+                        </button>
+                        ${children.length < 10 ? `
+                          <a
+                            href="#/instructor/courses/${cId}/lessons/new?learning_unit_id=${unitId}"
+                            class="px-3 py-2 rounded-xl border border-primary/30 text-primary dark:text-[#93C5FD] hover:bg-primary/5 text-xs font-bold transition-colors"
+                          >
+                            Thêm Lesson
+                          </a>
+                        ` : ''}
+                        <button
+                          type="button"
+                          class="btn-delete-learning-unit p-2 rounded-xl text-[#8F8E8A] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          data-unit-id="${unitId}"
+                          title="Xóa bài học này"
+                        >
+                          <span class="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -877,6 +908,48 @@ class InstructorView {
       `;
 
       // Bind Settings Modal Button
+      container.querySelector('#btn-create-learning-unit')?.addEventListener('click', async () => {
+        const title = await UI.prompt('Thêm Bài học', 'Đặt tên cho Bài học chứa tối đa 10 Lesson.', '', 'Ví dụ: Tổng quan khóa học', 1, 'Tạo Bài Học');
+        if (!title) return;
+        try {
+          const unit = await ApiClient.createLearningUnit(cId, { title });
+          window.location.hash = `#/instructor/courses/${cId}/lessons/new?learning_unit_id=${unit.learning_unit_id}`;
+        } catch (error) {
+          UI.showToast(error.message || 'Không tạo được Bài học.', 'error');
+        }
+      });
+      container.querySelectorAll('.btn-rename-learning-unit').forEach(button => {
+        button.addEventListener('click', async () => {
+          const unit = learningUnits.find(item => item.learning_unit_id === button.dataset.unitId);
+          if (!unit) return;
+          const title = await UI.prompt('Đổi tên Bài học', `Tên mới cho "${unit.title}":`, unit.title, 'Tên Bài học', 1, 'Lưu Tên Bài Học');
+          if (!title || title.trim() === unit.title) return;
+          try {
+            const response = await ApiClient.updateLearningUnit(unit.learning_unit_id, { title: title.trim() });
+            UI.showToast(response.pending_approval ? 'Tên Bài học đã gửi Admin xét duyệt.' : 'Đã đổi tên Bài học.', response.pending_approval ? 'info' : 'success');
+            if (!response.pending_approval) UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
+          } catch (error) {
+            UI.showToast(error.message || 'Không đổi được tên Bài học.', 'error');
+          }
+        });
+      });
+      container.querySelector('#course-thumbnail-input')?.addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+          UI.showToast('Chọn ảnh PNG, JPEG hoặc WebP.', 'warning');
+          return;
+        }
+        try {
+          const uploaded = await ApiClient.uploadCourseFile(cId, file, file.name, 'COURSE_IMAGE');
+          await ApiClient.updateCourse(cId, { thumbnail_file_asset_id: uploaded.asset_id });
+          UI.showToast('Đã cập nhật ảnh đại diện khóa học.', 'success');
+          UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
+        } catch (error) {
+          UI.showToast(error.message || 'Không cập nhật được ảnh đại diện.', 'error');
+        }
+      });
+
       document.getElementById('btn-open-course-settings').onclick = async () => {
         await InstructorView.openCourseSettingsModal(course, initialTab === 'curriculum' ? 'settings' : initialTab);
       };
@@ -925,51 +998,80 @@ class InstructorView {
         };
       }
 
-      // Bind Move Lesson Up
-      container.querySelectorAll('.btn-move-lesson-up').forEach(btn => {
-        btn.onclick = async () => {
+      // Bind Delete Learning Unit
+      container.querySelectorAll('.btn-delete-learning-unit').forEach(button => {
+        button.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const unitId = button.dataset.unitId;
+          const unit = learningUnits.find(item => item.learning_unit_id === unitId);
+          if (!unit) return;
+          const conf = await UI.confirm(
+            'Xóa Bài học',
+            `Bạn có chắc chắn muốn xóa bài học "${unit.title}" và toàn bộ lesson bên trong? Thao tác không thể hoàn tác.`,
+            'Xóa vĩnh viễn'
+          );
+          if (!conf) return;
+          try {
+            await ApiClient.deleteLearningUnit(unitId);
+            UI.showToast('Đã xóa bài học thành công.', 'success');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
+          } catch (error) {
+            UI.showToast(error.message || 'Không thể xóa bài học.', 'error');
+          }
+        });
+      });
+
+      // Bind Move Learning Unit Up
+      container.querySelectorAll('.btn-move-unit-up').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
           const idx = parseInt(btn.dataset.idx, 10);
-          if (idx <= 0 || idx >= lessons.length) return;
-          const reordered = [...lessons];
+          if (idx <= 0 || idx >= learningUnits.length) return;
+          const reordered = [...learningUnits];
           const temp = reordered[idx];
           reordered[idx] = reordered[idx - 1];
           reordered[idx - 1] = temp;
-          const orderedIds = reordered.map(l => l.lesson_id || l.id);
+          const orderedIds = reordered.map(u => u.learning_unit_id);
           try {
-            await ApiClient.reorderLessons(cId, orderedIds);
-            UI.showToast('Đã di chuyển bài giảng lên!', 'success');
-            applyLessonOrder(reordered);
+            await ApiClient.reorderLearningUnits(cId, orderedIds);
+            UI.showToast('Đã di chuyển bài học lên!', 'success');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
           } catch (err) {
-            UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
+            UI.showToast(err.message || 'Lỗi sắp xếp bài học.', 'error');
           }
         };
       });
 
-      // Bind Move Lesson Down
-      container.querySelectorAll('.btn-move-lesson-down').forEach(btn => {
-        btn.onclick = async () => {
+      // Bind Move Learning Unit Down
+      container.querySelectorAll('.btn-move-unit-down').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
           const idx = parseInt(btn.dataset.idx, 10);
-          if (idx < 0 || idx >= lessons.length - 1) return;
-          const reordered = [...lessons];
+          if (idx < 0 || idx >= learningUnits.length - 1) return;
+          const reordered = [...learningUnits];
           const temp = reordered[idx];
           reordered[idx] = reordered[idx + 1];
           reordered[idx + 1] = temp;
-          const orderedIds = reordered.map(l => l.lesson_id || l.id);
+          const orderedIds = reordered.map(u => u.learning_unit_id);
           try {
-            await ApiClient.reorderLessons(cId, orderedIds);
-            UI.showToast('Đã di chuyển bài giảng xuống!', 'success');
-            applyLessonOrder(reordered);
+            await ApiClient.reorderLearningUnits(cId, orderedIds);
+            UI.showToast('Đã di chuyển bài học xuống!', 'success');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
           } catch (err) {
-            UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
+            UI.showToast(err.message || 'Lỗi sắp xếp bài học.', 'error');
           }
         };
       });
 
-      // Bind Drag & Drop Reordering
-      let draggedIdx = null;
-      container.querySelectorAll('.lesson-row-card').forEach(card => {
+      // Bind Drag & Drop Reordering for Learning Units
+      let draggedUnitIdx = null;
+      container.querySelectorAll('.unit-row-card').forEach(card => {
         card.addEventListener('dragstart', (e) => {
-          draggedIdx = parseInt(card.dataset.idx, 10);
+          if (e.target.closest('button') || e.target.closest('a')) {
+            e.preventDefault();
+            return;
+          }
+          draggedUnitIdx = parseInt(card.dataset.idx, 10);
           card.classList.add('opacity-40');
           e.dataTransfer.effectAllowed = 'move';
         });
@@ -983,35 +1085,19 @@ class InstructorView {
         card.addEventListener('drop', async (e) => {
           e.preventDefault();
           const targetIdx = parseInt(card.dataset.idx, 10);
-          if (draggedIdx === null || draggedIdx === targetIdx) return;
-          const reordered = [...lessons];
-          const [moved] = reordered.splice(draggedIdx, 1);
+          if (draggedUnitIdx === null || draggedUnitIdx === targetIdx) return;
+          const reordered = [...learningUnits];
+          const [moved] = reordered.splice(draggedUnitIdx, 1);
           reordered.splice(targetIdx, 0, moved);
-          const orderedIds = reordered.map(l => l.lesson_id || l.id);
+          const orderedIds = reordered.map(u => u.learning_unit_id);
           try {
-            await ApiClient.reorderLessons(cId, orderedIds);
-            UI.showToast('Đã sắp xếp lại thứ tự bài giảng thành công!', 'success');
-            applyLessonOrder(reordered);
+            await ApiClient.reorderLearningUnits(cId, orderedIds);
+            UI.showToast('Đã sắp xếp lại thứ tự bài học thành công!', 'success');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, initialTab));
           } catch (err) {
-            UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
+            UI.showToast(err.message || 'Lỗi sắp xếp bài học.', 'error');
           }
         });
-      });
-
-      // Bind Delete Lesson
-      container.querySelectorAll('.btn-delete-lesson').forEach(btn => {
-        btn.onclick = async () => {
-          const lId = btn.dataset.lessonId;
-          const conf = await UI.confirm('Xóa bài học', 'Bạn có chắc chắn muốn xóa bài học này khỏi giáo trình? Thao tác không thể hoàn tác.', 'Xóa vĩnh viễn');
-          if (!conf) return;
-          try {
-            await ApiClient.deleteLesson(cId, lId);
-            UI.showToast('Đã xóa bài học thành công.', 'success');
-            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-          } catch (e) {
-            UI.showToast(e.message || 'Lỗi khi xóa bài học.', 'error');
-          }
-        };
       });
 
       // Bind Assessment Results Modal
@@ -2344,9 +2430,10 @@ class InstructorView {
     `;
 
     try {
-      const [data, appealRes] = await Promise.all([
+      const [data, appealRes, focusRes] = await Promise.all([
         ApiClient.getInstructorAttemptResult(attemptId),
-        ApiClient.getAttemptAppeal(attemptId).catch(() => ({ appeal: null }))
+        ApiClient.getAttemptAppeal(attemptId).catch(() => ({ appeal: null })),
+        ApiClient.getInstructorAttemptFocusEvents(attemptId).catch(() => null)
       ]);
 
       const appeal = appealRes?.appeal;
@@ -2402,10 +2489,19 @@ class InstructorView {
       }
 
       const questions = data.questions || [];
+      const focusEvents = focusRes?.events || [];
+      const knownSeconds = focusEvents.reduce((sum, event) => sum + (event.duration_seconds || 0), 0);
+      const focusBannerHtml = focusRes === null
+        ? '<div class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm mb-6">Không tải được ghi nhận rời trang thi. Vui lòng thử lại.</div>'
+        : `<section class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-sm mb-6">
+            <h4 class="font-bold">Ghi nhận từ trình duyệt: ${focusEvents.length} lần</h4>
+            <p class="text-slate-600 dark:text-slate-300 mt-1">Tổng thời gian đã ghi nhận: ${knownSeconds} giây. Dữ liệu trình duyệt chỉ hỗ trợ giảng viên xem lại.</p>
+            ${focusEvents.length ? `<ul class="mt-2 space-y-1">${focusEvents.map(event => `<li>${UI.escapeHtml({ TAB_HIDDEN: 'Rời tab', WINDOW_BLUR: 'Mất tiêu điểm', FULLSCREEN_EXIT: 'Thoát toàn màn hình' }[event.event_type] || event.event_type)} · ${event.duration_seconds === null ? 'Chưa xác định thời gian' : `${event.duration_seconds} giây`}</li>`).join('')}</ul>` : ''}
+          </section>`;
       if (questions.length === 0) {
-        contentEl.innerHTML = appealBannerHtml + `<div class="text-center py-8 text-slate-400 text-xs">Không có dữ liệu câu hỏi.</div>`;
+        contentEl.innerHTML = appealBannerHtml + focusBannerHtml + `<div class="text-center py-8 text-slate-400 text-xs">Không có dữ liệu câu hỏi.</div>`;
       } else {
-        contentEl.innerHTML = appealBannerHtml + questions.map((q, idx) => {
+        contentEl.innerHTML = appealBannerHtml + focusBannerHtml + questions.map((q, idx) => {
         const isCorr = q.is_correct;
         const choices = q.choices || [];
         return `
@@ -2491,10 +2587,10 @@ class InstructorView {
                 <div class="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 space-y-1">
                   <div class="font-bold flex items-center gap-1">
                     <span class="material-symbols-outlined text-[16px]">info</span>
-                    <span>Quyết định Phúc khảo Học bạ PWD301:</span>
+                    <span>Cập nhật điểm:</span>
                   </div>
                   <p class="text-[11px] leading-relaxed">
-                    Điểm số sau khi cập nhật sẽ tự động kích hoạt tính lại xếp loại học lực, đồng thời ghi nhận vào Lịch sử Kiểm toán Bất biến (Audit Trail) cho sinh viên.
+                    Hệ thống sẽ tính lại kết quả học tập và lưu lịch sử thay đổi điểm.
                   </p>
                 </div>
 
@@ -2871,32 +2967,179 @@ class InstructorView {
 
   static async uploadLessonFiles(files, uploadOne) {
     const uploaded = [];
+    const pending = [];
     const failed = [];
     for (const file of files) {
       try {
-        uploaded.push(await uploadOne(file));
+        const result = await uploadOne(file);
+        if (result?.pending_approval) pending.push({ file, ...result });
+        else uploaded.push(result);
       } catch (error) {
         failed.push({ file, error });
       }
     }
-    return { uploaded, failed };
+    return { uploaded, pending, failed };
   }
 
-  static canAddLessonVideo(links, resources) {
-    const uploaded = resources.filter(resource => /\.(mp4|webm|mkv|mov)$/i.test(resource.filename || resource.title || '')).length;
-    return links.length + uploaded < 5;
+  static getVideoCount(links, resources) {
+    const uploaded = (resources || []).filter(resource =>
+      /\.(mp4|webm|mkv|mov)$/i.test(resource?.filename || resource?.title || '')
+    ).length;
+    return (links || []).length + uploaded;
   }
 
-  static async renderLessonAuthoringStudio(container, courseId, lessonId = null) {
+  static canAddLessonVideo(links, resources, parentAvailable = 7) {
+    return InstructorView.getRemainingVideoSlots(links, resources, parentAvailable) > 0;
+  }
+
+  static getRemainingVideoSlots(links, resources, parentAvailable = 7) {
+    return Math.max(0, Math.min(2 - InstructorView.getVideoCount(links, resources), parentAvailable));
+  }
+
+  static filterVideoUploadBatch(files, remainingSlots) {
+    const validExts = /\.(mp4|webm|mkv|mov)$/i;
+    const valid = [];
+    const oversized = [];
+    const invalidType = [];
+    for (const file of (files || [])) {
+      const name = file?.name || '';
+      const type = file?.type || '';
+      const size = Number(file?.size || 0);
+      if (!validExts.test(name) && !type.startsWith('video/')) {
+        invalidType.push(file);
+      } else if (size >= 1000000000) {
+        oversized.push(file);
+      } else {
+        valid.push(file);
+      }
+    }
+    const accepted = valid.slice(0, remainingSlots);
+    const overflow = valid.slice(remainingSlots);
+    return { accepted, overflow, oversized, invalidType };
+  }
+
+  static moveVideoItem(list, fromIndex, toIndex) {
+    if (!Array.isArray(list) || fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+      return Array.isArray(list) ? [...list] : [];
+    }
+    const result = [...list];
+    const [item] = result.splice(fromIndex, 1);
+    result.splice(toIndex, 0, item);
+    return result;
+  }
+
+  static lessonSaveOutcome(response, publish) {
+    if (response?.pending_approval) return 'pending';
+    return publish ? 'published' : 'saved';
+  }
+
+  static shouldAutosaveLesson(currentVersion, savedVersion) {
+    return currentVersion !== savedVersion;
+  }
+
+  static renderLessonChildNavigator(unit, courseId, currentLessonId = null) {
+    if (!unit) return '';
+    const unitId = encodeURIComponent(unit.learning_unit_id);
+    const coursePath = `#/instructor/courses/${encodeURIComponent(courseId)}/lessons`;
+    const lessons = [...(unit.lessons || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
+    const count = unit.lesson_count ?? lessons.length;
+    return `
+      <nav aria-label="Lesson trong Bài học" class="rounded-2xl border border-[#E8E6DF] dark:border-[#526881] bg-[#FAF9F5] dark:bg-[#1B2A3D] p-4 space-y-3 lg:sticky lg:top-24">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E8E6DF] dark:border-[#526881]">
+          <div>
+            <h2 class="text-sm font-bold text-[#222120] dark:text-[#F0F5FA]">${UI.escapeHtml(unit.title)}</h2>
+            <span class="text-[11px] font-medium text-[#5C5B57] dark:text-[#C6D2E1]">${count}/10 Lesson</span>
+          </div>
+          ${count < 10 ? `<a href="${coursePath}/new?learning_unit_id=${unitId}" class="text-xs font-bold text-primary dark:text-[#93C5FD] hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-[14px]">add</span><span>Thêm Lesson</span></a>` : ''}
+        </div>
+        <div class="flex flex-col gap-2" id="nav-lessons-sortable-list">
+          ${lessons.map((lesson, idx) => {
+            const current = lesson.lesson_id === currentLessonId;
+            return `
+              <div
+                class="nav-lesson-item group/item flex items-center justify-between gap-2 rounded-xl border p-2.5 transition-all select-none ${
+                  current
+                    ? 'border-primary bg-primary-subtle text-primary dark:text-[#93C5FD] dark:bg-[#2D4058] shadow-2xs'
+                    : 'border-[#E8E6DF] dark:border-[#526881] bg-white dark:bg-[#223248] text-[#222120] dark:text-[#F0F5FA] hover:border-primary'
+                }"
+                draggable="true"
+                data-lesson-id="${lesson.lesson_id}"
+                data-idx="${idx}"
+              >
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <span class="nav-drag-handle cursor-grab active:cursor-grabbing text-[#8F8E8A] group-hover/item:text-primary transition-colors shrink-0" title="Kéo thả để đổi thứ tự bài học">
+                    <span class="material-symbols-outlined text-[16px]">drag_indicator</span>
+                  </span>
+                  <span class="w-5 h-5 rounded-md font-mono text-[10px] font-bold flex items-center justify-center shrink-0 ${
+                    current ? 'bg-primary text-white' : 'bg-[#FAF9F5] dark:bg-[#1B2A3D] text-[#5C5B57] dark:text-[#C6D2E1] border border-[#E8E6DF] dark:border-[#526881]'
+                  }">
+                    ${idx + 1}
+                  </span>
+                  <a
+                    href="${coursePath}/${encodeURIComponent(lesson.lesson_id)}/edit"
+                    ${current ? 'aria-current="page"' : ''}
+                    class="text-xs font-semibold truncate flex-1 hover:underline cursor-pointer block"
+                    title="${UI.escapeHtml(lesson.title)}"
+                  >
+                    ${UI.escapeHtml(lesson.title)}
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  class="btn-nav-delete-lesson p-1 rounded-lg text-[#8F8E8A] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors shrink-0 cursor-pointer"
+                  data-lesson-id="${lesson.lesson_id}"
+                  data-lesson-title="${UI.escapeHtml(lesson.title)}"
+                  title="Xóa bài học này"
+                >
+                  <span class="material-symbols-outlined text-[15px]">delete</span>
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        ${count < 10 ? `
+          <a
+            href="${coursePath}/new?learning_unit_id=${unitId}"
+            class="w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1"
+          >
+            <span class="material-symbols-outlined text-[16px]">add</span>
+            <span>+ Thêm bài học mới</span>
+          </a>
+        ` : ''}
+      </nav>
+    `;
+  }
+
+  static async renderLessonAuthoringStudio(container, courseId, lessonId = null, initialUnitId = null) {
+    let availableUnits = [];
+    let lessonStatus = 'DRAFT';
+    try {
+      const unitResponse = await ApiClient.getLearningUnits(courseId);
+      availableUnits = unitResponse.items || [];
+    } catch (error) {
+      UI.showToast(error.message || 'Không tải được danh sách Bài học.', 'error');
+      if (!lessonId) return;
+    }
+    let selectedUnitId = initialUnitId || null;
     let lessonCreationPromise = null;
     const createLessonOnce = (payload) => {
       if (lessonId) return Promise.resolve(lessonId);
       if (!lessonCreationPromise) {
-        lessonCreationPromise = ApiClient.createLesson(courseId, payload)
-          .then((result) => {
+        lessonCreationPromise = ApiClient.createLesson(courseId, {
+          ...payload,
+          ...(selectedUnitId ? { learning_unit_id: selectedUnitId } : {})
+        })
+          .then(async (result) => {
             lessonId = result?.lesson_id || result?.id;
+            selectedUnitId = result?.learning_unit_id || selectedUnitId;
             if (!lessonId) throw new Error('The lesson draft was not created.');
             window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/${lessonId}/edit`);
+            try {
+              availableUnits = (await ApiClient.getLearningUnits(courseId)).items || availableUnits;
+              renderChildNavigator();
+            } catch (_) {
+              // The created draft remains valid when the sibling list cannot refresh.
+            }
             return lessonId;
           })
           .finally(() => { lessonCreationPromise = null; });
@@ -2905,7 +3148,7 @@ class InstructorView {
     };
 
     container.innerHTML = `
-      <div class="min-h-screen bg-[#FAF9F5] dark:bg-[#191919] font-sans flex flex-col animate-fade-in" id="lesson-studio-root">
+      <div class="min-h-screen bg-[#FAF9F5] dark:bg-[#101925] font-sans flex flex-col animate-fade-in" id="lesson-studio-root">
         
         <!-- Top Sticky Header -->
         <header class="sticky top-0 z-40 bg-white dark:bg-[#202020] border-b border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs select-none shrink-0 px-4 sm:px-8 h-16 flex items-center justify-between gap-4">
@@ -2921,7 +3164,7 @@ class InstructorView {
             </button>
             <div class="flex items-center gap-2 truncate">
               <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary-subtle text-primary shrink-0 border border-primary/20">
-                SOẠN BÀI GIẢNG
+                <span class="sm:hidden">Lesson</span><span class="hidden sm:inline">SOẠN BÀI GIẢNG</span>
               </span>
               <span class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] hidden sm:inline">•</span>
               <span class="text-xs text-[#5C5B57] dark:text-[#9E9D99] truncate hidden sm:inline" id="studio-header-course-ref">
@@ -2957,9 +3200,22 @@ class InstructorView {
         </header>
 
         <!-- Main Document Canvas (Notion / Doc Style) -->
-        <main class="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 space-y-6">
-          <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-3xl p-6 sm:p-12 shadow-subtle space-y-6">
-            
+        <main class="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] items-start gap-6">
+          <aside id="studio-lesson-navigator" class="min-w-0"></aside>
+          <div class="min-w-0 bg-white dark:bg-[#223248] border border-[#E8E6DF] dark:border-[#526881] rounded-2xl p-6 sm:p-8 lg:p-10 shadow-subtle space-y-6">
+
+            <div class="space-y-2">
+              <label for="studio-learning-unit-select" class="block text-xs font-bold text-[#222120] dark:text-[#F0F5FA]">Bài học</label>
+              <select id="studio-learning-unit-select" class="w-full rounded-xl border border-[#E8E6DF] dark:border-[#526881] bg-[#FAF9F5] dark:bg-[#2D4058] px-4 py-3 text-sm text-[#222120] dark:text-[#F0F5FA]" ${lessonId ? 'disabled' : ''}>
+                <option value="">Tạo Bài học mới theo tên Lesson này</option>
+                ${availableUnits.filter(unit => (unit.lesson_count || 0) < 10).map(unit => `
+                  <option value="${UI.escapeHtml(unit.learning_unit_id)}" ${unit.learning_unit_id === selectedUnitId ? 'selected' : ''}>
+                    ${UI.escapeHtml(unit.title)} (${unit.lesson_count || 0}/10 Lesson)
+                  </option>
+                `).join('')}
+              </select>
+              <p class="text-xs text-[#5C5B57] dark:text-[#C6D2E1]">Mỗi Bài học chứa tối đa 10 Lesson và 7 video. Mỗi Lesson chứa tối đa 2 video và 5 tài liệu.</p>
+            </div>
             <!-- Lesson Title (Large Document Heading) -->
             <div>
               <input
@@ -3095,72 +3351,78 @@ class InstructorView {
               <div
                 id="studio-content-editor"
                 contenteditable="true"
-                class="w-full min-h-[420px] p-6 sm:p-8 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm sm:text-base text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed font-sans shadow-2xs overflow-y-auto space-y-3"
-                style="min-height: 420px;"
+                class="w-full min-h-[560px] p-6 sm:p-8 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] text-sm sm:text-base text-[#222120] dark:text-[#EDEDEB] focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed font-sans shadow-2xs overflow-y-auto space-y-3"
               >
                 <p>Nhập nội dung bài giảng tại đây. Bạn có thể bôi đen chữ để in đậm, in nghiêng, đổi màu, tạo danh sách hoặc chèn bảng giống Microsoft Word...</p>
               </div>
             </div>
 
-            <!-- Video Studio Section (Tải video lên hoặc dán link) -->
+            <!-- Video Studio Section (Unified Toolbar + Dropzone) -->
             <div class="p-5 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5]/80 dark:bg-[#262524]/60 space-y-4" id="studio-video-section">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99] flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-[18px] text-primary">play_circle</span>
-                  <span>Video bài giảng</span>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[20px] text-primary">play_circle</span>
+                  <span class="text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">Video bài giảng</span>
+                  <span id="studio-video-count-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                    0/2 video
+                  </span>
+                </div>
+                <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">
+                  Tối đa 2 video cho Lesson, 7 video cho Bài học • MP4/WebM/MKV &lt; 1GB hoặc link YouTube/Vimeo
                 </span>
-                <span class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">Hỗ trợ tệp MP4/WebM/MKV/MOV &lt; 1GB hoặc link YouTube/URL</span>
               </div>
 
-              <!-- Video Options Tab Switcher -->
-              <div class="flex items-center gap-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-2 text-xs">
-                <button
-                  type="button"
-                  id="tab-video-upload-btn"
-                  class="px-3 py-1.5 rounded-lg font-bold transition-all bg-primary text-white shadow-2xs"
-                >
-                  <span class="flex items-center gap-1">
-                    <span class="material-symbols-outlined text-[15px]">upload_file</span>
-                    <span>Tải tệp video (&lt; 1GB)</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  id="tab-video-link-btn"
-                  class="px-3 py-1.5 rounded-lg font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#202020] transition-all"
-                >
-                  <span class="flex items-center gap-1">
-                    <span class="material-symbols-outlined text-[15px]">link</span>
-                    <span>Dán link video (YouTube / URL)</span>
-                  </span>
-                </button>
+              <!-- Unified Toolbar: Chèn link video YouTube / Vimeo -->
+              <div class="space-y-1.5" id="studio-video-toolbar-area">
+                <label for="studio-input-video-url" class="block text-xs font-medium text-[#5C5B57] dark:text-[#9E9D99]">
+                  Chèn link video YouTube / Vimeo:
+                </label>
+                <div class="flex items-center gap-2">
+                  <div class="relative flex-1">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[18px] text-[#8F8E8A] dark:text-[#6D6C68]">link</span>
+                    <input
+                      type="url"
+                      id="studio-input-video-url"
+                      class="w-full h-10 pl-9 pr-3.5 rounded-xl bg-white dark:bg-[#202020] text-xs text-[#222120] dark:text-[#EDEDEB] placeholder:text-[#8F8E8A] dark:placeholder:text-[#6D6C68] border border-[#E8E6DF] dark:border-[#2E2D2B] outline-none focus:border-primary shadow-2xs transition-colors"
+                      placeholder="Dán link YouTube (VD: https://www.youtube.com/watch?v=...) hoặc Vimeo..."
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-apply-video-url"
+                    class="px-4 h-10 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">add_link</span>
+                    <span>Thêm link</span>
+                  </button>
+                </div>
               </div>
 
-              <!-- Tab Pane 1: File Upload -->
-              <div id="studio-video-list" class="space-y-2 text-xs" aria-live="polite"></div>
-              <div id="pane-video-upload" class="space-y-3">
+              <!-- Unified Dropzone: Kéo thả nhiều tệp video & Nút chọn file từ máy tính -->
+              <div class="space-y-2" id="studio-video-dropzone-area">
                 <input
                   type="file"
                   id="studio-video-file-input"
+                  multiple
                   accept="video/mp4,video/webm,video/x-matroska,video/quicktime,.mp4,.webm,.mkv,.mov"
                   class="hidden"
                 />
-                <p class="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50 flex items-center gap-1.5 font-medium">
-                  <span class="material-symbols-outlined text-[16px] text-amber-600 shrink-0">hd</span>
-                  <span>Khuyến nghị: Tải lên video độ phân giải <strong>1080p (Full HD)</strong>, định dạng MP4, dung lượng &lt; 1GB để đạt chất lượng bài giảng chuẩn.</span>
-                </p>
-                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  <button
-                    type="button"
-                    id="btn-choose-video-file"
-                    class="px-4 py-2 rounded-xl bg-white dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold flex items-center gap-2 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs transition-colors"
-                  >
-                    <span class="material-symbols-outlined text-[16px] text-primary">upload</span>
-                    <span>Chọn tệp video từ máy tính</span>
-                  </button>
-                  <span id="studio-video-filename" class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] truncate max-w-sm">
-                    Chưa chọn video nào.
-                  </span>
+                <div
+                  id="studio-video-dropzone"
+                  role="button"
+                  tabindex="0"
+                  class="rounded-xl border-2 border-dashed border-[#D3D0C8] dark:border-[#3E3D3A] hover:border-primary dark:hover:border-primary p-6 text-center cursor-pointer transition-all bg-white/60 dark:bg-[#1E1D1B]/60 hover:bg-white dark:hover:bg-[#202020] space-y-2 group focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mx-auto group-hover:scale-105 transition-transform">
+                    <span class="material-symbols-outlined text-[24px]">cloud_upload</span>
+                  </div>
+                  <div class="text-xs text-[#5C5B57] dark:text-[#9E9D99]">
+                    <span class="font-bold text-[#222120] dark:text-[#EDEDEB]">Kéo thả tối đa 2 video vào đây</span> hoặc
+                    <button type="button" id="btn-choose-video-file" class="text-primary font-bold hover:underline cursor-pointer">chọn từ máy tính</button>
+                  </div>
+                  <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">
+                    Hỗ trợ tải lên nhiều tệp cùng lúc (MP4, WebM, MKV, MOV &lt; 1GB/video • quét ClamAV tự động)
+                  </p>
                 </div>
 
                 <!-- Progress Bar -->
@@ -3175,38 +3437,48 @@ class InstructorView {
                 </div>
               </div>
 
-              <!-- Tab Pane 2: External Link -->
-              <div id="pane-video-link" class="hidden space-y-3">
-                <div class="flex items-center gap-2">
-                  <input
-                    type="url"
-                    id="studio-input-video-url"
-                    class="flex-1 h-10 px-3.5 rounded-xl bg-white dark:bg-[#202020] text-xs text-[#222120] dark:text-[#EDEDEB] placeholder:text-[#8F8E8A] dark:placeholder:text-[#6D6C68] border border-[#E8E6DF] dark:border-[#2E2D2B] outline-none focus:border-primary shadow-2xs"
-                    placeholder="VD: https://www.youtube.com/watch?v=... hoặc https://youtu.be/... hoặc shorts"
-                  />
-                  <button
-                    type="button"
-                    id="btn-apply-video-url"
-                    class="px-4 h-10 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shrink-0"
-                  >
-                    Áp dụng
-                  </button>
+              <!-- Danh sách Video (Cards List) -->
+              <div class="space-y-2 pt-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px] text-primary">playlist_play</span>
+                    <span>Danh sách video trong bài giảng</span>
+                    <span class="text-[10px] font-normal text-[#8F8E8A] dark:text-[#6D6C68] hidden sm:inline">(Kéo thả để đổi thứ tự • Bấm để xem trước)</span>
+                  </span>
+                  <span id="studio-video-quota-hint" class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]"></span>
                 </div>
+                <div id="studio-video-list" class="space-y-2 text-xs" aria-live="polite"></div>
               </div>
 
               <!-- Video Preview Box (Centered horizontally and vertically) -->
               <div id="studio-video-preview-box" class="hidden pt-2">
+                <div class="flex items-center justify-between pb-1.5 px-1">
+                  <span class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px] text-primary">preview</span>
+                    <span id="studio-video-preview-title">Xem trước video</span>
+                  </span>
+                  <div class="flex items-center gap-3">
+                    <button
+                      type="button"
+                      id="btn-delete-preview-video"
+                      class="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 flex items-center gap-0.5 cursor-pointer font-semibold"
+                      title="Xóa video đang xem trước"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">delete</span>
+                      <span>Xóa video</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-close-preview"
+                      class="text-xs text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">close</span>
+                      <span>Đóng xem trước</span>
+                    </button>
+                  </div>
+                </div>
                 <div class="max-w-2xl mx-auto relative rounded-2xl overflow-hidden bg-black aspect-video max-h-[360px] border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-subtle group flex items-center justify-center">
                   <div id="studio-video-player-target" class="w-full h-full flex items-center justify-center"></div>
-                  <button
-                    type="button"
-                    id="btn-remove-current-video"
-                    class="absolute top-3 right-3 px-3 py-1.5 rounded-xl bg-black/75 hover:bg-rose-600 text-white text-xs font-bold transition-colors flex items-center gap-1.5 backdrop-blur-sm shadow-xs z-10"
-                    title="Gỡ bỏ video khỏi bài giảng"
-                  >
-                    <span class="material-symbols-outlined text-[15px]">delete</span>
-                    <span>Gỡ video</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -3229,8 +3501,22 @@ class InstructorView {
                 <input type="file" id="studio-hidden-file-input" class="hidden" multiple />
               </div>
 
-              <div id="studio-resources-dropzone" role="button" tabindex="0" class="rounded-xl border-2 border-dashed border-[#D3D0C8] dark:border-[#3E3D3A] p-5 text-center text-xs text-[#5C5B57] dark:text-[#9E9D99] cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary">
-                Kéo thả nhiều tài liệu vào đây hoặc bấm để chọn tệp
+              <div
+                id="studio-resources-dropzone"
+                role="button"
+                tabindex="0"
+                class="rounded-xl border-2 border-dashed border-[#D3D0C8] dark:border-[#3E3D3A] hover:border-emerald-500 dark:hover:border-emerald-500 p-6 text-center cursor-pointer transition-all bg-white/60 dark:bg-[#1E1D1B]/60 hover:bg-white dark:hover:bg-[#202020] space-y-2 group focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform">
+                  <span class="material-symbols-outlined text-[24px]">cloud_upload</span>
+                </div>
+                <div class="text-xs text-[#5C5B57] dark:text-[#9E9D99]">
+                  <span class="font-bold text-[#222120] dark:text-[#EDEDEB]">Kéo thả tài liệu vào đây</span> hoặc
+                  <button type="button" id="btn-choose-doc-file" class="text-emerald-600 font-bold hover:underline cursor-pointer">chọn từ máy tính</button>
+                </div>
+                <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68]">
+                  Hỗ trợ tải lên nhiều tệp cùng lúc (PDF, DOCX, XLSX, PPTX, TXT, ZIP &lt; 50MB/tệp • quét ClamAV tự động • tối đa 5 tài liệu)
+                </p>
               </div>
 
               <!-- Attachments List Container -->
@@ -3287,64 +3573,106 @@ class InstructorView {
     let videoUrls = [];
     let miniQuizQuestions = [];
 
+    let videoItems = [];
+    const parentVideoSlots = () => {
+      const unit = availableUnits.find(item => item.learning_unit_id === selectedUnitId);
+      if (!unit) return 7;
+      const siblingVideos = (unit.lessons || [])
+        .filter(item => item.lesson_id !== lessonId)
+        .reduce((total, item) => total + InstructorView.getVideoCount(item.video_urls || [], item.resources || []), 0);
+      return Math.max(0, 7 - siblingVideos);
+    };
+    const unitSelect = document.getElementById('studio-learning-unit-select');
+    const renderChildNavigator = () => {
+      const target = container.querySelector('#studio-lesson-navigator');
+      if (!target) return;
+      const unit = availableUnits.find(item => item.learning_unit_id === selectedUnitId);
+      target.innerHTML = InstructorView.renderLessonChildNavigator(unit, courseId, lessonId);
+
+      if (!unit) return;
+      const lessons = [...(unit.lessons || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
+
+      // Bind delete lesson in navigator
+      target.querySelectorAll('.btn-nav-delete-lesson').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const targetLId = btn.dataset.lessonId;
+          const targetLTitle = btn.dataset.lessonTitle || 'bài học này';
+          const conf = await UI.confirm('Xóa Lesson', `Bạn có chắc chắn muốn xóa lesson "${targetLTitle}"? Thao tác không thể hoàn tác.`, 'Xóa vĩnh viễn');
+          if (!conf) return;
+          try {
+            await ApiClient.deleteLesson(courseId, targetLId);
+            UI.showToast('Đã xóa lesson thành công.', 'success');
+            if (unit && Array.isArray(unit.lessons)) {
+              unit.lessons = unit.lessons.filter(l => (l.lesson_id || l.id) !== targetLId);
+              unit.lesson_count = unit.lessons.length;
+            }
+            if (targetLId === lessonId) {
+              if (unit?.lessons?.length > 0) {
+                window.location.hash = `#/instructor/courses/${courseId}/lessons/${unit.lessons[0].lesson_id || unit.lessons[0].id}/edit`;
+              } else {
+                window.location.hash = `#/instructor/courses/${courseId}/lessons/new?learning_unit_id=${unit?.learning_unit_id || ''}`;
+              }
+            } else {
+              renderChildNavigator();
+            }
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi khi xóa lesson.', 'error');
+          }
+        };
+      });
+
+      // Bind Drag & Drop Reordering for lessons in navigator
+      let draggedNavIdx = null;
+      target.querySelectorAll('.nav-lesson-item').forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+          if (e.target.closest('button') || e.target.closest('.btn-nav-delete-lesson')) {
+            e.preventDefault();
+            return;
+          }
+          draggedNavIdx = parseInt(item.dataset.idx, 10);
+          item.classList.add('opacity-40');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('opacity-40');
+        });
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        });
+        item.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          const targetIdx = parseInt(item.dataset.idx, 10);
+          if (draggedNavIdx === null || draggedNavIdx === targetIdx || !unit?.lessons) return;
+          const reordered = [...lessons];
+          const [moved] = reordered.splice(draggedNavIdx, 1);
+          reordered.splice(targetIdx, 0, moved);
+          unit.lessons = reordered;
+          const orderedIds = reordered.map(l => l.lesson_id || l.id);
+          try {
+            await ApiClient.reorderLessons(courseId, orderedIds);
+            UI.showToast('Đã sắp xếp lại thứ tự bài học thành công!', 'success');
+            renderChildNavigator();
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi sắp xếp bài học.', 'error');
+          }
+        });
+      });
+    };
+    if (unitSelect) unitSelect.onchange = () => {
+      selectedUnitId = unitSelect.value || null;
+      renderChildNavigator();
+      renderVideoList();
+    };
+    renderChildNavigator();
+
     const resourceVideoUrl = resource => {
       const baseUrl = resource.file_url || resource.download_url || '';
       if (!baseUrl || baseUrl.includes('disposition=')) return baseUrl;
       return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}disposition=inline`;
     };
-
-    const renderVideoList = () => {
-      const list = document.getElementById('studio-video-list');
-      if (!list) return;
-      const uploaded = attachedResources.filter(resource => /\.(mp4|webm|mkv|mov)$/i.test(resource.filename || resource.title || ''));
-      const entries = [
-        ...videoUrls.map((url, index) => ({ url, label: `YouTube ${index + 1}` })),
-        ...uploaded.map((resource, index) => ({
-          url: resourceVideoUrl(resource),
-          label: resource.title || `Video tải lên ${index + 1}`
-        }))
-      ];
-      list.innerHTML = entries.length
-        ? `<p class="font-semibold">Video trong bài học (${entries.length}/5)</p>${entries.map((entry, index) => `
-          <button type="button" class="studio-video-select w-full text-left rounded-lg border border-[#E8E6DF] dark:border-[#3E3D3A] px-3 py-2 hover:border-primary" data-index="${index}">${UI.escapeHtml(entry.label)}</button>
-        `).join('')}`
-        : '<p>Chưa có video trong bài học (0/5).</p>';
-      list.querySelectorAll('.studio-video-select').forEach(button => {
-        button.onclick = () => {
-          currentVideoUrl = entries[Number(button.dataset.index)].url;
-          renderVideoPreview(currentVideoUrl);
-        };
-      });
-    };
-
-    // Video Section Tab Switcher
-    const tabUploadBtn = document.getElementById('tab-video-upload-btn');
-    const tabLinkBtn = document.getElementById('tab-video-link-btn');
-    const paneUpload = document.getElementById('pane-video-upload');
-    const paneLink = document.getElementById('pane-video-link');
-
-    const switchToUploadTab = () => {
-      if (tabUploadBtn && tabLinkBtn && paneUpload && paneLink) {
-        tabUploadBtn.className = 'px-3 py-1.5 rounded-lg font-bold transition-all bg-primary text-white shadow-2xs';
-        tabLinkBtn.className = 'px-3 py-1.5 rounded-lg font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#202020] transition-all';
-        paneUpload.classList.remove('hidden');
-        paneLink.classList.add('hidden');
-      }
-    };
-
-    const switchToLinkTab = () => {
-      if (tabUploadBtn && tabLinkBtn && paneUpload && paneLink) {
-        tabLinkBtn.className = 'px-3 py-1.5 rounded-lg font-bold transition-all bg-primary text-white shadow-2xs';
-        tabUploadBtn.className = 'px-3 py-1.5 rounded-lg font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#202020] transition-all';
-        paneLink.classList.remove('hidden');
-        paneUpload.classList.add('hidden');
-      }
-    };
-
-    if (tabUploadBtn && tabLinkBtn && paneUpload && paneLink) {
-      tabUploadBtn.onclick = switchToUploadTab;
-      tabLinkBtn.onclick = switchToLinkTab;
-    }
 
     // Helper: Parse YouTube Video ID reliably across all URL formats
     const parseYouTubeId = (url) => {
@@ -3355,6 +3683,7 @@ class InstructorView {
     const renderVideoPreview = (url) => {
       const previewBox = document.getElementById('studio-video-preview-box');
       const target = document.getElementById('studio-video-player-target');
+      const previewTitle = document.getElementById('studio-video-preview-title');
       if (!previewBox || !target) return;
 
       if (!url || !String(url).trim()) {
@@ -3365,6 +3694,13 @@ class InstructorView {
 
       previewBox.classList.remove('hidden');
       const cleanUrl = String(url).trim();
+
+      const item = videoItems.find(v => v.url === cleanUrl);
+      if (previewTitle && item) {
+        previewTitle.textContent = `Xem trước: ${item.title || 'Video bài giảng'}`;
+      } else if (previewTitle) {
+        previewTitle.textContent = 'Xem trước video';
+      }
 
       // YouTube Embed Handler
       const ytId = UI.parseYouTubeId(cleanUrl);
@@ -3408,6 +3744,328 @@ class InstructorView {
       `;
     };
 
+    const syncVideoItemsFromState = () => {
+      const currentMap = new Map(videoItems.map(v => [v.url, v]));
+      const nextItems = [];
+
+      for (const url of videoUrls) {
+        if (currentMap.has(url)) {
+          nextItems.push(currentMap.get(url));
+          currentMap.delete(url);
+        } else {
+          nextItems.push({
+            id: `link-${url}`,
+            type: 'LINK',
+            url,
+            title: url,
+            isYouTube: Boolean(UI.parseYouTubeId(url)),
+            isVimeo: /^https:\/\/(?:www\.)?vimeo\.com\/\d+/i.test(url)
+          });
+        }
+      }
+
+      const uploaded = attachedResources.filter(resource =>
+        /\.(mp4|webm|mkv|mov)$/i.test(resource.filename || resource.title || '')
+      );
+      for (const res of uploaded) {
+        const url = resourceVideoUrl(res);
+        if (currentMap.has(url)) {
+          const item = currentMap.get(url);
+          item.resource = res;
+          item.resource_id = res.resource_id;
+          nextItems.push(item);
+          currentMap.delete(url);
+        } else {
+          nextItems.push({
+            id: `res-${res.resource_id || Math.random()}`,
+            type: 'UPLOAD',
+            url,
+            title: res.title || res.filename || 'Video tải lên',
+            resource_id: res.resource_id,
+            resource: res
+          });
+        }
+      }
+
+      videoItems = nextItems;
+    };
+
+    const renderVideoList = () => {
+      syncVideoItemsFromState();
+      const list = document.getElementById('studio-video-list');
+      const badge = document.getElementById('studio-video-count-badge');
+      const quotaHint = document.getElementById('studio-video-quota-hint');
+      const toolbarInput = document.getElementById('studio-input-video-url');
+      const toolbarBtn = document.getElementById('btn-apply-video-url');
+      const dropzone = document.getElementById('studio-video-dropzone');
+
+      const totalCount = videoItems.length;
+      const remainingSlots = InstructorView.getRemainingVideoSlots(videoUrls, attachedResources, parentVideoSlots());
+
+      if (badge) {
+        badge.textContent = `${totalCount}/2 video`;
+        if (totalCount >= 2) {
+          badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20';
+        } else {
+          badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20';
+        }
+      }
+
+      if (quotaHint) {
+        quotaHint.textContent = remainingSlots === 0
+          ? 'Đã đạt giới hạn video của Lesson hoặc Bài học'
+          : `Còn trống ${remainingSlots} video trong Lesson và Bài học`;
+      }
+
+      const isFull = remainingSlots === 0;
+      if (toolbarInput) {
+        toolbarInput.disabled = isFull;
+        if (isFull) {
+          toolbarInput.placeholder = 'Đã đạt giới hạn tối đa 2 video trong Lesson.';
+        } else {
+          toolbarInput.placeholder = 'Dán link YouTube (VD: https://www.youtube.com/watch?v=...) hoặc Vimeo...';
+        }
+      }
+      if (toolbarBtn) toolbarBtn.disabled = isFull;
+      if (dropzone) {
+        if (isFull) {
+          dropzone.classList.add('opacity-60', 'cursor-not-allowed', 'pointer-events-none');
+        } else {
+          dropzone.classList.remove('opacity-60', 'cursor-not-allowed', 'pointer-events-none');
+        }
+      }
+
+      if (!list) return;
+
+      if (totalCount === 0) {
+        list.innerHTML = `
+          <div class="p-4 rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B] text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68]">
+            Chưa có video nào trong Lesson (0/2). Hãy dán link YouTube ở trên hoặc kéo thả tệp video từ máy tính.
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = videoItems.map((entry, index) => {
+        const isSelected = currentVideoUrl && entry.url === currentVideoUrl;
+        const iconHtml = entry.type === 'LINK'
+          ? (entry.isYouTube
+              ? `<span class="material-symbols-outlined text-[18px] text-rose-500 shrink-0">smart_display</span>`
+              : `<span class="material-symbols-outlined text-[18px] text-sky-500 shrink-0">live_tv</span>`)
+          : `<span class="material-symbols-outlined text-[18px] text-emerald-500 shrink-0">video_file</span>`;
+
+        const typeLabel = entry.type === 'LINK'
+          ? (entry.isYouTube ? 'YouTube' : 'Vimeo')
+          : 'Tệp tải lên';
+
+        return `
+          <div
+            class="video-draggable-card flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none group ${
+              isSelected
+                ? 'border-primary bg-primary/5 dark:bg-primary/10 shadow-2xs'
+                : 'border-[#E8E6DF] dark:border-[#3E3D3A] bg-white dark:bg-[#202020] hover:border-primary/50 dark:hover:border-primary/50'
+            }"
+            draggable="true"
+            data-index="${index}"
+            title="Bấm để xem video này • Kéo thả để đổi thứ tự"
+          >
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <!-- Drag handle indicator -->
+              <div
+                class="drag-handle text-[#8F8E8A] dark:text-[#6D6C68] group-hover:text-primary cursor-grab active:cursor-grabbing p-1 -ml-1 rounded-md shrink-0 flex items-center justify-center transition-colors"
+                title="Kéo thả để đổi thứ tự"
+              >
+                <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
+              </div>
+
+              <span class="px-2 py-0.5 rounded-md font-mono text-[11px] font-bold shrink-0 ${
+                index === 0
+                  ? 'bg-primary text-white'
+                  : 'bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99]'
+              }">
+                #${index + 1}
+              </span>
+              ${iconHtml}
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-[#8F8E8A] dark:text-[#6D6C68]">${typeLabel}</span>
+                  ${isSelected ? '<span class="text-[10px] font-semibold text-primary">• Đang xem</span>' : ''}
+                </div>
+                <div class="text-xs font-semibold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(entry.title)}">
+                  ${UI.escapeHtml(entry.title)}
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions: Delete -->
+            <div class="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                class="btn-video-delete px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                data-index="${index}"
+                title="Xóa video này"
+                draggable="false"
+              >
+                <span class="material-symbols-outlined text-[15px]">delete</span>
+                <span>Xóa video</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Bind Click to Preview & Drag and Drop for Reordering
+      let isDragging = false;
+      const cards = list.querySelectorAll('.video-draggable-card');
+
+      cards.forEach(card => {
+        // Click anywhere on card (except delete button) to preview
+        card.onclick = (e) => {
+          if (isDragging) return;
+          if (e.target.closest('.btn-video-delete')) return;
+          const idx = Number(card.dataset.index);
+          const item = videoItems[idx];
+          if (item) {
+            currentVideoUrl = item.url;
+            renderVideoPreview(currentVideoUrl);
+            renderVideoList();
+          }
+        };
+
+        // Drag and Drop reordering
+        card.ondragstart = (e) => {
+          if (e.target.closest('.btn-video-delete')) {
+            e.preventDefault();
+            return;
+          }
+          isDragging = true;
+          const idx = Number(card.dataset.index);
+          card.dataset.dragging = 'true';
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(idx));
+          setTimeout(() => {
+            card.classList.add('opacity-40', 'scale-[0.99]');
+          }, 0);
+        };
+
+        card.ondragend = () => {
+          setTimeout(() => {
+            isDragging = false;
+          }, 50);
+          cards.forEach(c => {
+            delete c.dataset.dragging;
+            c.classList.remove('opacity-40', 'scale-[0.99]', 'border-primary', 'bg-primary/10');
+          });
+        };
+
+        card.ondragover = (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (card.dataset.dragging !== 'true') {
+            card.classList.add('border-primary', 'bg-primary/10');
+          }
+        };
+
+        card.ondragleave = (e) => {
+          if (!card.contains(e.relatedTarget)) {
+            card.classList.remove('border-primary', 'bg-primary/10');
+          }
+        };
+
+        card.ondrop = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          card.classList.remove('border-primary', 'bg-primary/10');
+          const targetIdx = Number(card.dataset.index);
+          const rawSource = e.dataTransfer.getData('text/plain');
+          const sourceIdx = Number(rawSource);
+          if (!isNaN(sourceIdx) && !isNaN(targetIdx) && sourceIdx !== targetIdx) {
+            videoItems = InstructorView.moveVideoItem(videoItems, sourceIdx, targetIdx);
+            videoUrls = videoItems.filter(v => v.type === 'LINK').map(v => v.url);
+            renderVideoList();
+            UI.showToast(`Đã đổi vị trí video #${sourceIdx + 1} sang #${targetIdx + 1}.`, 'info');
+          }
+        };
+      });
+
+      // Bind Delete
+      list.querySelectorAll('.btn-video-delete').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const idx = Number(btn.dataset.index);
+          const item = videoItems[idx];
+          if (!item) return;
+
+          const conf = await UI.confirm('Xóa video', `Bạn có chắc chắn muốn xóa video "${item.title || 'này'}"?`, 'Xóa video');
+          if (!conf) return;
+
+          if (item.type === 'LINK') {
+            videoUrls = videoUrls.filter(u => u !== item.url);
+          } else if (item.type === 'UPLOAD') {
+            if (item.resource_id && lessonId) {
+              try {
+                const response = await ApiClient.detachLessonResource(courseId, lessonId, item.resource_id);
+                if (response.pending_approval) {
+                  UI.showToast('Yêu cầu gỡ video đã gửi Admin xét duyệt.', 'info');
+                  return;
+                }
+              } catch (err) {
+                UI.showToast(err.message || 'Không thể gỡ video.', 'error');
+                return;
+              }
+            }
+            attachedResources = attachedResources.filter(r => r !== item.resource && r.resource_id !== item.resource_id);
+            renderAttachments();
+          }
+
+          videoItems = videoItems.filter((_, i) => i !== idx);
+
+          if (currentVideoUrl === item.url) {
+            currentVideoUrl = videoItems.length ? videoItems[0].url : '';
+            renderVideoPreview(currentVideoUrl);
+          }
+
+          renderVideoList();
+          UI.showToast(`Đã xóa video thành công.`, 'info');
+        };
+      });
+    };
+
+    const deletePreviewVideoBtn = document.getElementById('btn-delete-preview-video');
+    if (deletePreviewVideoBtn) {
+      deletePreviewVideoBtn.onclick = async () => {
+        if (!currentVideoUrl) return;
+        const idx = videoItems.findIndex(v => v.url === currentVideoUrl);
+        if (idx === -1) return;
+        const item = videoItems[idx];
+        const conf = await UI.confirm('Xóa video', `Bạn có chắc chắn muốn xóa video "${item.title || 'này'}"?`, 'Xóa video');
+        if (!conf) return;
+        if (item.type === 'LINK') {
+          videoUrls = videoUrls.filter(u => u !== item.url);
+        } else if (item.type === 'UPLOAD') {
+          if (item.resource_id && lessonId) {
+            try {
+              const response = await ApiClient.detachLessonResource(courseId, lessonId, item.resource_id);
+              if (response.pending_approval) {
+                UI.showToast('Yêu cầu gỡ video đã gửi Admin xét duyệt.', 'info');
+                return;
+              }
+            } catch (err) {
+              UI.showToast(err.message || 'Không thể gỡ video.', 'error');
+              return;
+            }
+          }
+          attachedResources = attachedResources.filter(r => r !== item.resource && r.resource_id !== item.resource_id);
+          renderAttachments();
+        }
+        videoItems = videoItems.filter((_, i) => i !== idx);
+        currentVideoUrl = videoItems.length ? videoItems[0].url : '';
+        renderVideoPreview(currentVideoUrl);
+        renderVideoList();
+        UI.showToast('Đã xóa video thành công.', 'info');
+      };
+    }
+
     const handleApplyVideoUrl = () => {
       const inputEl = document.getElementById('studio-input-video-url');
       const inputUrl = inputEl?.value.trim() || '';
@@ -3422,16 +4080,20 @@ class InstructorView {
         return;
       }
       const url = ytId ? `https://www.youtube.com/watch?v=${ytId}` : `https://vimeo.com/${vimeoId}`;
-      if (!videoUrls.includes(url) && !InstructorView.canAddLessonVideo(videoUrls, attachedResources)) {
-        UI.showToast('Bài học chỉ được có tối đa 5 video.', 'warning');
+      if (videoUrls.includes(url)) {
+        UI.showToast('Video này đã có trong danh sách bài học.', 'warning');
         return;
       }
-      if (!videoUrls.includes(url)) videoUrls.push(url);
+      if (!InstructorView.canAddLessonVideo(videoUrls, attachedResources, parentVideoSlots())) {
+        UI.showToast('Mỗi Lesson chỉ được có tối đa 2 video.', 'warning');
+        return;
+      }
+      videoUrls.push(url);
       currentVideoUrl = url;
       if (inputEl) inputEl.value = '';
       renderVideoPreview(currentVideoUrl);
       renderVideoList();
-      UI.showToast('Đã áp dụng link video vào bài giảng!', 'success');
+      UI.showToast('Đã thêm link video vào bài học thành công!', 'success');
     };
 
     const applyUrlBtn = document.getElementById('btn-apply-video-url');
@@ -3449,129 +4111,180 @@ class InstructorView {
       };
     }
 
-    const removeVideoBtn = document.getElementById('btn-remove-current-video');
-    if (removeVideoBtn) {
-      removeVideoBtn.onclick = async () => {
-        if (videoUrls.includes(currentVideoUrl)) {
-          videoUrls = videoUrls.filter(url => url !== currentVideoUrl);
-        } else {
-          const resource = attachedResources.find(item => resourceVideoUrl(item) === currentVideoUrl);
-          if (resource && lessonId) {
-            try {
-              await ApiClient.detachLessonResource(courseId, lessonId, resource.resource_id);
-              attachedResources = attachedResources.filter(item => item !== resource);
-              renderAttachments();
-            } catch (error) {
-              UI.showToast(error.message || 'Không thể gỡ video.', 'error');
-              return;
-            }
-          }
-        }
-        currentVideoUrl = '';
+    const closePreviewBtn = document.getElementById('btn-close-preview');
+    if (closePreviewBtn) {
+      closePreviewBtn.onclick = () => {
         renderVideoPreview('');
-        renderVideoList();
-        const urlInputEl = document.getElementById('studio-input-video-url');
-        if (urlInputEl) urlInputEl.value = '';
-        const fnLabel = document.getElementById('studio-video-filename');
-        if (fnLabel) fnLabel.textContent = 'Chưa chọn video nào.';
-        const progBox = document.getElementById('studio-video-progress-box');
-        if (progBox) progBox.classList.add('hidden');
-        UI.showToast('Đã gỡ bỏ video khỏi bài giảng.', 'info');
       };
     }
 
+    // Video Batch Upload Function (Sequential & Quota Aware)
+    const uploadVideoBatch = async (files) => {
+      if (!files || !files.length) return;
+      const remainingSlots = InstructorView.getRemainingVideoSlots(videoUrls, attachedResources, parentVideoSlots());
 
-    // Video File Upload Handler
+      if (remainingSlots <= 0) {
+        UI.showToast('Lesson đã đạt giới hạn tối đa 2 video.', 'warning');
+        return;
+      }
+
+      const { accepted, overflow, oversized, invalidType } = InstructorView.filterVideoUploadBatch(files, remainingSlots);
+
+      if (invalidType.length) {
+        UI.showToast(`${invalidType.length} tệp không đúng định dạng video (MP4, WebM, MKV, MOV).`, 'warning');
+      }
+      if (oversized.length) {
+        UI.showToast(`${oversized.length} video vượt quá dung lượng cho phép (< 1GB).`, 'error');
+      }
+      if (overflow.length) {
+        UI.showToast(`Đã nhận ${accepted.length} video hợp lệ, bỏ qua ${overflow.length} video do vượt giới hạn 2 video.`, 'info');
+      }
+
+      if (!accepted.length) return;
+
+      const progressBox = document.getElementById('studio-video-progress-box');
+      const progressBar = document.getElementById('studio-video-progress-bar');
+      const progressPercent = document.getElementById('studio-video-progress-percent');
+      const progressText = document.getElementById('studio-video-progress-text');
+
+      if (progressBox) progressBox.classList.remove('hidden');
+
+      try {
+        if (!lessonId) {
+          if (progressText) progressText.textContent = 'Đang khởi tạo bản nháp bài học...';
+          const title = document.getElementById('studio-input-title')?.value.trim() || 'Bài giảng mới';
+          const summary = document.getElementById('studio-input-summary')?.value.trim() || '';
+          const editorEl = document.getElementById('studio-content-editor');
+          const mdContent = editorEl ? editorEl.innerHTML : '';
+          const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
+          await createLessonOnce({
+            title,
+            summary,
+            markdown_content: mdContent,
+            status: 'DRAFT',
+            estimated_duration_minutes: !isNaN(durationVal) && durationVal > 0 ? durationVal : 15
+          });
+        }
+
+        let uploadedSuccessCount = 0;
+        let pendingApprovalCount = 0;
+        for (let i = 0; i < accepted.length; i++) {
+          const file = accepted[i];
+          const fileNum = i + 1;
+          const totalFiles = accepted.length;
+
+          if (progressText) progressText.textContent = `Đang tải lên (${fileNum}/${totalFiles}): ${file.name}...`;
+          if (progressBar) progressBar.style.width = `${Math.round(((fileNum - 1) / totalFiles) * 100)}%`;
+          if (progressPercent) progressPercent.textContent = `${Math.round(((fileNum - 1) / totalFiles) * 100)}%`;
+
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('title', file.name);
+
+            const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
+            if (res.pending_approval) {
+              pendingApprovalCount++;
+              continue;
+            }
+            const baseVideoUrl = res.download_url || res.file_url || `/student/courses/${courseId}/files/${res.resource_id}/download`;
+            const videoUrl = `${baseVideoUrl}${baseVideoUrl.includes('?') ? '&' : '?'}disposition=inline`;
+
+            const newResource = {
+              resource_id: res.resource_id,
+              title: file.name,
+              filename: file.name,
+              file_url: videoUrl,
+              download_url: videoUrl,
+              file_asset: res.file_asset
+            };
+            attachedResources.push(newResource);
+            uploadedSuccessCount++;
+
+            if (!currentVideoUrl) {
+              currentVideoUrl = videoUrl;
+              renderVideoPreview(currentVideoUrl);
+            }
+
+            renderAttachments();
+            renderVideoList();
+          } catch (fileErr) {
+            UI.showToast(`Lỗi tải video "${file.name}": ${fileErr.message || 'Không thể tải lên.'}`, 'error');
+          }
+        }
+
+        if (progressBar) progressBar.style.width = '100%';
+        if (progressPercent) progressPercent.textContent = '100%';
+        if (progressText) progressText.textContent = `Hoàn tất tải lên ${uploadedSuccessCount}/${accepted.length} video.`;
+        if (uploadedSuccessCount > 0) {
+          UI.showToast(`Đã tải lên thành công ${uploadedSuccessCount} video!`, 'success');
+        }
+        if (pendingApprovalCount > 0) {
+          UI.showToast(`${pendingApprovalCount} video đã gửi Admin xét duyệt.`, 'info');
+        }
+      } catch (err) {
+        UI.showToast(err.message || 'Lỗi tải video lên máy chủ.', 'error');
+      } finally {
+        setTimeout(() => {
+          if (progressBox) progressBox.classList.add('hidden');
+        }, 2500);
+      }
+    };
+
+    // Video File Upload & Dropzone Handlers
     const videoFileInput = document.getElementById('studio-video-file-input');
     const chooseVideoBtn = document.getElementById('btn-choose-video-file');
+    const videoDropzone = document.getElementById('studio-video-dropzone');
+
     if (chooseVideoBtn && videoFileInput) {
-      chooseVideoBtn.onclick = () => videoFileInput.click();
+      chooseVideoBtn.onclick = (e) => {
+        e.stopPropagation();
+        videoFileInput.click();
+      };
+    }
 
+    if (videoDropzone && videoFileInput) {
+      videoDropzone.onclick = (e) => {
+        if (e.target !== chooseVideoBtn && !chooseVideoBtn?.contains(e.target)) {
+          videoFileInput.click();
+        }
+      };
+
+      videoDropzone.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          videoFileInput.click();
+        }
+      };
+
+      videoDropzone.ondragover = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        videoDropzone.classList.add('border-primary', 'bg-primary/5');
+      };
+
+      videoDropzone.ondragleave = (e) => {
+        e.preventDefault();
+        videoDropzone.classList.remove('border-primary', 'bg-primary/5');
+      };
+
+      videoDropzone.ondrop = async (e) => {
+        e.preventDefault();
+        videoDropzone.classList.remove('border-primary', 'bg-primary/5');
+        const files = Array.from(e.dataTransfer?.files || []);
+        if (files.length) {
+          await uploadVideoBatch(files);
+        }
+      };
+    }
+
+    if (videoFileInput) {
       videoFileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (!InstructorView.canAddLessonVideo(videoUrls, attachedResources)) {
-          UI.showToast('Bài học chỉ được có tối đa 5 video.', 'warning');
-          videoFileInput.value = '';
-          return;
+        const files = Array.from(e.target.files || []);
+        if (files.length) {
+          await uploadVideoBatch(files);
         }
-
-        // Invariant: Video size must be strictly < 1 GB
-        if (file.size >= 1000000000) {
-          UI.showToast('Dung lượng tệp vượt quá giới hạn 1GB theo quy định.', 'error');
-          videoFileInput.value = '';
-          return;
-        }
-
-        const fnLabel = document.getElementById('studio-video-filename');
-        if (fnLabel) {
-          fnLabel.textContent = `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`;
-        }
-
-        const progressBox = document.getElementById('studio-video-progress-box');
-        const progressBar = document.getElementById('studio-video-progress-bar');
-        const progressPercent = document.getElementById('studio-video-progress-percent');
-        const progressText = document.getElementById('studio-video-progress-text');
-
-        if (progressBox) progressBox.classList.remove('hidden');
-        if (progressBar) progressBar.style.width = '20%';
-        if (progressPercent) progressPercent.textContent = '20%';
-        if (progressText) progressText.textContent = 'Đang chuẩn bị tải lên...';
-
-        try {
-          // If creating a new lesson, auto-save draft first so lessonId exists
-          if (!lessonId) {
-            if (progressText) progressText.textContent = 'Đang khởi tạo bản nháp bài học...';
-            const title = document.getElementById('studio-input-title')?.value.trim() || 'Bài giảng mới';
-            const summary = document.getElementById('studio-input-summary')?.value.trim() || '';
-            const editorEl = document.getElementById('studio-content-editor');
-            const mdContent = editorEl ? editorEl.innerHTML : '';
-
-            const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
-            await createLessonOnce({
-              title,
-              summary,
-              markdown_content: mdContent,
-              status: 'DRAFT',
-              estimated_duration_minutes: !isNaN(durationVal) && durationVal > 0 ? durationVal : 15
-            });
-          }
-
-          if (progressBar) progressBar.style.width = '60%';
-          if (progressPercent) progressPercent.textContent = '60%';
-          if (progressText) progressText.textContent = 'Đang tải tệp video lên máy chủ (ClamAV scan)...';
-
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('title', file.name);
-
-          const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
-          if (progressBar) progressBar.style.width = '100%';
-          if (progressPercent) progressPercent.textContent = '100%';
-          if (progressText) progressText.textContent = 'Tải lên hoàn tất!';
-
-          const baseVideoUrl = res.download_url || res.file_url || `/student/courses/${courseId}/files/${res.resource_id}/download`;
-          const videoUrl = `${baseVideoUrl}${baseVideoUrl.includes('?') ? '&' : '?'}disposition=inline`;
-          currentVideoUrl = videoUrl;
-          renderVideoPreview(videoUrl);
-
-          attachedResources.push({
-            resource_id: res.resource_id,
-            title: file.name,
-            filename: file.name,
-            file_url: videoUrl,
-            download_url: videoUrl,
-            file_asset: res.file_asset
-          });
-          renderAttachments();
-          renderVideoList();
-          videoFileInput.value = '';
-          UI.showToast(`Đã tải lên video ${file.name} thành công!`, 'success');
-        } catch (err) {
-          if (progressBox) progressBox.classList.add('hidden');
-          videoFileInput.value = '';
-          UI.showToast(err.message || 'Lỗi tải video lên máy chủ.', 'error');
-        }
+        videoFileInput.value = '';
       };
     }
 
@@ -3675,11 +4388,12 @@ class InstructorView {
           </div>
           <button
             type="button"
-            class="btn-remove-attachment p-1 rounded-lg text-[#8F8E8A] hover:text-rose-600 transition-colors"
+            class="btn-remove-attachment px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
             data-idx="${idx}"
-            title="Gỡ tệp và xóa khỏi bài giảng"
+            title="Xóa tài liệu này"
           >
-            <span class="material-symbols-outlined text-[18px]">close</span>
+            <span class="material-symbols-outlined text-[15px]">delete</span>
+            <span>Xóa tài liệu</span>
           </button>
         </div>
       `).join('');
@@ -3688,11 +4402,20 @@ class InstructorView {
         btn.onclick = async () => {
           const idx = parseInt(btn.dataset.idx, 10);
           const res = attachedResources[idx];
+          if (!res) return;
+
+          const conf = await UI.confirm('Xóa tài liệu', `Bạn có chắc chắn muốn xóa tài liệu "${res.title || res.filename || 'này'}" khỏi bài học?`, 'Xóa tài liệu');
+          if (!conf) return;
+
           const resId = res?.resource_id || res?.id;
 
           if (lessonId && resId) {
             try {
-              await ApiClient.detachLessonResource(courseId, lessonId, resId);
+              const response = await ApiClient.detachLessonResource(courseId, lessonId, resId);
+              if (response.pending_approval) {
+                UI.showToast('Yêu cầu gỡ tài liệu đã gửi Admin xét duyệt.', 'info');
+                return;
+              }
               UI.showToast('Đã xóa tài liệu khỏi bài giảng!', 'success');
             } catch (err) {
               UI.showToast(err.message || 'Lỗi khi xóa tài liệu trên máy chủ.', 'error');
@@ -4500,6 +5223,16 @@ class InstructorView {
       try {
         const existingLesson = await ApiClient.getLesson(lessonId);
         if (existingLesson) {
+          selectedUnitId = existingLesson.learning_unit_id || selectedUnitId;
+          lessonStatus = existingLesson.status || 'DRAFT';
+          if (unitSelect && selectedUnitId) {
+            if (![...unitSelect.options].some(option => option.value === selectedUnitId)) {
+              const option = new Option(existingLesson.learning_unit_title || 'Bài học hiện tại', selectedUnitId);
+              unitSelect.add(option);
+            }
+            unitSelect.value = selectedUnitId;
+          }
+          renderChildNavigator();
           document.getElementById('studio-input-title').value = existingLesson.title || '';
           document.getElementById('studio-input-summary').value = existingLesson.summary || '';
           const durEl = document.getElementById('studio-input-duration');
@@ -4519,18 +5252,6 @@ class InstructorView {
             }
           }
 
-          if (existingLesson.video_url) {
-            currentVideoUrl = existingLesson.video_url;
-            renderVideoPreview(currentVideoUrl);
-            const urlInp = document.getElementById('studio-input-video-url');
-            const isExternalVideo = UI.parseYouTubeId(currentVideoUrl)
-              || /^https:\/\/(?:www\.)?vimeo\.com\/\d+/i.test(currentVideoUrl);
-            if (urlInp && isExternalVideo) {
-              urlInp.value = currentVideoUrl;
-              switchToLinkTab();
-            }
-          }
-
           videoUrls = Array.isArray(existingLesson.video_urls) ? [...existingLesson.video_urls] : [];
           if (!videoUrls.length && existingLesson.video_url && /^(https:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|vimeo\.com))/.test(existingLesson.video_url)) {
             videoUrls = [existingLesson.video_url];
@@ -4539,13 +5260,21 @@ class InstructorView {
           if (existingLesson.resources && Array.isArray(existingLesson.resources)) {
             attachedResources = existingLesson.resources;
             renderAttachments();
-            const selectedUpload = attachedResources.find(resource =>
-              [resource.file_url, resource.download_url, resourceVideoUrl(resource)].includes(currentVideoUrl)
+          }
+
+          if (existingLesson.video_url) {
+            currentVideoUrl = existingLesson.video_url;
+          } else if (videoUrls.length) {
+            currentVideoUrl = videoUrls[0];
+          } else {
+            const firstUpload = (attachedResources || []).find(resource =>
+              /\.(mp4|webm|mkv|mov)$/i.test(resource.filename || resource.title || '')
             );
-            if (selectedUpload) {
-              currentVideoUrl = resourceVideoUrl(selectedUpload);
-              renderVideoPreview(currentVideoUrl);
-            }
+            if (firstUpload) currentVideoUrl = resourceVideoUrl(firstUpload);
+          }
+
+          if (currentVideoUrl) {
+            renderVideoPreview(currentVideoUrl);
           }
           renderVideoList();
 
@@ -4565,6 +5294,13 @@ class InstructorView {
 
     const uploadDocuments = async files => {
       if (!files.length) return;
+      const documentCount = attachedResources.filter(resource =>
+        !/\.(mp4|webm|mkv|mov)$/i.test(resource.filename || resource.title || '')
+      ).length;
+      if (documentCount + files.length > 5) {
+        UI.showToast(`Lesson còn ${Math.max(0, 5 - documentCount)} vị trí tài liệu.`, 'warning');
+        return;
+      }
       try {
         if (!lessonId) {
           await createLessonOnce({
@@ -4579,6 +5315,7 @@ class InstructorView {
           formData.append('file', file);
           formData.append('title', file.name);
           const res = await ApiClient.attachLessonResource(courseId, lessonId, formData);
+          if (res.pending_approval) return res;
           return {
             resource_id: res.resource_id,
             title: file.name,
@@ -4591,6 +5328,7 @@ class InstructorView {
         renderAttachments();
         renderVideoList();
         if (result.uploaded.length) UI.showToast(`Đã đính kèm ${result.uploaded.length} tài liệu.`, 'success');
+        if (result.pending.length) UI.showToast(`${result.pending.length} tài liệu đã gửi Admin xét duyệt.`, 'info');
         for (const failure of result.failed) {
           UI.showToast(`${failure.file.name}: ${failure.error.message || 'Không thể tải lên.'}`, 'error');
         }
@@ -4603,25 +5341,56 @@ class InstructorView {
       fileInput.value = '';
     };
     const dropzone = document.getElementById('studio-resources-dropzone');
-    dropzone.onclick = () => fileInput.click();
-    dropzone.onkeydown = event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
+    const chooseDocBtn = document.getElementById('btn-choose-doc-file');
+    if (chooseDocBtn) {
+      chooseDocBtn.onclick = (e) => {
+        e.stopPropagation();
         fileInput.click();
-      }
-    };
-    dropzone.ondragover = event => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'copy';
-    };
-    dropzone.ondrop = async event => {
-      event.preventDefault();
-      await uploadDocuments(Array.from(event.dataTransfer?.files || []));
-    };
+      };
+    }
+    if (dropzone) {
+      dropzone.onclick = (e) => {
+        if (e.target !== chooseDocBtn && !chooseDocBtn?.contains(e.target)) {
+          fileInput.click();
+        }
+      };
+      dropzone.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          fileInput.click();
+        }
+      };
+      dropzone.ondragover = event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        dropzone.classList.add('border-emerald-500', 'bg-emerald-50/10');
+      };
+      dropzone.ondragleave = event => {
+        event.preventDefault();
+        dropzone.classList.remove('border-emerald-500', 'bg-emerald-50/10');
+      };
+      dropzone.ondrop = async event => {
+        event.preventDefault();
+        dropzone.classList.remove('border-emerald-500', 'bg-emerald-50/10');
+        await uploadDocuments(Array.from(event.dataTransfer?.files || []));
+      };
+    }
 
     // Save & Publish Logic
-    const saveLessonData = async (publish = false) => {
+    let editVersion = 0;
+    let savedVersion = 0;
+    let saveInFlight = null;
+    studioRoot.addEventListener('input', () => { editVersion++; });
+    studioRoot.addEventListener('change', () => { editVersion++; });
+    const saveLessonData = async (publish = false, autosave = false) => {
       if (!InstructorView.isActiveLessonStudio(studioRoot)) return false;
+      if (saveInFlight) {
+        if (autosave) return false;
+        try { await saveInFlight; } catch (_) { /* A manual save may retry after a failed autosave. */ }
+        if (!InstructorView.isActiveLessonStudio(studioRoot)) return false;
+      }
+      if (autosave && !InstructorView.shouldAutosaveLesson(editVersion, savedVersion)) return false;
+      const versionAtSave = editVersion;
       const title = document.getElementById('studio-input-title').value.trim();
       const summary = document.getElementById('studio-input-summary').value.trim();
       const editorEl = document.getElementById('studio-content-editor');
@@ -4684,8 +5453,8 @@ class InstructorView {
           return false;
         }
         const url = parsedYt ? `https://www.youtube.com/watch?v=${parsedYt}` : `https://vimeo.com/${vimeoId}`;
-        if (!videoUrls.includes(url) && !InstructorView.canAddLessonVideo(videoUrls, attachedResources)) {
-          UI.showToast('Bài học chỉ được có tối đa 5 video.', 'warning');
+        if (!videoUrls.includes(url) && !InstructorView.canAddLessonVideo(videoUrls, attachedResources, parentVideoSlots())) {
+          UI.showToast('Mỗi Lesson chỉ được có tối đa 2 video.', 'warning');
           return false;
         }
         if (!videoUrls.includes(url)) videoUrls.push(url);
@@ -4702,34 +5471,46 @@ class InstructorView {
         markdown_content: mdContent,
         video_urls: videoUrls,
         quiz: validQuiz,
-        status: publish ? 'PUBLISHED' : 'DRAFT',
+        status: publish || lessonStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT',
         resources: attachedResources,
         estimated_duration_minutes: estDuration
       };
 
       try {
-        if (!lessonId) await createLessonOnce(payload);
-        await ApiClient.updateLesson(lessonId, payload);
+        const operation = (async () => {
+          if (!lessonId) await createLessonOnce(payload);
+          return ApiClient.updateLesson(lessonId, payload);
+        })();
+        saveInFlight = operation;
+        const response = await operation;
+        const outcome = InstructorView.lessonSaveOutcome(response, publish);
+        if (outcome !== 'pending') lessonStatus = payload.status;
+        savedVersion = versionAtSave;
         const statusEl = document.getElementById('studio-autosave-status');
         if (statusEl) {
-          statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;
+          statusEl.innerHTML = outcome === 'pending'
+            ? '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Đang chờ Admin duyệt'
+            : `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;
         }
-        return true;
+        return outcome;
       } catch (err) {
         UI.showToast(err.message || 'Lỗi lưu bài giảng.', 'error');
         return false;
+      } finally {
+        saveInFlight = null;
       }
     };
 
     document.getElementById('studio-save-draft-btn').onclick = async () => {
-      const ok = await saveLessonData(false);
-      if (ok) UI.showToast('Đã lưu bản nháp bài giảng thành công!', 'success');
+      const outcome = await saveLessonData(false);
+      if (outcome === 'pending') UI.showToast('Bản sửa bài giảng đã gửi Admin xét duyệt.', 'info');
+      else if (outcome) UI.showToast('Đã lưu bài giảng thành công!', 'success');
     };
 
     document.getElementById('studio-publish-btn').onclick = async () => {
-      const ok = await saveLessonData(true);
-      if (ok) {
-        UI.showToast('Bài giảng đã được xuất bản chính thức vào giáo trình!', 'success');
+      const outcome = await saveLessonData(true);
+      if (outcome) {
+        UI.showToast(outcome === 'pending' ? 'Bản sửa bài giảng đã gửi Admin xét duyệt.' : 'Bài giảng đã được xuất bản chính thức vào giáo trình!', 'success');
         window.location.hash = `#/instructor/courses/${courseId}/manage?tab=curriculum`;
       }
     };
@@ -4741,7 +5522,7 @@ class InstructorView {
     // Auto-save interval every 30 seconds
     const autoSaveTimer = setInterval(async () => {
       if (InstructorView.isActiveLessonStudio(studioRoot)) {
-        await saveLessonData(false);
+        await saveLessonData(false, true);
       } else {
         clearInterval(autoSaveTimer);
       }

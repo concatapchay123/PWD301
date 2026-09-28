@@ -122,6 +122,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+test('notification action labels match the destination task', () => {
+  const { window } = createRouter();
+  const label = window.AppRouter.getNotificationActionLabel;
+  assert.equal(label({ event_type: 'COURSE_SUBMITTED_FOR_REVIEW' }), 'Xem Khóa Học');
+  assert.equal(label({ event_type: 'INSTRUCTOR_APPLICATION_SUBMITTED' }), 'Xem Hồ Sơ');
+  assert.equal(label({ event_type: 'COURSE_APPROVED' }), 'Xem Khóa Học');
+  assert.equal(label({ event_type: 'COURSE_CHANGE_REJECTED' }), 'Xem Khóa Học');
+  assert.equal(label({ event_type: 'LESSON_CHANGE_REQUEST' }), 'Xem Yêu Cầu');
+});
+
 test('keeps the current screen visible until the next route has finished rendering', async () => {
   const { router, viewport, window, document } = createRouter();
   const request = deferred();
@@ -170,6 +180,21 @@ test('keeps the current screen visible while refreshing the same route', async (
   request.resolve();
   await refresh;
   assert.equal(viewport.innerHTML, 'refreshed course ready');
+});
+
+test('direct navigation cannot skip unfinished exam authoring steps', async () => {
+  const { router, window, viewport } = createRouter();
+  router.currentUser = { primary_role: 'INSTRUCTOR', role_codes: ['INSTRUCTOR'] };
+  router.currentRole = 'INSTRUCTOR';
+  window.ExamStore = { canVisitStep: step => step <= 1 };
+  window.location.hash = '#/instructor/exams/settings';
+  let dispatched = false;
+  router.dispatchRoute = async () => { dispatched = true; };
+
+  await router.renderRoute(window.location.hash);
+  assert.equal(dispatched, false);
+  assert.equal(window.location.hash, '#/instructor/exams');
+  assert.equal(viewport.innerHTML, 'current screen');
 });
 
 test('renders the newest route when another navigation arrives during a pending render', async () => {

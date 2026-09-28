@@ -14,6 +14,14 @@
 (function () {
   const InstructorView = window.InstructorView || {};
 
+  InstructorView.readExamPolicy = function (root = document) {
+    return {
+      exam_layout: root.getElementById('cfg-exam-layout')?.value || 'STANDARD',
+      monitoring_enabled: Boolean(root.getElementById('cfg-monitoring')?.checked),
+      request_fullscreen: Boolean(root.getElementById('cfg-fullscreen')?.checked)
+    };
+  };
+
   InstructorView.resolvePastedExamImages = function (text, assetIds) {
     return text.replace(/\[\[PWD301:PASTE_IMAGE:(\d+)\]\]/g, (_, index) => {
       const assetId = assetIds[Number(index)];
@@ -35,6 +43,12 @@
       );
   };
 
+  InstructorView.buildInteractiveMatchPreview = function (pairs) {
+    const complete = (pairs || []).filter(pair => pair.left && pair.right);
+    const options = complete.map(pair => pair.right);
+    return complete.map(pair => ({ left: pair.left, expected: pair.right, options: [...options] }));
+  };
+
   // =========================================================================
   // 1. Unified Sticky Workflow Header
   // =========================================================================
@@ -42,20 +56,15 @@
     const draft = window.ExamStore ? window.ExamStore.getDraft() : { title: 'De_thi_moi.docx', questions: [] };
     const qCount = (draft.questions || []).length;
     const currentTitle = draft.title || 'De_thi_moi.docx';
+    const step2Route = draft.sourceMethod === 'manual' ? 'editor' : draft.sourceMethod;
+    const canVisit = step => window.ExamStore?.canVisitStep(step);
 
     return `
       <header class="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs select-none shrink-0">
         <div class="max-w-[1920px] mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-3">
           
-          <!-- Left: Brand, Back & Exam Title -->
+          <!-- Left: Back & Exam Title -->
           <div class="flex items-center gap-2.5 min-w-0">
-            <a href="#/instructor/exams" class="flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Hub Soạn đề thi">
-              <div class="w-7 h-7 rounded-lg bg-[#222120] dark:bg-[#EDEDEB] flex items-center justify-center text-[#FAF9F5] dark:text-[#191919] font-bold text-xs">
-                <span class="material-symbols-outlined text-[16px]">assignment_add</span>
-              </div>
-              <span class="font-bold text-sm tracking-tight text-[#222120] dark:text-[#EDEDEB] hidden sm:inline-block">Soạn đề thi</span>
-            </a>
-
             <button type="button" id="workflow-back-btn" class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Quay lại">
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
             </button>
@@ -89,7 +98,7 @@
 
             <!-- Step 2 -->
             <a
-              href="#/instructor/exams/editor"
+              ${canVisit(2) ? `href="#/instructor/exams/${step2Route}"` : 'aria-disabled="true" tabindex="-1"'}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeStep === 2 ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}"
             >
               <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${activeStep === 2 ? 'bg-indigo-600 text-white font-bold' : (activeStep > 2 ? 'bg-emerald-600 text-white' : 'border border-slate-300 text-slate-600')}">
@@ -100,18 +109,18 @@
 
             <!-- Step 3 -->
             <a
-              href="#/instructor/exams/matrix"
+              ${canVisit(3) ? 'href="#/instructor/exams/matrix"' : 'aria-disabled="true" tabindex="-1"'}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeStep === 3 ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}"
             >
               <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${activeStep === 3 ? 'bg-indigo-600 text-white font-bold' : (activeStep > 3 ? 'bg-emerald-600 text-white' : 'border border-slate-300 text-slate-600')}">
                 ${activeStep > 3 ? '✓' : '3'}
               </span>
-              <span>Ma trận học vụ</span>
+              <span>Kiểm tra đề</span>
             </a>
 
             <!-- Step 4 -->
             <a
-              href="#/instructor/exams/settings"
+              ${canVisit(4) ? 'href="#/instructor/exams/settings"' : 'aria-disabled="true" tabindex="-1"'}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${activeStep === 4 ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}"
             >
               <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${activeStep === 4 ? 'bg-indigo-600 text-white font-bold' : 'border border-slate-300 text-slate-600'}">
@@ -192,7 +201,7 @@
 
     container.innerHTML = `
       <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
-        ${InstructorView.renderExamWorkflowHeader(1, 'Chọn phương thức', '#/instructor/exams/editor', 'Tiếp tục soạn đề')}
+        ${InstructorView.renderExamWorkflowHeader(1, 'Chọn phương thức', null, null)}
 
         <main class="flex-1 overflow-y-auto max-w-[1440px] mx-auto px-4 sm:px-6 py-8 w-full pb-24">
           
@@ -200,10 +209,10 @@
           <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Khởi tạo Đề thi & Bài kiểm tra
+                Chọn cách tạo đề
               </h1>
               <p class="mt-1 text-sm text-slate-500">
-                Lựa chọn một trong các phương thức trực tuyến hoặc tải tệp tài liệu số hóa để bắt đầu.
+                Chọn môn học, rồi tải tệp hoặc tự soạn câu hỏi.
               </p>
             </div>
             <button type="button" onclick="window.location.hash = '#/instructor/dashboard'" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors self-start md:self-auto">
@@ -220,8 +229,8 @@
                   <span class="material-symbols-outlined text-[22px]">school</span>
                 </div>
                 <div>
-                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Môn học áp dụng đề thi</h3>
-                  <p class="text-xs text-slate-500">Đề thi được khởi tạo sẽ tự động gắn kết với môn học này trong hệ thống học vụ.</p>
+                  <h3 class="font-bold text-sm text-slate-900 dark:text-white">Môn học</h3>
+                  <p class="text-xs text-slate-500">Đề thi sẽ thuộc môn học bạn chọn.</p>
                 </div>
               </div>
               <div class="w-full sm:w-80 shrink-0">
@@ -260,13 +269,13 @@
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             
             <!-- Left Column: File Dropzone Area -->
-            <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex flex-col justify-between min-h-[580px]">
+            <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex flex-col justify-between">
               <div>
                 <div class="flex items-center justify-between mb-4">
                   <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>Nạp tệp đề thi sẵn có</span>
+                    <span>Tải tệp đề thi</span>
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Tự động bóc tách AI
+                      Tự đọc câu hỏi
                     </span>
                   </h2>
                 </div>
@@ -278,46 +287,26 @@
                     <span class="material-symbols-outlined text-3xl">cloud_upload</span>
                   </div>
                   <p class="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                    Kéo thả tệp đề thi vào đây hoặc <span class="text-indigo-600 underline underline-offset-2">bấm để duyệt tệp</span>
+                    Kéo tệp vào đây hoặc <span class="text-indigo-600 underline underline-offset-2">chọn tệp</span>
                   </p>
                   <p class="text-xs sm:text-sm text-slate-500 max-w-md mb-2">
-                    Hỗ trợ các định dạng tiêu chuẩn: <span class="font-medium text-slate-700 dark:text-slate-300">.docx, .pdf, .txt, .md, .xlsx</span>
+                    <span class="font-medium text-slate-700 dark:text-slate-300">.docx, .pdf, .txt, .md, .xlsx</span>
                   </p>
-                  <p class="text-xs text-slate-400">
-                    Hệ thống sẽ tự động bóc tách câu hỏi, phương án và đáp án vào trình soạn thảo.
-                  </p>
-
                   <button type="button" id="btn-hub-quick-sample" class="mt-4 px-4 py-2 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg text-xs hover:bg-indigo-600 hover:text-white transition-colors">
-                    ⚡ Nhấn nạp đề mẫu chuẩn hóa: De_thi_mau.docx
+                    Xem đề mẫu
                   </button>
                 </div>
 
-                <!-- Guidelines Card -->
-                <div class="mt-4 p-5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 space-y-3">
-                  <div class="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 pb-2">
-                    <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-white">
-                      <span class="material-symbols-outlined text-[20px] text-indigo-600">help_outline</span>
-                      <span class="text-sm">Quy chuẩn bóc tách văn bản (.docx, .pdf, .txt)</span>
-                    </div>
-                    <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 font-semibold text-[11px]">Chuẩn hóa</span>
-                  </div>
-
-                  <div class="space-y-1.5 text-slate-600 dark:text-slate-300 text-xs">
+                <!-- Optional file-format help -->
+                <details class="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+                  <summary class="cursor-pointer font-bold text-sm text-slate-900 dark:text-white">Hướng dẫn định dạng tệp</summary>
+                  <div class="mt-3 space-y-1.5 text-slate-600 dark:text-slate-300 text-xs">
                     <div><strong>1. Đầu đề:</strong> Bắt đầu bằng <code class="bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-1 rounded">Câu 1:</code>, <code class="bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-1 rounded">Câu 1.</code> hoặc <code class="bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-1 rounded">1.</code></div>
                     <div><strong>2. Phương án:</strong> Bắt đầu bằng <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">A.</code>, <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">B.</code>, <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">C.</code>, <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">D.</code></div>
                     <div><strong>3. Đáp án đúng:</strong> Đặt dấu hoa thị <code class="bg-rose-100 text-rose-600 font-bold px-1 rounded">*</code> ngay trước chữ cái (ví dụ: <code class="text-rose-600 font-bold">*A.</code>)</div>
                     <div><strong>4. Lời giải:</strong> Bắt đầu bằng <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">Lời giải:</code> hoặc <code class="bg-slate-200 dark:bg-slate-700 font-bold px-1 rounded">Giải thích:</code></div>
                   </div>
-                </div>
-              </div>
-
-              <div class="mt-6 flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
-                <div class="p-1 rounded bg-indigo-100 text-indigo-700 shrink-0">
-                  <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
-                </div>
-                <div class="text-xs text-slate-600 dark:text-slate-300">
-                  <span class="font-bold text-slate-900 dark:text-white">Công nghệ Parser thông minh:</span> Tự động nhận dạng công thức toán học LaTeX giữa cặp dấu $...$, hình ảnh đính kèm và đáp án đảo đề.
-                </div>
+                </details>
               </div>
             </div>
 
@@ -325,8 +314,7 @@
             <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-7 shadow-xs">
               <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
                 <div class="flex items-center gap-2">
-                  <h2 class="text-lg font-bold text-slate-900 dark:text-white">Phương thức trực tuyến</h2>
-                  <span class="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium px-2 py-0.5 rounded-full">4 hình thức</span>
+                  <h2 class="text-lg font-bold text-slate-900 dark:text-white">Tự tạo đề</h2>
                 </div>
               </div>
 
@@ -335,6 +323,7 @@
                 <!-- Method 1: Tự soạn Đề thi / Bài tập -->
                 <a
                   href="#/instructor/exams/editor"
+                  data-exam-method="manual"
                   class="group block p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-indigo-50/10 cursor-pointer transition-all shadow-xs"
                 >
                   <div class="flex items-start gap-3.5">
@@ -343,11 +332,11 @@
                     </div>
                     <div class="flex-1 min-w-0">
                       <h3 class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors flex items-center justify-between">
-                        <span>Tự soạn Đề thi / Bài tập</span>
+                        <span>Soạn câu hỏi</span>
                         <span class="material-symbols-outlined text-[18px] text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all">arrow_forward</span>
                       </h3>
                       <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Sử dụng trình soạn thảo Split-View trực quan, tự gõ nội dung từ trang trắng hoặc dán nhanh từ bộ nhớ đệm.
+                        Gõ hoặc dán nội dung đề thi.
                       </p>
                     </div>
                   </div>
@@ -356,6 +345,7 @@
                 <!-- Method 2: Tạo đề thi tương tác [MỚI] -->
                 <a
                   href="#/instructor/exams/interactive"
+                  data-exam-method="interactive"
                   class="group block p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-teal-500 hover:bg-teal-50/10 cursor-pointer transition-all shadow-xs"
                 >
                   <div class="flex items-start gap-3.5">
@@ -371,7 +361,7 @@
                         <span class="material-symbols-outlined text-[18px] text-slate-300 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all">arrow_forward</span>
                       </h3>
                       <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Bộ công cụ trực quan thiết lập câu hỏi kéo thả từ, điền khuyết từ khóa, ghép đôi cặp tương ứng sinh động.
+                        Tạo câu kéo thả, điền từ và ghép đôi.
                       </p>
                     </div>
                   </div>
@@ -380,6 +370,7 @@
                 <!-- Method 3: Tạo đề từ tệp Excel -->
                 <a
                   href="#/instructor/exams/excel"
+                  data-exam-method="excel"
                   class="group block p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50/10 cursor-pointer transition-all shadow-xs"
                 >
                   <div class="flex items-start gap-3.5">
@@ -392,7 +383,7 @@
                         <span class="material-symbols-outlined text-[18px] text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all">arrow_forward</span>
                       </h3>
                       <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Tải bảng tính mẫu chuẩn hóa, import hàng loạt câu hỏi kèm bảng kiểm tra dữ liệu trước khi lưu vào đề.
+                        Dùng bảng tính để thêm nhiều câu hỏi.
                       </p>
                     </div>
                   </div>
@@ -401,6 +392,7 @@
                 <!-- Method 4: Nạp từ chuẩn LMS Moodle XML / JSON -->
                 <a
                   href="#/instructor/exams/moodle"
+                  data-exam-method="moodle"
                   class="group block p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-amber-500 hover:bg-amber-50/10 cursor-pointer transition-all shadow-xs"
                 >
                   <div class="flex items-start gap-3.5">
@@ -409,11 +401,11 @@
                     </div>
                     <div class="flex-1 min-w-0">
                       <h3 class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 transition-colors flex items-center justify-between">
-                        <span>Nạp từ chuẩn LMS Moodle XML / JSON</span>
+                        <span>Nhập tệp Moodle XML / JSON</span>
                         <span class="material-symbols-outlined text-[18px] text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all">arrow_forward</span>
                       </h3>
                       <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Nhập cấu trúc ngân hàng câu hỏi theo chuẩn trao đổi quốc tế (Moodle XML, JSON), hỗ trợ dán trực tiếp mã nguồn.
+                        Tải tệp hoặc dán nội dung câu hỏi.
                       </p>
                     </div>
                   </div>
@@ -427,7 +419,23 @@
       </div>
     `;
 
-    InstructorView.bindExamWorkflowHeaderEvents(1, '#/instructor/exams/editor');
+    InstructorView.bindExamWorkflowHeaderEvents(1, null);
+
+    container.querySelectorAll('[data-exam-method]').forEach(link => {
+      link.addEventListener('click', event => {
+        const courseId = window.ExamStore.getDraft().courseId;
+        if (!courseId) {
+          event.preventDefault();
+          UI.showToast('Hãy chọn môn học trước khi soạn đề.', 'warning');
+          return;
+        }
+        window.ExamStore.saveDraft({
+          sourceMethod: link.dataset.examMethod,
+          methodSelected: true,
+          matrixConfirmed: false
+        });
+      });
+    });
 
     // Course Loader & Auto-Scoping
     const hubCourseSelect = document.getElementById('hub-course-select');
@@ -497,7 +505,12 @@
 
     // Resume / Discard draft
     document.getElementById('btn-hub-resume-draft')?.addEventListener('click', () => {
-      window.location.hash = '#/instructor/exams/editor';
+      if (!window.ExamStore.canVisitStep(2)) {
+        UI.showToast('Hãy chọn môn học và cách tạo đề để tiếp tục.', 'warning');
+        return;
+      }
+      const method = window.ExamStore.getDraft().sourceMethod;
+      window.location.hash = `#/instructor/exams/${method === 'manual' ? 'editor' : method}`;
     });
 
     document.getElementById('btn-hub-discard-draft')?.addEventListener('click', () => {
@@ -521,7 +534,7 @@
           const res = await ApiClient.parseExcelExam(file);
           if (res && res.success && res.questions && res.questions.length > 0) {
             window.ExamStore.replaceQuestions(res.questions);
-            window.ExamStore.saveDraft({ title: file.name.replace(/\.[^/.]+$/, '') });
+            window.ExamStore.saveDraft({ title: file.name.replace(/\.[^/.]+$/, ''), sourceMethod: 'excel', methodSelected: true });
             UI.showToast(`Đã bóc tách thành công ${res.total_questions} câu hỏi từ tệp Excel!`, 'success');
             window.location.hash = '#/instructor/exams/excel';
             return;
@@ -543,7 +556,9 @@
           window.ExamStore.saveDraft({
             title: file.name.replace(/\.[^/.]+$/, ''),
             rawText: rawContent,
-            questions: parsed.questions
+            questions: parsed.questions,
+            sourceMethod: 'manual',
+            methodSelected: true
           });
           UI.showToast(`Đã bóc tách thành công ${parsed.questions.length} câu hỏi từ tệp!`, 'success');
           window.location.hash = '#/instructor/exams/editor';
@@ -580,7 +595,9 @@
       window.ExamStore.saveDraft({
         title: 'De_thi_mau_chuan_hoa.docx',
         rawText: sampleText,
-        questions: parsed.questions
+        questions: parsed.questions,
+        sourceMethod: 'manual',
+        methodSelected: true
       });
       UI.showToast('Đã nạp đề thi mẫu De_thi_mau.docx!', 'success');
       window.location.hash = '#/instructor/exams/editor';
@@ -1460,8 +1477,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     let imageUploadInProgress = false
 
     container.innerHTML = `
-      <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
-        ${InstructorView.renderExamWorkflowHeader(2, 'Tạo đề thi tương tác', '#/instructor/exams/matrix', 'Tiếp tục: Ma trận học vụ')}
+      <div id="interactive-builder-root" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
+        ${InstructorView.renderExamWorkflowHeader(2, 'Soạn câu hỏi tương tác', '#/instructor/exams/matrix', 'Tiếp tục: Kiểm tra đề')}
 
         <main class="flex-1 overflow-y-auto max-w-[1520px] mx-auto px-4 sm:px-6 py-6 w-full pb-28">
           
@@ -1472,12 +1489,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 extension
               </div>
               <div>
-                <h3 class="font-bold text-sm text-teal-950 dark:text-teal-200">Bộ công cụ Thiết kế Câu hỏi Tương tác Trực quan</h3>
-                <p class="text-xs text-teal-700 dark:text-teal-300">Tạo dạng câu hỏi kéo thả, điền khuyết và ghép đôi sinh động kèm khung thử nghiệm trực tiếp.</p>
+                <h3 class="font-bold text-sm text-teal-950 dark:text-teal-200">Soạn câu hỏi tương tác</h3>
+                <p class="text-xs text-teal-700 dark:text-teal-300">Chọn dạng câu hỏi, nhập nội dung rồi thử trước khi thêm vào đề.</p>
               </div>
             </div>
             <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 border border-teal-200 self-start sm:self-auto shrink-0">
-              Đã có ${interactiveQuestions.length} câu tương tác trong đề
+              ${interactiveQuestions.length} câu tương tác đã thêm
             </span>
           </div>
 
@@ -1489,7 +1506,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               
               <!-- Tab Switcher -->
               <div>
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Chọn dạng câu hỏi tương tác</label>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">Dạng câu hỏi</label>
                 <div class="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
                   <button type="button" id="tab-btn-drag" class="py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs">
                     Kéo thả từ
@@ -1507,25 +1524,25 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <div id="form-container-drag" class="space-y-4">
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Đoạn văn có chứa các từ cần kéo thả đặt trong ngoặc vuông <code class="text-teal-600 font-bold bg-teal-50 px-1 rounded">[từ_khóa]</code> <span class="text-rose-500">*</span>
+                    Nội dung câu hỏi · đặt đáp án trong dấu [ ]
                   </label>
                   <textarea
                     id="drag-stem-input"
                     rows="4"
                     class="w-full p-3 text-xs sm:text-sm border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: Giao thức [HTTPS] bảo vệ đường truyền bằng chứng chỉ [SSL/TLS] chạy mặc định trên cổng [443]."
-                  >Giao thức [HTTPS] bảo vệ đường truyền bằng chứng chỉ [SSL/TLS] chạy mặc định trên cổng [443].</textarea>
-                  <span class="text-[11px] text-slate-400 mt-1 block">Hệ thống sẽ tự động bóc tách các từ trong ngoặc vuông làm ô trống cần kéo thả.</span>
+                  ></textarea>
+                  <span class="text-[11px] text-slate-500 dark:text-slate-300 mt-1 block">Ví dụ: Giao thức [HTTPS] bảo vệ đường truyền. Từ trong [ ] trở thành ô trống.</span>
                 </div>
 
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Các từ khóa gây nhiễu (phân cách bằng dấu phẩy)</label>
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Từ lựa chọn thêm (Không bắt buộc)</label>
                   <input
                     type="text"
                     id="drag-distractors-input"
                     class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: HTTP, 80, 21, SSH"
-                    value="HTTP, 80, 21"
+                    value=""
                   />
                 </div>
               </div>
@@ -1534,28 +1551,28 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <div id="form-container-fill" class="space-y-4 hidden">
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Nội dung câu hỏi chứa ô điền <code class="text-teal-600 font-bold bg-teal-50 px-1 rounded">___</code> <span class="text-rose-500">*</span>
+                    Nội dung câu hỏi · dùng ___ cho mỗi ô trống
                   </label>
                   <textarea
                     id="fill-stem-input"
                     rows="3"
                     class="w-full p-3 text-xs sm:text-sm border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: Cơ chế xác thực không trạng thái trong REST API sử dụng mã thông báo định dạng ___."
-                  >Cơ chế xác thực không trạng thái trong REST API sử dụng mã thông báo định dạng ___.</textarea>
+                  ></textarea>
                 </div>
 
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Các đáp án được chấp nhận (cách nhau bởi dấu phẩy) <span class="text-rose-500">*</span>
+                    Đáp án được chấp nhận
                   </label>
                   <input
                     type="text"
                     id="fill-answers-input"
                     class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: JWT, JSON Web Token, jwt"
-                    value="JWT, JSON Web Token"
+                    value=""
                   />
-                <p class="text-[11px] text-slate-500 mt-1">Separate blank groups with semicolons. Use commas for accepted variants of one blank.</p></div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-300 mt-1">Nhiều cách viết cho cùng một ô: ngăn bằng dấu phẩy. Nhiều ô: ngăn nhóm đáp án bằng dấu chấm phẩy.</p></div>
 
               </div>
 
@@ -1567,7 +1584,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     type="text"
                     id="match-stem-input"
                     class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
-                    value="Hãy ghép nối mỗi giao thức mạng ở cột A với cổng mặc định tương ứng ở cột B:"
+                    placeholder="Ví dụ: Ghép giao thức với cổng mạng tương ứng"
                   />
                 </div>
 
@@ -1581,49 +1598,52 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </div>
                   <div id="match-pairs-list" class="space-y-2">
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Khái niệm A (VD: HTTP)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="HTTP" />
+                      <input type="text" placeholder="Ví dụ: HTTP" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ý nghĩa B (VD: Cổng 80)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Cổng 80" />
+                      <input type="text" placeholder="Ví dụ: Cổng 80" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Khái niệm A (VD: HTTPS)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="HTTPS" />
+                      <input type="text" placeholder="Ví dụ: HTTPS" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ý nghĩa B (VD: Cổng 443)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Cổng 443" />
+                      <input type="text" placeholder="Ví dụ: Cổng 443" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Khái niệm A (VD: SSH)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="SSH" />
+                      <input type="text" placeholder="Ví dụ: SSH" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ý nghĩa B (VD: Cổng 22)" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Cổng 22" />
+                      <input type="text" placeholder="Ví dụ: Cổng 22" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Shared Meta: Điểm số, Bloom, Giải thích -->
-              <div class="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3">
+              <!-- Shared Meta -->
+              <div class="pt-4 border-t border-slate-100 dark:border-slate-700 space-y-4">
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Điểm số</label>
-                  <input type="number" id="interactive-points-input" min="0.5" step="0.5" value="1.5" class="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 font-bold text-center" />
+                  <label for="interactive-points-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Điểm cho câu hỏi</label>
+                  <input type="number" id="interactive-points-input" min="0.5" step="0.5" value="1.5" class="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 font-bold" />
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mức độ Bloom</label>
+                  <label for="interactive-exp-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Lời giải thích (Không bắt buộc)</label>
+                  <input type="text" id="interactive-exp-input" class="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800" placeholder="Giải thích đáp án sau khi học viên nộp bài..." />
+                </div>
+                <details class="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                  <summary class="cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">Tùy chọn thêm</summary>
+                  <div class="space-y-4 mt-4">
+                <div>
+                  <label for="interactive-bloom-select" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Mức độ tư duy</label>
                   <select id="interactive-bloom-select" class="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 font-semibold">
                     <option value="Nhận biết">Nhận biết</option>
                     <option value="Thông hiểu" selected>Thông hiểu</option>
                     <option value="Vận dụng">Vận dụng</option>
                   </select>
                 </div>
-              </div>
-
               <div>
-                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Giải thích / Lời giải củng cố</label>
-                <input type="text" id="interactive-exp-input" class="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800" placeholder="Lời giải chi tiết sau khi sinh viên hoàn thành..." />
-              </div>
-
-              <div>
-                <label for="interactive-image-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Question image (optional)</label>
+                <label for="interactive-image-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Ảnh minh họa (Không bắt buộc)</label>
                 <input type="file" id="interactive-image-input" accept="image/png,image/jpeg,image/webp,image/gif" class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800" />
-                <p id="interactive-image-status" class="mt-1 text-[11px] text-slate-500">PNG, JPEG, WebP, or GIF up to 5 MB.</p>
+                <p id="interactive-image-status" class="mt-1 text-[11px] text-slate-500 dark:text-slate-300">PNG, JPEG, WebP hoặc GIF, tối đa 5 MB.</p>
+              </div>
+                  </div>
+                </details>
               </div>
 
               <!-- Submit Button -->
@@ -1633,7 +1653,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-500/20 transition-all flex items-center justify-center gap-1.5"
               >
                 <span class="material-symbols-outlined text-[18px]">add_circle</span>
-                <span>Thêm câu hỏi tương tác này vào đề thi</span>
+                <span>Thêm Câu Hỏi</span>
               </button>
 
             </div>
@@ -1646,9 +1666,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
                   <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></span>
-                    <h3 class="text-sm font-bold text-slate-900 dark:text-white">Khung thử nghiệm tương tác trực tiếp</h3>
+                    <h3 class="text-sm font-bold text-slate-900 dark:text-white">Xem trước câu hỏi</h3>
                   </div>
-                  <span class="text-[11px] px-2 py-0.5 rounded bg-teal-50 text-teal-700 font-semibold">Trải nghiệm của thí sinh</span>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-teal-50 text-teal-700 font-semibold">Góc nhìn học viên</span>
                 </div>
 
                 <div id="interactive-live-preview-box" class="min-h-[160px] flex flex-col justify-center">
@@ -1657,7 +1677,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
                 <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <button type="button" id="btn-test-interactive-answer" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs transition-colors">
-                    Kiểm tra chấm điểm thử
+                    Kiểm tra đáp án
                   </button>
                   <span id="test-feedback-msg" class="text-xs font-semibold text-slate-500"></span>
                 </div>
@@ -1673,7 +1693,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     </span>
                   </h3>
                   <button type="button" id="btn-go-to-matrix" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1">
-                    <span>Tiếp tục: Ma trận học vụ</span>
+                    <span>Tiếp tục: Kiểm tra đề</span>
                     <span class="material-symbols-outlined text-[15px]">arrow_forward</span>
                   </button>
                 </div>
@@ -1751,6 +1771,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       if (!previewBox) return;
       if (feedbackMsg) feedbackMsg.textContent = '';
 
+      const inputId = activeTab === 'drag' ? 'drag-stem-input' : activeTab === 'fill' ? 'fill-stem-input' : 'match-stem-input';
+      if (!document.getElementById(inputId)?.value.trim()) {
+        previewBox.innerHTML = '<p class="text-sm text-slate-600 dark:text-slate-300 text-center py-8">Nhập nội dung ở bên trái để xem trước câu hỏi.</p>';
+        return;
+      }
+
       if (activeTab === 'drag') {
         const text = document.getElementById('drag-stem-input')?.value || '';
         const tokens = [...text.matchAll(/\[(.*?)\]/g)].map(match => match[1]);
@@ -1758,7 +1784,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           .split(',')
           .map(value => value.trim())
           .filter(Boolean);
-        const allPills = [...tokens, ...distractors].sort(() => Math.random() - 0.5);
+        const allPills = [...tokens, ...distractors];
         let previewHtml = UI.escapeHtml(text);
         tokens.forEach(token => {
           const safeToken = UI.escapeHtml(token);
@@ -1833,23 +1859,20 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           left: row.querySelector('.pair-left')?.value.trim() || '',
           right: row.querySelector('.pair-right')?.value.trim() || ''
         })).filter(pair => pair.left && pair.right);
-        const pairChoices = pairs.flatMap((leftPair, leftIndex) => pairs.map((rightPair, rightIndex) => ({
-          left: leftPair.left,
-          right: rightPair.right,
-          isCorrect: leftIndex === rightIndex
-        })));
+        const matchRows = InstructorView.buildInteractiveMatchPreview(pairs);
 
         previewBox.innerHTML = `
           <div class="space-y-3">
             <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">${UI.escapeHtml(stem)}</p>
-            <p class="text-[11px] text-slate-500">Select every correct pair:</p>
+            <p class="text-[11px] text-slate-600 dark:text-slate-300">Chọn một đáp án cho mỗi mục:</p>
             <div class="space-y-2">
-              ${pairChoices.map((pair, index) => `
-                <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-                  <input type="checkbox" class="preview-match-choice" data-correct="${pair.isCorrect}" value="${index}" />
-                  <span class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(pair.left)}</span>
-                  <span class="text-teal-600 font-bold">-&gt;</span>
-                  <span class="font-medium text-slate-700 dark:text-slate-300">${UI.escapeHtml(pair.right)}</span>
+              ${matchRows.map((row, index) => `
+                <label class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                  <span class="font-bold text-slate-900 dark:text-white sm:w-1/2">${index + 1}. ${UI.escapeHtml(row.left)}</span>
+                  <select class="preview-match-choice w-full sm:w-1/2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-xs text-slate-900 dark:text-slate-100" data-expected="${UI.escapeHtml(row.expected)}" aria-label="Ghép với ${UI.escapeHtml(row.left)}">
+                    <option value="">Chọn đáp án</option>
+                    ${row.options.map(option => `<option value="${UI.escapeHtml(option)}">${UI.escapeHtml(option)}</option>`).join('')}
+                  </select>
                 </label>
               `).join('')}
             </div>
@@ -1883,13 +1906,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         }
       } else {
         const choices = Array.from(previewBox.querySelectorAll('.preview-match-choice'));
-        const selected = choices.filter(input => input.checked);
-        const correctCount = choices.filter(input => input.dataset.correct === 'true').length;
-        const correctSelected = selected.filter(input => input.dataset.correct === 'true').length;
-        const isCompleteMatch = selected.length === correctCount && correctSelected === correctCount;
+        const correctCount = choices.length;
+        const correctSelected = choices.filter(input => input.value && input.value === input.dataset.expected).length;
+        const isCompleteMatch = correctCount > 0 && correctSelected === correctCount;
         feedbackMsg.textContent = isCompleteMatch
-          ? `Correct: ${correctSelected}/${correctCount} pairs.`
-          : `Correct: ${correctSelected}/${correctCount} pairs. Select every correct pair.`;
+          ? `Đúng ${correctSelected}/${correctCount} cặp.`
+          : `Đúng ${correctSelected}/${correctCount} cặp. Hãy chọn một đáp án cho mỗi mục.`;
         feedbackMsg.className = isCompleteMatch
           ? 'text-xs font-bold text-emerald-600'
           : 'text-xs font-bold text-amber-600';
@@ -1931,6 +1953,29 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       }
     });
 
+    const showInteractiveError = (fieldId, message) => {
+      document.querySelectorAll('[data-interactive-error]').forEach(node => node.remove());
+      document.querySelectorAll('.interactive-field-error').forEach(node => node.classList.remove('interactive-field-error', 'border-rose-500'));
+      const field = document.getElementById(fieldId);
+      if (!field) {
+        UI.showToast(message, 'warning');
+        return;
+      }
+      field.classList.add('interactive-field-error', 'border-rose-500');
+      const hint = document.createElement('p');
+      hint.dataset.interactiveError = fieldId;
+      hint.className = 'mt-1 text-xs font-medium text-rose-700 dark:text-rose-300';
+      hint.textContent = message;
+      field.insertAdjacentElement('afterend', hint);
+      field.focus();
+    };
+    document.getElementById('interactive-builder-root')?.addEventListener('input', event => {
+      const field = event.target;
+      if (!field.classList?.contains('interactive-field-error')) return;
+      field.classList.remove('interactive-field-error', 'border-rose-500');
+      container.querySelector(`[data-interactive-error="${field.id}"]`)?.remove();
+    });
+
     // Add Interactive Question to Exam
     document.getElementById('btn-add-interactive-question')?.addEventListener('click', () => {
       if (imageUploadInProgress) {
@@ -1940,7 +1985,11 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         );
         return;
       }
-      const pts = parseFloat(document.getElementById('interactive-points-input')?.value || 1.5) || 1.5;
+      const pts = Number.parseFloat(document.getElementById('interactive-points-input')?.value || '');
+      if (!Number.isFinite(pts) || pts <= 0) {
+        showInteractiveError('interactive-points-input', 'Nhập số điểm lớn hơn 0.');
+        return;
+      }
       const bloom = document.getElementById('interactive-bloom-select')?.value || 'Thông hiểu';
       const exp = document.getElementById('interactive-exp-input')?.value.trim() || '';
 
@@ -1949,12 +1998,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       if (activeTab === 'drag') {
         const stem = document.getElementById('drag-stem-input')?.value.trim();
         if (!stem) {
-          UI.showToast('Enter a sentence with at least one [word] token.', 'warning');
+          showInteractiveError('drag-stem-input', 'Nhập câu hỏi có ít nhất một đáp án trong dấu [ ].');
           return;
         }
         const tokens = [...stem.matchAll(/\[(.*?)\]/g)].map(match => match[1].trim()).filter(Boolean);
         if (!tokens.length || tokens.length > 6) {
-          UI.showToast('Use between one and six non-empty [word] tokens.', 'warning');
+          showInteractiveError('drag-stem-input', 'Dùng từ 1 đến 6 đáp án trong dấu [ ].');
           return;
         }
         const cleanStem = stem.replace(/\[(.*?)\]/g, '___');
@@ -1967,7 +2016,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         });
         const options = Array.from(optionsByValue.values());
         if (options.length > 16) {
-          UI.showToast('Use no more than sixteen answer and distractor tokens.', 'warning');
+          showInteractiveError('drag-distractors-input', 'Tối đa 16 từ lựa chọn, gồm đáp án và từ thêm.');
           return;
         }
         const choices = tokens.flatMap((answer, blankIndex) => options.map((option, optionIndex) => ({
@@ -1992,19 +2041,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const stem = document.getElementById('fill-stem-input')?.value.trim();
         const answersStr = document.getElementById('fill-answers-input')?.value.trim();
         if (!stem || !answersStr) {
-          UI.showToast('Enter the sentence and accepted answers for every blank.', 'warning');
+          showInteractiveError(!stem ? 'fill-stem-input' : 'fill-answers-input', 'Nhập câu hỏi và đáp án cho từng ô trống.');
           return;
         }
         const blankCount = (stem.match(/_{3,}/g) || []).length || 1;
         if (blankCount > 6) {
-          UI.showToast('Use no more than six blanks in one question.', 'warning');
+          showInteractiveError('fill-stem-input', 'Một câu hỏi có tối đa 6 ô trống.');
           return;
         }
         const acceptedGroups = answersStr.split(';').map(group =>
           group.split(',').map(answer => answer.trim()).filter(Boolean)
         );
         if (acceptedGroups.length !== blankCount || acceptedGroups.some(group => !group.length)) {
-          UI.showToast(`Provide one semicolon-separated answer group for each of the ${blankCount} blanks.`, 'warning');
+          showInteractiveError('fill-answers-input', `Cần ${blankCount} nhóm đáp án, ngăn bằng dấu chấm phẩy.`);
           return;
         }
         newQuestion = {
@@ -2024,22 +2073,27 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       } else if (activeTab === 'match') {
         const stem = document.getElementById('match-stem-input')?.value.trim();
         const rows = document.querySelectorAll('.match-pair-row');
-        const pairs = Array.from(rows).map(row => ({
+        const allPairs = Array.from(rows).map(row => ({
           left: row.querySelector('.pair-left')?.value.trim() || '',
           right: row.querySelector('.pair-right')?.value.trim() || ''
-        })).filter(pair => pair.left && pair.right);
+        }));
+        const pairs = allPairs.filter(pair => pair.left && pair.right);
+        if (allPairs.some(pair => Boolean(pair.left) !== Boolean(pair.right))) {
+          showInteractiveError('match-stem-input', 'Điền đủ cả hai vế cho mỗi cặp ghép.');
+          return;
+        }
         if (!stem || pairs.length < 2) {
-          UI.showToast('Enter the matching instruction and at least two complete pairs.', 'warning');
+          showInteractiveError('match-stem-input', 'Nhập đề bài và ít nhất hai cặp ghép đầy đủ.');
           return;
         }
         const normalizedLefts = pairs.map(pair => pair.left.toLocaleLowerCase());
         const normalizedRights = pairs.map(pair => pair.right.toLocaleLowerCase());
         if (new Set(normalizedLefts).size !== pairs.length || new Set(normalizedRights).size !== pairs.length) {
-          UI.showToast('Every label in both matching columns must be unique.', 'warning');
+          showInteractiveError('match-stem-input', 'Mỗi vế trong danh sách phải khác nhau.');
           return;
         }
         if (pairs.length > 6) {
-          UI.showToast('Limit matching questions to six pairs.', 'warning');
+          showInteractiveError('match-stem-input', 'Một câu hỏi có tối đa 6 cặp ghép.');
           return;
         }
         const choices = pairs.flatMap((leftPair, leftIndex) => pairs.map((rightPair, rightIndex) => ({
@@ -2069,8 +2123,21 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         if (imageInput) imageInput.value = '';
         const imageStatus = document.getElementById('interactive-image-status');
         if (imageStatus) imageStatus.textContent = 'PNG, JPEG, WebP, or GIF up to 5 MB.';
-        UI.showToast('Đã thêm câu hỏi tương tác vào đề thi!', 'success');
-        window.location.hash = '#/instructor/exams/editor';
+        interactiveQuestions.push(newQuestion);
+        for (const id of ['drag-stem-input', 'drag-distractors-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input', 'interactive-exp-input']) {
+          const field = document.getElementById(id);
+          if (field) field.value = '';
+        }
+        document.querySelectorAll('.match-pair-row').forEach(row => {
+          const left = row.querySelector('.pair-left');
+          const right = row.querySelector('.pair-right');
+          if (left) left.value = '';
+          if (right) right.value = '';
+        });
+        renderQuestionsList();
+        renderLivePreview();
+        document.getElementById(activeTab === 'drag' ? 'drag-stem-input' : activeTab === 'fill' ? 'fill-stem-input' : 'match-stem-input')?.focus();
+        UI.showToast('Đã thêm câu hỏi. Bạn có thể soạn câu tiếp theo.', 'success');
       }
     });
 
@@ -2078,6 +2145,17 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     // Render Questions List
     const renderQuestionsList = () => {
+      const typeLabels = {
+        MULTIPLE_CHOICE: 'Trắc nghiệm',
+        SINGLE_CHOICE: 'Chọn một đáp án',
+        MULTI_SELECT: 'Chọn nhiều đáp án',
+        'Drag and drop': 'Kéo thả từ',
+        'Fill in the blank': 'Điền khuyết',
+        'Matching pairs': 'Ghép đôi',
+        DRAG_AND_DROP: 'Kéo thả từ',
+        FILL_IN_THE_BLANK: 'Điền khuyết',
+        MATCHING: 'Ghép đôi'
+      };
       const currentDraft = window.ExamStore.getDraft();
       const listEl = document.getElementById('interactive-questions-list');
       const badge = document.getElementById('exam-questions-count-badge');
@@ -2089,7 +2167,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       if (qList.length === 0) {
         listEl.innerHTML = `
           <div class="p-6 text-center text-slate-400 text-xs">
-            Đề thi chưa có câu hỏi nào. Bạn hãy tạo câu hỏi ở khung bên trái và bấm '+ Thêm câu hỏi'.
+            Đề thi chưa có câu hỏi. Soạn câu hỏi ở bên trái rồi bấm Thêm Câu Hỏi.
           </div>
         `;
         return;
@@ -2100,7 +2178,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
               <span class="px-2 py-0.5 rounded bg-teal-50 text-teal-700 font-bold text-[11px]">Câu ${i + 1}</span>
-              <span class="text-slate-500 font-medium">${q.question_type || q.type}</span>
+              <span class="text-slate-500 font-medium">${typeLabels[q.question_type || q.type] || 'Câu hỏi'}</span>
               <span class="text-indigo-600 font-semibold">• ${(q.points || 1.0).toFixed(1)}đ</span>
             </div>
             <p class="font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(String(q.stem || q.question_text || '').replace(/^\[\[PWD301:FI_V1\]\]/, ''))}</p>
@@ -2121,7 +2199,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     document.getElementById('btn-go-to-matrix')?.addEventListener('click', () => {
       const currentDraft = window.ExamStore.getDraft();
       if (!currentDraft.questions || currentDraft.questions.length === 0) {
-        UI.showToast('Vui lòng thêm ít nhất 1 câu hỏi vào đề thi trước khi sang Ma trận!', 'warning');
+        UI.showToast('Thêm ít nhất một câu hỏi trước khi kiểm tra đề.', 'warning');
         return;
       }
       window.location.hash = '#/instructor/exams/matrix';
@@ -2503,7 +2581,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 <p class="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Kéo thả tệp <span id="upload-ext-label">.xml</span> vào đây hoặc bấm để chọn tệp
                 </p>
-                <p class="text-xs text-slate-500">Dữ liệu sẽ được thẩm định cú pháp tự động.</p>
+                <p class="text-xs text-slate-500">Hệ thống sẽ tự kiểm tra định dạng câu hỏi.</p>
               </div>
             </div>
 
@@ -2526,7 +2604,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 class="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5"
               >
                 <span class="material-symbols-outlined text-[18px]">verified</span>
-                <span>Bóc tách & Thẩm định cú pháp</span>
+                <span>Đọc Và Kiểm Tra Tệp</span>
               </button>
             </div>
 
@@ -2917,7 +2995,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         return;
       }
       const mode = document.querySelector('input[name="matrix_academic_mode"]:checked')?.value || 'independent';
-      window.ExamStore.saveDraft({ courseId: courseId, academicMode: mode });
+      window.ExamStore.saveDraft({ courseId: courseId, academicMode: mode, matrixConfirmed: true });
       window.location.hash = '#/instructor/exams/settings';
     };
 
@@ -2994,18 +3072,24 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
                 <div class="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <span class="material-symbols-outlined text-[22px] text-indigo-600">security</span>
-                  <h3 class="text-base font-bold text-slate-900 dark:text-white">2. Giám sát Chống gian lận & Phòng thi</h3>
+                  <h3 class="text-base font-bold text-slate-900 dark:text-slate-100">2. Cách hiển thị phòng thi</h3>
                 </div>
 
-                <div class="space-y-3 text-xs font-semibold">
-                  <label class="flex items-center gap-3 cursor-pointer select-none">
-                    <input type="checkbox" id="cfg-lock-tab" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.lockTab !== false ? 'checked' : ''} />
-                    <span>Cảnh báo & Ghi nhận vi phạm khi thí sinh chuyển tab hoặc rời khỏi trình duyệt</span>
+                <div class="space-y-4 text-sm">
+                  <div>
+                    <label for="cfg-exam-layout" class="block font-semibold mb-2">Giao diện làm bài</label>
+                    <select id="cfg-exam-layout" class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2">
+                      <option value="STANDARD" ${config.examLayout !== 'FOCUS' ? 'selected' : ''}>Tiêu chuẩn</option>
+                      <option value="FOCUS" ${config.examLayout === 'FOCUS' ? 'selected' : ''}>Tập trung</option>
+                    </select>
+                  </div>
+                  <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" id="cfg-monitoring" class="mt-1 rounded text-indigo-600 focus:ring-indigo-500" ${config.monitoringEnabled ? 'checked' : ''} />
+                    <span><strong class="block">Ghi nhận khi rời trang thi</strong><small class="block font-normal text-slate-600 dark:text-slate-300">Cảnh báo thí sinh và lưu lần rời tab, mất tiêu điểm hoặc thoát toàn màn hình để giảng viên xem lại.</small></span>
                   </label>
-
-                  <label class="flex items-center gap-3 cursor-pointer select-none">
-                    <input type="checkbox" id="cfg-proctoring" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.proctoring ? 'checked' : ''} />
-                    <span>Kích hoạt AI Proctoring (Giám sát qua webcam và phát hiện khuôn mặt)</span>
+                  <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" id="cfg-fullscreen" class="mt-1 rounded text-indigo-600 focus:ring-indigo-500" ${config.requestFullscreen ? 'checked' : ''} />
+                    <span><strong class="block">Đề nghị mở toàn màn hình</strong><small class="block font-normal text-slate-600 dark:text-slate-300">Trình duyệt có thể từ chối; thí sinh vẫn làm bài được. Không khóa bàn di chuột hoặc chụp màn hình.</small></span>
                   </label>
                 </div>
               </div>
@@ -3036,7 +3120,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
                   <label class="flex items-start gap-2.5 cursor-pointer text-xs text-slate-600 dark:text-slate-400 select-none">
                     <input type="checkbox" id="chk-publish-agreement" class="rounded text-indigo-600 focus:ring-indigo-500 mt-0.5" />
-                    <span>Tôi xác nhận đề thi đã hoàn tất thẩm định nội dung và sẵn sàng xuất bản vào CSDL.</span>
+                    <span>Tôi đã kiểm tra nội dung đề thi và sẵn sàng xuất bản.</span>
                   </label>
                 </div>
 
@@ -3160,7 +3244,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       const conf = await UI.confirm(
         'Xác nhận Xuất bản Đề thi',
-        `Bài thi "${title}" (Thời lượng ${duration} phút) đã hoàn tất thẩm định. Bạn có muốn kích hoạt và mở phòng thi ngay bây giờ?`,
+        `Bài thi "${title}" (${duration} phút) đã sẵn sàng. Bạn có muốn mở bài thi ngay bây giờ?`,
         'Xuất bản & Mở phòng thi'
       );
       if (!conf) return;
@@ -3170,6 +3254,16 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const maxAtt = parseInt(document.getElementById('cfg-attempts')?.value || 1, 10);
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
+        const policy = InstructorView.readExamPolicy();
+        window.ExamStore.saveDraft({ config: {
+          duration,
+          maxAttempts: maxAtt,
+          shuffleQuestions: shuffle,
+          scoringPolicy,
+          examLayout: policy.exam_layout,
+          monitoringEnabled: policy.monitoring_enabled,
+          requestFullscreen: policy.request_fullscreen
+        } });
 
         // 1. Create Assessment
         const created = await ApiClient.createAssessment(courseId, {
@@ -3179,7 +3273,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           max_attempts: maxAtt,
           require_password: false,
           shuffle_questions: shuffle,
-          scoring_policy: scoringPolicy
+          scoring_policy: scoringPolicy,
+          ...policy
         });
 
         const asmId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;

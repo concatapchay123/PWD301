@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.course import Course, Lesson
+from pwd301.models.file_import import LessonResource
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import create_course
 from pwd301.services.jwt_auth_service import create_token_pair
@@ -272,9 +273,10 @@ class TestFileApiEndpoints:
         assert res_resp.get_json()["status"] == "ACTIVE"
 
     def test_lesson_resource_attach_and_detach_rest_api(
-        self, client: FlaskClient, instructor_user: User, test_course: Course, test_lesson: Lesson
+        self, client: FlaskClient, instructor_user: User, admin_user: User,
+        test_course: Course, test_lesson: Lesson
     ) -> None:
-        """POST /api/lessons/<lesson_id>/resources and DELETE /resources/<resource_id> lifecycle."""
+        """Published Lesson resource links change only after Admin approval."""
         tokens = create_token_pair(instructor_user)
         headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
@@ -293,18 +295,33 @@ class TestFileApiEndpoints:
             json={"file_asset_id": asset_id, "title": "Lab 1 Manual"},
             headers=headers,
         )
-        assert attach_resp.status_code == 201
-        res_data = attach_resp.get_json()
-        assert res_data["title"] == "Lab 1 Manual"
-        resource_id = res_data["resource_id"]
+        assert attach_resp.status_code == 202
+        review_id = attach_resp.get_json()["change_request_id"]
+        assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 0
+
+        login_web_user(client, admin_user)
+        approved = client.post(
+            f"/admin/change-requests/{review_id}/review", json={"action": "approve"}
+        )
+        assert approved.status_code == 200
+        resource = db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).one()
+        assert resource.label == "Lab 1 Manual"
 
         # Detach
         detach_resp = client.delete(
-            f"/api/lessons/{test_lesson.public_id}/resources/{resource_id}",
+            f"/api/lessons/{test_lesson.public_id}/resources/{resource.public_id}",
             headers=headers,
         )
-        assert detach_resp.status_code == 200
-        assert detach_resp.get_json()["detached"] is True
+        assert detach_resp.status_code == 202
+        assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 1
+
+        login_web_user(client, admin_user)
+        approved = client.post(
+            f"/admin/change-requests/{detach_resp.get_json()['change_request_id']}/review",
+            json={"action": "approve"},
+        )
+        assert approved.status_code == 200
+        assert db.session.query(LessonResource).filter_by(lesson_id=test_lesson.id).count() == 0
 
 
 class TestWebInstructorFileRoutes:

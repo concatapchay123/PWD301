@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.ai_rag import AIConversation
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
@@ -364,6 +364,7 @@ def test_full_course_rag_ingest_and_query_flow(
     lesson = Lesson(
         public_id=uuid.uuid4(),
         course_id=test_course.id,
+        learning_unit=LearningUnit(course_id=test_course.id, title="AI Lesson", position=1),
         title="Supervised Learning and Gradient Descent",
         markdown_content=(
             "# Supervised Learning\n\n"
@@ -524,6 +525,7 @@ def test_instructor_source_management_permissions(
     lesson_a = Lesson(
         public_id=uuid.uuid4(),
         course_id=test_course.id,
+        learning_unit=LearningUnit(course_id=test_course.id, title="AI Lesson", position=1),
         title="Intro to AI",
         markdown_content="AI foundations and algorithms.",
         position=1,

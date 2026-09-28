@@ -167,7 +167,7 @@ def main() -> None:
     )
     output_lines.append("> 2. Toàn bộ tài liệu đặc tả kiến trúc hệ thống (System Specification).")
     output_lines.append(
-        "> 3. Toàn bộ tài liệu kiến trúc cơ sở dữ liệu chuẩn (Canonical Database Architecture) và 71 bảng DDL SQL Server."
+        "> 3. Toàn bộ tài liệu kiến trúc cơ sở dữ liệu chuẩn (Canonical Database Architecture) và 73 bảng DDL SQL Server."
     )
     output_lines.append(
         "> 4. Toàn bộ quy tắc nghiệp vụ (73 Business Rules), ma trận kiểm thử, luồng người dùng và máy trạng thái (State Machines)."
@@ -190,7 +190,7 @@ def main() -> None:
         "1. `docs/system/PWD301_SYSTEM_SPECIFICATION/`: Đặc tả hành vi hệ thống và nghiệp vụ đã được xác nhận (Mức ưu tiên cao nhất)."
     )
     output_lines.append(
-        "2. `docs/database/PWD301_DATABASE_ARCHITECTURE/`: Kiến trúc CSDL chuẩn duy nhất (Canonical SQL Server DDL gồm 71 bảng). Không tạo bản copy schema thứ hai."
+        "2. `docs/database/PWD301_DATABASE_ARCHITECTURE/`: Kiến trúc CSDL chuẩn duy nhất (Canonical SQL Server DDL gồm 73 bảng). Không tạo bản copy schema thứ hai."
     )
     output_lines.append("3. `README.md` (root): Kho tri thức tổng hợp toàn bộ dự án.")
     output_lines.append("4. `AGENTS.md`: Hợp đồng vận hành của Coding Agent.")

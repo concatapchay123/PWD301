@@ -25,6 +25,9 @@ CREATE TABLE assessments (
     is_required_for_completion BIT NOT NULL DEFAULT (0),
     shuffle_questions BIT NOT NULL DEFAULT (0),
     shuffle_choices BIT NOT NULL DEFAULT (0),
+    exam_layout VARCHAR(16) NOT NULL DEFAULT ('STANDARD'),
+    monitoring_enabled BIT NOT NULL DEFAULT (0),
+    request_fullscreen BIT NOT NULL DEFAULT (0),
     score_release_policy VARCHAR(24) NOT NULL DEFAULT ('IMMEDIATE'),
     answer_visibility_policy VARCHAR(32) NOT NULL DEFAULT ('AFTER_CLOSE'),
     random_question_count INT NULL,
@@ -50,6 +53,7 @@ CREATE TABLE assessments (
     CONSTRAINT ck_assessments_8 CHECK (answer_visibility_policy IN ('IMMEDIATE','AFTER_CLOSE','AFTER_ALL_ATTEMPTS','NEVER')),
     CONSTRAINT ck_assessments_9 CHECK (random_question_count IS NULL OR random_question_count > 0),
     CONSTRAINT ck_assessments_10 CHECK (open_at IS NULL OR close_at IS NULL OR open_at < close_at),
+    CONSTRAINT ck_assessments_exam_layout CHECK (exam_layout IN ('STANDARD','FOCUS')),
     CONSTRAINT fk_assessments_course_id FOREIGN KEY (course_id) REFERENCES courses (id),
     CONSTRAINT fk_assessments_creator_user_id FOREIGN KEY (creator_user_id) REFERENCES users (id),
     CONSTRAINT fk_assessments_deleted_by_user_id FOREIGN KEY (deleted_by_user_id) REFERENCES users (id)

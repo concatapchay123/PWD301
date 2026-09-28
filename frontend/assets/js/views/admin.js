@@ -129,6 +129,42 @@ class AdminView {
     return typeof UI !== 'undefined' ? UI.escapeHtml(String(markdown || '')) : '';
   }
 
+  static renderDiffOriginal(origText, propText) {
+    if (!origText && !propText) return '<p class="text-slate-400 italic">(Trống)</p>';
+    if (!propText || origText === propText) {
+      return AdminView.renderLessonMarkdown(origText);
+    }
+    const origLines = String(origText || '').split('\n');
+    const propLines = String(propText || '').split('\n');
+    const propSet = new Set(propLines);
+
+    return origLines.map(line => {
+      if (!line.trim()) return '<div class="h-2"></div>';
+      if (!propSet.has(line)) {
+        return `<div class="bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-l-4 border-rose-500 pl-2.5 py-1 my-1 rounded-r font-mono text-xs"><del class="line-through">${UI.escapeHtml(line)}</del> <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 font-bold ml-1">Đã xóa</span></div>`;
+      }
+      return `<div class="py-0.5 text-slate-700 dark:text-slate-300">${UI.escapeHtml(line)}</div>`;
+    }).join('');
+  }
+
+  static renderDiffProposed(origText, propText) {
+    if (!origText && !propText) return '<p class="text-slate-400 italic">(Trống)</p>';
+    if (!origText || origText === propText) {
+      return AdminView.renderLessonMarkdown(propText);
+    }
+    const origLines = String(origText || '').split('\n');
+    const propLines = String(propText || '').split('\n');
+    const origSet = new Set(origLines);
+
+    return propLines.map(line => {
+      if (!line.trim()) return '<div class="h-2"></div>';
+      if (!origSet.has(line)) {
+        return `<div class="bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border-l-4 border-emerald-500 pl-2.5 py-1 my-1 rounded-r font-mono text-xs"><ins class="no-underline bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 px-1 rounded font-bold">${UI.escapeHtml(line)}</ins> <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-bold ml-1">Mới thêm</span></div>`;
+      }
+      return `<div class="py-0.5 text-slate-800 dark:text-slate-200 font-medium">${UI.escapeHtml(line)}</div>`;
+    }).join('');
+  }
+
   static getQueueSummary(subRole, counts = {}) {
     const summary = { courses: 0, changes: 0, applications: 0, assignments: 0 };
     if (subRole === 'ADMIN_COURSE_REVIEW') {
@@ -157,19 +193,19 @@ class AdminView {
           <div class="space-y-1.5">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary font-caption text-xs font-semibold">
               <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-              <span id="admin-governance-actor-label">Phiên điều hành Quản trị viên • Trực ban Thẩm định Học vụ</span>
+              <span id="admin-governance-actor-label">Quản trị hệ thống</span>
             </div>
             <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Trung tâm Điều hành & Thẩm định Học vụ Đào tạo
+              Quản lý hệ thống
             </h1>
             <p class="text-xs sm:text-sm text-slate-500 max-w-3xl">
-              Quản lý phân quyền RBAC, thẩm định thay đổi đề cương môn học, điều chuyển giảng dạy an toàn và giám sát tính toàn vẹn dữ liệu.
+              Quản lý người dùng, khóa học, giảng viên và hoạt động của hệ thống.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-3 shrink-0">
             <div class="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-500">
               <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Quy chuẩn: <strong class="text-slate-800 dark:text-slate-200 font-bold">Calm Operational Trust</strong></span>
+              <span>Hệ thống đang hoạt động</span>
             </div>
             <button type="button" id="btn-open-broadcast" class="px-3.5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5" onclick="AdminView.openBroadcastModal()">
               <span class="material-symbols-outlined text-[18px]">campaign</span>
@@ -177,13 +213,13 @@ class AdminView {
             </button>
             <a href="#/admin/operations" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[18px]">monitoring</span>
-              <span>Cockpit Vận hành</span>
+              <span>Vận Hành</span>
             </a>
           </div>
         </section>
 
         <!-- 3 Core KPI Cards with Deep Link Navigation -->
-        <div class="${showQueueSummary ? 'grid grid-cols-1 md:grid-cols-3' : 'grid grid-cols-1 md:grid-cols-2'} gap-5">
+        <div class="${showQueueSummary ? '' : 'hidden'}">
           
           <!-- KPI 1: Đề cương chờ duyệt -->
           <div class="${showQueueSummary ? '' : 'hidden'} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=${isInstructorQueue ? 'applications' : 'courses'}'">
@@ -201,25 +237,6 @@ class AdminView {
             <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
               <span class="text-slate-500" id="kpi-courses-subtext">Hàng đợi xét duyệt ABET CAC</span>
               <span class="font-bold text-primary flex items-center gap-1">Xem chi tiết <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
-            </div>
-          </div>
-
-          <!-- KPI 2: Tài nguyên an ninh học vụ & Tệp cách ly -->
-          <div class="cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-rose-400/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=security'">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-500 flex items-center gap-2">
-                <span class="material-symbols-outlined text-rose-600 text-[22px]">security_update_warning</span>
-                An toàn Học thuật & Kiểm toán
-              </span>
-              <span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 text-[11px] font-bold">Sandbox Fail-Closed</span>
-            </div>
-            <div class="flex items-baseline gap-3 my-2">
-              <span class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono" id="kpi-audit-blocks">SHA-256</span>
-              <span class="text-xs text-slate-400">Chuỗi Bút lục Toàn vẹn</span>
-            </div>
-            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
-              <span class="text-slate-500">Kiểm toán append-only bất biến</span>
-              <span class="font-bold text-rose-600 flex items-center gap-1">Audit log <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
             </div>
           </div>
 
@@ -362,9 +379,9 @@ class AdminView {
           <div>
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-primary text-[22px]">badge</span>
-              <h2 class="text-base font-bold text-slate-900 dark:text-white">Ma trận Người dùng & Phân quyền RBAC (${totalUsers} tài khoản)</h2>
+              <h2 class="text-base font-bold text-slate-900 dark:text-white">Người dùng & Phân quyền (${totalUsers} tài khoản)</h2>
             </div>
-            <p class="text-xs text-slate-500 mt-0.5">Xác lập phạm vi thẩm quyền theo chuẩn RBAC AUTH-002. Cấp/thu hồi quyền có kiểm toán bắt buộc. Không Impersonation.</p>
+            <p class="text-xs text-slate-500 mt-0.5">Chọn quyền phù hợp cho từng người. Mọi thay đổi đều được ghi lại.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <div class="relative">
@@ -390,10 +407,10 @@ class AdminView {
             <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
               <tr>
                 <th class="py-3 px-3">Họ tên & Email</th>
-                <th class="py-3 px-3">Vai trò RBAC</th>
+                <th class="py-3 px-3">Vai trò</th>
                 <th class="py-3 px-3">Trạng thái</th>
                 <th class="py-3 px-3">Ngày tạo</th>
-                <th class="py-3 px-3 text-right">Kiểm soát An toàn</th>
+                <th class="py-3 px-3 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="admin-users-tbody">
@@ -406,9 +423,8 @@ class AdminView {
         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-300">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
-            <span><strong>Nguyên tắc Bất biến AUTH-002:</strong> Hệ thống không hỗ trợ "Đăng nhập dưới danh nghĩa" (Impersonation). Mọi hành động thao tác dữ liệu bắt buộc gắn định danh thực của Quản trị viên điều hành.</span>
+            <span>Quản trị viên dùng tài khoản của mình khi thao tác. Hệ thống ghi lại người thực hiện mỗi thay đổi.</span>
           </div>
-          <span class="font-mono text-[11px] text-slate-400 font-bold shrink-0">Policy RBAC-v4.2-Strict</span>
         </div>
 
         <!-- Optimistic Locking Panel -->
@@ -416,12 +432,12 @@ class AdminView {
           <div class="flex items-start gap-2.5">
             <span class="material-symbols-outlined text-amber-600 text-[20px] mt-0.5">sync_problem</span>
             <div>
-              <strong class="text-amber-900 dark:text-amber-300 block mb-0.5">Cơ chế Kiểm soát Xung đột Đồng thời (Optimistic Locking & auth_version)</strong>
-              <p class="text-amber-800/80 dark:text-amber-400/80">Khi vai trò bị thay đổi hoặc tài khoản bị tạm ngưng, auth_version sẽ tăng, lập tức thu hồi phiên của người dùng trên toàn hệ thống.</p>
+              <strong class="text-amber-900 dark:text-amber-300 block mb-0.5">Dữ liệu có thể thay đổi trong lúc bạn thao tác</strong>
+              <p class="text-amber-800/80 dark:text-amber-400/80">Khi đổi vai trò hoặc tạm ngưng tài khoản, các phiên đăng nhập hiện có sẽ hết hiệu lực.</p>
             </div>
           </div>
           <button type="button" id="btn-sync-optimistic" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 hover:bg-amber-50 text-slate-800 dark:text-slate-200 font-bold text-xs shrink-0 transition-colors shadow-xs">
-            Đồng bộ trạng thái mới nhất
+            Tải lại dữ liệu
           </button>
         </div>
       `;
@@ -509,7 +525,7 @@ class AdminView {
                     </button>
                   `}
                   <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-xs font-bold transition-colors revoke-sessions-btn" title="Thu hồi toàn bộ phiên đăng nhập của người dùng" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
-                    Thu hồi phiên
+                    Đăng xuất thiết bị
                   </button>
                 </div>
               </td>
@@ -568,7 +584,7 @@ class AdminView {
           renderTableRows(freshUsers);
           const counterEl = box.querySelector('h2');
           if (counterEl) {
-            counterEl.textContent = `Ma trận Người dùng & Phân quyền RBAC (${freshRes.total !== undefined ? freshRes.total : freshUsers.length} tài khoản)`;
+            counterEl.textContent = `Người dùng & Phân quyền (${freshRes.total !== undefined ? freshRes.total : freshUsers.length} tài khoản)`;
           }
         } catch (e) {
           const localFiltered = users.filter(u => {
@@ -660,9 +676,9 @@ class AdminView {
           <div class="flex items-center justify-between">
             <label class="block font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1.5">
               <span class="material-symbols-outlined text-primary text-[16px]">shield_person</span>
-              Phân nhóm quyền Quản trị (Dưới quyền Admin chính)
+              Quyền quản trị
             </label>
-            <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Thẩm quyền rõ ràng</span>
+            <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Chọn một vai trò</span>
           </div>
           <div class="space-y-2 pt-1">
             ${subRoleSelectionState.isExistingPrimary ? `
@@ -674,35 +690,35 @@ class AdminView {
               <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt khóa học</div>
-                <div class="text-[11px] text-slate-500">Phê duyệt đề cương khóa học mới, duyệt yêu cầu sửa/xóa bài giảng và môn học.</div>
+                <div class="text-[11px] text-slate-500">Duyệt khóa học và yêu cầu thay đổi bài giảng.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
               <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt giảng viên</div>
-                <div class="text-[11px] text-slate-500">Thẩm định hồ sơ, xem trực tiếp file CV, bằng cấp và phê duyệt/từ chối đơn ứng tuyển.</div>
+                <div class="text-[11px] text-slate-500">Xem hồ sơ và duyệt đơn đăng ký giảng viên.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
               <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin phân công giảng dạy</div>
-                <div class="text-[11px] text-slate-500">Điều phối, gán và chuyển giao giảng viên phụ trách các khóa học đào tạo.</div>
+                <div class="text-[11px] text-slate-500">Giao khóa học cho giảng viên phụ trách.</div>
               </div>
             </label>
             <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
               <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
               <div>
                 <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
-                <div class="text-[11px] text-slate-500">Theo dõi nhật ký kiểm toán và trạng thái vận hành dịch vụ.</div>
+                <div class="text-[11px] text-slate-500">Xem lịch sử hoạt động và tình trạng hệ thống.</div>
               </div>
             </label>
           </div>
         </div>
 
         <div class="space-y-1">
-          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do thay đổi phân quyền (Kiểm toán bắt buộc) *</label>
+          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do thay đổi quyền</label>
           <input type="text" id="modal-role-reason" placeholder="VD: Quyết định bổ nhiệm nhân sự học vụ..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary" />
         </div>
       </div>
@@ -778,12 +794,12 @@ class AdminView {
     const body = `
       <div class="space-y-4 text-xs">
         <div class="p-3.5 rounded-xl bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 text-xs border border-rose-200 dark:border-rose-900/60 leading-relaxed">
-          <strong>Cảnh báo An toàn Fail-Closed:</strong> Khi tạm ngưng tài khoản, toàn bộ phiên đăng nhập hoạt động (Web Session và JWT Bearer Tokens) sẽ bị thu hồi tức thì (auth_version increment). Người dùng sẽ bị chặn toàn bộ quyền truy cập.
+          <strong>Lưu ý:</strong> Khi tạm ngưng tài khoản, người dùng sẽ đăng xuất khỏi mọi thiết bị và không thể truy cập cho đến khi tài khoản được mở lại.
         </div>
-        <p class="text-slate-600 dark:text-slate-300">Tài khoản mục tiêu: <strong>${UI.escapeHtml(userName)}</strong> (${userId})</p>
+        <p class="text-slate-600 dark:text-slate-300">Tài khoản: <strong>${UI.escapeHtml(userName)}</strong></p>
 
         <div class="space-y-1">
-          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do phong tỏa (Bắt buộc kiểm toán) *</label>
+          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do tạm ngưng</label>
           <textarea id="suspend-reason" rows="3" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-rose-600 resize-none" placeholder="Ghi rõ căn cứ vi phạm hoặc nghi vấn an ninh..."></textarea>
         </div>
       </div>
@@ -837,17 +853,17 @@ class AdminView {
 
   static async revokeUserSessions(userId, userName) {
     const conf = await UI.confirm(
-      'Thu hồi toàn bộ phiên đăng nhập',
-      `Xác nhận cưỡng chế chấm dứt tất cả các phiên làm việc và JWT tokens hiện tại của "${userName}"? Người dùng sẽ phải đăng nhập lại.`,
-      'Thu hồi phiên'
+      'Đăng xuất khỏi mọi thiết bị',
+      `Bạn muốn đăng xuất "${userName}" khỏi mọi thiết bị? Người này sẽ cần đăng nhập lại.`,
+      'Đăng Xuất Thiết Bị'
     );
     if (!conf) return;
 
     try {
       await ApiClient.revokeUserSessions(userId, 'Quản trị viên cưỡng chế thu hồi phiên');
-      UI.showToast(`Đã thu hồi toàn bộ phiên đăng nhập của ${userName}!`, 'success');
+      UI.showToast(`Đã đăng xuất ${userName} khỏi mọi thiết bị.`, 'success');
     } catch (e) {
-      UI.showToast(e.message || 'Lỗi thu hồi phiên.', 'error');
+      UI.showToast(e.message || 'Không đăng xuất được các thiết bị.', 'error');
     }
   }
 
@@ -939,7 +955,7 @@ class AdminView {
       <div class="space-y-6 animate-fade-in" id="courses-review-box">
         <div class="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
           <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang tải hàng đợi thẩm định đề cương khóa học & yêu cầu sửa đổi...</p>
+          <p class="text-sm">Đang tải khóa học và yêu cầu chờ duyệt...</p>
         </div>
       </div>
     `;
@@ -974,9 +990,9 @@ class AdminView {
             <div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[20px]">fact_check</span>
-                Hàng đợi Thẩm định Khóa học Chờ Duyệt (Pending Courses)
+                Khóa học chờ duyệt
               </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Đối soát đề cương, chuẩn đầu ra SLO và danh mục bài học do Giảng viên hoàn thiện trước khi ban hành chính thức.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Xem thông tin, mục tiêu và bài học trước khi duyệt khóa học.</p>
             </div>
             <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-xs font-bold border border-amber-200">
               ${pendingCourses.length} Khóa học chờ duyệt
@@ -986,46 +1002,20 @@ class AdminView {
           ${pendingCourses.length === 0 ? `
             <div class="p-8 text-center text-slate-400 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
               <span class="material-symbols-outlined text-emerald-500 text-3xl">task_alt</span>
-              <p class="text-xs font-bold text-slate-700 dark:text-slate-300">Không có khóa học nào đang chờ thẩm định</p>
-              <p class="text-[11px] text-slate-400">Toàn bộ khóa học nộp lên đã được giải quyết hoặc chưa có đề xuất xuất bản mới.</p>
+              <p class="text-xs font-bold text-slate-700 dark:text-slate-300">Không có khóa học đang chờ duyệt</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-300">Khóa học mới gửi duyệt sẽ xuất hiện tại đây.</p>
             </div>
           ` : `
             <div class="space-y-4">
               ${pendingCourses.map(c => `
-                <div class="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                  <div class="bg-slate-50 dark:bg-slate-800 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700 text-xs">
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <span class="font-bold font-mono text-primary mr-1">${UI.escapeHtml(c.course_code)}</span>
-                      <span class="font-bold text-slate-800 dark:text-slate-200">${UI.escapeHtml(c.title)}</span>
-                      <span class="text-slate-400 ml-2">Cập nhật lúc: ${UI.formatDateTime(c.updated_at)}</span>
+                      <div class="font-bold text-sm text-slate-800 dark:text-slate-100">${UI.escapeHtml(c.title)}</div>
+                      <div class="text-xs text-slate-600 dark:text-slate-300 mt-1">${UI.escapeHtml(c.course_code)} · Gửi duyệt ${UI.formatDateTime(c.updated_at)}</div>
                     </div>
-                    <div class="flex items-center gap-2">
-                      <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-xs flex items-center gap-1 inspect-course-btn" data-course-id="${c.course_id}">
-                        <span class="material-symbols-outlined text-[16px]">menu_book</span> Xem đề cương & bài học
-                      </button>
-                      <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1 approve-course-btn" data-course-id="${c.course_id}" data-course-title="${UI.escapeHtml(c.title)}">
-                        <span class="material-symbols-outlined text-[16px]">check</span> Phê duyệt ban hành
-                      </button>
-                      <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors reject-course-btn" data-course-id="${c.course_id}" data-course-title="${UI.escapeHtml(c.title)}">
-                        Yêu cầu chỉnh sửa
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Course Metadata Details -->
-                  <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono bg-slate-50/50 dark:bg-slate-950/40">
-                    <div class="p-3 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1 font-sans">
-                      <div class="font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-100 dark:border-slate-800 font-mono">Thông tin nộp duyệt</div>
-                      <p><strong>Mã khóa học:</strong> <span class="font-mono text-primary font-bold">${UI.escapeHtml(c.course_code)}</span></p>
-                      <p><strong>Tiêu đề:</strong> ${UI.escapeHtml(c.title)}</p>
-                      <p><strong>Trạng thái:</strong> <span class="text-amber-600 font-bold">${c.status}</span></p>
-                      <p><strong>Giảng viên chủ quản:</strong> ${UI.escapeHtml(c.owner_instructor_name || c.owner_instructor_id || 'Chưa gán')}</p>
-                    </div>
-                    <div class="p-3 rounded bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 space-y-1 text-emerald-900 dark:text-emerald-300 font-sans">
-                      <div class="font-bold text-emerald-700 dark:text-emerald-400 uppercase text-[10px] pb-1 border-b border-emerald-200 dark:border-emerald-800 font-mono">Quy trình thẩm định học vụ</div>
-                      <p class="text-xs leading-relaxed">Đề cương đã được Giảng viên hoàn thiện toàn bộ bài học và đệ trình xuất bản. Nhấn <strong>Xem đề cương & bài học</strong> để kiểm tra đầy đủ, hoặc <strong>Phê duyệt ban hành</strong> để chính thức mở khóa học cho Sinh viên đăng ký.</p>
-                    </div>
-                  </div>
+                    <button type="button" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-slate-50 text-xs font-bold transition-colors flex items-center gap-1 inspect-course-btn" data-course-id="${c.course_id}">
+                      <span class="material-symbols-outlined text-[16px]">menu_book</span> Xem Khóa Học
+                    </button>
                 </div>
               `).join('')}
             </div>
@@ -1038,23 +1028,23 @@ class AdminView {
             <div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[20px]">edit_note</span>
-                Hàng đợi Phê duyệt Sửa/Xóa Bài giảng & Môn học (Change Requests)
+                Yêu cầu sửa hoặc xóa bài giảng và khóa học
               </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Xem đối chiếu bản sửa đổi chi tiết (Side-by-Side Diff) giữa bản hiện tại và bản đề xuất trước khi phê duyệt.</p>
+              <p class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">So sánh nội dung hiện tại và đề xuất trước khi duyệt.</p>
             </div>
             <div class="flex items-center gap-1.5" id="cr-status-filter-group">
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${changeRequests.length})</button>
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="PENDING">Chờ duyệt (${pendingChangeRequests.length})</button>
+              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="ALL">Tất cả (${changeRequests.length})</button>
+              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="PENDING">Chờ duyệt (${pendingChangeRequests.length})</button>
               <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt</button>
               <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối</button>
             </div>
           </div>
 
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs sm:text-sm min-w-[1500px] table-fixed">
+            <table class="w-full text-left text-xs sm:text-sm min-w-[1180px] table-fixed">
               <colgroup>
-                <col style="width:160px"><col style="width:240px"><col style="width:360px">
-                <col style="width:170px"><col style="width:130px"><col style="width:150px"><col style="width:290px">
+                <col style="width:120px"><col style="width:180px"><col style="width:290px">
+                <col style="width:130px"><col style="width:110px"><col style="width:120px"><col style="width:230px">
               </colgroup>
               <thead class="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase tracking-wider text-[11px] font-bold">
                 <tr>
@@ -1064,7 +1054,7 @@ class AdminView {
                   <th class="px-3.5 py-3 w-[140px] whitespace-nowrap">Người gửi</th>
                   <th class="px-3.5 py-3 w-[110px] whitespace-nowrap">Trạng thái</th>
                   <th class="px-3.5 py-3 w-[130px] whitespace-nowrap">Thời điểm</th>
-                  <th class="px-3.5 py-3 w-[230px] whitespace-nowrap text-right">Quyết định phê duyệt</th>
+                  <th class="px-3.5 py-3 w-[230px] whitespace-nowrap text-right">Xét duyệt</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-medium" id="change-requests-tbody">
@@ -1078,37 +1068,7 @@ class AdminView {
       // Event bindings for Courses Review
       box.querySelectorAll('.inspect-course-btn').forEach(btn => {
         btn.onclick = () => {
-          AdminView.openCourseInspectionModal(btn.dataset.courseId);
-        };
-      });
-
-      box.querySelectorAll('.approve-course-btn').forEach(btn => {
-        btn.onclick = () => {
-          const courseId = btn.dataset.courseId;
-          AdminView.openCourseInspectionModal(courseId);
-        };
-      });
-
-      box.querySelectorAll('.reject-course-btn').forEach(btn => {
-        btn.onclick = async () => {
-          const courseId = btn.dataset.courseId;
-          const courseTitle = btn.dataset.courseTitle;
-          const note = await UI.prompt(
-            'Yêu cầu chỉnh sửa đề cương',
-            `Vui lòng nhập lý do và chỉ dẫn yêu cầu giảng viên chỉnh sửa đề cương "${courseTitle}":`,
-            '',
-            'Nhập lý do chi tiết (tối thiểu 5 ký tự)...',
-            5
-          );
-          if (!note) return;
-
-          try {
-            await ApiClient.reviewCourse(courseId, 'reject', note);
-            UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${courseTitle}".`, 'info');
-            UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container));
-          } catch (e) {
-            UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
-          }
+          window.location.hash = `#/admin/courses/review?id=${encodeURIComponent(btn.dataset.courseId)}`;
         };
       });
 
@@ -1137,13 +1097,19 @@ class AdminView {
 
           if (r.change_type === 'LESSON_STRUCTURE' && payload.action === 'DELETE') {
             typeBadge = 'bg-rose-50 text-rose-700 border-rose-200';
-            typeLabel = 'XÓA BÀI GIẢNG';
+            typeLabel = 'Xóa bài giảng';
+          } else if (payload.action === 'UPDATE_LEARNING_UNIT') {
+            typeBadge = 'bg-blue-50 text-blue-700 border-blue-200';
+            typeLabel = 'Sửa Bài học';
+          } else if (payload.action === 'RESOURCE_CHANGES') {
+            typeBadge = 'bg-blue-50 text-blue-700 border-blue-200';
+            typeLabel = 'Tài liệu Lesson';
           } else if (r.change_type === 'LESSON_CONTENT' || r.change_type === 'LESSON_STRUCTURE') {
             typeBadge = 'bg-blue-50 text-blue-700 border-blue-200';
-            typeLabel = 'SỬA BÀI GIẢNG';
+            typeLabel = 'Sửa bài giảng';
           } else if (r.change_type === 'PREREQUISITE') {
             typeBadge = 'bg-purple-50 text-purple-700 border-purple-200';
-            typeLabel = 'MÔN TIÊN QUYẾT';
+            typeLabel = 'Môn tiên quyết';
           }
 
           let statusBadge = 'bg-amber-50 text-amber-700 border-amber-200';
@@ -1165,7 +1131,8 @@ class AdminView {
                 <div class="text-xs text-slate-500 truncate max-w-[190px]" title="${UI.escapeHtml(r.course_title || '')}">${UI.escapeHtml(r.course_title || '')}</div>
               </td>
               <td class="px-3.5 py-3.5 align-middle">
-                <div class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[320px]" title="${UI.escapeHtml(r.target_title || '')}">${UI.escapeHtml(r.target_title || 'Mục tiêu #' + (r.target_id || ''))}</div>
+                <div class="font-bold text-slate-800 dark:text-slate-200 text-xs break-words">${UI.escapeHtml(r.target_title || 'Nội dung được đề xuất')}</div>
+                ${r.status === 'REJECTED' && r.review_reason ? `<p class="mt-2 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 text-xs text-rose-800 dark:text-rose-200 break-words"><strong>Ghi chú từ chối:</strong> ${UI.escapeHtml(r.review_reason)}</p>` : ''}
                 ${payload.action === 'DELETE' ? `
                   <div class="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5 truncate max-w-[320px]" title="${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}">
                     <strong>Lý do xóa:</strong> ${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}
@@ -1188,19 +1155,12 @@ class AdminView {
                 ${UI.formatDate(r.created_at)}
               </td>
               <td class="px-3.5 py-3.5 text-right space-x-1.5 whitespace-nowrap align-middle">
-                <button type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors shadow-xs view-diff-cr-btn" data-req-id="${r.id}">
-                  Xem bản sửa
+                <button type="button" class="px-4 py-2 rounded-lg ${r.status === 'PENDING' ? 'bg-primary hover:bg-primary-hover text-white' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-colors view-diff-cr-btn" data-req-id="${r.id}">
+                  ${r.status === 'PENDING' ? 'Xét duyệt' : 'Xem bản sửa'}
                 </button>
-                ${r.status === 'PENDING' ? `
-                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors approve-cr-btn" data-req-id="${r.id}" data-type="${typeLabel}">
-                    Phê duyệt
-                  </button>
-                  <button type="button" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors reject-cr-btn" data-req-id="${r.id}" data-type="${typeLabel}">
-                    Từ chối
-                  </button>
-                ` : `
+                ${r.status !== 'PENDING' ? `
                   <span class="text-xs text-slate-400 italic">${UI.escapeHtml(r.review_reason || 'Đã giải quyết')}</span>
-                `}
+                ` : ''}
               </td>
             </tr>
           `;
@@ -1208,47 +1168,13 @@ class AdminView {
 
         tbody.querySelectorAll('.view-diff-cr-btn').forEach(btn => {
           btn.onclick = () => {
-            const reqId = btn.dataset.reqId;
-            const r = changeRequests.find(x => String(x.id) === String(reqId));
-            if (r) AdminView.openChangeRequestDiffModal(r, () => UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container)));
+            window.location.hash = `#/admin/change-requests/review?id=${encodeURIComponent(btn.dataset.reqId)}`;
           };
         });
 
-        tbody.querySelectorAll('.approve-cr-btn').forEach(btn => {
-          btn.onclick = () => {
-            const reqId = btn.dataset.reqId;
-            const r = changeRequests.find(x => String(x.id) === String(reqId));
-            if (r) {
-              AdminView.openChangeRequestDiffModal(r, () => UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container)));
-            }
-          };
-        });
-
-        tbody.querySelectorAll('.reject-cr-btn').forEach(btn => {
-          btn.onclick = async () => {
-            const reqId = btn.dataset.reqId;
-            const typeName = btn.dataset.type;
-            const reason = await UI.prompt(
-              'Từ chối yêu cầu thay đổi',
-              `Nhập lý do từ chối yêu cầu "${typeName}" (#${reqId}):`,
-              '',
-              'Nhập lý do từ chối (tối thiểu 3 ký tự)...',
-              3
-            );
-            if (!reason) return;
-
-            try {
-              await ApiClient.reviewAdminChangeRequest(reqId, { action: 'reject', reason });
-              UI.showToast(`Đã từ chối yêu cầu #${reqId}.`, 'info');
-              UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(container));
-            } catch (e) {
-              UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
-            }
-          };
-        });
       };
 
-      renderChangeRequestRows('ALL');
+      renderChangeRequestRows('PENDING');
 
       const crFilterBtns = box.querySelectorAll('.cr-filter-btn');
       crFilterBtns.forEach(btn => {
@@ -1289,22 +1215,62 @@ class AdminView {
   }
 
   // =========================================================================
-  // Modal: Thẩm định & Đối chiếu Bản Sửa đổi Chi tiết (Side-by-Side Diff)
+  // Full-page change review reuses the queue's authorized API response.
   // =========================================================================
-  static openChangeRequestDiffModal(r, onReviewed = null) {
+  static async renderChangeRequestReviewPage(container, requestId) {
+    container.innerHTML = '<div class="p-8 text-sm text-slate-600 dark:text-slate-300">Đang tải yêu cầu thay đổi...</div>';
+    try {
+      const result = await ApiClient.getAdminChangeRequests('ALL');
+      const request = (result.change_requests || []).find(item => String(item.id) === String(requestId));
+      if (!request) throw new Error('Không tìm thấy yêu cầu thay đổi.');
+      AdminView.renderChangeRequestReviewDetail(container, request);
+    } catch (error) {
+      container.innerHTML = `<div class="max-w-6xl mx-auto p-6"><a href="#/admin/governance?tab=courses" class="text-primary font-semibold">← Quay lại hàng đợi</a><p class="mt-6 text-rose-700 dark:text-rose-300">${UI.escapeHtml(error.message || 'Không tải được yêu cầu.')}</p></div>`;
+    }
+  }
+
+  static renderChangeRequestReviewDetail(container, r) {
     const orig = r.original_data || {};
     const prop = r.proposed_payload || {};
     const isDelete = prop.action === 'DELETE';
+    const isLearningUnit = prop.action === 'UPDATE_LEARNING_UNIT';
+    const isResourceChange = prop.action === 'RESOURCE_CHANGES';
     const isPending = r.status === 'PENDING';
 
     const isCourse = r.target_type === 'COURSE' || (!r.target_type && (orig.course_code || prop.course_code));
 
     const titleChanged = prop.title && prop.title !== orig.title;
-    const summaryChanged = prop.summary && prop.summary !== orig.summary;
+    const summaryChanged = prop.summary !== undefined && prop.summary !== orig.summary;
     const descChanged = prop.description && prop.description !== orig.description;
     const catChanged = prop.category && prop.category !== orig.category;
-    const contentChanged = prop.markdown_content && prop.markdown_content !== orig.markdown_content;
+    const contentChanged = prop.markdown_content !== undefined && prop.markdown_content !== orig.markdown_content;
     const durationChanged = prop.estimated_duration_minutes && prop.estimated_duration_minutes !== orig.estimated_duration_minutes;
+    const statusChanged = prop.status !== undefined && prop.status !== orig.status;
+    const lessonRuleRows = [
+      ['minimum_completion_seconds', 'Thời gian học tối thiểu', value => `${value ?? 0} giây`],
+      ['viewed_fraction_required', 'Tỷ lệ xem yêu cầu', value => `${Math.round(Number(value ?? 0) * 100)}%`],
+      ['required_for_periods_starting_at', 'Áp dụng từ kỳ học', value => value || '(Chưa đặt)'],
+    ].filter(([key]) => prop[key] !== undefined);
+    const lessonRulesBefore = lessonRuleRows.map(([key, label, display]) => `
+      <div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">${label}</div>
+      <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${UI.escapeHtml(display(orig[key]))}</div></div>
+    `).join('');
+    const lessonRulesAfter = lessonRuleRows.map(([key, label, display]) => `
+      <div class="p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800">
+        <div class="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">${label}</div>
+        <div class="text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(display(prop[key]))}</div>
+      </div>
+    `).join('');
+    const currentResources = Array.isArray(orig.resources) ? orig.resources : [];
+    const proposedResources = new Map(currentResources.map(item => [String(item.resource_id), item.title]));
+    for (const change of Array.isArray(prop.changes) ? prop.changes : []) {
+      if (!change || typeof change !== 'object') continue;
+      if (change.action === 'DETACH') proposedResources.delete(String(change.resource_id));
+      if (change.action === 'ATTACH') proposedResources.set(`asset:${change.asset_id}`, change.title || change.label || 'Tệp mới');
+    }
+    const resourceList = titles => titles.length
+      ? `<ul class="space-y-2">${titles.map(title => `<li class="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 break-words">${UI.escapeHtml(title)}</li>`).join('')}</ul>`
+      : '<p class="text-slate-500 dark:text-slate-400">Chưa có tài liệu.</p>';
 
     const body = `
       <div class="space-y-4 text-xs">
@@ -1326,7 +1292,29 @@ class AdminView {
           </div>
         </div>
 
-        ${isDelete ? `
+        ${isLearningUnit ? `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3">
+              <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Tên Bài học hiện tại</h2>
+              <p class="text-base text-slate-800 dark:text-slate-200 break-words">${UI.escapeHtml(orig.title || '(Chưa có)')}</p>
+            </section>
+            <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3">
+              <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD]">Tên Bài học đề xuất</h2>
+              <p class="text-base text-slate-900 dark:text-slate-100 break-words">${UI.escapeHtml(prop.title || '(Chưa có)')}</p>
+            </section>
+          </div>
+        ` : isResourceChange ? `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3">
+              <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Tài liệu hiện tại</h2>
+              ${resourceList(currentResources.map(item => item.title))}
+            </section>
+            <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3">
+              <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD]">Tài liệu sau khi duyệt</h2>
+              ${resourceList([...proposedResources.values()])}
+            </section>
+          </div>
+        ` : isDelete ? `
           <div class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 space-y-2">
             <div class="font-bold text-sm flex items-center gap-2 text-rose-700 dark:text-rose-400">
               <span class="material-symbols-outlined text-[20px]">delete_forever</span>
@@ -1355,7 +1343,7 @@ class AdminView {
                   <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px] text-slate-400">history</span> Bản hiện tại (Original)</span>
                   <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Hiện có</span>
                 </div>
-                <div class="p-3.5 space-y-3 flex-1 overflow-y-auto max-h-[350px]">
+                <div class="p-3.5 space-y-3 flex-1 ">
                   ${isCourse ? `
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tên khóa học</div>
@@ -1367,7 +1355,7 @@ class AdminView {
                     </div>
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mô tả khóa học</div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed  text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
                     </div>
                   ` : `
                     <div>
@@ -1383,8 +1371,15 @@ class AdminView {
                       <div class="font-mono text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${orig.estimated_duration_minutes || 0} phút</div>
                     </div>
                     <div>
-                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nội dung bài học (Markdown)</div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words max-h-48 overflow-y-auto text-slate-700 dark:text-slate-300">${AdminView.renderLessonMarkdown(orig.markdown_content || '(Chưa có nội dung)')}</div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Trạng thái Lesson</div>
+                      <div class="font-semibold text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${UI.escapeHtml(orig.status || '(Chưa có)')}</div>
+                    </div>
+                    ${lessonRulesBefore}
+                    <div>
+                      <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-rose-600">(Vạch đỏ: phần bị xóa)</span>' : ''}
+                      </div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border ${contentChanged ? 'border-rose-200 dark:border-rose-900/60' : 'border-slate-100 dark:border-slate-800'} text-sm leading-relaxed break-words text-slate-700 dark:text-slate-300">${contentChanged ? AdminView.renderDiffOriginal(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown(orig.markdown_content || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
@@ -1396,7 +1391,7 @@ class AdminView {
                   <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">edit_document</span> Bản đã sửa đổi (Proposed)</span>
                   <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary text-white font-bold">Bản mới</span>
                 </div>
-                <div class="p-3.5 space-y-3 flex-1 overflow-y-auto max-h-[350px]">
+                <div class="p-3.5 space-y-3 flex-1 ">
                   ${isCourse ? `
                     <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
@@ -1414,7 +1409,7 @@ class AdminView {
                       <div class="text-[10px] font-bold ${descChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Mô tả khóa học ${descChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed  text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
                     </div>
                   ` : `
                     <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
@@ -1427,7 +1422,7 @@ class AdminView {
                       <div class="text-[10px] font-bold ${summaryChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Tóm tắt ngắn (Summary) ${summaryChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
-                      <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs leading-relaxed">${UI.escapeHtml(prop.summary || orig.summary || '(Trống)')}</div>
+                      <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs leading-relaxed">${UI.escapeHtml((prop.summary ?? orig.summary) || '(Trống)')}</div>
                     </div>
                     <div class="${durationChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${durationChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
@@ -1435,11 +1430,16 @@ class AdminView {
                       </div>
                       <div class="font-mono text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${prop.estimated_duration_minutes || orig.estimated_duration_minutes || 0} phút</div>
                     </div>
+                    <div class="${statusChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                      <div class="text-[10px] font-bold ${statusChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider">Trạng thái Lesson ${statusChanged ? '(Đã sửa)' : ''}</div>
+                      <div class="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(prop.status ?? orig.status ?? '(Chưa có)')}</div>
+                    </div>
+                    ${lessonRulesAfter}
                     <div class="${contentChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${contentChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
-                        Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
+                        Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Vạch xanh: phần thêm mới)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words max-h-48 overflow-y-auto text-slate-800 dark:text-slate-200">${AdminView.renderLessonMarkdown(prop.markdown_content || orig.markdown_content || '(Chưa có nội dung)')}</div>
+                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words  text-slate-800 dark:text-slate-200">${contentChanged ? AdminView.renderDiffProposed(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown((prop.markdown_content ?? orig.markdown_content) || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
@@ -1451,8 +1451,8 @@ class AdminView {
     `;
 
     const footer = `
-      <div class="flex items-center justify-between w-full">
-        <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
+      <div class="flex flex-wrap items-center justify-between gap-4 w-full">
+        <a href="#/admin/governance?tab=courses" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold">Quay lại hàng đợi</a>
         ${isPending ? `
           <div class="flex items-center gap-2">
             <button type="button" id="diff-reject-btn" class="px-3.5 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors">
@@ -1469,20 +1469,24 @@ class AdminView {
       </div>
     `;
 
-    UI.openModal({
-      title: `Thẩm định Bản Sửa đổi • #${r.id} (${r.course_code || 'Khóa học'})`,
-      bodyHtml: body,
-      footerHtml: footer,
-      size: 'xl'
-    });
+    container.innerHTML = `
+      <main class="max-w-[1600px] mx-auto p-4 sm:p-8 space-y-6 animate-fade-in">
+        <header class="space-y-2">
+          <a href="#/admin/governance?tab=courses" class="text-sm font-semibold text-primary">← Hàng đợi xét duyệt</a>
+          <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">Thẩm định bản sửa đổi</h1>
+          <p class="text-sm text-slate-600 dark:text-slate-300">${UI.escapeHtml(r.course_title || 'Khóa học')} · Yêu cầu #${r.id}</p>
+        </header>
+        <section class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6">${body}</section>
+        <footer class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6">${footer}</footer>
+      </main>
+    `;
 
     if (isPending) {
       document.getElementById('diff-approve-btn').onclick = async () => {
         try {
           await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
           UI.showToast(`Đã phê duyệt và áp dụng bản sửa đổi #${r.id} thành công!`, 'success');
-          UI.closeModal();
-          if (onReviewed) onReviewed();
+          window.location.hash = '#/admin/governance?tab=courses';
         } catch (e) {
           UI.showToast(e.message || 'Lỗi phê duyệt yêu cầu.', 'error');
         }
@@ -1494,14 +1498,14 @@ class AdminView {
           `Nhập lý do từ chối yêu cầu sửa đổi #${r.id}:`,
           '',
           'Nhập lý do chi tiết (tối thiểu 3 ký tự)...',
-          3
+          3,
+          'Từ Chối Bản Sửa'
         );
         if (!reason) return;
         try {
           await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });
           UI.showToast(`Đã từ chối yêu cầu #${r.id}.`, 'info');
-          UI.closeModal();
-          if (onReviewed) onReviewed();
+          window.location.hash = '#/admin/governance?tab=courses';
         } catch (e) {
           UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
         }
@@ -1543,7 +1547,7 @@ class AdminView {
                 <span class="material-symbols-outlined text-primary text-[20px]">badge</span>
                 Hồ sơ Đăng ký Giảng viên (Instructor Applications)
               </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Thẩm định hồ sơ chuyên môn, văn bằng chứng chỉ và xét chuẩn đào tạo ABET CAC trước khi phê duyệt bổ nhiệm quyền giảng viên.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Xem hồ sơ và tài liệu trước khi quyết định cấp quyền giảng viên.</p>
             </div>
             <div class="flex items-center gap-1.5" id="app-status-filter-group">
               <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${applications.length})</button>
@@ -1650,7 +1654,7 @@ class AdminView {
             if (!conf) return;
 
             try {
-              await ApiClient.reviewInstructorApplication(appId, 'approve', 'Đạt chuẩn thẩm định học vụ');
+              await ApiClient.reviewInstructorApplication(appId, 'approve', 'Hồ sơ đạt yêu cầu');
               UI.showToast(`Đã bổ nhiệm giảng viên ${name} thành công!`, 'success');
               UI.refreshCurrentRoute(() => AdminView.renderTabInstructorApps(container));
             } catch (e) {
@@ -1668,7 +1672,8 @@ class AdminView {
               `Nhập lý do từ chối đơn đăng ký làm giảng viên của ứng viên "${name}":`,
               '',
               'Nhập lý do từ chối hồ sơ (tối thiểu 5 ký tự)...',
-              5
+              5,
+              'Từ Chối Hồ Sơ'
             );
             if (!reason) return;
 
@@ -1701,19 +1706,15 @@ class AdminView {
     }
   }
 
-  static async openCourseInspectionModal(courseId) {
-    let loadingLayer = null;
+  static async renderCourseReviewPage(container, courseId) {
     try {
-      loadingLayer = UI.openModal({
-        title: 'Hồ sơ Thẩm định Đề cương & Bài học',
-        bodyHtml: '<div class="p-8 text-center text-slate-400"><span class="inline-block animate-spin text-xl mb-2">⏳</span><p>Đang tải chi tiết đề cương học vụ...</p></div>',
-        footerHtml: '<button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>',
-        size: 'lg'
-      });
+      container.innerHTML = '<div class="p-8 text-sm text-slate-600 dark:text-slate-300">Đang tải chi tiết khóa học...</div>';
 
       const course = await ApiClient.getAdminCourseDetail(courseId);
-      if (loadingLayer && !loadingLayer.isConnected) return;
       const lessons = course.lessons || [];
+      const difficultyLabel = {
+        BEGINNER: 'Cơ bản', INTERMEDIATE: 'Trung cấp', ADVANCED: 'Nâng cao'
+      }[course.difficulty] || course.difficulty || 'Chưa chọn';
 
       // Parse learning objectives for Admin inspection
       let adminSLOs = [];
@@ -1741,13 +1742,13 @@ class AdminView {
                 <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-primary-subtle text-primary border border-primary/20">${UI.escapeHtml(course.course_code)}</span>
                 <h4 class="font-bold text-base text-slate-900 dark:text-white mt-1">${UI.escapeHtml(course.title)}</h4>
               </div>
-              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">${course.status}</span>
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">${course.status === 'SUBMITTED_FOR_REVIEW' ? 'Chờ Duyệt' : UI.escapeHtml(course.status)}</span>
             </div>
             <p class="text-slate-500 dark:text-slate-400 text-xs">${UI.escapeHtml(course.description || 'Chưa có mô tả khóa học.')}</p>
             <div class="pt-2 border-t border-slate-200 dark:border-slate-700 flex flex-wrap gap-4 text-slate-600 dark:text-slate-300 font-medium">
               <span><strong>Giảng viên:</strong> ${UI.escapeHtml(course.owner_instructor_name)} (${UI.escapeHtml(course.owner_instructor_email || 'N/A')})</span>
-              <span><strong>Độ khó:</strong> ${course.difficulty || 'N/A'}</span>
-              <span><strong>Danh mục:</strong> ${course.category || 'N/A'}</span>
+              <span><strong>Độ khó:</strong> ${UI.escapeHtml(difficultyLabel)}</span>
+              <span><strong>Danh mục:</strong> ${UI.escapeHtml(course.category || 'Chưa chọn')}</span>
             </div>
           </div>
 
@@ -1757,22 +1758,19 @@ class AdminView {
               <div class="flex items-center gap-2">
                 <h5 class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <span class="material-symbols-outlined text-[18px] text-primary">verified_user</span>
-                  Chuẩn kỹ năng đầu ra của môn học (SLO - Student Learning Outcomes)
+                  Mục tiêu học tập
                 </h5>
-                <button type="button" onclick="UI.openAcademicGlossaryModal()" class="text-[11px] text-primary hover:underline font-bold" title="Xem giải thích thuật ngữ">
-                  (SLO là gì?)
-                </button>
               </div>
-              <span class="text-slate-400 text-xs">${adminSLOs.length} Chuẩn đầu ra</span>
+              <span class="text-slate-500 dark:text-slate-300 text-xs">${adminSLOs.length} mục tiêu</span>
             </div>
 
             ${adminSLOs.length === 0 ? `
               <div class="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs space-y-1">
                 <div class="font-bold flex items-center gap-1">
                   <span class="material-symbols-outlined text-[16px]">warning</span>
-                  <span>Chưa thiết lập Chuẩn đầu ra môn học!</span>
+                  <span>Chưa có mục tiêu học tập</span>
                 </div>
-                <p class="text-[11px] leading-relaxed">Khóa học này chưa có danh mục SLO. Khuyến nghị Admin yêu cầu giảng viên bổ sung chuẩn đầu ra trước khi phê duyệt ban hành.</p>
+                <p class="text-[11px] leading-relaxed">Giảng viên chưa thêm mục tiêu học tập. Hãy xem lại trước khi duyệt khóa học.</p>
               </div>
             ` : `
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1798,7 +1796,7 @@ class AdminView {
             <div class="flex items-center justify-between">
               <h5 class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span class="material-symbols-outlined text-[18px] text-primary">format_list_numbered</span>
-                Đề cương Danh sách Bài học (${lessons.length} bài)
+                Nội dung bài học (${lessons.length} bài)
               </h5>
             </div>
 
@@ -1809,20 +1807,29 @@ class AdminView {
             ` : `
               <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
                 ${lessons.map((l, idx) => `
-                  <div class="p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <details class="p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <summary class="flex items-center justify-between gap-3 cursor-pointer">
                     <div class="flex items-center gap-3 min-w-0">
                       <span class="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono font-bold text-xs flex items-center justify-center flex-shrink-0">
-                        ${l.order_index || idx + 1}
+                        ${UI.escapeHtml(l.order_index || idx + 1)}
                       </span>
                       <div class="truncate">
+                        ${l.learning_unit_title ? `<div class="text-[11px] text-slate-600 dark:text-slate-300 truncate">${UI.escapeHtml(l.learning_unit_title)}</div>` : ''}
                         <div class="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">${UI.escapeHtml(l.title)}</div>
                         ${l.summary ? `<div class="text-[11px] text-slate-400 truncate">${UI.escapeHtml(l.summary)}</div>` : ''}
                       </div>
                     </div>
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold ${l.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}">
-                      ${l.status}
+                      ${l.status === 'PUBLISHED' ? 'Đã xuất bản' : 'Bản nháp'}
                     </span>
-                  </div>
+                    </summary>
+                    <div class="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
+                      <h6 class="font-semibold">Nội dung bài học</h6>
+                      <pre class="whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-800 p-4 text-xs text-slate-700 dark:text-slate-200">${UI.escapeHtml(l.markdown_content || 'Chưa có nội dung.')}</pre>
+                      <p class="text-slate-600 dark:text-slate-300">Tài liệu đính kèm: ${(l.resources || []).length}</p>
+                      ${(l.resources || []).map(resource => `<p class="text-slate-600 dark:text-slate-300">${UI.escapeHtml(resource.label)} · ${UI.escapeHtml(resource.resource_type || '')} · ${resource.scan_status === 'CLEAN' ? 'Đã kiểm tra' : 'Chưa an toàn'}</p>`).join('')}
+                    </div>
+                  </details>
                 `).join('')}
               </div>
             `}
@@ -1831,44 +1838,27 @@ class AdminView {
       `;
 
       const isPending = course.status === 'SUBMITTED_FOR_REVIEW';
-      const footerHtml = `
-        <div class="flex items-center justify-between w-full">
-          <button type="button" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>
-          ${isPending ? `
-            <div class="flex items-center gap-2">
-              <button type="button" id="modal-reject-course-btn" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors">
-                Yêu cầu chỉnh sửa
-              </button>
-              <button type="button" id="modal-approve-course-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px]">check</span>
-                <span>Phê duyệt ban hành</span>
-              </button>
-            </div>
-          ` : ''}
-        </div>
-      `;
-
-      UI.closeModal();
-      loadingLayer = null;
-      UI.openModal({
-        title: `Hồ sơ Thẩm định Đề cương • ${course.course_code}`,
-        bodyHtml,
-        footerHtml,
-        size: 'lg'
-      });
+      container.innerHTML = `
+          <main class="mx-auto max-w-6xl px-4 sm:px-6 py-8 space-y-6 text-slate-800 dark:text-slate-100">
+            <a href="#/admin/governance?tab=courses" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300"><span class="material-symbols-outlined text-lg">arrow_back</span> Khóa Học Chờ Duyệt</a>
+            <header><h1 class="text-2xl font-bold">Xem Và Duyệt Khóa Học</h1><p class="text-sm text-slate-600 dark:text-slate-300">Kiểm tra thông tin và bài học trước khi quyết định.</p></header>
+            <div class="space-y-6">${bodyHtml}</div>
+            ${isPending ? `<div class="flex flex-col sm:flex-row gap-3 border-t border-slate-200 dark:border-slate-700 pt-6">
+              <button type="button" id="modal-reject-course-btn" class="rounded-xl border border-rose-600 px-5 py-2.5 text-sm font-bold text-rose-700 dark:text-rose-300">Yêu Cầu Chỉnh Sửa</button>
+              <button type="button" id="modal-approve-course-btn" class="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-slate-50">Duyệt Khóa Học</button>
+            </div>` : ''}
+          </main>`;
 
       if (isPending) {
         const approveBtn = document.getElementById('modal-approve-course-btn');
         if (approveBtn) {
           approveBtn.onclick = async () => {
-            const conf = await UI.confirm('Phê duyệt đề cương', `Xác nhận phê duyệt ban hành đề cương khóa học "${course.title}"?`, 'Phê duyệt');
+            const conf = await UI.confirm('Duyệt khóa học', `Bạn muốn duyệt khóa học "${course.title}"?`, 'Duyệt Khóa Học');
             if (!conf) return;
             try {
-              await ApiClient.reviewCourse(course.course_id, 'approve', 'Phê duyệt chuẩn hóa đề cương học vụ');
-              UI.showToast(`Đã phê duyệt đề cương "${course.title}" thành công!`, 'success');
-              UI.closeModal();
-              const contentBox = document.getElementById('admin-tab-content-box');
-              if (contentBox) UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(contentBox));
+              await ApiClient.reviewCourse(course.course_id, 'approve', 'Đã kiểm tra nội dung và duyệt khóa học');
+              UI.showToast(`Đã duyệt khóa học "${course.title}".`, 'success');
+              window.location.hash = '#/admin/governance?tab=courses';
             } catch (e) {
               UI.showToast(e.message || 'Lỗi duyệt khóa học.', 'error');
             }
@@ -1879,28 +1869,26 @@ class AdminView {
         if (rejectBtn) {
           rejectBtn.onclick = async () => {
             const note = await UI.prompt(
-              'Yêu cầu chỉnh sửa đề cương',
-              `Vui lòng nhập lý do và chỉ dẫn yêu cầu giảng viên chỉnh sửa đề cương "${course.title}":`,
+              'Yêu cầu chỉnh sửa khóa học',
+              `Nêu rõ phần cần chỉnh sửa trong khóa học "${course.title}":`,
               '',
               'Nhập lý do chi tiết (tối thiểu 5 ký tự)...',
-              5
+              5,
+              'Gửi Yêu Cầu'
             );
             if (!note) return;
             try {
               await ApiClient.reviewCourse(course.course_id, 'reject', note);
               UI.showToast(`Đã gửi phản hồi yêu cầu chỉnh sửa cho khóa học "${course.title}".`, 'info');
-              UI.closeModal();
-              const contentBox = document.getElementById('admin-tab-content-box');
-              if (contentBox) UI.refreshCurrentRoute(() => AdminView.renderTabCoursesReview(contentBox));
+              window.location.hash = '#/admin/governance?tab=courses';
             } catch (e) {
-              UI.showToast(e.message || 'Lỗi từ chối đề cương.', 'error');
+              UI.showToast(e.message || 'Không gửi được yêu cầu chỉnh sửa khóa học.', 'error');
             }
           };
         }
       }
     } catch (err) {
-      if (loadingLayer?.isConnected) UI.closeModal();
-      UI.showToast(err.message || 'Lỗi tải hồ sơ khóa học.', 'error');
+      container.innerHTML = `<div class="p-8 text-rose-700 dark:text-rose-300">Không tải được khóa học: ${UI.escapeHtml(err.message)}</div>`;
     }
   }
 
@@ -2061,7 +2049,8 @@ class AdminView {
             `Nhập lý do từ chối đơn đăng ký của ứng viên "${app.applicant_name}":`,
             '',
             'Nhập lý do từ chối hồ sơ (tối thiểu 5 ký tự)...',
-            5
+            5,
+            'Từ Chối Hồ Sơ'
           );
           if (!reason) return;
           try {
@@ -2182,13 +2171,13 @@ class AdminView {
           <div>
             <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <span class="material-symbols-outlined text-primary text-[20px]">swap_horiz</span>
-              Điều chuyển Phân công Giảng dạy
+              Phân Công Giảng Dạy
             </h3>
-            <p class="text-xs text-slate-400 mt-0.5">Quản lý phân công và thực hiện điều phối chuyển giao khóa học giữa các Giảng viên có thẩm quyền.</p>
+            <p class="text-xs text-slate-400 mt-0.5">Xem người phụ trách và chuyển khóa học khi cần.</p>
           </div>
           <button type="button" id="open-reassign-tool-btn" class="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm flex items-center gap-1.5">
             <span class="material-symbols-outlined text-[16px]">sync_alt</span>
-            <span>Điều chuyển Môn học</span>
+            <span>Chuyển Khóa Học</span>
           </button>
         </div>
 
@@ -2238,7 +2227,7 @@ class AdminView {
                     </td>
                     <td class="px-5 py-4 text-right">
                       <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors reassign-instructor-btn" data-instructor-id="${ins.user_id}">
-                        Điều chuyển
+                        Chuyển Khóa Học
                       </button>
                     </td>
                   </tr>
@@ -2253,11 +2242,11 @@ class AdminView {
         const body = `
           <div class="space-y-4 text-xs">
             <p class="text-slate-600 dark:text-slate-300">
-              Chuyển giao quyền sở hữu môn học từ Giảng viên hiện tại sang Giảng viên mới. Thao tác này sẽ ghi nhật ký kiểm toán bất biến.
+              Chọn khóa học và giảng viên sẽ phụ trách tiếp theo. Thay đổi này được ghi lại.
             </p>
 
             <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Khóa học cần điều chuyển *</label>
+              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Khóa học cần chuyển</label>
               <select id="modal-reassign-course" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
                 ${courses.map(c => `
                   <option value="${c.course_id}" ${c.course_id === preselectedCourseId ? 'selected' : ''}>
@@ -2268,7 +2257,7 @@ class AdminView {
             </div>
 
             <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Giảng viên tiếp nhận mới *</label>
+              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Giảng viên mới</label>
               <select id="modal-reassign-instructor" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
                 ${instructors.map(ins => `
                   <option value="${ins.user_id}" ${ins.user_id === preselectedInstructorId ? 'selected' : ''}>
@@ -2279,7 +2268,7 @@ class AdminView {
             </div>
 
             <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do điều chuyển (Kiểm toán bắt buộc) *</label>
+              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do chuyển khóa học</label>
               <textarea id="modal-reassign-reason" rows="2" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs resize-none" placeholder="Căn cứ theo quyết định điều động công tác số..."></textarea>
             </div>
           </div>
@@ -2287,11 +2276,11 @@ class AdminView {
 
         const footer = `
           <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600" onclick="UI.closeModal()">Hủy</button>
-          <button type="button" id="submit-reassign-btn" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold">Xác nhận điều chuyển</button>
+          <button type="button" id="submit-reassign-btn" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold">Chuyển Khóa Học</button>
         `;
 
         UI.openModal({
-          title: 'Điều chuyển Phân công Giảng dạy',
+          title: 'Chuyển Khóa Học',
           bodyHtml: body,
           footerHtml: footer,
           size: 'md'
@@ -2307,17 +2296,17 @@ class AdminView {
             return;
           }
           if (reason.length < 5) {
-            UI.showToast('Vui lòng nhập lý do giải trình kiểm toán chi tiết.', 'warning');
+            UI.showToast('Vui lòng nhập lý do chuyển khóa học.', 'warning');
             return;
           }
 
           try {
             await ApiClient.reassignCourse(courseId, newInstructorId, reason);
             UI.closeModal();
-            UI.showToast('Đã điều chuyển môn học cho giảng viên mới thành công!', 'success');
+            UI.showToast('Đã giao khóa học cho giảng viên mới.', 'success');
             UI.refreshCurrentRoute(() => AdminView.renderTabReassign(container));
           } catch (e) {
-            UI.showToast(e.message || 'Lỗi điều chuyển khóa học.', 'error');
+            UI.showToast(e.message || 'Không chuyển được khóa học.', 'error');
           }
         };
       };
@@ -2420,10 +2409,10 @@ class AdminView {
                 <span class="material-symbols-outlined text-[18px]">policy</span>
               </div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white">
-                Nhật ký Kiểm toán Bất biến & Chuỗi Bút lục Toàn vẹn (${totalLogs} bản ghi)
+                Nhật ký hệ thống (${totalLogs} bản ghi)
               </h3>
             </div>
-            <p class="text-xs text-slate-500 mt-1">Mọi tác vụ quản trị, thay đổi điểm số, phong tỏa tài khoản được ghi vết vĩnh viễn kèm chữ ký băm SHA-256 đối soát.</p>
+            <p class="text-xs text-slate-500 mt-1">Xem các thay đổi tài khoản, điểm số và thao tác quản trị.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <select id="audit-action-filter" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer">
@@ -2748,11 +2737,11 @@ class AdminView {
           </div>
           <div class="space-y-0.5">
             <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Bút lục Kiểm toán Bất biến (ADR-010 Immutable Audit Proof)</span>
+              <span>Tính toàn vẹn của nhật ký</span>
               <span class="px-2 py-0.2 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 text-[10px] font-bold">HỢP LỆ</span>
             </div>
             <p class="text-slate-500 dark:text-slate-400 leading-relaxed text-[11px]">
-              Bản ghi được ghi vết theo nguyên tắc Append-Only và bảo vệ bằng chữ ký mật mã SHA-256. Mọi bí mật nhạy cảm (JWT, mật khẩu) được tự động che giấu theo chính sách Zero PK Leakage.
+              Bản ghi không thể sửa sau khi tạo. Mật khẩu và mã đăng nhập không xuất hiện trong nhật ký.
             </p>
           </div>
         </div>
@@ -2833,10 +2822,10 @@ class AdminView {
           </div>
           <div class="space-y-2 font-mono text-[11px]">
             <div>
-              <span class="text-slate-400 block text-[10px] uppercase font-sans font-bold">Mã Sự kiện Kiểm toán (Event UUID):</span>
+              <span class="text-slate-400 block text-[10px] uppercase font-sans font-bold">Mã bản ghi:</span>
               <div class="flex items-center gap-2 mt-0.5">
                 <span class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 break-all flex-1 select-all">${logId}</span>
-                <button type="button" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer" onclick="AdminView.copyToClipboard('${logId}', 'Đã sao chép Event UUID!')" title="Sao chép">
+                <button type="button" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer" onclick="AdminView.copyToClipboard('${logId}', 'Đã sao chép mã bản ghi!')" title="Sao chép">
                   <span class="material-symbols-outlined text-[14px]">content_copy</span>
                 </button>
               </div>
@@ -2869,7 +2858,7 @@ class AdminView {
     `;
 
     UI.openModal({
-      title: `Bản ghi Kiểm toán Toàn vẹn • ${action}`,
+      title: `Chi tiết nhật ký • ${action}`,
       bodyHtml: body,
       footerHtml: `
         <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold transition-colors cursor-pointer" onclick="UI.closeModal()">Đóng</button>
@@ -2892,15 +2881,14 @@ class AdminView {
             <div class="flex items-center gap-3">
               <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 text-primary dark:bg-indigo-950/40 dark:text-indigo-400 text-xs uppercase font-bold tracking-wider border border-indigo-200 dark:border-indigo-800">
                 <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                Operational Cockpit • Lớp Bảo Mật Cấp III
+                Vận hành hệ thống
               </span>
-              <span class="text-xs text-slate-400 font-mono">Mã trạm: SEC-SOC-04</span>
             </div>
             <h1 class="text-2xl lg:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Trung tâm Giám sát Vận hành & Nhật ký Kiểm toán Toàn viện
+              Giám sát hệ thống
             </h1>
             <p class="text-xs sm:text-sm text-slate-500 leading-relaxed">
-              Tổng kiểm soát Hạ tầng & Khảo thí số • MS SQL Server 2022 • Fail-Closed Quarantine Sandbox Active.
+              Theo dõi trạng thái dịch vụ và nhật ký hoạt động.
             </p>
           </div>
           <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
@@ -2925,12 +2913,12 @@ class AdminView {
             <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 class="text-base font-bold text-slate-900 dark:text-white">Ma trận Sức khỏe Hạ tầng Dịch vụ</h2>
-                  <p class="text-xs text-slate-400">Tình trạng các tiến trình nền tảng, cơ chế phát hiện và điều tiết tải.</p>
+                  <h2 class="text-base font-bold text-slate-900 dark:text-white">Hạ tầng dịch vụ</h2>
+                  <p class="text-xs text-slate-400">Tình trạng các dịch vụ đang chạy.</p>
                 </div>
                 <div class="flex items-center gap-2" id="health-summary-pills">
                   <span class="inline-flex items-center gap-1 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-3 py-1 rounded-lg">
-                    <span class="material-symbols-outlined text-sm text-primary">sync</span> 6 Node Hoạt Động
+                    <span class="material-symbols-outlined text-sm text-primary">sync</span> Đang kiểm tra
                   </span>
                 </div>
               </div>
@@ -2942,7 +2930,7 @@ class AdminView {
                 </div>
                 <div class="text-xs space-y-1">
                   <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>Chính sách Cách ly An toàn Tuyệt đối (Fail-Closed Quarantine Sandbox)</span>
+                    <span>Kiểm tra tệp trước khi sử dụng</span>
                     <span class="px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-mono text-[10px] font-bold">HIỆU LỰC</span>
                   </div>
                   <p class="text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -3034,12 +3022,12 @@ class AdminView {
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">100%</span>
                   </div>
                   <div>
-                    <div class="text-sm font-bold text-slate-900 dark:text-white">Token Invalidation</div>
-                    <div class="text-xs text-slate-400">O(1) Revocation Latency</div>
+                    <div class="text-sm font-bold text-slate-900 dark:text-white">Phiên đăng nhập</div>
+                    <div class="text-xs text-slate-400">Tự hết hiệu lực khi quyền thay đổi</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
-                    <span>auth_version Sync</span>
-                    <span class="text-emerald-600 font-bold">Synced</span>
+                    <span>Trạng thái</span>
+                    <span class="text-emerald-600 font-bold">Đã đồng bộ</span>
                   </div>
                 </div>
               </div>
@@ -3191,7 +3179,7 @@ class AdminView {
               <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                 <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <span class="material-symbols-outlined text-rose-600 text-[18px]">key</span>
-                  <span>Cưỡng chế Thu hồi Phiên (Emergency Revoke)</span>
+                  <span>Đăng xuất tài khoản khỏi mọi thiết bị</span>
                 </h3>
               </div>
               <p class="text-xs text-slate-500">
@@ -3200,7 +3188,7 @@ class AdminView {
               <div class="space-y-2">
                 <input type="text" id="quick-revoke-user-id" placeholder="Nhập User Public UUID..." class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono" />
                 <button type="button" id="quick-revoke-btn" class="w-full py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs">
-                  Thu hồi phiên ngay
+                  Đăng Xuất Ngay
                 </button>
               </div>
             </div>

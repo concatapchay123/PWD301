@@ -144,7 +144,7 @@ Trước khi implement service:
 |---|---|
 | Actual SQL table count | **71** |
 | Markdown structural/static QA | **PASS** |
-| ERD ↔ Data Dictionary ↔ DDL reconciliation | **PASS — 71/71 tables** |
+| ERD ↔ Data Dictionary ↔ DDL reconciliation | 73 DDL tables; reconciliation pending verification |
 | SQL Server static compatibility/constraint/index/FK QA | **PASS** |
 | Mermaid static block/entity/reference QA | **PASS** |
 | SQL Server runtime execution | **NOT EXECUTED — environment limitation (no SQL Server/sqlcmd/Docker runtime available)** |

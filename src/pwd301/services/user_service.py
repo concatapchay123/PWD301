@@ -480,9 +480,10 @@ def mark_email_verified(
     return user
 
 
-# Allowed role sets per AUTH-002: STUDENT; STUDENT+INSTRUCTOR; STUDENT+INSTRUCTOR+ADMIN
+# Allowed role sets per AUTH-002: STUDENT; STUDENT+INSTRUCTOR; STUDENT+INSTRUCTOR+ADMIN; STUDENT+ADMIN
 VALID_ROLE_COMBINATIONS: tuple[frozenset[str], ...] = (
     frozenset({"STUDENT"}),
+    frozenset({"STUDENT", "ADMIN"}),
     frozenset({"STUDENT", "INSTRUCTOR"}),
     frozenset({"STUDENT", "INSTRUCTOR", "ADMIN"}),
 )
@@ -566,7 +567,9 @@ def set_user_roles(
             "ADMIN_PRIMARY cannot be granted through exact role assignment."
         )
     if user.is_primary_admin and "ADMIN" not in target_roles:
-        raise AdminActionForbiddenError("The existing primary administrator role cannot be removed.")
+        raise AdminActionForbiddenError(
+            "The existing primary administrator role cannot be removed."
+        )
 
     before_roles = sorted(user.role_codes)
     now = utc_now()
@@ -715,12 +718,26 @@ def assign_role_to_user(
         raise InvalidRoleAssignmentError(
             "ADMIN_PRIMARY cannot be granted through ordinary role assignment."
         )
-    if norm_code == "ADMIN" and admin_sub_role is not None and admin_sub_role not in {
-        "ADMIN_COURSE_REVIEW",
-        "ADMIN_INSTRUCTOR_REVIEW",
-        "ADMIN_TEACHING_ASSIGNMENT",
-        "ADMIN_SYSTEM_MONITORING",
-    }:
+    if (
+        norm_code == "ADMIN"
+        and admin_sub_role is None
+        and assigned_by_user_id is not None
+        and assigned_by_user_id != user.id
+    ):
+        raise InvalidRoleAssignmentError(
+            "ADMIN_PRIMARY cannot be inferred; choose an explicit subordinate admin role."
+        )
+    if (
+        norm_code == "ADMIN"
+        and admin_sub_role is not None
+        and admin_sub_role
+        not in {
+            "ADMIN_COURSE_REVIEW",
+            "ADMIN_INSTRUCTOR_REVIEW",
+            "ADMIN_TEACHING_ASSIGNMENT",
+            "ADMIN_SYSTEM_MONITORING",
+        }
+    ):
         raise InvalidRoleAssignmentError(f"Invalid admin sub-role: '{admin_sub_role}'.")
 
     if assigned_by_user_id is not None:
@@ -750,7 +767,7 @@ def assign_role_to_user(
     elif norm_code == "INSTRUCTOR":
         target_roles = {"STUDENT", "INSTRUCTOR"}
     else:  # ADMIN
-        target_roles = {"STUDENT", "INSTRUCTOR", "ADMIN"}
+        target_roles = {"STUDENT", "ADMIN"}
 
     # Include existing roles
     new_role_codes = user.role_codes | target_roles
@@ -825,15 +842,35 @@ def assign_role_to_user(
         try:
             from pwd301.services.notification_service import dispatch_notification
 
+            sub_role_names = {
+                "ADMIN_PRIMARY": "Quản trị viên Cấp cao",
+                "ADMIN_COURSE_REVIEW": "Kiểm duyệt Khóa học & Bài giảng",
+                "ADMIN_INSTRUCTOR_REVIEW": "Xét duyệt Giảng viên",
+                "ADMIN_TEACHING_ASSIGNMENT": "Phân công Giảng dạy",
+                "ADMIN_SYSTEM_MONITORING": "Giám sát Hệ thống & Vận hành",
+            }
+            is_admin_promotion = ("ADMIN" in after_roles and "ADMIN" not in before_roles)
+            if is_admin_promotion:
+                sub_label = sub_role_names.get(admin_sub_role or getattr(user, "admin_sub_role", None), user.admin_sub_role_label or "Quản trị viên phụ")
+                notif_title = "🎉 Chúc mừng bạn đã được bổ nhiệm làm Quản trị viên hệ thống"
+                notif_body = (
+                    f"Chúc mừng bạn! Bạn đã được Quản trị viên chính bổ nhiệm vai trò Quản trị viên (Admin phụ: {sub_label}). "
+                    f"Quyền hạn điều hành mới của bạn đã chính thức sẵn sàng."
+                    + (f" Lý do: {reason}" if reason else "")
+                )
+            else:
+                notif_title = "Cập nhật vai trò tài khoản"
+                notif_body = (
+                    f"Các vai trò của bạn đã được cập nhật thành: {', '.join(after_roles)}."
+                    + (f" Lý do: {reason}" if reason else "")
+                )
+
             with sess.begin_nested():
                 dispatch_notification(
                     recipient_user=user.id,
                     event_type="ROLE_CHANGED",
-                    title="Cập nhật vai trò tài khoản",
-                    body=(
-                        f"Các vai trò của bạn đã được cập nhật thành: {', '.join(after_roles)}."
-                        + (f" Lý do: {reason}" if reason else "")
-                    ),
+                    title=notif_title,
+                    body=notif_body,
                     action_url="/",
                     category="SYSTEM",
                     session=sess,
@@ -897,7 +934,9 @@ def remove_role_from_user(
         )
 
     if user.is_primary_admin and norm_code in ("ADMIN", "INSTRUCTOR"):
-        raise AdminActionForbiddenError("The existing primary administrator role cannot be removed.")
+        raise AdminActionForbiddenError(
+            "The existing primary administrator role cannot be removed."
+        )
 
     if removed_by_user_id is not None:
         remover = sess.get(User, removed_by_user_id)
@@ -1221,7 +1260,9 @@ def submit_instructor_application(
         note_json = json.dumps(clean_data, ensure_ascii=False)
 
     if len(note_json) > 1950:
-        raise ValidationError("Application details are too long. Shorten optional descriptions and retry.")
+        raise ValidationError(
+            "Application details are too long. Shorten optional descriptions and retry."
+        )
 
     now = utc_now()
     app_record = InstructorApplication(
@@ -1276,9 +1317,7 @@ def submit_instructor_application(
                         session=sess,
                     )
     except Exception as exc:
-        logger.warning(
-            "Failed to dispatch instructor application notification to admins: %s", exc
-        )
+        logger.warning("Failed to dispatch instructor application notification to admins: %s", exc)
 
     try:
         sess.commit()
@@ -1397,13 +1436,10 @@ def review_instructor_application(
     """Review an instructor application (approve or reject) by an administrator."""
     sess = session if session is not None else db.session
     admin = sess.get(User, admin_user_id)
-    if (
-        admin is None
-        or not admin.is_admin
-        or not admin.has_admin_permission("INSTRUCTOR_REVIEW")
-    ):
+    if admin is None or not admin.is_admin or not admin.has_admin_permission("INSTRUCTOR_REVIEW"):
         raise ValidationError(
-            "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền xét duyệt đơn đăng ký giảng viên."
+            "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền "
+            "xét duyệt đơn đăng ký giảng viên."
         )
 
     clean_action = str(action).strip().lower()

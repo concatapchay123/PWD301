@@ -36,6 +36,31 @@ from pwd301.models.types import (
 )
 
 
+class AttemptFocusEvent(Base):
+    """One browser-reported absence interval for instructor review."""
+
+    __tablename__ = "attempt_focus_events"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    public_id = db.Column(GUID, nullable=False, unique=True)
+    attempt_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("assessment_attempts.id", name="fk_attempt_focus_events_attempt_id"),
+        nullable=False,
+    )
+    event_type = db.Column(sa.String(24), nullable=False)
+    started_at = db.Column(UTCDateTime, nullable=False, default=utc_now)
+    ended_at = db.Column(UTCDateTime, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "event_type IN ('TAB_HIDDEN','WINDOW_BLUR','FULLSCREEN_EXIT')",
+            name="ck_attempt_focus_events_type",
+        ),
+        sa.Index("ix_attempt_focus_events_attempt", "attempt_id", "started_at"),
+    )
+
+
 class AssessmentAttempt(Base):
     """Student attempt session mapping to canonical 'assessment_attempts' table."""
 

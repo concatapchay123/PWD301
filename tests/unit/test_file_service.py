@@ -32,6 +32,7 @@ from pwd301.services.exceptions import (
 from pwd301.services.file_service import (
     _serialize_file_asset,
     add_file_revision,
+    attach_resource_to_lesson,
     check_file_size_limit,
     get_file_storage_root,
     restore_file_asset,
@@ -40,6 +41,7 @@ from pwd301.services.file_service import (
     trash_file_asset,
     validate_file_metadata,
 )
+from pwd301.services.lesson_service import create_learning_unit, create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
@@ -94,6 +96,35 @@ def test_filename_sanitization() -> None:
     assert sanitize_filename("../../../malicious<file>:*.docx") == "maliciousfile.docx"
     assert sanitize_filename("") == "unnamed_file"
     assert sanitize_filename("....") == "unnamed_file"
+
+
+def test_lesson_document_cap_is_enforced_by_service(
+    app: Flask, instructor: User, course: Course
+) -> None:
+    unit = create_learning_unit(instructor, course.id, {"title": "Materials"})
+    lesson = create_lesson(
+        instructor,
+        course.id,
+        {
+            "title": "Documents",
+            "markdown_content": "# Documents",
+            "learning_unit_id": str(unit.public_id),
+        },
+    )
+    for index in range(6):
+        asset = store_file_stream(
+            actor=instructor,
+            course_id=course.id,
+            file_stream=io.BytesIO(f"document {index}".encode()),
+            filename=f"document_{index}.pdf",
+            content_type="application/pdf",
+            session=db.session,
+        )
+        if index == 5:
+            with pytest.raises(FileValidationError, match="5"):
+                attach_resource_to_lesson(instructor, lesson.id, asset.id, session=db.session)
+        else:
+            attach_resource_to_lesson(instructor, lesson.id, asset.id, session=db.session)
 
 
 def test_forbidden_file_extensions() -> None:

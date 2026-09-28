@@ -33,6 +33,9 @@ DRAFT → PUBLISHED; open/closed được derive từ server time + open_at/clos
 | `is_required_for_completion` | `BIT` | No | `0` | Có ảnh hưởng Course completion |
 | `shuffle_questions` | `BIT` | No | `0` | Trộn câu |
 | `shuffle_choices` | `BIT` | No | `0` | Trộn choice mặc định |
+| `exam_layout` | `VARCHAR(16)` | No | `'STANDARD'` | Giao diện chuẩn hoặc tập trung (`STANDARD`, `FOCUS`) |
+| `monitoring_enabled` | `BIT` | No | `0` | Ghi nhận sự kiện rời tab/cửa sổ/toàn màn hình từ trình duyệt |
+| `request_fullscreen` | `BIT` | No | `0` | Đề nghị học viên bật toàn màn hình; trình duyệt không thể khóa hệ điều hành |
 | `score_release_policy` | `VARCHAR(24)` | No | `'IMMEDIATE'` | IMMEDIATE/AFTER_CLOSE/INSTRUCTOR_RELEASE |
 | `answer_visibility_policy` | `VARCHAR(32)` | No | `'AFTER_CLOSE'` | IMMEDIATE/AFTER_CLOSE/AFTER_ALL_ATTEMPTS/NEVER |
 | `random_question_count` | `INT` | Yes |  | Tổng số câu chọn ngẫu nhiên nếu dùng pool |

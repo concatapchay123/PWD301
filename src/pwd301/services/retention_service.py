@@ -66,6 +66,7 @@ from pwd301.models.course import (
     Enrollment,
     EnrollmentEvent,
     EnrollmentPeriod,
+    LearningUnit,
     Lesson,
     LessonProgress,
 )
@@ -521,6 +522,9 @@ def prune_trash_entities(
             )
 
             sess.query(Lesson).filter(Lesson.course_id == crs.id).delete(synchronize_session=False)
+            sess.query(LearningUnit).filter(LearningUnit.course_id == crs.id).delete(
+                synchronize_session=False
+            )
 
             sess.delete(crs)
         counts["courses"] += 1

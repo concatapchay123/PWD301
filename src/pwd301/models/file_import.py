@@ -320,6 +320,17 @@ class FileAsset(Base):
         return any(name.endswith(ext) for ext in (".mp4", ".webm", ".mkv", ".mov", ".avi"))
 
     @property
+    def has_passed_malware_scan(self) -> bool:
+        """A clean status alone is insufficient without a persisted scan verdict."""
+        revision = self.current_revision
+        if revision is None or revision.status != "ACTIVE":
+            return False
+        malware_scans = [
+            result for result in revision.scan_results if result.scan_type == "MALWARE"
+        ]
+        return bool(malware_scans) and all(result.status == "PASS" for result in malware_scans)
+
+    @property
     def is_pdf(self) -> bool:
         """Determine if asset represents a PDF document."""
         mime = (self.mime_type or "").lower()

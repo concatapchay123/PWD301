@@ -13,6 +13,7 @@ Provides business logic for:
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import re
@@ -25,13 +26,16 @@ from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
 from pwd301.models.course import (
+    Course,
     CourseChangeRequest,
     Enrollment,
     EnrollmentPeriod,
+    LearningUnit,
     Lesson,
     LessonProgress,
 )
-from pwd301.models.identity import User
+from pwd301.models.file_import import FileAsset
+from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
@@ -62,10 +66,177 @@ VALID_LESSON_STATUSES = {
 }
 
 
-def _lesson_mini_quiz(lesson: Lesson) -> list[dict[str, Any]]:
-    match = re.search(
-        r"<!--\s*mini_quiz:\s*(.+?)\s*-->", lesson.markdown_content or "", re.DOTALL
+def create_learning_unit(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    data: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> LearningUnit:
+    """Create an instructor-facing lesson group in an authorized course."""
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+    if course.deleted_at is not None or course.status in ("TRASH", "ARCHIVED"):
+        raise LessonStateViolationError("Cannot add a learning unit to this course.")
+    title = data.get("title")
+    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
+        raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
+    position = (
+        sess.query(sa.func.max(LearningUnit.position))
+        .filter(LearningUnit.course_id == course.id)
+        .scalar()
+        or 0
+    ) + 1
+    unit = LearningUnit(course_id=course.id, title=title.strip(), position=position)
+    sess.add(unit)
+    sess.flush()
+    if session is None:
+        sess.commit()
+    return unit
+
+
+def list_learning_units(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[LearningUnit]:
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+    return (
+        sess.query(LearningUnit)
+        .filter(LearningUnit.course_id == course.id, LearningUnit.deleted_at.is_(None))
+        .order_by(LearningUnit.position)
+        .all()
     )
+
+
+def update_learning_unit(
+    actor: User,
+    unit_id: uuid.UUID | str,
+    data: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> LearningUnit:
+    sess = session if session is not None else db.session
+    try:
+        public_id = uuid.UUID(str(unit_id))
+    except (TypeError, ValueError, AttributeError):
+        raise LessonValidationError("Invalid learning unit ID.") from None
+    unit = sess.query(LearningUnit).filter(LearningUnit.public_id == public_id).first()
+    if unit is None or unit.deleted_at is not None:
+        raise ResourceNotFoundError("Learning unit not found.")
+    require_course_manager(actor, unit.course_id, session=sess)
+    title = data.get("title")
+    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
+        raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
+    unit.title = title.strip()
+    if session is None:
+        sess.commit()
+    return unit
+
+
+def delete_learning_unit(
+    actor: User,
+    unit_id: uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Soft delete a learning unit and disassociate its lessons."""
+    sess = session if session is not None else db.session
+    try:
+        public_id = uuid.UUID(str(unit_id))
+    except (TypeError, ValueError, AttributeError):
+        raise LessonValidationError("Invalid learning unit ID.") from None
+    unit = sess.query(LearningUnit).filter(LearningUnit.public_id == public_id).first()
+    if unit is None or unit.deleted_at is not None:
+        raise ResourceNotFoundError("Learning unit not found.")
+    require_course_manager(actor, unit.course_id, session=sess)
+
+    for lesson in unit.lessons:
+        if lesson.deleted_at is None:
+            lesson.learning_unit_id = None
+            lesson.updated_at = utc_now()
+
+    unit.deleted_at = utc_now()
+    if session is None:
+        sess.commit()
+    return True
+
+
+def reorder_learning_units(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    ordered_unit_ids: list[str],
+    session: Session | scoped_session[Any] | None = None,
+) -> list[LearningUnit]:
+    """Reorder learning units within an authorized course."""
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+    units = (
+        sess.query(LearningUnit)
+        .filter(LearningUnit.course_id == course.id, LearningUnit.deleted_at.is_(None))
+        .all()
+    )
+    unit_map = {str(u.public_id): u for u in units}
+    position = 1
+    reordered: list[LearningUnit] = []
+    for uid in ordered_unit_ids:
+        u = unit_map.get(str(uid))
+        if u and u not in reordered:
+            u.position = position
+            position += 1
+            reordered.append(u)
+    for u in units:
+        if u not in reordered:
+            u.position = position
+            position += 1
+            reordered.append(u)
+
+    if session is None:
+        sess.commit()
+    return reordered
+
+
+def _external_video_count(markdown_content: str | None) -> int:
+    content = markdown_content or ""
+    match = re.search(r"<!--\s*video_urls:\s*(\[.*?\])\s*-->", content, re.DOTALL)
+    if match:
+        try:
+            urls = json.loads(match.group(1))
+        except (TypeError, ValueError):
+            raise LessonValidationError("Invalid video link list.") from None
+        if not isinstance(urls, list) or any(not isinstance(url, str) for url in urls):
+            raise LessonValidationError("Invalid video link list.")
+        return len(urls)
+    return len(re.findall(r"<!--\s*video_url:\s*\S+?\s*-->", content))
+
+
+def validate_lesson_media_limits(
+    unit: LearningUnit,
+    lesson: Lesson | None,
+    markdown_content: str,
+    added_uploaded_video: int = 0,
+    added_documents: int = 0,
+) -> None:
+    """Enforce child and parent caps against persisted media and proposed changes."""
+    external_count = _external_video_count(markdown_content)
+    resources = list(lesson.resources) if lesson is not None else []
+    uploaded_count = sum(1 for resource in resources if resource.is_video)
+    document_count = len(resources) - uploaded_count
+    child_videos = external_count + uploaded_count + added_uploaded_video
+    if child_videos > 2:
+        raise LessonValidationError("A lesson can contain at most 2 videos.")
+    if document_count + added_documents > 5:
+        raise LessonValidationError("A lesson can contain at most 5 documents.")
+    unit_videos = child_videos
+    for sibling in unit.lessons:
+        if sibling is lesson or sibling.deleted_at is not None or sibling.status == "TRASH":
+            continue
+        unit_videos += _external_video_count(sibling.markdown_content)
+        unit_videos += sum(1 for resource in sibling.resources if resource.is_video)
+    if unit_videos > 7:
+        raise LessonValidationError("A learning unit can contain at most 7 videos.")
+
+
+def _lesson_mini_quiz(lesson: Lesson) -> list[dict[str, Any]]:
+    match = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", lesson.markdown_content or "", re.DOTALL)
     if match is None:
         return []
     try:
@@ -79,9 +250,7 @@ def _lesson_mini_quiz(lesson: Lesson) -> list[dict[str, Any]]:
     return questions
 
 
-def _lesson_quiz_answers_complete(
-    questions: list[dict[str, Any]], answers: list[Any]
-) -> bool:
+def _lesson_quiz_answers_complete(questions: list[dict[str, Any]], answers: list[Any]) -> bool:
     if len(answers) != len(questions):
         return False
 
@@ -91,9 +260,10 @@ def _lesson_quiz_answers_complete(
             options = question.get("options") or question.get("choices") or []
             if not isinstance(options, list) or not options:
                 return False
-            multi = bool(question.get("allow_multiple")) or len(
-                question.get("correct_answers") or []
-            ) > 1
+            multi = (
+                bool(question.get("allow_multiple"))
+                or len(question.get("correct_answers") or []) > 1
+            )
             selected = answer if isinstance(answer, list) else [answer]
             if not selected or (not multi and len(selected) != 1):
                 return False
@@ -154,6 +324,7 @@ def _lesson_requires_video_watch(lesson: Lesson) -> bool:
         for resource in lesson.resources
         if resource.file_asset is not None
     )
+
 
 # Mass-assignment safe writable lesson fields
 UPDATABLE_LESSON_FIELDS = {
@@ -317,6 +488,44 @@ def create_lesson(
                 "required_for_periods_starting_at must be a datetime or ISO string."
             )
 
+    learning_unit_id = data.get("learning_unit_id")
+    if learning_unit_id is None:
+        # Legacy clients create a one-child group while retaining the Lesson ID.
+        unit = create_learning_unit(actor, course.id, {"title": clean_title}, session=sess)
+    else:
+        try:
+            public_unit_id = uuid.UUID(str(learning_unit_id))
+        except (TypeError, ValueError, AttributeError):
+            raise LessonValidationError("Invalid learning unit ID.") from None
+        existing_unit = (
+            sess.query(LearningUnit)
+            .filter(LearningUnit.public_id == public_unit_id)
+            .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .first()
+        )
+        if (
+            existing_unit is None
+            or existing_unit.course_id != course.id
+            or existing_unit.deleted_at is not None
+        ):
+            raise LessonValidationError("Learning unit does not belong to this course.")
+        unit = existing_unit
+        child_count = (
+            sess.query(sa.func.count(Lesson.id))
+            .filter(
+                Lesson.learning_unit_id == unit.id,
+                Lesson.deleted_at.is_(None),
+                Lesson.status != "TRASH",
+            )
+            .scalar()
+            or 0
+        )
+        if child_count >= 10:
+            raise LessonValidationError("A learning unit can contain at most 10 lessons.")
+
+    validate_lesson_media_limits(unit, None, clean_markdown)
+
     # Calculate position and shift if needed
     active_lessons = (
         sess.query(Lesson)
@@ -360,6 +569,7 @@ def create_lesson(
 
     lesson = Lesson(
         course_id=course.id,
+        learning_unit_id=unit.id,
         change_request_id=change_req_id,
         title=clean_title,
         summary=clean_summary,
@@ -465,6 +675,16 @@ def update_lesson(
         md = data["markdown_content"]
         if not md or not isinstance(md, str) or not md.strip():
             raise LessonValidationError("Lesson markdown_content cannot be empty.")
+        if lesson.learning_unit is not None:
+            unit = (
+                sess.query(LearningUnit)
+                .filter(LearningUnit.id == lesson.learning_unit_id)
+                .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+                .with_for_update()
+                .one()
+            )
+            sess.expire(unit, ["lessons"])
+            validate_lesson_media_limits(unit, lesson, md.strip())
         lesson.markdown_content = md.strip()
 
     if "summary" in data:
@@ -1173,9 +1393,7 @@ def record_lesson_progress(
     # Evaluate completion: monotonic, idempotent
     min_completion_seconds = lesson.minimum_completion_seconds
     viewed_fraction_required = (
-        1.0
-        if _lesson_requires_video_watch(lesson)
-        else float(lesson.viewed_fraction_required)
+        1.0 if _lesson_requires_video_watch(lesson) else float(lesson.viewed_fraction_required)
     )
 
     progress_snapshot: dict[str, Any] = {}
@@ -1187,9 +1405,7 @@ def record_lesson_progress(
         except (TypeError, ValueError):
             progress_snapshot = {}
 
-    quiz_is_configured = re.search(
-        r"<!--\s*mini_quiz:", lesson.markdown_content or ""
-    ) is not None
+    quiz_is_configured = re.search(r"<!--\s*mini_quiz:", lesson.markdown_content or "") is not None
     quiz_is_complete = not quiz_is_configured or bool(
         progress_snapshot.get("mini_quiz_completed_at")
     )
@@ -1258,13 +1474,14 @@ def complete_lesson_mini_quiz(
         raise LessonValidationError("Answer every lesson quiz question before completing it.")
 
     requires_video_watch = _lesson_requires_video_watch(lesson)
-    video_view_fraction_required = 1.0 if requires_video_watch else float(lesson.viewed_fraction_required)
+    video_view_fraction_required = (
+        1.0 if requires_video_watch else float(lesson.viewed_fraction_required)
+    )
     existing_progress = get_lesson_progress(actor, lesson_id, session=sess)
     video_watch_complete = bool(
         existing_progress
         and existing_progress.seconds_spent >= lesson.minimum_completion_seconds
-        and float(existing_progress.max_view_fraction)
-        >= video_view_fraction_required
+        and float(existing_progress.max_view_fraction) >= video_view_fraction_required
     )
     if requires_video_watch and not video_watch_complete:
         raise LessonStateViolationError("Watch the lesson video before answering its quiz.")
@@ -1375,6 +1592,187 @@ def get_lesson_progress(
             LessonProgress.lesson_id == lesson.id,
         )
         .first()
+    )
+
+
+def queue_lesson_review(
+    actor: User,
+    course: Course,
+    lesson: Lesson,
+    change_type: str,
+    proposal: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Retain one pending review per lesson action and notify reviewers once."""
+    sess = session if session is not None else db.session
+    require_course_manager(actor, course.id, session=sess)
+    if lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found in course.")
+    # Serialize proposals for one lesson before checking for an existing review.
+    sess.query(Lesson).filter(Lesson.id == lesson.id).with_hint(
+        Lesson, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql"
+    ).with_for_update().one()
+    pending = (
+        sess.query(CourseChangeRequest)
+        .filter_by(
+            course_id=course.id,
+            requested_by_user_id=actor.id,
+            change_type=change_type,
+            target_type="LESSON",
+            target_id=lesson.id,
+            status="PENDING",
+        )
+        .order_by(CourseChangeRequest.id.desc())
+        .first()
+    )
+    if pending is not None:
+        try:
+            current = json.loads(pending.proposed_payload_json or "{}")
+        except (TypeError, ValueError):
+            current = {}
+        if not isinstance(current, dict):
+            current = {}
+        if proposal.get("action") == current.get("action") == "RESOURCE_CHANGES":
+            changes = current.get("changes", [])
+            if not isinstance(changes, list):
+                changes = []
+            for change in proposal.get("changes", []):
+                if change not in changes:
+                    changes.append(change)
+            proposal = {**proposal, "changes": changes}
+        if proposal.get("action") == "RESOURCE_CHANGES":
+            _validate_proposed_resource_changes(lesson, proposal, sess)
+        pending.proposed_payload_json = json.dumps({**current, **proposal}, default=str)
+        sess.commit()
+        return pending
+
+    if proposal.get("action") == "RESOURCE_CHANGES":
+        _validate_proposed_resource_changes(lesson, proposal, sess)
+    review = CourseChangeRequest(
+        course_id=course.id,
+        requested_by_user_id=actor.id,
+        change_type=change_type,
+        target_type="LESSON",
+        target_id=lesson.id,
+        proposed_payload_json=json.dumps(proposal, default=str),
+        status="PENDING",
+        created_at=utc_now(),
+    )
+    sess.add(review)
+    sess.flush()
+
+    from pwd301.services.notification_service import dispatch_notification
+
+    action = "xóa" if proposal.get("action") == "DELETE" else "sửa"
+    admin_users = sess.query(User).filter(User.roles.any(Role.code == "ADMIN")).all()
+    for admin in admin_users:
+        if not admin.has_admin_permission("COURSE_REVIEW"):
+            continue
+        with contextlib.suppress(Exception):
+            dispatch_notification(
+                recipient_user=admin,
+                event_type="LESSON_CHANGE_REQUEST",
+                title=f"Yêu cầu {action} bài giảng: {lesson.title}",
+                body=(
+                    f"Giảng viên {actor.display_name} gửi yêu cầu {action} bài giảng "
+                    f"'{lesson.title}' trong khóa học '{course.title}'."
+                ),
+                action_url=f"#/admin/change-requests/review?id={review.id}",
+                category="COURSE",
+                session=sess,
+            )
+    sess.commit()
+    return review
+
+
+def _validate_proposed_resource_changes(
+    lesson: Lesson,
+    proposal: dict[str, Any],
+    sess: Session | scoped_session[Any],
+) -> None:
+    """Check media caps against the resources Admin would actually publish."""
+    remaining = {resource.id: resource.file_asset for resource in lesson.resources}
+    added: dict[int, FileAsset] = {}
+    for change in proposal.get("changes", []):
+        if change.get("action") == "DETACH":
+            remaining.pop(change["resource_id"], None)
+        elif change.get("action") == "ATTACH":
+            asset = sess.get(FileAsset, change["asset_id"])
+            if asset is not None and asset.id not in (item.id for item in remaining.values()):
+                added[asset.id] = asset
+    assets = [*remaining.values(), *added.values()]
+    uploaded_videos = sum(asset.is_video for asset in assets)
+    if uploaded_videos + _external_video_count(lesson.markdown_content) > 2:
+        raise LessonValidationError("A lesson can contain at most 2 videos.")
+    if len(assets) - uploaded_videos > 5:
+        raise LessonValidationError("A lesson can contain at most 5 documents.")
+    if lesson.learning_unit is not None:
+        unit_videos = uploaded_videos + _external_video_count(lesson.markdown_content)
+        for sibling in lesson.learning_unit.lessons:
+            if (
+                sibling.id == lesson.id
+                or sibling.deleted_at is not None
+                or sibling.status == "TRASH"
+            ):
+                continue
+            unit_videos += _external_video_count(sibling.markdown_content)
+            unit_videos += sum(resource.is_video for resource in sibling.resources)
+        if unit_videos > 7:
+            raise LessonValidationError("A learning unit can contain at most 7 videos.")
+
+
+def queue_lesson_resource_change(
+    actor: User,
+    course: Course,
+    lesson: Lesson,
+    action: str,
+    *,
+    asset: FileAsset | None = None,
+    resource_id: int | uuid.UUID | str | None = None,
+    label: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Keep published Lesson resource links unchanged until Admin review."""
+    sess = session if session is not None else db.session
+    if action == "ATTACH":
+        if (
+            asset is None
+            or asset.course_id != course.id
+            or asset.asset_type != "RESOURCE"
+            or asset.status != "ACTIVE"
+            or asset.deleted_at is not None
+        ):
+            raise LessonValidationError("Only an active resource in this course can be proposed.")
+        clean_label = (label or asset.display_name).strip()
+        if not clean_label or len(clean_label) > 255:
+            raise LessonValidationError("Resource label must have 1 to 255 characters.")
+        change = {"action": "ATTACH", "asset_id": asset.id, "label": clean_label}
+    elif action == "DETACH":
+        resource = next(
+            (
+                item
+                for item in lesson.resources
+                if str(item.id) == str(resource_id)
+                or str(item.public_id) == str(resource_id)
+                or (
+                    item.file_asset is not None
+                    and str(item.file_asset.public_id) == str(resource_id)
+                )
+            ),
+            None,
+        )
+        if resource is None:
+            raise ResourceNotFoundError("Lesson resource link not found.")
+        change = {"action": "DETACH", "resource_id": resource.id}
+    else:
+        raise LessonValidationError("Invalid Lesson resource change.")
+    return queue_lesson_review(
+        actor,
+        course,
+        lesson,
+        "OTHER",
+        {"action": "RESOURCE_CHANGES", "changes": [change]},
+        session=sess,
     )
 
 

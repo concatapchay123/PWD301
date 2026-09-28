@@ -37,9 +37,10 @@ def test_migration_upgrade_and_downgrade(monkeypatch):
             assert "roles" in tables
             assert "courses" in tables
             assert "assessments" in tables
-            # Exactly 71 domain tables + 1 alembic_version = 72
-            assert len(tables) >= 72
-            assert len(tables - {"alembic_version"}) == 71
+            # Existing domain tables plus focus observations and learning units.
+            assert "attempt_focus_events" in tables
+            assert "learning_units" in tables
+            assert len(tables - {"alembic_version"}) == 73
 
             # Run downgrade to base
             downgrade(directory="migrations", revision="base")
@@ -60,4 +61,48 @@ def test_migration_upgrade_and_downgrade(monkeypatch):
             assert tables_re == tables
 
             # Explicitly dispose engine to release SQLite file lock on Windows
+            db.engine.dispose()
+
+
+def test_learning_unit_migration_backfills_without_replacing_lesson(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_db_url = f"sqlite:///{(Path(tmpdir) / 'backfill.db').as_posix()}"
+        monkeypatch.setenv("TEST_DATABASE_URL", test_db_url)
+        app = create_app("testing")
+        with app.app_context():
+            upgrade(directory="migrations", revision="c3d4e5f6a7b9")
+            with db.engine.begin() as conn:
+                conn.execute(
+                    sa.text("""
+                    INSERT INTO courses (
+                        course_code, course_code_normalized, title, title_normalized
+                    )
+                    VALUES ('MIG-101', 'MIG-101', 'Migration course', 'MIGRATION COURSE')
+                """)
+                )
+                course_id = conn.execute(
+                    sa.text("SELECT id FROM courses WHERE course_code='MIG-101' ")
+                ).scalar_one()
+                conn.execute(
+                    sa.text("""
+                    INSERT INTO lessons (course_id, title, markdown_content, position)
+                    VALUES (:course_id, 'Existing lesson', '# Saved content', 1)
+                """),
+                    {"course_id": course_id},
+                )
+                lesson_id = conn.execute(
+                    sa.text("SELECT id FROM lessons WHERE course_id=:course_id"),
+                    {"course_id": course_id},
+                ).scalar_one()
+            upgrade(directory="migrations")
+            with db.engine.connect() as conn:
+                row = conn.execute(
+                    sa.text("""
+                    SELECT l.id, l.markdown_content, u.title, u.course_id
+                    FROM lessons l JOIN learning_units u ON u.id=l.learning_unit_id
+                    WHERE l.id=:lesson_id
+                """),
+                    {"lesson_id": lesson_id},
+                ).one()
+                assert tuple(row) == (lesson_id, "# Saved content", "Existing lesson", course_id)
             db.engine.dispose()

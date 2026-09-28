@@ -231,6 +231,7 @@ def test_admin_role_lifecycle_and_hierarchy_enforcement(
         role_code="ADMIN",
         assigned_by_user_id=admin_user.id,
         reason="Appointed system administrator",
+        admin_sub_role="ADMIN_SYSTEM_MONITORING",
         session=sess,
     )
     assert target_user.role_codes == {"STUDENT", "INSTRUCTOR", "ADMIN"}
