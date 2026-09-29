@@ -285,13 +285,14 @@ def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
     children = [
         lesson for lesson in unit.lessons if lesson.deleted_at is None and lesson.status != "TRASH"
     ]
+    sorted_children = sorted(children, key=lambda l: l.position or 0)
     return {
         "learning_unit_id": str(unit.public_id),
         "course_id": str(unit.course.public_id),
         "title": unit.title,
         "position": unit.position,
-        "lesson_count": len(children),
-        "lessons": [_serialize_lesson(lesson) for lesson in children],
+        "lesson_count": len(sorted_children),
+        "lessons": [_serialize_lesson(lesson) for lesson in sorted_children],
     }
 
 
@@ -1326,11 +1327,12 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
             payload["markdown_content"] = cleaned_md
 
     # Strict Admin Approval Invariant:
-    # Approved or published course changes from instructors require Admin review.
+    # Approved or published course changes from instructors require Admin review,
+    # EXCEPT for lessons that are still in DRAFT status.
     if (
         not actor.is_admin
-        and lesson.status != "DRAFT"
         and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        and lesson.status != "DRAFT"
     ):
         req = queue_lesson_review(actor, course, lesson, "LESSON_CONTENT", payload)
 

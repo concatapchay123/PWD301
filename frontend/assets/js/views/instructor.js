@@ -3048,8 +3048,33 @@ class InstructorView {
   }
 
   static renderLessonChildNavigator(unit, courseId, currentLessonId = null) {
-    if (!unit) return '';
-    const unitId = encodeURIComponent(unit.learning_unit_id);
+    if (!unit) {
+      return `
+        <nav aria-label="Lesson trong Bài học" class="rounded-2xl border border-[#E8E6DF] dark:border-[#526881] bg-[#FAF9F5] dark:bg-[#1B2A3D] p-4 space-y-3 lg:sticky lg:top-24">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E8E6DF] dark:border-[#526881]">
+            <div>
+              <h2 class="text-sm font-bold text-[#222120] dark:text-[#F0F5FA]">Chương bài giảng</h2>
+              <span class="text-[11px] font-medium text-[#5C5B57] dark:text-[#C6D2E1]">0/10 Lesson</span>
+            </div>
+          </div>
+          <div class="p-3 text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68] bg-white/50 dark:bg-[#202020]/50 rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+            Chưa có bài giảng nào trong chương này
+          </div>
+          <button
+            type="button"
+            id="btn-nav-add-lesson"
+            class="btn-nav-add-lesson w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1 cursor-pointer"
+            data-learning-unit-id="learning_unit_id="
+            data-unit-id=""
+            title="Thêm bài học mới"
+          >
+            <span class="material-symbols-outlined text-[16px]">add</span>
+            <span>+ Thêm bài học mới</span>
+          </button>
+        </nav>
+      `;
+    }
+    const unitId = encodeURIComponent(unit.learning_unit_id || '');
     const coursePath = `#/instructor/courses/${encodeURIComponent(courseId)}/lessons`;
     const lessons = [...(unit.lessons || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
     const count = unit.lesson_count ?? lessons.length;
@@ -3062,6 +3087,11 @@ class InstructorView {
           </div>
         </div>
         <div class="flex flex-col gap-2" id="nav-lessons-sortable-list">
+          ${lessons.length === 0 ? `
+            <div class="p-3 text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68] bg-white/50 dark:bg-[#202020]/50 rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+              Chưa có bài giảng nào trong chương này
+            </div>
+          ` : ''}
           ${lessons.map((lesson, idx) => {
             const current = lesson.lesson_id === currentLessonId;
             return `
@@ -3087,7 +3117,7 @@ class InstructorView {
                   <a
                     href="${coursePath}/${encodeURIComponent(lesson.lesson_id)}/edit"
                     ${current ? 'aria-current="page"' : ''}
-                    class="text-xs font-semibold truncate flex-1 hover:underline cursor-pointer block"
+                    class="nav-lesson-link text-xs font-semibold truncate flex-1 hover:underline cursor-pointer block"
                     title="${UI.escapeHtml(lesson.title)}"
                   >
                     ${UI.escapeHtml(lesson.title)}
@@ -3107,13 +3137,17 @@ class InstructorView {
           }).join('')}
         </div>
         ${count < 10 ? `
-          <a
-            href="${coursePath}/new?learning_unit_id=${unitId}"
-            class="w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1"
+          <button
+            type="button"
+            id="btn-nav-add-lesson"
+            class="btn-nav-add-lesson w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1 cursor-pointer"
+            data-learning-unit-id="learning_unit_id=${unitId}"
+            data-unit-id="${unitId}"
+            title="Thêm bài học mới"
           >
             <span class="material-symbols-outlined text-[16px]">add</span>
-            <span>Thêm lesson</span>
-          </a>
+            <span>+ Thêm bài học mới</span>
+          </button>
         ` : ''}
       </nav>
     `;
@@ -3126,6 +3160,8 @@ class InstructorView {
     }
     let availableUnits = [];
     let lessonStatus = 'DRAFT';
+    let handleAddNewLesson = null;
+    let resetEditorToEmpty = null;
     try {
       const unitResponse = await ApiClient.getLearningUnits(courseId);
       availableUnits = unitResponse.items || [];
@@ -3134,6 +3170,41 @@ class InstructorView {
       if (!lessonId) return;
     }
     let selectedUnitId = initialUnitId || null;
+    if (!selectedUnitId && availableUnits.length > 0) {
+      selectedUnitId = availableUnits[0].learning_unit_id || availableUnits[0].id;
+    }
+    if (!selectedUnitId) {
+      try {
+        const newUnit = await ApiClient.createLearningUnit(courseId, { title: 'Chương 1: Khởi động' });
+        selectedUnitId = newUnit?.learning_unit_id || newUnit?.id;
+        const freshUnits = await ApiClient.getLearningUnits(courseId);
+        availableUnits = freshUnits.items || [];
+      } catch (err) {
+        console.warn('Could not create default learning unit:', err);
+      }
+    }
+
+    if (!lessonId) {
+      try {
+        const unit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
+        const nextIndex = (unit?.lessons?.length || 0) + 1;
+        const created = await ApiClient.createLesson(courseId, {
+          title: `Bài giảng ${nextIndex}`,
+          summary: '',
+          markdown_content: '<p>Nội dung bài giảng mới đang được biên soạn...</p>',
+          status: 'DRAFT',
+          estimated_duration_minutes: 15,
+          learning_unit_id: selectedUnitId
+        });
+        const createdId = created?.lesson_id || created?.id;
+        if (createdId) {
+          window.location.hash = `#/instructor/courses/${courseId}/lessons/${createdId}/edit`;
+          return;
+        }
+      } catch (err) {
+        console.warn('Auto create initial lesson draft error:', err);
+      }
+    }
     let lessonCreationPromise = null;
     const createLessonOnce = (payload) => {
       if (lessonId) return Promise.resolve(lessonId);
@@ -3186,28 +3257,25 @@ class InstructorView {
             </div>
           </div>
 
-          <!-- Center: Autosave Status -->
-          <div class="flex items-center gap-1.5 text-xs text-[#8F8E8A] dark:text-[#6D6C68]" id="studio-autosave-status">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span class="hidden sm:inline">Sẵn sàng lưu</span>
+          <!-- Center: Learning Unit Title -->
+          <div class="flex-1 flex items-center justify-center min-w-0 px-2 text-center">
+            <span class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB] truncate" id="studio-header-unit-title">
+              Bài học
+            </span>
           </div>
 
-          <!-- Right: Action Buttons -->
+          <!-- Right: Action Buttons (Single 'Lưu' button with compact sync indicator) -->
           <div class="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              id="studio-save-draft-btn"
-              class="px-3.5 py-2 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B]"
+              id="studio-save-btn"
+              class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
+              title="Lưu bài giảng"
             >
-              Lưu bản nháp
-            </button>
-            <button
-              type="button"
-              id="studio-publish-btn"
-              class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-            >
-              <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
-              <span>Xuất bản</span>
+              <span id="studio-save-indicator" class="flex items-center text-white/90">
+                <span class="material-symbols-outlined text-[16px]">cloud_done</span>
+              </span>
+              <span>Lưu</span>
             </button>
           </div>
         </header>
@@ -3217,17 +3285,25 @@ class InstructorView {
           <aside id="studio-lesson-navigator" class="min-w-0"></aside>
           <div class="min-w-0 bg-white dark:bg-[#223248] border border-[#E8E6DF] dark:border-[#526881] rounded-2xl p-6 sm:p-8 lg:p-10 shadow-subtle space-y-6">
 
-            <div class="space-y-2">
-              <label for="studio-learning-unit-select" class="block text-xs font-bold text-[#222120] dark:text-[#F0F5FA]">Bài học</label>
-              <select id="studio-learning-unit-select" class="w-full rounded-xl border border-[#E8E6DF] dark:border-[#526881] bg-[#FAF9F5] dark:bg-[#2D4058] px-4 py-3 text-sm text-[#222120] dark:text-[#F0F5FA]" ${lessonId ? 'disabled' : ''}>
-                <option value="">Tạo Bài học mới theo tên Lesson này</option>
-                ${availableUnits.filter(unit => (unit.lesson_count || 0) < 10).map(unit => `
-                  <option value="${UI.escapeHtml(unit.learning_unit_id)}" ${unit.learning_unit_id === selectedUnitId ? 'selected' : ''}>
-                    ${UI.escapeHtml(unit.title)} (${unit.lesson_count || 0}/10 Lesson)
-                  </option>
-                `).join('')}
-              </select>
-              <p class="text-xs text-[#5C5B57] dark:text-[#C6D2E1]">Mỗi Bài học chứa tối đa 10 Lesson và 7 video. Mỗi Lesson chứa tối đa 2 video và 5 tài liệu.</p>
+            <!-- Hidden learning unit select for programmatic compatibility -->
+            <select id="studio-learning-unit-select" class="hidden" aria-hidden="true">
+              <option value="">Tạo Bài học mới</option>
+              ${availableUnits.map(unit => `
+                <option value="${UI.escapeHtml(unit.learning_unit_id)}" ${unit.learning_unit_id === selectedUnitId ? 'selected' : ''}>
+                  ${UI.escapeHtml(unit.title)}
+                </option>
+              `).join('')}
+            </select>
+
+            <!-- Quy định cấu trúc bài giảng (Làm nổi bật) -->
+            <div class="rounded-xl border border-primary/25 bg-primary/5 dark:bg-primary/10 dark:border-primary/30 p-3.5 sm:p-4 flex items-center gap-3.5 shadow-2xs">
+              <div class="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[20px]">info</span>
+              </div>
+              <div class="flex-1 text-xs text-[#222120] dark:text-[#E7E9EB] leading-relaxed">
+                <span class="font-bold text-primary dark:text-[#93C5FD]">Lưu ý định mức:</span>
+                Mỗi <strong class="text-[#121212] dark:text-white">Bài học</strong> chứa tối đa <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-primary/10 text-primary dark:text-[#93C5FD] text-[11px]">10 Lesson</span> và <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-primary/10 text-primary dark:text-[#93C5FD] text-[11px]">7 video</span>. Mỗi <strong class="text-[#121212] dark:text-white">Lesson</strong> chứa tối đa <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-primary/10 text-primary dark:text-[#93C5FD] text-[11px]">2 video</span> và <span class="inline-flex items-center px-1.5 py-0.5 rounded font-bold bg-primary/10 text-primary dark:text-[#93C5FD] text-[11px]">5 tài liệu</span>.
+              </div>
             </div>
             <!-- Lesson Title (Large Document Heading) -->
             <div>
@@ -3580,30 +3656,78 @@ class InstructorView {
       </div>
     `;
 
-    const studioRoot = container.querySelector('#lesson-studio-root');
+    const studioRoot = container.querySelector('#lesson-studio-root') || container;
+    const getEl = (id) => studioRoot ? studioRoot.querySelector('#' + id) : null;
     let attachedResources = [];
     let currentVideoUrl = '';
     let videoUrls = [];
     let miniQuizQuestions = [];
 
+    const updateHeaderUnitTitle = () => {
+      const titleEl = getEl('studio-header-unit-title');
+      if (!titleEl) return;
+      const unit = availableUnits.find(item => (item.learning_unit_id || item.id) === selectedUnitId);
+      const clean = (unit?.title || 'Bài học').replace(/\s*\(\d+\/\d+.*?\)/g, '').trim();
+      titleEl.textContent = clean;
+    };
+
+    const setSaveIndicator = (state) => {
+      const ind = getEl('studio-save-indicator');
+      if (!ind) return;
+      if (state === 'saving') {
+        ind.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">sync</span>';
+      } else if (state === 'pending') {
+        ind.innerHTML = '<span class="material-symbols-outlined text-[16px] text-amber-300" title="Đang chờ Admin duyệt">hourglass_top</span>';
+      } else {
+        ind.innerHTML = '<span class="material-symbols-outlined text-[16px]">cloud_done</span>';
+      }
+    };
+
     let videoItems = [];
     const parentVideoSlots = () => {
-      const unit = availableUnits.find(item => item.learning_unit_id === selectedUnitId);
+      const unit = availableUnits.find(item => (item.learning_unit_id || item.id) === selectedUnitId);
       if (!unit) return 7;
       const siblingVideos = (unit.lessons || [])
-        .filter(item => item.lesson_id !== lessonId)
+        .filter(item => (item.lesson_id || item.id) !== lessonId)
         .reduce((total, item) => total + InstructorView.getVideoCount(item.video_urls || [], item.resources || []), 0);
       return Math.max(0, 7 - siblingVideos);
     };
-    const unitSelect = document.getElementById('studio-learning-unit-select');
+    const unitSelect = getEl('studio-learning-unit-select');
     const renderChildNavigator = () => {
-      const target = container.querySelector('#studio-lesson-navigator');
+      const target = getEl('studio-lesson-navigator');
       if (!target) return;
-      const unit = availableUnits.find(item => item.learning_unit_id === selectedUnitId);
+      const unit = availableUnits.find(item => (item.learning_unit_id || item.id) === selectedUnitId);
       target.innerHTML = InstructorView.renderLessonChildNavigator(unit, courseId, lessonId);
+      updateHeaderUnitTitle();
+
+      // Bind Add Lesson button in navigator
+      const navAddBtn = target.querySelector('#btn-nav-add-lesson');
+      if (navAddBtn) {
+        navAddBtn.onclick = (e) => {
+          e.preventDefault();
+          if (typeof handleAddNewLesson === 'function') {
+            handleAddNewLesson();
+          }
+        };
+      }
 
       if (!unit) return;
       const lessons = [...(unit.lessons || [])].sort((a, b) => (a.position || 0) - (b.position || 0));
+
+      // Clean up timer when navigating away by clicking a lesson link
+      target.querySelectorAll('.nav-lesson-link').forEach(link => {
+        link.addEventListener('click', async () => {
+          if (lessonId && editVersion > savedVersion) {
+            try {
+              await saveLessonData(false, true);
+            } catch (_) {}
+          }
+          if (window._currentStudioTimer) {
+            clearInterval(window._currentStudioTimer);
+            window._currentStudioTimer = null;
+          }
+        });
+      });
 
       // Bind delete lesson in navigator
       target.querySelectorAll('.btn-nav-delete-lesson').forEach(btn => {
@@ -3615,7 +3739,11 @@ class InstructorView {
           const conf = await UI.confirm('Xóa Lesson', `Bạn có chắc chắn muốn xóa lesson "${targetLTitle}"? Thao tác không thể hoàn tác.`, 'Xóa vĩnh viễn');
           if (!conf) return;
           try {
-            await ApiClient.deleteLesson(courseId, targetLId);
+            const res = await ApiClient.deleteLesson(courseId, targetLId);
+            if (res && res.pending_approval) {
+              UI.showToast(res.message || 'Yêu cầu xóa bài giảng đã được gửi tới Admin để xét duyệt.', 'info');
+              return;
+            }
             UI.showToast('Đã xóa lesson thành công.', 'success');
             if (unit && Array.isArray(unit.lessons)) {
               unit.lessons = unit.lessons.filter(l => (l.lesson_id || l.id) !== targetLId);
@@ -3623,9 +3751,20 @@ class InstructorView {
             }
             if (targetLId === lessonId) {
               if (unit?.lessons?.length > 0) {
-                window.location.hash = `#/instructor/courses/${courseId}/lessons/${unit.lessons[0].lesson_id || unit.lessons[0].id}/edit`;
+                if (window._currentStudioTimer) {
+                  clearInterval(window._currentStudioTimer);
+                  window._currentStudioTimer = null;
+                }
+                const nextLesson = unit.lessons[0];
+                const nextId = nextLesson.lesson_id || nextLesson.id;
+                window.location.hash = `#/instructor/courses/${courseId}/lessons/${nextId}/edit`;
               } else {
-                window.location.hash = `#/instructor/courses/${courseId}/lessons/new?learning_unit_id=${unit?.learning_unit_id || ''}`;
+                lessonId = null;
+                if (typeof resetEditorToEmpty === 'function') {
+                  resetEditorToEmpty();
+                }
+                renderChildNavigator();
+                window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/new?learning_unit_id=${unit?.learning_unit_id || ''}`);
               }
             } else {
               renderChildNavigator();
@@ -3645,31 +3784,50 @@ class InstructorView {
             return;
           }
           draggedNavIdx = parseInt(item.dataset.idx, 10);
-          item.classList.add('opacity-40');
+          item.classList.add('opacity-40', 'scale-[0.98]');
           e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(draggedNavIdx));
         });
         item.addEventListener('dragend', () => {
-          item.classList.remove('opacity-40');
+          item.classList.remove('opacity-40', 'scale-[0.98]');
+          target.querySelectorAll('.nav-lesson-item').forEach(el => {
+            el.classList.remove('border-primary', 'bg-primary/5');
+          });
         });
         item.addEventListener('dragover', (e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
+          item.classList.add('border-primary', 'bg-primary/5');
+        });
+        item.addEventListener('dragleave', () => {
+          item.classList.remove('border-primary', 'bg-primary/5');
         });
         item.addEventListener('drop', async (e) => {
           e.preventDefault();
+          e.stopPropagation();
+          item.classList.remove('border-primary', 'bg-primary/5');
           const targetIdx = parseInt(item.dataset.idx, 10);
           if (draggedNavIdx === null || draggedNavIdx === targetIdx || !unit?.lessons) return;
           const reordered = [...lessons];
           const [moved] = reordered.splice(draggedNavIdx, 1);
           reordered.splice(targetIdx, 0, moved);
           unit.lessons = reordered;
-          const orderedIds = reordered.map(l => l.lesson_id || l.id);
+          renderChildNavigator();
+
+          const allOrderedIds = [];
+          (availableUnits || []).forEach(u => {
+            (u.lessons || []).forEach(l => {
+              const lid = l.lesson_id || l.id;
+              if (lid && !allOrderedIds.includes(lid)) allOrderedIds.push(lid);
+            });
+          });
+
           try {
-            await ApiClient.reorderLessons(courseId, orderedIds);
-            UI.showToast('Đã sắp xếp lại thứ tự bài học thành công!', 'success');
-            renderChildNavigator();
+            await ApiClient.reorderLessons(courseId, allOrderedIds);
+            UI.showToast('Đã sắp xếp lại thứ tự bài giảng thành công!', 'success');
           } catch (err) {
-            UI.showToast(err.message || 'Lỗi sắp xếp bài học.', 'error');
+            UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
+            renderChildNavigator();
           }
         });
       });
@@ -3677,9 +3835,11 @@ class InstructorView {
     if (unitSelect) unitSelect.onchange = () => {
       selectedUnitId = unitSelect.value || null;
       renderChildNavigator();
+      updateHeaderUnitTitle();
       renderVideoList();
     };
     renderChildNavigator();
+    updateHeaderUnitTitle();
 
     const resourceVideoUrl = resource => {
       const baseUrl = resource.file_url || resource.download_url || '';
@@ -3694,9 +3854,9 @@ class InstructorView {
 
     // Render Video Preview Helper (Centered)
     const renderVideoPreview = (url) => {
-      const previewBox = document.getElementById('studio-video-preview-box');
-      const target = document.getElementById('studio-video-player-target');
-      const previewTitle = document.getElementById('studio-video-preview-title');
+      const previewBox = getEl('studio-video-preview-box');
+      const target = getEl('studio-video-player-target');
+      const previewTitle = getEl('studio-video-preview-title');
       if (!previewBox || !target) return;
 
       if (!url || !String(url).trim()) {
@@ -3805,12 +3965,12 @@ class InstructorView {
 
     const renderVideoList = () => {
       syncVideoItemsFromState();
-      const list = document.getElementById('studio-video-list');
-      const badge = document.getElementById('studio-video-count-badge');
-      const quotaHint = document.getElementById('studio-video-quota-hint');
-      const toolbarInput = document.getElementById('studio-input-video-url');
-      const toolbarBtn = document.getElementById('btn-apply-video-url');
-      const dropzone = document.getElementById('studio-video-dropzone');
+      const list = getEl('studio-video-list');
+      const badge = getEl('studio-video-count-badge');
+      const quotaHint = getEl('studio-video-quota-hint');
+      const toolbarInput = getEl('studio-input-video-url');
+      const toolbarBtn = getEl('btn-apply-video-url');
+      const dropzone = getEl('studio-video-dropzone');
 
       const totalCount = videoItems.length;
       const remainingSlots = InstructorView.getRemainingVideoSlots(videoUrls, attachedResources, parentVideoSlots());
@@ -4044,7 +4204,7 @@ class InstructorView {
       });
     };
 
-    const deletePreviewVideoBtn = document.getElementById('btn-delete-preview-video');
+    const deletePreviewVideoBtn = getEl('btn-delete-preview-video');
     if (deletePreviewVideoBtn) {
       deletePreviewVideoBtn.onclick = async () => {
         if (!currentVideoUrl) return;
@@ -4080,7 +4240,7 @@ class InstructorView {
     }
 
     const handleApplyVideoUrl = async () => {
-      const inputEl = document.getElementById('studio-input-video-url');
+      const inputEl = getEl('studio-input-video-url');
       const inputUrl = inputEl?.value.trim() || '';
       if (!inputUrl) {
         UI.showToast('Vui lòng nhập đường dẫn video hợp lệ.', 'warning');
@@ -4126,12 +4286,12 @@ class InstructorView {
       }
     };
 
-    const applyUrlBtn = document.getElementById('btn-apply-video-url');
+    const applyUrlBtn = getEl('btn-apply-video-url');
     if (applyUrlBtn) {
       applyUrlBtn.onclick = handleApplyVideoUrl;
     }
 
-    const urlInput = document.getElementById('studio-input-video-url');
+    const urlInput = getEl('studio-input-video-url');
     if (urlInput) {
       urlInput.onkeydown = (e) => {
         if (e.key === 'Enter') {
@@ -4141,7 +4301,7 @@ class InstructorView {
       };
     }
 
-    const closePreviewBtn = document.getElementById('btn-close-preview');
+    const closePreviewBtn = getEl('btn-close-preview');
     if (closePreviewBtn) {
       closePreviewBtn.onclick = () => {
         renderVideoPreview('');
@@ -4172,21 +4332,21 @@ class InstructorView {
 
       if (!accepted.length) return;
 
-      const progressBox = document.getElementById('studio-video-progress-box');
-      const progressBar = document.getElementById('studio-video-progress-bar');
-      const progressPercent = document.getElementById('studio-video-progress-percent');
-      const progressText = document.getElementById('studio-video-progress-text');
+      const progressBox = getEl('studio-video-progress-box');
+      const progressBar = getEl('studio-video-progress-bar');
+      const progressPercent = getEl('studio-video-progress-percent');
+      const progressText = getEl('studio-video-progress-text');
 
       if (progressBox) progressBox.classList.remove('hidden');
 
       try {
         if (!lessonId) {
           if (progressText) progressText.textContent = 'Đang khởi tạo bản nháp bài học...';
-          const title = document.getElementById('studio-input-title')?.value.trim() || 'Bài giảng mới';
-          const summary = document.getElementById('studio-input-summary')?.value.trim() || '';
-          const editorEl = document.getElementById('studio-content-editor');
+          const title = getEl('studio-input-title')?.value.trim() || 'Bài giảng mới';
+          const summary = getEl('studio-input-summary')?.value.trim() || '';
+          const editorEl = getEl('studio-content-editor');
           const mdContent = editorEl ? editorEl.innerHTML : '';
-          const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
+          const durationVal = parseInt(getEl('studio-input-duration')?.value, 10);
           await createLessonOnce({
             title,
             summary,
@@ -4262,9 +4422,9 @@ class InstructorView {
     };
 
     // Video File Upload & Dropzone Handlers
-    const videoFileInput = document.getElementById('studio-video-file-input');
-    const chooseVideoBtn = document.getElementById('btn-choose-video-file');
-    const videoDropzone = document.getElementById('studio-video-dropzone');
+    const videoFileInput = getEl('studio-video-file-input');
+    const chooseVideoBtn = getEl('btn-choose-video-file');
+    const videoDropzone = getEl('studio-video-dropzone');
 
     if (chooseVideoBtn && videoFileInput) {
       chooseVideoBtn.onclick = (e) => {
@@ -4321,49 +4481,49 @@ class InstructorView {
     // Word-like WYSIWYG Editor Helpers & ExecCommand Bindings
     const formatDoc = (cmd, value = null) => {
       document.execCommand(cmd, false, value);
-      const editor = document.getElementById('studio-content-editor');
+      const editor = getEl('studio-content-editor');
       if (editor) editor.focus();
     };
 
-    const toolFormat = document.getElementById('studio-tool-format');
+    const toolFormat = getEl('studio-tool-format');
     if (toolFormat) {
       toolFormat.onchange = (e) => {
         formatDoc('formatBlock', `<${e.target.value}>`);
       };
     }
 
-    document.getElementById('studio-tool-bold')?.addEventListener('click', () => formatDoc('bold'));
-    document.getElementById('studio-tool-italic')?.addEventListener('click', () => formatDoc('italic'));
-    document.getElementById('studio-tool-underline')?.addEventListener('click', () => formatDoc('underline'));
-    document.getElementById('studio-tool-strike')?.addEventListener('click', () => formatDoc('strikeThrough'));
-    document.getElementById('studio-tool-left')?.addEventListener('click', () => formatDoc('justifyLeft'));
-    document.getElementById('studio-tool-center')?.addEventListener('click', () => formatDoc('justifyCenter'));
-    document.getElementById('studio-tool-right')?.addEventListener('click', () => formatDoc('justifyRight'));
-    document.getElementById('studio-tool-justify')?.addEventListener('click', () => formatDoc('justifyFull'));
-    document.getElementById('studio-tool-ul')?.addEventListener('click', () => formatDoc('insertUnorderedList'));
-    document.getElementById('studio-tool-ol')?.addEventListener('click', () => formatDoc('insertOrderedList'));
-    document.getElementById('studio-tool-hr')?.addEventListener('click', () => formatDoc('insertHorizontalRule'));
-    document.getElementById('studio-tool-clear')?.addEventListener('click', () => formatDoc('removeFormat'));
-    document.getElementById('studio-tool-undo')?.addEventListener('click', () => formatDoc('undo'));
-    document.getElementById('studio-tool-redo')?.addEventListener('click', () => formatDoc('redo'));
+    getEl('studio-tool-bold')?.addEventListener('click', () => formatDoc('bold'));
+    getEl('studio-tool-italic')?.addEventListener('click', () => formatDoc('italic'));
+    getEl('studio-tool-underline')?.addEventListener('click', () => formatDoc('underline'));
+    getEl('studio-tool-strike')?.addEventListener('click', () => formatDoc('strikeThrough'));
+    getEl('studio-tool-left')?.addEventListener('click', () => formatDoc('justifyLeft'));
+    getEl('studio-tool-center')?.addEventListener('click', () => formatDoc('justifyCenter'));
+    getEl('studio-tool-right')?.addEventListener('click', () => formatDoc('justifyRight'));
+    getEl('studio-tool-justify')?.addEventListener('click', () => formatDoc('justifyFull'));
+    getEl('studio-tool-ul')?.addEventListener('click', () => formatDoc('insertUnorderedList'));
+    getEl('studio-tool-ol')?.addEventListener('click', () => formatDoc('insertOrderedList'));
+    getEl('studio-tool-hr')?.addEventListener('click', () => formatDoc('insertHorizontalRule'));
+    getEl('studio-tool-clear')?.addEventListener('click', () => formatDoc('removeFormat'));
+    getEl('studio-tool-undo')?.addEventListener('click', () => formatDoc('undo'));
+    getEl('studio-tool-redo')?.addEventListener('click', () => formatDoc('redo'));
 
-    const colorInput = document.getElementById('studio-tool-color');
+    const colorInput = getEl('studio-tool-color');
     if (colorInput) {
       colorInput.oninput = (e) => formatDoc('foreColor', e.target.value);
     }
-    const bgInput = document.getElementById('studio-tool-bgcolor');
+    const bgInput = getEl('studio-tool-bgcolor');
     if (bgInput) {
       bgInput.oninput = (e) => formatDoc('hiliteColor', e.target.value);
     }
 
     // Insert Callout Box
-    document.getElementById('studio-tool-callout')?.addEventListener('click', () => {
+    getEl('studio-tool-callout')?.addEventListener('click', () => {
       const html = `<blockquote style="border-left: 3px solid #2563EB; background: #EFF4FE; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; color: #1E3A8A;"><strong>💡 Lưu ý trọng tâm:</strong> Nhập ghi chú kiến thức cần nhấn mạnh cho sinh viên tại đây...</blockquote><p><br></p>`;
       formatDoc('insertHTML', html);
     });
 
     // Insert 3x3 Table
-    document.getElementById('studio-tool-table')?.addEventListener('click', () => {
+    getEl('studio-tool-table')?.addEventListener('click', () => {
       const html = `
         <table style="width: 100%; border-collapse: collapse; margin: 12px 0; border: 1px solid #E8E6DF;">
           <thead>
@@ -4393,7 +4553,7 @@ class InstructorView {
 
     // Render Attached Files List (with API server deletion)
     function renderAttachments() {
-      const containerEl = document.getElementById('studio-attachments-list');
+      const containerEl = getEl('studio-attachments-list');
       if (!containerEl) return;
 
       if (attachedResources.length === 0) {
@@ -4792,10 +4952,10 @@ class InstructorView {
 
     // Mini-Quiz Authoring Renderer
     function renderMiniQuiz() {
-      const containerEl = document.getElementById('studio-mini-quiz-list');
+      const containerEl = getEl('studio-mini-quiz-list');
       if (!containerEl) return;
 
-      const countEl = document.getElementById('studio-mini-quiz-count');
+      const countEl = getEl('studio-mini-quiz-count');
       if (countEl) countEl.textContent = `${miniQuizQuestions.length} câu hỏi`;
 
       if (miniQuizQuestions.length === 0) {
@@ -5235,18 +5395,21 @@ class InstructorView {
     }
 
     // Add Mini-Quiz Question Button
-    document.getElementById('btn-add-mini-quiz-q').onclick = () => {
-      miniQuizQuestions.push(normalizeQuizQuestion({
-        type: 'MULTIPLE_CHOICE',
-        question: '',
-        allow_multiple: false,
-        options: ['Lựa chọn A', 'Lựa chọn B', 'Lựa chọn C', 'Lựa chọn D'],
-        correct_answers: [0],
-        correct_index: 0,
-        explanation: ''
-      }));
-      renderMiniQuiz();
-    };
+    const addQuizQBtn = getEl('btn-add-mini-quiz-q');
+    if (addQuizQBtn) {
+      addQuizQBtn.onclick = () => {
+        miniQuizQuestions.push(normalizeQuizQuestion({
+          type: 'MULTIPLE_CHOICE',
+          question: '',
+          allow_multiple: false,
+          options: ['Lựa chọn A', 'Lựa chọn B', 'Lựa chọn C', 'Lựa chọn D'],
+          correct_answers: [0],
+          correct_index: 0,
+          explanation: ''
+        }));
+        renderMiniQuiz();
+      };
+    }
 
     // Load Existing Lesson if Editing
     if (lessonId) {
@@ -5263,13 +5426,15 @@ class InstructorView {
             unitSelect.value = selectedUnitId;
           }
           renderChildNavigator();
-          document.getElementById('studio-input-title').value = existingLesson.title || '';
-          document.getElementById('studio-input-summary').value = existingLesson.summary || '';
-          const durEl = document.getElementById('studio-input-duration');
+          const titleEl = getEl('studio-input-title');
+          if (titleEl) titleEl.value = existingLesson.title || '';
+          const summaryEl = getEl('studio-input-summary');
+          if (summaryEl) summaryEl.value = existingLesson.summary || '';
+          const durEl = getEl('studio-input-duration');
           if (durEl) durEl.value = existingLesson.estimated_duration_minutes || 15;
 
           if (existingLesson.markdown_content) {
-            const editorEl = document.getElementById('studio-content-editor');
+            const editorEl = getEl('studio-content-editor');
             if (editorEl) {
               let content = existingLesson.markdown_content;
               // If it's already HTML
@@ -5319,8 +5484,9 @@ class InstructorView {
     }
 
     // File Upload Handler for Documents / Attachments
-    const fileInput = document.getElementById('studio-hidden-file-input');
-    document.getElementById('btn-trigger-upload').onclick = () => fileInput.click();
+    const fileInput = getEl('studio-hidden-file-input');
+    const triggerUploadBtn = getEl('btn-trigger-upload');
+    if (triggerUploadBtn && fileInput) triggerUploadBtn.onclick = () => fileInput.click();
 
     const uploadDocuments = async files => {
       if (!files.length) return;
@@ -5334,9 +5500,9 @@ class InstructorView {
       try {
         if (!lessonId) {
           await createLessonOnce({
-            title: document.getElementById('studio-input-title')?.value.trim() || 'Bài giảng mới',
-            summary: document.getElementById('studio-input-summary')?.value.trim() || '',
-            markdown_content: document.getElementById('studio-content-editor')?.innerHTML || '',
+            title: getEl('studio-input-title')?.value.trim() || 'Bài giảng mới',
+            summary: getEl('studio-input-summary')?.value.trim() || '',
+            markdown_content: getEl('studio-content-editor')?.innerHTML || '',
             status: 'DRAFT'
           });
         }
@@ -5366,19 +5532,21 @@ class InstructorView {
         UI.showToast(error.message || 'Không thể tạo bản nháp để tải tài liệu.', 'error');
       }
     };
-    fileInput.onchange = async event => {
-      await uploadDocuments(Array.from(event.target.files || []));
-      fileInput.value = '';
-    };
-    const dropzone = document.getElementById('studio-resources-dropzone');
-    const chooseDocBtn = document.getElementById('btn-choose-doc-file');
-    if (chooseDocBtn) {
+    if (fileInput) {
+      fileInput.onchange = async event => {
+        await uploadDocuments(Array.from(event.target.files || []));
+        fileInput.value = '';
+      };
+    }
+    const dropzone = getEl('studio-resources-dropzone');
+    const chooseDocBtn = getEl('btn-choose-doc-file');
+    if (chooseDocBtn && fileInput) {
       chooseDocBtn.onclick = (e) => {
         e.stopPropagation();
         fileInput.click();
       };
     }
-    if (dropzone) {
+    if (dropzone && fileInput) {
       dropzone.onclick = (e) => {
         if (e.target !== chooseDocBtn && !chooseDocBtn?.contains(e.target)) {
           fileInput.click();
@@ -5530,14 +5698,21 @@ class InstructorView {
         const outcome = InstructorView.lessonSaveOutcome(response, publish);
         if (outcome !== 'pending') lessonStatus = payload.status;
         savedVersion = versionAtSave;
-        const statusEl = studioRoot.querySelector('#studio-autosave-status');
-        if (statusEl) {
-          statusEl.innerHTML = outcome === 'pending'
-            ? '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Đang chờ Admin duyệt'
-            : `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Đã lưu lúc ${new Date().toLocaleTimeString('vi-VN')}`;
+        setSaveIndicator(outcome === 'pending' ? 'pending' : 'saved');
+
+        // Update the lesson title in local unit.lessons so navigator reflects the new title immediately
+        const curUnit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
+        if (curUnit && Array.isArray(curUnit.lessons)) {
+          const lItem = curUnit.lessons.find(l => (l.lesson_id || l.id) === lessonId);
+          if (lItem && lItem.title !== title) {
+            lItem.title = title;
+            renderChildNavigator();
+          }
         }
+
         return outcome;
       } catch (err) {
+        setSaveIndicator('saved');
         UI.showToast(err.message || 'Lỗi lưu bài giảng.', 'error');
         return false;
       } finally {
@@ -5545,22 +5720,120 @@ class InstructorView {
       }
     };
 
-    document.getElementById('studio-save-draft-btn').onclick = async () => {
-      const outcome = await saveLessonData(false);
-      if (outcome === 'pending') UI.showToast('Bản sửa bài giảng đã gửi Admin xét duyệt.', 'info');
-      else if (outcome) UI.showToast('Đã lưu bài giảng thành công!', 'success');
+    resetEditorToEmpty = () => {
+      const titleEl = studioRoot.querySelector('#studio-input-title');
+      if (titleEl) titleEl.value = 'Bài giảng mới';
+      const summaryEl = studioRoot.querySelector('#studio-input-summary');
+      if (summaryEl) summaryEl.value = '';
+      const durEl = studioRoot.querySelector('#studio-input-duration');
+      if (durEl) durEl.value = '15';
+      const editorEl = studioRoot.querySelector('#studio-content-editor');
+      if (editorEl) editorEl.innerHTML = '<p>Nhập nội dung bài giảng tại đây...</p>';
+      videoUrls = [];
+      currentVideoUrl = '';
+      renderVideoList();
+      attachedResources = [];
+      renderResourceList();
+      miniQuizQuestions = [];
+      renderMiniQuiz();
+      editVersion = 0;
+      savedVersion = 0;
+      setSaveIndicator('saved');
     };
 
-    document.getElementById('studio-publish-btn').onclick = async () => {
-      const outcome = await saveLessonData(true);
-      if (outcome) {
-        UI.showToast(outcome === 'pending' ? 'Bản sửa bài giảng đã gửi Admin xét duyệt.' : 'Bài giảng đã được xuất bản chính thức vào giáo trình!', 'success');
-        window.location.hash = `#/instructor/courses/${courseId}/manage?tab=curriculum`;
+    handleAddNewLesson = async () => {
+      if (lessonId && editVersion > savedVersion) {
+        try {
+          await saveLessonData(false, true);
+        } catch (_) {}
+      }
+
+      if (!selectedUnitId && availableUnits.length > 0) {
+        selectedUnitId = availableUnits[0].learning_unit_id || availableUnits[0].id;
+      }
+      if (!selectedUnitId) {
+        try {
+          const newUnit = await ApiClient.createLearningUnit(courseId, { title: 'Chương 1: Khởi động' });
+          selectedUnitId = newUnit?.learning_unit_id || newUnit?.id;
+          const freshUnits = await ApiClient.getLearningUnits(courseId);
+          availableUnits = freshUnits.items || [];
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi tạo Chương bài giảng mới.', 'error');
+          return;
+        }
+      }
+
+      let curUnit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
+      const existingLessons = curUnit?.lessons || [];
+      if (existingLessons.length >= 10) {
+        UI.showToast('Mỗi Bài học chỉ chứa tối đa 10 Lesson.', 'warning');
+        return;
+      }
+
+      const nextPos = existingLessons.length + 1;
+      const defaultTitle = `Bài giảng ${nextPos}`;
+
+      const addBtn = studioRoot.querySelector('#btn-nav-add-lesson');
+      if (addBtn) addBtn.disabled = true;
+
+      try {
+        UI.showToast('Đang thêm bài giảng mới...', 'info');
+        const created = await ApiClient.createLesson(courseId, {
+          title: defaultTitle,
+          summary: '',
+          markdown_content: '<p>Nội dung bài giảng mới đang được biên soạn...</p>',
+          status: 'DRAFT',
+          estimated_duration_minutes: 15,
+          learning_unit_id: selectedUnitId
+        });
+        const newLessonId = created?.lesson_id || created?.id;
+        if (!newLessonId) throw new Error('Không tạo được bài giảng mới.');
+
+        UI.showToast(`Đã thêm bài giảng "${defaultTitle}" thành công!`, 'success');
+
+        if (window._currentStudioTimer) {
+          clearInterval(window._currentStudioTimer);
+          window._currentStudioTimer = null;
+        }
+
+        window.location.hash = `#/instructor/courses/${courseId}/lessons/${newLessonId}/edit`;
+      } catch (err) {
+        UI.showToast(err.message || 'Lỗi khi thêm bài giảng mới.', 'error');
+        if (addBtn) addBtn.disabled = false;
       }
     };
 
-    document.getElementById('studio-back-btn').onclick = () => {
-      window.location.hash = `#/instructor/courses/${courseId}/manage?tab=curriculum`;
+    const saveBtn = getEl('studio-save-btn');
+    if (saveBtn) {
+      saveBtn.onclick = async () => {
+        saveBtn.disabled = true;
+        setSaveIndicator('saving');
+        try {
+          const outcome = await saveLessonData(true);
+          if (outcome === 'pending') {
+            UI.showToast('Bản sửa bài giảng đã gửi Admin xét duyệt.', 'info');
+            setSaveIndicator('pending');
+          } else if (outcome) {
+            UI.showToast('Đã lưu bài giảng thành công!', 'success');
+            setSaveIndicator('saved');
+          } else {
+            setSaveIndicator('saved');
+          }
+        } finally {
+          saveBtn.disabled = false;
+        }
+      };
+    }
+
+    const backBtn = getEl('studio-back-btn');
+    if (backBtn) {
+      backBtn.onclick = () => {
+        if (window._currentStudioTimer) {
+          clearInterval(window._currentStudioTimer);
+          window._currentStudioTimer = null;
+        }
+        window.location.hash = `#/instructor/courses/${courseId}/manage?tab=curriculum`;
+      };
     };
 
     // Auto-save interval every 30 seconds

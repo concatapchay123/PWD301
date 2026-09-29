@@ -1461,7 +1461,7 @@ class AdminView {
                 <span>Giảng viên: <strong>${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}</strong></span>
               </span>
               <span class="text-slate-300 dark:text-slate-600">•</span>
-              <span class="font-mono text-slate-400">${UI.formatDateTime(r.created_at)}</span>
+              <span class="font-mono text-slate-400">${typeof UI.formatDateTime === 'function' ? UI.formatDateTime(r.created_at) : (r.created_at || '')}</span>
             </div>
           </div>
 

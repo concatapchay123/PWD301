@@ -576,8 +576,8 @@ class StudentView {
           </div>
         </div>
 
-        <!-- Catalog Grid (Large 2-column Course Cards) -->
-        <div id="catalog-courses-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Catalog Grid (Standardized 3-column Course Cards matching My Learning & Instructor) -->
+        <div id="catalog-courses-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div class="col-span-full text-center py-16 text-slate-400">
             <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
             <p class="text-sm">Đang tải danh mục khóa học...</p>
@@ -632,58 +632,70 @@ class StudentView {
         const preset = colorPresets[hashSeed % colorPresets.length];
 
         return `
-          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-7 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5">
-            <a href="#/student/courses/detail?id=${cid}" class="block group/cover cursor-pointer" title="Xem chi tiết môn học ${UI.escapeHtml(c.title)}">
-              <div class="relative h-48 sm:h-52 overflow-hidden rounded-2xl bg-gradient-to-tr ${preset.bg} border border-slate-200/50 dark:border-slate-800/80 flex flex-col items-center justify-center p-4 text-white shadow-xs group-hover/cover:shadow-md transition-all">
-                <span class="absolute -right-8 -top-8 h-40 w-40 rounded-full border-[20px] border-white/10" aria-hidden="true"></span>
-                <span class="absolute -left-6 -bottom-6 h-32 w-32 rounded-full border-[15px] border-white/10" aria-hidden="true"></span>
-                <span class="material-symbols-outlined text-5xl sm:text-6xl ${preset.iconColor} drop-shadow-sm mb-1 group-hover/cover:scale-105 transition-transform" aria-hidden="true">${preset.icon}</span>
-                <span class="text-xs font-mono font-bold tracking-widest uppercase bg-black/25 px-2.5 py-0.5 rounded-full backdrop-blur-xs text-white/90 border border-white/20">${UI.escapeHtml(c.course_code)}</span>
-                ${c.thumbnail_url ? `<img src="${UI.escapeHtml(c.thumbnail_url)}" alt="" class="absolute inset-0 h-full w-full object-cover transition-transform group-hover/cover:scale-105" onerror="this.remove()" />` : ''}
-              </div>
-            </a>
-
+          <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
             <div class="space-y-3">
+              <!-- Standardized Aspect-Video Thumbnail Cover -->
+              <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '#/student/courses/detail?id=${cid}'">
+                ${c.thumbnail_url ? `
+                  <img src="${UI.escapeHtml(c.thumbnail_url)}" alt="${UI.escapeHtml(c.title)}" class="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
+                ` : `
+                  <div class="w-full h-full flex flex-col items-center justify-center p-4 bg-gradient-to-tr ${preset.bg} text-white relative">
+                    <span class="absolute -right-6 -top-6 h-28 w-28 rounded-full border-[12px] border-white/10" aria-hidden="true"></span>
+                    <span class="material-symbols-outlined text-4xl ${preset.iconColor} drop-shadow-sm mb-1">${preset.icon}</span>
+                    <span class="text-xs font-mono font-bold tracking-wider uppercase bg-black/25 px-2.5 py-0.5 rounded-full border border-white/20">${UI.escapeHtml(c.course_code || 'Khóa học')}</span>
+                  </div>
+                `}
+              </div>
+
               <div class="flex items-center justify-between">
-                <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-3 py-1 rounded-full">${UI.escapeHtml(c.course_code)}</span>
+                <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(c.course_code)}</span>
                 <div class="flex items-center gap-2">
                   ${isEnrolled ? `
-                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                      <span>Đã đăng ký</span>
+                    <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[13px]">check_circle</span>
+                      <span>Đã ghi danh</span>
                     </span>
                   ` : ''}
                   ${UI.difficultyBadge(c.difficulty)}
                 </div>
               </div>
-              <a href="#/student/courses/detail?id=${cid}" class="block group/title">
-                <h3 class="font-extrabold text-slate-900 dark:text-white text-lg sm:text-xl leading-snug group-hover/title:text-primary transition-colors">
-                  ${UI.escapeHtml(c.title)}
-                </h3>
-              </a>
-              <p class="text-sm text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
-                ${UI.escapeHtml(c.description || c.summary || 'Khóa học học thuật chính quy theo chuẩn đầu ra ABET.')}
+
+              <h3
+                class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer"
+                onclick="window.location.hash = '#/student/courses/detail?id=${cid}'"
+              >
+                ${UI.escapeHtml(c.title)}
+              </h3>
+
+              <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                ${UI.escapeHtml(c.description || c.summary || 'Khóa học đào tạo chính quy theo chuẩn đầu ra ABET.')}
               </p>
             </div>
 
-            <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div class="flex items-center gap-3 pt-1">
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div class="flex items-center gap-2">
                 ${isEnrolled ? `
                   <a
                     href="#/student/courses/detail?id=${cid}"
-                    class="w-full c-btn c-btn-primary c-btn-md flex items-center justify-center gap-2 shadow-sm"
+                    class="w-full c-btn c-btn-primary c-btn-sm flex items-center justify-center gap-1.5 shadow-xs"
                   >
-                    <span>Vào khóa học</span>
-                    <span class="material-symbols-outlined text-[18px]">play_circle</span>
+                    <span>Vào học tiếp tục</span>
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </a>
                 ` : `
+                  <a
+                    href="#/student/courses/detail?id=${cid}"
+                    class="flex-1 c-btn c-btn-secondary c-btn-sm text-center"
+                  >
+                    <span>Chi tiết</span>
+                  </a>
                   <button
                     type="button"
-                    class="w-full c-btn c-btn-primary c-btn-md enroll-action-btn"
+                    class="flex-1 c-btn c-btn-primary c-btn-sm enroll-action-btn"
                     data-course-id="${cid}"
                     data-course-title="${UI.escapeHtml(c.title)}"
                   >
-                    <span>Đăng ký học ngay</span>
+                    <span>Ghi danh</span>
                   </button>
                 `}
               </div>
@@ -1377,16 +1389,46 @@ class StudentView {
           `;
         }
 
-        // Default: Syllabus tab
+        // Default: Syllabus tab — Displays ONLY Bài học (Learning Units) with sequential locking
+        const rawUnits = (courseData?.learning_units && courseData.learning_units.length > 0)
+          ? [...courseData.learning_units].sort((a, b) => (a.position || 0) - (b.position || 0))
+          : [];
+
+        // Synthesize Learning Units if course only returned flat lessons
+        const displayUnits = [...rawUnits];
+        if (displayUnits.length === 0 && lessons.length > 0) {
+          const unitMap = new Map();
+          lessons.forEach((l, idx) => {
+            const uId = l.learning_unit_id || 'default';
+            const uTitle = l.learning_unit_title || `Bài ${idx + 1}: ${l.title}`;
+            if (!unitMap.has(uId)) {
+              unitMap.set(uId, {
+                id: uId,
+                learning_unit_id: uId,
+                title: uTitle,
+                position: unitMap.size + 1,
+                lessons: []
+              });
+            }
+            unitMap.get(uId).lessons.push(l);
+          });
+          unitMap.forEach(u => {
+            u.lesson_count = u.lessons.length;
+            u.completed_lesson_count = u.lessons.filter(les => les.is_completed || les.progress?.is_completed).length;
+            u.is_completed = u.lesson_count > 0 && u.completed_lesson_count >= u.lesson_count;
+            displayUnits.push(u);
+          });
+        }
+
         return `
           <div class="space-y-4">
             <div class="flex items-center justify-between">
               <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[20px]">format_list_numbered</span>
-                Đề cương & Danh sách Bài giảng (${lessons.length} bài)
+                Đề cương Khóa học (${displayUnits.length} Bài học)
               </h3>
               ${isEnrolled ? `
-                <span class="text-xs text-slate-500 font-medium">Hoàn thành: <strong>${Math.round(progressData?.progress_percent || 0)}%</strong></span>
+                <span class="text-xs text-slate-500 font-medium">Tiến độ hoàn thành: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong></span>
               ` : `
                 <span class="text-xs font-bold text-amber-600 flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">lock</span> Chưa ghi danh</span>
               `}
@@ -1400,13 +1442,13 @@ class StudentView {
                   </div>
                   <div>
                     <h4 class="text-xs font-bold text-slate-900 dark:text-white">Bạn chưa ghi danh khóa học này</h4>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Vui lòng ghi danh môn học để mở khóa toàn bộ bài giảng, tải tài liệu và tham gia khảo thí.</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Vui lòng ghi danh môn học để mở khóa toàn bộ bài học, học tuần tự và tích lũy chứng nhận.</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onclick="document.getElementById('dossier-enroll-btn')?.click()"
-                  class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm shrink-0 flex items-center gap-1.5"
+                  class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm shrink-0 flex items-center gap-1.5 cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[16px]">school</span>
                   <span>Ghi danh ngay</span>
@@ -1415,54 +1457,119 @@ class StudentView {
             ` : ''}
 
             <div class="space-y-3">
-              ${lessons.length === 0 ? `
+              ${displayUnits.length === 0 ? `
                 <div class="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm">
-                  Khóa học này đang hoàn thiện giáo trình, chưa có bài giảng nào được công bố.
+                  Khóa học này đang hoàn thiện giáo trình, chưa có bài học nào được công bố.
                 </div>
-              ` : lessons.map((l, idx) => `
-                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${!isEnrolled ? 'opacity-85' : ''}">
-                  <div class="flex items-start gap-3.5">
-                    <div class="w-8 h-8 rounded-xl ${isEnrolled ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'} font-bold flex items-center justify-center shrink-0 text-xs">
-                      ${idx + 1}
-                    </div>
-                    <div>
-                      ${l.learning_unit_title ? `<p class="text-[11px] font-semibold text-primary mb-1">Bài học: ${UI.escapeHtml(l.learning_unit_title)}</p>` : ''}
-                      <h4
-                        class="font-bold text-slate-900 dark:text-white text-sm ${isEnrolled ? 'hover:text-primary transition-colors cursor-pointer' : 'text-slate-700 dark:text-slate-300'}"
-                        ${isEnrolled ? `onclick="window.location.hash = '#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}'"` : `onclick="UI.showToast('Vui lòng ghi danh môn học trước khi bắt đầu bài học.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"`}
-                      >
-                        <span class="flex items-center gap-1.5">
-                          <span>${UI.escapeHtml(l.title)}</span>
-                          ${!isEnrolled ? `<span class="material-symbols-outlined text-[15px] text-amber-600" title="Cần ghi danh để mở khóa">lock</span>` : ''}
-                        </span>
-                      </h4>
-                      <p class="text-xs text-slate-500 mt-0.5 line-clamp-1">${UI.escapeHtml(l.summary || 'Bài giảng lý thuyết & thực hành kèm code mẫu')}</p>
-                      <div class="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                        <span>Tài liệu: ${(l.resources || []).length} tệp đính kèm</span>
-                        ${l.quiz && l.quiz.length ? `<span>•</span><span class="text-indigo-600 dark:text-indigo-400 font-semibold">${l.quiz.length} câu trắc nghiệm</span>` : ''}
+              ` : displayUnits.map((u, idx) => {
+                const uNum = idx + 1;
+                const prevUnit = idx > 0 ? displayUnits[idx - 1] : null;
+                const prevCompleted = prevUnit ? Boolean(prevUnit.is_completed || (prevUnit.lesson_count > 0 && prevUnit.completed_lesson_count >= prevUnit.lesson_count)) : true;
+                const isUnlocked = isPreview || !isEnrolled ? (isPreview) : (idx === 0 || prevCompleted);
+                const isCompleted = Boolean(u.is_completed || (u.lesson_count > 0 && u.completed_lesson_count >= u.lesson_count));
+                const unitLessons = u.lessons || [];
+                const targetLesson = unitLessons.find(l => !(l.is_completed || l.progress?.is_completed)) || unitLessons[0];
+                const targetLessonId = targetLesson ? (targetLesson.lesson_id || targetLesson.id) : '';
+
+                const cleanTitle = u.title.replace(/^Chương\s*\d+\s*:\s*/i, '').replace(/^Bài\s*\d+\s*:\s*/i, '');
+                const displayTitle = `Bài ${uNum}: ${cleanTitle}`;
+
+                if (!isEnrolled) {
+                  return `
+                    <div
+                      class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs opacity-75 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:border-amber-400 transition-all"
+                      onclick="UI.showToast('Vui lòng ghi danh môn học để bắt đầu học Bài ${uNum}.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
+                    >
+                      <div class="flex items-center gap-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold flex items-center justify-center shrink-0 text-sm">
+                          ${uNum}
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <h4 class="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-base">${UI.escapeHtml(displayTitle)}</h4>
+                            <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
+                          </div>
+                          <p class="text-xs text-slate-400 mt-0.5">${unitLessons.length} bài giảng • Cần ghi danh môn học</p>
+                        </div>
+                      </div>
+                      <div class="text-xs font-semibold text-amber-600 flex items-center gap-1 shrink-0">
+                        <span class="material-symbols-outlined text-[15px]">lock</span>
+                        <span>Khóa</span>
                       </div>
                     </div>
-                  </div>
+                  `;
+                }
 
-                  <div class="shrink-0">
-                    ${isEnrolled ? `
-                      <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${l.lesson_id || l.id}" class="px-4 py-2 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1">
-                        <span>Vào học ngay</span>
-                        <span class="material-symbols-outlined text-[16px]">play_arrow</span>
-                      </a>
-                    ` : `
-                      <button
-                        type="button"
-                        onclick="UI.showToast('Vui lòng ghi danh môn học trước khi bắt đầu bài học.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
-                        class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-500 hover:text-amber-600 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
-                      >
-                        <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
-                        <span>Cần ghi danh</span>
-                      </button>
-                    `}
+                if (!isUnlocked) {
+                  return `
+                    <div
+                      class="bg-slate-50/70 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 opacity-60 cursor-not-allowed select-none flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      onclick="UI.showToast('Bạn cần hoàn thành toàn bộ bài giảng của Bài ${idx} (100%) để mở khóa ${UI.escapeHtml(displayTitle)}.', 'warning')"
+                    >
+                      <div class="flex items-center gap-3.5">
+                        <div class="w-10 h-10 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-slate-400 font-bold flex items-center justify-center shrink-0 text-sm">
+                          ${uNum}
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <h4 class="font-bold text-slate-500 dark:text-slate-400 text-sm sm:text-base">${UI.escapeHtml(displayTitle)}</h4>
+                            <span class="material-symbols-outlined text-[16px] text-slate-400">lock</span>
+                          </div>
+                          <p class="text-xs text-slate-400 mt-0.5">${unitLessons.length} bài giảng • Chưa mở khóa</p>
+                        </div>
+                      </div>
+                      <div class="text-xs font-semibold text-amber-700 dark:text-amber-400/90 flex items-center gap-1 shrink-0 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-900/60">
+                        <span class="material-symbols-outlined text-[14px]">lock</span>
+                        <span>Cần hoàn thành Bài ${idx} (100%)</span>
+                      </div>
+                    </div>
+                  `;
+                }
+
+                return `
+                  <div
+                    class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md hover:border-primary/60 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group/unit"
+                    onclick="${targetLessonId ? `window.location.hash = '#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(targetLessonId)}'` : `UI.showToast('Bài học này chưa có bài giảng nào.', 'info')`}"
+                  >
+                    <div class="flex items-center gap-3.5">
+                      <div class="w-10 h-10 rounded-xl ${isCompleted ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' : 'bg-primary-subtle text-primary border border-primary/20'} font-bold flex items-center justify-center shrink-0 text-sm shadow-2xs">
+                        ${isCompleted ? '<span class="material-symbols-outlined text-[20px]">check_circle</span>' : uNum}
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <h4 class="font-extrabold text-slate-900 dark:text-white text-sm sm:text-base group-hover/unit:text-primary transition-colors">
+                            ${UI.escapeHtml(displayTitle)}
+                          </h4>
+                          ${isCompleted ? `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Đã hoàn thành 100%
+                            </span>
+                          ` : (u.completed_lesson_count > 0 ? `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary-subtle text-primary border border-primary/20">
+                              Đang học (${u.completed_lesson_count}/${u.lesson_count || unitLessons.length})
+                            </span>
+                          ` : `
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              Sẵn sàng học
+                            </span>
+                          `)}
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                          <span>${unitLessons.length} bài giảng</span>
+                          <span>•</span>
+                          <span>Đã xong ${u.completed_lesson_count || 0}/${u.lesson_count || unitLessons.length}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span class="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 group-hover/unit:bg-primary group-hover/unit:text-white text-slate-400 flex items-center justify-center transition-all shadow-2xs">
+                        <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+                      </span>
+                    </div>
                   </div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
         `;
@@ -1691,6 +1798,86 @@ class StudentView {
         savedNote = localStorage.getItem(`notes_${courseId}_${lessonId}`) || '';
       }
 
+      // Find current Learning Unit and its child lessons
+      const learningUnits = courseData?.learning_units || [];
+      const currentUnit = learningUnits.find(u =>
+        String(u.learning_unit_id || u.id) === String(lesson.learning_unit_id) ||
+        (Array.isArray(u.lessons) && u.lessons.some(l => String(l.lesson_id || l.id) === String(lessonId)))
+      ) || learningUnits[0] || null;
+
+      const unitLessons = (currentUnit?.lessons && currentUnit.lessons.length > 0)
+        ? [...currentUnit.lessons].sort((a, b) => (a.position || 0) - (b.position || 0))
+        : lessonsList;
+      const rawUnitTitle = currentUnit?.title || lesson.learning_unit_title || 'Bài học hiện tại';
+      const cleanUnitTitle = rawUnitTitle.replace(/^Chương\s*\d+\s*:\s*/i, '').replace(/^Bài\s*\d+\s*:\s*/i, '');
+      const unitNum = currentUnit?.position || lesson.learning_unit_position || 1;
+      const displayUnitHeader = `Bài ${unitNum}: ${cleanUnitTitle}`;
+
+      const renderUnitLessonsListHtml = () => {
+        return unitLessons.map((l, jIdx) => {
+          const isCur = String(l.lesson_id || l.id) === String(lessonId);
+          const isLesDone = Boolean(l.is_completed || l.progress?.is_completed || (isCur && isCompleted));
+          const prevLes = jIdx > 0 ? unitLessons[jIdx - 1] : null;
+          const prevLesDone = prevLes ? Boolean(prevLes.is_completed || prevLes.progress?.is_completed || (String(prevLes.lesson_id || prevLes.id) === String(lessonId) && isCompleted)) : true;
+          const isLesUnlocked = isPreview || (jIdx === 0) || prevLesDone;
+
+          if (!isLesUnlocked) {
+            return `
+              <div
+                class="p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 text-slate-400 opacity-60 cursor-not-allowed select-none space-y-1"
+                onclick="UI.showToast('Vui lòng hoàn thành bài giảng trước để mở khóa bài giảng này.', 'warning')"
+                title="Chưa mở khóa"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-mono font-bold text-slate-400">BÀI GIẢNG ${jIdx + 1}</span>
+                  <span class="material-symbols-outlined text-[15px] text-slate-400">lock</span>
+                </div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">${UI.escapeHtml(l.title)}</div>
+                <div class="text-[10px] text-slate-400 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[13px]">schedule</span>
+                  <span>${l.estimated_duration_minutes || 15} phút</span>
+                </div>
+              </div>
+            `;
+          }
+
+          if (isCur) {
+            return `
+              <div class="p-3 rounded-xl border-2 border-primary bg-primary-subtle dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-mono font-bold text-primary">BÀI GIẢNG ${jIdx + 1} • ĐANG HỌC</span>
+                  <span class="material-symbols-outlined text-[16px] text-primary" id="sidebar-cur-icon">${isLesDone ? 'check_circle' : 'play_circle'}</span>
+                </div>
+                <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(l.title)}</div>
+                <div class="text-[10px] text-primary font-medium flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[13px]">schedule</span>
+                  <span>${l.estimated_duration_minutes || 15} phút</span>
+                  ${isLesDone ? '<span class="ml-1 text-emerald-600 font-bold">• Đã xong</span>' : ''}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <a
+              href="#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(l.lesson_id || l.id)}"
+              class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/60 hover:shadow-2xs text-slate-700 dark:text-slate-300 transition-all cursor-pointer space-y-1 block group/les"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-mono font-bold text-slate-400 group-hover/les:text-primary transition-colors">BÀI GIẢNG ${jIdx + 1}</span>
+                ${isLesDone ? '<span class="material-symbols-outlined text-[16px] text-emerald-500">check_circle</span>' : '<span class="material-symbols-outlined text-[16px] text-slate-300 group-hover/les:text-primary transition-colors">arrow_forward</span>'}
+              </div>
+              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover/les:text-primary transition-colors truncate">${UI.escapeHtml(l.title)}</div>
+              <div class="text-[10px] text-slate-400 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[13px]">schedule</span>
+                <span>${l.estimated_duration_minutes || 15} phút</span>
+                ${isLesDone ? '<span class="ml-1 text-emerald-600 font-bold">• Đã hoàn thành</span>' : ''}
+              </div>
+            </a>
+          `;
+        }).join('');
+      };
+
       container.innerHTML = `
         <div id="lesson-reader-root" data-lesson-id="${UI.escapeHtml(lessonId)}" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
           
@@ -1717,6 +1904,16 @@ class StudentView {
 
             <!-- Header Action Controls -->
             <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="mobile-unit-lessons-btn"
+                class="lg:hidden px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Danh sách bài giảng trong bài học"
+              >
+                <span class="material-symbols-outlined text-[17px] text-primary">format_list_numbered</span>
+                <span class="hidden sm:inline">Bài giảng</span>
+              </button>
+
               <button
                 type="button"
                 id="toggle-resources-btn"
@@ -1756,9 +1953,11 @@ class StudentView {
             </div>
           </div>
 
-          <!-- Single-Column Focus Reading Canvas -->
-          <div class="flex-1 overflow-y-auto p-4 sm:p-8">
-            <main class="max-w-3xl mx-auto space-y-6">
+          <!-- Reading Canvas + Right Sidebar Split Layout -->
+          <div class="flex-1 flex overflow-hidden">
+            <!-- Left Main Reading Pane -->
+            <div class="flex-1 overflow-y-auto p-4 sm:p-8" id="lesson-reader-main-scroll">
+              <main class="max-w-3xl mx-auto space-y-6">
               
               <!-- Lesson Header & Objectives Card -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-3">
@@ -2008,12 +2207,65 @@ class StudentView {
 
             </main>
           </div>
-        </div>
-      `;
 
-      // 1. Right Drawer Handler: Resource Vault & Personal Notepad (Syllabus removed, all files consolidated)
-      const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn') || document.getElementById('toggle-resources-btn');
-      if (vaultNotesBtn) {
+          <!-- Right Column: Child Lessons in this Learning Unit with Sequential Locking -->
+          <aside class="hidden lg:flex w-80 xl:w-96 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-col shrink-0 overflow-hidden" id="lesson-unit-sidebar">
+            <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1 select-none">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-primary uppercase tracking-wider font-mono">BÀI HỌC HIỆN TẠI</span>
+                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${unitLessons.length} bài giảng</span>
+              </div>
+              <h3 class="font-extrabold text-slate-900 dark:text-white text-sm truncate" title="${UI.escapeHtml(displayUnitHeader)}">
+                ${UI.escapeHtml(displayUnitHeader)}
+              </h3>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar" id="unit-lessons-desktop-list">
+              ${renderUnitLessonsListHtml()}
+            </div>
+
+            <div class="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+              <button
+                type="button"
+                id="sidebar-notes-btn"
+                class="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <span class="material-symbols-outlined text-[16px] text-primary">folder_open</span>
+                <span>Mở Sổ tay & Tài liệu (${resources.length})</span>
+              </button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    `;
+
+    // Hook up Mobile Unit Lessons Drawer & Sidebar Notes Button
+    const mobileLessonsBtn = document.getElementById('mobile-unit-lessons-btn');
+    if (mobileLessonsBtn) {
+      mobileLessonsBtn.onclick = () => {
+        UI.openDrawer({
+          side: 'right',
+          title: displayUnitHeader,
+          width: 'max-w-sm',
+          headerBadge: `<span class="text-xs font-bold text-primary">${unitLessons.length} bài giảng</span>`,
+          bodyHtml: `
+            <div class="space-y-2.5 p-1">
+              ${renderUnitLessonsListHtml()}
+            </div>
+          `
+        });
+      };
+    }
+    const sidebarNotesBtn = document.getElementById('sidebar-notes-btn');
+    if (sidebarNotesBtn) {
+      sidebarNotesBtn.onclick = () => {
+        document.getElementById('toggle-resources-btn')?.click();
+      };
+    }
+
+    // 1. Right Drawer Handler: Resource Vault & Personal Notepad (Syllabus removed, all files consolidated)
+    const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn') || document.getElementById('toggle-resources-btn');
+    if (vaultNotesBtn) {
         vaultNotesBtn.onclick = () => {
           const hasFiles = resources.length > 0;
           UI.openDrawer({
@@ -2172,9 +2424,10 @@ class StudentView {
       });
 
       // 3. Mark lesson completed handler (Enforces 100% video watch)
-      const completeBtn = document.getElementById('complete-lesson-btn');
       const setLessonCompleted = () => {
         isCompleted = true;
+        const desktopList = document.getElementById('unit-lessons-desktop-list');
+        if (desktopList) desktopList.innerHTML = renderUnitLessonsListHtml();
         if (!completeBtn) return;
         completeBtn.disabled = true;
         completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
@@ -5490,6 +5743,22 @@ class StudentView {
           if (activeBox) {
             activeBox.innerHTML = `<img src="${UI.escapeHtml(generatedAvatarUrl)}" alt="Avatar ngẫu nhiên" class="w-full h-full object-cover" onerror="this.remove();" />`;
           }
+
+          // Immediately persist and synchronize to topbar in real-time
+          StudentView.storeRandomAvatarUrl(profileIdentity, generatedAvatarUrl);
+          localStorage.setItem('pwd301_avatar', generatedAvatarUrl);
+          if (window.app && window.app.currentUser) {
+            window.app.currentUser.avatar_url = generatedAvatarUrl;
+          }
+          try {
+            const cached = JSON.parse(localStorage.getItem('pwd301_user') || '{}');
+            cached.avatar_url = generatedAvatarUrl;
+            localStorage.setItem('pwd301_user', JSON.stringify(cached));
+          } catch (_) {}
+          if (window.app && typeof window.app.updateUserUI === 'function') {
+            window.app.updateUserUI();
+          }
+          UI.showToast('Đã đổi avatar ngẫu nhiên và đồng bộ lên thanh tiêu đề!', 'success');
         };
       }
 

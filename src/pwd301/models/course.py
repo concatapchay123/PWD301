@@ -217,6 +217,13 @@ class Course(Base):
         """Return target audience items as a parsed list of strings."""
         return _parse_string_list(self.target_audience)
 
+    @property
+    def thumbnail_url(self) -> str | None:
+        """Return the API endpoint URL for the course thumbnail if asset exists."""
+        if self.thumbnail_file_asset_id:
+            return f"/api/courses/{self.public_id}/thumbnail"
+        return None
+
     @validates("course_code")
     def _validate_course_code(self, key: str, value: str | None) -> str | None:
         if value is not None:

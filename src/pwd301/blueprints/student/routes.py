@@ -277,9 +277,19 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             except Exception:
                 pass
 
+    lu = getattr(les, "learning_unit", None)
+    lu_id = str(getattr(lu, "public_id", None)) if lu and getattr(lu, "public_id", None) else None
+    lu_title = getattr(lu, "title", None) if lu else None
+    lu_pos = getattr(lu, "position", None) if lu else None
+    course = getattr(les, "course", None)
+    course_id = str(getattr(course, "public_id", None)) if course and getattr(course, "public_id", None) else None
+
     return {
-        "lesson_id": str(les.public_id),
-        "course_id": str(les.course.public_id) if les.course else None,
+        "lesson_id": str(getattr(les, "public_id", None) or getattr(les, "id", "")),
+        "learning_unit_id": lu_id,
+        "learning_unit_title": lu_title,
+        "learning_unit_position": lu_pos,
+        "course_id": course_id,
         "title": les.title,
         "summary": les.summary,
         "markdown_content": cleaned_markdown,
@@ -1629,6 +1639,55 @@ def student_course_detail(course_id: str) -> Any:
         except Exception:
             cr_data = course.completion_requirements
 
+    from pwd301.models.course import LearningUnit
+
+    units = (
+        db.session.query(LearningUnit)
+        .filter(
+            LearningUnit.course_id == course.id,
+            LearningUnit.deleted_at.is_(None),
+        )
+        .order_by(LearningUnit.position.asc(), LearningUnit.id.asc())
+        .all()
+    )
+
+    serialized_units = []
+    for u in units:
+        u_lessons = [
+            les for les in serialized_lessons if les.get("learning_unit_id") == str(u.public_id)
+        ]
+        u_lesson_count = len(u_lessons)
+        u_completed_count = sum(1 for les in u_lessons if les.get("is_completed"))
+        is_unit_completed = (u_lesson_count > 0 and u_completed_count >= u_lesson_count)
+        serialized_units.append(
+            {
+                "id": str(u.public_id),
+                "learning_unit_id": str(u.public_id),
+                "title": u.title,
+                "position": u.position,
+                "lesson_count": u_lesson_count,
+                "completed_lesson_count": u_completed_count,
+                "is_completed": is_unit_completed,
+                "lessons": u_lessons,
+            }
+        )
+
+    if not units and serialized_lessons:
+        u_lesson_count = len(serialized_lessons)
+        u_completed_count = sum(1 for les in serialized_lessons if les.get("is_completed"))
+        serialized_units.append(
+            {
+                "id": "default",
+                "learning_unit_id": "default",
+                "title": "Chương trình bài học",
+                "position": 1,
+                "lesson_count": u_lesson_count,
+                "completed_lesson_count": u_completed_count,
+                "is_completed": (u_lesson_count > 0 and u_completed_count >= u_lesson_count),
+                "lessons": serialized_lessons,
+            }
+        )
+
     return jsonify(
         {
             "course": {
@@ -1637,6 +1696,7 @@ def student_course_detail(course_id: str) -> Any:
                 "code": course.course_code,
                 "course_code": course.course_code,
                 "title": course.title,
+                "thumbnail_url": course.thumbnail_url,
                 "description": clean_desc,
                 "category": course.category,
                 "difficulty": course.difficulty,
@@ -1667,6 +1727,7 @@ def student_course_detail(course_id: str) -> Any:
             "is_eligible": is_eligible,
             "missing_titles": missing_titles,
             "prerequisites": prereq_items,
+            "learning_units": serialized_units,
             "lessons": serialized_lessons,
             "assessments": serialized_assessments,
             "resources": serialized_resources,

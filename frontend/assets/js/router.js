@@ -418,11 +418,16 @@ class AppRouter {
       const parts = path.split('/');
       const courseId = parts[3];
       await InstructorView.renderLessonAuthoringStudio(viewport, courseId, null, query.learning_unit_id);
-    } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && path.endsWith('/edit')) {
-      const parts = path.split('/');
-      const courseId = parts[3];
-      const lessonId = parts[5];
-      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, lessonId);
+    } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && !path.includes('/lessons/new')) {
+      const match = path.match(/#\/instructor\/courses\/([^/]+)\/lessons\/([^/]+)/);
+      if (match) {
+        const courseId = match[1];
+        let lessonId = match[2];
+        if (lessonId === 'new') lessonId = null;
+        else if (lessonId === 'edit') lessonId = query.id || query.lesson_id || null;
+        else if (lessonId === 'undefined' || lessonId === 'null') lessonId = null;
+        await InstructorView.renderLessonAuthoringStudio(viewport, courseId, lessonId, query.learning_unit_id);
+      }
     } else if (path === '#/instructor/questions/studio' || (path === '#/instructor/questions' && query.studio)) {
       await InstructorView.renderExtendedQuestionStudio(viewport, query.course);
     } else if (path === '#/instructor/questions') {
@@ -683,9 +688,17 @@ class AppRouter {
       }`;
     }
 
+    const avatarUrl = user.avatar_url
+      || localStorage.getItem(`pwd301:random-avatar:${user.public_id || user.id || user.email}`)
+      || localStorage.getItem('pwd301_avatar');
+
     if (avatarInitials) {
-      avatarInitials.textContent = initials || 'US';
-      avatarInitials.className = `w-7 h-7 rounded-full font-bold flex items-center justify-center text-[11px] shadow-xs transition-all border ${
+      if (avatarUrl) {
+        avatarInitials.innerHTML = `<img src="${avatarUrl}" alt="${UI.escapeHtml(displayName)}" class="w-full h-full object-cover rounded-full" onerror="this.remove();" />`;
+      } else {
+        avatarInitials.textContent = initials || 'US';
+      }
+      avatarInitials.className = `w-7 h-7 rounded-full font-bold flex items-center justify-center text-[11px] shadow-xs transition-all border overflow-hidden ${
         this.currentRole === 'ADMIN'
           ? 'bg-rose-900 text-rose-100 border-rose-400/50'
           : this.currentRole === 'INSTRUCTOR'

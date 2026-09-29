@@ -23,8 +23,12 @@ import logging
 import sys
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from PIL import Image, ImageDraw
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
@@ -140,6 +144,62 @@ def generate_pdf_document(title: str, subtitle: str, topics: list[str]) -> bytes
         b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n450\n%%EOF\n"
     )
     return pdf
+
+
+def generate_course_cover_png(
+    course_code: str,
+    title: str,
+    subtitle: str,
+    bg_gradient: tuple[tuple[int, int, int], tuple[int, int, int]],
+    accent_color: tuple[int, int, int],
+) -> bytes:
+    """Generate a clean 16:9 (1280x720) course thumbnail with modern tech styling."""
+    width = 1280
+    height = 720
+    img = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(img)
+
+    color_start, color_end = bg_gradient
+    # Linear vertical gradient
+    for y in range(height):
+        ratio = y / height
+        r = int(color_start[0] * (1 - ratio) + color_end[0] * ratio)
+        g = int(color_start[1] * (1 - ratio) + color_end[1] * ratio)
+        b = int(color_start[2] * (1 - ratio) + color_end[2] * ratio)
+        draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+    # Tech grid pattern
+    for x in range(0, width, 64):
+        draw.line([(x, 0), (x, height)], fill=(color_start[0] + 12, color_start[1] + 14, color_start[2] + 20))
+    for y in range(0, height, 64):
+        draw.line([(0, y), (width, y)], fill=(color_start[0] + 12, color_start[1] + 14, color_start[2] + 20))
+
+    # Decorative top pill
+    draw.rounded_rectangle([(80, 70), (230, 116)], radius=12, fill=accent_color)
+    draw.text((105, 84), course_code, fill=(255, 255, 255))
+
+    # Inner card box
+    draw.rounded_rectangle(
+        [(80, 150), (1200, 630)],
+        radius=24,
+        fill=(color_start[0] + 8, color_start[1] + 10, color_start[2] + 16),
+        outline=(255, 255, 255, 30),
+        width=2,
+    )
+
+    # Texts
+    draw.text((120, 210), title[:42], fill=(255, 255, 255))
+    if len(title) > 42:
+        draw.text((120, 260), title[42:85], fill=(255, 255, 255))
+    draw.text((120, 340), subtitle, fill=(180, 195, 215))
+
+    # Verification pill badge
+    draw.rounded_rectangle([(120, 530), (340, 575)], radius=10, fill=(30, 42, 60))
+    draw.text((140, 544), "PWD301 Verified Program", fill=(130, 220, 180))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def wipe_all_courses(session: Session) -> None:
@@ -326,6 +386,27 @@ def seed_courses() -> None:
             approved_by_user_id=admin.id,
         )
         session.add(c1)
+        session.flush()
+
+        # Generate & attach 16:9 clean cover for PY301
+        c1_img_bytes = generate_course_cover_png(
+            course_code="PY301",
+            title="Lập trình Python Backend & REST API Doanh Nghiệp",
+            subtitle="Flask • SQLAlchemy • SQL Server • JWT • RBAC • Clean Architecture",
+            bg_gradient=((15, 23, 42), (30, 41, 59)),
+            accent_color=(37, 99, 235),
+        )
+        c1_asset = store_file_stream(
+            actor=inst1,
+            course_id=c1.id,
+            file_stream=io.BytesIO(c1_img_bytes),
+            filename="py301_cover.png",
+            content_type="image/png",
+            asset_type="COURSE_IMAGE",
+            title="Ảnh bìa khóa học PY301",
+            session=session,
+        )
+        c1.thumbnail_file_asset_id = c1_asset.id
         session.flush()
 
         # Completion rule for c1
@@ -801,6 +882,27 @@ def role_required(*allowed_roles):
         session.add(c2)
         session.flush()
 
+        # Generate & attach 16:9 clean cover for DSA201
+        c2_img_bytes = generate_course_cover_png(
+            course_code="DSA201",
+            title="Cấu Trúc Dữ Liệu & Giải Thuật Ứng Dụng Nâng Cao",
+            subtitle="Trees • Graphs • Dynamic Programming • Sorting • Big-O Complexity",
+            bg_gradient=((17, 24, 39), (31, 41, 55)),
+            accent_color=(16, 185, 129),
+        )
+        c2_asset = store_file_stream(
+            actor=inst2,
+            course_id=c2.id,
+            file_stream=io.BytesIO(c2_img_bytes),
+            filename="dsa201_cover.png",
+            content_type="image/png",
+            asset_type="COURSE_IMAGE",
+            title="Ảnh bìa khóa học DSA201",
+            session=session,
+        )
+        c2.thumbnail_file_asset_id = c2_asset.id
+        session.flush()
+
         session.add(
             CourseCompletionRule(
                 course_id=c2.id,
@@ -1114,6 +1216,27 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
             approved_by_user_id=admin.id,
         )
         session.add(c3)
+        session.flush()
+
+        # Generate & attach 16:9 clean cover for OPS401
+        c3_img_bytes = generate_course_cover_png(
+            course_code="OPS401",
+            title="DevOps, CI/CD Pipeline & Hạ Tầng Điện Toán Đám Mây",
+            subtitle="Docker • Kubernetes • GitHub Actions • Cloud Architecture",
+            bg_gradient=((24, 24, 27), (39, 39, 42)),
+            accent_color=(168, 85, 247),
+        )
+        c3_asset = store_file_stream(
+            actor=inst1,
+            course_id=c3.id,
+            file_stream=io.BytesIO(c3_img_bytes),
+            filename="ops401_cover.png",
+            content_type="image/png",
+            asset_type="COURSE_IMAGE",
+            title="Ảnh bìa khóa học OPS401",
+            session=session,
+        )
+        c3.thumbnail_file_asset_id = c3_asset.id
         session.flush()
 
         session.add(

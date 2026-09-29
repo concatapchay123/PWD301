@@ -155,6 +155,20 @@ def delete_learning_unit(
             lesson.updated_at = utc_now()
 
     unit.deleted_at = utc_now()
+    sess.flush()
+
+    # Re-compact remaining active learning units to contiguous positions
+    remaining_units = (
+        sess.query(LearningUnit)
+        .filter(LearningUnit.course_id == unit.course_id, LearningUnit.deleted_at.is_(None))
+        .order_by(LearningUnit.position.asc(), LearningUnit.id.asc())
+        .all()
+    )
+    for idx, rem in enumerate(remaining_units, start=1):
+        rem.position = idx
+        rem.updated_at = utc_now()
+    sess.flush()
+
     if session is None:
         sess.commit()
     return True

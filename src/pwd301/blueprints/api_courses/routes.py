@@ -94,7 +94,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "capacity": c.capacity,
         "status": c.status,
         "thumbnail_url": f"/api/courses/{c.public_id}/thumbnail"
-        if c.status == "PUBLISHED" and thumbnail
+        if thumbnail
         else None,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "published_at": c.published_at.isoformat() if c.published_at else None,
@@ -157,15 +157,17 @@ def get_course_thumbnail_api(course_id: str) -> Response:
     from pwd301.services.exceptions import ResourceNotFoundError
     from pwd301.services.file_service import get_file_for_download
 
-    course = get_course_detail(None, course_id)
+    actor = get_authenticated_actor()
+    course = get_course_detail(actor, course_id)
     asset = get_course_thumbnail_asset(course)
     if asset is None:
         raise ResourceNotFoundError("Course cover image not found.")
+    is_public = (course.status == "PUBLISHED")
     _asset, blob, physical_path = get_file_for_download(
-        None,
+        actor,
         asset,
         session=db.session,
-        public_course_thumbnail=True,
+        public_course_thumbnail=is_public,
     )
     return send_file(physical_path, mimetype=blob.detected_mime_type, conditional=True)
 
