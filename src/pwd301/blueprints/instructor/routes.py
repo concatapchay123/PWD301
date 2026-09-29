@@ -3929,3 +3929,32 @@ def instructor_get_json_sample_route() -> Response:
         as_attachment=True,
         download_name="exam_sample_questions.json",
     )
+
+
+@instructor_bp.route("/check-youtube-link", methods=["POST"])
+@instructor_required
+def check_youtube_link_route() -> Any:
+    """Validate YouTube URL embeddability, availability, and active status."""
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"valid": False, "reason": "Vui lòng nhập liên kết YouTube."}), 400
+
+    from pwd301.services.youtube_validator_service import verify_youtube_embeddability
+
+    result = verify_youtube_embeddability(url)
+    return jsonify(result), 200
+
+
+@instructor_bp.route("/courses/<course_id>/scan-videos", methods=["POST"])
+@instructor_required
+def scan_course_videos_route(course_id: str) -> Any:
+    """Scan all YouTube videos in a managed course and notify instructor if broken."""
+    actor = require_authenticated_actor()
+    course = require_course_manager(actor, course_id, session=db.session)
+
+    from pwd301.services.youtube_validator_service import scan_and_notify_broken_youtube_videos
+
+    reports = scan_and_notify_broken_youtube_videos(course_id=course.id)
+    return jsonify({"success": True, "broken_count": len(reports), "reports": reports}), 200
+

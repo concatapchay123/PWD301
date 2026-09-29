@@ -710,6 +710,11 @@ def get_student_learning_overview(
             "course_title": e.course.title if e.course else None,
             "title": e.course.title if e.course else None,
             "name": e.course.title if e.course else None,
+            "thumbnail_url": (
+                e.course.thumbnail_url
+                if (e.course and getattr(e.course, "thumbnail_url", None))
+                else None
+            ),
             "instructor_name": (
                 e.course.owner_instructor.display_name
                 if (e.course and e.course.owner_instructor)

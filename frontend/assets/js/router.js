@@ -775,6 +775,10 @@ class AppRouter {
             }
             UI.showToast(`Đã chuyển sang góc nhìn ${target === 'ADMIN' ? 'Quản trị viên' : target === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên'}!`, 'info');
             this.updateUserUI();
+            this.updateBadgeFromCache();
+            if (document.getElementById('topbar-notifications-dropdown') && !document.getElementById('topbar-notifications-dropdown').classList.contains('hidden')) {
+              this.renderNotificationsDropdownContent();
+            }
             this.redirectToRoleHome();
             roleDropdown.classList.add('hidden');
           } catch (err) {
@@ -874,10 +878,108 @@ class AppRouter {
     }
   }
 
+  getNotificationRole(item) {
+    if (!item) return 'ALL';
+    const cat = (item.category || '').toUpperCase();
+    const title = (item.title || '').toLowerCase();
+    const body = (item.body || item.message || '').toLowerCase();
+    const url = (item.action_url || item.target_url || '').toLowerCase();
+    const eventType = (item.event_type || '').toUpperCase();
+
+    // Universal security alerts across all roles
+    if (cat === 'SECURITY' || eventType.startsWith('SECURITY_') || title.includes('bảo mật') || title.includes('đăng nhập')) {
+      return 'ALL';
+    }
+
+    // Admin role notifications
+    if (
+      url.startsWith('#/admin') ||
+      eventType.startsWith('ADMIN_') ||
+      eventType.includes('APPLICATION_SUBMITTED') ||
+      eventType === 'INSTRUCTOR_APPLICATION' ||
+      title.includes('ứng tuyển') ||
+      body.includes('ứng tuyển') ||
+      title.includes('yêu cầu phê duyệt') ||
+      title.includes('chờ duyệt') ||
+      body.includes('chờ quản trị viên duyệt') ||
+      body.includes('chờ admin duyệt')
+    ) {
+      return 'ADMIN';
+    }
+
+    // Instructor role notifications
+    if (
+      url.startsWith('#/instructor') ||
+      eventType.startsWith('INSTRUCTOR_') ||
+      eventType === 'LESSON_APPROVED' ||
+      eventType === 'LESSON_REJECTED' ||
+      eventType === 'STUDENT_ENROLLED' ||
+      title.includes('đã được duyệt') ||
+      title.includes('bị từ chối') ||
+      body.includes('bài học của bạn đã được duyệt') ||
+      body.includes('bài học của bạn đã bị từ chối') ||
+      title.includes('học viên mới') ||
+      body.includes('học viên mới tham gia') ||
+      body.includes('đã đăng ký khóa học của bạn')
+    ) {
+      return 'INSTRUCTOR';
+    }
+
+    // Student role notifications
+    if (
+      url.startsWith('#/learning') ||
+      url.startsWith('#/student') ||
+      url.startsWith('#/assessments') ||
+      url.startsWith('#/courses') ||
+      cat === 'ASSESSMENT' ||
+      cat === 'GRADE' ||
+      eventType.startsWith('ASSESSMENT_') ||
+      eventType.startsWith('GRADE_') ||
+      eventType.startsWith('ENROLLMENT_') ||
+      title.includes('khảo thí') ||
+      title.includes('bài thi') ||
+      title.includes('điểm số') ||
+      title.includes('đã hoàn thành') ||
+      body.includes('bài kiểm tra') ||
+      body.includes('điểm thi')
+    ) {
+      return 'STUDENT';
+    }
+
+    // Universal system broadcasts or general updates
+    return 'ALL';
+  }
+
+  getVisibleNotificationsForCurrentRole() {
+    if (!this.notificationsCache || !Array.isArray(this.notificationsCache.items)) {
+      return [];
+    }
+    const currentRole = (this.currentRole || 'STUDENT').toUpperCase();
+    const rawItems = this.notificationsCache.items;
+
+    // 1. Deduplicate by (title, body): collapse duplicates, keeping only the newest item
+    const seenKeys = new Set();
+    const deduplicated = [];
+    for (const item of rawItems) {
+      const key = `${(item.title || '').trim()}:::${(item.body || item.message || '').trim()}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        deduplicated.push(item);
+      }
+    }
+
+    // 2. Strict role partitioning: only include notifications belonging to current role or universal 'ALL'
+    return deduplicated.filter(item => {
+      const role = this.getNotificationRole(item);
+      return role === 'ALL' || role === currentRole;
+    });
+  }
+
   updateBadgeFromCache() {
     const badge = document.getElementById('topbar-notifications-badge');
     if (!badge || !this.notificationsCache) return;
-    const count = this.notificationsCache.unread_count ?? (this.notificationsCache.items || []).filter(i => !i.is_read && !i.read).length;
+    const items = this.getVisibleNotificationsForCurrentRole();
+    const count = items.filter(i => !i.is_read && !i.read).length;
     if (count > 0) {
       badge.textContent = count > 99 ? '99+' : count;
       badge.classList.remove('hidden');
@@ -1049,7 +1151,7 @@ class AppRouter {
     const dropdown = document.getElementById('topbar-notifications-dropdown');
     if (!dropdown || !this.notificationsCache) return;
 
-    const items = this.notificationsCache.items || [];
+    const items = this.getVisibleNotificationsForCurrentRole();
     const unreadCount = items.filter(i => !i.is_read && !i.read).length;
     const activeTab = this.activeNotificationTab || 'ALL';
 

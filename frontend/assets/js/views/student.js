@@ -487,6 +487,16 @@ class StudentView {
             return `
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4">
                 <div class="space-y-2">
+                  <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '#/student/courses/detail?id=${e.course_id}'">
+                    ${e.thumbnail_url ? `
+                      <img src="${UI.escapeHtml(e.thumbnail_url)}" alt="${UI.escapeHtml(e.course_title || 'Khóa học')}" class="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
+                    ` : `
+                      <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-1 p-4">
+                        <span class="material-symbols-outlined text-[28px] text-primary/40">school</span>
+                        <span class="text-[11px] font-semibold">${UI.escapeHtml(e.course_code || 'CRS')}</span>
+                      </div>
+                    `}
+                  </div>
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-mono font-bold text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(e.course_code || 'CRS')}</span>
                     ${e.status && e.status !== 'ACTIVE' ? UI.statusBadge(e.status) : ''}
@@ -686,7 +696,12 @@ class StudentView {
       grid.querySelectorAll('.enroll-action-btn').forEach(btn => {
         btn.onclick = () => {
           const cid = btn.dataset.courseId;
-          StudentView.openEnrollmentModal(cid, () => renderFiltered());
+          StudentView.openEnrollmentModal(cid, (enrolledId) => {
+            const targetId = enrolledId || cid;
+            if (targetId) enrolledCourseIds.add(String(targetId));
+            if (cid) enrolledCourseIds.add(String(cid));
+            renderFiltered();
+          });
         };
       });
     };
@@ -842,7 +857,7 @@ class StudentView {
             UI.closeModal();
             UI.showToast(`Đã ghi danh thành công khóa học: ${course.title}`, 'success');
             if (typeof onEnrolledCallback === 'function') {
-              onEnrolledCallback();
+              onEnrolledCallback(courseId);
             } else {
               window.location.hash = '#/student/courses';
             }
@@ -965,6 +980,16 @@ class StudentView {
           return `
             <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
               <div class="space-y-2.5">
+                <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '#/student/courses/detail?id=${e.course_id}'">
+                  ${e.thumbnail_url ? `
+                    <img src="${UI.escapeHtml(e.thumbnail_url)}" alt="${UI.escapeHtml(e.course_title)}" class="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
+                  ` : `
+                    <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-1 p-4">
+                      <span class="material-symbols-outlined text-[28px] text-primary/40">school</span>
+                      <span class="text-[11px] font-semibold">${UI.escapeHtml(e.course_code || 'Khóa học')}</span>
+                    </div>
+                  `}
+                </div>
                 <div class="flex items-center justify-between">
                   <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(e.course_code)}</span>
                   ${e.status && e.status !== 'ACTIVE' ? UI.statusBadge(e.status) : ''}
@@ -1643,7 +1668,9 @@ class StudentView {
       const courseResources = courseData?.resources || course.resources || [];
 
       // Only display resources explicitly attached to the current lesson
-      const resources = Array.isArray(lesson.resources) ? lesson.resources : [];
+      const currentLessonId = String(lessonId || lesson.lesson_id || lesson.id || '');
+      const resources = (Array.isArray(lesson.resources) ? lesson.resources : [])
+        .filter(r => !r.lesson_id || String(r.lesson_id) === currentLessonId);
       const hasVideo = Boolean(lesson.video_url);
       let videoWatched = StudentView.isLessonVideoWatched(lesson);
       let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
@@ -1762,14 +1789,14 @@ class StudentView {
                   <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
                     <div class="flex items-center gap-2">
                       <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
-                        ${isCompleted ? 'verified' : 'lock_clock'}
+                        ${isCompleted ? 'verified' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'smart_display' : 'lock_clock')}
                       </span>
                       <span id="anti-seek-status-label" class="font-medium text-[11px] sm:text-xs">
-                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.'}
+                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'Video YouTube: Bạn có thể tua tiến độ tùy ý.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.')}
                       </span>
                     </div>
                     <span id="anti-seek-progress-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
-                      ${isCompleted ? '100%' : 'Tiến độ: 0%'}
+                      ${isCompleted ? '100%' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'YouTube' : 'Tiến độ: 0%')}
                     </span>
                   </div>
                 </div>
@@ -2329,25 +2356,13 @@ class StudentView {
               }
               if (typeof info.currentTime === 'number') {
                 const cur = info.currentTime;
-                if (!videoWatched && cur > maxWatchedTime + 2.0) {
-                  // Forward seek detected! Revert back to maxWatchedTime
-                  try {
-                    videoEl.contentWindow?.postMessage(JSON.stringify({
-                      event: 'command',
-                      func: 'seekTo',
-                      args: [maxWatchedTime, true]
-                    }), iframeOrigin);
-                  } catch (err) {}
-                  notifySeekBlocked();
-                } else {
-                  if (cur > maxWatchedTime) {
-                    maxWatchedTime = cur;
-                  }
-                  if (iframeDuration > 0) {
-                    updateProgressUI(maxWatchedTime, iframeDuration);
-                    if (cur >= iframeDuration - 2.0) {
-                      handleVideoCompleted(iframeDuration);
-                    }
+                if (cur > maxWatchedTime) {
+                  maxWatchedTime = cur;
+                }
+                if (iframeDuration > 0) {
+                  updateProgressUI(maxWatchedTime, iframeDuration);
+                  if (cur >= iframeDuration - 2.0) {
+                    handleVideoCompleted(iframeDuration);
                   }
                 }
               }
@@ -4710,7 +4725,7 @@ class StudentView {
             <!-- Full Name -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Họ và tên đầy đủ
+                Họ và tên đầy đủ <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="text"
@@ -4724,7 +4739,7 @@ class StudentView {
             <!-- Date of Birth -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Ngày sinh
+                Ngày sinh <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="date"
@@ -4737,7 +4752,7 @@ class StudentView {
             <!-- Phone Number -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Số điện thoại liên hệ
+                Số điện thoại liên hệ <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="tel"
@@ -4751,7 +4766,7 @@ class StudentView {
             <!-- Contact Email -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Email liên hệ
+                Email liên hệ <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="email"
@@ -4765,7 +4780,7 @@ class StudentView {
             <!-- Citizen ID (CCCD) -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Số CCCD / CMND / Hộ chiếu
+                Số CCCD / CMND / Hộ chiếu <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="text"
@@ -4788,7 +4803,7 @@ class StudentView {
             <!-- Specialization -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Chuyên môn / Lĩnh vực giảng dạy chính
+                Chuyên môn / Lĩnh vực giảng dạy chính <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <input
                 type="text"
@@ -4802,7 +4817,7 @@ class StudentView {
             <!-- Statement of Purpose / Bio -->
             <div class="space-y-1.5">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Giới thiệu bản thân & Định hướng giảng dạy
+                Giới thiệu bản thân & Định hướng giảng dạy <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <textarea
                 name="statement"
@@ -4862,20 +4877,20 @@ class StudentView {
               <span>3. Hồ sơ năng lực & Minh chứng</span>
             </div>
             <p class="text-xs text-slate-500">
-              Tải lên hồ sơ để Quản trị viên đối soát năng lực. Hỗ trợ tệp PDF, Word (DOCX) hoặc hình ảnh (PNG, JPG), tối đa 50MB/file.
+              Tải lên hồ sơ để Quản trị viên đối soát năng lực. Tệp CV chỉ chấp nhận 1 file PDF; tệp minh chứng tối đa 4 file (PDF, hình ảnh) dưới 2MB/tệp.
             </p>
 
             <!-- CV / Portfolio File Dropzone -->
             <div class="space-y-2">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Tệp CV hoặc Portfolio tóm tắt năng lực
+                Tệp CV hoặc Portfolio tóm tắt năng lực <span class="text-rose-500 font-bold ml-0.5">*</span>
               </label>
               <div id="cv-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary dark:hover:border-primary rounded-2xl p-5 text-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30">
-                <input type="file" id="cv_file_input" name="cv_file" accept=".pdf,.docx,.png,.jpg,.jpeg" class="hidden" />
+                <input type="file" id="cv_file_input" name="cv_file" accept=".pdf,application/pdf" class="hidden" />
                 <div id="cv-empty-view" class="space-y-1 pointer-events-none">
                   <span class="material-symbols-outlined text-[32px] text-primary">cloud_upload</span>
                   <div class="text-xs font-bold text-slate-700 dark:text-slate-200">Bấm hoặc kéo thả tệp CV / Portfolio vào đây</div>
-                  <div class="text-[11px] text-slate-400">PDF, DOCX, PNG, JPG (Tối đa 50MB)</div>
+                  <div class="text-[11px] text-slate-400">Chỉ chấp nhận duy nhất 1 tệp định dạng PDF</div>
                 </div>
                 <div id="cv-selected-view" class="hidden flex items-center justify-between p-2.5 rounded-xl bg-primary/10 border border-primary/20 text-left">
                   <div class="flex items-center gap-2.5 min-w-0">
@@ -4895,15 +4910,15 @@ class StudentView {
             <!-- Additional Evidence Files Dropzone -->
             <div class="space-y-2">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Chứng chỉ, bằng cấp hoặc minh chứng bổ sung <span class="text-[11px] text-slate-400 font-normal lowercase">(không bắt buộc)</span>
+                Chứng chỉ, bằng cấp hoặc minh chứng bổ sung <span class="text-[11px] text-slate-400 font-normal lowercase">(Tối đa 4 tệp PDF/PNG/JPG, dưới 2MB/tệp)</span>
               </label>
               <div id="evidence-dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-primary dark:hover:border-primary rounded-2xl p-4 text-center cursor-pointer transition-all bg-slate-50/50 dark:bg-slate-800/30">
-                <input type="file" id="evidence_files_input" name="evidence_files" multiple accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" class="hidden" />
+                <input type="file" id="evidence_files_input" name="evidence_files" multiple accept=".pdf,image/png,image/jpeg,image/jpg" class="hidden" />
                 <div class="flex items-center justify-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 pointer-events-none">
                   <span class="material-symbols-outlined text-[20px] text-slate-400">attach_file</span>
                   <span>Bấm hoặc kéo thả để chọn thêm tệp minh chứng</span>
                 </div>
-                <div class="text-[11px] text-slate-400 mt-0.5 pointer-events-none">Bằng tốt nghiệp, chứng chỉ nghề, hợp đồng giảng dạy...</div>
+                <div class="text-[11px] text-slate-400 mt-0.5 pointer-events-none">Tối đa 4 tệp: Bằng tốt nghiệp, chứng chỉ nghề (PDF, PNG, JPG dưới 2MB)</div>
               </div>
               <div id="evidence-files-list" class="space-y-1.5 empty:hidden pt-1"></div>
             </div>
@@ -4938,6 +4953,12 @@ class StudentView {
           if (cvInput) cvInput.value = '';
           cvEmptyView?.classList.remove('hidden');
           cvSelectedView?.classList.add('hidden');
+          return;
+        }
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'pdf' && file.type !== 'application/pdf') {
+          UI.showToast('Tệp CV hoặc Portfolio chỉ chấp nhận định dạng PDF.', 'warning');
+          if (cvInput) cvInput.value = '';
           return;
         }
         cvSelectedFile = file;
@@ -4983,6 +5004,35 @@ class StudentView {
       const evInput = document.getElementById('evidence_files_input');
       const evList = document.getElementById('evidence-files-list');
 
+      const handleAddEvidenceFiles = (incomingFiles) => {
+        if (!incomingFiles || incomingFiles.length === 0) return;
+        const allowedExts = ['pdf', 'png', 'jpg', 'jpeg'];
+        const maxBytes = 2 * 1024 * 1024; // 2MB
+        let count = evidenceSelectedFiles.length;
+
+        for (let i = 0; i < incomingFiles.length; i++) {
+          const f = incomingFiles[i];
+          const ext = f.name.split('.').pop().toLowerCase();
+          if (!allowedExts.includes(ext)) {
+            UI.showToast(`Tệp '${f.name}' không đúng định dạng. Chỉ chấp nhận PDF, PNG, JPG.`, 'warning');
+            continue;
+          }
+          if (f.size > maxBytes) {
+            UI.showToast(`Tệp '${f.name}' (${UI.formatBytes(f.size)}) vượt quá dung lượng tối đa 2MB.`, 'warning');
+            continue;
+          }
+          if (count >= 4) {
+            UI.showToast('Bạn chỉ được đính kèm tối đa 4 tệp minh chứng bổ sung.', 'warning');
+            break;
+          }
+          if (!evidenceSelectedFiles.some(item => item.name === f.name && item.size === f.size)) {
+            evidenceSelectedFiles.push(f);
+            count++;
+          }
+        }
+        renderEvidenceList();
+      };
+
       const renderEvidenceList = () => {
         if (!evList) return;
         if (evidenceSelectedFiles.length === 0) {
@@ -5018,13 +5068,8 @@ class StudentView {
 
       evInput?.addEventListener('change', () => {
         if (evInput.files) {
-          for (let i = 0; i < evInput.files.length; i++) {
-            const f = evInput.files[i];
-            if (!evidenceSelectedFiles.some(item => item.name === f.name && item.size === f.size)) {
-              evidenceSelectedFiles.push(f);
-            }
-          }
-          renderEvidenceList();
+          handleAddEvidenceFiles(evInput.files);
+          evInput.value = '';
         }
       });
 
@@ -5039,13 +5084,7 @@ class StudentView {
         e.preventDefault();
         evDropzone.classList.remove('border-primary', 'bg-primary/5');
         if (e.dataTransfer.files) {
-          for (let i = 0; i < e.dataTransfer.files.length; i++) {
-            const f = e.dataTransfer.files[i];
-            if (!evidenceSelectedFiles.some(item => item.name === f.name && item.size === f.size)) {
-              evidenceSelectedFiles.push(f);
-            }
-          }
-          renderEvidenceList();
+          handleAddEvidenceFiles(e.dataTransfer.files);
         }
       });
 
@@ -5447,8 +5486,9 @@ class StudentView {
           const styles = ['adventurer', 'lorelei', 'fun-emoji', 'pixel-art', 'thumbs', 'bottts'];
           const randomStyle = styles[Math.floor(Math.random() * styles.length)];
           generatedAvatarUrl = StudentView.createRandomAvatarUrl(Math.random, randomStyle);
-          if (avatarBox) {
-            avatarBox.innerHTML = `<img src="${UI.escapeHtml(generatedAvatarUrl)}" alt="Avatar ngẫu nhiên" class="w-full h-full object-cover" onerror="this.remove();" />`;
+          const activeBox = document.getElementById('avatar-preview-box') || avatarBox;
+          if (activeBox) {
+            activeBox.innerHTML = `<img src="${UI.escapeHtml(generatedAvatarUrl)}" alt="Avatar ngẫu nhiên" class="w-full h-full object-cover" onerror="this.remove();" />`;
           }
         };
       }
@@ -5458,9 +5498,10 @@ class StudentView {
       if (profileForm) {
         profileForm.onsubmit = async (e) => {
           e.preventDefault();
-          const nameInput = container.querySelector('#settings-display-name');
-          const saveBtn = container.querySelector('#btn-save-profile');
-          const newName = nameInput ? nameInput.value.trim() : '';
+          const activeForm = e.target || document.getElementById('profile-settings-form');
+          const nameInput = activeForm ? (activeForm.querySelector('#settings-display-name') || document.getElementById('settings-display-name')) : document.getElementById('settings-display-name');
+          const saveBtn = activeForm ? (activeForm.querySelector('#btn-save-profile') || document.getElementById('btn-save-profile')) : document.getElementById('btn-save-profile');
+          const newName = nameInput ? nameInput.value.trim() : (profile.display_name || '');
 
           if (!newName || newName.length < 2) {
             UI.showToast('Vui lòng nhập họ và tên hiển thị hợp lệ (tối thiểu 2 ký tự).', 'warning');

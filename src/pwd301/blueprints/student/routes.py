@@ -475,6 +475,11 @@ def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
         "course_id": str(e.course.public_id) if e.course else None,
         "course_code": e.course.course_code if e.course else None,
         "course_title": e.course.title if e.course else None,
+        "thumbnail_url": (
+            e.course.thumbnail_url
+            if (e.course and getattr(e.course, "thumbnail_url", None))
+            else None
+        ),
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
@@ -1754,6 +1759,25 @@ def submit_become_instructor() -> Any:
         quarantine_root = get_file_quarantine_root()
         max_evidence_bytes = 50_000_000  # Enforce 50 MB ceiling (SEC-02 DoS prevention)
 
+        # Enforce strict CV / Portfolio constraints: max 1 file, PDF only
+        cv_files = [f for f in (request.files.getlist("cv_file") + request.files.getlist("portfolio_file")) if f and f.filename and f.filename.strip()]
+        if len(cv_files) > 1:
+            return jsonify({"error": {"code": "INVALID_FILE_COUNT", "message": "Tệp CV hoặc Portfolio chỉ được phép tải lên tối đa 1 tệp."}}), 400
+        for f in cv_files:
+            clean_name = sanitize_filename(f.filename)
+            if Path(clean_name).suffix.lower() != ".pdf":
+                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": f"Tệp CV '{clean_name}' không đúng định dạng. Chỉ chấp nhận tệp định dạng PDF."}}), 400
+
+        # Enforce strict Additional Evidence constraints: max 4 files, each <= 2MB, PDF/PNG/JPG/DOCX
+        ev_files = [f for f in request.files.getlist("evidence_files") if f and f.filename and f.filename.strip()]
+        if len(ev_files) > 4:
+            return jsonify({"error": {"code": "INVALID_FILE_COUNT", "message": "Minh chứng bổ sung chỉ được phép tải lên tối đa 4 tệp."}}), 400
+        allowed_ev_exts = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
+        for f in ev_files:
+            clean_name = sanitize_filename(f.filename)
+            if Path(clean_name).suffix.lower() not in allowed_ev_exts:
+                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": f"Tệp minh chứng '{clean_name}' không được hỗ trợ. Chỉ chấp nhận PDF, PNG, JPG, DOCX."}}), 400
+
         for field_name, doc_type in evidence_field_specs:
             if field_name not in request.files:
                 continue
@@ -1795,6 +1819,12 @@ def submit_become_instructor() -> Any:
                     if temp_path.exists():
                         temp_path.unlink(missing_ok=True)
                     continue
+
+                if doc_type == "EVIDENCE" and total_size > 2_097_152:
+                    if temp_path.exists():
+                        temp_path.unlink(missing_ok=True)
+                    msg = f"Tệp minh chứng '{clean_original_name}' vượt quá dung lượng tối đa 2MB."
+                    return jsonify({"error": {"code": "FILE_TOO_LARGE", "message": msg}}), 400
 
                 # Multi-engine malware scanning (SEC-02 ClamAV scan)
                 scan_verdicts = scan_file_all_engines(temp_path)

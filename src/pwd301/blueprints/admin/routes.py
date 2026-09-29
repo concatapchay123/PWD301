@@ -1385,9 +1385,12 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             les = db.session.get(Lesson, r.target_id)
             if les:
                 target_title = les.title
+                unit_title = les.learning_unit.title if les.learning_unit else None
                 original_data = {
                     "id": les.id,
                     "title": les.title,
+                    "learning_unit_id": str(les.learning_unit_id) if les.learning_unit_id else None,
+                    "learning_unit_title": unit_title,
                     "summary": les.summary or "",
                     "markdown_content": les.markdown_content or "",
                     "status": les.status,
@@ -1465,6 +1468,10 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             ):
                 dur = staged_lesson.estimated_duration_minutes
                 payload_data["estimated_duration_minutes"] = dur
+            if staged_lesson.learning_unit_id:
+                payload_data["learning_unit_id"] = str(staged_lesson.learning_unit_id)
+                if staged_lesson.learning_unit:
+                    payload_data["learning_unit_title"] = staged_lesson.learning_unit.title
 
         results.append(
             {
@@ -1472,6 +1479,16 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 "course_id": str(r.course.public_id) if r.course else str(r.course_id),
                 "course_code": r.course.course_code if r.course else None,
                 "course_title": r.course.title if r.course else None,
+                "learning_unit_id": (
+                    original_data.get("learning_unit_id")
+                    if isinstance(original_data, dict) and original_data.get("learning_unit_id")
+                    else (payload_data.get("learning_unit_id") if isinstance(payload_data, dict) else None)
+                ),
+                "learning_unit_title": (
+                    original_data.get("learning_unit_title")
+                    if isinstance(original_data, dict) and original_data.get("learning_unit_title")
+                    else (payload_data.get("learning_unit_title") if isinstance(payload_data, dict) else None)
+                ),
                 "requested_by_id": str(r.requested_by.public_id) if r.requested_by else None,
                 "requested_by_name": r.requested_by.display_name if r.requested_by else None,
                 "change_type": r.change_type,

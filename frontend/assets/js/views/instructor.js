@@ -289,20 +289,29 @@ class InstructorView {
             const lessonCount = (c.lessons || []).length;
             const studentCount = c.enrollments_count ?? c.enrolled_count ?? 0;
             return `
-              <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs hover:border-primary/40 hover:shadow-subtle transition-all flex flex-col justify-between gap-5 group">
+              <div
+                class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs hover:border-primary/40 hover:shadow-subtle transition-all flex flex-col justify-between gap-4 group cursor-pointer"
+                onclick="window.location.hash = '#/instructor/courses/manage?id=${cId}'"
+              >
                 <div class="space-y-3">
+                  <!-- Course Thumbnail Image -->
+                  <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-[#E8E6DF] dark:border-[#2E2D2B]">
+                    ${c.thumbnail_url ? `
+                      <img src="${UI.escapeHtml(c.thumbnail_url)}" alt="${UI.escapeHtml(c.title)}" class="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
+                    ` : `
+                      <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 gap-1 p-4">
+                        <span class="material-symbols-outlined text-[28px]">image</span>
+                        <span class="text-[11px] font-semibold">Chưa có ảnh bìa</span>
+                      </div>
+                    `}
+                  </div>
+
                   <!-- Top Row: Code & Status -->
                   <div class="flex items-center justify-between gap-2 flex-wrap">
                     <span class="font-mono font-extrabold text-primary text-xs px-2.5 py-1 rounded-lg bg-primary-subtle border border-primary/20">
                       ${UI.escapeHtml(c.course_code)}
                     </span>
                     <div class="flex items-center gap-1.5 flex-wrap">
-                      ${!c.thumbnail_url ? `
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-[10px] font-semibold border border-amber-200 dark:border-amber-800" title="Khóa học này chưa có ảnh bìa đại diện">
-                          <span class="material-symbols-outlined text-[13px]">add_photo_alternate</span>
-                          <span>Chưa có ảnh bìa</span>
-                        </span>
-                      ` : ''}
                       ${UI.statusBadge(c.status)}
                     </div>
                   </div>
@@ -335,6 +344,7 @@ class InstructorView {
                   <a
                     href="#/instructor/courses/manage?id=${cId}"
                     class="w-full py-2.5 px-4 rounded-xl bg-[#F4F1EA] hover:bg-primary hover:text-white dark:bg-[#262524] dark:hover:bg-primary dark:hover:text-white text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all flex items-center justify-center gap-2 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs"
+                    onclick="event.stopPropagation()"
                   >
                     <span>Mở khóa học</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
@@ -605,10 +615,10 @@ class InstructorView {
 
           <!-- Course Header Banner (Warm Surface Card) -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-6 sm:p-8 shadow-subtle space-y-4">
-            <div class="relative h-40 overflow-hidden rounded-xl bg-indigo-100 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center">
+            <div class="relative aspect-video max-h-72 w-full overflow-hidden rounded-xl bg-indigo-100 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center">
               <span class="absolute -right-8 -top-12 h-44 w-44 rounded-full border-[28px] border-indigo-200/70 dark:border-indigo-800/70" aria-hidden="true"></span>
               <span class="material-symbols-outlined text-6xl text-indigo-600 dark:text-indigo-300" aria-hidden="true">school</span>
-              ${course.thumbnail_url ? `<img src="${UI.escapeHtml(course.thumbnail_url)}" alt="Ảnh đại diện khóa học" class="absolute inset-0 h-full w-full object-cover" onerror="this.remove()" />` : ''}
+              ${course.thumbnail_url ? `<img src="${UI.escapeHtml(course.thumbnail_url)}" alt="Ảnh đại diện khóa học" class="absolute inset-0 h-full w-full object-cover object-center" onerror="this.remove()" />` : ''}
             </div>
             <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
               <span class="material-symbols-outlined text-base">add_photo_alternate</span> Đổi Ảnh Đại Diện Khóa Học
@@ -3050,7 +3060,6 @@ class InstructorView {
             <h2 class="text-sm font-bold text-[#222120] dark:text-[#F0F5FA]">${UI.escapeHtml(unit.title)}</h2>
             <span class="text-[11px] font-medium text-[#5C5B57] dark:text-[#C6D2E1]">${count}/10 Lesson</span>
           </div>
-          ${count < 10 ? `<a href="${coursePath}/new?learning_unit_id=${unitId}" class="text-xs font-bold text-primary dark:text-[#93C5FD] hover:underline flex items-center gap-0.5"><span class="material-symbols-outlined text-[14px]">add</span><span>Thêm Lesson</span></a>` : ''}
         </div>
         <div class="flex flex-col gap-2" id="nav-lessons-sortable-list">
           ${lessons.map((lesson, idx) => {
@@ -3103,7 +3112,7 @@ class InstructorView {
             class="w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1"
           >
             <span class="material-symbols-outlined text-[16px]">add</span>
-            <span>+ Thêm bài học mới</span>
+            <span>Thêm lesson</span>
           </a>
         ` : ''}
       </nav>
@@ -3111,6 +3120,10 @@ class InstructorView {
   }
 
   static async renderLessonAuthoringStudio(container, courseId, lessonId = null, initialUnitId = null) {
+    if (window._currentStudioTimer) {
+      clearInterval(window._currentStudioTimer);
+      window._currentStudioTimer = null;
+    }
     let availableUnits = [];
     let lessonStatus = 'DRAFT';
     try {
@@ -4066,7 +4079,7 @@ class InstructorView {
       };
     }
 
-    const handleApplyVideoUrl = () => {
+    const handleApplyVideoUrl = async () => {
       const inputEl = document.getElementById('studio-input-video-url');
       const inputUrl = inputEl?.value.trim() || '';
       if (!inputUrl) {
@@ -4088,12 +4101,29 @@ class InstructorView {
         UI.showToast('Mỗi Lesson chỉ được có tối đa 2 video.', 'warning');
         return;
       }
+
+      if (ytId) {
+        UI.showToast('Đang kiểm tra tính khả dụng của video YouTube...', 'info');
+        try {
+          const check = await ApiClient.checkYouTubeLink(url);
+          if (!check.valid) {
+            UI.showToast(check.reason || 'Video YouTube không tồn tại hoặc không cho phép nhúng.', 'error');
+            return;
+          }
+          UI.showToast(`Video YouTube hợp lệ: "${check.title || 'Video'}"`, 'success');
+        } catch (err) {
+          console.warn('YouTube check error:', err);
+        }
+      }
+
       videoUrls.push(url);
       currentVideoUrl = url;
       if (inputEl) inputEl.value = '';
       renderVideoPreview(currentVideoUrl);
       renderVideoList();
-      UI.showToast('Đã thêm link video vào bài học thành công!', 'success');
+      if (!ytId) {
+        UI.showToast('Đã thêm link video vào bài học thành công!', 'success');
+      }
     };
 
     const applyUrlBtn = document.getElementById('btn-apply-video-url');
@@ -5391,9 +5421,9 @@ class InstructorView {
       }
       if (autosave && !InstructorView.shouldAutosaveLesson(editVersion, savedVersion)) return false;
       const versionAtSave = editVersion;
-      const title = document.getElementById('studio-input-title').value.trim();
-      const summary = document.getElementById('studio-input-summary').value.trim();
-      const editorEl = document.getElementById('studio-content-editor');
+      const title = (studioRoot.querySelector('#studio-input-title')?.value || '').trim();
+      const summary = (studioRoot.querySelector('#studio-input-summary')?.value || '').trim();
+      const editorEl = studioRoot.querySelector('#studio-content-editor');
       const mdContent = editorEl ? editorEl.innerHTML : '';
 
       if (!title) {
@@ -5444,7 +5474,7 @@ class InstructorView {
         });
 
       // Auto-capture URL from input field if instructor entered a link
-      const typedUrl = document.getElementById('studio-input-video-url')?.value.trim() || '';
+      const typedUrl = (studioRoot.querySelector('#studio-input-video-url')?.value || '').trim();
       if (typedUrl) {
         const parsedYt = UI.parseYouTubeId(typedUrl);
         const vimeoId = typedUrl.match(/^https:\/\/(?:www\.)?vimeo\.com\/(\d+)\/?$/i)?.[1];
@@ -5462,7 +5492,7 @@ class InstructorView {
         renderVideoList();
       }
 
-      const durationVal = parseInt(document.getElementById('studio-input-duration')?.value, 10);
+      const durationVal = parseInt(studioRoot.querySelector('#studio-input-duration')?.value, 10);
       const estDuration = !isNaN(durationVal) && durationVal > 0 ? durationVal : 15;
 
       const payload = {
@@ -5478,7 +5508,21 @@ class InstructorView {
 
       try {
         const operation = (async () => {
-          if (!lessonId) await createLessonOnce(payload);
+          if (!lessonId) {
+            const created = await ApiClient.createLesson(courseId, {
+              ...payload,
+              ...(selectedUnitId ? { learning_unit_id: selectedUnitId } : {})
+            });
+            lessonId = created?.lesson_id || created?.id;
+            selectedUnitId = created?.learning_unit_id || selectedUnitId;
+            if (!lessonId) throw new Error('Không tạo được bài giảng mới.');
+            window.history.replaceState(null, '', `#/instructor/courses/${courseId}/lessons/${lessonId}/edit`);
+            try {
+              availableUnits = (await ApiClient.getLearningUnits(courseId)).items || availableUnits;
+              renderChildNavigator();
+            } catch (_) {}
+            return created;
+          }
           return ApiClient.updateLesson(lessonId, payload);
         })();
         saveInFlight = operation;
@@ -5486,7 +5530,7 @@ class InstructorView {
         const outcome = InstructorView.lessonSaveOutcome(response, publish);
         if (outcome !== 'pending') lessonStatus = payload.status;
         savedVersion = versionAtSave;
-        const statusEl = document.getElementById('studio-autosave-status');
+        const statusEl = studioRoot.querySelector('#studio-autosave-status');
         if (statusEl) {
           statusEl.innerHTML = outcome === 'pending'
             ? '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Đang chờ Admin duyệt'
@@ -5525,8 +5569,12 @@ class InstructorView {
         await saveLessonData(false, true);
       } else {
         clearInterval(autoSaveTimer);
+        if (window._currentStudioTimer === autoSaveTimer) {
+          window._currentStudioTimer = null;
+        }
       }
     }, 30000);
+    window._currentStudioTimer = autoSaveTimer;
   }
 
   // =========================================================================

@@ -313,3 +313,46 @@ def test_unified_auth_notifications_web_session(
     assert resp_all_read.status_code == 200
     assert "marked_count" in resp_all_read.get_json()
 
+
+def test_notification_deduplication_collapsing(
+    app: Flask, client: FlaskClient, student_user: User
+) -> None:
+    """Verify that multiple notifications with identical title & body collapse to the newest one."""
+    from pwd301.models.notification_audit import Notification
+    from pwd301.services.notification_service import get_unread_count, list_user_notifications
+
+    # Dispatch 3 duplicate notifications to the same student
+    for _ in range(3):
+        dispatch_notification(
+            student_user,
+            "SYSTEM_NOTICE",
+            "Bảo trì hệ thống định kỳ",
+            "Hệ thống sẽ bảo trì lúc 02:00 sáng.",
+            session=db.session,
+        )
+    db.session.commit()
+
+    # Verify database has 3 notifications persisted (audit invariant)
+    all_db = (
+        db.session.query(Notification)
+        .filter_by(recipient_user_id=student_user.id, title="Bảo trì hệ thống định kỳ")
+        .all()
+    )
+    assert len(all_db) >= 3
+
+    # Query through service - must be collapsed to exactly 1 visible item
+    items, total = list_user_notifications(student_user, session=db.session)
+    matching_items = [i for i in items if i["title"] == "Bảo trì hệ thống định kỳ"]
+    assert len(matching_items) == 1
+    # Check that event_type is present in dict
+    assert matching_items[0]["event_type"] == "SYSTEM_NOTICE"
+
+    # API unread count reflects collapsed visible count
+    tokens = create_token_pair(student_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp = client.get("/api/notifications", headers=headers)
+    assert resp.status_code == 200
+    api_items = [i for i in resp.get_json()["items"] if i["title"] == "Bảo trì hệ thống định kỳ"]
+    assert len(api_items) == 1
+
+

@@ -408,7 +408,6 @@ class AdminView {
               <tr>
                 <th class="py-3 px-3">Họ tên & Email</th>
                 <th class="py-3 px-3">Vai trò</th>
-                <th class="py-3 px-3">Trạng thái</th>
                 <th class="py-3 px-3">Ngày tạo</th>
                 <th class="py-3 px-3 text-right">Thao tác</th>
               </tr>
@@ -449,7 +448,7 @@ class AdminView {
         if (userList.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="5" class="py-8 text-center text-slate-400 text-xs">
+              <td colspan="4" class="py-8 text-center text-slate-400 text-xs">
                 Không tìm thấy người dùng phù hợp với điều kiện tìm kiếm.
               </td>
             </tr>
@@ -461,6 +460,7 @@ class AdminView {
           const isSuspended = u.status === 'SUSPENDED';
           const initials = (u.display_name || u.email || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
           const avatarBg = u.roles && u.roles.includes('ADMIN') ? 'bg-primary text-white' : u.roles && u.roles.includes('INSTRUCTOR') ? 'bg-indigo-600 text-white' : 'bg-slate-500 text-white';
+          const revocableRoles = (u.roles || []).filter(r => r !== 'STUDENT');
 
           return `
             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
@@ -493,37 +493,17 @@ class AdminView {
                   }).join('')}
                 </div>
               </td>
-              <td class="py-4 px-3 align-middle text-xs">
-                ${isSuspended ? `
-                  <div class="flex items-center gap-1.5 text-rose-600 font-bold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                    <span>Đã đình chỉ</span>
-                  </div>
-                  <div class="font-mono text-[10px] text-slate-400">${u.suspended_at ? UI.formatDate(u.suspended_at) : ''}</div>
-                ` : `
-                  <div class="flex items-center gap-1.5 text-emerald-600 font-bold">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Hoạt động</span>
-                  </div>
-                `}
-              </td>
               <td class="py-4 px-3 align-middle text-xs text-slate-400 font-mono">
                 ${UI.formatDate(u.created_at)}
               </td>
               <td class="py-4 px-3 align-middle text-right">
-                <div class="inline-flex items-center gap-1.5">
+                <div class="inline-flex items-center gap-1.5 flex-wrap justify-end">
                   <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors manage-role-btn ${!window.app?.currentUser?.is_primary_admin ? 'opacity-60 cursor-not-allowed' : ''}" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}" data-roles="${(u.roles || []).join(',')}" data-admin-sub-role="${u.admin_sub_role || 'ADMIN_PRIMARY'}" title="${!window.app?.currentUser?.is_primary_admin ? 'Chỉ Admin chính mới có quyền phân quyền' : 'Phân quyền tài khoản'}">
                     Phân quyền
                   </button>
-                  ${isSuspended ? `
-                    <button type="button" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold border border-emerald-200 transition-colors unsuspend-user-btn" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
-                      Mở khóa
-                    </button>
-                  ` : `
-                    <button type="button" class="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold border border-rose-200 transition-colors suspend-user-btn" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
-                      Tạm ngưng
-                    </button>
-                  `}
+                  <button type="button" class="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 text-xs font-bold border border-amber-200 dark:border-amber-800 transition-colors revoke-role-btn ${!window.app?.currentUser?.is_primary_admin ? 'opacity-60 cursor-not-allowed' : ''}" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}" data-roles="${(u.roles || []).join(',')}" data-admin-sub-role="${u.admin_sub_role || 'ADMIN_PRIMARY'}" title="${!window.app?.currentUser?.is_primary_admin ? 'Chỉ Admin chính mới có quyền thu hồi quyền' : 'Thu hồi quyền tài khoản'}">
+                    Thu hồi quyền
+                  </button>
                   <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-xs font-bold transition-colors revoke-sessions-btn" title="Thu hồi toàn bộ phiên đăng nhập của người dùng" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
                     Đăng xuất thiết bị
                   </button>
@@ -541,19 +521,18 @@ class AdminView {
               return;
             }
             const currentRoles = (btn.dataset.roles || '').split(',').filter(Boolean);
-            AdminView.openRoleModal(btn.dataset.userId, btn.dataset.userName, currentRoles, btn.dataset.adminSubRole);
+            AdminView.openRoleModal(btn.dataset.userId, btn.dataset.userName, currentRoles, btn.dataset.adminSubRole, 'assign');
           };
         });
 
-        tbody.querySelectorAll('.suspend-user-btn').forEach(btn => {
+        tbody.querySelectorAll('.revoke-role-btn').forEach(btn => {
           btn.onclick = () => {
-            AdminView.openSuspendModal(btn.dataset.userId, btn.dataset.userName);
-          };
-        });
-
-        tbody.querySelectorAll('.unsuspend-user-btn').forEach(btn => {
-          btn.onclick = () => {
-            AdminView.unsuspendUser(btn.dataset.userId, btn.dataset.userName);
+            if (!window.app?.currentUser?.is_primary_admin) {
+              UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền thu hồi vai trò người dùng.', 'warning');
+              return;
+            }
+            const currentRoles = (btn.dataset.roles || '').split(',').filter(Boolean);
+            AdminView.openRevokeRoleModal(btn.dataset.userId, btn.dataset.userName, currentRoles, btn.dataset.adminSubRole);
           };
         });
 
@@ -634,17 +613,34 @@ class AdminView {
     }
   }
 
-  static openRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY') {
-    const subRoleSelectionState = AdminView.getAdminSubRoleSelectionState(currentRoles, currentAdminSubRole);
+  static openRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY', initialAction = 'assign') {
     if (!window.app?.currentUser?.is_primary_admin) {
-      UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền phân quyền người dùng.', 'error');
+      UI.showToast('Chỉ Quản trị viên chính (Admin chính) mới có quyền phân quyền hoặc thu hồi quyền người dùng.', 'error');
       return;
     }
+
+    const subRoleSelectionState = AdminView.getAdminSubRoleSelectionState(currentRoles, currentAdminSubRole);
+    const revocableRoles = currentRoles.filter(r => r !== 'STUDENT');
+
+    const roleLabels = {
+      'INSTRUCTOR': {
+        title: 'Giảng viên (INSTRUCTOR)',
+        desc: 'Quyền biên soạn giáo trình, quản lý bài học, tạo đề thi và chấm bài của học sinh.',
+        color: 'border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-900 dark:text-indigo-200'
+      },
+      'ADMIN': {
+        title: 'Quản trị viên (ADMIN)',
+        desc: 'Quyền phê duyệt khóa học, quản lý ứng tuyển giảng viên, vận hành và cấu hình hệ thống.',
+        color: 'border-purple-200 dark:border-purple-900/60 bg-purple-50/50 dark:bg-purple-950/20 text-purple-900 dark:text-purple-200'
+      }
+    };
+
+    const isRevokeMode = initialAction === 'remove';
 
     const body = `
       <div class="space-y-4 text-xs">
         <p class="text-slate-600 dark:text-slate-300">
-          Quản lý phân quyền lũy tiến AUTH-002 cho tài khoản <strong>${UI.escapeHtml(userName)}</strong>.
+          Quản lý phân quyền và thu hồi quyền tài khoản <strong>${UI.escapeHtml(userName)}</strong>.
         </p>
         
         <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
@@ -657,80 +653,137 @@ class AdminView {
         <div class="space-y-1">
           <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Hành động</label>
           <select id="modal-role-action" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
-            <option value="assign">Cấp thêm quyền (Assign)</option>
-            <option value="remove">Thu hồi quyền (Remove)</option>
+            <option value="assign" ${!isRevokeMode ? 'selected' : ''}>Phân quyền (Cấp thêm quyền)</option>
+            <option value="remove" ${isRevokeMode ? 'selected' : ''}>Thu hồi quyền (Remove)</option>
           </select>
         </div>
 
-        <div class="space-y-1">
-          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Vai trò mục tiêu</label>
-          <select id="modal-role-code" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
-            <option value="ADMIN">ADMIN (Quản trị viên)</option>
-            <option value="INSTRUCTOR">INSTRUCTOR (Giảng viên)</option>
-            <option value="STUDENT">STUDENT (Sinh viên)</option>
-          </select>
+        <!-- Section 1: Giao diện Phân quyền -->
+        <div id="role-assign-section" class="${!isRevokeMode ? '' : 'hidden'} space-y-4">
+          <div class="space-y-1">
+            <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Vai trò mục tiêu</label>
+            <select id="modal-role-code" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
+              <option value="ADMIN">ADMIN (Quản trị viên)</option>
+              <option value="INSTRUCTOR">INSTRUCTOR (Giảng viên)</option>
+              <option value="STUDENT">STUDENT (Sinh viên)</option>
+            </select>
+          </div>
+
+          <!-- Phân quyền chi tiết Admin dưới quyền Admin chính -->
+          <div id="admin-sub-role-container" class="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+            <div class="flex items-center justify-between">
+              <label class="block font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-primary text-[16px]">shield_person</span>
+                Quyền quản trị
+              </label>
+              <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Chọn một vai trò</span>
+            </div>
+            <div class="space-y-2 pt-1">
+              ${subRoleSelectionState.isExistingPrimary ? `
+                <div class="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200" role="status">
+                  Tài khoản Admin chính hiện tại; không thể cấp mới hoặc đổi vai trò tại đây.
+                </div>
+              ` : ''}
+              <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+                <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
+                <div>
+                  <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt khóa học</div>
+                  <div class="text-[11px] text-slate-500">Duyệt khóa học và yêu cầu thay đổi bài giảng.</div>
+                </div>
+              </label>
+              <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+                <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
+                <div>
+                  <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt giảng viên</div>
+                  <div class="text-[11px] text-slate-500">Xem hồ sơ và duyệt đơn đăng ký giảng viên.</div>
+                </div>
+              </label>
+              <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+                <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
+                <div>
+                  <div class="font-bold text-xs text-slate-900 dark:text-white">Admin phân công giảng dạy</div>
+                  <div class="text-[11px] text-slate-500">Giao khóa học cho giảng viên phụ trách.</div>
+                </div>
+              </label>
+              <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
+                <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
+                <div>
+                  <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
+                  <div class="text-[11px] text-slate-500">Xem lịch sử hoạt động và tình trạng hệ thống.</div>
+                </div>
+              </label>
+            </div>
+          </div>
         </div>
 
-        <!-- Phân quyền chi tiết Admin dưới quyền Admin chính -->
-        <div id="admin-sub-role-container" class="space-y-2 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-          <div class="flex items-center justify-between">
-            <label class="block font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 text-[11px] flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-primary text-[16px]">shield_person</span>
-              Quyền quản trị
-            </label>
-            <span class="text-[10px] text-primary font-bold bg-primary-subtle px-2 py-0.5 rounded">Chọn một vai trò</span>
+        <!-- Section 2: Giao diện Thu hồi quyền -->
+        <div id="role-revoke-section" class="${isRevokeMode ? '' : 'hidden'} space-y-3">
+          <!-- Baseline Student Notice -->
+          <div class="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 flex items-start gap-2.5 text-blue-800 dark:text-blue-300">
+            <span class="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5">info</span>
+            <div>
+              <strong class="block font-semibold">Quy tắc vai trò cơ bản (Baseline Role)</strong>
+              <span>Vai trò <strong>Sinh viên (STUDENT)</strong> là quyền mặc định cơ bản của mọi tài khoản trong hệ thống và không thể thu hồi.</span>
+            </div>
           </div>
-          <div class="space-y-2 pt-1">
-            ${subRoleSelectionState.isExistingPrimary ? `
-              <div class="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200" role="status">
-                Tài khoản Admin chính hiện tại; không thể cấp mới hoặc đổi vai trò tại đây.
-              </div>
-            ` : ''}
-            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_COURSE_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_COURSE_REVIEW' ? 'checked' : ''}>
-              <div>
-                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt khóa học</div>
-                <div class="text-[11px] text-slate-500">Duyệt khóa học và yêu cầu thay đổi bài giảng.</div>
-              </div>
-            </label>
-            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_INSTRUCTOR_REVIEW" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_INSTRUCTOR_REVIEW' ? 'checked' : ''}>
-              <div>
-                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin duyệt giảng viên</div>
-                <div class="text-[11px] text-slate-500">Xem hồ sơ và duyệt đơn đăng ký giảng viên.</div>
-              </div>
-            </label>
-            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_TEACHING_ASSIGNMENT" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_TEACHING_ASSIGNMENT' ? 'checked' : ''}>
-              <div>
-                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin phân công giảng dạy</div>
-                <div class="text-[11px] text-slate-500">Giao khóa học cho giảng viên phụ trách.</div>
-              </div>
-            </label>
-            <label class="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-700/50 cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-600 transition-all">
-              <input type="radio" name="admin-sub-role-radio" value="ADMIN_SYSTEM_MONITORING" ${subRoleSelectionState.isExistingPrimary ? 'disabled' : ''} class="mt-0.5 text-primary focus:ring-primary" ${subRoleSelectionState.selectedSubRole === 'ADMIN_SYSTEM_MONITORING' ? 'checked' : ''}>
-              <div>
-                <div class="font-bold text-xs text-slate-900 dark:text-white">Admin giám sát hệ thống</div>
-                <div class="text-[11px] text-slate-500">Xem lịch sử hoạt động và tình trạng hệ thống.</div>
-              </div>
-            </label>
-          </div>
+
+          ${revocableRoles.length === 0 ? `
+            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center text-slate-500 text-xs">
+              Tài khoản này chỉ có quyền Sinh viên (STUDENT) mặc định, không có quyền nào khác để thu hồi.
+            </div>
+          ` : `
+            <!-- Select All Checkbox -->
+            <div class="flex items-center justify-between px-1 pt-1 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-800 dark:text-slate-200 select-none">
+                <input type="checkbox" id="revoke-select-all" class="w-4 h-4 rounded text-primary focus:ring-primary cursor-pointer" />
+                <span>Chọn tất cả quyền có thể thu hồi (${revocableRoles.length})</span>
+              </label>
+              <span class="text-[11px] text-slate-400">Chọn ít nhất 1 quyền</span>
+            </div>
+
+            <!-- Role Checkboxes List (No STUDENT) -->
+            <div class="space-y-2.5" id="revoke-roles-list">
+              ${revocableRoles.map(r => {
+                const info = roleLabels[r] || { title: r, desc: `Vai trò ${r} trong hệ thống`, color: 'border-slate-200 bg-slate-50 text-slate-800' };
+                return `
+                  <label class="flex items-start gap-3 p-3.5 rounded-xl border ${info.color} cursor-pointer hover:shadow-2xs transition-all select-none">
+                    <input type="checkbox" name="revoke-role-item" value="${r}" class="revoke-role-checkbox mt-0.5 w-4 h-4 rounded text-rose-600 focus:ring-rose-600 cursor-pointer" />
+                    <div class="min-w-0 flex-1">
+                      <div class="font-bold text-xs flex items-center justify-between">
+                        <span>${info.title}</span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/80 dark:bg-slate-900/80 border border-current">${r}</span>
+                      </div>
+                      <p class="text-[11px] opacity-80 mt-0.5 leading-relaxed">${info.desc}</p>
+                    </div>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          `}
         </div>
 
+        <!-- Lý do thay đổi quyền (Audit Reason) -->
         <div class="space-y-1">
-          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do thay đổi quyền</label>
-          <input type="text" id="modal-role-reason" placeholder="VD: Quyết định bổ nhiệm nhân sự học vụ..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary" />
+          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">
+            Lý do kiểm toán <span class="text-rose-500">*</span>
+          </label>
+          <input type="text" id="modal-role-reason" placeholder="VD: Bổ nhiệm hoặc kết thúc nhiệm kỳ giảng dạy..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary" />
         </div>
       </div>
     `;
 
     const footer = `
-      <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100" onclick="UI.closeModal()">Đóng</button>
-      <button type="button" id="submit-role-btn" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold">Xác nhận phân quyền</button>
+      <div class="flex items-center justify-between w-full">
+        <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" onclick="UI.closeModal()">Đóng</button>
+        <button type="button" id="submit-role-btn" class="px-5 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${isRevokeMode ? 'bg-rose-600 hover:bg-rose-700' : 'bg-primary hover:bg-primary-dark'}">
+          <span class="material-symbols-outlined text-[16px]" id="submit-role-icon">${isRevokeMode ? 'remove_moderator' : 'verified_user'}</span>
+          <span id="submit-role-text">${isRevokeMode ? 'Xác nhận thu hồi quyền' : 'Xác nhận phân quyền'}</span>
+        </button>
+      </div>
     `;
 
     UI.openModal({
-      title: 'Phân quyền tài khoản người dùng',
+      title: isRevokeMode ? 'Thu hồi quyền tài khoản người dùng' : 'Phân quyền tài khoản người dùng',
       bodyHtml: body,
       footerHtml: footer,
       size: 'md'
@@ -739,10 +792,16 @@ class AdminView {
     const actionSelect = document.getElementById('modal-role-action');
     const roleSelect = document.getElementById('modal-role-code');
     const subRoleContainer = document.getElementById('admin-sub-role-container');
+    const assignSection = document.getElementById('role-assign-section');
+    const revokeSection = document.getElementById('role-revoke-section');
+    const submitBtn = document.getElementById('submit-role-btn');
+    const submitIcon = document.getElementById('submit-role-icon');
+    const submitText = document.getElementById('submit-role-text');
+    const reasonInput = document.getElementById('modal-role-reason');
 
     const updateSubRoleVisibility = () => {
       if (subRoleContainer) {
-        if (actionSelect.value === 'assign' && roleSelect.value === 'ADMIN') {
+        if (actionSelect.value === 'assign' && roleSelect?.value === 'ADMIN') {
           subRoleContainer.classList.remove('hidden');
         } else {
           subRoleContainer.classList.add('hidden');
@@ -750,44 +809,105 @@ class AdminView {
       }
     };
 
-    if (actionSelect) actionSelect.onchange = updateSubRoleVisibility;
+    const handleActionChange = () => {
+      const mode = actionSelect.value;
+      if (mode === 'remove') {
+        if (assignSection) assignSection.classList.add('hidden');
+        if (revokeSection) revokeSection.classList.remove('hidden');
+        if (submitBtn) {
+          submitBtn.className = 'px-5 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700';
+        }
+        if (submitIcon) submitIcon.textContent = 'remove_moderator';
+        if (submitText) submitText.textContent = 'Xác nhận thu hồi quyền';
+        if (reasonInput) reasonInput.placeholder = 'VD: Kết thúc nhiệm kỳ giảng dạy, điều chuyển công tác...';
+      } else {
+        if (assignSection) assignSection.classList.remove('hidden');
+        if (revokeSection) revokeSection.classList.add('hidden');
+        if (submitBtn) {
+          submitBtn.className = 'px-5 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-primary hover:bg-primary-dark';
+        }
+        if (submitIcon) submitIcon.textContent = 'verified_user';
+        if (submitText) submitText.textContent = 'Xác nhận phân quyền';
+        if (reasonInput) reasonInput.placeholder = 'VD: Quyết định bổ nhiệm nhân sự học vụ...';
+        updateSubRoleVisibility();
+      }
+    };
+
+    if (actionSelect) actionSelect.onchange = handleActionChange;
     if (roleSelect) roleSelect.onchange = updateSubRoleVisibility;
     updateSubRoleVisibility();
 
-    document.getElementById('submit-role-btn').onclick = async () => {
-      const action = document.getElementById('modal-role-action').value;
-      const role = document.getElementById('modal-role-code').value;
-      const reason = document.getElementById('modal-role-reason').value.trim();
+    // Checkbox wiring for revoke section
+    const selectAllBox = document.getElementById('revoke-select-all');
+    const itemBoxes = document.querySelectorAll('.revoke-role-checkbox');
+
+    if (selectAllBox) {
+      selectAllBox.onchange = () => {
+        itemBoxes.forEach(box => { box.checked = selectAllBox.checked; });
+      };
+    }
+
+    itemBoxes.forEach(box => {
+      box.onchange = () => {
+        if (selectAllBox) {
+          selectAllBox.checked = Array.from(itemBoxes).every(b => b.checked);
+        }
+      };
+    });
+
+    submitBtn.onclick = async () => {
+      const action = actionSelect.value;
+      const reason = (reasonInput?.value || '').trim();
 
       if (!reason) {
-        UI.showToast('Vui lòng nhập lý do thay đổi phân quyền kiểm toán.', 'warning');
+        UI.showToast(action === 'remove' ? 'Vui lòng nhập lý do thu hồi quyền để lưu nhật ký kiểm toán.' : 'Vui lòng nhập lý do thay đổi phân quyền kiểm toán.', 'warning');
         return;
       }
 
-      let adminSubRole = null;
-      if (action === 'assign' && role === 'ADMIN') {
-        const checkedRadio = document.querySelector('input[name="admin-sub-role-radio"]:checked');
-        if (!checkedRadio || !AdminView.getAssignableAdminSubRoles().includes(checkedRadio.value)) {
-          UI.showToast('Vui lòng chọn một vai trò admin phụ trước khi cấp quyền ADMIN.', 'warning');
-          return;
+      if (action === 'assign') {
+        const role = roleSelect.value;
+        let adminSubRole = null;
+        if (role === 'ADMIN') {
+          const checkedRadio = document.querySelector('input[name="admin-sub-role-radio"]:checked');
+          if (!checkedRadio || !AdminView.getAssignableAdminSubRoles().includes(checkedRadio.value)) {
+            UI.showToast('Vui lòng chọn một vai trò admin phụ trước khi cấp quyền ADMIN.', 'warning');
+            return;
+          }
+          adminSubRole = checkedRadio.value;
         }
-        adminSubRole = checkedRadio.value;
-      }
 
-      try {
-        if (action === 'assign') {
+        try {
           await ApiClient.assignRole(userId, role, reason, adminSubRole);
           UI.showToast(`Đã cấp quyền ${role} cho ${userName} thành công!`, 'success');
-        } else {
-          await ApiClient.removeRole(userId, role, reason);
-          UI.showToast(`Đã thu hồi quyền ${role} của ${userName} thành công!`, 'info');
+          UI.closeModal();
+          UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
+        } catch (e) {
+          UI.showToast(e.message || 'Lỗi phân quyền.', 'error');
         }
-        UI.closeModal();
-        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
-      } catch (e) {
-        UI.showToast(e.message || 'Lỗi phân quyền.', 'error');
+      } else {
+        // action === 'remove'
+        const selected = Array.from(itemBoxes).filter(b => b.checked).map(b => b.value);
+        if (selected.length === 0) {
+          UI.showToast('Vui lòng chọn ít nhất 1 quyền cần thu hồi.', 'warning');
+          return;
+        }
+
+        try {
+          for (const roleCode of selected) {
+            await ApiClient.removeRole(userId, roleCode, reason);
+          }
+          UI.showToast(`Đã thu hồi thành công vai trò ${selected.join(', ')} của ${userName}!`, 'success');
+          UI.closeModal();
+          UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi thu hồi quyền.', 'error');
+        }
       }
     };
+  }
+
+  static openRevokeRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY') {
+    return AdminView.openRoleModal(userId, userName, currentRoles, currentAdminSubRole, 'remove');
   }
 
   static openSuspendModal(userId, userName) {
@@ -1221,15 +1341,20 @@ class AdminView {
     container.innerHTML = '<div class="p-8 text-sm text-slate-600 dark:text-slate-300">Đang tải yêu cầu thay đổi...</div>';
     try {
       const result = await ApiClient.getAdminChangeRequests('ALL');
-      const request = (result.change_requests || []).find(item => String(item.id) === String(requestId));
+      const allRequests = result.change_requests || [];
+      const request = allRequests.find(item => String(item.id) === String(requestId));
       if (!request) throw new Error('Không tìm thấy yêu cầu thay đổi.');
-      AdminView.renderChangeRequestReviewDetail(container, request);
+      const siblingRequests = allRequests.filter(item =>
+        item.status === 'PENDING' &&
+        (String(item.course_id) === String(request.course_id) || (request.target_id && String(item.target_id) === String(request.target_id)))
+      );
+      AdminView.renderChangeRequestReviewDetail(container, request, siblingRequests);
     } catch (error) {
       container.innerHTML = `<div class="max-w-6xl mx-auto p-6"><a href="#/admin/governance?tab=courses" class="text-primary font-semibold">← Quay lại hàng đợi</a><p class="mt-6 text-rose-700 dark:text-rose-300">${UI.escapeHtml(error.message || 'Không tải được yêu cầu.')}</p></div>`;
     }
   }
 
-  static renderChangeRequestReviewDetail(container, r) {
+  static renderChangeRequestReviewDetail(container, r, siblingRequests = []) {
     const orig = r.original_data || {};
     const prop = r.proposed_payload || {};
     const isDelete = prop.action === 'DELETE';
@@ -1269,81 +1394,187 @@ class AdminView {
       if (change.action === 'ATTACH') proposedResources.set(`asset:${change.asset_id}`, change.title || change.label || 'Tệp mới');
     }
     const resourceList = titles => titles.length
-      ? `<ul class="space-y-2">${titles.map(title => `<li class="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 break-words">${UI.escapeHtml(title)}</li>`).join('')}</ul>`
-      : '<p class="text-slate-500 dark:text-slate-400">Chưa có tài liệu.</p>';
+      ? `<ul class="space-y-2">${titles.map(title => `<li class="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 break-words flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-emerald-600">description</span><span>${UI.escapeHtml(title)}</span></li>`).join('')}</ul>`
+      : '<p class="text-slate-500 dark:text-slate-400 italic">Chưa có tài liệu đính kèm.</p>';
+
+    // Prepare Preview Data for Student Perspective
+    const previewTitle = prop.title || orig.title || 'Tiêu đề bài học';
+    const previewSummary = prop.summary ?? orig.summary ?? '';
+    const previewDuration = prop.estimated_duration_minutes || orig.estimated_duration_minutes || 15;
+    const rawMarkdown = prop.markdown_content ?? orig.markdown_content ?? '';
+    let previewVideoUrls = [];
+    const ytListMatch = rawMarkdown.match(/<!--\s*video_urls?:\s*(\[.*?\])\s*-->/);
+    if (ytListMatch) {
+      try { previewVideoUrls = JSON.parse(ytListMatch[1]); } catch (_) {}
+    }
+    if (!previewVideoUrls.length) {
+      const singleYt = rawMarkdown.match(/<!--\s*video_url:\s*(\S+?)\s*-->/);
+      if (singleYt) previewVideoUrls = [singleYt[1]];
+    }
+    let previewMiniQuiz = [];
+    const quizMatch = rawMarkdown.match(/<!--\s*mini_quiz:\s*(.+?)\s*-->/s);
+    if (quizMatch) {
+      try { previewMiniQuiz = JSON.parse(quizMatch[1]); } catch (_) {}
+    }
+    const cleanPreviewMarkdown = rawMarkdown
+      .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
+      .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '');
+
+    const primaryVideoUrl = previewVideoUrls.length ? previewVideoUrls[0] : null;
+    const parsedYtId = primaryVideoUrl ? UI.parseYouTubeId(primaryVideoUrl) : null;
+
+    const chapterTitle = r.learning_unit_title || orig.learning_unit_title || prop.learning_unit_title;
 
     const body = `
-      <div class="space-y-4 text-xs">
-        <!-- Header Info -->
-        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-primary-subtle text-primary border border-primary/20">${UI.escapeHtml(r.course_code || orig.course_code || '')}</span>
-              <span class="font-bold text-sm text-slate-900 dark:text-white">${UI.escapeHtml(r.target_title || orig.title || 'Yêu cầu #' + r.id)}</span>
+      <div class="space-y-5 text-xs">
+        <!-- Header Info & Chapter Breadcrumb -->
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="space-y-1.5 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="px-2.5 py-0.5 rounded font-mono font-bold text-xs bg-primary-subtle text-primary border border-primary/20">
+                ${UI.escapeHtml(r.course_code || orig.course_code || 'KHÓA HỌC')}
+              </span>
+              <span class="font-bold text-base text-slate-900 dark:text-white truncate">
+                ${UI.escapeHtml(r.target_title || orig.title || 'Yêu cầu #' + r.id)}
+              </span>
+              <span class="text-[11px] font-mono text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">
+                ID bài học: ${r.target_id || r.id}
+              </span>
             </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Khóa học: <strong>${UI.escapeHtml(r.course_title || orig.title || '')}</strong> • Giảng viên đề xuất: <strong>${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}</strong>
+
+            <!-- Chapter (Learning Unit) and Context Hierarchy -->
+            <div class="flex items-center gap-2.5 flex-wrap text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+              <span class="flex items-center gap-1 font-medium">
+                <span class="material-symbols-outlined text-[16px] text-slate-400">school</span>
+                <span>Khóa học: <strong class="text-slate-800 dark:text-slate-200">${UI.escapeHtml(r.course_title || orig.title || 'N/A')}</strong></span>
+              </span>
+              ${chapterTitle ? `
+                <span class="text-slate-300 dark:text-slate-600">•</span>
+                <span class="flex items-center gap-1 font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800/80">
+                  <span class="material-symbols-outlined text-[15px] text-amber-600">folder_open</span>
+                  <span>Chương: <strong>${UI.escapeHtml(chapterTitle)}</strong></span>
+                </span>
+              ` : ''}
+              <span class="text-slate-300 dark:text-slate-600">•</span>
+              <span class="flex items-center gap-1">
+                <span class="material-symbols-outlined text-[16px] text-slate-400">person</span>
+                <span>Giảng viên: <strong>${UI.escapeHtml(r.requested_by_name || 'Giảng viên')}</strong></span>
+              </span>
+              <span class="text-slate-300 dark:text-slate-600">•</span>
+              <span class="font-mono text-slate-400">${UI.formatDateTime(r.created_at)}</span>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${r.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border border-amber-200' : (r.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200')}">
-              ${r.status === 'PENDING' ? 'Chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
+
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="px-3 py-1 rounded-full text-xs font-bold ${r.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border border-amber-200' : (r.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200')}">
+              ${r.status === 'PENDING' ? 'Đang chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
             </span>
           </div>
         </div>
 
-        ${isLearningUnit ? `
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3">
-              <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Tên Bài học hiện tại</h2>
-              <p class="text-base text-slate-800 dark:text-slate-200 break-words">${UI.escapeHtml(orig.title || '(Chưa có)')}</p>
-            </section>
-            <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3">
-              <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD]">Tên Bài học đề xuất</h2>
-              <p class="text-base text-slate-900 dark:text-slate-100 break-words">${UI.escapeHtml(prop.title || '(Chưa có)')}</p>
-            </section>
-          </div>
-        ` : isResourceChange ? `
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3">
-              <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">Tài liệu hiện tại</h2>
-              ${resourceList(currentResources.map(item => item.title))}
-            </section>
-            <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3">
-              <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD]">Tài liệu sau khi duyệt</h2>
-              ${resourceList([...proposedResources.values()])}
-            </section>
-          </div>
-        ` : isDelete ? `
-          <div class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 space-y-2">
-            <div class="font-bold text-sm flex items-center gap-2 text-rose-700 dark:text-rose-400">
-              <span class="material-symbols-outlined text-[20px]">delete_forever</span>
-              Yêu cầu gỡ bỏ ${isCourse ? 'khóa học' : 'bài giảng'}
+        <!-- Sibling Requests Selector if multiple requests exist for this course/lesson -->
+        ${siblingRequests && siblingRequests.length > 1 ? `
+          <div class="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2">
+            <div class="flex items-center justify-between text-xs text-amber-900 dark:text-amber-200 font-bold">
+              <span class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[18px] text-amber-600">playlist_add_check</span>
+                <span>Khóa học / Bài học này có ${siblingRequests.length} yêu cầu thay đổi đang chờ duyệt:</span>
+              </span>
+              <span class="text-[11px] font-normal text-amber-700 dark:text-amber-300 hidden sm:inline">Bấm vào từng yêu cầu để thẩm định & duyệt độc lập</span>
             </div>
-            <p class="leading-relaxed">Giảng viên đề xuất gỡ bỏ ${isCourse ? 'khóa học này khỏi hệ thống' : 'bài giảng này khỏi đề cương'}.</p>
-            <div class="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 text-xs">
-              <strong>Lý do yêu cầu xóa:</strong> ${UI.escapeHtml(prop.reason || 'Không có lý do chi tiết.')}
+            <div class="flex flex-wrap gap-2 pt-1">
+              ${siblingRequests.map(s => {
+                const isCurrent = String(s.id) === String(r.id);
+                return `
+                  <a
+                    href="#/admin/change-requests/review?id=${s.id}"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isCurrent
+                        ? 'bg-primary text-white shadow-xs ring-2 ring-primary/30'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-amber-200 dark:border-amber-700 hover:border-primary'
+                    }"
+                  >
+                    <span class="material-symbols-outlined text-[15px]">${isCurrent ? 'radio_button_checked' : 'radio_button_unchecked'}</span>
+                    <span>Yêu cầu #${s.id}: ${UI.escapeHtml(s.target_title || s.change_type)}</span>
+                    ${isCurrent ? '<span class="text-[10px] bg-white/20 px-1.5 py-0.2 rounded uppercase tracking-wider font-extrabold ml-1">Đang xem</span>' : ''}
+                  </a>
+                `;
+              }).join('')}
             </div>
           </div>
-        ` : `
-          <!-- Side-by-Side Diff View -->
-          <div class="space-y-2">
-            <div class="flex items-center justify-between">
-              <h5 class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
-                <span class="material-symbols-outlined text-primary text-[18px]">difference</span>
-                Đối chiếu thay đổi chi tiết (Bản hiện tại vs Bản đã sửa đổi)
-              </h5>
-              <span class="text-[11px] text-slate-400">Các mục có khung màu viền sáng hiển thị nội dung được điều chỉnh</span>
-            </div>
+        ` : ''}
 
+        <!-- View Mode Switcher -->
+        <div class="flex items-center justify-between pt-1">
+          <div class="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold">
+            <button type="button" id="cr-tab-diff-btn" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all bg-white dark:bg-slate-900 text-primary shadow-xs font-bold cursor-pointer">
+              <span class="material-symbols-outlined text-[16px]">difference</span>
+              <span>Đối chiếu thay đổi (Diff)</span>
+            </button>
+            <button type="button" id="cr-tab-preview-btn" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
+              <span class="material-symbols-outlined text-[16px]">visibility</span>
+              <span>Xem trước bài học (Preview)</span>
+            </button>
+          </div>
+          <span class="text-[11px] text-slate-400 hidden sm:inline">Chuyển sang chế độ Xem trước để đối chiếu góc nhìn sinh viên</span>
+        </div>
+
+        <!-- Tab 1: Side-by-side Diff View -->
+        <div id="cr-diff-container" class="space-y-4">
+          ${isLearningUnit ? `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3 border border-slate-200 dark:border-slate-700">
+                <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[18px] text-slate-400">history</span>
+                  <span>Tên Bài học hiện tại</span>
+                </h2>
+                <p class="text-base text-slate-800 dark:text-slate-200 break-words">${UI.escapeHtml(orig.title || '(Chưa có)')}</p>
+              </section>
+              <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3 border border-primary/30">
+                <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD] flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[18px]">edit_document</span>
+                  <span>Tên Bài học đề xuất</span>
+                </h2>
+                <p class="text-base text-slate-900 dark:text-slate-100 break-words">${UI.escapeHtml(prop.title || '(Chưa có)')}</p>
+              </section>
+            </div>
+          ` : isResourceChange ? `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <section class="rounded-xl bg-slate-50 dark:bg-slate-800 p-5 space-y-3 border border-slate-200 dark:border-slate-700">
+                <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[18px] text-slate-400">history</span>
+                  <span>Tài liệu hiện tại</span>
+                </h2>
+                ${resourceList(currentResources.map(item => item.title))}
+              </section>
+              <section class="rounded-xl bg-primary-subtle dark:bg-[#2D4058] p-5 space-y-3 border border-primary/30">
+                <h2 class="text-sm font-bold text-primary dark:text-[#93C5FD] flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[18px]">edit_document</span>
+                  <span>Tài liệu sau khi duyệt</span>
+                </h2>
+                ${resourceList([...proposedResources.values()])}
+              </section>
+            </div>
+          ` : isDelete ? `
+            <div class="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 space-y-3">
+              <div class="font-bold text-sm flex items-center gap-2 text-rose-700 dark:text-rose-400">
+                <span class="material-symbols-outlined text-[22px]">delete_forever</span>
+                <span>Yêu cầu gỡ bỏ ${isCourse ? 'khóa học' : 'bài giảng'}</span>
+              </div>
+              <p class="leading-relaxed">Giảng viên đề xuất gỡ bỏ ${isCourse ? 'khóa học này khỏi hệ thống' : 'bài giảng này khỏi đề cương'}.</p>
+              <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 text-xs">
+                <strong>Lý do yêu cầu xóa:</strong> ${UI.escapeHtml(prop.reason || 'Không có lý do chi tiết.')}
+              </div>
+            </div>
+          ` : `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Left: Original Version -->
-              <div class="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col">
-                <div class="bg-slate-100 dark:bg-slate-800 px-3.5 py-2 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-2xs">
+                <div class="bg-slate-100 dark:bg-slate-800 px-4 py-2.5 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                   <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px] text-slate-400">history</span> Bản hiện tại (Original)</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Hiện có</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">Hiện có</span>
                 </div>
-                <div class="p-3.5 space-y-3 flex-1 ">
+                <div class="p-4 space-y-3.5 flex-1">
                   ${isCourse ? `
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tên khóa học</div>
@@ -1355,7 +1586,7 @@ class AdminView {
                     </div>
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mô tả khóa học</div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed  text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
+                      <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
                     </div>
                   ` : `
                     <div>
@@ -1379,86 +1610,182 @@ class AdminView {
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                         Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-rose-600">(Vạch đỏ: phần bị xóa)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border ${contentChanged ? 'border-rose-200 dark:border-rose-900/60' : 'border-slate-100 dark:border-slate-800'} text-sm leading-relaxed break-words text-slate-700 dark:text-slate-300">${contentChanged ? AdminView.renderDiffOriginal(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown(orig.markdown_content || '(Chưa có nội dung)')}</div>
+                      <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border ${contentChanged ? 'border-rose-200 dark:border-rose-900/60' : 'border-slate-100 dark:border-slate-800'} text-xs leading-relaxed break-words text-slate-700 dark:text-slate-300 max-h-96 overflow-y-auto">${contentChanged ? AdminView.renderDiffOriginal(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown(orig.markdown_content || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
               </div>
 
               <!-- Right: Modified Version -->
-              <div class="rounded-xl border-2 border-primary/30 dark:border-primary/40 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-xs">
-                <div class="bg-primary/10 px-3.5 py-2 border-b border-primary/20 font-bold text-primary flex items-center justify-between">
+              <div class="rounded-2xl border-2 border-primary/40 dark:border-primary/50 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-xs">
+                <div class="bg-primary/10 px-4 py-2.5 border-b border-primary/20 font-bold text-primary flex items-center justify-between">
                   <span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">edit_document</span> Bản đã sửa đổi (Proposed)</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary text-white font-bold">Bản mới</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-md bg-primary text-white font-bold">Bản mới</span>
                 </div>
-                <div class="p-3.5 space-y-3 flex-1 ">
+                <div class="p-4 space-y-3.5 flex-1">
                   ${isCourse ? `
-                    <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${titleChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Tên khóa học ${titleChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
                       <div class="font-bold text-slate-900 dark:text-white mt-0.5 text-xs">${UI.escapeHtml(prop.title || orig.title || 'Chưa cập nhật')}</div>
                     </div>
-                    <div class="${catChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${catChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${catChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Danh mục đào tạo ${catChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
                       <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs">${UI.escapeHtml(prop.category || orig.category || 'N/A')}</div>
                     </div>
-                    <div class="${descChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${descChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${descChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Mô tả khóa học ${descChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed  text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
+                      <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
                     </div>
                   ` : `
-                    <div class="${titleChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${titleChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Tiêu đề bài học ${titleChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
                       <div class="font-bold text-slate-900 dark:text-white mt-0.5 text-xs">${UI.escapeHtml(prop.title || orig.title || 'Chưa cập nhật')}</div>
                     </div>
-                    <div class="${summaryChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${summaryChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${summaryChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Tóm tắt ngắn (Summary) ${summaryChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
                       <div class="text-slate-700 dark:text-slate-300 mt-0.5 text-xs leading-relaxed">${UI.escapeHtml((prop.summary ?? orig.summary) || '(Trống)')}</div>
                     </div>
-                    <div class="${durationChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${durationChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${durationChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Thời lượng dự kiến ${durationChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Đã sửa)</span>' : ''}
                       </div>
                       <div class="font-mono text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${prop.estimated_duration_minutes || orig.estimated_duration_minutes || 0} phút</div>
                     </div>
-                    <div class="${statusChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${statusChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${statusChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider">Trạng thái Lesson ${statusChanged ? '(Đã sửa)' : ''}</div>
                       <div class="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(prop.status ?? orig.status ?? '(Chưa có)')}</div>
                     </div>
                     ${lessonRulesAfter}
-                    <div class="${contentChanged ? 'p-2 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
+                    <div class="${contentChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${contentChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
                         Nội dung bài học (Markdown) ${contentChanged ? '<span class="text-[10px] font-bold text-emerald-600">(Vạch xanh: phần thêm mới)</span>' : ''}
                       </div>
-                      <div class="mt-1 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm leading-relaxed break-words  text-slate-800 dark:text-slate-200">${contentChanged ? AdminView.renderDiffProposed(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown((prop.markdown_content ?? orig.markdown_content) || '(Chưa có nội dung)')}</div>
+                      <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed break-words text-slate-800 dark:text-slate-200 max-h-96 overflow-y-auto">${contentChanged ? AdminView.renderDiffProposed(orig.markdown_content || '', prop.markdown_content || '') : AdminView.renderLessonMarkdown((prop.markdown_content ?? orig.markdown_content) || '(Chưa có nội dung)')}</div>
                     </div>
                   `}
                 </div>
               </div>
             </div>
+          `}
+        </div>
+
+        <!-- Tab 2: Student Preview Mode Mockup -->
+        <div id="cr-preview-container" class="hidden space-y-6">
+          <div class="p-6 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-subtle space-y-6 max-w-4xl mx-auto">
+            <!-- Preview Banner -->
+            <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[15px]">visibility</span>
+                <span>Chế độ Xem trước (Góc nhìn Học viên)</span>
+              </span>
+              <span class="text-xs text-slate-400 font-mono">Thời lượng: ${previewDuration} phút</span>
+            </div>
+
+            <!-- Video Player Preview (if any) -->
+            ${primaryVideoUrl ? `
+              <div class="rounded-2xl overflow-hidden bg-black aspect-video max-h-[380px] w-full border border-slate-800 shadow-subtle flex items-center justify-center">
+                ${parsedYtId ? `
+                  <iframe
+                    class="w-full h-full aspect-video block"
+                    src="${UI.getYouTubeEmbedUrl(parsedYtId)}"
+                    title="Video bài học"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen
+                  ></iframe>
+                ` : `
+                  <video controls class="max-h-[380px] max-w-full mx-auto my-auto object-contain block" src="${UI.escapeHtml(primaryVideoUrl)}" preload="metadata">
+                    Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
+                  </video>
+                `}
+              </div>
+            ` : `
+              <div class="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400 space-y-1">
+                <span class="material-symbols-outlined text-[28px] text-slate-300">smart_display</span>
+                <p>Bài học này không chứa liên kết video.</p>
+              </div>
+            `}
+
+            <!-- Heading & Summary -->
+            <div class="space-y-2">
+              <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
+                ${UI.escapeHtml(previewTitle)}
+              </h2>
+              ${previewSummary ? `
+                <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed italic">
+                  ${UI.escapeHtml(previewSummary)}
+                </p>
+              ` : ''}
+            </div>
+
+            <!-- Rendered Rich Markdown Content -->
+            <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 pt-2 border-t border-slate-100 dark:border-slate-800">
+              ${UI.renderMarkdown(cleanPreviewMarkdown || '*Chưa có nội dung văn bản cho bài giảng này.*')}
+            </div>
+
+            <!-- Attached Documents List -->
+            <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] text-emerald-600">attach_file</span>
+                <span>Tài liệu đính kèm bài giảng</span>
+              </h3>
+              ${resourceList([...proposedResources.values()])}
+            </div>
+
+            <!-- Mini-Quiz Preview (if available) -->
+            ${previewMiniQuiz && previewMiniQuiz.length ? `
+              <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-purple-600">quiz</span>
+                  <span>Bài kiểm tra củng cố (${previewMiniQuiz.length} câu hỏi)</span>
+                </h3>
+                <div class="space-y-3">
+                  ${previewMiniQuiz.map((q, idx) => `
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span class="w-5 h-5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 flex items-center justify-center text-[10px] font-bold">${idx + 1}</span>
+                        <span>${UI.escapeHtml(q.question || 'Câu hỏi củng cố')}</span>
+                      </div>
+                      ${q.options && Array.isArray(q.options) ? `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          ${q.options.map((opt, oIdx) => `
+                            <div class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2">
+                              <span class="w-4 h-4 rounded-full border border-slate-300 flex items-center justify-center text-[9px] font-bold text-slate-500">${String.fromCharCode(65 + oIdx)}</span>
+                              <span>${UI.escapeHtml(opt)}</span>
+                            </div>
+                          `).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
           </div>
-        `}
+        </div>
+
       </div>
     `;
 
     const footer = `
       <div class="flex flex-wrap items-center justify-between gap-4 w-full">
-        <a href="#/admin/governance?tab=courses" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold">Quay lại hàng đợi</a>
+        <a href="#/admin/governance?tab=courses" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold hover:bg-slate-300 transition-colors">Quay lại hàng đợi</a>
         ${isPending ? `
           <div class="flex items-center gap-2">
-            <button type="button" id="diff-reject-btn" class="px-3.5 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors">
+            <button type="button" id="diff-reject-btn" class="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors cursor-pointer">
               Từ chối yêu cầu
             </button>
-            <button type="button" id="diff-approve-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5">
+            <button type="button" id="diff-approve-btn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer">
               <span class="material-symbols-outlined text-[16px]">check</span>
               <span>Phê duyệt & Áp dụng thay đổi</span>
             </button>
@@ -1472,14 +1799,36 @@ class AdminView {
     container.innerHTML = `
       <main class="max-w-[1600px] mx-auto p-4 sm:p-8 space-y-6 animate-fade-in">
         <header class="space-y-2">
-          <a href="#/admin/governance?tab=courses" class="text-sm font-semibold text-primary">← Hàng đợi xét duyệt</a>
+          <a href="#/admin/governance?tab=courses" class="text-sm font-semibold text-primary hover:underline">← Hàng đợi xét duyệt</a>
           <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">Thẩm định bản sửa đổi</h1>
           <p class="text-sm text-slate-600 dark:text-slate-300">${UI.escapeHtml(r.course_title || 'Khóa học')} · Yêu cầu #${r.id}</p>
         </header>
-        <section class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6">${body}</section>
-        <footer class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6">${footer}</footer>
+        <section class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6 shadow-2xs">${body}</section>
+        <footer class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 sm:p-6 shadow-2xs">${footer}</footer>
       </main>
     `;
+
+    // Hook up View Mode tabs
+    const diffBtn = document.getElementById('cr-tab-diff-btn');
+    const previewBtn = document.getElementById('cr-tab-preview-btn');
+    const diffContainer = document.getElementById('cr-diff-container');
+    const previewContainer = document.getElementById('cr-preview-container');
+
+    if (diffBtn && previewBtn && diffContainer && previewContainer) {
+      diffBtn.onclick = () => {
+        diffBtn.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all bg-white dark:bg-slate-900 text-primary shadow-xs font-bold cursor-pointer';
+        previewBtn.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer';
+        diffContainer.classList.remove('hidden');
+        previewContainer.classList.add('hidden');
+      };
+
+      previewBtn.onclick = () => {
+        previewBtn.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all bg-white dark:bg-slate-900 text-primary shadow-xs font-bold cursor-pointer';
+        diffBtn.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer';
+        previewContainer.classList.remove('hidden');
+        diffContainer.classList.add('hidden');
+      };
+    }
 
     if (isPending) {
       document.getElementById('diff-approve-btn').onclick = async () => {

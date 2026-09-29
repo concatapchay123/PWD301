@@ -208,11 +208,14 @@ class Notification(Base):
                 return f"{s}Z"
             return s
 
+        event_type = self.event.event_type if self.event else None
+
         return {
             "id": str(self.public_id),
             "category": self.category,
             "title": self.title,
             "body": self.body,
+            "event_type": event_type,
             "read": self.is_read,
             "is_read": self.is_read,
             "read_at": _to_utc_iso(self.read_at),

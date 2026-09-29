@@ -269,15 +269,12 @@ def dispatch_notification(
 def _visible_notification_query(
     session: Session | scoped_session, recipient_id: int
 ) -> Any:
-    """Collapse duplicate lesson review alerts while retaining their audit events."""
+    """Collapse duplicate notifications while retaining their audit events."""
     newer = sa.orm.aliased(Notification)
-    newer_event = sa.orm.aliased(NotificationEvent)
     duplicate = (
         sa.select(newer.id)
-        .join(newer_event, newer.notification_event_id == newer_event.id)
         .where(
             newer.recipient_user_id == recipient_id,
-            newer_event.event_type == "LESSON_CHANGE_REQUEST",
             newer.title == Notification.title,
             newer.body == Notification.body,
             newer.id > Notification.id,
@@ -289,7 +286,7 @@ def _visible_notification_query(
         .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
         .filter(
             Notification.recipient_user_id == recipient_id,
-            sa.or_(NotificationEvent.event_type != "LESSON_CHANGE_REQUEST", ~duplicate),
+            ~duplicate,
         )
     )
 

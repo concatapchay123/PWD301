@@ -560,6 +560,19 @@ class ApiClient {
     });
   }
 
+  static async checkYouTubeLink(url) {
+    return await ApiClient.request('/instructor/check-youtube-link', {
+      method: 'POST',
+      body: { url }
+    });
+  }
+
+  static async scanCourseVideos(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/scan-videos`, {
+      method: 'POST'
+    });
+  }
+
   static async detachLessonResource(courseId, lessonId, resourceId) {
     return await ApiClient.request(`/instructor/courses/${courseId}/lessons/${lessonId}/resources/${resourceId}`, {
       method: 'DELETE'
