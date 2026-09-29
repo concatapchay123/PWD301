@@ -800,6 +800,85 @@ class UI {
   // =========================================================================
   // 5. Lightweight Markdown & Rich Document WYSIWYG Parser
   // =========================================================================
+  static htmlToMarkdown(html) {
+    if (!html) return '';
+    if (typeof document === 'undefined') return String(html);
+    const div = document.createElement('div');
+    div.innerHTML = html;
+
+    const convertNode = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return '';
+      }
+
+      const tag = node.tagName.toLowerCase();
+      let childrenText = Array.from(node.childNodes).map(convertNode).join('');
+
+      switch (tag) {
+        case 'h1':
+          return `\n# ${childrenText.trim()}\n\n`;
+        case 'h2':
+          return `\n## ${childrenText.trim()}\n\n`;
+        case 'h3':
+          return `\n### ${childrenText.trim()}\n\n`;
+        case 'h4':
+        case 'h5':
+        case 'h6':
+          return `\n#### ${childrenText.trim()}\n\n`;
+        case 'strong':
+        case 'b':
+          return childrenText.trim() ? `**${childrenText.trim()}**` : '';
+        case 'em':
+        case 'i':
+          return childrenText.trim() ? `*${childrenText.trim()}*` : '';
+        case 's':
+        case 'del':
+        case 'strike':
+          return childrenText.trim() ? `~~${childrenText.trim()}~~` : '';
+        case 'code':
+          if (node.parentElement && node.parentElement.tagName.toLowerCase() === 'pre') {
+            return childrenText;
+          }
+          return childrenText.trim() ? `\`${childrenText.trim()}\`` : '';
+        case 'pre':
+          return `\n\`\`\`\n${node.textContent.trim()}\n\`\`\`\n\n`;
+        case 'blockquote':
+          return `\n> ${childrenText.trim()}\n\n`;
+        case 'p':
+        case 'div':
+          return childrenText.trim() ? `\n${childrenText.trim()}\n\n` : '\n';
+        case 'br':
+          return '\n';
+        case 'ul':
+          return `\n${childrenText}\n`;
+        case 'ol':
+          return `\n${childrenText}\n`;
+        case 'li': {
+          const isOrdered = node.parentElement && node.parentElement.tagName.toLowerCase() === 'ol';
+          const prefix = isOrdered ? '1. ' : '- ';
+          return `${prefix}${childrenText.trim()}\n`;
+        }
+        case 'a': {
+          const href = node.getAttribute('href') || '#';
+          return `[${childrenText.trim() || href}](${href})`;
+        }
+        case 'img': {
+          const src = node.getAttribute('src') || '';
+          const alt = node.getAttribute('alt') || '';
+          return `![${alt}](${src})`;
+        }
+        default:
+          return childrenText;
+      }
+    };
+
+    const md = Array.from(div.childNodes).map(convertNode).join('');
+    return md.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   static renderMarkdown(raw) {
     if (!raw) return '';
 
@@ -1048,6 +1127,105 @@ class UI {
   static getYouTubeEmbedUrl(id) {
     if (!id) return '';
     return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+  }
+
+  // =========================================================================
+  // Plain-Language Academic Glossary & Low-Tech Friendly Helpers
+  // =========================================================================
+  static helpTooltip(tooltipText, termName = '') {
+    const escapedText = UI.escapeHtml(tooltipText);
+    const escapedTerm = UI.escapeHtml(termName);
+    return `
+      <span class="inline-flex items-center gap-1 group relative cursor-help select-none" title="${escapedText}">
+        ${escapedTerm ? `<span class="underline decoration-dotted decoration-slate-400 dark:decoration-slate-500 underline-offset-2">${escapedTerm}</span>` : ''}
+        <span class="material-symbols-outlined text-[15px] text-slate-400 hover:text-primary transition-colors">help</span>
+      </span>
+    `;
+  }
+
+  static openAcademicGlossaryModal(initialTerm = null) {
+    const glossary = [
+      {
+        term: 'SLO (Student Learning Outcomes)',
+        vnTitle: 'Chuẩn kỹ năng đầu ra của người học',
+        badge: 'Học vụ & Kỹ năng',
+        description: 'Bản cam kết rõ ràng về những kiến thức, kỹ năng và sản phẩm thực tế mà bạn chắc chắn sẽ tự tay làm được sau khi học xong môn học này. Giảng viên căn cứ vào chuẩn này để ra đề thi công bằng, sát thực tế.',
+        example: 'Ví dụ: "Tự tay thiết kế và lập trình được website bán hàng an toàn, bảo vệ tài khoản người dùng."'
+      },
+      {
+        term: 'ABET Criterion 3',
+        vnTitle: 'Khung kiểm định chất lượng quốc tế',
+        badge: 'Tiêu chuẩn quốc tế',
+        description: 'Tổ chức kiểm định hàng đầu thế giới của Hoa Kỳ dành cho các chương trình đào tạo kỹ thuật - công nghệ (Computing Accreditation Commission). Khi môn học đạt chuẩn ABET, bằng cấp và kiến thức của bạn được công nhận tương đương tiêu chuẩn quốc tế.',
+        example: 'Gồm các chuẩn năng lực: Phân tích vấn đề, Thiết kế giải pháp, Đạo đức nghề nghiệp, Giao tiếp kỹ thuật.'
+      },
+      {
+        term: 'Prerequisites',
+        vnTitle: 'Môn học điều kiện cần học trước',
+        badge: 'Lộ trình học tập',
+        description: 'Những môn học cung cấp kiến thức nền tảng mà bạn bắt buộc phải học và thi đạt trước khi đăng ký môn học này, giúp bạn tiếp thu kiến thức mới một cách thuận lợi và không bị bỡ ngỡ.',
+        example: 'Ví dụ: Cần hoàn thành môn "Nhập môn Lập trình" trước khi học môn "Lập trình Web nâng cao".'
+      },
+      {
+        term: 'Assessment',
+        vnTitle: 'Đợt khảo thí & Đánh giá năng lực',
+        badge: 'Kiểm tra & Thi',
+        description: 'Các bài tập, bài kiểm tra trắc nghiệm, tự luận hoặc đồ án thực hành giúp bạn tự đo lường mức độ hiểu bài và tích lũy điểm số cho học phần.',
+        example: 'Gồm: Bài kiểm tra thường xuyên (Quizzes), Thi giữa kỳ (Midterm), Đồ án cuối kỳ (Final Project).'
+      },
+      {
+        term: 'Rubric',
+        vnTitle: 'Tiêu chí và thang điểm chi tiết',
+        badge: 'Minh bạch điểm số',
+        description: 'Bảng hướng dẫn chấm điểm công khai chỉ rõ từng mức độ hoàn thành bài tập tương ứng với bao nhiêu điểm, giúp bạn biết chính xác mình cần làm gì để đạt điểm tối đa.',
+        example: 'Ví dụ: Giao diện đẹp đạt 2 điểm, Code chạy đúng đạt 5 điểm, Bảo mật tốt đạt 3 điểm.'
+      }
+    ];
+
+    const bodyHtml = `
+      <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div class="p-4 rounded-xl bg-primary-subtle text-primary border border-primary/20 space-y-1">
+          <div class="flex items-center gap-2 font-bold text-sm">
+            <span class="material-symbols-outlined text-[20px]">help</span>
+            <span>Sổ tay giải thích thuật ngữ học vụ (Dành cho người học & Người mới)</span>
+          </div>
+          <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            Hệ thống PWD301 áp dụng các tiêu chuẩn giáo dục quốc tế nhưng luôn cam kết ngôn ngữ tường minh, gần gũi nhất để bất kỳ ai (kể cả người mới bắt đầu hoặc người không chuyên công nghệ) cũng hiểu rõ quyền lợi và lộ trình học tập của mình.
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          ${glossary.map(item => `
+            <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span class="text-xs font-bold text-primary font-mono">${UI.escapeHtml(item.term)}</span>
+                  <h4 class="text-sm font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(item.vnTitle)}</h4>
+                </div>
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${UI.escapeHtml(item.badge)}</span>
+              </div>
+              <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description)}</p>
+              ${item.example ? `
+                <div class="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 italic border-l-2 border-primary">
+                  ${UI.escapeHtml(item.example)}
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    UI.openModal({
+      title: 'Sổ tay thuật ngữ học vụ & Chuẩn đầu ra',
+      bodyHtml,
+      footerHtml: `
+        <button type="button" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-bold transition-all" onclick="UI.closeModal()">
+          Đã hiểu rõ
+        </button>
+      `,
+      size: 'lg'
+    });
   }
 }
 

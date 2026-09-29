@@ -284,6 +284,12 @@ class ApiClient {
     });
   }
 
+  static async optInLessonRevision(lessonId) {
+    return await ApiClient.request(`/student/lessons/${lessonId}/opt-in`, {
+      method: 'POST'
+    });
+  }
+
   static async getStudentAssessments() {
     return await ApiClient.request('/student/assessments');
   }
@@ -473,6 +479,12 @@ class ApiClient {
     });
   }
 
+  static async cancelSubmitCourse(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/cancel-submit`, {
+      method: 'POST'
+    });
+  }
+
   static async publishCourse(courseId) {
     return await ApiClient.request(`/instructor/courses/${courseId}/publish`, {
       method: 'POST'
@@ -530,6 +542,12 @@ class ApiClient {
     return await ApiClient.request(`/instructor/lessons/${lessonId}`, {
       method: 'PATCH',
       body: data
+    });
+  }
+
+  static async discardLessonDraft(lessonId) {
+    return await ApiClient.request(`/instructor/lessons/${lessonId}/draft/discard`, {
+      method: 'POST'
     });
   }
 

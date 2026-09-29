@@ -1783,6 +1783,7 @@ class StudentView {
       let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
       const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
       const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
+      const hasNewerRevision = Boolean(lesson.has_newer_revision || lesson.status === 'HISTORICAL' || (lesson.latest_lesson_id && lesson.latest_lesson_id !== lessonId));
 
       // Find prev and next lesson
       const currentIndex = lessonsList.findIndex(l => (l.lesson_id || l.id) === lessonId);
@@ -1958,12 +1959,38 @@ class StudentView {
             <!-- Left Main Reading Pane -->
             <div class="flex-1 overflow-y-auto p-4 sm:p-8" id="lesson-reader-main-scroll">
               <main class="max-w-3xl mx-auto space-y-6">
+
+              ${hasNewerRevision ? `
+                <!-- Lesson Revision Opt-In Banner -->
+                <div id="lesson-revision-update-banner" class="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/50 p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <span class="material-symbols-outlined text-[22px]">published_with_changes</span>
+                    </div>
+                    <div>
+                      <h3 class="text-sm font-bold text-indigo-950 dark:text-indigo-200">Đã có phiên bản bài giảng mới hơn</h3>
+                      <p class="text-xs text-indigo-800/90 dark:text-indigo-300/90 mt-1 leading-relaxed">
+                        ${lesson.material_change_summary ? `<strong>Thay đổi:</strong> ${UI.escapeHtml(lesson.material_change_summary)}. ` : ''}
+                        Bạn đang xem phiên bản lưu trữ an toàn để bảo lưu tiến trình học. Bạn có thể chủ động chuyển sang phiên bản mới nhất bất cứ lúc nào.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="shrink-0 flex items-center">
+                    <button
+                      type="button"
+                      id="btn-opt-in-new-revision"
+                      class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">sync</span>
+                      <span>Cập nhật bản mới</span>
+                    </button>
+                  </div>
+                </div>
+              ` : ''}
               
               <!-- Lesson Header & Objectives Card -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-3">
                 <div class="flex items-center gap-2 text-xs text-slate-400">
-                  <span class="font-mono text-primary font-bold">BÀI ${currentIndex + 1} / ${lessonsList.length}</span>
-                  <span>•</span>
                   <span class="flex items-center gap-1">
                     <span>Mục tiêu kỹ năng: Thiết kế & Hiện thực hóa</span>
                     <button type="button" onclick="UI.openAcademicGlossaryModal()" class="cursor-pointer text-[10px] bg-slate-100 hover:bg-primary-subtle hover:text-primary dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono transition-colors" title="Bấm để xem giải thích chuẩn đầu ra (SLO)">SLO (?)</button>
@@ -2239,6 +2266,30 @@ class StudentView {
       </div>
     `;
 
+    // Hook up Revision Opt-in Button
+    const optInBtn = document.getElementById('btn-opt-in-new-revision');
+    if (optInBtn) {
+      optInBtn.onclick = async () => {
+        try {
+          optInBtn.disabled = true;
+          optInBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang chuyển đổi...';
+          const res = await ApiClient.optInLessonRevision(lessonId);
+          UI.showToast('Đã nâng cấp lên phiên bản bài giảng mới nhất!', 'success');
+          const targetLessonId = res?.active_lesson_id || res?.new_lesson_id || lesson.latest_lesson_id;
+          if (targetLessonId) {
+            window.location.hash = `#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(targetLessonId)}`;
+            window.location.reload();
+          } else {
+            window.location.reload();
+          }
+        } catch (err) {
+          UI.showToast(err.message || 'Không thể chuyển đổi phiên bản.', 'error');
+          optInBtn.disabled = false;
+          optInBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">sync</span> <span>Cập nhật bản mới</span>';
+        }
+      };
+    }
+
     // Hook up Mobile Unit Lessons Drawer & Sidebar Notes Button
     const mobileLessonsBtn = document.getElementById('mobile-unit-lessons-btn');
     if (mobileLessonsBtn) {
@@ -2424,6 +2475,7 @@ class StudentView {
       });
 
       // 3. Mark lesson completed handler (Enforces 100% video watch)
+      const completeBtn = document.getElementById('complete-lesson-btn');
       const setLessonCompleted = () => {
         isCompleted = true;
         const desktopList = document.getElementById('unit-lessons-desktop-list');

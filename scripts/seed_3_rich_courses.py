@@ -6,11 +6,15 @@ Creates 3 comprehensive, industry-standard courses:
 3. OPS401: DevOps, CI/CD Pipeline & Hạ Tầng Điện Toán Đám Mây (TS. Nguyễn Văn A)
 
 Each course features:
-- Clear chapters (Learning Units) and sequential lessons.
+- Standard Learning Objectives (SLO), target audience, completion requirements.
+- Full course banner cover image generated via pure Python stdlib PNG.
+- Chapters (LearningUnits) and sequential lessons with rich Markdown, summary & duration.
 - Verified embeddable public YouTube videos and uploaded internal MP4 demo videos.
 - Attached real PDF documents with authentic academic outlines.
-- Interactive multi-choice and true/false mini-quizzes with detailed explanations.
-- Student enrollments and initial progress.
+- Interactive mini-quizzes supporting all 4 question types (Multiple Choice, True/False,
+  Fill in the Blank, Matching) with detailed explanations.
+- Formal Assessment (Exam/Midterm) with question assignments totaling 100.00 points.
+- Student enrollments and initial learning progress & attempt scores.
 """
 
 from __future__ import annotations
@@ -20,15 +24,15 @@ import decimal
 import io
 import json
 import logging
+import struct
 import sys
 import uuid
+import zlib
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from PIL import Image, ImageDraw
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
@@ -76,7 +80,6 @@ from pwd301.models.file_import import (
     LessonResource,
 )
 from pwd301.models.identity import Role, User, UserRole
-from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
 from pwd301.models.question_bank import (
     Question,
     QuestionProvenance,
@@ -105,6 +108,45 @@ SAMPLE_MP4_BYTES = base64.b64decode(
 )
 
 
+def generate_course_cover_png(
+    course_code: str,
+    bg_gradient: tuple[tuple[int, int, int], tuple[int, int, int]],
+) -> bytes:
+    """Generate a clean 16:9 (1280x720) valid PNG image using stdlib without external PIL dependency."""
+    width = 1280
+    height = 720
+    color_start, color_end = bg_gradient
+
+    raw_lines = []
+    for y in range(height):
+        ratio = y / float(height - 1)
+        r = int(color_start[0] * (1.0 - ratio) + color_end[0] * ratio)
+        g = int(color_start[1] * (1.0 - ratio) + color_end[1] * ratio)
+        b = int(color_start[2] * (1.0 - ratio) + color_end[2] * ratio)
+
+        line_bytes = bytearray([0])
+        line_pixel = bytes([r, g, b])
+        line_bytes.extend(line_pixel * width)
+        raw_lines.append(bytes(line_bytes))
+
+    raw_data = b"".join(raw_lines)
+    compressed = zlib.compress(raw_data, level=6)
+
+    def png_chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+    idat = png_chunk(b"IDAT", compressed)
+    iend = png_chunk(b"IEND", b"")
+    return sig + ihdr + idat + iend
+
+
 def generate_pdf_document(title: str, subtitle: str, topics: list[str]) -> bytes:
     """Generate a clean, valid PDF 1.4 binary file with layout text."""
     stream_content = (
@@ -124,9 +166,9 @@ def generate_pdf_document(title: str, subtitle: str, topics: list[str]) -> bytes
         safe_topic = topic.replace("(", "[").replace(")", "]")
         stream_content += f"({idx}. {safe_topic}) Tj\n0 -18 Td\n"
     stream_content += (
-        f"0 -25 Td\n"
-        f"(He thong Hoc truc tuyen PWD301 - Luu hanh noi bo hoc vien va giang vien) Tj\n"
-        f"ET\n"
+        "0 -25 Td\n"
+        "(He thong Hoc truc tuyen PWD301 - Luu hanh noi bo hoc vien va giang vien) Tj\n"
+        "ET\n"
     )
     stream_bytes = stream_content.encode("latin-1", errors="replace")
 
@@ -137,8 +179,11 @@ def generate_pdf_document(title: str, subtitle: str, topics: list[str]) -> bytes
         b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
         b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n"
         b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
-        b"5 0 obj\n<< /Length " + str(len(stream_bytes)).encode("ascii") + b" >>\nstream\n"
-        + stream_bytes + b"\nendstream\nendobj\n"
+        b"5 0 obj\n<< /Length "
+        + str(len(stream_bytes)).encode("ascii")
+        + b" >>\nstream\n"
+        + stream_bytes
+        + b"\nendstream\nendobj\n"
         b"xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n"
         b"0000000115 00000 n \n0000000261 00000 n \n0000000336 00000 n \n"
         b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n450\n%%EOF\n"
@@ -146,80 +191,73 @@ def generate_pdf_document(title: str, subtitle: str, topics: list[str]) -> bytes
     return pdf
 
 
-def generate_course_cover_png(
-    course_code: str,
-    title: str,
-    subtitle: str,
-    bg_gradient: tuple[tuple[int, int, int], tuple[int, int, int]],
-    accent_color: tuple[int, int, int],
-) -> bytes:
-    """Generate a clean 16:9 (1280x720) course thumbnail with modern tech styling."""
-    width = 1280
-    height = 720
-    img = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(img)
-
-    color_start, color_end = bg_gradient
-    # Linear vertical gradient
-    for y in range(height):
-        ratio = y / height
-        r = int(color_start[0] * (1 - ratio) + color_end[0] * ratio)
-        g = int(color_start[1] * (1 - ratio) + color_end[1] * ratio)
-        b = int(color_start[2] * (1 - ratio) + color_end[2] * ratio)
-        draw.line([(0, y), (width, y)], fill=(r, g, b))
-
-    # Tech grid pattern
-    for x in range(0, width, 64):
-        draw.line([(x, 0), (x, height)], fill=(color_start[0] + 12, color_start[1] + 14, color_start[2] + 20))
-    for y in range(0, height, 64):
-        draw.line([(0, y), (width, y)], fill=(color_start[0] + 12, color_start[1] + 14, color_start[2] + 20))
-
-    # Decorative top pill
-    draw.rounded_rectangle([(80, 70), (230, 116)], radius=12, fill=accent_color)
-    draw.text((105, 84), course_code, fill=(255, 255, 255))
-
-    # Inner card box
-    draw.rounded_rectangle(
-        [(80, 150), (1200, 630)],
-        radius=24,
-        fill=(color_start[0] + 8, color_start[1] + 10, color_start[2] + 16),
-        outline=(255, 255, 255, 30),
-        width=2,
-    )
-
-    # Texts
-    draw.text((120, 210), title[:42], fill=(255, 255, 255))
-    if len(title) > 42:
-        draw.text((120, 260), title[42:85], fill=(255, 255, 255))
-    draw.text((120, 340), subtitle, fill=(180, 195, 215))
-
-    # Verification pill badge
-    draw.rounded_rectangle([(120, 530), (340, 575)], radius=10, fill=(30, 42, 60))
-    draw.text((140, 544), "PWD301 Verified Program", fill=(130, 220, 180))
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
 def wipe_all_courses(session: Session) -> None:
     """Wipe existing courses and all child relational records completely."""
     logger.info("Cleaning up existing course and learning records...")
 
-    # 0. Temporarily disable triggers during full table reset (SQL Server DDL)
-    tables_with_freeze_triggers = [
-        "assessment_question_assignments",
-        "assessment_sections",
+    all_tables_with_triggers = [
         "assessments",
+        "assessment_question_assignments",
         "assessment_question_pool",
+        "assessment_sections",
         "assessment_blueprint_rules",
-        "assessment_blueprints",
+        "question_revisions",
+        "question_revision_choices",
+        "question_revision_accepted_answers",
+        "file_revisions",
+        "knowledge_versions",
     ]
-    for tbl in tables_with_freeze_triggers:
+    for tbl in all_tables_with_triggers:
         try:
             session.execute(sa.text(f"ALTER TABLE {tbl} DISABLE TRIGGER ALL"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Disable trigger warning on {tbl}: {e}")
+    session.commit()
+
+    # Nullify / remove dependent references
+    try:
+        session.execute(
+            sa.text("UPDATE ai_conversations SET course_id = NULL WHERE course_id IS NOT NULL")
+        )
+    except Exception as e:
+        logger.debug(f"Clear ai_conversations warning: {e}")
+
+    try:
+        session.execute(
+            sa.text("DELETE FROM ai_generated_question_drafts WHERE course_id IS NOT NULL")
+        )
+    except Exception as e:
+        logger.debug(f"Clear ai_generated_question_drafts warning: {e}")
+
+    try:
+        session.execute(
+            sa.text(
+                "DELETE FROM knowledge_chunks WHERE document_id IN (SELECT id FROM knowledge_documents WHERE course_id IS NOT NULL)"
+            )
+        )
+        session.execute(sa.text("DELETE FROM knowledge_documents WHERE course_id IS NOT NULL"))
+    except Exception as e:
+        logger.debug(f"Clear knowledge_documents warning: {e}")
+
+    try:
+        session.execute(
+            sa.text(
+                "DELETE FROM import_question_options WHERE import_question_id IN (SELECT id FROM import_questions WHERE import_job_id IN (SELECT id FROM document_import_jobs WHERE course_id IS NOT NULL))"
+            )
+        )
+        session.execute(
+            sa.text(
+                "DELETE FROM import_questions WHERE import_job_id IN (SELECT id FROM document_import_jobs WHERE course_id IS NOT NULL)"
+            )
+        )
+        session.execute(sa.text("DELETE FROM document_import_jobs WHERE course_id IS NOT NULL"))
+    except Exception as e:
+        logger.debug(f"Clear document_import_jobs warning: {e}")
+
+    try:
+        session.execute(sa.text("DELETE FROM grade_exports WHERE course_id IS NOT NULL"))
+    except Exception as e:
+        logger.debug(f"Clear grade_exports warning: {e}")
     session.commit()
 
     # Attempts & Results (strict FK reverse order)
@@ -243,19 +281,19 @@ def wipe_all_courses(session: Session) -> None:
     session.query(AssessmentSection).delete(synchronize_session=False)
     session.query(Assessment).delete(synchronize_session=False)
 
-    for tbl in tables_with_freeze_triggers:
-        try:
-            session.execute(sa.text(f"ALTER TABLE {tbl} ENABLE TRIGGER ALL"))
-        except Exception:
-            pass
-    session.commit()
-
     # Question Bank
     session.query(QuestionRevisionChoice).delete(synchronize_session=False)
     session.query(QuestionRevisionAcceptedAnswer).delete(synchronize_session=False)
     session.query(QuestionRevision).delete(synchronize_session=False)
     session.query(QuestionProvenance).delete(synchronize_session=False)
     session.query(Question).delete(synchronize_session=False)
+
+    for tbl in all_tables_with_triggers:
+        try:
+            session.execute(sa.text(f"ALTER TABLE {tbl} ENABLE TRIGGER ALL"))
+        except Exception:
+            pass
+    session.commit()
 
     # Lesson resources, progress & lessons
     session.query(LessonProgress).delete(synchronize_session=False)
@@ -279,7 +317,9 @@ def wipe_all_courses(session: Session) -> None:
     for fa in course_assets:
         revisions = session.query(FileRevision).filter(FileRevision.file_asset_id == fa.id).all()
         for rev in revisions:
-            session.query(FileScanResult).filter(FileScanResult.file_revision_id == rev.id).delete(synchronize_session=False)
+            session.query(FileScanResult).filter(FileScanResult.file_revision_id == rev.id).delete(
+                synchronize_session=False
+            )
             session.delete(rev)
         session.delete(fa)
 
@@ -293,16 +333,32 @@ def get_or_create_users(session: Session) -> dict[str, User]:
     """Ensure baseline test users exist with roles."""
     roles = {r.code: r for r in session.query(Role).all()}
     if not roles:
-        for code, name in [("STUDENT", "Student"), ("INSTRUCTOR", "Instructor"), ("ADMIN", "System Administrator")]:
+        for code, name in [
+            ("STUDENT", "Student"),
+            ("INSTRUCTOR", "Instructor"),
+            ("ADMIN", "System Administrator"),
+        ]:
             r = Role(code=code, name=name)
             session.add(r)
             session.flush()
             roles[code] = r
 
     user_configs = [
-        {"email": "admin@pwd301.local", "name": "Quản trị viên Hệ thống", "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"]},
-        {"email": "instructor1@pwd301.local", "name": "TS. Nguyễn Văn A", "roles": ["STUDENT", "INSTRUCTOR"]},
-        {"email": "instructor2@pwd301.local", "name": "ThS. Trần Thị B", "roles": ["STUDENT", "INSTRUCTOR"]},
+        {
+            "email": "admin@pwd301.local",
+            "name": "Quản trị viên Hệ thống",
+            "roles": ["STUDENT", "INSTRUCTOR", "ADMIN"],
+        },
+        {
+            "email": "instructor1@pwd301.local",
+            "name": "TS. Nguyễn Văn A",
+            "roles": ["STUDENT", "INSTRUCTOR"],
+        },
+        {
+            "email": "instructor2@pwd301.local",
+            "name": "ThS. Trần Thị B",
+            "roles": ["STUDENT", "INSTRUCTOR"],
+        },
         {"email": "student1@pwd301.local", "name": "Lê Hoàng Long", "roles": ["STUDENT"]},
         {"email": "student2@pwd301.local", "name": "Phạm Minh Tuấn", "roles": ["STUDENT"]},
         {"email": "student3@pwd301.local", "name": "Vũ Thảo Nguyên", "roles": ["STUDENT"]},
@@ -335,9 +391,20 @@ def get_or_create_users(session: Session) -> dict[str, User]:
 
         for r_code in cfg["roles"]:
             r_obj = roles[r_code]
-            has_link = session.query(UserRole).filter(UserRole.user_id == u.id, UserRole.role_id == r_obj.id).first()
+            has_link = (
+                session.query(UserRole)
+                .filter(UserRole.user_id == u.id, UserRole.role_id == r_obj.id)
+                .first()
+            )
             if not has_link:
-                session.add(UserRole(user_id=u.id, role_id=r_obj.id, assigned_by_user_id=u.id, assignment_reason="Seed"))
+                session.add(
+                    UserRole(
+                        user_id=u.id,
+                        role_id=r_obj.id,
+                        assigned_by_user_id=u.id,
+                        assignment_reason="Seed",
+                    )
+                )
 
         users[norm] = u
 
@@ -366,16 +433,48 @@ def seed_courses() -> None:
         # COURSE 1: PY301
         # =========================================================================
         logger.info("Seeding Course 1: PY301...")
+        c1_slo = [
+            {
+                "title": "SLO-1: Kiến trúc HTTP & RESTful API",
+                "description": "Nắm vững nguyên lý Client-Server, các chuẩn HTTP methods (GET, POST, PUT, DELETE), status codes và thiết kế endpoint chuẩn RESTful.",
+                "weight": "25%",
+            },
+            {
+                "title": "SLO-2: ORM & Database Design với SQL Server",
+                "description": "Làm chủ SQLAlchemy ORM, quan hệ bảng 1-N, N-N, tối ưu hóa truy vấn và schema migrations.",
+                "weight": "35%",
+            },
+            {
+                "title": "SLO-3: Xác thực JWT & Phân quyền RBAC",
+                "description": "Triển khai xác thực JWT, session auth an toàn, phân quyền người dùng theo vai trò RBAC và phòng thủ các lỗ hổng OWASP phổ biến.",
+                "weight": "40%",
+            },
+        ]
+        c1_target = [
+            "Sinh viên năm 3-4 chuyên ngành CNTT, Kỹ thuật Phần mềm cần củng cố kiến thức backend doanh nghiệp",
+            "Lập trình viên muốn nâng cao kỹ năng thiết kế RESTful API chuẩn mực và bảo mật hệ thống",
+            "Kỹ sư phần mềm cần làm chủ Microsoft SQL Server và SQLAlchemy ORM trong môi trường Production",
+        ]
+        c1_completion = {
+            "minimum_grade_score": 80.0,
+            "allow_certificate": True,
+            "completion_grace_days": 14,
+            "require_all_lessons": True,
+        }
+
         c1 = Course(
             course_code="PY301",
             course_code_normalized="PY301",
-            title="PY301: Lập trình Python Backend & REST API Doanh Nghiệp",
-            title_normalized="py301: lập trình python backend & rest api doanh nghiệp",
+            title="Lập trình Python Backend & REST API Doanh Nghiệp",
+            title_normalized="lập trình python backend & rest api doanh nghiệp",
             description=(
                 "Khóa học chuyên sâu trang bị kiến trúc backend hoàn chỉnh với Python hiện đại: "
                 "Flask Framework, SQLAlchemy ORM, Microsoft SQL Server, xác thực JWT, phân quyền RBAC, "
                 "bảo mật CSRF/XSS và kiểm thử tự động với Pytest."
             ),
+            learning_objectives=json.dumps(c1_slo, ensure_ascii=False),
+            target_audience=json.dumps(c1_target, ensure_ascii=False),
+            completion_requirements=json.dumps(c1_completion, ensure_ascii=False),
             category="Kỹ thuật Lập trình",
             difficulty="INTERMEDIATE",
             owner_instructor_id=inst1.id,
@@ -388,14 +487,8 @@ def seed_courses() -> None:
         session.add(c1)
         session.flush()
 
-        # Generate & attach 16:9 clean cover for PY301
-        c1_img_bytes = generate_course_cover_png(
-            course_code="PY301",
-            title="Lập trình Python Backend & REST API Doanh Nghiệp",
-            subtitle="Flask • SQLAlchemy • SQL Server • JWT • RBAC • Clean Architecture",
-            bg_gradient=((15, 23, 42), (30, 41, 59)),
-            accent_color=(37, 99, 235),
-        )
+        # Cover banner
+        c1_img_bytes = generate_course_cover_png("PY301", ((15, 23, 42), (30, 41, 59)))
         c1_asset = store_file_stream(
             actor=inst1,
             course_id=c1.id,
@@ -409,12 +502,11 @@ def seed_courses() -> None:
         c1.thumbnail_file_asset_id = c1_asset.id
         session.flush()
 
-        # Completion rule for c1
         session.add(
             CourseCompletionRule(
                 course_id=c1.id,
                 require_all_required_lessons=True,
-                require_required_assessments=False,
+                require_required_assessments=True,
                 minimum_progress_percent=decimal.Decimal("80.00"),
                 updated_by_user_id=inst1.id,
             )
@@ -448,20 +540,36 @@ def seed_courses() -> None:
                 "explanation": "Chính xác. HTTP 201 Created biểu thị yêu cầu POST đã hoàn thành và tài nguyên mới đã được ghi nhận trên máy chủ.",
             },
             {
-                "type": "MULTIPLE_CHOICE",
-                "question": "Header nào trong HTTP Request được sử dụng để client thông báo cho máy chủ định dạng dữ liệu mà nó có thể tiếp nhận?",
-                "options": ["Content-Type", "Accept", "Authorization", "User-Agent"],
-                "choices": ["Content-Type", "Accept", "Authorization", "User-Agent"],
-                "correct_answers": [1],
-                "correct_answer": 1,
-                "explanation": "Header 'Accept' (ví dụ Accept: application/json) thông báo cho server định dạng phản hồi mong muốn của client.",
+                "type": "FILL_IN_BLANK",
+                "question": "Mã trạng thái HTTP [___] đại diện cho lỗi Unauthorized khi người dùng chưa cung cấp thông tin xác thực danh tính hợp lệ.",
+                "blanks": [
+                    {
+                        "placeholder": "[___]",
+                        "answers": ["401", "HTTP 401"],
+                    }
+                ],
+                "explanation": "Mã trạng thái HTTP 401 Unauthorized biểu thị người dùng chưa được xác thực danh tính.",
+            },
+            {
+                "type": "MATCHING",
+                "question": "Hãy ghép cặp mã trạng thái HTTP với ý nghĩa chuẩn xác tương ứng:",
+                "pairs": [
+                    {"left": "200 OK", "right": "Thành công truy xuất hoặc cập nhật tài nguyên"},
+                    {"left": "201 Created", "right": "Khởi tạo tài nguyên mới thành công"},
+                    {
+                        "left": "403 Forbidden",
+                        "right": "Đã đăng nhập nhưng không có quyền truy cập",
+                    },
+                    {"left": "404 Not Found", "right": "Tài nguyên được yêu cầu không tồn tại"},
+                ],
+                "explanation": "200 OK: Thành công; 201 Created: Tạo mới; 403 Forbidden: Không có quyền; 404 Not Found: Không tìm thấy.",
             },
         ]
 
         md_1_1 = f"""<!-- video_urls: ["https://www.youtube.com/watch?v=kqtD5dpn9C8"] -->
 # Tổng quan về Giao thức HTTP & Kiến trúc RESTful API
 
-Chào mừng các bạn đến với khóa học **PY301: Lập trình Python Backend & REST API Doanh Nghiệp**.
+Chào mừng các bạn đến với khóa học **Lập trình Python Backend & REST API Doanh Nghiệp (PY301)**.
 
 ## 1. Mô hình Client-Server Hiện Đại
 Trong kiến trúc web hướng dịch vụ (Service-Oriented Architecture), máy khách (Client: trình duyệt web SPA, ứng dụng di động Flutter/React Native) và máy chủ (Backend Server) giao tiếp với nhau thông qua giao thức **HTTP/HTTPS**:
@@ -491,13 +599,13 @@ Hãy xem video bài giảng bên trên và hoàn thành bài kiểm tra mini-qui
             estimated_duration_minutes=45,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=10),
         )
         session.add(les_1_1)
         session.flush()
 
-        # Attach real PDF to Lesson 1.1
         pdf_1_1_data = generate_pdf_document(
             title="GIAO TRINH: KIEN TRUC HTTP VA RESTFUL API CHUAN",
             subtitle="Hoc phan PY301 - Chuong 1: Tong quan Giao thuc HTTP",
@@ -600,13 +708,13 @@ Hãy theo dõi video hướng dẫn demo thực hành bên trên!
             estimated_duration_minutes=50,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=9),
         )
         session.add(les_1_2)
         session.flush()
 
-        # Attach real uploaded MP4 video to Lesson 1.2
         fa_vid_1_2 = store_file_stream(
             actor=inst1,
             course_id=c1.id,
@@ -626,7 +734,6 @@ Hãy theo dõi video hướng dẫn demo thực hành bên trên!
             session=session,
         )
 
-        # Attach PDF to Lesson 1.2
         pdf_1_2_data = generate_pdf_document(
             title="SO TAY: THIET KE FLASK APPLICATION FACTORY VA BLUEPRINTS",
             subtitle="Hoc phan PY301 - Chuong 1: Thiet ke Module Backend",
@@ -731,6 +838,7 @@ class Product(db.Model):
             estimated_duration_minutes=55,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=7),
         )
@@ -751,10 +859,10 @@ class Product(db.Model):
             actor=inst1,
             course_id=c1.id,
             file_stream=io.BytesIO(pdf_1_3_data),
-            filename="SQLAlchemy_ORM_Cheatsheet.pdf",
+            filename="SQLAlchemy_ORM_va_Alembic_Guide.pdf",
             content_type="application/pdf",
             asset_type="RESOURCE",
-            title="Tài liệu tra cứu: SQLAlchemy ORM & Migration Cheatsheet",
+            title="Tài liệu chuyên đề: SQLAlchemy ORM & Alembic Migration",
             session=session,
         )
         attach_resource_to_lesson(
@@ -762,52 +870,48 @@ class Product(db.Model):
             lesson_id=les_1_3.id,
             asset_id=fa_pdf_1_3.id,
             is_downloadable=True,
-            label="Bảng tra cứu: Cú pháp SQLAlchemy & Migration (PDF)",
+            label="Chuyên đề: Quản lý Migration CSDL SQL Server (PDF)",
             session=session,
         )
 
-        # Lesson 1.4 (YouTube Video + PDF + Quiz)
+        # Lesson 1.4 (Uploaded Video MP4 + PDF + Quiz)
         quiz_1_4 = [
             {
                 "type": "MULTIPLE_CHOICE",
-                "question": "Thành phần nào trong JWT (JSON Web Token) đảm bảo token không bị kẻ tấn công can thiệp chỉnh sửa dữ liệu payload?",
-                "options": ["Header", "Payload", "Signature (Chữ ký điện tử)", "Algorithm Name"],
-                "choices": ["Header", "Payload", "Signature (Chữ ký điện tử)", "Algorithm Name"],
-                "correct_answers": [2],
-                "correct_answer": 2,
-                "explanation": "Chữ ký số (Signature) được tạo bởi Secret Key của server. Bất kỳ thay đổi nào trong Header hoặc Payload sẽ khiến chữ ký không khớp, server sẽ từ chối token ngay lập tức.",
+                "question": "JSON Web Token (JWT) bao gồm 3 phần cấu thành nào theo chuẩn RFC 7519?",
+                "options": [
+                    "Header, Payload, Signature",
+                    "Username, Password, Salt",
+                    "Request, Response, Status",
+                    "Cookie, Session, Token",
+                ],
+                "choices": [
+                    "Header, Payload, Signature",
+                    "Username, Password, Salt",
+                    "Request, Response, Status",
+                    "Cookie, Session, Token",
+                ],
+                "correct_answers": [0],
+                "correct_answer": 0,
+                "explanation": "JWT có cấu trúc chuẩn gồm 3 phần phân tách bằng dấu chấm: Header.Payload.Signature.",
             },
             {
                 "type": "TRUE_FALSE",
-                "question": "Để bảo mật chống tấn công XSS, Access Token JWT không nên lưu trữ trong localStorage của trình duyệt mà nên dùng httpOnly Cookie hoặc Authorization Header trong session.",
-                "correct_answer": True,
-                "explanation": "Đúng. Mã JavaScript độc hại (XSS) có thể đọc toàn bộ localStorage. Lưu trữ an toàn trong Cookie httpOnly hoặc bảo vệ phiên là khuyến nghị OWASP hàng đầu.",
+                "question": "Dữ liệu lưu trữ trong phần Payload của JWT được mã hóa bảo mật bí mật tuyệt đối và client không thể đọc được.",
+                "correct_answer": False,
+                "explanation": "Sai. Payload chỉ được encode Base64Url chứ không hề mã hóa bí mật. Bất kỳ ai có token đều đọc được nội dung payload. Vì vậy không bao giờ lưu mật khẩu hoặc dữ liệu nhạy cảm vào payload.",
             },
         ]
 
-        md_1_4 = f"""<!-- video_urls: ["https://www.youtube.com/watch?v=7lmCu8wz8ro"] -->
-# Xác Thực JWT & Phân Quyền Truy Cập RBAC Chuẩn Doanh Nghiệp
+        md_1_4 = f"""# Xác Thực JWT & Phân Quyền Truy Cập RBAC Chuẩn Doanh Nghiệp
 
-Tìm hiểu cơ chế bảo mật xác thực danh tính người dùng và ủy quyền truy cập tài nguyên.
+Thiết lập cơ chế bảo mật xác thực danh tính stateless thông qua JSON Web Token.
 
-## 1. Cấu Trúc JWT (JSON Web Token)
-JWT gồm 3 phần phân tách bởi dấu chấm (`.`):
-1. **Header**: Chứa thuật toán mã hóa (ví dụ `HS256`, `RS256`).
-2. **Payload**: Chứa các claims công khai (`user_id`, `email`, `roles`, `exp`).
-3. **Signature**: Băm mật mã kiểm chứng tính toàn vẹn `HMACSHA256(base64(header) + "." + base64(payload), secret)`.
-
-## 2. Decorator Phân Quyền RBAC
-```python
-def role_required(*allowed_roles):
-    def decorator(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            if not current_user.has_any_role(*allowed_roles):
-                raise ForbiddenError("Bạn không có quyền truy cập endpoint này.")
-            return fn(*args, **kwargs)
-        return wrapper
-    return decorator
-```
+## 1. Cơ Chế Hoạt Động của JWT
+Khi người dùng đăng nhập thành công với Email và Mật khẩu, máy chủ sinh Access Token có thời hạn và trả về cho client:
+- Header: Chứa thuật toán ký (`HS256`, `RS256`).
+- Payload: Chứa thông tin định danh (`sub`: user_id, `roles`: list roles, `exp`: expiration time).
+- Signature: Chữ ký HMAC băm từ Header, Payload và `JWT_SECRET_KEY`.
 
 <!-- mini_quiz: {json.dumps(quiz_1_4, ensure_ascii=False)} -->
 """
@@ -815,33 +919,53 @@ def role_required(*allowed_roles):
             course_id=c1.id,
             learning_unit_id=u1_2.id,
             title="Bài 4: Xác thực JWT & Phân quyền Truy cập RBAC Chuẩn Doanh Nghiệp",
-            summary="Cấu trúc token, xác thực không trạng thái, cơ chế thu hồi quyền và phòng vệ lỗ hổng IDOR.",
+            summary="Tìm hiểu cấu trúc JSON Web Token, cơ chế ký số và kiểm soát phân quyền truy cập Role-Based Access Control.",
             markdown_content=md_1_4,
             position=4,
             estimated_duration_minutes=60,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=6),
         )
         session.add(les_1_4)
         session.flush()
 
+        fa_vid_1_4 = store_file_stream(
+            actor=inst1,
+            course_id=c1.id,
+            file_stream=io.BytesIO(SAMPLE_MP4_BYTES),
+            filename="xac_thuc_jwt_va_phan_quyen_rbac.mp4",
+            content_type="video/mp4",
+            asset_type="RESOURCE",
+            title="Video thực hành: Cài đặt JWT và phân quyền RBAC trong Flask",
+            session=session,
+        )
+        attach_resource_to_lesson(
+            actor=inst1,
+            lesson_id=les_1_4.id,
+            asset_id=fa_vid_1_4.id,
+            is_downloadable=False,
+            label="Video thực hành: Thiết lập JWT & Phân quyền RBAC",
+            session=session,
+        )
+
         pdf_1_4_data = generate_pdf_document(
-            title="SECURITY BLUEPRINT: XAC THUC JWT VA PHAN QUYEN RBAC",
-            subtitle="Hoc phan PY301 - Chuong 2: An ninh va Bao mat REST API",
+            title="AN NINH WEBSERVICE: KIEN TRUC XAC THUC JWT VA PHAN QUYEN RBAC",
+            subtitle="Hoc phan PY301 - Chuong 2: Bao mat He thong Backend",
             topics=[
-                "Vong doi Token: Access Token ngan han va Refresh Token dai han",
-                "Phong chong cac cuoc tan cong Token Hijacking, CSRF va XSS",
-                "Kien truc kiem soat truy cap Role-Based Access Control (RBAC)",
-                "Cac nguyen tac bao ve IDOR (Insecure Direct Object Reference) o cap tang Service",
+                "Chuan RFC 7519 ve JSON Web Token va chu ky so HMAC SHA256",
+                "Thiet ke Refresh Token rotation phong chong chiem doat phien",
+                "Phan quyen theo vai tro (Role-Based Access Control) voi Decorators",
+                "Phong chong cac lo hong bao mat OWASP API Security Top 10",
             ],
         )
         fa_pdf_1_4 = store_file_stream(
             actor=inst1,
             course_id=c1.id,
             file_stream=io.BytesIO(pdf_1_4_data),
-            filename="Bao_mat_JWT_va_RBAC.pdf",
+            filename="Bao_mat_JWT_va_RBAC_Guide.pdf",
             content_type="application/pdf",
             asset_type="RESOURCE",
             title="Tài liệu chuyên đề: Bảo mật JWT & Phân quyền RBAC",
@@ -852,44 +976,206 @@ def role_required(*allowed_roles):
             lesson_id=les_1_4.id,
             asset_id=fa_pdf_1_4.id,
             is_downloadable=True,
-            label="Tài liệu chuyên đề: An ninh mạng & Bảo mật API (PDF)",
+            label="Chuyên đề: Bảo mật JWT và Phân quyền RBAC (PDF)",
             session=session,
+        )
+
+        # Formal Assessment for Course 1
+        logger.info("Seeding formal assessment for Course 1...")
+        asm1 = Assessment(
+            course_id=c1.id,
+            title="Kiểm tra Giữa kỳ: Kiến trúc Backend & RESTful API",
+            description="Bài thi đánh giá tổng hợp năng lực thiết kế API, thao tác ORM và bảo mật JWT.",
+            assessment_type="MIDTERM",
+            status="PUBLISHED",
+            time_limit_minutes=45,
+            attempt_limit=3,
+            scoring_policy="HIGHEST",
+            passing_percent=decimal.Decimal("60.00"),
+            is_required_for_completion=True,
+            score_release_policy="IMMEDIATE",
+            answer_visibility_policy="IMMEDIATE",
+            published_at=now - timedelta(days=5),
+        )
+        session.add(asm1)
+        session.flush()
+
+        sec1 = AssessmentSection(
+            assessment_id=asm1.id,
+            title="Phần 1: Kiến thức Cốt lõi & Kỹ năng Backend",
+            position=1,
+            instructions="Đọc kỹ câu hỏi và chọn đáp án chính xác.",
+        )
+        session.add(sec1)
+        session.flush()
+
+        # Questions for Course 1 Assessment
+        q1_1 = Question(
+            course_id=c1.id,
+            lesson_id=les_1_1.id,
+            creator_user_id=inst1.id,
+            difficulty="REMEMBER",
+            learning_objective="REST HTTP methods",
+            status="ACTIVE",
+        )
+        session.add(q1_1)
+        session.flush()
+        q1_1_rev = QuestionRevision(
+            question_id=q1_1.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst1.id,
+            content="Phương thức HTTP nào được quy định để xóa bỏ hoàn toàn một tài nguyên theo chuẩn RESTful?",
+            question_type="SINGLE_CHOICE",
+            explanation="DELETE là phương thức chuẩn để xóa tài nguyên.",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q1_1_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [("GET", False), ("POST", False), ("DELETE", True), ("PATCH", False)], 1
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q1_1_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q1_1.id, question_revision_id=q1_1_rev.id, source_type="MANUAL"
+            )
+        )
+
+        q1_2 = Question(
+            course_id=c1.id,
+            lesson_id=les_1_3.id,
+            creator_user_id=inst1.id,
+            difficulty="UNDERSTAND",
+            learning_objective="SQLAlchemy ORM",
+            status="ACTIVE",
+        )
+        session.add(q1_2)
+        session.flush()
+        q1_2_rev = QuestionRevision(
+            question_id=q1_2.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst1.id,
+            content="Trong SQLAlchemy, thuộc tính `back_populates` trong `relationship` có vai trò gì?",
+            question_type="SINGLE_CHOICE",
+            explanation="`back_populates` thiết lập đồng bộ hai chiều rõ ràng giữa hai models.",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q1_2_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [
+                ("Thiết lập quan hệ đồng bộ hai chiều rõ ràng giữa hai model", True),
+                ("Tự động xóa database khi khởi động lại", False),
+                ("Chuyển đổi kiểu dữ liệu sang JSON", False),
+                ("Tăng tốc độ mạng Internet", False),
+            ],
+            1,
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q1_2_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q1_2.id, question_revision_id=q1_2_rev.id, source_type="MANUAL"
+            )
+        )
+
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm1.id,
+                question_id=q1_1.id,
+                section_id=sec1.id,
+                points=decimal.Decimal("50.00"),
+                position=1,
+            )
+        )
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm1.id,
+                question_id=q1_2.id,
+                section_id=sec1.id,
+                points=decimal.Decimal("50.00"),
+                position=2,
+            )
         )
 
         # =========================================================================
         # COURSE 2: DSA201
         # =========================================================================
         logger.info("Seeding Course 2: DSA201...")
+        c2_slo = [
+            {
+                "title": "SLO-1: Đánh giá Độ phức tạp & Tối ưu Thuật toán",
+                "description": "Thành thạo phân tích Big-O thời gian và không gian cho các giải thuật lặp và đệ quy.",
+                "weight": "30%",
+            },
+            {
+                "title": "SLO-2: Cấu trúc Cây & Đồ thị Ứng dụng",
+                "description": "Hiện thực cây nhị phân cân bằng, Heap, đồ thị và các thuật toán tìm đường đi ngắn nhất.",
+                "weight": "40%",
+            },
+            {
+                "title": "SLO-3: Kỹ thuật Quy hoạch Động Nâng cao",
+                "description": "Phân rã bài toán con tối ưu và xây dựng bảng phương án giải quyết bài toán thực tế.",
+                "weight": "30%",
+            },
+        ]
+        c2_target = [
+            "Sinh viên muốn chinh phục các vòng phỏng vấn kỹ thuật thuật toán tại các tập đoàn công nghệ",
+            "Lập trình viên muốn rèn luyện tư duy tối ưu hiệu năng cho hệ thống phân tán chịu tải cao",
+            "Kỹ sư phát triển phần mềm chuẩn bị thi các chứng chỉ lập trình quốc tế",
+        ]
+        c2_completion = {
+            "minimum_grade_score": 75.0,
+            "allow_certificate": True,
+            "completion_grace_days": 10,
+            "require_all_lessons": True,
+        }
+
         c2 = Course(
             course_code="DSA201",
             course_code_normalized="DSA201",
-            title="DSA201: Cấu Trúc Dữ Liệu & Giải Thuật Ứng Dụng Nâng Cao",
-            title_normalized="dsa201: cấu trúc dữ liệu & giải thuật ứng dụng nâng cao",
+            title="Cấu Trúc Dữ Liệu & Giải Thuật Ứng Dụng Nâng Cao",
+            title_normalized="cấu trúc dữ liệu & giải thuật ứng dụng nâng cao",
             description=(
-                "Trang bị nền tảng tư duy thuật toán vững chắc cho kỹ sư phần mềm: "
-                "phân tích độ phức tạp thời gian & không gian Big-O, cấu trúc cây nhị phân, "
-                "Heap, đồ thị, thuật toán tìm kiếm đường đi ngắn nhất Dijkstra và quy hoạch động."
+                "Nghiên cứu chuyên sâu về phân tích độ phức tạp thời gian/không gian thuật toán, "
+                "cấu trúc dữ liệu tuyến tính và phi tuyến tính: Heap, Balanced Trees, Đồ thị, "
+                "thuật toán Quy hoạch động và ứng dụng trong các bài toán quy mô lớn."
             ),
-            category="Khoa học Máy tính",
+            learning_objectives=json.dumps(c2_slo, ensure_ascii=False),
+            target_audience=json.dumps(c2_target, ensure_ascii=False),
+            completion_requirements=json.dumps(c2_completion, ensure_ascii=False),
+            category="Cấu trúc Dữ liệu & Giải thuật",
             difficulty="ADVANCED",
             owner_instructor_id=inst2.id,
             status="PUBLISHED",
             capacity=50,
-            published_at=now - timedelta(days=8),
-            approved_at=now - timedelta(days=8),
+            published_at=now - timedelta(days=9),
+            approved_at=now - timedelta(days=9),
             approved_by_user_id=admin.id,
         )
         session.add(c2)
         session.flush()
 
-        # Generate & attach 16:9 clean cover for DSA201
-        c2_img_bytes = generate_course_cover_png(
-            course_code="DSA201",
-            title="Cấu Trúc Dữ Liệu & Giải Thuật Ứng Dụng Nâng Cao",
-            subtitle="Trees • Graphs • Dynamic Programming • Sorting • Big-O Complexity",
-            bg_gradient=((17, 24, 39), (31, 41, 55)),
-            accent_color=(16, 185, 129),
-        )
+        c2_img_bytes = generate_course_cover_png("DSA201", ((24, 24, 27), (39, 39, 42)))
         c2_asset = store_file_stream(
             actor=inst2,
             course_id=c2.id,
@@ -907,7 +1193,7 @@ def role_required(*allowed_roles):
             CourseCompletionRule(
                 course_id=c2.id,
                 require_all_required_lessons=True,
-                require_required_assessments=False,
+                require_required_assessments=True,
                 minimum_progress_percent=decimal.Decimal("75.00"),
                 updated_by_user_id=inst2.id,
             )
@@ -966,6 +1252,7 @@ Nghiên cứu cách đánh giá hiệu năng thuật toán một cách khoa họ
             estimated_duration_minutes=45,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=8),
         )
@@ -1001,13 +1288,23 @@ Nghiên cứu cách đánh giá hiệu năng thuật toán một cách khoa họ
             session=session,
         )
 
-        # Lesson 2.2 (Uploaded Video MP4 + PDF + Quiz)
+        # Lesson 2.2
         quiz_2_2 = [
             {
                 "type": "MULTIPLE_CHOICE",
                 "question": "Trong cấu trúc Min-Heap, phần tử có giá trị nhỏ nhất luôn nằm ở vị trí nào?",
-                "options": ["Nút lá cuối cùng", "Nút gốc (Root)", "Phần tử ở giữa mảng", "Tùy thuộc vào thứ tự chèn"],
-                "choices": ["Nút lá cuối cùng", "Nút gốc (Root)", "Phần tử ở giữa mảng", "Tùy thuộc vào thứ tự chèn"],
+                "options": [
+                    "Nút lá cuối cùng",
+                    "Nút gốc (Root)",
+                    "Phần tử ở giữa mảng",
+                    "Tùy thuộc vào thứ tự chèn",
+                ],
+                "choices": [
+                    "Nút lá cuối cùng",
+                    "Nút gốc (Root)",
+                    "Phần tử ở giữa mảng",
+                    "Tùy thuộc vào thứ tự chèn",
+                ],
                 "correct_answers": [1],
                 "correct_answer": 1,
                 "explanation": "Đặc tính bất biến của Min-Heap là mọi nút cha đều nhỏ hơn hoặc bằng các nút con của nó. Do đó, nút gốc luôn chứa giá trị nhỏ nhất của toàn bộ heap.",
@@ -1047,6 +1344,7 @@ Với nút ở vị trí `i`:
             estimated_duration_minutes=50,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=7),
         )
@@ -1114,36 +1412,42 @@ Với nút ở vị trí `i`:
         quiz_2_3 = [
             {
                 "type": "MULTIPLE_CHOICE",
-                "question": "Thuật toán duyệt đồ thị theo chiều rộng (Breadth-First Search - BFS) sử dụng cấu trúc dữ liệu nào làm bộ đệm hàng đợi duyệt?",
-                "options": ["Ngăn xếp (Stack)", "Hàng đợi (Queue)", "Cây nhị phân (Binary Tree)", "Mảng 2 chiều"],
-                "choices": ["Ngăn xếp (Stack)", "Hàng đợi (Queue)", "Cây nhị phân (Binary Tree)", "Mảng 2 chiều"],
+                "question": "Thuật toán tìm kiếm theo chiều rộng (Breadth-First Search - BFS) sử dụng cấu trúc dữ liệu nào để quản lý các đỉnh chờ duyệt?",
+                "options": [
+                    "Ngăn xếp (Stack)",
+                    "Hàng đợi (Queue)",
+                    "Cây nhị phân",
+                    "Bảng băm (Hash Table)",
+                ],
+                "choices": [
+                    "Ngăn xếp (Stack)",
+                    "Hàng đợi (Queue)",
+                    "Cây nhị phân",
+                    "Bảng băm (Hash Table)",
+                ],
                 "correct_answers": [1],
                 "correct_answer": 1,
-                "explanation": "BFS duyệt theo từng tầng khoảng cách từ đỉnh xuất phát, hoạt động theo nguyên tắc First-In First-Out (FIFO) của cấu trúc Queue.",
+                "explanation": "BFS duyệt theo từng lớp khoảng cách từ đỉnh xuất phát, nên cần cơ chế FIFO của Hàng đợi (Queue). Trong khi DFS dùng LIFO (Stack).",
             },
             {
                 "type": "TRUE_FALSE",
                 "question": "Thuật toán Dijkstra có thể hoạt động chính xác trên đồ thị có cạnh mang trọng số âm.",
                 "correct_answer": False,
-                "explanation": "Sai. Thuật toán Dijkstra dựa trên chiến lược tham lam (Greedy) và giả định trọng số các cạnh không âm. Khi có cạnh âm, phải dùng thuật toán Bellman-Ford.",
+                "explanation": "Sai. Thuật toán Dijkstra dựa trên giả định tham lam rằng đường đi ngắn nhất không thể bị rút ngắn thêm bởi các cạnh tương lai, điều này không còn đúng khi có trọng số âm. Với trọng số âm cần dùng thuật toán Bellman-Ford.",
             },
         ]
 
         md_2_3 = f"""<!-- video_urls: ["https://www.youtube.com/watch?v=JJmcL1N2KQs"] -->
 # Thuật Toán Duyệt Đồ Thị BFS / DFS & Tìm Đường Đi Ngắn Nhất
 
-Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán thực tế.
+Nghiên cứu hai thuật toán nền tảng trong lý thuyết đồ thị và bài toán định tuyến.
 
-## 1. Biểu Diễn Đồ Thị
-- **Danh sách kề (Adjacency List)**: Tối ưu không gian cho đồ thị thưa $O(V + E)$.
-- **Ma trận kề (Adjacency Matrix)**: Truy xuất nhanh cạnh $(u, v)$ trong $O(1)$ nhưng tốn $O(V^2)$ bộ nhớ.
-
-## 2. So Sánh BFS và DFS
-| Đặc tính | BFS (Breadth-First) | DFS (Depth-First) |
-|----------|---------------------|-------------------|
-| Cấu trúc dữ liệu | Hàng đợi (`Queue`) | Ngăn xếp (`Stack`) / Đệ quy |
-| Thứ tự duyệt | Theo từng lớp bán kính | Đâm sâu tối đa trước khi quay lui |
-| Ứng dụng chính | Tìm đường ngắn nhất không trọng số | Dò đường mê cung, sắp xếp tô-pô |
+## 1. So Sánh BFS và DFS
+| Tiêu chí | BFS (Breadth-First Search) | DFS (Depth-First Search) |
+|----------|----------------------------|--------------------------|
+| Cấu trúc dữ liệu | Hàng đợi (Queue - FIFO) | Ngăn xếp (Stack - LIFO) |
+| Thứ tự duyệt | Từng tầng khoảng cách | Đi sâu hết mức trước khi quay lui |
+| Ứng dụng | Tìm đường đi ngắn nhất đồ thị không trọng số | Tìm thành phần liên thông, sắp xếp topo |
 
 <!-- mini_quiz: {json.dumps(quiz_2_3, ensure_ascii=False)} -->
 """
@@ -1151,12 +1455,13 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
             course_id=c2.id,
             learning_unit_id=u2_2.id,
             title="Bài 3: Thuật toán Duyệt Đồ thị BFS / DFS & Tìm Đường đi Ngắn nhất",
-            summary="Nắm vững kỹ thuật duyệt đồ thị, phát hiện chu trình và giải thuật Dijkstra tìm đường tối ưu.",
+            summary="Khám phá thuật toán duyệt theo chiều rộng, chiều sâu và định tuyến ngắn nhất với Dijkstra.",
             markdown_content=md_2_3,
             position=3,
-            estimated_duration_minutes=60,
+            estimated_duration_minutes=55,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=5),
         )
@@ -1164,23 +1469,23 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
         session.flush()
 
         pdf_2_3_data = generate_pdf_document(
-            title="LY THUYET DO THI: THUAT TOAN DUYET VA TIM DUONG DI NGAN NHAT",
-            subtitle="Hoc phan DSA201 - Chuong 2: Giai thuat Do thi Nang cao",
+            title="LY THUYET DO THI NANG CAO: THUAT TOAN BFS, DFS VA DIJKSTRA",
+            subtitle="Hoc phan DSA201 - Chuong 2: Do thi & Ung dung",
             topics=[
-                "Bieu dien Do thi bang Adjacency List va Adjacency Matrix",
-                "Thuat toan BFS va tim duong di ngan nhat tren do thi khong trong so",
-                "Thuat toan DFS va bai toan Sap xep To-po (Topological Sort)",
-                "Thuat toan Dijkstra toi uu voi Priority Queue (O(E log V))",
+                "Bieu dien do thi: Ma tran ke vs Danh sach ke (Adjacency List)",
+                "Cai dat thuat toan BFS va DFS bang ngon ngu Python",
+                "Thuat toan Dijkstra voi Priority Queue giam do phuc tap xuong O(E log V)",
+                "Phat hien chu trinh trong do thi co huong bang thuat toan Tarjan",
             ],
         )
         fa_pdf_2_3 = store_file_stream(
             actor=inst2,
             course_id=c2.id,
             file_stream=io.BytesIO(pdf_2_3_data),
-            filename="Giai_thuat_Duyet_Do_thi_Nang_cao.pdf",
+            filename="Thuat_toan_Do_thi_Dijkstra_AStar.pdf",
             content_type="application/pdf",
             asset_type="RESOURCE",
-            title="Giáo trình chuyên sâu: Lý thuyết Đồ thị & Giải thuật Tìm đường",
+            title="Tài liệu chuyên đề: Lý thuyết Đồ thị & Dijkstra",
             session=session,
         )
         attach_resource_to_lesson(
@@ -1188,44 +1493,199 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
             lesson_id=les_2_3.id,
             asset_id=fa_pdf_2_3.id,
             is_downloadable=True,
-            label="Tài liệu chuyên sâu: Lý thuyết đồ thị & Dijkstra (PDF)",
+            label="Chuyên đề: Thuật toán Đồ thị nâng cao (PDF)",
             session=session,
+        )
+
+        # Formal Assessment for Course 2
+        logger.info("Seeding formal assessment for Course 2...")
+        asm2 = Assessment(
+            course_id=c2.id,
+            title="Kiểm tra Giữa kỳ: Cấu trúc Dữ liệu & Giải thuật Nâng cao",
+            description="Bài đánh giá toàn diện về phân tích độ phức tạp Big-O, Heap và Đồ thị.",
+            assessment_type="MIDTERM",
+            status="PUBLISHED",
+            time_limit_minutes=60,
+            attempt_limit=3,
+            scoring_policy="HIGHEST",
+            passing_percent=decimal.Decimal("60.00"),
+            is_required_for_completion=True,
+            score_release_policy="IMMEDIATE",
+            answer_visibility_policy="IMMEDIATE",
+            published_at=now - timedelta(days=4),
+        )
+        session.add(asm2)
+        session.flush()
+
+        sec2 = AssessmentSection(
+            assessment_id=asm2.id,
+            title="Phần 1: Tư duy Giải thuật & Cấu trúc Dữ liệu",
+            position=1,
+            instructions="Đọc kỹ câu hỏi và chọn đáp án chính xác.",
+        )
+        session.add(sec2)
+        session.flush()
+
+        q2_1 = Question(
+            course_id=c2.id,
+            lesson_id=les_2_1.id,
+            creator_user_id=inst2.id,
+            difficulty="UNDERSTAND",
+            learning_objective="Big-O Analysis",
+            status="ACTIVE",
+        )
+        session.add(q2_1)
+        session.flush()
+        q2_1_rev = QuestionRevision(
+            question_id=q2_1.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst2.id,
+            content="Độ phức tạp thời gian trung bình của giải thuật QuickSort khi phân hoạch ngẫu nhiên là gì?",
+            question_type="SINGLE_CHOICE",
+            explanation="QuickSort có độ phức tạp trung bình là O(n log n).",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q2_1_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [("O(n)", False), ("O(n log n)", True), ("O(n^2)", False), ("O(log n)", False)], 1
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q2_1_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q2_1.id, question_revision_id=q2_1_rev.id, source_type="MANUAL"
+            )
+        )
+
+        q2_2 = Question(
+            course_id=c2.id,
+            lesson_id=les_2_2.id,
+            creator_user_id=inst2.id,
+            difficulty="APPLY",
+            learning_objective="Heap properties",
+            status="ACTIVE",
+        )
+        session.add(q2_2)
+        session.flush()
+        q2_2_rev = QuestionRevision(
+            question_id=q2_2.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst2.id,
+            content="Để xây dựng một Binary Heap từ một mảng n phần tử cho trước, thời gian tối ưu đạt được là bao nhiêu?",
+            question_type="SINGLE_CHOICE",
+            explanation="Thuật toán Build-Heap từ dưới lên (bottom-up heapify) chỉ mất thời gian O(n).",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q2_2_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [("O(n)", True), ("O(n log n)", False), ("O(n^2)", False), ("O(1)", False)], 1
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q2_2_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q2_2.id, question_revision_id=q2_2_rev.id, source_type="MANUAL"
+            )
+        )
+
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm2.id,
+                question_id=q2_1.id,
+                section_id=sec2.id,
+                points=decimal.Decimal("50.00"),
+                position=1,
+            )
+        )
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm2.id,
+                question_id=q2_2.id,
+                section_id=sec2.id,
+                points=decimal.Decimal("50.00"),
+                position=2,
+            )
         )
 
         # =========================================================================
         # COURSE 3: OPS401
         # =========================================================================
         logger.info("Seeding Course 3: OPS401...")
+        c3_slo = [
+            {
+                "title": "SLO-1: Đóng gói Container & Quản trị Image",
+                "description": "Thiết kế Dockerfile đa tầng (Multi-stage build), tối ưu layer cache và bảo mật container non-root.",
+                "weight": "30%",
+            },
+            {
+                "title": "SLO-2: Tự động hóa CI/CD với GitHub Actions",
+                "description": "Xây dựng pipeline tự động kiểm thử tự động, linting, build docker image và deploy lên staging server.",
+                "weight": "40%",
+            },
+            {
+                "title": "SLO-3: Điều phối Dịch vụ & Giám sát Hệ thống",
+                "description": "Quản lý multi-container với Docker Compose, healthchecks, cấu hình reverse proxy Nginx và giám sát telemetry.",
+                "weight": "30%",
+            },
+        ]
+        c3_target = [
+            "Lập trình viên Backend muốn làm chủ hạ tầng và quy trình vận hành phần mềm hiện đại",
+            "Kỹ sư hệ thống muốn chuyển dịch sang văn hóa DevOps và công nghệ Container hóa",
+            "Trưởng nhóm kỹ thuật cần chuẩn hóa pipeline kiểm thử và tự động hóa release cho dự án doanh nghiệp",
+        ]
+        c3_completion = {
+            "minimum_grade_score": 80.0,
+            "allow_certificate": True,
+            "completion_grace_days": 14,
+            "require_all_lessons": True,
+        }
+
         c3 = Course(
             course_code="OPS401",
             course_code_normalized="OPS401",
-            title="OPS401: DevOps, CI/CD Pipeline & Hạ Tầng Điện Toán Đám Mây",
-            title_normalized="ops401: devops, ci/cd pipeline & hạ tầng điện toán đám mây",
+            title="DevOps, CI/CD Pipeline & Hạ Tầng Điện Toán Đám Mây",
+            title_normalized="devops, ci/cd pipeline & hạ tầng điện toán đám mây",
             description=(
-                "Trang bị kỹ năng triển khai ứng dụng thực chiến trong môi trường doanh nghiệp: "
-                "container hóa với Docker, tối ưu hóa image đa tầng (Multi-stage build), "
-                "soạn thảo kịch bản CI/CD tự động hóa trên GitHub Actions và giám sát hệ thống production."
+                "Lộ trình thực chiến từ đóng gói container với Docker, điều phối dịch vụ với Docker Compose, "
+                "xây dựng quy trình tự động hóa CI/CD với GitHub Actions, giám sát hạ tầng và triển khai ứng dụng "
+                "an toàn trên đám mây."
             ),
-            category="Hạ tầng & Hệ thống",
+            learning_objectives=json.dumps(c3_slo, ensure_ascii=False),
+            target_audience=json.dumps(c3_target, ensure_ascii=False),
+            completion_requirements=json.dumps(c3_completion, ensure_ascii=False),
+            category="Hạ tầng & Điện toán Đám mây",
             difficulty="ADVANCED",
             owner_instructor_id=inst1.id,
             status="PUBLISHED",
-            capacity=40,
-            published_at=now - timedelta(days=5),
-            approved_at=now - timedelta(days=5),
+            capacity=45,
+            published_at=now - timedelta(days=7),
+            approved_at=now - timedelta(days=7),
             approved_by_user_id=admin.id,
         )
         session.add(c3)
         session.flush()
 
-        # Generate & attach 16:9 clean cover for OPS401
-        c3_img_bytes = generate_course_cover_png(
-            course_code="OPS401",
-            title="DevOps, CI/CD Pipeline & Hạ Tầng Điện Toán Đám Mây",
-            subtitle="Docker • Kubernetes • GitHub Actions • Cloud Architecture",
-            bg_gradient=((24, 24, 27), (39, 39, 42)),
-            accent_color=(168, 85, 247),
-        )
+        c3_img_bytes = generate_course_cover_png("OPS401", ((16, 24, 40), (28, 40, 60)))
         c3_asset = store_file_stream(
             actor=inst1,
             course_id=c3.id,
@@ -1243,8 +1703,8 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
             CourseCompletionRule(
                 course_id=c3.id,
                 require_all_required_lessons=True,
-                require_required_assessments=False,
-                minimum_progress_percent=decimal.Decimal("70.00"),
+                require_required_assessments=True,
+                minimum_progress_percent=decimal.Decimal("80.00"),
                 updated_by_user_id=inst1.id,
             )
         )
@@ -1254,7 +1714,7 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
             course_id=c3.id,
             title="Chương 1: Đóng gói Container với Docker & Tối ưu Image",
             position=1,
-            created_at=now - timedelta(days=5),
+            created_at=now - timedelta(days=6),
         )
         session.add(u3_1)
         session.flush()
@@ -1262,41 +1722,37 @@ Khám phá thế giới giải thuật đồ thị và mô hình hóa bài toán
         quiz_3_1 = [
             {
                 "type": "MULTIPLE_CHOICE",
-                "question": "Mục đích lớn nhất của kỹ thuật Multi-stage build trong Dockerfile là gì?",
+                "question": "Kỹ thuật Multi-Stage Build trong Dockerfile mang lại lợi ích nổi bật nhất nào?",
                 "options": [
-                    "Tăng tốc độ kết nối mạng của container",
-                    "Giảm dung lượng image cuối cùng và loại bỏ các công cụ build dư thừa khỏi production",
-                    "Cho phép chạy cùng lúc nhiều hệ điều hành khác nhau trong 1 container",
-                    "Tự động vá lỗi logic code của ứng dụng",
+                    "Tự động cấu hình firewall cho server",
+                    "Tách biệt môi trường build cồng kềnh khỏi runtime image cuối cùng, giúp giảm kích thước image từ hàng GB xuống vài chục MB",
+                    "Ngăn cấm người dùng chạy container",
+                    "Tự động tăng tốc độ đường truyền Internet",
                 ],
                 "choices": [
-                    "Tăng tốc độ kết nối mạng của container",
-                    "Giảm dung lượng image cuối cùng và loại bỏ các công cụ build dư thừa khỏi production",
-                    "Cho phép chạy cùng lúc nhiều hệ điều hành khác nhau trong 1 container",
-                    "Tự động vá lỗi logic code của ứng dụng",
+                    "Tự động cấu hình firewall cho server",
+                    "Tách biệt môi trường build cồng kềnh khỏi runtime image cuối cùng, giúp giảm kích thước image từ hàng GB xuống vài chục MB",
+                    "Ngăn cấm người dùng chạy container",
+                    "Tự động tăng tốc độ đường truyền Internet",
                 ],
                 "correct_answers": [1],
                 "correct_answer": 1,
-                "explanation": "Multi-stage build cho phép biên dịch ở stage đầu tiên và chỉ copy sản phẩm chạy (binary, wheels) sang stage runtime tối giản (Alpine/Distroless), giúp image siêu nhẹ và an toàn.",
+                "explanation": "Multi-stage builds cho phép sử dụng image chứa công cụ build (SDK, compilers) ở stage đầu, sau đó chỉ copy artifact đã compile sang stage runtime tối giản (Alpine/Slim).",
             },
             {
                 "type": "TRUE_FALSE",
-                "question": "Chạy container với người dùng quyền root (UID 0) trong production là một vi phạm an toàn thông tin nghiêm trọng.",
-                "correct_answer": True,
-                "explanation": "Chính xác. Luôn tạo người dùng không đặc quyền (non-root user) với chỉ thị `USER appuser` để giảm thiểu rủi ro container breakout.",
+                "question": "Trong môi trường Production, luôn luôn nên chạy container dưới quyền user 'root' mặc định để tránh các lỗi phân quyền file.",
+                "correct_answer": False,
+                "explanation": "Sai. Đây là lỗi bảo mật nghiêm trọng. Container trong Production bắt buộc phải chạy dưới non-root user (như nobody hoặc appuser) để hạn chế thiệt hại khi xảy ra tấn công container breakout.",
             },
         ]
 
         md_3_1 = f"""<!-- video_urls: ["https://www.youtube.com/watch?v=kqtD5dpn9C8"] -->
 # Đóng Gói Ứng Dụng Backend Đa Tầng với Dockerfile
 
-Thực hành container hóa ứng dụng Python Backend chuẩn enterprise.
+Khám phá nguyên lý container hóa và các tiêu chuẩn bảo mật cho Docker Image.
 
-## 1. Nguyên Lý Tối Ưu Docker Layer Cache
-- Đặt các lệnh ít thay đổi (`COPY requirements.txt`, `RUN pip install`) lên trước.
-- Đặt mã nguồn ứng dụng (`COPY src/ src/`) về phía sau cùng để tận dụng bộ đệm (cache) khi chỉnh sửa code.
-
-## 2. Dockerfile Mẫu Multi-Stage
+## 1. Mẫu Dockerfile Multi-Stage Build Chuẩn
 ```dockerfile
 # Stage 1: Build & Dependencies
 FROM python:3.12-slim AS builder
@@ -1325,6 +1781,7 @@ CMD ["python", "-m", "pwd301"]
             estimated_duration_minutes=45,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=5),
         )
@@ -1360,7 +1817,7 @@ CMD ["python", "-m", "pwd301"]
             session=session,
         )
 
-        # Lesson 3.2 (Uploaded Video MP4 + PDF + Quiz)
+        # Lesson 3.2
         quiz_3_2 = [
             {
                 "type": "MULTIPLE_CHOICE",
@@ -1420,6 +1877,7 @@ volumes:
             estimated_duration_minutes=50,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=4),
         )
@@ -1554,6 +2012,7 @@ jobs:
             estimated_duration_minutes=55,
             minimum_completion_seconds=30,
             viewed_fraction_required=decimal.Decimal("0.8000"),
+            revision_no=1,
             status="PUBLISHED",
             published_at=now - timedelta(days=2),
         )
@@ -1589,21 +2048,158 @@ jobs:
             session=session,
         )
 
+        # Formal Assessment for Course 3
+        logger.info("Seeding formal assessment for Course 3...")
+        asm3 = Assessment(
+            course_id=c3.id,
+            title="Kiểm tra Giữa kỳ: Hạ tầng DevOps & Tự động hóa CI/CD",
+            description="Bài thi kiểm tra kiến thức đóng gói container Docker, cấu hình docker-compose và viết workflow GitHub Actions.",
+            assessment_type="MIDTERM",
+            status="PUBLISHED",
+            time_limit_minutes=45,
+            attempt_limit=3,
+            scoring_policy="HIGHEST",
+            passing_percent=decimal.Decimal("60.00"),
+            is_required_for_completion=True,
+            score_release_policy="IMMEDIATE",
+            answer_visibility_policy="IMMEDIATE",
+            published_at=now - timedelta(days=3),
+        )
+        session.add(asm3)
+        session.flush()
+
+        sec3 = AssessmentSection(
+            assessment_id=asm3.id,
+            title="Phần 1: Trắc nghiệm Kiến trúc Container & CI/CD",
+            position=1,
+            instructions="Đọc kỹ câu hỏi và chọn đáp án chính xác.",
+        )
+        session.add(sec3)
+        session.flush()
+
+        q3_1 = Question(
+            course_id=c3.id,
+            lesson_id=les_3_1.id,
+            creator_user_id=inst1.id,
+            difficulty="UNDERSTAND",
+            learning_objective="Docker caching",
+            status="ACTIVE",
+        )
+        session.add(q3_1)
+        session.flush()
+        q3_1_rev = QuestionRevision(
+            question_id=q3_1.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst1.id,
+            content="Thứ tự nào sau đây trong Dockerfile giúp tối ưu hóa Docker Layer Cache tốt nhất khi build ứng dụng Python?",
+            question_type="SINGLE_CHOICE",
+            explanation="Copy file dependencies trước (requirements/pyproject) giúp tận dụng cache tầng cài đặt thư viện.",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q3_1_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [
+                ("Copy pyproject.toml -> Run pip install -> Copy src/", True),
+                ("Copy src/ -> Copy pyproject.toml -> Run pip install", False),
+                ("Run pip install -> Copy src/ -> Copy pyproject.toml", False),
+                ("Không cần quan tâm thứ tự các dòng lệnh", False),
+            ],
+            1,
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q3_1_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q3_1.id, question_revision_id=q3_1_rev.id, source_type="MANUAL"
+            )
+        )
+
+        q3_2 = Question(
+            course_id=c3.id,
+            lesson_id=les_3_3.id,
+            creator_user_id=inst1.id,
+            difficulty="APPLY",
+            learning_objective="CI/CD Pipelines",
+            status="ACTIVE",
+        )
+        session.add(q3_2)
+        session.flush()
+        q3_2_rev = QuestionRevision(
+            question_id=q3_2.id,
+            revision_no=1,
+            is_current=True,
+            created_by_user_id=inst1.id,
+            content="Sự kiện (Event trigger) nào thường được cấu hình trong GitHub Actions để kích hoạt pipeline kiểm thử tự động mỗi khi thành viên gửi code mới?",
+            question_type="SINGLE_CHOICE",
+            explanation="Sự kiện push và pull_request là hai trigger cốt lõi cho CI pipeline.",
+            change_type="INITIAL",
+            approved_at=now,
+        )
+        session.add(q3_2_rev)
+        session.flush()
+        for idx, (lbl, corr) in enumerate(
+            [
+                ("push và pull_request", True),
+                ("schedule hàng năm", False),
+                ("watch repository", False),
+                ("delete branch", False),
+            ],
+            1,
+        ):
+            session.add(
+                QuestionRevisionChoice(
+                    question_revision_id=q3_2_rev.id,
+                    choice_key=uuid.uuid4(),
+                    content=lbl,
+                    is_correct=corr,
+                    position=idx,
+                )
+            )
+        session.add(
+            QuestionProvenance(
+                question_id=q3_2.id, question_revision_id=q3_2_rev.id, source_type="MANUAL"
+            )
+        )
+
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm3.id,
+                question_id=q3_1.id,
+                section_id=sec3.id,
+                points=decimal.Decimal("50.00"),
+                position=1,
+            )
+        )
+        session.add(
+            AssessmentQuestionAssignment(
+                assessment_id=asm3.id,
+                question_id=q3_2.id,
+                section_id=sec3.id,
+                points=decimal.Decimal("50.00"),
+                position=2,
+            )
+        )
+
         # =========================================================================
-        # ENROLLMENTS & DEMO PROGRESS
+        # ENROLLMENTS, DEMO PROGRESS & ATTEMPT RESULTS
         # =========================================================================
-        logger.info("Setting up enrollments and initial progress...")
+        logger.info("Setting up enrollments, progress, and assessment attempt...")
         from pwd301.services.enrollment_service import enroll_student
 
-        # Enroll student1 in PY301 & DSA201
         e1 = enroll_student(actor=student1, course_id=c1.id, session=session)
-        e2 = enroll_student(actor=student1, course_id=c2.id, session=session)
-
-        # Enroll student2 in PY301
-        e3 = enroll_student(actor=student2, course_id=c1.id, session=session)
-
-        # Enroll student3 in OPS401
-        e4 = enroll_student(actor=student3, course_id=c3.id, session=session)
+        enroll_student(actor=student1, course_id=c2.id, session=session)
+        enroll_student(actor=student2, course_id=c1.id, session=session)
+        enroll_student(actor=student3, course_id=c3.id, session=session)
         session.flush()
 
         # student1 has completed Lesson 1.1 with progress
@@ -1615,18 +2211,145 @@ jobs:
                     seconds_spent=300,
                     max_view_fraction=decimal.Decimal("1.0000"),
                     completed_at=now - timedelta(days=3),
+                    acknowledged_revision_no=1,
                     completion_rule_snapshot_json=json.dumps(
                         {
                             "personal_notes": "Đã ghi nhớ các chuẩn HTTP methods và quy ước status codes.",
                             "mini_quiz_completed_at": (now - timedelta(days=3)).isoformat(),
-                            "mini_quiz_question_count": 3,
+                            "mini_quiz_question_count": 4,
+                        }
+                    ),
+                )
+            )
+            session.add(
+                LessonProgress(
+                    enrollment_period_id=e1.current_period_id,
+                    lesson_id=les_1_2.id,
+                    seconds_spent=420,
+                    max_view_fraction=decimal.Decimal("0.9500"),
+                    completed_at=now - timedelta(days=2),
+                    acknowledged_revision_no=1,
+                    completion_rule_snapshot_json=json.dumps(
+                        {
+                            "personal_notes": "Đã hoàn thành video hướng dẫn Application Factory Pattern.",
+                            "mini_quiz_completed_at": (now - timedelta(days=2)).isoformat(),
+                            "mini_quiz_question_count": 2,
                         }
                     ),
                 )
             )
 
+        # student1 completed Attempt on Course 1 Assessment (score 100.00)
+        attempt1 = AssessmentAttempt(
+            assessment_id=asm1.id,
+            enrollment_period_id=e1.current_period_id,
+            student_user_id=student1.id,
+            attempt_number=1,
+            status="GRADED",
+            started_at=now - timedelta(hours=3),
+            deadline_at=now - timedelta(hours=2, minutes=15),
+            submitted_at=now - timedelta(hours=2, minutes=20),
+            graded_at=now - timedelta(hours=2, minutes=19),
+            finalized_at=now - timedelta(hours=2, minutes=19),
+        )
+        session.add(attempt1)
+        session.flush()
+
+        aq1 = AttemptQuestion(
+            attempt_id=attempt1.id,
+            source_question_id=q1_1.id,
+            source_question_revision_id=q1_1_rev.id,
+            position=1,
+            question_type_snapshot=q1_1_rev.question_type,
+            content_snapshot=q1_1_rev.content,
+            points_assigned=decimal.Decimal("50.0000"),
+        )
+        session.add(aq1)
+        session.flush()
+
+        for c_pos, choice in enumerate(q1_1_rev.choices, start=1):
+            acs = AttemptChoiceSnapshot(
+                attempt_question_id=aq1.id,
+                source_choice_id=choice.id,
+                choice_key_snapshot=choice.choice_key,
+                content_snapshot=choice.content,
+                position=c_pos,
+            )
+            session.add(acs)
+
+        aq2 = AttemptQuestion(
+            attempt_id=attempt1.id,
+            source_question_id=q1_2.id,
+            source_question_revision_id=q1_2_rev.id,
+            position=2,
+            question_type_snapshot=q1_2_rev.question_type,
+            content_snapshot=q1_2_rev.content,
+            points_assigned=decimal.Decimal("50.0000"),
+        )
+        session.add(aq2)
+        session.flush()
+
+        for c_pos, choice in enumerate(q1_2_rev.choices, start=1):
+            acs = AttemptChoiceSnapshot(
+                attempt_question_id=aq2.id,
+                source_choice_id=choice.id,
+                choice_key_snapshot=choice.choice_key,
+                content_snapshot=choice.content,
+                position=c_pos,
+            )
+            session.add(acs)
+
+        ans1 = AttemptAnswer(
+            attempt_question_id=aq1.id,
+            saved_at=now - timedelta(hours=2, minutes=25),
+        )
+        session.add(ans1)
+
+        session.add(
+            AttemptQuestionGrade(
+                attempt_question_id=aq1.id,
+                awarded_points=decimal.Decimal("50.0000"),
+                grading_status="AUTO_GRADED",
+                grading_rule="ORIGINAL",
+                graded_by_user_id=inst1.id,
+                graded_at=now - timedelta(hours=2, minutes=19),
+            )
+        )
+
+        ans2 = AttemptAnswer(
+            attempt_question_id=aq2.id,
+            saved_at=now - timedelta(hours=2, minutes=22),
+        )
+        session.add(ans2)
+
+        session.add(
+            AttemptQuestionGrade(
+                attempt_question_id=aq2.id,
+                awarded_points=decimal.Decimal("50.0000"),
+                grading_status="AUTO_GRADED",
+                grading_rule="ORIGINAL",
+                graded_by_user_id=inst1.id,
+                graded_at=now - timedelta(hours=2, minutes=19),
+            )
+        )
+
+        session.add(
+            AssessmentResult(
+                attempt_id=attempt1.id,
+                raw_score=decimal.Decimal("100.0000"),
+                max_score=decimal.Decimal("100.0000"),
+                percent_score=decimal.Decimal("100.0000"),
+                passed=True,
+                status="RELEASED",
+                released_at=now - timedelta(hours=2, minutes=19),
+                graded_at=now - timedelta(hours=2, minutes=19),
+            )
+        )
+
         session.commit()
-        logger.info("Done! Successfully seeded 3 rich courses with full multimedia, PDFs, and quizzes!")
+        logger.info(
+            "Done! Successfully seeded 3 rich courses with full multimedia, PDFs, quizzes, and assessments!"
+        )
 
 
 if __name__ == "__main__":

@@ -44,7 +44,6 @@ def upgrade() -> None:
             "lessons",
             ["previous_lesson_id"],
             ["id"],
-            ondelete="SET NULL",
         )
 
     with op.batch_alter_table("lesson_progress") as batch_op:

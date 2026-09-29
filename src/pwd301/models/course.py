@@ -572,7 +572,7 @@ class Lesson(Base):
     )
     previous_lesson_id = db.Column(
         sa.BigInteger,
-        sa.ForeignKey("lessons.id", name="fk_lessons_previous_lesson_id", ondelete="SET NULL"),
+        sa.ForeignKey("lessons.id", name="fk_lessons_previous_lesson_id"),
         nullable=True,
     )
     material_change_summary = db.Column(sa.Unicode(500), nullable=True)

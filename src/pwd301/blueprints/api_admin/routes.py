@@ -986,7 +986,11 @@ def api_admin_instructor_applications() -> tuple[Response, int] | Response:
         status_filter = "PENDING"
 
     applications = list_instructor_applications(status=status_filter, session=sess)
-    all_apps = sess.query(InstructorApplication).all()
+    all_apps = (
+        sess.query(InstructorApplication)
+        .filter(InstructorApplication.status != "CANCELLED")
+        .all()
+    )
     pending_count = sum(1 for a in all_apps if a.status == "PENDING")
 
     return (

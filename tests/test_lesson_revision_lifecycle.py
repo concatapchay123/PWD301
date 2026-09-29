@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import uuid
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Enrollment, Lesson, LessonProgress
+from pwd301.models.course import Course, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.enrollment_service import enroll_student
@@ -21,7 +21,6 @@ from pwd301.services.lesson_service import (
     create_lesson,
     create_lesson_change_request,
     discard_lesson_working_draft,
-    get_lesson_detail,
     get_lesson_detail_with_draft,
     opt_in_newer_lesson_revision,
     record_lesson_progress,
@@ -105,7 +104,9 @@ def published_course(app: Flask, instructor_user: User, admin_user: User) -> tup
         },
         session=db.session,
     )
-    unit = create_learning_unit(instructor_user, course.id, {"title": "Chương 1"}, session=db.session)
+    unit = create_learning_unit(
+        instructor_user, course.id, {"title": "Chương 1"}, session=db.session
+    )
     lesson = create_lesson(
         actor=instructor_user,
         course_id=course.id,
@@ -175,7 +176,9 @@ def test_working_draft_continuity_after_rejection(
     assert discarded is True
 
     # 4. Working draft is now cleared
-    _, draft_info_after = get_lesson_detail_with_draft(instructor_user, lesson.id, session=db.session)
+    _, draft_info_after = get_lesson_detail_with_draft(
+        instructor_user, lesson.id, session=db.session
+    )
     assert draft_info_after is None
 
 
@@ -188,7 +191,9 @@ def test_in_flight_student_progress_on_historical_lesson(
 ) -> None:
     """An in-flight student can continue recording heartbeat progress on a HISTORICAL lesson."""
     course, lesson_v1 = published_course
-    enroll_student(actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session)
+    enroll_student(
+        actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session
+    )
     db.session.commit()
 
     # Student starts learning lesson_v1 (records first ping)
@@ -246,7 +251,9 @@ def test_in_flight_student_progress_on_historical_lesson(
         session=db.session,
     )
     assign_role_to_user(other_student.id, "STUDENT", session=db.session)
-    enroll_student(actor=admin_user, student_id=other_student.id, course_id=course.id, session=db.session)
+    enroll_student(
+        actor=admin_user, student_id=other_student.id, course_id=course.id, session=db.session
+    )
     db.session.commit()
 
     with pytest.raises(LessonStateViolationError, match="historical"):
@@ -268,7 +275,9 @@ def test_student_opt_in_with_carry_over(
 ) -> None:
     """When a student opts in to a newer revision, completion status is carried over."""
     course, lesson_v1 = published_course
-    enroll_student(actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session)
+    enroll_student(
+        actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session
+    )
     db.session.commit()
 
     # Student completes lesson_v1
@@ -325,7 +334,9 @@ def test_instructor_and_student_routes_for_revisions(
 ) -> None:
     """Test REST API routes for working drafts and student opt-in."""
     course, lesson = published_course
-    enroll_student(actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session)
+    enroll_student(
+        actor=admin_user, student_id=student_user.id, course_id=course.id, session=db.session
+    )
     db.session.commit()
 
     # 1. Create a rejected change request

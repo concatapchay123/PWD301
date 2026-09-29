@@ -11,6 +11,7 @@ Provides business logic for:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -168,6 +169,11 @@ def set_course_completion_rule(
             f"Cannot configure completion rules for course in '{course.status}' status."
         )
 
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise CompletionRuleValidationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể sửa đổi quy tắc hoàn thành."
+        )
+
     # Validate minimum_progress_percent
     min_pct: Decimal | None = None
     if "minimum_progress_percent" in payload:
@@ -222,19 +228,15 @@ def set_course_completion_rule(
         rule.minimum_progress_percent = min_pct
 
     if "minimum_grade_score" in payload:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             req_dict["minimum_grade_score"] = float(payload["minimum_grade_score"])
-        except (ValueError, TypeError):
-            pass
 
     if "allow_certificate" in payload:
         req_dict["allow_certificate"] = bool(payload["allow_certificate"])
 
     if "completion_grace_days" in payload:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             req_dict["completion_grace_days"] = int(payload["completion_grace_days"])
-        except (ValueError, TypeError):
-            pass
 
     course.completion_requirements = json.dumps(req_dict, ensure_ascii=False)
 

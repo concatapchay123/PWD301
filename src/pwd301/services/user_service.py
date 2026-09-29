@@ -480,7 +480,8 @@ def mark_email_verified(
     return user
 
 
-# Allowed role sets per AUTH-002: STUDENT; STUDENT+INSTRUCTOR; STUDENT+INSTRUCTOR+ADMIN; STUDENT+ADMIN
+# Allowed role sets per AUTH-002:
+# STUDENT; STUDENT+INSTRUCTOR; STUDENT+INSTRUCTOR+ADMIN; STUDENT+ADMIN
 VALID_ROLE_COMBINATIONS: tuple[frozenset[str], ...] = (
     frozenset({"STUDENT"}),
     frozenset({"STUDENT", "ADMIN"}),
@@ -851,10 +852,14 @@ def assign_role_to_user(
             }
             is_admin_promotion = ("ADMIN" in after_roles and "ADMIN" not in before_roles)
             if is_admin_promotion:
-                sub_label = sub_role_names.get(admin_sub_role or getattr(user, "admin_sub_role", None), user.admin_sub_role_label or "Quản trị viên phụ")
+                sub_label = sub_role_names.get(
+                    admin_sub_role or getattr(user, "admin_sub_role", None),
+                    user.admin_sub_role_label or "Quản trị viên phụ",
+                )
                 notif_title = "🎉 Chúc mừng bạn đã được bổ nhiệm làm Quản trị viên hệ thống"
                 notif_body = (
-                    f"Chúc mừng bạn! Bạn đã được Quản trị viên chính bổ nhiệm vai trò Quản trị viên (Admin phụ: {sub_label}). "
+                    f"Chúc mừng bạn! Bạn đã được Quản trị viên chính bổ nhiệm vai trò "
+                    f"Quản trị viên (Admin phụ: {sub_label}). "
                     f"Quyền hạn điều hành mới của bạn đã chính thức sẵn sàng."
                     + (f" Lý do: {reason}" if reason else "")
                 )
@@ -1421,8 +1426,10 @@ def list_instructor_applications(
     """List instructor applications with optional status filter, ordered by latest created_at."""
     sess = session if session is not None else db.session
     query = sess.query(InstructorApplication)
-    if status and status.upper() != "ALL":
+    if status and status.upper() not in ("ALL", ""):
         query = query.filter(InstructorApplication.status == status.upper())
+    else:
+        query = query.filter(InstructorApplication.status != "CANCELLED")
     return query.order_by(InstructorApplication.created_at.desc()).all()
 
 

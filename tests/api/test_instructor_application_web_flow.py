@@ -402,7 +402,9 @@ def test_instructor_application_evidence_upload_and_download(client, test_users)
         "current_schedule": "Thứ 3 và Thứ 5",
         "employment_contract": "Hợp đồng giảng dạy 2024-2026",
         "statement_of_purpose": "Muốn đóng góp cho cộng đồng PWD301",
-        "certificate_drive_url": "https://drive.google.com/file/d/" + "a" * 180 + "/view?usp=sharing",
+        "certificate_drive_url": (
+            "https://drive.google.com/file/d/" + "a" * 180 + "/view?usp=sharing"
+        ),
         "evidence_files": (io.BytesIO(file_content), "certificate_2024.docx"),
     }
 
@@ -527,3 +529,89 @@ def test_student_freelancer_niche_submit_web_flow(client, test_users):
         assert details["portfolio_url"] == "https://github.com/niche-freelancer"
         assert len(details["attached_files"]) == 1
         assert details["attached_files"][0]["doc_type"] == "CV_PORTFOLIO"
+
+
+def test_admin_instructor_applications_queue_excludes_cancelled_and_approved_from_pending_queue(
+    client, test_users
+):
+    """Admin queue defaults to PENDING, excluding cancelled applications.
+    Also ensures approved applications are removed from pending queue.
+    """
+    # 1. Student1 submits application (PENDING)
+    client.post(
+        "/auth/login",
+        json={"email": test_users["student1_email"], "password": "Password123!"},
+    )
+    resp1 = client.post(
+        "/student/become-instructor",
+        json={
+            "institution_name": "Đại học Bách Khoa",
+            "specialization": "Khoa học Dữ liệu",
+            "experience_years": "3",
+        },
+    )
+    assert resp1.status_code in (200, 201)
+    client.post("/auth/logout")
+
+    # 2. Student2 submits application and cancels it (CANCELLED)
+    client.post(
+        "/auth/login",
+        json={"email": test_users["student2_email"], "password": "Password123!"},
+    )
+    resp2 = client.post(
+        "/student/become-instructor",
+        json={
+            "institution_name": "Đại học Quốc tế",
+            "specialization": "An toàn thông tin",
+            "experience_years": "2",
+        },
+    )
+    assert resp2.status_code in (200, 201)
+    cancel_resp = client.post("/student/become-instructor/cancel", json={})
+    assert cancel_resp.status_code == 200
+    client.post("/auth/logout")
+
+    # 3. Admin logs in
+    client.post(
+        "/auth/login",
+        json={"email": test_users["admin_email"], "password": "AdminPassword123!"},
+    )
+
+    # 4. GET /admin/instructor-applications (default queue: PENDING)
+    queue_resp = client.get("/admin/instructor-applications")
+    assert queue_resp.status_code == 200
+    queue_data = queue_resp.get_json()
+    queue_statuses = [a["status"] for a in queue_data["applications"]]
+    assert "CANCELLED" not in queue_statuses
+    assert all(st == "PENDING" for st in queue_statuses)
+    assert queue_data["pending_count"] == 1
+    assert queue_data["total"] == 1
+    app1_id = queue_data["applications"][0]["id"]
+
+    # 5. GET with status=ALL must also exclude CANCELLED applications from admin listing
+    all_resp = client.get("/admin/instructor-applications?status=ALL")
+    assert all_resp.status_code == 200
+    all_data = all_resp.get_json()
+    all_statuses = [a["status"] for a in all_data["applications"]]
+    assert "CANCELLED" not in all_statuses
+
+    # 6. Admin approves student1's application
+    approve_resp = client.post(
+        f"/admin/instructor-applications/{app1_id}/review",
+        json={"action": "approve", "reason": "Hồ sơ đạt yêu cầu."},
+    )
+    assert approve_resp.status_code == 200
+
+    # 7. Re-query queue: approved application must be removed from PENDING queue
+    queue_after = client.get("/admin/instructor-applications")
+    assert queue_after.status_code == 200
+    queue_after_data = queue_after.get_json()
+    assert queue_after_data["pending_count"] == 0
+    assert queue_after_data["total"] == 0
+    assert len(queue_after_data["applications"]) == 0
+
+    # 8. Query status=APPROVED: student1's application is in approved history
+    approved_resp = client.get("/admin/instructor-applications?status=APPROVED")
+    assert approved_resp.status_code == 200
+    approved_data = approved_resp.get_json()
+    assert any(a["id"] == app1_id for a in approved_data["applications"])

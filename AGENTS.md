@@ -173,3 +173,9 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - Giấu toàn bộ ID kỹ thuật nội bộ (UUID câu hỏi, mã bài thi) khỏi giao diện của sinh viên.
 - Không tự ý thêm thắt các thư viện animation dư thừa (hiệu ứng nảy, liquid physics, giật màn hình) làm rối mắt người dùng.
 - Tuyệt đối không để lộ API keys, thông số IP máy chủ thật hay bí mật hệ thống trong tệp mã nguồn, README hay lịch sử commit git.
+
+### 10.7. Bất biến Điều hướng Đẳng công & Bản nháp Lười (Idempotent Navigation & Lazy Creation)
+- **Đẳng công khi tải Route (Idempotent Navigation)**: Mọi phương thức điều hướng hiển thị giao diện (render view, route resolution) cho các trang tạo mới (`/new`) bắt buộc phải thuần túy (side-effect free) và đẳng công (idempotent). Tuyệt đối cấm tự động gửi request ghi dữ liệu (`POST`/`create*`) vào cơ sở dữ liệu chỉ vì người dùng ghé thăm một đường dẫn.
+- **Cơ chế Bản nháp Lười (Lazy Draft Creation)**: Dữ liệu chỉ được phép tạo mới và ghi vào CSDL khi người dùng thực hiện một hành động chủ động rõ ràng (bấm nút "Lưu", "Xuất bản", hoặc kéo thả tệp tải lên bắt buộc phải có ID).
+- **Bảo toàn Ngăn xếp Lịch sử Trình duyệt (Clean History Stack)**: Khi một thực thể được tạo thành công từ giao diện `/new` và cần đồng bộ URL sang `/edit`, BẮT BUỘC sử dụng `window.history.replaceState` để thay thế mục lịch sử hiện tại. Nghiêm cấm gán `window.location.hash = ...` gây chèn thêm entry mới làm bẫy nút Quay lại (Browser Back) của người dùng.
+

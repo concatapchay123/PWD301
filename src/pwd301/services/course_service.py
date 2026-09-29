@@ -389,6 +389,13 @@ def update_course(
     if course.deleted_at is not None and not actor.is_admin:
         raise ForbiddenError("Cannot update a soft-deleted course.")
 
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        msg = (
+            "Khóa học đang trong quá trình xét duyệt của Quản trị viên. "
+            "Hãy rút lại yêu cầu xét duyệt nếu muốn chỉnh sửa."
+        )
+        raise CourseStateViolationError(msg)
+
     if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
         norm_client = normalize_row_version(data["row_version"])
         if norm_client is not None and norm_client != course.row_version:
@@ -662,9 +669,27 @@ def change_course_status(
         if not can_manage_course(actor, course, reason=reason, session=sess):
             raise ForbiddenError("You do not have permission to manage this course.")
 
-    # 3. Check active prerequisite dependencies before ARCHIVED or TRASH
+    # 3. Check active prerequisite dependencies and active enrollments before ARCHIVED or TRASH
     if target_status in ("ARCHIVED", "TRASH"):
         _check_active_prerequisite_dependencies(sess, course.id, course.course_code)
+        if target_status == "TRASH" and not actor.is_admin:
+            from pwd301.models.course import Enrollment
+
+            active_enrollments = (
+                sess.query(sa.func.count(Enrollment.id))
+                .filter(
+                    Enrollment.course_id == course.id,
+                    Enrollment.status == "ACTIVE",
+                )
+                .scalar()
+                or 0
+            )
+            if active_enrollments > 0:
+                msg = (
+                    f"Không thể chuyển khóa học vào thùng rác vì đang có "
+                    f"{active_enrollments} học viên đang theo học."
+                )
+                raise CourseStateViolationError(msg)
 
     if current_status == "TRASH" and target_status == "DRAFT" and course.published_at is not None:
         raise CourseStateViolationError(
@@ -696,6 +721,23 @@ def change_course_status(
     elif target_status == "PUBLISHED":
         if course.published_at is None:
             course.published_at = now
+        # Invariant: Auto-publish non-deleted draft lessons belonging to this course
+        from pwd301.models.course import Lesson
+
+        draft_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.status == "DRAFT",
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for les in draft_lessons:
+            les.status = "PUBLISHED"
+            if les.published_at is None:
+                les.published_at = now
+            les.updated_at = now
     elif target_status == "TRASH":
         course.deleted_at = now
         course.deleted_by_user_id = actor.id
@@ -1209,4 +1251,31 @@ def get_faculty_workload_metrics(
             "overload_count": overload_count,
             "total_assigned_courses": total_assigned_courses,
         },
+    }
+
+
+def get_course_last_rejection(
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any] | None:
+    """Retrieve the most recent rejection details for a course from AuditEvent."""
+    sess = session if session is not None else db.session
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        return None
+    last_event = (
+        sess.query(AuditEvent)
+        .filter(
+            AuditEvent.action == "COURSE_REJECTED",
+            AuditEvent.target_id == course.id,
+        )
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    if last_event is None:
+        return None
+    return {
+        "reason": last_event.reason,
+        "rejected_at": last_event.created_at.isoformat() if last_event.created_at else None,
+        "actor_id": str(last_event.actor_user_id) if last_event.actor_user_id else None,
     }

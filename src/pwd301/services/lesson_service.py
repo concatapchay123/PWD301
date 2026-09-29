@@ -77,6 +77,10 @@ def create_learning_unit(
     course = require_course_manager(actor, course_id, session=sess)
     if course.deleted_at is not None or course.status in ("TRASH", "ARCHIVED"):
         raise LessonStateViolationError("Cannot add a learning unit to this course.")
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể thêm chương mục mới."
+        )
     title = data.get("title")
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
         raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
@@ -123,7 +127,11 @@ def update_learning_unit(
     unit = sess.query(LearningUnit).filter(LearningUnit.public_id == public_id).first()
     if unit is None or unit.deleted_at is not None:
         raise ResourceNotFoundError("Learning unit not found.")
-    require_course_manager(actor, unit.course_id, session=sess)
+    course = require_course_manager(actor, unit.course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể sửa chương mục."
+        )
     title = data.get("title")
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
         raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
@@ -147,7 +155,11 @@ def delete_learning_unit(
     unit = sess.query(LearningUnit).filter(LearningUnit.public_id == public_id).first()
     if unit is None or unit.deleted_at is not None:
         raise ResourceNotFoundError("Learning unit not found.")
-    require_course_manager(actor, unit.course_id, session=sess)
+    course = require_course_manager(actor, unit.course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể xóa chương mục."
+        )
 
     for lesson in unit.lessons:
         if lesson.deleted_at is None:
@@ -183,6 +195,10 @@ def reorder_learning_units(
     """Reorder learning units within an authorized course."""
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể sắp xếp lại chương mục."
+        )
     units = (
         sess.query(LearningUnit)
         .filter(LearningUnit.course_id == course.id, LearningUnit.deleted_at.is_(None))
@@ -422,6 +438,10 @@ def create_lesson(
         raise LessonStateViolationError(
             f"Cannot add lessons to archived or trashed course in '{course.status}' status."
         )
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể thêm bài giảng mới."
+        )
 
     # Validate title
     title = data.get("title")
@@ -659,6 +679,10 @@ def update_lesson(
         raise LessonNotFoundError("Lesson not found.")
 
     course = require_course_manager(actor, lesson.course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể chỉnh sửa bài giảng."
+        )
 
     # Disallow modifying position via update_lesson
     if "position" in data and data["position"] != lesson.position:
@@ -834,6 +858,10 @@ def reorder_lessons(
     """
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể sắp xếp lại bài giảng."
+        )
 
     active_lessons = (
         sess.query(Lesson).filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None)).all()
@@ -944,6 +972,10 @@ def trash_lesson(
         raise LessonNotFoundError("Lesson not found.")
 
     course = require_course_manager(actor, lesson.course_id, session=sess)
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+        raise LessonStateViolationError(
+            "Khóa học đang chờ Quản trị viên xét duyệt. Không thể xóa bài giảng."
+        )
 
     if lesson.deleted_at is not None or lesson.status == "TRASH":
         return lesson
@@ -1123,7 +1155,9 @@ def restore_lesson(
     )
 
 
-def _has_in_flight_progress(session: Session | scoped_session[Any], student_user_id: int, lesson_id: int) -> bool:
+def _has_in_flight_progress(
+    session: Session | scoped_session[Any], student_user_id: int, lesson_id: int
+) -> bool:
     """Check if student has an existing progress record on this lesson revision."""
     return (
         session.query(LessonProgress)
@@ -1190,7 +1224,8 @@ def get_lesson_detail(
         return lesson
 
     # Student access guard:
-    # Must be authenticated, course not deleted, lesson PUBLISHED (or HISTORICAL for in-flight learners),
+    # Must be authenticated, course not deleted,
+    # lesson PUBLISHED (or HISTORICAL for in-flight learners),
     # and student actively enrolled
     if actor is None or not actor.is_active:
         raise ForbiddenError("Authentication required to access lesson.")
@@ -1390,9 +1425,7 @@ def record_lesson_progress(
     )
 
     if progress is None and lesson.status == "HISTORICAL":
-        raise LessonStateViolationError(
-            "Cannot start progress on a historical lesson revision."
-        )
+        raise LessonStateViolationError("Cannot start progress on a historical lesson revision.")
 
     now = utc_now()
     if progress is None:
@@ -1910,7 +1943,9 @@ def approve_course_change_request(
             active_at_pos.updated_at = now
             staged.revision_no = (active_at_pos.revision_no or 1) + 1
             staged.previous_lesson_id = active_at_pos.id
-            staged.material_change_summary = review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
+            staged.material_change_summary = (
+                review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
+            )
             sess.flush()
         else:
             staged.revision_no = 1
@@ -1990,7 +2025,8 @@ def get_lesson_detail_with_draft(
 
     require_course_manager(actor, lesson.course_id, session=sess)
 
-    # Find the latest pending or rejected change request for this lesson (direct target or staged lesson at same position)
+    # Find the latest pending or rejected change request for this lesson
+    # (direct target or staged lesson at same position)
     change_req = (
         sess.query(CourseChangeRequest)
         .filter(
@@ -2168,7 +2204,9 @@ def opt_in_newer_lesson_revision(
             seconds_spent=old_progress.seconds_spent if old_progress else 0,
             max_view_fraction=old_progress.max_view_fraction if old_progress else 0.0,
             completed_at=old_progress.completed_at if old_progress else None,
-            completion_rule_snapshot_json=old_progress.completion_rule_snapshot_json if old_progress else None,
+            completion_rule_snapshot_json=old_progress.completion_rule_snapshot_json
+            if old_progress
+            else None,
             acknowledged_revision_no=latest_lesson.revision_no,
             updated_at=now,
         )
@@ -2177,7 +2215,9 @@ def opt_in_newer_lesson_revision(
         # Carry over completion if old progress was completed and target was not
         if old_progress and old_progress.completed_at and not target_progress.completed_at:
             target_progress.completed_at = old_progress.completed_at
-            target_progress.completion_rule_snapshot_json = old_progress.completion_rule_snapshot_json
+            target_progress.completion_rule_snapshot_json = (
+                old_progress.completion_rule_snapshot_json
+            )
         target_progress.acknowledged_revision_no = latest_lesson.revision_no
         target_progress.updated_at = now
 

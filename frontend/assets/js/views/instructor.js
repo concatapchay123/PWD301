@@ -557,6 +557,7 @@ class InstructorView {
       const lessons = course.lessons || [];
       const learningUnits = course.learning_units || [];
       const assessments = assessmentsData.assessments || assessmentsData.items || course.assessments || [];
+      const isFrozen = course.status === 'SUBMITTED_FOR_REVIEW';
 
       container.innerHTML = `
         <div class="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in font-sans pb-20" id="course-manage-root" data-course-id="${UI.escapeHtml(cId)}">
@@ -613,6 +614,44 @@ class InstructorView {
             </div>
           ` : ''}
 
+          <!-- Rejection Banner: Previous Review Rejection -->
+          ${course.status === 'DRAFT' && course.last_rejection ? `
+            <div class="rounded-2xl border border-rose-300 dark:border-rose-700/60 bg-rose-50 dark:bg-rose-950/40 p-4 sm:p-5 flex items-start gap-4 shadow-xs">
+              <div class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20 mt-0.5">
+                <span class="material-symbols-outlined text-2xl">error</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-bold text-rose-900 dark:text-rose-200 flex items-center gap-2">
+                  <span>Khóa học đã bị Quản trị viên từ chối phê duyệt</span>
+                  ${course.last_rejection.rejected_at ? `<span class="text-xs font-normal text-rose-600 dark:text-rose-400">(${UI.formatDate(course.last_rejection.rejected_at)})</span>` : ''}
+                </h4>
+                <p class="text-xs text-rose-800 dark:text-rose-300 mt-1 font-medium bg-white/60 dark:bg-black/20 p-2.5 rounded-lg border border-rose-200/60 dark:border-rose-800/40">
+                  <strong>Lý do từ chối:</strong> ${UI.escapeHtml(course.last_rejection.reason || 'Không có lý do cụ thể.')}
+                </p>
+                <p class="text-[11px] text-rose-700 dark:text-rose-400 mt-1.5">
+                  Thầy/Cô vui lòng cập nhật nội dung giáo trình theo yêu cầu và nộp xét duyệt lại khi hoàn tất.
+                </p>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Freeze Banner: Course Submitted for Review -->
+          ${course.status === 'SUBMITTED_FOR_REVIEW' ? `
+            <div class="rounded-2xl border border-sky-300 dark:border-sky-700/60 bg-sky-50 dark:bg-sky-950/40 p-4 sm:p-5 flex items-start gap-4 shadow-xs">
+              <div class="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/20 mt-0.5">
+                <span class="material-symbols-outlined text-2xl">pending_actions</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-bold text-sky-900 dark:text-sky-200">
+                  Khóa học đang trong quá trình xét duyệt của Quản trị viên
+                </h4>
+                <p class="text-xs text-sky-800 dark:text-sky-300 mt-1">
+                  Mọi thao tác chỉnh sửa nội dung bài giảng, chương mục và bài thi tạm thời bị đóng băng. Nếu cần chỉnh sửa thêm, Thầy/Cô vui lòng bấm <strong>"Rút lại xét duyệt"</strong> phía trên.
+                </p>
+              </div>
+            </div>
+          ` : ''}
+
           <!-- Course Header Banner (Warm Surface Card) -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-6 sm:p-8 shadow-subtle space-y-4">
             <div class="relative aspect-video max-h-72 w-full overflow-hidden rounded-xl bg-indigo-100 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center">
@@ -647,17 +686,28 @@ class InstructorView {
                   <button
                     type="button"
                     id="btn-submit-review"
-                    class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                    class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <span class="material-symbols-outlined text-[16px]">send</span>
                     <span>Gửi duyệt xuất bản</span>
+                  </button>
+                ` : ''}
+                ${course.status === 'SUBMITTED_FOR_REVIEW' ? `
+                  <button
+                    type="button"
+                    id="btn-cancel-submit-review"
+                    class="px-4 py-2 rounded-xl bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    title="Rút lại yêu cầu xét duyệt để mở khóa quyền chỉnh sửa khóa học"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">undo</span>
+                    <span>Rút lại xét duyệt</span>
                   </button>
                 ` : ''}
                 ${course.status === 'APPROVED' || window.app?.currentRole === 'ADMIN' ? `
                   <button
                     type="button"
                     id="btn-publish-direct"
-                    class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                    class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
                     <span>Xuất bản ngay</span>
@@ -684,14 +734,21 @@ class InstructorView {
                 </div>
               </div>
 
-              <button
-                type="button"
-                id="btn-create-learning-unit"
-                class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-              >
-                <span class="material-symbols-outlined text-[16px]">add</span>
-                <span>Thêm Bài học</span>
-              </button>
+              ${isFrozen ? `
+                <div class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-semibold flex items-center gap-1.5" title="Khóa học đang chờ duyệt, hãy rút lại xét duyệt để mở khóa chỉnh sửa">
+                  <span class="material-symbols-outlined text-[16px]">lock</span>
+                  <span>Đang chờ duyệt</span>
+                </div>
+              ` : `
+                <button
+                  type="button"
+                  id="btn-create-learning-unit"
+                  class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-[16px]">add</span>
+                  <span>Thêm Bài học</span>
+                </button>
+              `}
             </div>
 
             <div class="space-y-4" id="learning-units-list">
@@ -713,7 +770,7 @@ class InstructorView {
                 return `
                   <section
                     class="unit-row-card rounded-2xl border border-[#E8E6DF] dark:border-[#526881] bg-white dark:bg-[#223248] p-5 sm:p-6 transition-all hover:border-primary/40 shadow-xs"
-                    draggable="true"
+                    ${isFrozen ? '' : 'draggable="true"'}
                     data-unit-id="${unitId}"
                     data-idx="${unitIdx}"
                   >
@@ -721,6 +778,7 @@ class InstructorView {
                       <div class="flex items-center gap-3.5 min-w-0 flex-1">
                         <!-- Drag Handle & Up/Down Arrows -->
                         <div class="flex items-center gap-1 shrink-0 select-none">
+                          ${isFrozen ? '' : `
                           <div class="flex flex-col gap-0.5">
                             <button
                               type="button"
@@ -744,6 +802,7 @@ class InstructorView {
                           <span class="unit-drag-handle cursor-grab active:cursor-grabbing p-1 text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB]" title="Kéo thả để sắp xếp thứ tự bài học">
                             <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
                           </span>
+                          `}
                           <span class="w-8 h-8 rounded-xl bg-[#F4F1EA] dark:bg-[#1B2A3D] text-[#5C5B57] dark:text-[#9E9D99] font-bold text-xs flex items-center justify-center shrink-0 border border-[#E8E6DF] dark:border-[#526881]">
                             #${unitIdx + 1}
                           </span>
@@ -777,9 +836,10 @@ class InstructorView {
                           class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                           title="Vào soạn thảo các bài giảng trong bài học này"
                         >
-                          <span class="material-symbols-outlined text-[16px]">edit_document</span>
-                          <span>Vào soạn thảo</span>
+                          <span class="material-symbols-outlined text-[16px]">${isFrozen ? 'visibility' : 'edit_document'}</span>
+                          <span>${isFrozen ? 'Xem nội dung' : 'Vào soạn thảo'}</span>
                         </a>
+                        ${isFrozen ? '' : `
                         <button
                           type="button"
                           class="btn-rename-learning-unit px-3 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#526881] hover:bg-[#FAF9F5] dark:hover:bg-[#1B2A3D] text-[#222120] dark:text-[#F0F5FA] text-xs font-semibold transition-colors cursor-pointer"
@@ -803,6 +863,7 @@ class InstructorView {
                         >
                           <span class="material-symbols-outlined text-[18px]">delete</span>
                         </button>
+                        `}
                       </div>
                     </div>
                   </section>
@@ -984,6 +1045,26 @@ class InstructorView {
             UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi gửi xét duyệt.', 'error');
+          }
+        };
+      }
+
+      // Bind Cancel Submit Review
+      const cancelRevBtn = document.getElementById('btn-cancel-submit-review');
+      if (cancelRevBtn) {
+        cancelRevBtn.onclick = async () => {
+          const conf = await UI.confirm(
+            'Rút lại yêu cầu xét duyệt',
+            'Khóa học sẽ quay về trạng thái Nháp (DRAFT) để Thầy/Cô tiếp tục chỉnh sửa giáo trình. Xác nhận rút lại yêu cầu?',
+            'Rút lại xét duyệt'
+          );
+          if (!conf) return;
+          try {
+            await ApiClient.cancelSubmitCourse(cId);
+            UI.showToast('Đã rút lại yêu cầu xét duyệt. Khóa học đã mở khóa để chỉnh sửa.', 'success');
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
+          } catch (e) {
+            UI.showToast(e.message || 'Lỗi khi rút lại xét duyệt.', 'error');
           }
         };
       }
@@ -1179,34 +1260,34 @@ class InstructorView {
 
     const modalHtml = `
       <div class="space-y-4">
-        <!-- Sub-tabs Navigation -->
-        <div class="flex items-center gap-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-3">
+        <!-- Sub-tabs Navigation: Modern Segmented Control -->
+        <div class="p-1 rounded-xl bg-[#F4F1EA] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] inline-flex items-center gap-1 w-full sm:w-auto">
           <button
             type="button"
-            class="course-modal-subtab px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-2xs"
+            class="course-modal-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#1E1E1E] text-primary shadow-xs"
             data-subtab="settings"
           >
-            <span class="flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-[16px]">settings</span>
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">tune</span>
               <span>Cài đặt chung</span>
             </span>
           </button>
           <button
             type="button"
-            class="course-modal-subtab px-3.5 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-all"
+            class="course-modal-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-white/50 dark:hover:bg-white/5 transition-all"
             data-subtab="academic"
           >
-            <span class="flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-[16px]">verified_user</span>
-              <span>Chuẩn đầu ra (ABET SLO)</span>
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">verified</span>
+              <span>Chuẩn đầu ra & Học vụ</span>
             </span>
           </button>
           <button
             type="button"
-            class="course-modal-subtab px-3.5 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-all"
+            class="course-modal-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-white/50 dark:hover:bg-white/5 transition-all"
             data-subtab="students"
           >
-            <span class="flex items-center gap-1.5">
+            <span class="flex items-center justify-center gap-1.5">
               <span class="material-symbols-outlined text-[16px]">groups</span>
               <span>Danh sách sinh viên</span>
             </span>
@@ -1214,17 +1295,33 @@ class InstructorView {
         </div>
 
         <!-- Sub-tab Content Container -->
-        <div id="course-modal-subtab-content" class="min-h-[380px] max-h-[70vh] overflow-y-auto"></div>
+        <div id="course-modal-subtab-content" class="pt-1"></div>
       </div>
     `;
 
     UI.openModal({
-      title: `Cài đặt & Học vụ • ${course.course_code}`,
+      title: `
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <span class="material-symbols-outlined text-[17px]">settings</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-[#222120] dark:text-[#EDEDEB]">Cài đặt & Học vụ</span>
+            <span class="px-2 py-0.5 rounded-md bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-mono text-xs font-bold border border-[#E8E6DF] dark:border-[#383734]">${UI.escapeHtml(course.course_code || '')}</span>
+          </div>
+        </div>
+      `,
       bodyHtml: modalHtml,
       footerHtml: `
-        <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors" onclick="UI.closeModal()">
-          Đóng
-        </button>
+        <div class="flex items-center justify-between w-full">
+          <div class="text-[11px] text-[#8F8E8A] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">shield_check</span>
+            <span>Mọi thay đổi học vụ được lưu trữ an toàn</span>
+          </div>
+          <button type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B]" onclick="UI.closeModal()">
+            Đóng
+          </button>
+        </div>
       `,
       size: 'xl'
     });
@@ -1235,9 +1332,9 @@ class InstructorView {
     const switchSubtab = (tab) => {
       subtabBtns.forEach(btn => {
         if (btn.dataset.subtab === tab) {
-          btn.className = 'course-modal-subtab px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-primary text-white shadow-2xs';
+          btn.className = 'course-modal-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#1E1E1E] text-primary shadow-xs';
         } else {
-          btn.className = 'course-modal-subtab px-3.5 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-all';
+          btn.className = 'course-modal-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB] hover:bg-white/50 dark:hover:bg-white/5 transition-all';
         }
       });
 
@@ -1515,32 +1612,67 @@ class InstructorView {
     tabContainer.innerHTML = `
       <div class="space-y-6 max-w-5xl mx-auto animate-fade-in" id="academic-tab-root">
         
-        <!-- CARD 1: ABET Student Learning Outcomes (SLOs) -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-6">
+        <!-- CARD 1: Chuẩn đầu ra (SLO) -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xs space-y-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
             <div>
               <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[20px]">verified_user</span>
-                <h2 class="text-base font-bold text-slate-900 dark:text-white">
-                  1. Chuẩn đầu ra Môn học (Student Learning Outcomes - SLO)
+                <span class="material-symbols-outlined text-primary text-[20px]">verified</span>
+                <h2 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  1. Chuẩn đầu ra
                 </h2>
-                <button type="button" onclick="UI.openAcademicGlossaryModal()" class="text-xs text-primary hover:underline font-bold flex items-center gap-0.5" title="Mở sổ tay thuật ngữ">
-                  <span class="material-symbols-outlined text-[16px]">help</span>
-                  <span>Giải thích SLO</span>
-                </button>
+                <!-- Icon dấu chấm hỏi ? có popover giải thích khi rê chuột hoặc bấm -->
+                <div class="relative inline-flex items-center" id="slo-help-wrapper">
+                  <button
+                    type="button"
+                    id="btn-slo-help-trigger"
+                    class="w-5 h-5 rounded-full bg-slate-100 hover:bg-primary/10 text-slate-500 hover:text-primary dark:bg-slate-800 dark:text-slate-400 dark:hover:text-primary transition-all flex items-center justify-center cursor-pointer shadow-2xs"
+                    title="Bấm hoặc rê chuột để xem giải thích Chuẩn đầu ra (SLO)"
+                    aria-label="Giải thích Chuẩn đầu ra"
+                  >
+                    <span class="material-symbols-outlined text-[15px]">help</span>
+                  </button>
+
+                  <!-- Micro Popover Giải thích SLO -->
+                  <div
+                    id="slo-help-popover"
+                    class="hidden absolute left-0 top-full mt-2 w-80 sm:w-96 p-4 rounded-xl bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-slate-800 shadow-xl z-50 text-xs leading-relaxed space-y-2.5 animate-in fade-in"
+                  >
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div class="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                        <span class="material-symbols-outlined text-primary text-[17px]">lightbulb</span>
+                        <span>Chuẩn đầu ra (SLO) là gì?</span>
+                      </div>
+                      <button type="button" id="btn-close-slo-popover" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer">
+                        <span class="material-symbols-outlined text-[14px]">close</span>
+                      </button>
+                    </div>
+                    <div class="space-y-1.5 text-slate-600 dark:text-slate-300">
+                      <p>
+                        <strong class="text-primary font-semibold">Student Learning Outcomes (SLO):</strong> Bản cam kết năng lực, kiến thức và kỹ năng thực tế mà người học chắc chắn sẽ tự tay làm được sau khi hoàn thành môn học.
+                      </p>
+                      <div class="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 border-l-2 border-primary">
+                        <em>Ví dụ: "Tự tay thiết kế và triển khai được hệ thống RESTful API an toàn, có xác thực phân quyền."</em>
+                      </div>
+                      <p class="text-[11px] text-slate-400 dark:text-slate-500">
+                        Giảng viên dựa vào các chuẩn này để xây dựng đề thi công bằng và phục vụ kiểm định chất lượng đào tạo (ABET CAC Criterion 3).
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
               <p class="text-xs text-slate-500 mt-1 leading-relaxed">
                 Quy định cụ thể những năng lực, kỹ năng thực tế mà sinh viên sẽ làm được sau khóa học. Các chuẩn này được ánh xạ vào ma trận ngân hàng đề thi và hồ sơ kiểm định quốc tế ABET CAC Criterion 3.
               </p>
             </div>
-            <div class="flex items-center gap-2.5 shrink-0">
-              <button type="button" id="btn-add-slo" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs">
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" id="btn-add-slo" class="px-3.5 py-1.75 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs">
                 <span class="material-symbols-outlined text-[16px] text-primary">add</span>
-                <span>Thêm Chuẩn đầu ra (SLO)</span>
+                <span>Thêm Chuẩn đầu ra</span>
               </button>
-              <button type="button" id="btn-save-slos" class="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm">
+              <button type="button" id="btn-save-slos" class="px-4 py-1.75 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm">
                 <span class="material-symbols-outlined text-[16px]">save</span>
-                <span>Lưu chuẩn đầu ra</span>
+                <span>Lưu</span>
               </button>
             </div>
           </div>
@@ -1632,6 +1764,51 @@ class InstructorView {
       </div>
     `;
 
+    // 0. Wire SLO Help Popover (Click & Hover)
+    const helpTrigger = document.getElementById('btn-slo-help-trigger');
+    const helpPopover = document.getElementById('slo-help-popover');
+    const closePopoverBtn = document.getElementById('btn-close-slo-popover');
+    let popoverTimeout = null;
+
+    if (helpTrigger && helpPopover) {
+      const showPopover = () => {
+        if (popoverTimeout) clearTimeout(popoverTimeout);
+        helpPopover.classList.remove('hidden');
+      };
+      const hidePopover = (delay = 200) => {
+        if (popoverTimeout) clearTimeout(popoverTimeout);
+        popoverTimeout = setTimeout(() => {
+          helpPopover.classList.add('hidden');
+        }, delay);
+      };
+
+      helpTrigger.addEventListener('mouseenter', () => showPopover());
+      helpTrigger.addEventListener('mouseleave', () => hidePopover(250));
+      helpPopover.addEventListener('mouseenter', () => showPopover());
+      helpPopover.addEventListener('mouseleave', () => hidePopover(200));
+
+      helpTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (helpPopover.classList.contains('hidden')) {
+          showPopover();
+        } else {
+          helpPopover.classList.add('hidden');
+        }
+      });
+
+      closePopoverBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        helpPopover.classList.add('hidden');
+      });
+
+      const onDocClick = (e) => {
+        if (!helpTrigger.contains(e.target) && !helpPopover.contains(e.target)) {
+          helpPopover.classList.add('hidden');
+        }
+      };
+      document.addEventListener('click', onDocClick);
+    }
+
     // 1. Render SLOs helper
     const sloContainer = document.getElementById('slo-items-list');
     const colors = ['text-primary', 'text-indigo-600', 'text-purple-600', 'text-emerald-600'];
@@ -1658,7 +1835,7 @@ class InstructorView {
       if (customSLOs.length === 0) {
         sloContainer.innerHTML = `
           <div class="p-6 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            Chưa có chuẩn đầu ra nào được thiết lập. Nhấp "+ Thêm Chuẩn đầu ra (SLO)" để tạo mới.
+            Chưa có chuẩn đầu ra nào được thiết lập. Nhấp "+ Thêm Chuẩn đầu ra" để tạo mới.
           </div>
         `;
         return;
@@ -1752,7 +1929,7 @@ class InstructorView {
           UI.showToast('Lỗi lưu chuẩn đầu ra: ' + (err.message || err), 'error');
         } finally {
           saveSlosBtn.disabled = false;
-          saveSlosBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">save</span><span>Lưu chuẩn đầu ra</span>`;
+          saveSlosBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">save</span><span>Lưu</span>`;
         }
       };
     }
@@ -2765,8 +2942,11 @@ class InstructorView {
     const defaultOfficeHours = contactInfo.office_hours || '';
 
     tabContainer.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-6 max-w-3xl mx-auto">
-        <h2 class="text-base font-bold text-slate-900 dark:text-white">Cập nhật thông tin khóa học</h2>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xs space-y-5 max-w-4xl mx-auto animate-fade-in">
+        <h2 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary text-[20px]">edit_note</span>
+          <span>Cập nhật thông tin khóa học</span>
+        </h2>
         
         <form id="edit-course-form" class="space-y-4">
           <div class="space-y-1">
@@ -2807,6 +2987,17 @@ class InstructorView {
                 <span class="material-symbols-outlined text-[18px]">groups</span>
                 <span>${course.enrolled_count ?? course.enrollments_count ?? 0} sinh viên đang theo học</span>
               </div>
+            </div>
+            <div class="space-y-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Giới hạn sĩ số tối đa (Capacity)</label>
+              <input
+                type="number"
+                name="capacity"
+                min="1"
+                value="${course.capacity ?? ''}"
+                placeholder="Để trống nếu không giới hạn sĩ số"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:border-primary text-xs"
+              />
             </div>
           </div>
 
@@ -2928,15 +3119,29 @@ class InstructorView {
         office_hours: form.contact_office_hours?.value.trim() || ''
       };
 
+      let capacityVal = undefined;
+      const capStr = form.capacity?.value?.trim();
+      if (capStr) {
+        const parsedCap = parseInt(capStr, 10);
+        if (!isNaN(parsedCap) && parsedCap > 0) {
+          capacityVal = parsedCap;
+        }
+      } else if (capStr === '') {
+        capacityVal = null;
+      } else if (course.capacity !== undefined) {
+        capacityVal = course.capacity;
+      }
+
       try {
         await ApiClient.updateCourse(cId, {
           title: form.title.value.trim(),
           description: form.description.value.trim(),
           category: form.category.value.trim(),
           contact_info: contactData,
-          capacity: null
+          capacity: capacityVal
         });
         course.contact_info = contactData;
+        if (capacityVal !== undefined) course.capacity = capacityVal;
         UI.showToast('Đã lưu thông tin khóa học & liên hệ thành công!', 'success');
       } catch (err) {
         UI.showToast(err.message || 'Lỗi cập nhật.', 'error');
@@ -3184,27 +3389,15 @@ class InstructorView {
       }
     }
 
-    if (!lessonId) {
-      try {
-        const unit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
-        const nextIndex = (unit?.lessons?.length || 0) + 1;
-        const created = await ApiClient.createLesson(courseId, {
-          title: `Bài giảng ${nextIndex}`,
-          summary: '',
-          markdown_content: '<p>Nội dung bài giảng mới đang được biên soạn...</p>',
-          status: 'DRAFT',
-          estimated_duration_minutes: 15,
-          learning_unit_id: selectedUnitId
-        });
-        const createdId = created?.lesson_id || created?.id;
-        if (createdId) {
-          window.location.hash = `#/instructor/courses/${courseId}/lessons/${createdId}/edit`;
-          return;
-        }
-      } catch (err) {
-        console.warn('Auto create initial lesson draft error:', err);
-      }
-    }
+    const activeUnit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
+    const nextIndex = (activeUnit?.lessons?.length || 0) + 1;
+    const initialLessonTitle = !lessonId ? `Bài giảng ${nextIndex}` : 'Bài giảng';
+
+    let courseDetails = null;
+    try {
+      courseDetails = await ApiClient.getCourse(courseId);
+    } catch (_) {}
+
     let lessonCreationPromise = null;
     const createLessonOnce = (payload) => {
       if (lessonId) return Promise.resolve(lessonId);
@@ -3252,7 +3445,7 @@ class InstructorView {
               </span>
               <span class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] hidden sm:inline">•</span>
               <span class="text-xs text-[#5C5B57] dark:text-[#9E9D99] truncate hidden sm:inline" id="studio-header-course-ref">
-                Khóa học
+                ${UI.escapeHtml(courseDetails?.title || courseDetails?.code || 'Khóa học')}
               </span>
             </div>
           </div>
@@ -3285,6 +3478,9 @@ class InstructorView {
           <aside id="studio-lesson-navigator" class="min-w-0"></aside>
           <div class="min-w-0 bg-white dark:bg-[#223248] border border-[#E8E6DF] dark:border-[#526881] rounded-2xl p-6 sm:p-8 lg:p-10 shadow-subtle space-y-6">
 
+            <!-- Working Draft / Approval Status Banner -->
+            <div id="studio-draft-banner-container" class="space-y-3"></div>
+
             <!-- Hidden learning unit select for programmatic compatibility -->
             <select id="studio-learning-unit-select" class="hidden" aria-hidden="true">
               <option value="">Tạo Bài học mới</option>
@@ -3312,7 +3508,7 @@ class InstructorView {
                 id="studio-input-title"
                 class="w-full text-2xl sm:text-3xl font-extrabold text-[#222120] dark:text-[#EDEDEB] placeholder:text-[#8F8E8A] dark:placeholder:text-[#6D6C68] bg-transparent border-0 border-b border-transparent hover:border-[#E8E6DF] dark:hover:border-[#2E2D2B] focus:border-primary outline-none py-2 transition-colors"
                 placeholder="Tiêu đề bài giảng..."
-                value="Bài giảng mới"
+                value="${UI.escapeHtml(initialLessonTitle)}"
               />
             </div>
 
@@ -5418,6 +5614,86 @@ class InstructorView {
         if (existingLesson) {
           selectedUnitId = existingLesson.learning_unit_id || selectedUnitId;
           lessonStatus = existingLesson.status || 'DRAFT';
+
+          // Check if there is a working draft from CourseChangeRequest
+          const draft = existingLesson.working_draft;
+          const draftBannerContainer = getEl('studio-draft-banner-container');
+          if (draft && draftBannerContainer) {
+            if (draft.status === 'REJECTED') {
+              const reason = draft.review_notes || 'Không có lý do chi tiết từ quản trị viên.';
+              draftBannerContainer.innerHTML = `
+                <div class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-start gap-3">
+                    <span class="material-symbols-outlined text-amber-600 dark:text-amber-400 text-2xl shrink-0 mt-0.5">warning</span>
+                    <div>
+                      <h4 class="text-sm font-bold text-amber-900 dark:text-amber-200">Bản sửa đổi gần nhất bị Quản trị viên từ chối</h4>
+                      <p class="text-xs text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
+                        <strong>Lý do từ chối:</strong> ${UI.escapeHtml(reason)}
+                      </p>
+                      <p class="text-[11px] text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                        Hệ thống đang hiển thị nội dung bản nháp đã sửa để bạn chỉnh sửa và gửi lại. Bạn cũng có thể hủy bỏ bản nháp để quay về bản đã xuất bản.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-2">
+                    <button id="btn-discard-lesson-draft" class="px-3.5 py-1.5 rounded-lg bg-white dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs font-semibold hover:bg-amber-100 transition-colors shadow-xs">
+                      Hủy bản nháp này
+                    </button>
+                  </div>
+                </div>
+              `;
+              const discardBtn = getEl('btn-discard-lesson-draft');
+              if (discardBtn) {
+                discardBtn.onclick = async () => {
+                  if (!confirm('Bạn có chắc muốn hủy bản nháp này và khôi phục về phiên bản bài giảng đang hoạt động không?')) return;
+                  try {
+                    await ApiClient.discardLessonDraft(draft.change_request_id);
+                    UI.showToast('Đã hủy bản nháp bài giảng thành công.', 'success');
+                    window.location.reload();
+                  } catch (e) {
+                    UI.showToast('Lỗi khi hủy bản nháp: ' + e.message, 'error');
+                  }
+                };
+              }
+            } else if (draft.status === 'PENDING') {
+              draftBannerContainer.innerHTML = `
+                <div class="rounded-xl border border-sky-300 bg-sky-50 dark:bg-sky-950/30 dark:border-sky-800 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div class="flex items-start gap-3">
+                    <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-2xl shrink-0 mt-0.5">pending_actions</span>
+                    <div>
+                      <h4 class="text-sm font-bold text-sky-900 dark:text-sky-200">Yêu cầu sửa đổi đang chờ Ban quản trị duyệt</h4>
+                      <p class="text-xs text-sky-800 dark:text-sky-300 mt-1 leading-relaxed">
+                        Nội dung bài giảng đang có bản đề xuất sửa đổi chờ xét duyệt. Bạn có thể tiếp tục cập nhật hoặc rút lại yêu cầu xét duyệt.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-2">
+                    <button id="btn-discard-lesson-draft" class="px-3.5 py-1.5 rounded-lg bg-white dark:bg-sky-900/60 border border-sky-300 dark:border-sky-700 text-sky-900 dark:text-sky-200 text-xs font-semibold hover:bg-sky-100 transition-colors shadow-xs">
+                      Hủy yêu cầu xét duyệt
+                    </button>
+                  </div>
+                </div>
+              `;
+              const discardBtn = getEl('btn-discard-lesson-draft');
+              if (discardBtn) {
+                discardBtn.onclick = async () => {
+                  if (!confirm('Bạn có chắc muốn rút lại yêu cầu xét duyệt bản sửa đổi này không?')) return;
+                  try {
+                    await ApiClient.discardLessonDraft(draft.change_request_id);
+                    UI.showToast('Đã hủy yêu cầu xét duyệt thành công.', 'success');
+                    window.location.reload();
+                  } catch (e) {
+                    UI.showToast('Lỗi khi hủy yêu cầu: ' + e.message, 'error');
+                  }
+                };
+              }
+            }
+          }
+
+          const sourceData = (draft && draft.payload && typeof draft.payload === 'object')
+            ? { ...existingLesson, ...draft.payload }
+            : existingLesson;
+
           if (unitSelect && selectedUnitId) {
             if (![...unitSelect.options].some(option => option.value === selectedUnitId)) {
               const option = new Option(existingLesson.learning_unit_title || 'Bài học hiện tại', selectedUnitId);
@@ -5427,16 +5703,16 @@ class InstructorView {
           }
           renderChildNavigator();
           const titleEl = getEl('studio-input-title');
-          if (titleEl) titleEl.value = existingLesson.title || '';
+          if (titleEl) titleEl.value = sourceData.title || '';
           const summaryEl = getEl('studio-input-summary');
-          if (summaryEl) summaryEl.value = existingLesson.summary || '';
+          if (summaryEl) summaryEl.value = sourceData.summary || '';
           const durEl = getEl('studio-input-duration');
-          if (durEl) durEl.value = existingLesson.estimated_duration_minutes || 15;
+          if (durEl) durEl.value = sourceData.estimated_duration_minutes || 15;
 
-          if (existingLesson.markdown_content) {
+          if (sourceData.markdown_content) {
             const editorEl = getEl('studio-content-editor');
             if (editorEl) {
-              let content = existingLesson.markdown_content;
+              let content = sourceData.markdown_content;
               // If it's already HTML
               if (/<[a-z][\s\S]*>/i.test(content) && (content.includes('<p') || content.includes('<div') || content.includes('<h'))) {
                 editorEl.innerHTML = UI.renderMarkdown(content);
@@ -5447,18 +5723,18 @@ class InstructorView {
             }
           }
 
-          videoUrls = Array.isArray(existingLesson.video_urls) ? [...existingLesson.video_urls] : [];
-          if (!videoUrls.length && existingLesson.video_url && /^(https:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|vimeo\.com))/.test(existingLesson.video_url)) {
-            videoUrls = [existingLesson.video_url];
+          videoUrls = Array.isArray(sourceData.video_urls) ? [...sourceData.video_urls] : [];
+          if (!videoUrls.length && sourceData.video_url && /^(https:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|vimeo\.com))/.test(sourceData.video_url)) {
+            videoUrls = [sourceData.video_url];
           }
 
-          if (existingLesson.resources && Array.isArray(existingLesson.resources)) {
-            attachedResources = existingLesson.resources;
+          if (sourceData.resources && Array.isArray(sourceData.resources)) {
+            attachedResources = sourceData.resources;
             renderAttachments();
           }
 
-          if (existingLesson.video_url) {
-            currentVideoUrl = existingLesson.video_url;
+          if (sourceData.video_url) {
+            currentVideoUrl = sourceData.video_url;
           } else if (videoUrls.length) {
             currentVideoUrl = videoUrls[0];
           } else {
@@ -5473,8 +5749,8 @@ class InstructorView {
           }
           renderVideoList();
 
-          if (existingLesson.quiz && Array.isArray(existingLesson.quiz)) {
-            miniQuizQuestions = existingLesson.quiz.map(normalizeQuizQuestion).filter(Boolean);
+          if (sourceData.quiz && Array.isArray(sourceData.quiz)) {
+            miniQuizQuestions = sourceData.quiz.map(normalizeQuizQuestion).filter(Boolean);
             renderMiniQuiz();
           }
         }
@@ -5499,10 +5775,11 @@ class InstructorView {
       }
       try {
         if (!lessonId) {
+          const rawInitialHtml = getEl('studio-content-editor')?.innerHTML || '';
           await createLessonOnce({
             title: getEl('studio-input-title')?.value.trim() || 'Bài giảng mới',
             summary: getEl('studio-input-summary')?.value.trim() || '',
-            markdown_content: getEl('studio-content-editor')?.innerHTML || '',
+            markdown_content: UI.htmlToMarkdown ? UI.htmlToMarkdown(rawInitialHtml) : rawInitialHtml,
             status: 'DRAFT'
           });
         }
@@ -5592,7 +5869,8 @@ class InstructorView {
       const title = (studioRoot.querySelector('#studio-input-title')?.value || '').trim();
       const summary = (studioRoot.querySelector('#studio-input-summary')?.value || '').trim();
       const editorEl = studioRoot.querySelector('#studio-content-editor');
-      const mdContent = editorEl ? editorEl.innerHTML : '';
+      const rawHtml = editorEl ? editorEl.innerHTML : '';
+      const mdContent = UI.htmlToMarkdown ? UI.htmlToMarkdown(rawHtml) : rawHtml;
 
       if (!title) {
         UI.showToast('Vui lòng nhập tên bài giảng.', 'warning');
@@ -5721,8 +5999,10 @@ class InstructorView {
     };
 
     resetEditorToEmpty = () => {
+      const curUnit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
+      const nextPos = (curUnit?.lessons?.length || 0) + 1;
       const titleEl = studioRoot.querySelector('#studio-input-title');
-      if (titleEl) titleEl.value = 'Bài giảng mới';
+      if (titleEl) titleEl.value = `Bài giảng ${nextPos}`;
       const summaryEl = studioRoot.querySelector('#studio-input-summary');
       if (summaryEl) summaryEl.value = '';
       const durEl = studioRoot.querySelector('#studio-input-duration');
@@ -5770,36 +6050,20 @@ class InstructorView {
         return;
       }
 
-      const nextPos = existingLessons.length + 1;
-      const defaultTitle = `Bài giảng ${nextPos}`;
+      if (window._currentStudioTimer) {
+        clearInterval(window._currentStudioTimer);
+        window._currentStudioTimer = null;
+      }
 
-      const addBtn = studioRoot.querySelector('#btn-nav-add-lesson');
-      if (addBtn) addBtn.disabled = true;
-
-      try {
-        UI.showToast('Đang thêm bài giảng mới...', 'info');
-        const created = await ApiClient.createLesson(courseId, {
-          title: defaultTitle,
-          summary: '',
-          markdown_content: '<p>Nội dung bài giảng mới đang được biên soạn...</p>',
-          status: 'DRAFT',
-          estimated_duration_minutes: 15,
-          learning_unit_id: selectedUnitId
-        });
-        const newLessonId = created?.lesson_id || created?.id;
-        if (!newLessonId) throw new Error('Không tạo được bài giảng mới.');
-
-        UI.showToast(`Đã thêm bài giảng "${defaultTitle}" thành công!`, 'success');
-
-        if (window._currentStudioTimer) {
-          clearInterval(window._currentStudioTimer);
-          window._currentStudioTimer = null;
+      const nextTargetHash = `#/instructor/courses/${courseId}/lessons/new?learning_unit_id=${selectedUnitId}`;
+      if (window.location.hash === nextTargetHash) {
+        lessonId = null;
+        if (typeof resetEditorToEmpty === 'function') {
+          resetEditorToEmpty();
         }
-
-        window.location.hash = `#/instructor/courses/${courseId}/lessons/${newLessonId}/edit`;
-      } catch (err) {
-        UI.showToast(err.message || 'Lỗi khi thêm bài giảng mới.', 'error');
-        if (addBtn) addBtn.disabled = false;
+        renderChildNavigator();
+      } else {
+        window.location.hash = nextTargetHash;
       }
     };
 

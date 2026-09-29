@@ -18,6 +18,7 @@ from pwd301.models.course import (
     Enrollment,
     LearningUnit,
     Lesson,
+    LessonProgress,
 )
 from pwd301.models.file_import import FileAsset, QuestionRevisionResource
 from pwd301.models.identity import Role, User
@@ -67,6 +68,7 @@ from pwd301.services.course_service import (
     change_course_status,
     create_course,
     get_course_detail,
+    get_course_last_rejection,
     get_course_thumbnail_asset,
     trash_course,
     update_course,
@@ -288,7 +290,7 @@ def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
     children = [
         lesson for lesson in unit.lessons if lesson.deleted_at is None and lesson.status != "TRASH"
     ]
-    sorted_children = sorted(children, key=lambda l: l.position or 0)
+    sorted_children = sorted(children, key=lambda les: les.position or 0)
     return {
         "learning_unit_id": str(unit.public_id),
         "course_id": str(unit.course.public_id),
@@ -381,6 +383,9 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "learning_units": [
             _serialize_learning_unit(unit) for unit in c.learning_units if unit.deleted_at is None
         ],
+        "last_rejection": (
+            get_course_last_rejection(c.id, session=db.session) if c.status == "DRAFT" else None
+        ),
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
     }
@@ -576,6 +581,24 @@ def submit_course_route(course_id: str) -> Any:
     """Submit a DRAFT course for admin review."""
     actor = require_authenticated_actor()
 
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+
+    valid_units = [u for u in course_obj.learning_units if u.deleted_at is None]
+    valid_lessons = [
+        les
+        for les in course_obj.lessons
+        if les.deleted_at is None and les.status != "TRASH" and (les.markdown_content or "").strip()
+    ]
+    if not valid_units or not valid_lessons:
+        msg = (
+            "Khóa học cần có ít nhất 1 Chương mục (Learning Unit) và 1 Bài giảng "
+            "có nội dung trước khi nộp duyệt."
+        )
+        raise CourseValidationError(msg)
+
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason", "Giảng viên đề xuất phê duyệt giáo trình và xuất bản khóa học.")
     try:
@@ -706,7 +729,9 @@ def reorder_learning_units_route(course_id: str) -> Any:
 
     reordered = reorder_learning_units(actor, course_id, unit_ids, session=db.session)
     db.session.commit()
-    return jsonify({"success": True, "items": [_serialize_learning_unit(u) for u in reordered]}), 200
+    return jsonify(
+        {"success": True, "items": [_serialize_learning_unit(u) for u in reordered]}
+    ), 200
 
 
 @instructor_bp.route("/learning-units/<unit_id>", methods=["DELETE"])
@@ -714,6 +739,74 @@ def reorder_learning_units_route(course_id: str) -> Any:
 def delete_learning_unit_route(unit_id: str) -> Any:
     actor = require_authenticated_actor()
     from pwd301.services.lesson_service import delete_learning_unit
+
+    try:
+        public_unit_id = uuid.UUID(unit_id)
+    except (TypeError, ValueError, AttributeError):
+        raise LessonValidationError("Invalid learning unit ID.") from None
+    unit = (
+        db.session.query(LearningUnit)
+        .filter(LearningUnit.public_id == public_unit_id, LearningUnit.deleted_at.is_(None))
+        .first()
+    )
+    if unit is None:
+        raise ResourceNotFoundError("Learning unit not found.")
+    course = require_course_manager(actor, unit.course_id, session=db.session)
+
+    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        proposed = {
+            "action": "DELETE_LEARNING_UNIT",
+            "learning_unit_id": str(unit.public_id),
+            "title": unit.title,
+        }
+        pending = (
+            db.session.query(CourseChangeRequest)
+            .filter_by(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="LESSON_STRUCTURE",
+                target_type="COURSE",
+                target_id=course.id,
+                status="PENDING",
+            )
+            .all()
+        )
+        review = next(
+            (
+                r
+                for r in pending
+                if (json.loads(r.proposed_payload_json or "{}")).get("action")
+                == "DELETE_LEARNING_UNIT"
+                and (json.loads(r.proposed_payload_json or "{}")).get("learning_unit_id")
+                == str(unit.public_id)
+            ),
+            None,
+        )
+        if review is None:
+            review = CourseChangeRequest(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="LESSON_STRUCTURE",
+                target_type="COURSE",
+                target_id=course.id,
+                proposed_payload_json=json.dumps(proposed, default=str),
+                status="PENDING",
+                created_at=utc_now(),
+            )
+            db.session.add(review)
+            db.session.commit()
+
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Chương mục thuộc khóa học đã ban hành. "
+                    "Yêu cầu xóa chương mục đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": review.id,
+            }
+        ), 202
 
     delete_learning_unit(actor, unit_id, session=db.session)
     db.session.commit()
@@ -887,7 +980,18 @@ def create_lesson_route(course_id: str) -> Any:
                     clean_fn = sanitize_filename(f.filename)
                     validate_file_metadata(clean_fn, getattr(f, "content_type", None))
 
-        lesson = create_lesson(actor, course.id, payload)
+        if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+            from pwd301.services.lesson_service import create_lesson_change_request
+
+            payload["change_type"] = "LESSON_STRUCTURE"
+            payload["action"] = "CREATE_LESSON"
+            req, lesson = create_lesson_change_request(
+                actor, course.id, payload, session=db.session
+            )
+            is_staged = True
+        else:
+            lesson = create_lesson(actor, course.id, payload)
+            is_staged = False
         attached_count = 0
 
         # Milestone 4: Process multipart uploaded media and resource files
@@ -955,6 +1059,21 @@ def create_lesson_route(course_id: str) -> Any:
                 except Exception:
                     db.session.rollback()
                 raise
+
+        if is_staged:
+            db.session.commit()
+            return jsonify(
+                {
+                    "status": "pending_approval",
+                    "pending_approval": True,
+                    "message": (
+                        "Khóa học đã ban hành. "
+                        "Yêu cầu tạo bài giảng mới đã được gửi tới Quản trị viên để xét duyệt."
+                    ),
+                    "change_request_id": req.id,
+                    "lesson": _serialize_lesson(lesson),
+                }
+            ), 202
 
         return jsonify(_serialize_lesson(lesson)), 201
     except Exception:
@@ -1169,11 +1288,13 @@ def upload_course_file_route(course_id: str) -> Any:
             review = queue_lesson_resource_change(
                 actor, course, lesson, "ATTACH", asset=asset, label=title, session=db.session
             )
-            return jsonify({
-                **_serialize_file_asset(asset),
-                "pending_approval": True,
-                "change_request_id": review.id,
-            }), 202
+            return jsonify(
+                {
+                    **_serialize_file_asset(asset),
+                    "pending_approval": True,
+                    "change_request_id": review.id,
+                }
+            ), 202
         if lesson is not None:
             attach_resource_to_lesson(actor, lesson, asset, label=title, session=db.session)
         db.session.commit()
@@ -1267,6 +1388,7 @@ def get_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
 
     from pwd301.services.lesson_service import get_lesson_detail_with_draft
+
     lesson, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
     data = _serialize_lesson(lesson)
     data["working_draft"] = working_draft
@@ -1279,6 +1401,7 @@ def discard_lesson_draft_route(lesson_id: str) -> tuple[Response, int] | Respons
     """Discard an active working draft for a lesson."""
     actor = require_authenticated_actor()
     from pwd301.services.lesson_service import discard_lesson_working_draft
+
     discarded = discard_lesson_working_draft(actor, lesson_id, session=db.session)
     return jsonify({"success": True, "discarded": discarded}), 200
 
@@ -1350,7 +1473,28 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         and lesson.status != "DRAFT"
     ):
-        req = queue_lesson_review(actor, course, lesson, "LESSON_CONTENT", payload)
+        has_student_activity = (
+            db.session.query(LessonProgress.id)
+            .filter(LessonProgress.lesson_id == lesson.id)
+            .first()
+            is not None
+        )
+        if has_student_activity or payload.get("create_revision"):
+            from pwd301.services.lesson_service import create_lesson_change_request
+
+            staged_payload = dict(payload)
+            staged_payload["target_id"] = lesson.id
+            staged_payload["learning_unit_id"] = staged_payload.get("learning_unit_id") or (
+                str(lesson.learning_unit.public_id) if lesson.learning_unit else None
+            )
+            staged_payload["position"] = lesson.position
+            if "title" not in staged_payload:
+                staged_payload["title"] = lesson.title
+            req, staged_lesson = create_lesson_change_request(
+                actor, course.id, staged_payload, session=db.session
+            )
+        else:
+            req = queue_lesson_review(actor, course, lesson, "LESSON_CONTENT", payload)
 
         return jsonify(
             {
@@ -1376,6 +1520,11 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
     """Reorder lessons within a course."""
     actor = require_authenticated_actor()
 
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course.id, session=db.session)
+
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     raw_ids = payload.get("ordered_lesson_ids")
     if not isinstance(raw_ids, list):
@@ -1384,7 +1533,58 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
     ordered_ids: list[int | uuid.UUID | str] = [
         item for item in raw_ids if isinstance(item, (int, uuid.UUID, str))
     ]
-    reordered = reorder_lessons(actor, course_id, ordered_ids)
+
+    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        proposed = {
+            "action": "REORDER_LESSONS",
+            "ordered_lesson_ids": [str(item) for item in ordered_ids],
+        }
+        pending = (
+            db.session.query(CourseChangeRequest)
+            .filter_by(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="LESSON_STRUCTURE",
+                target_type="COURSE",
+                target_id=course.id,
+                status="PENDING",
+            )
+            .all()
+        )
+        review = next(
+            (
+                r
+                for r in pending
+                if (json.loads(r.proposed_payload_json or "{}")).get("action") == "REORDER_LESSONS"
+            ),
+            None,
+        )
+        if review is None:
+            review = CourseChangeRequest(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="LESSON_STRUCTURE",
+                target_type="COURSE",
+                target_id=course.id,
+                proposed_payload_json=json.dumps(proposed, default=str),
+                status="PENDING",
+                created_at=utc_now(),
+            )
+            db.session.add(review)
+            db.session.commit()
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Khóa học đã ban hành. "
+                    "Yêu cầu thay đổi thứ tự bài giảng đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": review.id,
+            }
+        ), 202
+
+    reordered = reorder_lessons(actor, course.id, ordered_ids)
     return jsonify({"lessons": [_serialize_lesson(les) for les in reordered]}), 200
 
 
@@ -1438,8 +1638,10 @@ def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
 
-    if not actor.is_admin and lesson.status != "DRAFT" and (
-        course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") or lesson.status == "PUBLISHED"
+    if (
+        not actor.is_admin
+        and lesson.status != "DRAFT"
+        and (course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") or lesson.status == "PUBLISHED")
     ):
         req = queue_lesson_review(
             actor,
@@ -1963,6 +2165,47 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     course = require_course_manager(actor, course_id, session=db.session)
+
+    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        proposed = dict(payload)
+        pending = (
+            db.session.query(CourseChangeRequest)
+            .filter_by(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="COMPLETION_RULE",
+                target_type="COURSE",
+                target_id=course.id,
+                status="PENDING",
+            )
+            .first()
+        )
+        if pending is None:
+            pending = CourseChangeRequest(
+                course_id=course.id,
+                requested_by_user_id=actor.id,
+                change_type="COMPLETION_RULE",
+                target_type="COURSE",
+                target_id=course.id,
+                proposed_payload_json=json.dumps(proposed, default=str),
+                status="PENDING",
+                created_at=utc_now(),
+            )
+            db.session.add(pending)
+        else:
+            pending.proposed_payload_json = json.dumps(proposed, default=str)
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Quy tắc hoàn thành khóa học đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": pending.id,
+            }
+        ), 202
+
     rule = set_course_completion_rule(
         actor=actor,
         course_id=course.id,
@@ -3975,4 +4218,3 @@ def scan_course_videos_route(course_id: str) -> Any:
 
     reports = scan_and_notify_broken_youtube_videos(course_id=course.id)
     return jsonify({"success": True, "broken_count": len(reports), "reports": reports}), 200
-

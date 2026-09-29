@@ -1877,8 +1877,11 @@ class AdminView {
 
     try {
       const appsRes = await ApiClient.getAdminInstructorApplications('ALL');
-      const applications = appsRes?.applications || [];
+      const rawApplications = appsRes?.applications || [];
+      const applications = rawApplications.filter(a => a.status !== 'CANCELLED');
       const pendingApps = applications.filter(a => a.status === 'PENDING');
+      const approvedApps = applications.filter(a => a.status === 'APPROVED');
+      const rejectedApps = applications.filter(a => a.status === 'REJECTED');
 
       // Update badge
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
@@ -1899,10 +1902,10 @@ class AdminView {
               <p class="text-xs text-slate-400 mt-0.5">Xem hồ sơ và tài liệu trước khi quyết định cấp quyền giảng viên.</p>
             </div>
             <div class="flex items-center gap-1.5" id="app-status-filter-group">
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="ALL">Tất cả (${applications.length})</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="PENDING">Chờ duyệt (${pendingApps.length})</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt</button>
-              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="PENDING">Chờ duyệt (${pendingApps.length})</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt (${approvedApps.length})</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối (${rejectedApps.length})</button>
+              <button type="button" class="app-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="ALL">Tất cả (${applications.length})</button>
             </div>
           </div>
 
@@ -1926,17 +1929,23 @@ class AdminView {
         </div>
       `;
 
-      const renderAppRows = (statusFilter = 'ALL') => {
+      const renderAppRows = (statusFilter = 'PENDING') => {
         const tbody = document.getElementById('instructor-apps-tbody');
         if (!tbody) return;
 
         const filtered = applications.filter(a => statusFilter === 'ALL' || a.status === statusFilter);
 
         if (filtered.length === 0) {
+          const emptyMsg = statusFilter === 'PENDING'
+            ? 'Hàng đợi trống — Hiện không có hồ sơ nào đang chờ duyệt. Các hồ sơ đã được duyệt hoặc hủy sẽ tự động rời khỏi hàng đợi.'
+            : 'Không có hồ sơ nào trong danh mục này.';
           tbody.innerHTML = `
             <tr>
-              <td colspan="6" class="py-8 text-center text-slate-400 text-xs">
-                Không có hồ sơ nào trong danh mục này.
+              <td colspan="6" class="py-12 text-center text-slate-400 text-xs">
+                <div class="flex flex-col items-center justify-center gap-2">
+                  <span class="material-symbols-outlined text-emerald-500 text-3xl">task_alt</span>
+                  <p class="font-bold text-slate-700 dark:text-slate-300 text-sm">${emptyMsg}</p>
+                </div>
               </td>
             </tr>
           `;
@@ -1981,7 +1990,9 @@ class AdminView {
                   <button type="button" class="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold transition-colors reject-app-btn" data-app-id="${a.id}" data-name="${UI.escapeHtml(a.applicant_name)}">
                     Từ chối
                   </button>
-                ` : ''}
+                ` : `
+                  <span class="text-xs text-slate-400 italic">${UI.escapeHtml(a.review_reason || (a.status === 'APPROVED' ? 'Đã duyệt bổ nhiệm' : 'Đã từ chối'))}</span>
+                `}
               </td>
             </tr>
           `;
@@ -2037,7 +2048,7 @@ class AdminView {
         });
       };
 
-      renderAppRows('ALL');
+      renderAppRows('PENDING');
 
       const filterBtns = box.querySelectorAll('.app-filter-btn');
       filterBtns.forEach(btn => {
@@ -2383,7 +2394,7 @@ class AdminView {
             await ApiClient.reviewInstructorApplication(app.id, 'approve', 'Đạt chuẩn thẩm định học vụ');
             UI.showToast(`Đã bổ nhiệm giảng viên ${app.applicant_name} thành công!`, 'success');
             UI.closeModal();
-            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabReview(container));
+            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabInstructorApps(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi phê duyệt đơn.', 'error');
           }
@@ -2406,7 +2417,7 @@ class AdminView {
             await ApiClient.reviewInstructorApplication(app.id, 'reject', reason);
             UI.showToast(`Đã từ chối đơn của ${app.applicant_name}.`, 'info');
             UI.closeModal();
-            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabReview(container));
+            if (container) UI.refreshCurrentRoute(() => AdminView.renderTabInstructorApps(container));
           } catch (e) {
             UI.showToast(e.message || 'Lỗi từ chối đơn.', 'error');
           }

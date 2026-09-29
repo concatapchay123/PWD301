@@ -1051,7 +1051,9 @@ def admin_instructor_applications() -> tuple[Response, int] | Response | str:
         status_filter = "PENDING"
 
     applications = list_instructor_applications(status=status_filter, session=sess)
-    all_apps = sess.query(InstructorApplication).all()
+    all_apps = (
+        sess.query(InstructorApplication).filter(InstructorApplication.status != "CANCELLED").all()
+    )
     pending_count = sum(1 for a in all_apps if a.status == "PENDING")
     approved_count = sum(1 for a in all_apps if a.status == "APPROVED")
     rejected_count = sum(1 for a in all_apps if a.status == "REJECTED")
@@ -1482,12 +1484,20 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 "learning_unit_id": (
                     original_data.get("learning_unit_id")
                     if isinstance(original_data, dict) and original_data.get("learning_unit_id")
-                    else (payload_data.get("learning_unit_id") if isinstance(payload_data, dict) else None)
+                    else (
+                        payload_data.get("learning_unit_id")
+                        if isinstance(payload_data, dict)
+                        else None
+                    )
                 ),
                 "learning_unit_title": (
                     original_data.get("learning_unit_title")
                     if isinstance(original_data, dict) and original_data.get("learning_unit_title")
-                    else (payload_data.get("learning_unit_title") if isinstance(payload_data, dict) else None)
+                    else (
+                        payload_data.get("learning_unit_title")
+                        if isinstance(payload_data, dict)
+                        else None
+                    )
                 ),
                 "requested_by_id": str(r.requested_by.public_id) if r.requested_by else None,
                 "requested_by_name": r.requested_by.display_name if r.requested_by else None,
@@ -1652,6 +1662,39 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                     session=db.session,
                 )
             msg = f"Đã phê duyệt yêu cầu xóa bài giảng #{req_record.target_id}."
+
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "DELETE_LEARNING_UNIT"
+        ):
+            from pwd301.services.lesson_service import delete_learning_unit
+
+            public_unit_id = p_data.get("learning_unit_id")
+            if public_unit_id:
+                delete_learning_unit(actor, public_unit_id, session=db.session)
+            msg = f"Đã phê duyệt yêu cầu xóa chương mục #{public_unit_id}."
+
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "REORDER_LESSONS"
+        ):
+            from pwd301.services.lesson_service import reorder_lessons
+
+            ordered_ids = p_data.get("ordered_lesson_ids") or []
+            if ordered_ids:
+                reorder_lessons(actor, req_record.course_id, ordered_ids, session=db.session)
+            msg = f"Đã phê duyệt sắp xếp lại bài giảng khóa học #{req_record.course_id}."
+
+        elif req_record.change_type == "COMPLETION_RULE":
+            from pwd301.services.completion_service import set_course_completion_rule
+
+            set_course_completion_rule(
+                actor=actor,
+                course_id=req_record.course_id,
+                payload=p_data,
+                session=db.session,
+            )
+            msg = f"Đã phê duyệt quy tắc hoàn thành khóa học #{req_record.course_id}."
 
         elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
             staged = (
