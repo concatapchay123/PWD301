@@ -312,3 +312,87 @@ def test_broadcast_system_notification(
     assert count >= 2
     items_s1, _ = list_user_notifications(student_user, session=db.session)
     assert any(item["title"] == "Maintenance Tomorrow" for item in items_s1)
+
+
+def test_target_role_isolation_and_unread_count(
+    app: Flask, setup_roles: dict[str, Role]
+) -> None:
+    """Test that notifications are strictly scoped by target_role for multi-role users."""
+    u = register_user(
+        f"multirole_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Multi Role User"
+    )
+    assign_role_to_user(u.id, "INSTRUCTOR")
+    assign_role_to_user(u.id, "STUDENT")
+    db.session.commit()
+
+    # Clear initial role assignment notification from setup
+    mark_all_as_read(u, session=db.session)
+    db.session.commit()
+
+    # 1. Dispatch INSTRUCTOR notification
+    dispatch_notification(
+        recipient_user=u,
+        event_type="LESSON_APPROVED",
+        title="Bài giảng CS101 đã duyệt",
+        body="Nội dung đã được Admin phê duyệt.",
+        target_role="INSTRUCTOR",
+        session=db.session,
+    )
+
+    # 2. Dispatch STUDENT notification
+    dispatch_notification(
+        recipient_user=u,
+        event_type="ASSESSMENT_GRADED",
+        title="Điểm thi môn CS101",
+        body="Bạn đạt 9.5 điểm.",
+        target_role="STUDENT",
+        session=db.session,
+    )
+
+    # 3. Dispatch GLOBAL/SECURITY notification (target_role=None)
+    dispatch_notification(
+        recipient_user=u,
+        event_type="SECURITY_LOGIN_ANOMALY",
+        title="Cảnh báo bảo mật tài khoản",
+        body="Phát hiện đăng nhập lạ.",
+        target_role=None,
+        session=db.session,
+    )
+    db.session.commit()
+
+    # Verify counts per role
+    instr_count = get_unread_count(u, target_role="INSTRUCTOR", session=db.session)
+    stud_count = get_unread_count(u, target_role="STUDENT", session=db.session)
+    all_count = get_unread_count(u, session=db.session)
+
+    assert instr_count == 2  # Instructor specific + global
+    assert stud_count == 2   # Student specific + global
+    assert all_count == 3    # All 3 unread
+
+    # Verify unread items per role
+    instr_items, total_instr = list_user_notifications(
+        u, target_role="INSTRUCTOR", unread_only=True, session=db.session
+    )
+    assert total_instr == 2
+    instr_titles = {i["title"] for i in instr_items}
+    assert "Bài giảng CS101 đã duyệt" in instr_titles
+    assert "Cảnh báo bảo mật tài khoản" in instr_titles
+    assert "Điểm thi môn CS101" not in instr_titles
+
+    stud_items, total_stud = list_user_notifications(
+        u, target_role="STUDENT", unread_only=True, session=db.session
+    )
+    assert total_stud == 2
+    stud_titles = {i["title"] for i in stud_items}
+    assert "Điểm thi môn CS101" in stud_titles
+    assert "Cảnh báo bảo mật tài khoản" in stud_titles
+    assert "Bài giảng CS101 đã duyệt" not in stud_titles
+
+    # Mark all read for INSTRUCTOR only
+    marked = mark_all_as_read(u, target_role="INSTRUCTOR", session=db.session)
+    assert marked >= 2
+
+    # Instructor now has 0 unread, Student still has 1 unread (the student exam notice)
+    assert get_unread_count(u, target_role="INSTRUCTOR", session=db.session) == 0
+    assert get_unread_count(u, target_role="STUDENT", session=db.session) == 1
+

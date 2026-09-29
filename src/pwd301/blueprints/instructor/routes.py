@@ -1062,8 +1062,10 @@ def create_lesson_route(course_id: str) -> Any:
 
         if is_staged:
             db.session.commit()
+            serialized = _serialize_lesson(lesson)
             return jsonify(
                 {
+                    **serialized,
                     "status": "pending_approval",
                     "pending_approval": True,
                     "message": (
@@ -1071,7 +1073,7 @@ def create_lesson_route(course_id: str) -> Any:
                         "Yêu cầu tạo bài giảng mới đã được gửi tới Quản trị viên để xét duyệt."
                     ),
                     "change_request_id": req.id,
-                    "lesson": _serialize_lesson(lesson),
+                    "lesson": serialized,
                 }
             ), 202
 

@@ -2276,6 +2276,49 @@ def calculate_attempt_result(
     sess.add(history_entry)
     sess.flush()
 
+    # Dispatch in-app notifications
+    if status == "RELEASED" and attempt.student_user_id:
+        asm_title = attempt.assessment.title if attempt.assessment else "Khảo thí"
+        asm_pub_id = str(attempt.assessment.public_id) if attempt.assessment else ""
+        action_url = f"#/student/assessments/{asm_pub_id}/results" if asm_pub_id else "#/student/assessments"
+
+        try:
+            from pwd301.services.notification_service import dispatch_notification
+
+            if valid_reason_code == "INITIAL":
+                with sess.begin_nested():
+                    dispatch_notification(
+                        recipient_user=attempt.student_user_id,
+                        event_type="ASSESSMENT_GRADED",
+                        title=f"Kết quả bài thi: {asm_title}",
+                        body=(
+                            f"Bài thi lần #{attempt.attempt_number} của bạn đã có điểm: "
+                            f"{float(raw_score):.1f}/{float(max_score):.1f} điểm "
+                            f"({float(percent_score or 0.0):.1f}%)."
+                        ),
+                        action_url=action_url,
+                        category="ASSESSMENT",
+                        target_role="STUDENT",
+                        session=sess,
+                    )
+            elif valid_reason_code in ("REGRADE", "CORRECTION") and old_score is not None and old_score != raw_score:
+                with sess.begin_nested():
+                    dispatch_notification(
+                        recipient_user=attempt.student_user_id,
+                        event_type="SCORE_CHANGED_AFTER_REGRADE",
+                        title=f"Điểm bài thi đã thay đổi: {asm_title}",
+                        body=(
+                            f"Điểm bài thi của bạn đã được cập nhật từ {float(old_score):.1f} "
+                            f"thành {float(raw_score):.1f}/{float(max_score):.1f} điểm sau khi chấm lại."
+                        ),
+                        action_url=action_url,
+                        category="GRADE",
+                        target_role="STUDENT",
+                        session=sess,
+                    )
+        except Exception as exc:
+            logger.warning("Failed to dispatch assessment grading notification: %s", exc)
+
     return result
 
 

@@ -305,6 +305,22 @@ def change_password(
         sess.rollback()
         raise
 
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        dispatch_notification(
+            recipient_user=user.id,
+            event_type="SECURITY_PASSWORD_CHANGED",
+            title="Mật khẩu của bạn đã được thay đổi",
+            body="Mật khẩu tài khoản của bạn vừa được thay đổi thành công. Nếu bạn không thực hiện thao tác này, vui lòng liên hệ quản trị viên ngay lập tức.",
+            category="SECURITY",
+            force_email=True,
+            target_role=None,
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
+
     return user
 
 
@@ -347,6 +363,22 @@ def set_password(
     except Exception:
         sess.rollback()
         raise
+
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        dispatch_notification(
+            recipient_user=user.id,
+            event_type="SECURITY_PASSWORD_CHANGED",
+            title="Mật khẩu của bạn đã được thay đổi",
+            body="Mật khẩu tài khoản của bạn vừa được thay đổi thành công. Nếu bạn không thực hiện thao tác này, vui lòng liên hệ quản trị viên ngay lập tức.",
+            category="SECURITY",
+            force_email=True,
+            target_role=None,
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
 
     return user
 
@@ -397,6 +429,25 @@ def suspend_user(
     except Exception:
         sess.rollback()
         raise
+
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        dispatch_notification(
+            recipient_user=user.id,
+            event_type="ACCOUNT_SUSPENDED",
+            title="Tài khoản đã bị tạm khóa",
+            body=(
+                f"Tài khoản của bạn đã bị tạm khóa bởi Quản trị viên. "
+                f"Lý do: {reason or 'Vi phạm quy chế học vụ'}."
+            ),
+            category="SECURITY",
+            force_email=True,
+            target_role=None,
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch ACCOUNT_SUSPENDED notification for user %s: %s", user.id, exc)
 
     return user
 

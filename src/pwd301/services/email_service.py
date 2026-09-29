@@ -167,6 +167,8 @@ def enqueue_email(
         recipient_user_id=recipient_user_id,
         recipient_email_snapshot=clean_email,
         template_code=template_code,
+        subject=subject[:250] if subject else None,
+        body_text=body_text,
         dedupe_key=dedupe_key,
         status="PENDING",
         attempt_count=0,
@@ -209,8 +211,8 @@ def send_single_email(
     delivery.status = "SENDING"
     s.flush()
 
-    sub = subject or f"PWD301 Notification: {delivery.template_code}"
-    body = body_text or f"You have a notification for {delivery.template_code}."
+    sub = subject or delivery.subject or f"PWD301 Notification: {delivery.template_code}"
+    body = body_text or delivery.body_text or f"You have a notification for {delivery.template_code}."
 
     try:
         client.send(
@@ -227,7 +229,7 @@ def send_single_email(
         return True
     except Exception as exc:
         delivery.attempt_count += 1
-        delivery.last_error = str(exc)[:2000]
+        delivery.last_error = str(exc)[:1900]
 
         if delivery.attempt_count >= max_retries:
             delivery.status = "FAILED"

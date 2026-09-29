@@ -220,6 +220,10 @@ class ApiClient {
     return await ApiClient.request(url);
   }
 
+  static async getCourse(courseId) {
+    return await ApiClient.getCourseDetail(courseId);
+  }
+
   static async getCourseDetail(courseId) {
     const isInstructorRoute = window.location.hash.startsWith('#/instructor');
     if (isInstructorRoute) {
@@ -400,16 +404,19 @@ class ApiClient {
     }
   }
 
-  static async markAllNotificationsRead(category = null) {
+  static async markAllNotificationsRead(category = null, role = null) {
+    const payload = {};
+    if (category) payload.category = category;
+    if (role) payload.role = role;
     try {
       return await ApiClient.request('/auth/notifications/mark-all-read', {
         method: 'POST',
-        body: category ? { category } : {}
+        body: payload
       });
     } catch {
       return await ApiClient.request('/student/notifications/mark-all-read', {
         method: 'POST',
-        body: category ? { category } : {}
+        body: payload
       });
     }
   }
@@ -1053,6 +1060,8 @@ class ApiClient {
   // =========================================================================
   static async getNotifications(options = {}) {
     const params = new URLSearchParams();
+    if (options.role) params.append('role', options.role);
+    if (options.target_role) params.append('target_role', options.target_role);
     if (options.category && options.category !== 'ALL') params.append('category', options.category);
     if (options.unread_only) params.append('unread_only', 'true');
     if (options.page) params.append('page', options.page);
@@ -1074,14 +1083,18 @@ class ApiClient {
     }
   }
 
-  static async getUnreadNotificationCount() {
+  static async getUnreadNotificationCount(options = {}) {
+    const params = new URLSearchParams();
+    if (options.role) params.append('role', options.role);
+    if (options.target_role) params.append('target_role', options.target_role);
+    const qs = params.toString() ? `?${params.toString()}` : '';
     try {
-      const res = await ApiClient.request('/auth/notifications/unread-count');
+      const res = await ApiClient.request(`/auth/notifications/unread-count${qs}`);
       if (res && typeof res.unread_count !== 'undefined') return res.unread_count;
     } catch {
       // Fallback
     }
-    const list = await ApiClient.getNotifications();
+    const list = await ApiClient.getNotifications(options);
     return list.unread_count ?? (list.items || []).filter(i => !i.is_read && !i.read).length;
   }
 

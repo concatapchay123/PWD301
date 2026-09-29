@@ -47,9 +47,11 @@ def list_notifications_api() -> tuple[Response, int] | Response:
     unread_only_arg = request.args.get("unread_only", "").strip().lower()
     unread_only = unread_only_arg in ("true", "1", "yes")
     category = request.args.get("category")
+    target_role = request.args.get("role") or request.args.get("target_role")
 
     items, total = list_user_notifications(
         actor=actor,
+        target_role=target_role,
         status=status,
         unread_only=unread_only,
         category=category,
@@ -57,12 +59,15 @@ def list_notifications_api() -> tuple[Response, int] | Response:
         per_page=per_page,
         session=db.session,
     )
+    unread = get_unread_count(actor=actor, target_role=target_role, session=db.session)
 
     return (
         jsonify(
             {
+                "success": True,
                 "items": items,
                 "total": total,
+                "unread_count": unread,
                 "page": max(1, page),
                 "per_page": min(max(1, per_page), 100),
             }
@@ -76,8 +81,9 @@ def list_notifications_api() -> tuple[Response, int] | Response:
 def unread_count_api() -> tuple[Response, int] | Response:
     """Get fast count of unread notifications for badge polling."""
     actor = require_authenticated_actor()
-    count = get_unread_count(actor=actor, session=db.session)
-    return jsonify({"unread_count": count}), 200
+    target_role = request.args.get("role") or request.args.get("target_role")
+    count = get_unread_count(actor=actor, target_role=target_role, session=db.session)
+    return jsonify({"success": True, "unread_count": count}), 200
 
 
 @api_notification_bp.route("/<notification_id>/read", methods=["PATCH", "POST"])
@@ -100,13 +106,15 @@ def mark_all_read_api() -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     data: dict[str, Any] = request.get_json(silent=True) or {}
     category = data.get("category") or request.args.get("category")
+    target_role = data.get("role") or data.get("target_role") or request.args.get("role") or request.args.get("target_role")
 
     count = mark_all_as_read(
         actor=actor,
         category=category,
+        target_role=target_role,
         session=db.session,
     )
-    return jsonify({"marked_count": count}), 200
+    return jsonify({"success": True, "marked_count": count}), 200
 
 
 @api_notification_bp.route("/<notification_id>/dismiss", methods=["PATCH", "POST"])

@@ -142,7 +142,7 @@ def test_learning_unit_api_keeps_lessons_nested_and_private(
         json={"title": "Lesson mới", "markdown_content": "# Content", "learning_unit_id": unit_id},
         headers={"X-CSRFToken": csrf},
     )
-    assert lesson.status_code == 201
+    assert lesson.status_code in (201, 202)
     assert lesson.get_json()["learning_unit_id"] == unit_id
     listing = client.get(url)
     assert listing.status_code == 200

@@ -218,7 +218,9 @@ def test_course_completion_rules_api_parity(
     assert "minimum_progress_percent" in get_data
     assert_adr002(get_data)
 
-    # 2. Update completion rules
+    # 2. Update completion rules (in DRAFT mode)
+    c_a.status = "DRAFT"
+    db.session.commit()
     update_payload = {
         "require_all_required_lessons": True,
         "require_required_assessments": False,

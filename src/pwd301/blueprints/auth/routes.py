@@ -780,9 +780,11 @@ def auth_notifications_center() -> Any:
     unread_only_arg = request.args.get("unread_only", "").strip().lower()
     unread_only = unread_only_arg in ("true", "1", "yes")
     category = request.args.get("category")
+    target_role = request.args.get("role") or request.args.get("target_role")
 
     items, total = list_user_notifications(
         actor=current_user,
+        target_role=target_role,
         status=status,
         unread_only=unread_only,
         category=category,
@@ -791,11 +793,12 @@ def auth_notifications_center() -> Any:
         session=db.session,
     )
     prefs = get_user_preferences(actor=current_user, session=db.session)
-    unread = get_unread_count(actor=current_user, session=db.session)
+    unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
 
     return (
         jsonify(
             {
+                "success": True,
                 "items": items,
                 "total": total,
                 "unread_count": unread,
@@ -812,13 +815,14 @@ def auth_notifications_center() -> Any:
 def auth_notifications_unread_count() -> Any:
     """Fast unread notification count for authenticated web session topbar badge."""
     if not current_user.is_authenticated:
-        return jsonify({"unread_count": 0}), 200
+        return jsonify({"success": True, "unread_count": 0}), 200
 
     from pwd301.extensions import db
     from pwd301.services.notification_service import get_unread_count
 
-    unread = get_unread_count(actor=current_user, session=db.session)
-    return jsonify({"unread_count": unread}), 200
+    target_role = request.args.get("role") or request.args.get("target_role")
+    unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
+    return jsonify({"success": True, "unread_count": unread}), 200
 
 
 @auth_bp.route("/notifications/<notification_id>/read", methods=["POST"])
@@ -869,8 +873,9 @@ def auth_mark_all_notifications_read() -> Any:
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     category = payload.get("category") or request.args.get("category")
-    count = mark_all_as_read(actor=current_user, category=category, session=db.session)
-    return jsonify({"marked_count": count}), 200
+    target_role = payload.get("role") or payload.get("target_role") or request.args.get("role") or request.args.get("target_role")
+    count = mark_all_as_read(actor=current_user, category=category, target_role=target_role, session=db.session)
+    return jsonify({"success": True, "marked_count": count}), 200
 
 
 @auth_bp.route("/profile", methods=["GET", "PUT", "POST"])

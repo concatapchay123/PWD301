@@ -673,13 +673,15 @@ def notifications_center() -> tuple[Response, int] | Response:
     )
 
     actor = require_authenticated_actor()
-    items, total = list_user_notifications(actor=actor, session=db.session)
+    target_role = request.args.get("role") or request.args.get("target_role") or "STUDENT"
+    items, total = list_user_notifications(actor=actor, target_role=target_role, session=db.session)
     prefs = get_user_preferences(actor=actor, session=db.session)
-    unread = get_unread_count(actor=actor, session=db.session)
+    unread = get_unread_count(actor=actor, target_role=target_role, session=db.session)
 
     return (
         jsonify(
             {
+                "success": True,
                 "items": items,
                 "total": total,
                 "unread_count": unread,
@@ -714,8 +716,9 @@ def student_mark_all_read() -> Any:
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     category = payload.get("category") or request.args.get("category")
-    count = mark_all_as_read(actor=actor, category=category, session=db.session)
-    return jsonify({"marked_count": count}), 200
+    target_role = payload.get("role") or payload.get("target_role") or request.args.get("role") or request.args.get("target_role") or "STUDENT"
+    count = mark_all_as_read(actor=actor, category=category, target_role=target_role, session=db.session)
+    return jsonify({"success": True, "marked_count": count}), 200
 
 
 @student_bp.route("/attempt/<attempt_id>/answers/<attempt_question_id>", methods=["POST", "PUT"])

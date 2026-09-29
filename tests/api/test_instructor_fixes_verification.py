@@ -124,6 +124,8 @@ def test_slo_and_completion_rules_persistence(
 
     # Re-login instructor for subsequent tests
     login_web_user(client, test_instructor)
+    course.status = "DRAFT"
+    db.session.commit()
 
     # 2. Update completion rule (minimum_grade_score, allow_certificate, grace_days)
     res_comp = client.post(

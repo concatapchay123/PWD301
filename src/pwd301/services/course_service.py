@@ -787,6 +787,7 @@ def change_course_status(
                 ),
                 action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
+                target_role="INSTRUCTOR",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,
@@ -817,6 +818,7 @@ def change_course_status(
                 ),
                 action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
+                target_role="INSTRUCTOR",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,
@@ -852,6 +854,7 @@ def change_course_status(
                             ),
                             action_url=f"#/admin/courses/review?id={course.public_id}",
                             category="COURSE",
+                            target_role="ADMIN",
                             payload={
                                 "course_id": str(course.public_id),
                                 "course_code": course.course_code,
@@ -966,6 +969,7 @@ def reassign_course_owner(
                 title=f"Bạn không còn phụ trách khóa học {course.course_code}",
                 body=(f"Khóa học '{course.title}' đã được giao cho giảng viên khác."),
                 category="COURSE",
+                target_role="INSTRUCTOR",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,
@@ -991,6 +995,7 @@ def reassign_course_owner(
                 body=(f"Bạn đã được giao phụ trách khóa học '{course.title}'."),
                 action_url=f"#/instructor/courses/manage?id={course.public_id}",
                 category="COURSE",
+                target_role="INSTRUCTOR",
                 payload={
                     "course_id": str(course.public_id),
                     "course_code": course.course_code,

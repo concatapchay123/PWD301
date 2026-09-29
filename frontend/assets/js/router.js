@@ -344,10 +344,21 @@ class AppRouter {
     } else if (this.currentRole === 'INSTRUCTOR') {
       target = '#/instructor/dashboard';
     }
-    if (window.location.hash === target) {
+    this.navigate(target);
+  }
+
+  navigate(target, replace = false) {
+    if (!target) return;
+    const cleanHash = target.startsWith('#') ? target : `#${target}`;
+    if (replace) {
+      window.history.replaceState(null, '', cleanHash);
       this.handleRoute();
     } else {
-      window.location.hash = target;
+      if ((window.location.hash || '#/') === cleanHash) {
+        this.handleRoute();
+      } else {
+        window.location.hash = cleanHash;
+      }
     }
   }
 
@@ -788,10 +799,9 @@ class AppRouter {
             }
             UI.showToast(`Đã chuyển sang góc nhìn ${target === 'ADMIN' ? 'Quản trị viên' : target === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên'}!`, 'info');
             this.updateUserUI();
-            this.updateBadgeFromCache();
-            if (document.getElementById('topbar-notifications-dropdown') && !document.getElementById('topbar-notifications-dropdown').classList.contains('hidden')) {
-              this.renderNotificationsDropdownContent();
-            }
+            this.notificationsCache = null;
+            this.loadCachedNotifications();
+            await this.fetchNotifications(true);
             this.redirectToRoleHome();
             roleDropdown.classList.add('hidden');
           } catch (err) {
@@ -807,7 +817,12 @@ class AppRouter {
           roleDropdown.classList.add('hidden');
           this.closeNotificationsDropdown();
           if (this.currentUser && this.currentUser.id) {
-            try { sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}`); } catch {}
+            try {
+              ['STUDENT', 'INSTRUCTOR', 'ADMIN'].forEach(r => {
+                sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}_${r}`);
+              });
+              sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}`);
+            } catch {}
           }
           this.notificationsCache = null;
           this.currentUser = null;
@@ -866,10 +881,17 @@ class AppRouter {
   // 4. Instant Notification Dropdown & Cache Management (0ms SWR)
   // =========================================================================
 
+  getNotificationCacheKey() {
+    if (!this.currentUser || !this.currentUser.id) return null;
+    const role = (this.currentRole || 'STUDENT').toUpperCase();
+    return `pwd301_notifs_${this.currentUser.id}_${role}`;
+  }
+
   loadCachedNotifications() {
-    if (!this.currentUser || !this.currentUser.id) return;
+    const key = this.getNotificationCacheKey();
+    if (!key) return;
     try {
-      const raw = sessionStorage.getItem(`pwd301_notifs_${this.currentUser.id}`);
+      const raw = sessionStorage.getItem(key);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.items)) {
@@ -883,83 +905,29 @@ class AppRouter {
   }
 
   saveCachedNotifications() {
-    if (!this.currentUser || !this.currentUser.id || !this.notificationsCache) return;
+    const key = this.getNotificationCacheKey();
+    if (!key || !this.notificationsCache) return;
     try {
-      sessionStorage.setItem(`pwd301_notifs_${this.currentUser.id}`, JSON.stringify(this.notificationsCache));
+      sessionStorage.setItem(key, JSON.stringify(this.notificationsCache));
     } catch {
       // Ignore quota errors
     }
   }
 
+  static decodeHtmlEntities(str) {
+    if (!str || typeof str !== 'string') return '';
+    try {
+      const doc = new DOMParser().parseFromString(str, 'text/html');
+      return doc.body.textContent || '';
+    } catch {
+      return str;
+    }
+  }
+
   getNotificationRole(item) {
     if (!item) return 'ALL';
-    const cat = (item.category || '').toUpperCase();
-    const title = (item.title || '').toLowerCase();
-    const body = (item.body || item.message || '').toLowerCase();
-    const url = (item.action_url || item.target_url || '').toLowerCase();
-    const eventType = (item.event_type || '').toUpperCase();
-
-    // Universal security alerts across all roles
-    if (cat === 'SECURITY' || eventType.startsWith('SECURITY_') || title.includes('bảo mật') || title.includes('đăng nhập')) {
-      return 'ALL';
-    }
-
-    // Admin role notifications
-    if (
-      url.startsWith('#/admin') ||
-      eventType.startsWith('ADMIN_') ||
-      eventType.includes('APPLICATION_SUBMITTED') ||
-      eventType === 'INSTRUCTOR_APPLICATION' ||
-      title.includes('ứng tuyển') ||
-      body.includes('ứng tuyển') ||
-      title.includes('yêu cầu phê duyệt') ||
-      title.includes('chờ duyệt') ||
-      body.includes('chờ quản trị viên duyệt') ||
-      body.includes('chờ admin duyệt')
-    ) {
-      return 'ADMIN';
-    }
-
-    // Instructor role notifications
-    if (
-      url.startsWith('#/instructor') ||
-      eventType.startsWith('INSTRUCTOR_') ||
-      eventType === 'LESSON_APPROVED' ||
-      eventType === 'LESSON_REJECTED' ||
-      eventType === 'STUDENT_ENROLLED' ||
-      title.includes('đã được duyệt') ||
-      title.includes('bị từ chối') ||
-      body.includes('bài học của bạn đã được duyệt') ||
-      body.includes('bài học của bạn đã bị từ chối') ||
-      title.includes('học viên mới') ||
-      body.includes('học viên mới tham gia') ||
-      body.includes('đã đăng ký khóa học của bạn')
-    ) {
-      return 'INSTRUCTOR';
-    }
-
-    // Student role notifications
-    if (
-      url.startsWith('#/learning') ||
-      url.startsWith('#/student') ||
-      url.startsWith('#/assessments') ||
-      url.startsWith('#/courses') ||
-      cat === 'ASSESSMENT' ||
-      cat === 'GRADE' ||
-      eventType.startsWith('ASSESSMENT_') ||
-      eventType.startsWith('GRADE_') ||
-      eventType.startsWith('ENROLLMENT_') ||
-      title.includes('khảo thí') ||
-      title.includes('bài thi') ||
-      title.includes('điểm số') ||
-      title.includes('đã hoàn thành') ||
-      body.includes('bài kiểm tra') ||
-      body.includes('điểm thi')
-    ) {
-      return 'STUDENT';
-    }
-
-    // Universal system broadcasts or general updates
+    const tr = (item.target_role || '').toUpperCase();
+    if (tr && tr !== 'ALL') return tr;
     return 'ALL';
   }
 
@@ -970,21 +938,23 @@ class AppRouter {
     const currentRole = (this.currentRole || 'STUDENT').toUpperCase();
     const rawItems = this.notificationsCache.items;
 
-    // 1. Deduplicate by (title, body): collapse duplicates, keeping only the newest item
+    // 1. Deduplicate by (title, body): collapse duplicates, keeping only newest item
     const seenKeys = new Set();
     const deduplicated = [];
     for (const item of rawItems) {
-      const key = `${(item.title || '').trim()}:::${(item.body || item.message || '').trim()}`;
+      const titleDecoded = AppRouter.decodeHtmlEntities(item.title || '');
+      const bodyDecoded = AppRouter.decodeHtmlEntities(item.body || item.message || '');
+      const key = `${titleDecoded.trim()}:::${bodyDecoded.trim()}`;
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
         deduplicated.push(item);
       }
     }
 
-    // 2. Strict role partitioning: only include notifications belonging to current role or universal 'ALL'
+    // 2. Strict role partitioning: universal ('ALL' or null) or strictly matching currentRole
     return deduplicated.filter(item => {
-      const role = this.getNotificationRole(item);
-      return role === 'ALL' || role === currentRole;
+      const tr = (item.target_role || '').toUpperCase();
+      return !tr || tr === 'ALL' || tr === currentRole;
     });
   }
 
@@ -1252,11 +1222,11 @@ class AppRouter {
                 </div>
 
                 <div class="text-xs ${isRead ? 'font-medium text-[#222120] dark:text-[#EDEDEB]' : 'font-bold text-[#222120] dark:text-[#EDEDEB]'} leading-snug">
-                  ${window.UI ? UI.escapeHtml(item.title || '') : (item.title || '')}
+                  ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.title || '')) : AppRouter.decodeHtmlEntities(item.title || '')}
                 </div>
 
                 <p class="text-[11.5px] text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed line-clamp-2">
-                  ${window.UI ? UI.escapeHtml(item.body || item.message || '') : (item.body || item.message || '')}
+                  ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.body || item.message || '')) : AppRouter.decodeHtmlEntities(item.body || item.message || '')}
                 </p>
               </div>
             </div>
@@ -1333,18 +1303,13 @@ class AppRouter {
       const reviewTarget = AppRouter.getNotificationReviewTarget(item, link);
       if (reviewTarget) {
         this.closeNotificationsDropdown();
-        if (window.location.hash === reviewTarget) this.handleRoute();
-        else window.location.hash = reviewTarget;
+        this.navigate(reviewTarget);
         return;
       }
       this.openNotificationModal(item, link);
     } else if (link) {
       this.closeNotificationsDropdown();
-      if (window.location.hash === link) {
-        this.handleRoute();
-      } else {
-        window.location.hash = link;
-      }
+      this.navigate(link);
     }
   }
 
@@ -1373,10 +1338,10 @@ class AppRouter {
 
         <div class="space-y-2">
           <h4 class="text-sm sm:text-base font-bold text-[#222120] dark:text-[#EDEDEB] leading-snug">
-            ${window.UI ? UI.escapeHtml(item.title || '') : (item.title || '')}
+            ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.title || '')) : AppRouter.decodeHtmlEntities(item.title || '')}
           </h4>
           <div class="p-4 rounded-xl bg-[#FAF9F5] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB] leading-relaxed text-xs sm:text-sm whitespace-pre-line select-text">
-            ${window.UI ? UI.escapeHtml(item.body || item.message || '') : (item.body || item.message || '')}
+            ${window.UI ? UI.escapeHtml(AppRouter.decodeHtmlEntities(item.body || item.message || '')) : AppRouter.decodeHtmlEntities(item.body || item.message || '')}
           </div>
         </div>
       </div>
@@ -1408,11 +1373,7 @@ class AppRouter {
       if (navBtn) {
         navBtn.onclick = () => {
           UI.closeModal();
-          if (window.location.hash === targetLink) {
-            this.handleRoute();
-          } else {
-            window.location.hash = targetLink;
-          }
+          this.navigate(targetLink);
         };
       }
     }
@@ -1437,7 +1398,7 @@ class AppRouter {
 
     // Silent background API sync
     try {
-      await ApiClient.markAllNotificationsRead();
+      await ApiClient.markAllNotificationsRead(null, this.currentRole);
     } catch (err) {
       console.warn('markAllNotificationsRead background sync error:', err);
     }
@@ -1446,7 +1407,8 @@ class AppRouter {
   async fetchNotifications(forceRender = false) {
     if (!this.currentUser) return;
     try {
-      const data = await ApiClient.getNotifications();
+      const currentRole = this.currentRole || 'STUDENT';
+      const data = await ApiClient.getNotifications({ role: currentRole });
       if (data && Array.isArray(data.items)) {
         const items = data.items.map(i => ({
           ...i,
@@ -1460,13 +1422,14 @@ class AppRouter {
           unread_count: unreadCount,
           last_fetched: Date.now(),
           user_id: this.currentUser.id,
+          role: currentRole,
         };
         this.saveCachedNotifications();
         this.updateBadgeFromCache();
 
         // If dropdown is currently open or forceRender requested, re-render
         const dropdown = document.getElementById('topbar-notifications-dropdown');
-        if (dropdown && !dropdown.classList.contains('hidden') || forceRender) {
+        if ((dropdown && !dropdown.classList.contains('hidden')) || forceRender) {
           this.renderNotificationsDropdownContent();
         }
       }

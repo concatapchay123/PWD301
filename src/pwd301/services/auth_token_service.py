@@ -332,6 +332,22 @@ def reset_password_with_token(
         sess.rollback()
         raise
 
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        dispatch_notification(
+            recipient_user=user.id,
+            event_type="SECURITY_PASSWORD_CHANGED",
+            title="Mật khẩu của bạn đã được thay đổi",
+            body="Mật khẩu tài khoản của bạn vừa được đặt lại thành công. Nếu bạn không thực hiện thao tác này, vui lòng liên hệ quản trị viên ngay lập tức.",
+            category="SECURITY",
+            force_email=True,
+            target_role=None,
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
+
     return user
 
 

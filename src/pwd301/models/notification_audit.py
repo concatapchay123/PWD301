@@ -110,6 +110,7 @@ class Notification(Base):
         sa.ForeignKey("users.id", name="fk_notifications_recipient_user_id"),
         nullable=False,
     )
+    target_role = db.Column(sa.String(20), nullable=True)
     category = db.Column(sa.String(32), nullable=False)
     title = db.Column(sa.Unicode(250), nullable=False)
     body = db.Column(sa.Unicode(2000), nullable=False)
@@ -133,11 +134,21 @@ class Notification(Base):
             "category IN ('SECURITY','COURSE','ASSESSMENT','GRADE','SYSTEM')",
             name="ck_notifications_1",
         ),
+        sa.CheckConstraint(
+            "target_role IS NULL OR target_role IN ('STUDENT','INSTRUCTOR','ADMIN')",
+            name="ck_notifications_target_role",
+        ),
         sa.Index(
             "ix_notifications_recipient",
             "recipient_user_id",
             "read_at",
             "created_at",
+        ),
+        sa.Index(
+            "ix_notifications_user_role_unread",
+            "recipient_user_id",
+            "target_role",
+            "read_at",
         ),
         sa.Index(
             "ix_notifications_user_unread",
@@ -212,6 +223,7 @@ class Notification(Base):
 
         return {
             "id": str(self.public_id),
+            "target_role": self.target_role,
             "category": self.category,
             "title": self.title,
             "body": self.body,
@@ -249,7 +261,7 @@ class NotificationPreference(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "category IN ('COURSE','ASSESSMENT','GRADE','MARKETING','SECURITY')",
+            "category IN ('COURSE','ASSESSMENT','GRADE','MARKETING','SECURITY','SYSTEM')",
             name="ck_notification_preferences_1",
         ),
         sa.CheckConstraint(
@@ -301,6 +313,8 @@ class EmailDelivery(Base):
         default="PENDING",
         server_default=sa.text("'PENDING'"),
     )
+    subject = db.Column(sa.Unicode(250), nullable=True)
+    body_text = db.Column(sa.UnicodeText, nullable=True)
     attempt_count = db.Column(
         sa.Integer,
         nullable=False,
@@ -353,6 +367,8 @@ class EmailDelivery(Base):
             "id": str(self.public_id),
             "recipient_email": self.recipient_email_snapshot,
             "template_code": self.template_code,
+            "subject": self.subject,
+            "body_text": self.body_text,
             "status": self.status,
             "attempt_count": self.attempt_count,
             "next_attempt_at": self.next_attempt_at.isoformat() if self.next_attempt_at else None,

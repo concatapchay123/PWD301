@@ -582,7 +582,9 @@ def test_web_instructor_completion_rules_routes(
     assert data["course_id"] == str(course.public_id)
     assert data["minimum_progress_percent"] == 100.0
 
-    # POST
+    # POST (in DRAFT mode updates immediately without requiring admin change request)
+    course.status = "DRAFT"
+    db.session.commit()
     resp_post = client.post(
         f"/instructor/courses/{course.public_id}/completion-rules",
         json={"minimum_progress_percent": 90.0, "require_all_required_lessons": True},

@@ -65,6 +65,7 @@ VALID_PREFERENCE_CATEGORIES: set[str] = {
     "GRADE",
     "MARKETING",
     "SECURITY",
+    "SYSTEM",
 }
 
 DEFAULT_PREFERENCES: dict[str, bool] = {
@@ -73,6 +74,7 @@ DEFAULT_PREFERENCES: dict[str, bool] = {
     "ASSESSMENT": True,
     "GRADE": True,
     "MARKETING": False,
+    "SYSTEM": True,
 }
 
 
@@ -80,7 +82,7 @@ def sanitize_text(text: str, max_length: int = 2000) -> str:
     """Sanitize user-provided text by HTML-escaping and trimming."""
     if not text:
         return ""
-    escaped = html.escape(text.strip())
+    escaped = html.escape(str(text).strip())
     return escaped[:max_length]
 
 
@@ -162,6 +164,7 @@ def dispatch_notification(
     body: str,
     action_url: str | None = None,
     category: str | None = None,
+    target_role: str | None = None,
     force_email: bool = False,
     payload: dict[str, Any] | None = None,
     event: NotificationEvent | None = None,
@@ -173,6 +176,7 @@ def dispatch_notification(
     - Verifies user exists.
     - Honors user preferences for optional categories.
     - Enforces mandatory email dispatch for SECURITY events.
+    - Sets target_role for precise role-scoped delivery.
     - Preserves outbox pattern: email enqueue failure does not rollback in-app notification.
     """
     s = session or db.session
@@ -217,10 +221,13 @@ def dispatch_notification(
     )
     if existing_notif is not None:
         notification = existing_notif
+        if target_role and not notification.target_role:
+            notification.target_role = target_role.strip().upper()
     else:
         notification = Notification(
             notification_event_id=event.id,
             recipient_user_id=user.id,
+            target_role=target_role.strip().upper() if target_role else None,
             category=in_app_cat,
             title=clean_title,
             body=clean_body,
@@ -267,9 +274,11 @@ def dispatch_notification(
 
 
 def _visible_notification_query(
-    session: Session | scoped_session, recipient_id: int
+    session: Session | scoped_session,
+    recipient_id: int,
+    target_role: str | None = None,
 ) -> Any:
-    """Collapse duplicate notifications while retaining their audit events."""
+    """Collapse duplicate notifications while retaining their audit events, optionally scoped by target_role."""
     newer = sa.orm.aliased(Notification)
     duplicate = (
         sa.select(newer.id)
@@ -281,7 +290,7 @@ def _visible_notification_query(
         )
         .exists()
     )
-    return (
+    query = (
         session.query(Notification)
         .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
         .filter(
@@ -289,6 +298,12 @@ def _visible_notification_query(
             ~duplicate,
         )
     )
+    if target_role:
+        upper_role = target_role.strip().upper()
+        query = query.filter(
+            sa.or_(Notification.target_role == upper_role, Notification.target_role.is_(None))
+        )
+    return query
 
 
 def list_user_notifications(
@@ -296,6 +311,7 @@ def list_user_notifications(
     status: str | None = None,
     unread_only: bool = False,
     category: str | None = None,
+    target_role: str | None = None,
     page: int = 1,
     per_page: int = 20,
     session: Session | scoped_session | None = None,
@@ -305,7 +321,7 @@ def list_user_notifications(
     if not actor:
         raise ForbiddenError("Actor context required.")
 
-    query = _visible_notification_query(s, actor.id)
+    query = _visible_notification_query(s, actor.id, target_role=target_role)
 
     if unread_only or (status and status.lower() == "unread"):
         query = query.filter(Notification.read_at.is_(None))
@@ -334,6 +350,7 @@ def list_user_notifications(
 
 def get_unread_count(
     actor: User,
+    target_role: str | None = None,
     session: Session | scoped_session | None = None,
 ) -> int:
     """Get count of unread notifications for fast topbar badge polling."""
@@ -341,7 +358,11 @@ def get_unread_count(
     if not actor:
         return 0
 
-    count = _visible_notification_query(s, actor.id).filter(Notification.read_at.is_(None)).count()
+    count = (
+        _visible_notification_query(s, actor.id, target_role=target_role)
+        .filter(Notification.read_at.is_(None))
+        .count()
+    )
     return count or 0
 
 
@@ -381,6 +402,7 @@ def mark_notification_as_read(
 def mark_all_as_read(
     actor: User,
     category: str | None = None,
+    target_role: str | None = None,
     session: Session | scoped_session | None = None,
 ) -> int:
     """Mark all unread notifications of the current actor as read."""
@@ -392,6 +414,11 @@ def mark_all_as_read(
         Notification.recipient_user_id == actor.id,
         Notification.read_at.is_(None),
     )
+    if target_role:
+        upper_role = target_role.strip().upper()
+        query = query.filter(
+            sa.or_(Notification.target_role == upper_role, Notification.target_role.is_(None))
+        )
     if category:
         query = query.filter(Notification.category == category.upper())
 

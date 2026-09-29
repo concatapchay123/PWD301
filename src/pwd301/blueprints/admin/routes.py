@@ -1756,6 +1756,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                     body=f"Quản trị viên đã phê duyệt thay đổi đối với {subject}.",
                     action_url=action_url,
                     category="COURSE",
+                    target_role="INSTRUCTOR",
                     session=db.session,
                 )
 
@@ -1786,6 +1787,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                     ),
                     action_url=action_url,
                     category="COURSE",
+                    target_role="INSTRUCTOR",
                     session=db.session,
                 )
         msg = f"Đã từ chối yêu cầu thay đổi #{req_record.id}."

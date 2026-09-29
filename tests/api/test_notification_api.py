@@ -319,7 +319,7 @@ def test_notification_deduplication_collapsing(
 ) -> None:
     """Verify that multiple notifications with identical title & body collapse to the newest one."""
     from pwd301.models.notification_audit import Notification
-    from pwd301.services.notification_service import get_unread_count, list_user_notifications
+    from pwd301.services.notification_service import list_user_notifications
 
     # Dispatch 3 duplicate notifications to the same student
     for _ in range(3):

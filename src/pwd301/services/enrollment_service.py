@@ -13,6 +13,7 @@ Implements:
 - Resource-level authorization and IDOR prevention.
 """
 
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -21,6 +22,8 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
+
+logger = logging.getLogger(__name__)
 from pwd301.models.course import (
     Course,
     CourseCompletionSummary,
@@ -374,6 +377,34 @@ def enroll_student(
     except Exception:
         sess.rollback()
         raise
+
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        if locked_course.instructor_user_id:
+            dispatch_notification(
+                recipient_user=locked_course.instructor_user_id,
+                event_type="STUDENT_ENROLLED",
+                title="Học viên mới tham gia khóa học",
+                body=f"Học viên {target_student.display_name} vừa đăng ký tham gia khóa học '{locked_course.title}'.",
+                action_url=f"/instructor/courses/{locked_course.public_id}",
+                category="COURSE",
+                target_role="INSTRUCTOR",
+                session=sess,
+            )
+
+        dispatch_notification(
+            recipient_user=target_student.id,
+            event_type="STUDENT_ENROLLED",
+            title="Đăng ký khóa học thành công",
+            body=f"Bạn đã đăng ký thành công khóa học '{locked_course.title}'. Bắt đầu học ngay hôm nay!",
+            action_url=f"/student/courses/{locked_course.public_id}",
+            category="COURSE",
+            target_role="STUDENT",
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("Failed to dispatch STUDENT_ENROLLED notification: %s", exc)
 
     enrollment._is_new = True
     return enrollment

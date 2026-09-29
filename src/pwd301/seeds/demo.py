@@ -1219,6 +1219,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Admin User (admin@pwd301.local)
         (
             admin_user,
+            "ADMIN",
             instructor1.id,
             "SYSTEM_SECURITY_ALERT",
             "SECURITY",
@@ -1235,6 +1236,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             admin_user,
+            "ADMIN",
             instructor2.id,
             "COURSE_APPROVAL_REQUEST",
             "COURSE",
@@ -1251,6 +1253,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             admin_user,
+            "ADMIN",
             admin_user.id,
             "SYSTEM_BACKUP_COMPLETED",
             "SYSTEM",
@@ -1264,6 +1267,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             admin_user,
+            "ADMIN",
             instructor1.id,
             "ASSESSMENT_MONITORING",
             "ASSESSMENT",
@@ -1278,6 +1282,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Instructor 1 (instructor1@pwd301.local)
         (
             instructor1,
+            "INSTRUCTOR",
             student2.id,
             "ASSESSMENT_SUBMITTED",
             "ASSESSMENT",
@@ -1291,6 +1296,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             instructor1,
+            "INSTRUCTOR",
             admin_user.id,
             "COURSE_PUBLISHED",
             "COURSE",
@@ -1304,6 +1310,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             instructor1,
+            "INSTRUCTOR",
             instructor1.id,
             "GRADE_REPORT",
             "GRADE",
@@ -1317,6 +1324,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             instructor1,
+            "INSTRUCTOR",
             admin_user.id,
             "SYSTEM_ANNOUNCEMENT",
             "SYSTEM",
@@ -1331,6 +1339,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Instructor 2 (instructor2@pwd301.local)
         (
             instructor2,
+            "INSTRUCTOR",
             admin_user.id,
             "COURSE_STATUS_UPDATE",
             "COURSE",
@@ -1344,6 +1353,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             instructor2,
+            "INSTRUCTOR",
             instructor2.id,
             "QUESTION_BANK_READY",
             "ASSESSMENT",
@@ -1358,6 +1368,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Student 1 (student1@pwd301.local - Lê Hoàng Long)
         (
             student1,
+            "STUDENT",
             instructor1.id,
             "ASSESSMENT_GRADED",
             "ASSESSMENT",
@@ -1371,6 +1382,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             student1,
+            "STUDENT",
             instructor1.id,
             "LESSON_UNLOCKED",
             "COURSE",
@@ -1384,6 +1396,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             student1,
+            "STUDENT",
             instructor1.id,
             "GRADE_ANNOUNCEMENT",
             "GRADE",
@@ -1395,6 +1408,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Student 2 (student2@pwd301.local - Phạm Minh Tuấn)
         (
             student2,
+            "STUDENT",
             instructor1.id,
             "ASSESSMENT_SUBMITTED_CONFIRM",
             "ASSESSMENT",
@@ -1408,6 +1422,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             student2,
+            "STUDENT",
             instructor1.id,
             "ASSIGNMENT_DUE_REMINDER",
             "COURSE",
@@ -1422,6 +1437,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Student 3 (student3@pwd301.local - Vũ Thảo Nguyên)
         (
             student3,
+            "STUDENT",
             admin_user.id,
             "COURSE_ENROLLMENT_CONFIRM",
             "COURSE",
@@ -1435,6 +1451,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             student3,
+            "STUDENT",
             instructor1.id,
             "ASSESSMENT_SCHEDULED",
             "ASSESSMENT",
@@ -1449,6 +1466,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         # Student 4 (student4@pwd301.local - Đặng Gia Huy)
         (
             student4,
+            "STUDENT",
             admin_user.id,
             "WELCOME_ONBOARDING",
             "SYSTEM",
@@ -1462,6 +1480,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
         ),
         (
             student4,
+            "STUDENT",
             admin_user.id,
             "PROFILE_UPDATE_PROMPT",
             "SYSTEM",
@@ -1477,6 +1496,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
 
     for (
         recipient_usr,
+        target_role,
         actor_uid,
         ev_type,
         cat_code,
@@ -1520,6 +1540,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 Notification(
                     notification_event_id=existing_ev.id,
                     recipient_user_id=recipient_usr.id,
+                    target_role=target_role,
                     category=cat_code,
                     title=title_txt,
                     body=body_txt,
@@ -1528,6 +1549,8 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
                 )
             )
             summary["notifications_created"] += 1
+        else:
+            existing_notif.target_role = target_role
 
     # 13. Sample Audit Events
     audit_samples = [

@@ -553,6 +553,22 @@ def store_file_stream(
                     )
                 )
 
+            try:
+                from pwd301.services.notification_service import dispatch_notification
+
+                dispatch_notification(
+                    recipient_user=actor.id,
+                    event_type="FILE_REJECTED",
+                    title="Tệp tải lên bị từ chối do nhiễm mã độc",
+                    body=f"Tệp '{clean_filename}' đã bị từ chối và cách ly vì phát hiện mã độc ({sig_desc}).",
+                    category="SECURITY",
+                    force_email=True,
+                    target_role="INSTRUCTOR",
+                    session=sess,
+                )
+            except Exception:
+                pass
+
             sess.commit()
             return asset
 
@@ -824,6 +840,21 @@ def add_file_revision(
                         completed_at=now,
                     )
                 )
+            try:
+                from pwd301.services.notification_service import dispatch_notification
+
+                dispatch_notification(
+                    recipient_user=actor.id,
+                    event_type="FILE_REJECTED",
+                    title="Phiên bản tệp bị từ chối do nhiễm mã độc",
+                    body=f"Phiên bản mới của tệp '{clean_filename}' đã bị từ chối vì phát hiện mã độc ({sig_desc}).",
+                    category="SECURITY",
+                    force_email=True,
+                    target_role="INSTRUCTOR",
+                    session=sess,
+                )
+            except Exception:
+                pass
 
             sess.commit()
             return new_rev
