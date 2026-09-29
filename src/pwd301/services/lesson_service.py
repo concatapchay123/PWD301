@@ -1123,6 +1123,21 @@ def restore_lesson(
     )
 
 
+def _has_in_flight_progress(session: Session | scoped_session[Any], student_user_id: int, lesson_id: int) -> bool:
+    """Check if student has an existing progress record on this lesson revision."""
+    return (
+        session.query(LessonProgress)
+        .join(EnrollmentPeriod, LessonProgress.enrollment_period_id == EnrollmentPeriod.id)
+        .join(Enrollment, EnrollmentPeriod.enrollment_id == Enrollment.id)
+        .filter(
+            Enrollment.student_user_id == student_user_id,
+            LessonProgress.lesson_id == lesson_id,
+        )
+        .first()
+        is not None
+    )
+
+
 def get_lesson_detail(
     actor: User | None,
     lesson_id: int | uuid.UUID | str,
@@ -1132,7 +1147,8 @@ def get_lesson_detail(
 
     Rules:
     - Instructor managing this course / Admin: can read any status.
-    - Student: must have an ACTIVE enrollment in this course, and lesson must be PUBLISHED.
+    - Student: must have an ACTIVE enrollment in this course, and lesson must be PUBLISHED
+      (or HISTORICAL if student already has active in-flight progress on it).
     - Inactive / Soft-deleted: inaccessible to non-admins.
 
     Args:
@@ -1174,12 +1190,17 @@ def get_lesson_detail(
         return lesson
 
     # Student access guard:
-    # Must be authenticated, course not deleted, lesson PUBLISHED, and student actively enrolled
+    # Must be authenticated, course not deleted, lesson PUBLISHED (or HISTORICAL for in-flight learners),
+    # and student actively enrolled
     if actor is None or not actor.is_active:
         raise ForbiddenError("Authentication required to access lesson.")
 
+    has_history = False
+    if lesson.status == "HISTORICAL" and actor is not None and getattr(actor, "id", None):
+        has_history = _has_in_flight_progress(sess, actor.id, lesson.id)
+
     is_accessible = (
-        lesson.status == "PUBLISHED"
+        (lesson.status == "PUBLISHED" or has_history)
         and course.deleted_at is None
         and course.status not in ("TRASH", "ARCHIVED")
     )
@@ -1300,7 +1321,7 @@ def record_lesson_progress(
     if lesson is None:
         raise LessonNotFoundError("Lesson not found.")
 
-    if lesson.deleted_at is not None or lesson.status != "PUBLISHED":
+    if lesson.deleted_at is not None or lesson.status not in ("PUBLISHED", "HISTORICAL"):
         raise LessonStateViolationError(
             "Cannot record progress on an unpublished or deleted lesson."
         )
@@ -1368,6 +1389,11 @@ def record_lesson_progress(
         .first()
     )
 
+    if progress is None and lesson.status == "HISTORICAL":
+        raise LessonStateViolationError(
+            "Cannot start progress on a historical lesson revision."
+        )
+
     now = utc_now()
     if progress is None:
         progress = LessonProgress(
@@ -1375,6 +1401,7 @@ def record_lesson_progress(
             lesson_id=lesson.id,
             seconds_spent=0,
             max_view_fraction=0.0,
+            acknowledged_revision_no=lesson.revision_no,
             updated_at=now,
         )
         sess.add(progress)
@@ -1401,6 +1428,7 @@ def record_lesson_progress(
     progress.seconds_spent = (progress.seconds_spent or 0) + sec
     current_fraction = float(progress.max_view_fraction or 0.0)
     progress.max_view_fraction = max(current_fraction, vf)
+    progress.acknowledged_revision_no = lesson.revision_no
     progress.last_activity_at = now
     progress.updated_at = now
 
@@ -1880,7 +1908,12 @@ def approve_course_change_request(
         if active_at_pos is not None:
             active_at_pos.status = "HISTORICAL"
             active_at_pos.updated_at = now
+            staged.revision_no = (active_at_pos.revision_no or 1) + 1
+            staged.previous_lesson_id = active_at_pos.id
+            staged.material_change_summary = review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
             sess.flush()
+        else:
+            staged.revision_no = 1
 
         staged.status = "PUBLISHED"
         if staged.published_at is None:
@@ -1942,3 +1975,214 @@ def reject_course_change_request(
         raise
 
     return req
+
+
+def get_lesson_detail_with_draft(
+    actor: User,
+    lesson_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[Lesson, dict[str, Any] | None]:
+    """Retrieve lesson detail along with active working draft from rejected or pending requests."""
+    sess = session if session is not None else db.session
+    lesson = _resolve_lesson(lesson_id, session=sess)
+    if lesson is None or lesson.deleted_at is not None:
+        raise LessonNotFoundError("Lesson not found.")
+
+    require_course_manager(actor, lesson.course_id, session=sess)
+
+    # Find the latest pending or rejected change request for this lesson (direct target or staged lesson at same position)
+    change_req = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == lesson.course_id,
+            CourseChangeRequest.target_type == "LESSON",
+            CourseChangeRequest.status.in_(["PENDING", "REJECTED"]),
+        )
+        .filter(
+            sa.or_(
+                CourseChangeRequest.target_id == lesson.id,
+                CourseChangeRequest.id.in_(
+                    sess.query(Lesson.change_request_id).filter(
+                        Lesson.course_id == lesson.course_id,
+                        Lesson.position == lesson.position,
+                        Lesson.change_request_id.is_not(None),
+                    )
+                ),
+            )
+        )
+        .order_by(CourseChangeRequest.id.desc())
+        .first()
+    )
+
+    draft_info: dict[str, Any] | None = None
+    if change_req is not None:
+        try:
+            payload = json.loads(change_req.proposed_payload_json or "{}")
+        except Exception:
+            payload = {}
+        draft_info = {
+            "change_request_id": change_req.id,
+            "status": change_req.status,
+            "review_reason": change_req.review_reason,
+            "created_at": change_req.created_at.isoformat() if change_req.created_at else None,
+            "reviewed_at": change_req.reviewed_at.isoformat() if change_req.reviewed_at else None,
+            "payload": payload,
+        }
+
+    return lesson, draft_info
+
+
+def discard_lesson_working_draft(
+    actor: User,
+    lesson_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Discard an active working draft (PENDING or REJECTED) by marking it CANCELLED."""
+    sess = session if session is not None else db.session
+    lesson = _resolve_lesson(lesson_id, session=sess)
+    if lesson is None or lesson.deleted_at is not None:
+        raise LessonNotFoundError("Lesson not found.")
+
+    require_course_manager(actor, lesson.course_id, session=sess)
+
+    change_reqs = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == lesson.course_id,
+            CourseChangeRequest.target_type == "LESSON",
+            CourseChangeRequest.status.in_(["PENDING", "REJECTED"]),
+        )
+        .filter(
+            sa.or_(
+                CourseChangeRequest.target_id == lesson.id,
+                CourseChangeRequest.id.in_(
+                    sess.query(Lesson.change_request_id).filter(
+                        Lesson.course_id == lesson.course_id,
+                        Lesson.position == lesson.position,
+                        Lesson.change_request_id.is_not(None),
+                    )
+                ),
+            )
+        )
+        .all()
+    )
+    if not change_reqs:
+        return False
+
+    now = utc_now()
+    for req in change_reqs:
+        req.status = "CANCELLED"
+        req.reviewed_at = now
+        staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
+        for staged in staged_lessons:
+            staged.status = "TRASH"
+            staged.deleted_at = now
+            staged.updated_at = now
+
+    sess.flush()
+    if session is None:
+        sess.commit()
+    return True
+
+
+def opt_in_newer_lesson_revision(
+    actor: User,
+    lesson_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[Lesson, LessonProgress]:
+    """Allow student to opt-in to latest published lesson revision with monotonic carry-over."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    current_lesson = _resolve_lesson(lesson_id, session=sess)
+    if current_lesson is None or current_lesson.deleted_at is not None:
+        raise LessonNotFoundError("Lesson not found.")
+
+    # Find the latest PUBLISHED lesson at the same course and position
+    latest_lesson = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == current_lesson.course_id,
+            Lesson.position == current_lesson.position,
+            Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+            Lesson.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if latest_lesson is None:
+        raise LessonNotFoundError("No published revision found for this lesson.")
+
+    enrollment = (
+        sess.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == current_lesson.course_id,
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ForbiddenError("Active course enrollment required.")
+
+    active_period = None
+    if enrollment.current_period_id:
+        active_period = sess.get(EnrollmentPeriod, enrollment.current_period_id)
+    if active_period is None:
+        active_period = (
+            sess.query(EnrollmentPeriod)
+            .filter(
+                EnrollmentPeriod.enrollment_id == enrollment.id,
+                EnrollmentPeriod.status.in_(["ACTIVE", "COMPLETED"]),
+            )
+            .order_by(EnrollmentPeriod.period_no.desc())
+            .first()
+        )
+    if active_period is None:
+        raise LessonProgressError("No active enrollment period found.")
+
+    # Get old progress if exists
+    old_progress = (
+        sess.query(LessonProgress)
+        .filter(
+            LessonProgress.enrollment_period_id == active_period.id,
+            LessonProgress.lesson_id == current_lesson.id,
+        )
+        .first()
+    )
+
+    # Get or create progress for latest lesson
+    target_progress = (
+        sess.query(LessonProgress)
+        .filter(
+            LessonProgress.enrollment_period_id == active_period.id,
+            LessonProgress.lesson_id == latest_lesson.id,
+        )
+        .first()
+    )
+    now = utc_now()
+    if target_progress is None:
+        target_progress = LessonProgress(
+            enrollment_period_id=active_period.id,
+            lesson_id=latest_lesson.id,
+            seconds_spent=old_progress.seconds_spent if old_progress else 0,
+            max_view_fraction=old_progress.max_view_fraction if old_progress else 0.0,
+            completed_at=old_progress.completed_at if old_progress else None,
+            completion_rule_snapshot_json=old_progress.completion_rule_snapshot_json if old_progress else None,
+            acknowledged_revision_no=latest_lesson.revision_no,
+            updated_at=now,
+        )
+        sess.add(target_progress)
+    else:
+        # Carry over completion if old progress was completed and target was not
+        if old_progress and old_progress.completed_at and not target_progress.completed_at:
+            target_progress.completed_at = old_progress.completed_at
+            target_progress.completion_rule_snapshot_json = old_progress.completion_rule_snapshot_json
+        target_progress.acknowledged_revision_no = latest_lesson.revision_no
+        target_progress.updated_at = now
+
+    sess.flush()
+    if session is None:
+        sess.commit()
+
+    return latest_lesson, target_progress

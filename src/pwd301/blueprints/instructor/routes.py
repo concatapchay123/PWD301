@@ -270,6 +270,9 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": float(les.viewed_fraction_required),
         "status": les.status,
+        "revision_no": getattr(les, "revision_no", 1) or 1,
+        "previous_lesson_id": getattr(les, "previous_lesson_id", None),
+        "material_change_summary": getattr(les, "material_change_summary", None),
         "published_at": les.published_at.isoformat() if les.published_at else None,
         "created_at": les.created_at.isoformat(),
         "updated_at": les.updated_at.isoformat(),
@@ -1260,11 +1263,24 @@ def create_course_assessment_route(course_id: str) -> Any:
 @instructor_bp.route("/lessons/<lesson_id>", methods=["GET"])
 @instructor_required
 def get_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
-    """View lesson detail for authoring."""
+    """View lesson detail for authoring with working draft if present."""
     actor = require_authenticated_actor()
 
-    lesson = get_lesson_detail(actor, lesson_id)
-    return jsonify(_serialize_lesson(lesson)), 200
+    from pwd301.services.lesson_service import get_lesson_detail_with_draft
+    lesson, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
+    data = _serialize_lesson(lesson)
+    data["working_draft"] = working_draft
+    return jsonify(data), 200
+
+
+@instructor_bp.route("/lessons/<lesson_id>/draft/discard", methods=["POST"])
+@instructor_required
+def discard_lesson_draft_route(lesson_id: str) -> tuple[Response, int] | Response:
+    """Discard an active working draft for a lesson."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import discard_lesson_working_draft
+    discarded = discard_lesson_working_draft(actor, lesson_id, session=db.session)
+    return jsonify({"success": True, "discarded": discarded}), 200
 
 
 @instructor_bp.route("/lessons/<lesson_id>", methods=["PATCH", "PUT"])

@@ -564,6 +564,18 @@ class Lesson(Base):
         sa.ForeignKey("users.id", name="fk_lessons_deleted_by_user_id", ondelete="SET NULL"),
         nullable=True,
     )
+    revision_no = db.Column(
+        sa.Integer,
+        nullable=False,
+        default=1,
+        server_default=sa.text("1"),
+    )
+    previous_lesson_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("lessons.id", name="fk_lessons_previous_lesson_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    material_change_summary = db.Column(sa.Unicode(500), nullable=True)
 
     __table_args__ = (
         sa.Index(
@@ -598,6 +610,12 @@ class Lesson(Base):
         "CourseChangeRequest",
         foreign_keys=[change_request_id],
         backref="staged_lessons",
+    )
+    previous_lesson = relationship(
+        "Lesson",
+        remote_side="Lesson.id",
+        foreign_keys=[previous_lesson_id],
+        backref=db.backref("newer_revisions", lazy="dynamic"),
     )
     deleted_by = relationship("User", foreign_keys=[deleted_by_user_id])
     resources = relationship(
@@ -920,6 +938,7 @@ class LessonProgress(Base):
     last_activity_at = db.Column(UTCDateTime, nullable=True)
     completed_at = db.Column(UTCDateTime, nullable=True)
     completion_rule_snapshot_json = db.Column(NVarCharMax, nullable=True)
+    acknowledged_revision_no = db.Column(sa.Integer, nullable=True)
     updated_at = db.Column(
         UTCDateTime,
         nullable=False,

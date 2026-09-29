@@ -42,6 +42,9 @@ def _serialize_lesson(les: Lesson, include_content: bool = True) -> dict[str, An
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": float(les.viewed_fraction_required),
         "status": les.status,
+        "revision_no": getattr(les, "revision_no", 1) or 1,
+        "previous_lesson_id": getattr(les, "previous_lesson_id", None),
+        "material_change_summary": getattr(les, "material_change_summary", None),
         "published_at": les.published_at.isoformat() if les.published_at else None,
         "created_at": les.created_at.isoformat(),
         "updated_at": les.updated_at.isoformat(),
@@ -56,6 +59,7 @@ def _serialize_progress(p: LessonProgress) -> dict[str, Any]:
         "lesson_id": str(p.lesson.public_id) if p.lesson else None,
         "seconds_spent": p.seconds_spent,
         "max_view_fraction": float(p.max_view_fraction),
+        "acknowledged_revision_no": getattr(p, "acknowledged_revision_no", None),
         "last_activity_at": p.last_activity_at.isoformat() if p.last_activity_at else None,
         "completed_at": p.completed_at.isoformat() if p.completed_at else None,
         "is_completed": p.completed_at is not None,
@@ -67,12 +71,17 @@ def _serialize_progress(p: LessonProgress) -> dict[str, Any]:
 def get_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Read lesson details with authorization checks.
 
-    Instructor of course / Admin: can read any status.
-    Student: must have ACTIVE enrollment and lesson must be PUBLISHED.
+    Instructor of course / Admin: can read any status and includes working draft if present.
+    Student: must have ACTIVE enrollment and lesson must be PUBLISHED (or HISTORICAL for in-flight).
     """
     actor = get_authenticated_actor()
     lesson = get_lesson_detail(actor, lesson_id)
-    return jsonify(_serialize_lesson(lesson)), 200
+    data = _serialize_lesson(lesson)
+    if actor and (actor.is_admin or (actor.has_role("INSTRUCTOR") and lesson.course and lesson.course.owner_instructor_id == actor.id)):
+        from pwd301.services.lesson_service import get_lesson_detail_with_draft
+        _, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
+        data["working_draft"] = working_draft
+    return jsonify(data), 200
 
 
 @api_lesson_bp.route("/<lesson_id>/progress", methods=["POST"])
@@ -337,3 +346,29 @@ def change_lesson_status_api(lesson_id: str) -> tuple[Response, int] | Response:
         ), 202
     lesson = change_lesson_status(actor, lesson_id, new_status, reason=reason, session=db.session)
     return jsonify(_serialize_lesson(lesson)), 200
+
+
+@api_lesson_bp.route("/<lesson_id>/draft/discard", methods=["POST"])
+@jwt_required
+@instructor_required
+def discard_lesson_draft_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Discard an active working draft for a lesson."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import discard_lesson_working_draft
+    discarded = discard_lesson_working_draft(actor, lesson_id, session=db.session)
+    return jsonify({"success": True, "discarded": discarded}), 200
+
+
+@api_lesson_bp.route("/<lesson_id>/opt-in", methods=["POST"])
+@jwt_required
+@student_required
+def opt_in_lesson_revision_api(lesson_id: str) -> tuple[Response, int] | Response:
+    """Student opts in to the latest published lesson revision."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import opt_in_newer_lesson_revision
+    latest_lesson, progress = opt_in_newer_lesson_revision(actor, lesson_id, session=db.session)
+    return jsonify({
+        "success": True,
+        "lesson": _serialize_lesson(latest_lesson),
+        "progress": _serialize_progress(progress),
+    }), 200

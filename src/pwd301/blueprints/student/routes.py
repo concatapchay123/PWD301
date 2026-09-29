@@ -284,6 +284,26 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
     course = getattr(les, "course", None)
     course_id = str(getattr(course, "public_id", None)) if course and getattr(course, "public_id", None) else None
 
+    has_newer = False
+    latest_lesson_id = None
+    change_summary = None
+    if getattr(les, "status", None) == "HISTORICAL":
+        from pwd301.models.course import Lesson
+        newer = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == les.course_id,
+                Lesson.position == les.position,
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                Lesson.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if newer and newer.id != les.id:
+            has_newer = True
+            latest_lesson_id = str(newer.public_id)
+            change_summary = newer.material_change_summary
+
     return {
         "lesson_id": str(getattr(les, "public_id", None) or getattr(les, "id", "")),
         "learning_unit_id": lu_id,
@@ -294,6 +314,11 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "summary": les.summary,
         "markdown_content": cleaned_markdown,
         "position": les.position,
+        "revision_no": getattr(les, "revision_no", 1) or 1,
+        "status": getattr(les, "status", "PUBLISHED"),
+        "has_newer_revision": has_newer,
+        "latest_lesson_id": latest_lesson_id,
+        "material_change_summary": change_summary,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
         "viewed_fraction_required": (
@@ -332,6 +357,19 @@ def get_student_lesson_route(course_id: str, lesson_id: str) -> Any:
     progress = get_lesson_progress(actor, lesson_id)
 
     return jsonify(_serialize_student_lesson(lesson, progress)), 200
+
+
+@student_bp.route("/lessons/<lesson_id>/opt-in", methods=["POST"])
+@student_required
+def opt_in_student_lesson_revision(lesson_id: str) -> tuple[Response, int] | Response:
+    """Student opts in to switch to the latest published lesson revision, carrying over progress."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import opt_in_newer_lesson_revision
+    latest_lesson, progress = opt_in_newer_lesson_revision(actor, lesson_id, session=db.session)
+    return jsonify({
+        "success": True,
+        "lesson": _serialize_student_lesson(latest_lesson, progress),
+    }), 200
 
 
 @student_bp.route("/lessons/<lesson_id>/progress", methods=["POST"])
