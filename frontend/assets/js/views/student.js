@@ -302,6 +302,30 @@ class StudentView {
               </div>
             </div>
 
+            <!-- AI Course Recommendations Section (Algorithm 14) -->
+            <div class="space-y-4 pt-2" id="dashboard-recommendations-section">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[18px]">auto_awesome</span>
+                  <div>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white leading-tight">Gợi ý khóa học tiếp theo</h2>
+                    <p class="text-xs text-slate-400">Được phân tích bởi Bạch tuộc AI theo tiến độ và điều kiện tiên quyết</p>
+                  </div>
+                </div>
+                <a href="#/student/courses/catalog" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5">
+                  <span>Khám phá thêm</span>
+                  <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </a>
+              </div>
+
+              <div id="dashboard-recommendations-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="col-span-full text-center py-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
+                  <span class="inline-block animate-spin text-base mb-1">⏳</span>
+                  <p>Bạch tuộc AI đang tính toán lộ trình tối ưu cho bạn...</p>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           <!-- Right Column (4 cols): Sticky Việc cần làm hôm nay (100% Khảo thí & Thi cử) -->
@@ -562,6 +586,55 @@ class StudentView {
           }).join('');
         }
       }
+
+      // Load AI Course Recommendations (Algorithm 14)
+      const recListEl = document.getElementById('dashboard-recommendations-list');
+      if (recListEl) {
+        try {
+          const recs = await ApiClient.getRecommendations(2);
+          if (recs && recs.length > 0) {
+            recListEl.innerHTML = recs.map(r => `
+              <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3.5">
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60">
+                      ${UI.escapeHtml(r.course_code)}
+                    </span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${r.difficulty === 'ADVANCED' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' : (r.difficulty === 'INTERMEDIATE' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300')}">
+                      ${r.difficulty || 'Mới bắt đầu'}
+                    </span>
+                  </div>
+                  <h3 class="font-extrabold text-slate-900 dark:text-white text-sm leading-snug hover:text-indigo-600 transition-colors">
+                    ${UI.escapeHtml(r.title)}
+                  </h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                    ${UI.escapeHtml(r.description || '')}
+                  </p>
+                </div>
+
+                <div class="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/80 dark:border-indigo-900/40 text-[11px] text-indigo-800 dark:text-indigo-300 flex items-start gap-2">
+                  <span class="material-symbols-outlined text-[15px] text-indigo-500 shrink-0 mt-0.5">psychology</span>
+                  <span class="leading-relaxed line-clamp-2">${UI.escapeHtml(r.explanation || 'Phù hợp với mục tiêu và tiến độ học tập hiện tại của bạn.')}</span>
+                </div>
+
+                <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span class="text-[11px] text-slate-400 font-medium">${UI.escapeHtml(r.category || 'Công nghệ thông tin')}</span>
+                  <a href="#/student/courses/detail?id=${r.course_id}" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors inline-flex items-center gap-1 shadow-xs">
+                    <span>Xem khóa học</span>
+                    <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+                  </a>
+                </div>
+              </div>
+            `).join('');
+          } else {
+            const recSection = document.getElementById('dashboard-recommendations-section');
+            if (recSection) recSection.classList.add('hidden');
+          }
+        } catch {
+          const recSection = document.getElementById('dashboard-recommendations-section');
+          if (recSection) recSection.classList.add('hidden');
+        }
+      }
     } catch (err) {
       console.warn('Dashboard load error:', err);
       UI.showToast('Không thể tải toàn bộ dữ liệu Dashboard.', 'warning');
@@ -598,6 +671,22 @@ class StudentView {
               <option value="An toàn thông tin">An toàn thông tin</option>
               <option value="Kỹ thuật phần mềm">Kỹ thuật phần mềm</option>
             </select>
+          </div>
+        </div>
+
+        <!-- Recommended For You Spotlight Banner (Algorithm 14) -->
+        <div id="catalog-recommendations-banner" class="hidden rounded-2xl bg-linear-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 shadow-md border border-indigo-700/50 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-xl bg-white/10 text-indigo-200 flex items-center justify-center material-symbols-outlined text-[20px]">auto_awesome</span>
+              <div>
+                <h2 class="font-extrabold text-base sm:text-lg text-white">Được đề xuất cho bạn (Bạch tuộc AI)</h2>
+                <p class="text-xs text-indigo-200">Các khóa học tối ưu dựa trên trình độ và môn học bạn đã hoàn thành</p>
+              </div>
+            </div>
+          </div>
+          <div id="catalog-recommendations-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Dynamically populated -->
           </div>
         </div>
 
@@ -744,9 +833,10 @@ class StudentView {
     };
 
     try {
-      const [resCatalog, resEnrolled] = await Promise.all([
+      const [resCatalog, resEnrolled, recs] = await Promise.all([
         ApiClient.getCatalogCourses(),
-        ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] }))
+        ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] })),
+        ApiClient.getRecommendations(3).catch(() => [])
       ]);
       allCourses = resCatalog.items || resCatalog.courses || [];
       const enrolledList = resEnrolled.enrollments || resEnrolled.courses || [];
@@ -754,6 +844,29 @@ class StudentView {
         if (e.course_id) enrolledCourseIds.add(String(e.course_id));
         if (e.id) enrolledCourseIds.add(String(e.id));
       });
+
+      // Render recommendations spotlight banner
+      const recBanner = document.getElementById('catalog-recommendations-banner');
+      const recList = document.getElementById('catalog-recommendations-list');
+      if (recBanner && recList && Array.isArray(recs) && recs.length > 0) {
+        recList.innerHTML = recs.map(r => `
+          <div class="bg-white/10 backdrop-blur-xs rounded-xl p-4 border border-white/10 flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center justify-between text-[11px] font-mono text-indigo-200">
+                <span>${UI.escapeHtml(r.course_code)}</span>
+                <span class="px-1.5 py-0.5 rounded bg-white/20 text-white font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
+              </div>
+              <h3 class="font-bold text-white text-sm mt-1 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
+              <p class="text-xs text-indigo-200 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
+            </div>
+            <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-1.5 rounded-lg bg-white hover:bg-slate-100 text-indigo-900 font-bold text-xs text-center transition-colors shadow-xs">
+              Xem khóa học
+            </a>
+          </div>
+        `).join('');
+        recBanner.classList.remove('hidden');
+      }
+
       renderFiltered();
     } catch (err) {
       grid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-500">Lỗi nạp danh mục: ${UI.escapeHtml(err.message)}</div>`;
@@ -1353,7 +1466,7 @@ class StudentView {
       const totalResourceCount = totalLessonResourcesCount + generalCourseResources.length;
 
       // Track active tabs & expanded accordion module IDs
-      let currentTab = initialTab === 'resources' ? 'resources' : 'outline';
+      let currentTab = (initialTab === 'resources' || initialTab === 'ai') ? initialTab : 'outline';
       let searchQuery = '';
       const expandedModuleIds = new Set();
       if (activeItem && activeItem.moduleId) {
@@ -1458,23 +1571,31 @@ class StudentView {
               id="cisco-console-sidebar"
               class="w-80 sm:w-88 md:w-96 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 overflow-hidden transition-all duration-300 z-10"
             >
-              <!-- Dual Tabs: Course Outline & Resources -->
-              <div class="h-12 border-b border-slate-200 dark:border-slate-800 grid grid-cols-2 text-xs font-bold select-none shrink-0" id="sidebar-tab-strip">
+              <!-- Triple Tabs: Course Outline, Resources & Bạch tuộc AI -->
+              <div class="h-12 border-b border-slate-200 dark:border-slate-800 grid grid-cols-3 text-xs font-bold select-none shrink-0" id="sidebar-tab-strip">
                 <button
                   type="button"
                   id="tab-btn-outline"
-                  class="flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${currentTab === 'outline' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
+                  class="flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${currentTab === 'outline' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
                 >
-                  <span class="material-symbols-outlined text-[18px]">menu_book</span>
-                  <span>Đề cương</span>
+                  <span class="material-symbols-outlined text-[17px]">menu_book</span>
+                  <span class="truncate">Đề cương</span>
                 </button>
                 <button
                   type="button"
                   id="tab-btn-resources"
-                  class="flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${currentTab === 'resources' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
+                  class="flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${currentTab === 'resources' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
                 >
-                  <span class="material-symbols-outlined text-[18px]">folder_open</span>
-                  <span id="tab-resources-badge-label">Tài liệu (${totalResourceCount})</span>
+                  <span class="material-symbols-outlined text-[17px]">folder_open</span>
+                  <span class="truncate" id="tab-resources-badge-label">Tài liệu (${totalResourceCount})</span>
+                </button>
+                <button
+                  type="button"
+                  id="tab-btn-ai"
+                  class="flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${currentTab === 'ai' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 dark:bg-indigo-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
+                >
+                  <span class="material-symbols-outlined text-[17px] text-indigo-500">smart_toy</span>
+                  <span class="truncate">Trợ lý AI</span>
                 </button>
               </div>
 
@@ -1509,6 +1630,76 @@ class StudentView {
               <!-- Sidebar Panel 2: Resources Vault (Grouped by Chapter & Lesson) -->
               <div id="sidebar-panel-resources" class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar ${currentTab === 'resources' ? '' : 'hidden'}">
                 <!-- Rendered dynamically by renderSidebarResources -->
+              </div>
+
+              <!-- Sidebar Panel 3: Bạch tuộc trợ lí AI Console -->
+              <div id="sidebar-panel-ai" class="flex-1 flex flex-col overflow-hidden ${currentTab === 'ai' ? '' : 'hidden'} bg-slate-50/50 dark:bg-slate-900/50">
+                <!-- Context header bar -->
+                <div class="p-2.5 px-3 bg-indigo-50/80 dark:bg-indigo-950/40 border-b border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between shrink-0">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0"></span>
+                    <span class="text-[11px] font-semibold text-indigo-900 dark:text-indigo-200 truncate" id="console-ai-context-label">
+                      Ngữ cảnh: Toàn bộ khóa học
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    id="console-ai-new-chat-btn"
+                    class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium shrink-0 flex items-center gap-0.5 cursor-pointer ml-1"
+                    title="Bắt đầu hội thoại mới"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">refresh</span> Làm mới
+                  </button>
+                </div>
+
+                <!-- Messages container -->
+                <div id="console-ai-messages" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar text-xs">
+                  <div class="flex gap-2">
+                    <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                      <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
+                      <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
+                      <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                        Chào bạn! Mình có thể giải đáp kiến thức trong bài giảng, tóm tắt lý thuyết, giải thích câu hỏi hoặc hướng dẫn giải bài tập thực hành. Hãy đặt câu hỏi cho mình nhé!
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Prompt recommendation chips -->
+                <div class="p-2 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex gap-1.5 overflow-x-auto no-scrollbar shrink-0" id="console-ai-chips">
+                  <button type="button" class="console-prompt-chip px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200/60 dark:border-indigo-800/60 shrink-0 cursor-pointer transition-colors" data-prompt="Giải thích ngắn gọn nội dung cốt lõi của bài học này giúp mình">
+                    💡 Tóm tắt bài học
+                  </button>
+                  <button type="button" class="console-prompt-chip px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200/60 dark:border-indigo-800/60 shrink-0 cursor-pointer transition-colors" data-prompt="Các khái niệm quan trọng nhất cần ghi nhớ là gì?">
+                    🔑 Khái niệm cốt lõi
+                  </button>
+                  <button type="button" class="console-prompt-chip px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-medium border border-indigo-200/60 dark:border-indigo-800/60 shrink-0 cursor-pointer transition-colors" data-prompt="Cho mình một ví dụ thực tế liên quan đến bài giảng này">
+                    📌 Ví dụ thực tế
+                  </button>
+                </div>
+
+                <!-- Chat Input Form -->
+                <div class="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                  <form id="console-ai-form" class="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      id="console-ai-input"
+                      placeholder="Hỏi Bạch tuộc AI về bài học..."
+                      class="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:border-indigo-500 transition-all"
+                      autocomplete="off"
+                    />
+                    <button
+                      type="submit"
+                      id="console-ai-send-btn"
+                      class="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                      title="Gửi câu hỏi"
+                    >
+                      <span class="material-symbols-outlined text-[18px]">send</span>
+                    </button>
+                  </form>
+                </div>
               </div>
             </aside>
 
@@ -1580,29 +1771,182 @@ class StudentView {
       // Tab Switching Handler
       const tabBtnOutline = document.getElementById('tab-btn-outline');
       const tabBtnResources = document.getElementById('tab-btn-resources');
+      const tabBtnAi = document.getElementById('tab-btn-ai');
       const panelOutline = document.getElementById('sidebar-panel-outline');
       const panelResources = document.getElementById('sidebar-panel-resources');
+      const panelAi = document.getElementById('sidebar-panel-ai');
 
       const switchSidebarTab = (tab) => {
         currentTab = tab;
+        const activeTabClass = 'flex items-center justify-center gap-1.5 border-b-2 border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20 transition-all cursor-pointer';
+        const activeAiTabClass = 'flex items-center justify-center gap-1.5 border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 dark:bg-indigo-950/20 transition-all cursor-pointer';
+        const inactiveTabClass = 'flex items-center justify-center gap-1.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer';
+
+        if (tabBtnOutline) tabBtnOutline.className = tab === 'outline' ? activeTabClass : inactiveTabClass;
+        if (tabBtnResources) tabBtnResources.className = tab === 'resources' ? activeTabClass : inactiveTabClass;
+        if (tabBtnAi) tabBtnAi.className = tab === 'ai' ? activeAiTabClass : inactiveTabClass;
+
+        if (panelOutline) panelOutline.classList.toggle('hidden', tab !== 'outline');
+        if (panelResources) panelResources.classList.toggle('hidden', tab !== 'resources');
+        if (panelAi) panelAi.classList.toggle('hidden', tab !== 'ai');
+
         if (tab === 'outline') {
-          tabBtnOutline.className = 'flex items-center justify-center gap-2 border-b-2 border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20 transition-all cursor-pointer';
-          tabBtnResources.className = 'flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer';
-          panelOutline.classList.remove('hidden');
-          panelResources.classList.add('hidden');
           renderSidebarOutline();
-        } else {
-          tabBtnResources.className = 'flex items-center justify-center gap-2 border-b-2 border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20 transition-all cursor-pointer';
-          tabBtnOutline.className = 'flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer';
-          panelResources.classList.remove('hidden');
-          panelOutline.classList.add('hidden');
+        } else if (tab === 'resources') {
           renderSidebarResources();
+        } else if (tab === 'ai') {
+          updateAIContextBadge();
+          const aiInput = document.getElementById('console-ai-input');
+          if (aiInput) aiInput.focus();
         }
       };
 
-      if (tabBtnOutline && tabBtnResources) {
-        tabBtnOutline.onclick = () => switchSidebarTab('outline');
-        tabBtnResources.onclick = () => switchSidebarTab('resources');
+      if (tabBtnOutline) tabBtnOutline.onclick = () => switchSidebarTab('outline');
+      if (tabBtnResources) tabBtnResources.onclick = () => switchSidebarTab('resources');
+      if (tabBtnAi) tabBtnAi.onclick = () => switchSidebarTab('ai');
+
+      // AI Chat Controller inside NetAcad Course Console
+      let consoleConvId = null;
+      let isAiSending = false;
+
+      const updateAIContextBadge = () => {
+        const badge = document.getElementById('console-ai-context-label');
+        if (!badge) return;
+        if (activeItem && activeItem.type === 'lesson') {
+          badge.textContent = `Ngữ cảnh: Bài học - ${activeItem.title}`;
+          badge.title = `Bài học: ${activeItem.title}`;
+        } else if (activeItem && activeItem.type === 'exam') {
+          badge.textContent = `Ngữ cảnh: Khảo thí - ${activeItem.title}`;
+          badge.title = `Khảo thí: ${activeItem.title}`;
+        } else {
+          badge.textContent = `Ngữ cảnh: Khóa học - ${course.title || 'Toàn khóa'}`;
+          badge.title = `Khóa học: ${course.title}`;
+        }
+      };
+
+      const appendConsoleAIMessage = (role, text) => {
+        const msgContainer = document.getElementById('console-ai-messages');
+        if (!msgContainer) return;
+        const div = document.createElement('div');
+        div.className = 'flex gap-2' + (role === 'user' ? ' justify-end' : '');
+        if (role === 'user') {
+          div.innerHTML = `
+            <div class="bg-indigo-600 text-white p-2.5 rounded-2xl rounded-tr-sm shadow-xs max-w-[85%] text-[11px] leading-relaxed break-words whitespace-pre-wrap">
+              ${UI.escapeHtml(text)}
+            </div>
+          `;
+        } else {
+          div.innerHTML = `
+            <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+            </div>
+            <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
+              <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
+              <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed prose prose-invert prose-xs max-w-none">
+                ${UI.renderMarkdown ? UI.renderMarkdown(text) : UI.escapeHtml(text).replace(/\n/g, '<br/>')}
+              </div>
+            </div>
+          `;
+        }
+        msgContainer.appendChild(div);
+        msgContainer.scrollTop = msgContainer.scrollHeight;
+      };
+
+      const sendConsoleAIMessage = async (text) => {
+        const query = (text || '').trim();
+        if (!query || isAiSending) return;
+        isAiSending = true;
+
+        const sendBtn = document.getElementById('console-ai-send-btn');
+        const inputEl = document.getElementById('console-ai-input');
+        if (sendBtn) sendBtn.disabled = true;
+        if (inputEl) inputEl.value = '';
+
+        appendConsoleAIMessage('user', query);
+
+        // Show typing indicator
+        const msgContainer = document.getElementById('console-ai-messages');
+        const typingId = 'console-ai-typing-' + Date.now();
+        if (msgContainer) {
+          const typingDiv = document.createElement('div');
+          typingDiv.id = typingId;
+          typingDiv.className = 'flex gap-2';
+          typingDiv.innerHTML = `
+            <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+              <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+            </div>
+            <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs text-slate-500 text-[11px] flex items-center gap-1.5">
+              <span class="inline-block animate-spin text-[12px]">⏳</span> Bạch tuộc đang suy nghĩ câu trả lời...
+            </div>
+          `;
+          msgContainer.appendChild(typingDiv);
+          msgContainer.scrollTop = msgContainer.scrollHeight;
+        }
+
+        try {
+          const curLessonId = (activeItem && activeItem.type === 'lesson') ? activeItem.id : null;
+          const res = await ApiClient.sendAIChat(query, consoleConvId, courseId, curLessonId);
+          const typingEl = document.getElementById(typingId);
+          if (typingEl) typingEl.remove();
+
+          if (res && res.conversation_id) {
+            consoleConvId = res.conversation_id;
+          }
+          const reply = res?.reply || res?.data?.reply || (typeof res?.assistant_message === 'string' ? res.assistant_message : res?.assistant_message?.content) || res?.message || res?.content || 'Xin lỗi bạn, mình chưa thể xử lý yêu cầu lúc này.';
+          appendConsoleAIMessage('assistant', reply);
+        } catch (err) {
+          const typingEl = document.getElementById(typingId);
+          if (typingEl) typingEl.remove();
+          const errText = err?.data?.error?.message || err?.message || 'Lỗi mạng hoặc hệ thống tạm thời bận';
+          appendConsoleAIMessage('assistant', `⚠️ Không thể gửi câu hỏi: ${errText}. Vui lòng thử lại sau ít phút.`);
+        } finally {
+          isAiSending = false;
+          if (sendBtn) sendBtn.disabled = false;
+          if (inputEl) inputEl.focus();
+        }
+      };
+
+      // Form submit & Prompt chips listeners
+      const aiForm = document.getElementById('console-ai-form');
+      if (aiForm) {
+        aiForm.onsubmit = (e) => {
+          e.preventDefault();
+          const val = document.getElementById('console-ai-input')?.value;
+          sendConsoleAIMessage(val);
+        };
+      }
+
+      document.querySelectorAll('.console-prompt-chip').forEach(btn => {
+        btn.onclick = () => {
+          const prompt = btn.dataset.prompt;
+          if (prompt) {
+            sendConsoleAIMessage(prompt);
+          }
+        };
+      });
+
+      const newChatBtn = document.getElementById('console-ai-new-chat-btn');
+      if (newChatBtn) {
+        newChatBtn.onclick = () => {
+          consoleConvId = null;
+          const msgContainer = document.getElementById('console-ai-messages');
+          if (msgContainer) {
+            msgContainer.innerHTML = `
+              <div class="flex gap-2">
+                <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
+                  <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
+                  <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                    Đã làm mới phiên thảo luận. Bạn muốn tìm hiểu hoặc cần mình giải đáp phần nào trong bài học này?
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+          UI.showToast('Đã bắt đầu phiên trao đổi mới với Bạch tuộc AI', 'info');
+        };
       }
 
       // Search Box in Outline
@@ -2015,6 +2359,7 @@ class StudentView {
         renderSidebarResources();
         renderActiveContent();
         updateFloatingNav();
+        updateAIContextBadge();
       };
 
       // Floating [<] and [>] Nav Controller
@@ -2594,20 +2939,32 @@ class StudentView {
 
 
               <!-- Bottom Action Navigation Bar -->
-              <div class="flex items-center justify-between pt-4 pb-12">
+              <div class="flex items-center justify-between pt-4 pb-12 gap-2 flex-wrap">
                 <div id="cisco-bottom-prev-box">
                   <!-- Prev Button dynamically updated -->
                 </div>
 
-                <button
-                  type="button"
-                  id="cisco-complete-btn"
-                  class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer')}"
-                  ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
-                >
-                  <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
-                  <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    id="cisco-ask-ai-lesson-btn"
+                    class="px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 cursor-pointer"
+                    title="Mở tab Trợ lý AI trao đổi về bài học này"
+                  >
+                    <span class="material-symbols-outlined text-[18px]">smart_toy</span>
+                    <span>Hỏi Trợ lý AI</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="cisco-complete-btn"
+                    class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer')}"
+                    ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
+                  >
+                    <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
+                    <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
+                  </button>
+                </div>
 
                 <div id="cisco-bottom-next-box">
                   <!-- Next Button dynamically updated -->
@@ -2642,6 +2999,17 @@ class StudentView {
               </button>
             `;
             bottomNextBox.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
+          }
+
+          // Hook Ask AI Button in Lesson Reader
+          const askAiBtn = document.getElementById('cisco-ask-ai-lesson-btn');
+          if (askAiBtn) {
+            askAiBtn.onclick = () => {
+              if (sidebarEl && sidebarEl.classList.contains('hidden')) {
+                sidebarEl.classList.remove('hidden');
+              }
+              switchSidebarTab('ai');
+            };
           }
 
           // Revision Opt-In Button
@@ -5038,7 +5406,12 @@ class StudentView {
           const stem = btn.dataset.stem;
           const ans = btn.dataset.answer;
           const prompt = `Bạch tuộc hãy giải thích chi tiết giúp tôi câu hỏi thi này (vì sao đáp án đúng là "${ans}"):\n"${stem}"`;
-          FloatingAITutor.openWithQuestion(prompt);
+          const courseId = data.course_id || data.assessment?.course_id || null;
+          if (window.FloatingAITutor) {
+            FloatingAITutor.openWithQuestion(prompt, courseId);
+          } else {
+            UI.showToast('Trợ lý AI đang sẵn sàng, vui lòng thử lại sau giây lát...', 'info');
+          }
         };
       });
 
@@ -5299,7 +5672,7 @@ class StudentView {
       typing.className = 'flex gap-3 justify-start text-xs text-slate-400 items-center p-2';
       typing.innerHTML = `
         <span class="inline-block animate-spin text-primary text-sm">✦</span>
-        <span>Gemini 3.8 Flash đang phân tích kiến thức...</span>
+        <span>Bạch tuộc trợ lí AI đang phân tích kiến thức...</span>
       `;
       chatContainer.appendChild(typing);
       chatContainer.scrollTop = chatContainer.scrollHeight;

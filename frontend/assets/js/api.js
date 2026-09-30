@@ -365,14 +365,29 @@ class ApiClient {
     });
   }
 
-  static async sendAIChat(message, conversationId = null, courseId = null) {
+  static async sendAIChat(message, conversationId = null, courseId = null, lessonId = null) {
     const body = { message };
-    if (conversationId) body.conversation_id = conversationId;
+    if (conversationId !== undefined) body.conversation_id = conversationId;
     if (courseId) body.course_id = courseId;
+    if (lessonId) body.lesson_id = lessonId;
     return await ApiClient.request('/student/ai/chat', {
       method: 'POST',
       body
     });
+  }
+
+  static async getRecommendations(limit = 4) {
+    try {
+      const res = await ApiClient.request(`/student/recommendations?limit=${limit}`);
+      return res?.recommendations || res?.data?.recommendations || res || [];
+    } catch {
+      try {
+        const res = await ApiClient.request(`/api/ai/recommendations?limit=${limit}`);
+        return res?.recommendations || res?.data?.recommendations || res || [];
+      } catch {
+        return [];
+      }
+    }
   }
 
   static async getInstructorApplication() {

@@ -1768,6 +1768,10 @@ class ExamAntiCheatManager {
 // 10. Floating Circular AI Tutor Widget Controller (Warm Editorial Style)
 // =========================================================================
 class FloatingAITutor {
+  static isInitialized = false;
+  static conversationId = null;
+  static courseId = null;
+
   static init() {
     const launcher = document.getElementById('floating-ai-launcher');
     const drawer = document.getElementById('floating-ai-drawer');
@@ -1776,6 +1780,8 @@ class FloatingAITutor {
     const input = document.getElementById('floating-ai-input');
 
     if (!launcher || !drawer || !form) return;
+    if (FloatingAITutor.isInitialized) return;
+    FloatingAITutor.isInitialized = true;
 
     launcher.onclick = () => {
       drawer.classList.toggle('hidden');
@@ -1783,6 +1789,13 @@ class FloatingAITutor {
         input.focus();
       }
     };
+
+    const resetBtn = document.getElementById('floating-ai-reset-btn');
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        FloatingAITutor.resetConversation();
+      };
+    }
 
     if (closeBtn) {
       closeBtn.onclick = () => {
@@ -1794,37 +1807,67 @@ class FloatingAITutor {
       e.preventDefault();
       const text = input.value.trim();
       if (!text) return;
-
       input.value = '';
-      FloatingAITutor.appendMessage('user', text);
-
-      const loadingId = 'ai_load_' + Date.now();
-      FloatingAITutor.appendLoadingBubble(loadingId);
-
-      try {
-        const res = await ApiClient.sendAIChat(text);
-        FloatingAITutor.removeLoadingBubble(loadingId);
-        const reply = res?.reply || res?.message || res?.data?.reply || 'Tôi đã tiếp nhận câu hỏi của bạn.';
-        FloatingAITutor.appendMessage('ai', reply);
-      } catch (err) {
-        FloatingAITutor.removeLoadingBubble(loadingId);
-        FloatingAITutor.appendMessage('ai', `Xin lỗi, có sự cố kết nối: ${err.message || 'Không thể liên hệ với Gemini AI.'}`);
-      }
+      await FloatingAITutor.sendMessage(text);
     };
   }
 
-  static openWithQuestion(promptText) {
-    const drawer = document.getElementById('floating-ai-drawer');
-    const input = document.getElementById('floating-ai-input');
-    const form = document.getElementById('floating-ai-form');
+  static resetConversation() {
+    FloatingAITutor.conversationId = null;
+    const msgContainer = document.getElementById('floating-ai-messages');
+    if (msgContainer) {
+      msgContainer.innerHTML = `
+        <div class="flex gap-2.5 items-start">
+          <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-7 h-7 rounded-lg object-cover shrink-0 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs" />
+          <div class="bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] p-3 rounded-xl rounded-tl-none max-w-[85%] border border-[#E8E6DF] dark:border-[#2E2D2B]">
+            Đã làm mới cuộc hội thoại! Bạn có thể đặt câu hỏi mới về khóa học hoặc kiến thức lập trình nhé.
+          </div>
+        </div>
+      `;
+    }
+    if (UI.showToast) {
+      UI.showToast('Đã làm mới cuộc hội thoại với Bạch tuộc AI', 'info');
+    }
+  }
 
+  static async sendMessage(text) {
+    FloatingAITutor.appendMessage('user', text);
+    const loadingId = 'ai_load_' + Date.now();
+    FloatingAITutor.appendLoadingBubble(loadingId);
+
+    try {
+      const res = await ApiClient.sendAIChat(text, FloatingAITutor.conversationId, FloatingAITutor.courseId);
+      FloatingAITutor.removeLoadingBubble(loadingId);
+      if (res && res.conversation_id) {
+        FloatingAITutor.conversationId = res.conversation_id;
+      }
+      const reply = res?.reply || res?.message || res?.data?.reply || 'Tôi đã tiếp nhận câu hỏi của bạn.';
+      FloatingAITutor.appendMessage('ai', reply);
+    } catch (err) {
+      FloatingAITutor.removeLoadingBubble(loadingId);
+      FloatingAITutor.appendMessage('ai', `Xin lỗi, có sự cố kết nối: ${err.message || 'Không thể liên hệ với Gemini AI.'}`);
+    }
+  }
+
+  static openWithQuestion(promptText, courseId = null) {
+    if (!FloatingAITutor.isInitialized) {
+      FloatingAITutor.init();
+    }
+    if (courseId && courseId !== FloatingAITutor.courseId) {
+      FloatingAITutor.conversationId = null;
+      FloatingAITutor.courseId = courseId;
+    } else if (courseId) {
+      FloatingAITutor.courseId = courseId;
+    }
+    const drawer = document.getElementById('floating-ai-drawer');
     if (drawer) {
       drawer.classList.remove('hidden');
     }
-    if (input && form) {
-      input.value = promptText;
-      form.dispatchEvent(new Event('submit'));
+    const input = document.getElementById('floating-ai-input');
+    if (input) {
+      input.value = '';
     }
+    FloatingAITutor.sendMessage(promptText);
   }
 
   static close() {

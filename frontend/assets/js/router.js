@@ -407,7 +407,7 @@ class AppRouter {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
       await StudentView.renderAttemptResults(viewport, attId);
     } else if (path === '#/student/ai-assistant') {
-      window.location.hash = '#/student/dashboard';
+      await StudentView.renderAIAssistant(viewport);
     } else if (path === '#/student/become-instructor') {
       await StudentView.renderBecomeInstructor(viewport);
     } else if (path === '#/student/settings' || path === '#/settings') {

@@ -278,6 +278,7 @@ def generate_course_recommendations(
         results.append(
             {
                 "course_id": str(cand_course.public_id),
+                "id": str(cand_course.public_id),
                 "course_code": cand_course.course_code,
                 "title": cand_course.title,
                 "description": cand_course.description,
