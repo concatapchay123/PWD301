@@ -670,9 +670,13 @@ def _build_course_outline_context(course: Course) -> str:
         parts.append("Cấu trúc chương/học phần:")
         for u in units:
             unit_lessons = [
-                l.title
-                for l in lessons
-                if l.learning_unit_id == u.id and l.status == "PUBLISHED" and l.deleted_at is None
+                les.title
+                for les in lessons
+                if (
+                    les.learning_unit_id == u.id
+                    and les.status == "PUBLISHED"
+                    and les.deleted_at is None
+                )
             ]
             if unit_lessons:
                 parts.append(f"  + {u.title}: {', '.join(unit_lessons)}")
@@ -680,7 +684,7 @@ def _build_course_outline_context(course: Course) -> str:
                 parts.append(f"  + {u.title}")
     elif lessons:
         pub_lessons = [
-            l.title for l in lessons if l.status == "PUBLISHED" and l.deleted_at is None
+            les.title for les in lessons if les.status == "PUBLISHED" and les.deleted_at is None
         ]
         if pub_lessons:
             parts.append("Danh sách bài học: " + ", ".join(pub_lessons))

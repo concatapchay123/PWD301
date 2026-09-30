@@ -702,7 +702,6 @@ def test_student_can_ask_ai_about_published_course_without_enrollment(
     """Student browsing catalog can ask AI about course syllabus without 403 Forbidden."""
     from pwd301.models.course import Course
 
-    course = student_fixture["course"]
     instructor = student_fixture["instructor"]
     sess = db.session
 
@@ -738,7 +737,7 @@ def test_student_can_ask_ai_about_published_course_without_enrollment(
 def test_student_ai_chat_new_session_when_conversation_id_null(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
-    """Sending conversation_id=null actively creates a fresh session and clears previous session ID."""
+    """Sending conversation_id=null actively creates a fresh session."""
     csrf = login_client(client, "student_stu@pwd301.local")
     # First message: creates session 1
     resp1 = client.post(

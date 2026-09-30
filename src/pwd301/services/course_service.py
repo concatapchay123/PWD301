@@ -923,8 +923,10 @@ def change_course_status(
                 les.published_at = now
             les.updated_at = now
 
-        from pwd301.services.rag_service import auto_ingest_course_materials
         import contextlib
+
+        from pwd301.services.rag_service import auto_ingest_course_materials
+
         with contextlib.suppress(Exception):
             auto_ingest_course_materials(course, actor=actor, session=sess)
     elif target_status == "TRASH":

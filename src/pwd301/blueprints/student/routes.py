@@ -1280,6 +1280,7 @@ def ai_assistant_view() -> Any:
 @student_required
 def student_ai_chat() -> Any:
     from pwd301.services.ai_service import create_conversation, get_conversation, send_chat_message
+    from pwd301.services.authorization_service import can_manage_course
     from pwd301.services.exceptions import (
         AIConversationExpiredError,
         AIOutOfScopeError,
@@ -1355,14 +1356,16 @@ def student_ai_chat() -> Any:
                 )
                 .first()
             )
-            if not enr_check:
-                if lesson_id or (
+            if not enr_check and (
+                lesson_id
+                or (
                     target_course.status != "PUBLISHED"
                     and not (
                         actor.is_admin
                         or can_manage_course(actor, target_course, session=db.session)
                     )
-                ):
+                )
+            ):
                     return (
                         jsonify(
                             {

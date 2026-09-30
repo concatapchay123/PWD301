@@ -501,18 +501,22 @@ def test_auto_ingest_lesson_on_publish(
     instructor_user: User,
     test_course: Course,
 ) -> None:
-    """When a lesson is created with status PUBLISHED, it is automatically ingested into RAG chunks."""
+    """When a lesson is created as PUBLISHED, it is auto-ingested into RAG chunks."""
     from pwd301.models.ai_rag import KnowledgeDocument
     from pwd301.services.lesson_service import create_lesson
 
     sess: Session = db.session
+    md_content = (
+        "# Kiến trúc RAG tự động\n"
+        "Hệ thống PWD301 tự động ingest nội dung bài giảng khi xuất bản."
+    )
     lesson = create_lesson(
         actor=instructor_user,
         course_id=test_course.id,
         data={
             "title": "Tự động lập chỉ mục RAG",
             "summary": "Tự động chunking và lưu trữ tri thức",
-            "markdown_content": "# Kiến trúc RAG tự động\nHệ thống PWD301 tự động ingest nội dung bài giảng khi xuất bản.",
+            "markdown_content": md_content,
             "status": "PUBLISHED",
         },
         session=sess,

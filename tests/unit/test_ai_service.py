@@ -7,6 +7,7 @@ import json
 import unittest.mock
 import uuid
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from flask import Flask
@@ -696,8 +697,6 @@ def test_send_chat_message_lesson_and_recommendation_grounding(
     app: Flask, student_user: User, sample_course: Course
 ) -> None:
     """Verify that send_chat_message injects lesson markdown and recommendation into context."""
-    from typing import Any
-
     from pwd301.models.course import LearningUnit, Lesson
 
     sess: Session = db.session
@@ -926,7 +925,8 @@ def test_conversation_history_sliding_window_limits_turns(
         # Sliding window of 6 turns = max 12 prior items + 1 current = 13 items
         assert len(msgs) <= 13
         # Oldest turn 1 must be pruned
-        assert not any(m.get("content") == "Khóa học lập trình 1 có những nội dung gì?" for m in msgs)
+        oldest_prompt = "Khóa học lập trình 1 có những nội dung gì?"
+        assert not any(m.get("content") == oldest_prompt for m in msgs)
         assert any(m.get("content") == "Khóa học lập trình 10 có những nội dung gì?" for m in msgs)
         assert msgs[-1].get("content") == "Khóa học này gồm những bài học nào?"
     finally:
