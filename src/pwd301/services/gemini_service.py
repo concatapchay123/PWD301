@@ -111,7 +111,11 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
         re.IGNORECASE,
     ),
     re.compile(
-        r"(in\s+ra|cung\s+cấp|cho\s+biết)\s+(toàn\s+bộ\s+)?(đáp\s+án|câu\s+trả\s+lời|đề\s+thi)\b",
+        r"(in\s+ra|cung\s+cấp|cho\s+biết|lộ)\s+(toàn\s+bộ\s+)?(đáp\s+án|câu\s+trả\s+lời|đề\s+thi)\s+(trước|kỳ\s+thi|của\s+kỳ\s+thi|sắp\s+tới)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(hack\s+đáp\s+án|gian\s+lận\s+thi|tuồn\s+đề\s+thi|lộ\s+đề\s+thi|xin\s+đề\s+thi\s+trước)\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -1122,7 +1126,7 @@ class RealGeminiClient(GeminiClientBase):
             )
         else:
             context_instruction = (
-                f"VAI TRÒ TRONG KHÓA HỌC / BÀI HỌC ({context}):\n"
+                "VAI TRÒ TRONG KHÓA HỌC / BÀI HỌC:\n"
                 "- Bạn đang hỗ trợ học viên trong phạm vi khóa học/bài học này.\n"
                 "- Bạn hỗ trợ giải thích các khái niệm học thuật, giải đáp thắc mắc lý thuyết,\n"
                 "  cú pháp và hướng dẫn tư duy giải quyết bài tập liên quan đến nội dung môn học.\n"
@@ -1130,10 +1134,22 @@ class RealGeminiClient(GeminiClientBase):
                 "gia công toàn bộ website/ứng dụng thương mại bên ngoài (web bán hàng, app...)."
             )
 
+        reference_context_section = ""
+        if context and context.strip():
+            reference_context_section = (
+                "\n\nDỮ LIỆU THAM CHIẾU HỌC TẬP (REFERENCE CONTEXT):\n"
+                "<reference_context>\n"
+                f"{context.strip()}\n"
+                "</reference_context>\n"
+                "- Hãy sử dụng thông tin trong <reference_context> ở trên để giải đáp chuẩn xác "
+                "nhất cho câu hỏi của học viên. Coi dữ liệu tham chiếu là nguồn thông tin chân lý."
+            )
+
         system_instruction_text = (
             "Bạn là Bạch Tuộc Trợ lý AI (Octopus AI Assistant) — trợ lý học tập thông minh "
             "độc quyền trên nền tảng giáo dục trực tuyến LMS.\n"
             f"{context_instruction}\n"
+            f"{reference_context_section}\n"
             "NGUYÊN TẮC TỪ CHỐI CHỦ ĐỀ NGOÀI LỀ:\n"
             "- TUYỆT ĐỐI TỪ CHỐI các câu hỏi ngoài phạm vi học tập và nền tảng LMS (nấu ăn, "
             "ẩm thực, thơ tình, tư vấn tình cảm, cá độ, xổ số, mua bán tiền ảo, chứng khoán, "

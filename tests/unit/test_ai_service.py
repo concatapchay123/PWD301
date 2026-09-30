@@ -831,3 +831,44 @@ def test_course_syllabus_grounding_in_chat(
         assert "Bài 1: Giới thiệu chung" in ctx
     finally:
         set_gemini_client_override(None)
+
+
+def test_global_recommendation_context_delivered_to_model(
+    app: Flask, student_user: User
+) -> None:
+    """When on GLOBAL context, course recommendations are included in the prompt payload."""
+    from pwd301.services.gemini_service import RealGeminiClient
+
+    client = RealGeminiClient(api_key="AIzaSyTestMockKeyForContextTest12345")
+    with unittest.mock.patch.object(client, "_call_gemini_api") as mock_call:
+        mock_call.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Dưới đây là các khóa học gợi ý phù hợp nhất cho bạn."}
+                        ]
+                    }
+                }
+            ]
+        }
+        test_context = (
+            "Context: GLOBAL\n\n"
+            "<personalized_course_catalog_recommendations>\n"
+            "- [WEB101] Lập trình Web Cơ bản\n"
+            "</personalized_course_catalog_recommendations>"
+        )
+        client.chat_response(
+            messages=[{"sender": "USER", "content": "Gợi ý khóa học cho mình"}],
+            context=test_context,
+            skip_scope_check=True,
+        )
+        assert mock_call.called
+        payload = mock_call.call_args[0][0]
+        sys_text = payload.get("systemInstruction", {}).get("parts", [{}])[0].get("text", "")
+        # Must contain recommendations
+        assert "<personalized_course_catalog_recommendations>" in sys_text
+        assert "WEB101" in sys_text
+        # Must NOT have broken parenthetical header stuffing
+        assert "VAI TRÒ TRONG KHÓA HỌC / BÀI HỌC (" not in sys_text
+        assert "DỮ LIỆU THAM CHIẾU" in sys_text or "<reference_context>" in sys_text
