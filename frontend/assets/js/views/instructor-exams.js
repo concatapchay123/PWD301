@@ -999,7 +999,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             </label>
             <span class="text-slate-500">${q.image_asset_id || (q.resources && q.resources.length > 0) ? 'Đã đính kèm ảnh câu hỏi' : 'PNG, JPEG, WebP hoặc GIF; tối đa 5 MB'}</span>
           </div>
-          <div class="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 focus-within:bg-white dark:focus-within:bg-slate-800 outline-none" contenteditable="true" onclick="event.stopPropagation()">
+          <div class="q-card-stem text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 focus-within:bg-white dark:focus-within:bg-slate-800 outline-none" contenteditable="true" data-q-index="${idx}" onclick="event.stopPropagation()">
             ${UI.escapeHtml((q.stem || q.question_text || '').replace(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):[^\]]+\]\]/gi, '').trim())}
           </div>
 
@@ -1009,14 +1009,16 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <div class="flex items-start gap-2 group/opt">
                 <button
                   type="button"
-                  class="w-6 h-6 rounded-md font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs transition-colors ${c.is_correct ? 'bg-indigo-600 text-white' : 'border border-slate-300 dark:border-slate-700 text-slate-600 hover:border-indigo-500'}"
-                  title="${c.is_correct ? 'Đáp án đúng' : 'Đánh dấu đáp án đúng'}"
+                  class="q-choice-btn w-6 h-6 rounded-md font-bold text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-xs transition-colors ${c.is_correct ? 'bg-indigo-600 text-white' : 'border border-slate-300 dark:border-slate-700 text-slate-600 hover:border-indigo-500'}"
+                  data-q-index="${idx}"
+                  data-c-index="${cIdx}"
+                  title="${c.is_correct ? 'Đáp án đúng (nhấp để bỏ)' : 'Đánh dấu đáp án đúng'}"
                 >
-                  ${c.is_correct ? '✓' : c.label}
+                  ${c.is_correct ? '✓' : (c.label || String.fromCharCode(65 + cIdx))}
                 </button>
-                <div class="text-xs p-2 rounded-lg w-full transition-colors ${c.is_correct ? 'border border-indigo-500 bg-indigo-50/20 text-slate-900 dark:text-white font-medium ring-1 ring-indigo-500/30' : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800'}">
-                  <span class="font-bold ${c.is_correct ? 'text-indigo-700 mr-1' : 'mr-1'}">${c.label}.</span>
-                  <span>${UI.escapeHtml(c.content)}</span>
+                <div class="q-choice-content text-xs p-2 rounded-lg w-full transition-colors ${c.is_correct ? 'border border-indigo-500 bg-indigo-50/20 text-slate-900 dark:text-white font-medium ring-1 ring-indigo-500/30' : 'border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800'}" contenteditable="true" data-q-index="${idx}" data-c-index="${cIdx}">
+                  <span class="font-bold ${c.is_correct ? 'text-indigo-700 mr-1' : 'mr-1'}">${c.label || String.fromCharCode(65 + cIdx)}.</span>
+                  <span>${UI.escapeHtml(c.content || '')}</span>
                 </div>
               </div>
             `).join('')}
@@ -1053,6 +1055,61 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             const total = questions.reduce((sum, item) => sum + (parseFloat(item.points) || 0), 0);
             const syncBadge = document.getElementById('workflow-sync-badge');
             if (syncBadge) syncBadge.textContent = `${questions.length} câu • ${total.toFixed(1)}đ • Tự động lưu`;
+          }
+        };
+      });
+
+      // Stem in-place editing
+      previewContainer.querySelectorAll('.q-card-stem').forEach(stemEl => {
+        stemEl.onblur = (e) => {
+          const idx = parseInt(e.target.dataset.qIndex, 10);
+          const newStem = e.target.innerText.trim();
+          if (questions[idx] && newStem && newStem !== questions[idx].stem) {
+            questions[idx].stem = newStem;
+            questions[idx].question_text = newStem;
+            textarea.value = ExamParser.generateRawFromQuestions(questions);
+            updateLineNumbers();
+            saveEditorState();
+          }
+        };
+      });
+
+      // Choice toggle correct
+      previewContainer.querySelectorAll('.q-choice-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const qIdx = parseInt(btn.dataset.qIndex, 10);
+          const cIdx = parseInt(btn.dataset.cIndex, 10);
+          const q = questions[qIdx];
+          if (!q || !q.choices || !q.choices[cIdx]) return;
+          if (q.type === 'MULTIPLE_CHOICE' || q.question_type === 'TN nhiều đáp án') {
+            q.choices[cIdx].is_correct = !q.choices[cIdx].is_correct;
+          } else {
+            q.choices.forEach((c, i) => {
+              c.is_correct = (i === cIdx);
+            });
+          }
+          textarea.value = ExamParser.generateRawFromQuestions(questions);
+          renderEditorPreview();
+          saveEditorState();
+        };
+      });
+
+      // Choice content in-place editing
+      previewContainer.querySelectorAll('.q-choice-content').forEach(cEl => {
+        cEl.onblur = (e) => {
+          const qIdx = parseInt(cEl.dataset.qIndex, 10);
+          const cIdx = parseInt(cEl.dataset.cIndex, 10);
+          const rawText = cEl.innerText.trim();
+          const q = questions[qIdx];
+          if (q && q.choices && q.choices[cIdx]) {
+            const cleanContent = rawText.replace(/^[A-F]\.\s*/i, '').trim();
+            if (cleanContent && cleanContent !== q.choices[cIdx].content) {
+              q.choices[cIdx].content = cleanContent;
+              textarea.value = ExamParser.generateRawFromQuestions(questions);
+              updateLineNumbers();
+              saveEditorState();
+            }
           }
         };
       });
@@ -3352,19 +3409,33 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           requestFullscreen: policy.request_fullscreen
         } });
 
-        // 1. Create Assessment
-        const created = await ApiClient.createAssessment(courseId, {
-          title: title,
-          assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
-          duration_minutes: duration,
-          max_attempts: maxAtt,
-          require_password: false,
-          shuffle_questions: shuffle,
-          scoring_policy: scoringPolicy,
-          ...policy
-        });
+        // 1. Create or Update Assessment
+        let asmId = currentDraft.isEditingExisting ? currentDraft.assessmentId : null;
+        if (asmId) {
+          await ApiClient.updateAssessment(asmId, {
+            title: title,
+            assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
+            duration_minutes: duration,
+            max_attempts: maxAtt,
+            require_password: false,
+            shuffle_questions: shuffle,
+            scoring_policy: scoringPolicy,
+            ...policy
+          });
+        } else {
+          const created = await ApiClient.createAssessment(courseId, {
+            title: title,
+            assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
+            duration_minutes: duration,
+            max_attempts: maxAtt,
+            require_password: false,
+            shuffle_questions: shuffle,
+            scoring_policy: scoringPolicy,
+            ...policy
+          });
+          asmId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;
+        }
 
-        const asmId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;
         const questionsToSave = currentDraft.questions || [];
         let createdQuestionsCount = 0;
 
@@ -3447,6 +3518,758 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     runPreflight();
   };
 
+
+  // =========================================================================
+  // 8. Dedicated Exam Edit Studio (#/instructor/exams/edit)
+  // =========================================================================
+  InstructorView.renderExamEdit = async function (container, assessmentId, query = {}) {
+    if (!assessmentId) {
+      container.innerHTML = `
+        <div class="max-w-2xl mx-auto py-16 px-4 text-center">
+          <div class="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950 text-amber-600 flex items-center justify-center mx-auto mb-4">
+            <span class="material-symbols-outlined text-3xl">error_outline</span>
+          </div>
+          <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1.5">Không tìm thấy mã đề thi</h2>
+          <p class="text-xs text-slate-500 mb-6">Mã định danh đề thi không tồn tại hoặc chưa được cung cấp.</p>
+          <a href="#/instructor/courses" class="px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-sm">
+            <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+            <span>Về danh sách khóa học</span>
+          </a>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="max-w-6xl mx-auto py-16 px-4 text-center text-slate-400">
+        <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+        <p class="text-xs font-semibold text-slate-600 dark:text-slate-300">Đang tải thông tin chi tiết đề thi...</p>
+      </div>
+    `;
+
+    let detail;
+    try {
+      detail = await ApiClient.getAssessmentDetail(assessmentId);
+    } catch (err) {
+      container.innerHTML = `
+        <div class="max-w-2xl mx-auto py-16 px-4 text-center">
+          <div class="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950 text-rose-600 flex items-center justify-center mx-auto mb-4">
+            <span class="material-symbols-outlined text-3xl">error</span>
+          </div>
+          <h2 class="text-base font-bold text-slate-900 dark:text-white mb-1.5">Lỗi tải dữ liệu đề thi</h2>
+          <p class="text-xs text-slate-500 mb-6">${UI.escapeHtml(err.message || String(err))}</p>
+          <a href="#/instructor/courses" class="px-5 py-2.5 rounded-xl bg-primary text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-sm">
+            <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+            <span>Về danh sách khóa học</span>
+          </a>
+        </div>
+      `;
+      return;
+    }
+
+    const assessment = detail.assessment || detail;
+    let questions = detail.question_assignments || detail.questions || [];
+    const isLocked = Boolean(assessment.first_attempt_started_at);
+    const isPub = assessment.status === 'PUBLISHED';
+    const cId = assessment.course_id || query.course_id || '';
+
+    const render = () => {
+      const totalPoints = questions.reduce((sum, q) => sum + (parseFloat(q.points) || 1.0), 0);
+
+      container.innerHTML = `
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+          
+          <!-- Top Header -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-start gap-3">
+              <a
+                href="#/instructor/courses/${cId}?tab=assessments"
+                class="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 mt-0.5"
+                title="Quay lại danh sách kỳ thi"
+              >
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+              </a>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h1 class="text-lg font-bold text-slate-900 dark:text-white">${UI.escapeHtml(assessment.title || 'Chỉnh sửa đề thi')}</h1>
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isPub ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200' : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200'}">
+                    ${isPub ? 'Đã xuất bản' : 'Bản nháp'}
+                  </span>
+                  ${isLocked ? `
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border border-rose-200 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[13px]">lock</span>
+                      <span>Đã khóa cấu trúc (Invariant 14)</span>
+                    </span>
+                  ` : ''}
+                </div>
+                <div class="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                  <span>${questions.length} câu hỏi</span>
+                  <span>•</span>
+                  <span>Tổng ${totalPoints.toFixed(1)} điểm</span>
+                  <span>•</span>
+                  <span>${assessment.duration_minutes || 45} phút</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                id="btn-edit-in-studio"
+                class="px-3.5 py-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs hover:bg-indigo-100 transition-colors inline-flex items-center gap-1.5"
+                title="Mở toàn bộ câu hỏi trong trình soạn thảo cú pháp chia đôi màn hình"
+              >
+                <span class="material-symbols-outlined text-[16px]">terminal</span>
+                <span>Soạn thảo Split-View</span>
+              </button>
+
+              ${!isPub ? `
+                <button
+                  type="button"
+                  id="btn-publish-from-edit"
+                  class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                >
+                  <span class="material-symbols-outlined text-[16px]">publish</span>
+                  <span>Xuất bản</span>
+                </button>
+              ` : ''}
+
+              <button
+                type="button"
+                id="btn-save-edit-settings"
+                class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white font-bold text-xs transition-colors inline-flex items-center gap-1.5 shadow-sm"
+              >
+                <span class="material-symbols-outlined text-[16px]">save</span>
+                <span>Lưu thay đổi</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Main Layout: 2 Columns (Settings & Question List) -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Left Column: Settings Panel -->
+            <div class="lg:col-span-1 space-y-4">
+              <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <span class="material-symbols-outlined text-[18px] text-primary">tune</span>
+                  <span>Thông số & Cấu hình</span>
+                </h3>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Tên bài thi / Đề thi</label>
+                    <input
+                      type="text"
+                      id="edit-exam-title"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-colors"
+                      value="${UI.escapeHtml(assessment.title || '')}"
+                    />
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Thời lượng (phút)</label>
+                      <input
+                        type="number"
+                        id="edit-exam-duration"
+                        min="5"
+                        max="360"
+                        class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                        value="${assessment.duration_minutes || 45}"
+                      />
+                    </div>
+                    <div>
+                      <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Số lần làm tối đa</label>
+                      <input
+                        type="number"
+                        id="edit-exam-attempts"
+                        min="1"
+                        max="10"
+                        class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                        value="${assessment.max_attempts || 1}"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Cách tính điểm khi làm lại</label>
+                    <select
+                      id="edit-exam-scoring-policy"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="HIGHEST" ${assessment.scoring_policy === 'HIGHEST' ? 'selected' : ''}>Điểm cao nhất (HIGHEST)</option>
+                      <option value="LATEST" ${assessment.scoring_policy === 'LATEST' ? 'selected' : ''}>Lần làm cuối cùng (LATEST)</option>
+                      <option value="AVERAGE" ${assessment.scoring_policy === 'AVERAGE' ? 'selected' : ''}>Trung bình các lần làm (AVERAGE)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Bố cục hiển thị câu hỏi</label>
+                    <select
+                      id="edit-exam-layout"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="STANDARD" ${assessment.exam_layout === 'STANDARD' ? 'selected' : ''}>Tiêu chuẩn (Danh sách liên tục)</option>
+                      <option value="SINGLE_QUESTION" ${assessment.exam_layout === 'SINGLE_QUESTION' ? 'selected' : ''}>Từng câu hỏi một</option>
+                      <option value="ALL_PAGED" ${assessment.exam_layout === 'ALL_PAGED' ? 'selected' : ''}>Phân trang nhóm câu hỏi</option>
+                    </select>
+                  </div>
+
+                  <div class="pt-2 space-y-2 border-t border-slate-100 dark:border-slate-800">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="edit-exam-shuffle"
+                        class="rounded text-primary focus:ring-primary"
+                        ${assessment.shuffle_questions !== false ? 'checked' : ''}
+                      />
+                      <span class="text-slate-700 dark:text-slate-300 font-medium">Trộn thứ tự câu hỏi khi làm</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="edit-exam-monitoring"
+                        class="rounded text-primary focus:ring-primary"
+                        ${assessment.monitoring_enabled ? 'checked' : ''}
+                      />
+                      <span class="text-slate-700 dark:text-slate-300 font-medium">Bật giám sát tab rời / gian lận</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        id="edit-exam-fullscreen"
+                        class="rounded text-primary focus:ring-primary"
+                        ${assessment.request_fullscreen ? 'checked' : ''}
+                      />
+                      <span class="text-slate-700 dark:text-slate-300 font-medium">Bắt buộc chế độ toàn màn hình</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Question List & Reordering -->
+            <div class="lg:col-span-2 space-y-4">
+              <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
+                
+                <div class="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap">
+                  <div>
+                    <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[18px] text-primary">format_list_numbered</span>
+                      <span>Danh sách & Thứ tự câu hỏi (${questions.length})</span>
+                    </h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Sử dụng nút Mũi tên lên / xuống để hoán đổi thứ tự câu hỏi trong đề thi.</p>
+                  </div>
+
+                  ${!isLocked ? `
+                    <button
+                      type="button"
+                      id="btn-open-add-question-modal"
+                      class="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">add_circle</span>
+                      <span>Thêm câu hỏi</span>
+                    </button>
+                  ` : ''}
+                </div>
+
+                ${isLocked ? `
+                  <div class="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+                    <span class="material-symbols-outlined text-[18px] text-amber-600 shrink-0 mt-0.5">lock</span>
+                    <div>
+                      <strong class="font-bold">Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14)</strong>
+                      <p class="mt-0.5">Đã có sinh viên bắt đầu làm bài kiểm tra này. Các chức năng đổi thứ tự câu hỏi, xóa câu hỏi và điều chỉnh điểm bị khóa để bảo toàn tính toàn vẹn kết quả.</p>
+                    </div>
+                  </div>
+                ` : ''}
+
+                <!-- Question Cards Container -->
+                <div id="edit-questions-list-container" class="space-y-3">
+                  ${questions.length === 0 ? `
+                    <div class="py-12 text-center text-slate-400 text-xs">
+                      Đề thi này chưa có câu hỏi nào. Nhấn "Thêm câu hỏi" hoặc mở trong Studio Soạn thảo.
+                    </div>
+                  ` : questions.map((q, idx) => {
+                    const qId = q.question_id || q.id;
+                    const qStem = q.stem || q.content || q.question_text || 'Câu hỏi chưa có nội dung';
+                    const qType = q.question_type || q.type || 'SINGLE_CHOICE';
+                    const qPts = parseFloat(q.points) || 1.0;
+                    return `
+                      <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-start justify-between gap-3 text-xs" data-q-id="${qId}" data-q-index="${idx}">
+                        
+                        <!-- Left: Reorder buttons & Position badge -->
+                        <div class="flex items-center gap-1.5 shrink-0 pt-0.5">
+                          ${!isLocked ? `
+                            <div class="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                class="btn-move-q-up w-6 h-6 rounded flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                                ${idx === 0 ? 'disabled' : ''}
+                                data-idx="${idx}"
+                                title="Di chuyển lên trên"
+                              >
+                                <span class="material-symbols-outlined text-[16px]">arrow_upward</span>
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-move-q-down w-6 h-6 rounded flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                                ${idx === questions.length - 1 ? 'disabled' : ''}
+                                data-idx="${idx}"
+                                title="Di chuyển xuống dưới"
+                              >
+                                <span class="material-symbols-outlined text-[16px]">arrow_downward</span>
+                              </button>
+                            </div>
+                          ` : ''}
+
+                          <span class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center border border-indigo-200/60 text-xs shrink-0">
+                            #${idx + 1}
+                          </span>
+                        </div>
+
+                        <!-- Center: Stem snippet & Type badge -->
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              ${qType}
+                            </span>
+                            <span class="text-[11px] text-slate-400">
+                              ${(q.choices || []).length > 0 ? `${q.choices.length} phương án` : (q.accepted_answers ? 'Điền từ' : '')}
+                            </span>
+                          </div>
+                          <p class="text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">
+                            ${UI.escapeHtml(qStem.replace(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):[^\]]+\]\]/gi, '').trim())}
+                          </p>
+                        </div>
+
+                        <!-- Right: Points input & Delete button -->
+                        <div class="flex items-center gap-2 shrink-0 pt-0.5">
+                          <div class="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0.1"
+                              max="100"
+                              value="${qPts}"
+                              class="q-edit-points-input w-16 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-center outline-none focus:border-primary disabled:bg-slate-100 disabled:text-slate-400"
+                              ${isLocked ? 'disabled' : ''}
+                              data-q-id="${qId}"
+                              data-idx="${idx}"
+                              title="Điểm của câu hỏi"
+                            />
+                            <span class="text-[11px] text-slate-400">đ</span>
+                          </div>
+
+                          ${!isLocked ? `
+                            <button
+                              type="button"
+                              class="btn-delete-q p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                              data-q-id="${qId}"
+                              data-idx="${idx}"
+                              title="Xóa câu hỏi khỏi đề thi"
+                            >
+                              <span class="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                          ` : ''}
+                        </div>
+
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Add Question Modal -->
+        <div id="modal-quick-add-question" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden animate-fade-in">
+          <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[18px] text-primary">add_circle</span>
+                <span>Thêm câu hỏi mới vào đề thi</span>
+              </h3>
+              <button type="button" id="btn-close-add-q-modal" class="text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            <form id="form-quick-add-question" class="p-5 overflow-y-auto space-y-3 text-xs">
+              <div>
+                <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Loại câu hỏi</label>
+                <select id="new-q-type" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                  <option value="SINGLE_CHOICE">Trắc nghiệm 1 đáp án (SINGLE_CHOICE)</option>
+                  <option value="MULTIPLE_CHOICE">Trắc nghiệm nhiều đáp án (MULTIPLE_CHOICE)</option>
+                  <option value="TRUE_FALSE">Đúng / Sai (TRUE_FALSE)</option>
+                  <option value="SHORT_ANSWER">Điền từ / Trả lời ngắn (SHORT_ANSWER)</option>
+                  <option value="ESSAY">Tự luận (ESSAY)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nội dung câu hỏi</label>
+                <textarea id="new-q-stem" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary" placeholder="Nhập câu hỏi..."></textarea>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Mức độ nhận thức</label>
+                  <select id="new-q-bloom" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                    <option value="UNDERSTAND">Thông hiểu</option>
+                    <option value="REMEMBER">Nhận biết</option>
+                    <option value="APPLY">Vận dụng</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Điểm phân bổ</label>
+                  <input type="number" id="new-q-points" step="0.25" min="0.1" value="1.0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" />
+                </div>
+              </div>
+
+              <div id="new-q-choices-section" class="space-y-2">
+                <label class="block font-semibold text-slate-700 dark:text-slate-300">Các lựa chọn (Tích chọn đáp án đúng):</label>
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="new-q-correct" value="0" checked class="text-primary" />
+                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án A" />
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="new-q-correct" value="1" class="text-primary" />
+                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án B" />
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="new-q-correct" value="2" class="text-primary" />
+                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án C" />
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="new-q-correct" value="3" class="text-primary" />
+                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án D" />
+                </div>
+              </div>
+
+              <div>
+                <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Giải thích đáp án</label>
+                <input type="text" id="new-q-explanation" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Giải thích chi tiết..." />
+              </div>
+
+              <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+                <button type="button" id="btn-cancel-add-q" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs">
+                  Hủy
+                </button>
+                <button type="submit" id="btn-submit-add-q" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white font-bold text-xs shadow-sm">
+                  Thêm vào đề thi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+
+      // Event: Save Settings
+      document.getElementById('btn-save-edit-settings')?.addEventListener('click', async () => {
+        const title = document.getElementById('edit-exam-title')?.value?.trim();
+        const duration = parseInt(document.getElementById('edit-exam-duration')?.value || 45, 10);
+        const maxAttempts = parseInt(document.getElementById('edit-exam-attempts')?.value || 1, 10);
+        const scoringPolicy = document.getElementById('edit-exam-scoring-policy')?.value || 'HIGHEST';
+        const examLayout = document.getElementById('edit-exam-layout')?.value || 'STANDARD';
+        const shuffle = Boolean(document.getElementById('edit-exam-shuffle')?.checked);
+        const monitoring = Boolean(document.getElementById('edit-exam-monitoring')?.checked);
+        const fullscreen = Boolean(document.getElementById('edit-exam-fullscreen')?.checked);
+
+        if (!title) {
+          UI.showToast('Tên đề thi không được để trống.', 'warning');
+          return;
+        }
+
+        try {
+          UI.showToast('Đang lưu thay đổi...', 'info');
+          await ApiClient.updateAssessment(assessmentId, {
+            title: title,
+            duration_minutes: duration,
+            max_attempts: maxAttempts,
+            scoring_policy: scoringPolicy,
+            exam_layout: examLayout,
+            shuffle_questions: shuffle,
+            monitoring_enabled: monitoring,
+            request_fullscreen: fullscreen
+          });
+          assessment.title = title;
+          assessment.duration_minutes = duration;
+          assessment.max_attempts = maxAttempts;
+          assessment.scoring_policy = scoringPolicy;
+          assessment.exam_layout = examLayout;
+          assessment.shuffle_questions = shuffle;
+          assessment.monitoring_enabled = monitoring;
+          assessment.request_fullscreen = fullscreen;
+          UI.showToast('Đã lưu cấu hình đề thi thành công!', 'success');
+        } catch (saveErr) {
+          UI.showToast('Lỗi lưu cấu hình: ' + (saveErr.message || saveErr), 'error');
+        }
+      });
+
+      // Event: Publish
+      document.getElementById('btn-publish-from-edit')?.addEventListener('click', async () => {
+        const conf = await UI.confirm('Xuất bản đề thi', 'Bạn có chắc chắn muốn xuất bản đề thi này để sinh viên có thể bắt đầu làm bài?', 'Xuất bản');
+        if (!conf) return;
+        try {
+          UI.showToast('Đang xuất bản đề thi...', 'info');
+          await ApiClient.publishAssessment(assessmentId);
+          UI.showToast('Đã xuất bản đề thi thành công!', 'success');
+          assessment.status = 'PUBLISHED';
+          render();
+        } catch (pubErr) {
+          UI.showToast('Lỗi xuất bản: ' + (pubErr.message || pubErr), 'error');
+        }
+      });
+
+      // Event: Open in Studio
+      document.getElementById('btn-edit-in-studio')?.addEventListener('click', () => {
+        const mapped = questions.map((q, idx) => ({
+          number: idx + 1,
+          question_id: q.question_id || q.id,
+          stem: q.stem || q.content || q.question_text || '',
+          question_text: q.stem || q.content || q.question_text || '',
+          type: q.question_type || q.type || 'SINGLE_CHOICE',
+          question_type: (
+            (q.question_type === 'MULTIPLE_CHOICE' || q.type === 'MULTIPLE_CHOICE') ? 'TN nhiều đáp án'
+            : (q.question_type === 'TRUE_FALSE' || q.type === 'TRUE_FALSE') ? 'Đúng / Sai'
+            : (q.question_type === 'SHORT_ANSWER' || q.type === 'SHORT_ANSWER') ? 'Điền từ'
+            : (q.question_type === 'ESSAY' || q.type === 'ESSAY') ? 'Tự luận'
+            : 'Trắc nghiệm 1 đáp án'
+          ),
+          points: parseFloat(q.points) || 1.0,
+          bloom_level: q.difficulty === 'REMEMBER' ? 'Nhận biết' : q.difficulty === 'APPLY' ? 'Vận dụng' : 'Thông hiểu',
+          explanation: q.explanation || '',
+          choices: (q.choices || []).map((c, cIdx) => ({
+            label: c.label || String.fromCharCode(65 + cIdx),
+            content: c.content || c.text || '',
+            is_correct: Boolean(c.is_correct),
+            position: c.position || cIdx + 1
+          })),
+          accepted_answers: (q.accepted_answers || []).map(a => typeof a === 'string' ? a : (a.answer_text || a.content || '')),
+          resources: q.resources || [],
+          image_asset_id: q.image_asset_id || (q.resources && q.resources[0] ? q.resources[0].asset_id : null)
+        }));
+
+        window.ExamStore.saveDraft({
+          assessmentId: assessmentId,
+          isEditingExisting: true,
+          title: assessment.title || 'Đề thi',
+          courseId: cId,
+          courseTitle: assessment.course_title || '',
+          questions: mapped,
+          rawText: ExamParser.generateRawFromQuestions(mapped),
+          config: {
+            duration: assessment.duration_minutes || 45,
+            maxAttempts: assessment.max_attempts || 1,
+            shuffleQuestions: assessment.shuffle_questions !== false,
+            scoringPolicy: assessment.scoring_policy || 'HIGHEST',
+            examLayout: assessment.exam_layout || 'STANDARD',
+            monitoringEnabled: Boolean(assessment.monitoring_enabled),
+            requestFullscreen: Boolean(assessment.request_fullscreen),
+            scoreScale: assessment.max_points || 40.0
+          },
+          sourceMethod: 'editor',
+          methodSelected: true,
+          matrixConfirmed: true
+        });
+        window.location.hash = '#/instructor/exams/editor';
+      });
+
+      // Events: Move Question Up/Down (Reordering)
+      container.querySelectorAll('.btn-move-q-up').forEach(btn => {
+        btn.onclick = async () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          if (idx <= 0) return;
+          const temp = questions[idx];
+          questions[idx] = questions[idx - 1];
+          questions[idx - 1] = temp;
+
+          const orderedIds = questions.map(q => q.question_id || q.id);
+          try {
+            await ApiClient.reorderAssessmentQuestions(assessmentId, orderedIds);
+            UI.showToast('Đã cập nhật thứ tự câu hỏi!', 'success');
+            render();
+          } catch (reorderErr) {
+            UI.showToast('Lỗi sắp xếp câu hỏi: ' + (reorderErr.message || reorderErr), 'error');
+            // Revert
+            const rev = questions[idx];
+            questions[idx] = questions[idx - 1];
+            questions[idx - 1] = rev;
+          }
+        };
+      });
+
+      container.querySelectorAll('.btn-move-q-down').forEach(btn => {
+        btn.onclick = async () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          if (idx >= questions.length - 1) return;
+          const temp = questions[idx];
+          questions[idx] = questions[idx + 1];
+          questions[idx + 1] = temp;
+
+          const orderedIds = questions.map(q => q.question_id || q.id);
+          try {
+            await ApiClient.reorderAssessmentQuestions(assessmentId, orderedIds);
+            UI.showToast('Đã cập nhật thứ tự câu hỏi!', 'success');
+            render();
+          } catch (reorderErr) {
+            UI.showToast('Lỗi sắp xếp câu hỏi: ' + (reorderErr.message || reorderErr), 'error');
+            // Revert
+            const rev = questions[idx];
+            questions[idx] = questions[idx + 1];
+            questions[idx + 1] = rev;
+          }
+        };
+      });
+
+      // Event: Edit Points
+      container.querySelectorAll('.q-edit-points-input').forEach(input => {
+        input.onchange = async () => {
+          const qId = input.dataset.qId;
+          const idx = parseInt(input.dataset.idx, 10);
+          const val = parseFloat(input.value);
+          if (isNaN(val) || val <= 0) {
+            UI.showToast('Điểm phân bổ phải lớn hơn 0.', 'warning');
+            input.value = questions[idx]?.points || 1.0;
+            return;
+          }
+          try {
+            await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/${qId}/edit`, {
+              method: 'POST',
+              body: { points: val }
+            });
+            questions[idx].points = val;
+            UI.showToast('Đã cập nhật điểm câu hỏi!', 'success');
+          } catch (ptErr) {
+            UI.showToast('Lỗi đổi điểm: ' + (ptErr.message || ptErr), 'error');
+            input.value = questions[idx]?.points || 1.0;
+          }
+        };
+      });
+
+      // Event: Delete Question
+      container.querySelectorAll('.btn-delete-q').forEach(btn => {
+        btn.onclick = async () => {
+          const qId = btn.dataset.qId;
+          const idx = parseInt(btn.dataset.idx, 10);
+          const conf = await UI.confirm('Gỡ câu hỏi', `Bạn có chắc muốn xóa câu hỏi #${idx + 1} khỏi đề thi này?`, 'Gỡ câu hỏi');
+          if (!conf) return;
+          try {
+            await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/${qId}`, {
+              method: 'DELETE'
+            });
+            questions.splice(idx, 1);
+            UI.showToast('Đã gỡ câu hỏi khỏi đề thi!', 'success');
+            render();
+          } catch (delErr) {
+            UI.showToast('Lỗi gỡ câu hỏi: ' + (delErr.message || delErr), 'error');
+          }
+        };
+      });
+
+      // Modal Quick Add Question
+      const addModal = document.getElementById('modal-quick-add-question');
+      document.getElementById('btn-open-add-question-modal')?.addEventListener('click', () => {
+        addModal?.classList.remove('hidden');
+      });
+      document.getElementById('btn-close-add-q-modal')?.addEventListener('click', () => {
+        addModal?.classList.add('hidden');
+      });
+      document.getElementById('btn-cancel-add-q')?.addEventListener('click', () => {
+        addModal?.classList.add('hidden');
+      });
+
+      const qTypeSelect = document.getElementById('new-q-type');
+      const choicesSection = document.getElementById('new-q-choices-section');
+      qTypeSelect?.addEventListener('change', () => {
+        const val = qTypeSelect.value;
+        if (val === 'SHORT_ANSWER' || val === 'ESSAY') {
+          if (choicesSection) choicesSection.classList.add('hidden');
+        } else {
+          if (choicesSection) choicesSection.classList.remove('hidden');
+        }
+      });
+
+      document.getElementById('form-quick-add-question')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const stem = document.getElementById('new-q-stem')?.value?.trim();
+        if (!stem) {
+          UI.showToast('Nội dung câu hỏi không được để trống.', 'warning');
+          return;
+        }
+        const qType = qTypeSelect?.value || 'SINGLE_CHOICE';
+        const bloom = document.getElementById('new-q-bloom')?.value || 'UNDERSTAND';
+        const points = parseFloat(document.getElementById('new-q-points')?.value || 1.0);
+        const explanation = document.getElementById('new-q-explanation')?.value?.trim();
+
+        const payload = {
+          question_type: qType,
+          content: stem,
+          difficulty: bloom,
+          points: points,
+          explanation: explanation
+        };
+
+        if (qType === 'SINGLE_CHOICE' || qType === 'MULTIPLE_CHOICE' || qType === 'TRUE_FALSE') {
+          const choiceInputs = document.querySelectorAll('.new-q-choice-text');
+          const correctIdx = document.querySelector('input[name="new-q-correct"]:checked')?.value || '0';
+          const choices = [];
+          choiceInputs.forEach((inp, i) => {
+            const txt = inp.value.trim();
+            if (txt) {
+              choices.push({
+                content: txt,
+                is_correct: (String(i) === String(correctIdx)),
+                position: i + 1
+              });
+            }
+          });
+          if (choices.length < 2 && qType !== 'TRUE_FALSE') {
+            UI.showToast('Vui lòng nhập tối thiểu 2 phương án lựa chọn.', 'warning');
+            return;
+          }
+          payload.choices = choices;
+        } else if (qType === 'SHORT_ANSWER') {
+          payload.accepted_answers = ['Đáp án'];
+        }
+
+        try {
+          UI.showToast('Đang thêm câu hỏi vào đề...', 'info');
+          const res = await ApiClient.createAssessmentQuestion(assessmentId, payload);
+          addModal?.classList.add('hidden');
+          UI.showToast('Đã thêm câu hỏi vào đề thi thành công!', 'success');
+          if (res?.question) {
+            questions.push({
+              question_id: res.question.question_id || res.question.id,
+              stem: res.question.content || stem,
+              question_type: qType,
+              difficulty: bloom,
+              points: points,
+              explanation: explanation,
+              choices: payload.choices || []
+            });
+            render();
+          } else {
+            // Reload detail
+            const refreshed = await ApiClient.getAssessmentDetail(assessmentId);
+            questions = refreshed.question_assignments || refreshed.questions || [];
+            render();
+          }
+        } catch (createErr) {
+          UI.showToast('Lỗi tạo câu hỏi: ' + (createErr.message || createErr), 'error');
+        }
+      });
+    };
+
+    render();
+  };
 
   // =========================================================================
   // 9. Backwards compatibility alias

@@ -752,6 +752,12 @@ class ApiClient {
     });
   }
 
+  static async reorderAssessmentQuestions(assessmentId, orderedQuestionIds) {
+    return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/reorder`, {
+      method: 'POST',
+      body: { ordered_question_ids: orderedQuestionIds }
+    });
+  }
 
   static async createAssessmentQuestion(assessmentId, data) {
     return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/create`, {
@@ -1095,9 +1101,12 @@ class ApiClient {
     return list.unread_count ?? (list.items || []).filter(i => !i.is_read && !i.read).length;
   }
 
-  static async parseExamFile(file) {
+  static async parseExamFile(file, courseId = null) {
     const formData = new FormData();
     formData.append('file', file);
+    if (courseId) {
+      formData.append('course_id', courseId);
+    }
     return await ApiClient.request('/instructor/exams/parse-file', {
       method: 'POST',
       body: formData
@@ -1108,19 +1117,25 @@ class ApiClient {
     window.location.href = '/instructor/exams/excel-template';
   }
 
-  static async parseExcelExam(file) {
+  static async parseExcelExam(file, courseId = null) {
     const formData = new FormData();
     formData.append('file', file);
+    if (courseId) {
+      formData.append('course_id', courseId);
+    }
     return await ApiClient.request('/instructor/exams/parse-excel', {
       method: 'POST',
       body: formData
     });
   }
 
-  static async parseMoodleXml(fileOrText) {
+  static async parseMoodleXml(fileOrText, courseId = null) {
     if (fileOrText instanceof File || fileOrText instanceof Blob) {
       const formData = new FormData();
       formData.append('file', fileOrText);
+      if (courseId) {
+        formData.append('course_id', courseId);
+      }
       return await ApiClient.request('/instructor/exams/parse-moodle-xml', {
         method: 'POST',
         body: formData
@@ -1128,20 +1143,26 @@ class ApiClient {
     }
     return await ApiClient.request('/instructor/exams/parse-moodle-xml', {
       method: 'POST',
-      body: { xml: String(fileOrText) }
+      body: { xml: String(fileOrText), course_id: courseId }
     });
   }
 
-  static async parseMoodleJson(fileOrText) {
+  static async parseMoodleJson(fileOrText, courseId = null) {
     if (fileOrText instanceof File || fileOrText instanceof Blob) {
       const formData = new FormData();
       formData.append('file', fileOrText);
+      if (courseId) {
+        formData.append('course_id', courseId);
+      }
       return await ApiClient.request('/instructor/exams/parse-json', {
         method: 'POST',
         body: formData
       });
     }
-    const body = typeof fileOrText === 'object' ? fileOrText : { json_content: String(fileOrText) };
+    const body = typeof fileOrText === 'object' ? { ...fileOrText } : { json_content: String(fileOrText) };
+    if (courseId) {
+      body.course_id = courseId;
+    }
     return await ApiClient.request('/instructor/exams/parse-json', {
       method: 'POST',
       body: body

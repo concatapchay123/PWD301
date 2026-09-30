@@ -1165,13 +1165,23 @@ class InstructorView {
 
       // Bind Settings Modal Button
       container.querySelector('#btn-create-learning-unit')?.addEventListener('click', async () => {
-        const title = await UI.prompt('Thêm Bài học', 'Đặt tên cho Bài học chứa tối đa 10 Lesson.', '', 'Ví dụ: Tổng quan khóa học', 1, 'Tạo Bài Học');
+        const title = await UI.prompt('Thêm Chương mới', 'Đặt tên cho Chương bài học chứa tối đa 10 Bài giảng.', '', 'Ví dụ: Tổng quan khóa học', 1, 'Tạo Chương');
         if (!title) return;
         try {
-          const unit = await ApiClient.createLearningUnit(cId, { title });
-          window.location.hash = `#/instructor/courses/${cId}/lessons/new?learning_unit_id=${unit.learning_unit_id}`;
+          const unit = await ApiClient.createLearningUnit(cId, { title: title.trim() });
+          if (unit && unit.pending_approval) {
+            UI.showToast(unit.message || 'Yêu cầu tạo Chương mới đã gửi Quản trị viên để xét duyệt.', 'info');
+            await InstructorView.renderCourseManageCurriculum(container, cId);
+            return;
+          }
+          const newUnitId = unit.learning_unit_id || unit.id;
+          if (newUnitId) {
+            window.location.hash = `#/instructor/courses/${cId}/lessons/new?learning_unit_id=${newUnitId}`;
+          } else {
+            await InstructorView.renderCourseManageCurriculum(container, cId);
+          }
         } catch (error) {
-          UI.showToast(error.message || 'Không tạo được Bài học.', 'error');
+          UI.showToast(error.message || 'Không tạo được Chương bài học.', 'error');
         }
       });
       container.querySelectorAll('.btn-rename-learning-unit').forEach(button => {
@@ -2591,10 +2601,12 @@ class InstructorView {
                 <span>Bảng điểm & Bài nộp</span>
               </button>
               <a
-                href="#/instructor/exams?course_id=${cId}"
-                class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
+                href="#/instructor/exams/edit?id=${a.assessment_id || a.id}&course_id=${cId}"
+                class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1"
+                title="Chỉnh sửa cấu hình và danh sách câu hỏi đề thi"
               >
-                Soạn đề
+                <span class="material-symbols-outlined text-[15px]">edit</span>
+                <span>Chỉnh sửa</span>
               </a>
             </div>
           </div>
@@ -3458,7 +3470,7 @@ class InstructorView {
             type="button"
             id="btn-nav-add-lesson"
             class="btn-nav-add-lesson w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1 cursor-pointer"
-            data-learning-unit-id="learning_unit_id="
+            data-learning-unit-id=""
             data-unit-id=""
             title="Thêm bài học mới"
           >
@@ -3529,13 +3541,35 @@ class InstructorView {
               </div>
             `;
           }).join('')}
+          ${(!currentLessonId || currentLessonId === 'new') ? `
+            <div
+              id="nav-draft-lesson-item"
+              class="nav-lesson-item group/item flex items-center justify-between gap-2 rounded-xl border p-2.5 transition-all select-none border-primary bg-primary-subtle text-primary dark:text-[#93C5FD] dark:bg-[#2D4058] shadow-2xs ring-1 ring-primary/30"
+            >
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="w-5 h-5 rounded-md font-mono text-[10px] font-bold flex items-center justify-center shrink-0 bg-primary text-white">
+                  ${lessons.length + 1}
+                </span>
+                <span
+                  id="nav-draft-lesson-title"
+                  class="text-xs font-bold text-primary truncate flex-1 block"
+                  title="Bài giảng mới (Bản nháp)"
+                >
+                  Bài giảng ${lessons.length + 1}
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 shrink-0">
+                  Bản nháp
+                </span>
+              </div>
+            </div>
+          ` : ''}
         </div>
         ${count < 10 ? `
           <button
             type="button"
             id="btn-nav-add-lesson"
             class="btn-nav-add-lesson w-full py-2 px-3 rounded-xl border border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs mt-1 cursor-pointer"
-            data-learning-unit-id="learning_unit_id=${unitId}"
+            data-learning-unit-id="${unitId}"
             data-unit-id="${unitId}"
             title="Thêm bài học mới"
           >
@@ -3640,18 +3674,27 @@ class InstructorView {
             </span>
           </div>
 
-          <!-- Right: Action Buttons (Single 'Lưu' button with compact sync indicator) -->
+          <!-- Right: Action Buttons (Lưu nháp & Xuất bản) -->
           <div class="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="studio-save-draft-btn"
+              class="px-3.5 py-2 rounded-xl bg-white dark:bg-[#1B2A3D] hover:bg-[#FAF9F5] dark:hover:bg-[#223248] text-[#5C5B57] dark:text-[#C6D2E1] border border-[#E8E6DF] dark:border-[#526881] text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              title="Lưu bản nháp bài giảng"
+            >
+              <span class="material-symbols-outlined text-[16px]">save</span>
+              <span>Lưu nháp</span>
+            </button>
             <button
               type="button"
               id="studio-save-btn"
               class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer"
-              title="Lưu bài giảng"
+              title="Xuất bản bài giảng"
             >
               <span id="studio-save-indicator" class="flex items-center text-white/90">
                 <span class="material-symbols-outlined text-[16px]">cloud_done</span>
               </span>
-              <span>Lưu</span>
+              <span id="studio-save-btn-text">Xuất bản</span>
             </button>
           </div>
         </header>
@@ -3664,15 +3707,22 @@ class InstructorView {
             <!-- Working Draft / Approval Status Banner -->
             <div id="studio-draft-banner-container" class="space-y-3"></div>
 
-            <!-- Hidden learning unit select for programmatic compatibility -->
-            <select id="studio-learning-unit-select" class="hidden" aria-hidden="true">
-              <option value="">Tạo Bài học mới</option>
-              ${availableUnits.map(unit => `
-                <option value="${UI.escapeHtml(unit.learning_unit_id)}" ${unit.learning_unit_id === selectedUnitId ? 'selected' : ''}>
-                  ${UI.escapeHtml(unit.title)}
-                </option>
-              `).join('')}
-            </select>
+            <!-- Learning unit select for choosing Chapter in studio -->
+            <div class="flex items-center gap-2.5 p-3 rounded-xl bg-[#FAF9F5] dark:bg-[#1B2A3D] border border-[#E8E6DF] dark:border-[#526881]">
+              <span class="material-symbols-outlined text-[18px] text-primary shrink-0">folder_open</span>
+              <label for="studio-learning-unit-select" class="text-xs font-bold text-[#5C5B57] dark:text-[#C6D2E1] shrink-0">Thuộc Chương:</label>
+              <select
+                id="studio-learning-unit-select"
+                class="flex-1 bg-transparent text-xs font-semibold text-[#222120] dark:text-[#F0F5FA] outline-none cursor-pointer"
+                title="Chọn Chương chứa bài giảng"
+              >
+                ${availableUnits.map(unit => `
+                  <option value="${UI.escapeHtml(unit.learning_unit_id)}" ${unit.learning_unit_id === selectedUnitId ? 'selected' : ''}>
+                    ${UI.escapeHtml(unit.title)}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
 
             <!-- Quy định cấu trúc bài giảng (Làm nổi bật) -->
             <div class="rounded-xl border border-primary/25 bg-primary/5 dark:bg-primary/10 dark:border-primary/30 p-3.5 sm:p-4 flex items-center gap-3.5 shadow-2xs">
@@ -4095,8 +4145,11 @@ class InstructorView {
 
       // Clean up timer when navigating away by clicking a lesson link
       target.querySelectorAll('.nav-lesson-link').forEach(link => {
-        link.addEventListener('click', async () => {
-          if (lessonId && editVersion > savedVersion) {
+        link.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const targetHref = link.getAttribute('href');
+          if (editVersion > savedVersion) {
+            setSaveIndicator('saving');
             try {
               await saveLessonData(false, true);
             } catch (_) {}
@@ -4104,6 +4157,9 @@ class InstructorView {
           if (window._currentStudioTimer) {
             clearInterval(window._currentStudioTimer);
             window._currentStudioTimer = null;
+          }
+          if (targetHref) {
+            window.location.hash = targetHref.replace(/^#/, '');
           }
         });
       });
@@ -4223,6 +4279,18 @@ class InstructorView {
     };
     renderChildNavigator();
     updateHeaderUnitTitle();
+
+    const titleInput = getEl('studio-input-title');
+    if (titleInput) {
+      titleInput.addEventListener('input', () => {
+        const draftTitleEl = getEl('nav-draft-lesson-title');
+        if (draftTitleEl) {
+          const unit = availableUnits.find(item => (item.learning_unit_id || item.id) === selectedUnitId);
+          const nextIdx = (unit?.lessons?.length || 0) + 1;
+          draftTitleEl.textContent = titleInput.value.trim() || `Bài giảng ${nextIdx}`;
+        }
+      });
+    }
 
     const resourceVideoUrl = resource => {
       const baseUrl = resource.file_url || resource.download_url || '';
@@ -6143,13 +6211,15 @@ class InstructorView {
           return false;
         }
         const url = parsedYt ? `https://www.youtube.com/watch?v=${parsedYt}` : `https://vimeo.com/${vimeoId}`;
-        if (!videoUrls.includes(url) && !InstructorView.canAddLessonVideo(videoUrls, attachedResources, parentVideoSlots())) {
-          UI.showToast('Mỗi Lesson chỉ được có tối đa 2 video.', 'warning');
-          return false;
+        if (!videoUrls.includes(url)) {
+          if (!InstructorView.canAddLessonVideo(videoUrls, attachedResources, parentVideoSlots())) {
+            UI.showToast('Mỗi Bài giảng chỉ được có tối đa 2 video. URL video phụ không được lưu kèm.', 'warning');
+          } else {
+            videoUrls.push(url);
+            currentVideoUrl = url;
+            renderVideoList();
+          }
         }
-        if (!videoUrls.includes(url)) videoUrls.push(url);
-        currentVideoUrl = url;
-        renderVideoList();
       }
 
       const durationVal = parseInt(studioRoot.querySelector('#studio-input-duration')?.value, 10);
@@ -6236,7 +6306,7 @@ class InstructorView {
     };
 
     handleAddNewLesson = async () => {
-      if (lessonId && editVersion > savedVersion) {
+      if (editVersion > savedVersion) {
         try {
           await saveLessonData(false, true);
         } catch (_) {}
@@ -6246,8 +6316,14 @@ class InstructorView {
         selectedUnitId = availableUnits[0].learning_unit_id || availableUnits[0].id;
       }
       if (!selectedUnitId) {
+        const title = await UI.prompt('Tạo Chương mới', 'Khóa học chưa có Chương nào. Vui lòng đặt tên cho Chương đầu tiên:', '', 'Ví dụ: Chương 1: Khởi động', 1, 'Tạo Chương');
+        if (!title) return;
         try {
-          const newUnit = await ApiClient.createLearningUnit(courseId, { title: 'Chương 1: Khởi động' });
+          const newUnit = await ApiClient.createLearningUnit(courseId, { title: title.trim() });
+          if (newUnit?.pending_approval) {
+            UI.showToast(newUnit.message || 'Yêu cầu tạo Chương mới đã gửi Quản trị viên để xét duyệt.', 'info');
+            return;
+          }
           selectedUnitId = newUnit?.learning_unit_id || newUnit?.id;
           const freshUnits = await ApiClient.getLearningUnits(courseId);
           availableUnits = freshUnits.items || [];
@@ -6270,16 +6346,44 @@ class InstructorView {
       }
 
       const nextTargetHash = `#/instructor/courses/${courseId}/lessons/new?learning_unit_id=${selectedUnitId}`;
-      if (window.location.hash === nextTargetHash) {
-        lessonId = null;
-        if (typeof resetEditorToEmpty === 'function') {
-          resetEditorToEmpty();
+      if (window.location.hash === nextTargetHash || !lessonId) {
+        const titleEl = studioRoot.querySelector('#studio-input-title');
+        const hasContent = editVersion > 0;
+        if (hasContent) {
+          try {
+            await saveLessonData(false, true);
+            window.location.hash = nextTargetHash;
+            return;
+          } catch (_) {}
         }
+        if (titleEl) {
+          titleEl.focus();
+        }
+        UI.showToast('Bạn đang ở màn hình soạn bài giảng mới.', 'info');
         renderChildNavigator();
       } else {
         window.location.hash = nextTargetHash;
       }
     };
+
+    const saveDraftBtn = getEl('studio-save-draft-btn');
+    if (saveDraftBtn) {
+      saveDraftBtn.onclick = async () => {
+        saveDraftBtn.disabled = true;
+        setSaveIndicator('saving');
+        try {
+          const outcome = await saveLessonData(false);
+          if (outcome) {
+            UI.showToast('Đã lưu bản nháp bài giảng thành công!', 'success');
+            setSaveIndicator('saved');
+          } else {
+            setSaveIndicator('saved');
+          }
+        } finally {
+          saveDraftBtn.disabled = false;
+        }
+      };
+    }
 
     const saveBtn = getEl('studio-save-btn');
     if (saveBtn) {
@@ -6292,7 +6396,7 @@ class InstructorView {
             UI.showToast('Bản sửa bài giảng đã gửi Admin xét duyệt.', 'info');
             setSaveIndicator('pending');
           } else if (outcome) {
-            UI.showToast('Đã lưu bài giảng thành công!', 'success');
+            UI.showToast('Đã lưu và xuất bản bài giảng thành công!', 'success');
             setSaveIndicator('saved');
           } else {
             setSaveIndicator('saved');
@@ -6305,7 +6409,14 @@ class InstructorView {
 
     const backBtn = getEl('studio-back-btn');
     if (backBtn) {
-      backBtn.onclick = () => {
+      backBtn.onclick = async (e) => {
+        e.preventDefault();
+        if (editVersion > savedVersion) {
+          setSaveIndicator('saving');
+          try {
+            await saveLessonData(false, true);
+          } catch (_) {}
+        }
         if (window._currentStudioTimer) {
           clearInterval(window._currentStudioTimer);
           window._currentStudioTimer = null;

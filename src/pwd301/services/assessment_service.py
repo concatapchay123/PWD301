@@ -227,7 +227,10 @@ def _serialize_section(section: AssessmentSection) -> dict[str, Any]:
     }
 
 
-def _serialize_assignment(assignment: AssessmentQuestionAssignment) -> dict[str, Any]:
+def _serialize_assignment(
+    assignment: AssessmentQuestionAssignment,
+    include_answers: bool = True,
+) -> dict[str, Any]:
     """Serialize an AssessmentQuestionAssignment masking BIGINT PK (ADR-002)."""
     synthetic_id = str(
         uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.assessment_assignment.{assignment.id}")
@@ -247,11 +250,12 @@ def _serialize_assignment(assignment: AssessmentQuestionAssignment) -> dict[str,
         "shuffle_choices_override": assignment.shuffle_choices_override,
         "source_type": assignment.source_type,
         "question": (
-            _serialize_question(assignment.question, include_answers=False)
+            _serialize_question(assignment.question, include_answers=include_answers)
             if assignment.question
             else None
         ),
     }
+
 
 
 def _serialize_blueprint_rule(rule: AssessmentBlueprintRule) -> dict[str, Any]:
@@ -335,6 +339,7 @@ def _serialize_assessment(
     assessment: Assessment,
     full: bool = False,
     session: Session | scoped_session[Any] | None = None,
+    include_answers: bool = True,
 ) -> dict[str, Any]:
     """Serialize Assessment conforming to ADR-002 and prompt schema contract."""
     questions_count, total_points = _calculate_assessment_aggregates(assessment, session=session)
@@ -393,7 +398,7 @@ def _serialize_assessment(
                     for s in sorted(assessment.sections, key=lambda s: s.position)
                 ],
                 "questions": [
-                    _serialize_assignment(a)
+                    _serialize_assignment(a, include_answers=include_answers)
                     for a in sorted(assessment.question_assignments, key=lambda a: a.position)
                 ],
                 "blueprints": [_serialize_blueprint(b) for b in assessment.blueprints],
@@ -905,6 +910,7 @@ def get_assessment_detail(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
+    include_answers: bool | None = None,
 ) -> dict[str, Any]:
     """Retrieve detailed assessment configuration with role-based visibility."""
     sess = session if session is not None else db.session
@@ -920,7 +926,13 @@ def get_assessment_detail(
     ):
         raise AssessmentNotFoundError("Assessment not found.")
 
-    return _serialize_assessment(assessment, full=True)
+    effective_include_answers = is_manager if include_answers is None else include_answers
+    return _serialize_assessment(
+        assessment,
+        full=True,
+        session=sess,
+        include_answers=effective_include_answers,
+    )
 
 
 def list_course_assessments(
@@ -1604,6 +1616,89 @@ def update_question_assignment(
         raise
 
     return assignment
+
+
+def reorder_assessment_questions(
+    actor: User,
+    assessment_id: Assessment | int | uuid.UUID | str,
+    ordered_question_ids: list[int | uuid.UUID | str],
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Reorder question assignments for an assessment preserving structural freeze invariants."""
+    sess = session if session is not None else db.session
+    assessment = _resolve_assessment(assessment_id, session=sess)
+    if assessment is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+
+    require_course_manager(actor, assessment.course_id, session=sess)
+
+    # Structure freeze check (Invariant 14)
+    if assessment.first_attempt_started_at is not None:
+        raise AssessmentLockedError(
+            "Cấu trúc đề thi đã bị khóa do đã có thí sinh bắt đầu làm bài (Invariant 14)."
+        )
+
+    if not ordered_question_ids:
+        raise AssessmentValidationError("ordered_question_ids cannot be empty.")
+
+    # Fetch existing assignments
+    assignments = (
+        sess.query(AssessmentQuestionAssignment)
+        .filter(AssessmentQuestionAssignment.assessment_id == assessment.id)
+        .all()
+    )
+    if not assignments:
+        return []
+
+    # Map question public_id and id to assignment
+    assignment_by_qid: dict[str, AssessmentQuestionAssignment] = {}
+    for a in assignments:
+        if a.question:
+            assignment_by_qid[str(a.question.public_id)] = a
+            assignment_by_qid[str(a.question.id)] = a
+        assignment_by_qid[str(a.question_id)] = a
+        synthetic_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.assessment_assignment.{a.id}"))
+        assignment_by_qid[synthetic_id] = a
+
+    matched_assignments: list[AssessmentQuestionAssignment] = []
+    seen_ids: set[str] = set()
+
+    for qid in ordered_question_ids:
+        qid_str = str(qid).strip()
+        if qid_str in seen_ids:
+            continue
+        if qid_str in assignment_by_qid:
+            target_assign = assignment_by_qid[qid_str]
+            if target_assign not in matched_assignments:
+                matched_assignments.append(target_assign)
+                seen_ids.add(qid_str)
+
+    # Any unmentioned assignments get placed after
+    for a in sorted(assignments, key=lambda x: x.position):
+        if a not in matched_assignments:
+            matched_assignments.append(a)
+
+    for new_pos, a in enumerate(matched_assignments, start=1):
+        a.position = new_pos
+
+    assessment.updated_at = utc_now()
+    sess.flush()
+
+    _record_assessment_audit(
+        sess=sess,
+        actor=actor,
+        action="ASSESSMENT_QUESTIONS_REORDERED",
+        target_id=assessment.id,
+        reason=f"Reordered {len(matched_assignments)} questions",
+    )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return [_serialize_assignment(a, include_answers=True) for a in sorted(assignments, key=lambda x: x.position)]
 
 
 # ============================================================================

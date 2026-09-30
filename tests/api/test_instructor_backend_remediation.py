@@ -319,7 +319,7 @@ def test_create_assessment_question_essay_rejected_and_short_answer_supported(
 
     csrf = login_session(client, inst.email)
 
-    # 1. Essay question must be rejected with 400
+    # 1. Essay question must be accepted with 201
     essay_payload = {
         "question_type": "ESSAY",
         "difficulty": "APPLY",
@@ -335,8 +335,12 @@ def test_create_assessment_question_essay_rejected_and_short_answer_supported(
         json=essay_payload,
         headers={"X-CSRFToken": csrf},
     )
-    assert res.status_code == 400
-    assert "ESSAY" in res.get_data(as_text=True)
+    assert res.status_code == 201, f"Failed: {res.get_data(as_text=True)}"
+    essay_data = res.get_json()
+    assert essay_data.get("status") == "ok"
+    assert essay_data["question"]["question_type"] == "ESSAY"
+    essay_qid = essay_data["question"]["question_id"]
+    assert_adr002(essay_data)
 
     # 2. Objective SHORT_ANSWER question must be accepted
     sa_payload = {
@@ -352,9 +356,37 @@ def test_create_assessment_question_essay_rejected_and_short_answer_supported(
         headers={"X-CSRFToken": csrf},
     )
     assert sa_res.status_code in (200, 201), f"Failed: {sa_res.get_data(as_text=True)}"
-    data = sa_res.get_json()
-    assert data.get("status") == "ok" or "question_id" in data or "id" in data
-    assert_adr002(data)
+    sa_data = sa_res.get_json()
+    assert sa_data.get("status") == "ok" or "question_id" in sa_data
+    sa_qid = sa_data["question"]["question_id"]
+    assert_adr002(sa_data)
+
+    # 3. Assessment detail must return valid JSON without 500 error
+    detail_res = client.get(
+        f"/instructor/assessments/{asm.public_id}",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert detail_res.status_code == 200, f"Detail failed: {detail_res.get_data(as_text=True)}"
+    detail_data = detail_res.get_json()
+    assert isinstance(detail_data.get("question_assignments"), list)
+    assert len(detail_data["question_assignments"]) == 2
+    assert_adr002(detail_data)
+
+    # 4. Reorder questions endpoint
+    reorder_res = client.post(
+        f"/instructor/assessments/{asm.public_id}/questions/reorder",
+        json={"ordered_question_ids": [sa_qid, essay_qid]},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert reorder_res.status_code == 200, f"Reorder failed: {reorder_res.get_data(as_text=True)}"
+    reorder_data = reorder_res.get_json()
+    assert reorder_data.get("success") is True
+    assert len(reorder_data["assignments"]) == 2
+    assert reorder_data["assignments"][0]["question_id"] == sa_qid
+    assert reorder_data["assignments"][0]["position"] == 1
+    assert reorder_data["assignments"][1]["question_id"] == essay_qid
+    assert reorder_data["assignments"][1]["position"] == 2
+    assert_adr002(reorder_data)
 
 
 # ============================================================================

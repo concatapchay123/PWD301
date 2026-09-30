@@ -457,6 +457,8 @@ class AppRouter {
       InstructorView.renderExamMatrix(viewport);
     } else if (path === '#/instructor/exams/settings') {
       InstructorView.renderExamSettings(viewport);
+    } else if (path === '#/instructor/exams/edit') {
+      await InstructorView.renderExamEdit(viewport, query.id || query.assessment_id, query);
     }
 
     // --- Admin Routes ---

@@ -1493,11 +1493,14 @@ class ExamParser {
       } else if (q.image_asset_id && !stemText.includes(q.image_asset_id)) {
         out += `[[PWD301:IMAGE:${q.image_asset_id}]]\n`;
       }
-      if (q.choices && Array.isArray(q.choices)) {
-        q.choices.forEach(c => {
+      if (q.choices && Array.isArray(q.choices) && q.choices.length > 0) {
+        q.choices.forEach((c, cIdx) => {
           const star = c.is_correct ? '*' : '';
-          out += `${star}${c.label}. ${c.content}\n`;
+          const label = c.label || String.fromCharCode(65 + cIdx);
+          out += `${star}${label}. ${c.content || ''}\n`;
         });
+      } else if ((q.type === 'SHORT_ANSWER' || q.question_type === 'Điền từ') && Array.isArray(q.accepted_answers) && q.accepted_answers.length > 0) {
+        out += `Đáp án: ${q.accepted_answers.join(', ')}\n`;
       }
       if (q.explanation) {
         out += `Lời giải: ${q.explanation}\n`;

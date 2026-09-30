@@ -1574,7 +1574,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = str(payload.get("reason", "")).strip()
-    raw_action = str(payload.get("action") or payload.get("decision") or "").strip().lower()
+    raw_action = str(payload.get("action") or payload.get("decision") or payload.get("status") or "").strip().lower()
     if raw_action in ("approve", "approved"):
         action = "approve"
     elif raw_action in ("reject", "rejected"):
@@ -1782,6 +1782,26 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
             )
             msg = f"Đã phê duyệt quy tắc hoàn thành khóa học #{req_record.course_id}."
 
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "CREATE_LEARNING_UNIT"
+        ):
+            from pwd301.services.lesson_service import create_learning_unit
+
+            create_learning_unit(actor, req_record.course_id, p_data, session=db.session)
+            msg = f"Đã phê duyệt tạo chương mục mới cho khóa học #{req_record.course_id}."
+
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "REORDER_LEARNING_UNITS"
+        ):
+            from pwd301.services.lesson_service import reorder_learning_units
+
+            unit_ids = p_data.get("unit_ids") or []
+            if unit_ids:
+                reorder_learning_units(actor, req_record.course_id, unit_ids, session=db.session)
+            msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
+
         elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
             staged = (
                 db.session.query(Lesson).filter(Lesson.change_request_id == req_record.id).first()
@@ -1839,26 +1859,6 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             update_course(actor, req_record.course_id, p_data, session=db.session)
             msg = f"Đã phê duyệt cập nhật thông tin khóa học #{req_record.course_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "CREATE_LEARNING_UNIT"
-        ):
-            from pwd301.services.lesson_service import create_learning_unit
-
-            create_learning_unit(actor, req_record.course_id, p_data, session=db.session)
-            msg = f"Đã phê duyệt tạo chương mục mới cho khóa học #{req_record.course_id}."
-
-        elif (
-            req_record.change_type == "LESSON_STRUCTURE"
-            and p_data.get("action") == "REORDER_LEARNING_UNITS"
-        ):
-            from pwd301.services.lesson_service import reorder_learning_units
-
-            unit_ids = p_data.get("unit_ids") or []
-            if unit_ids:
-                reorder_learning_units(actor, req_record.course_id, unit_ids, session=db.session)
-            msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
 
         else:
             msg = f"Đã phê duyệt yêu cầu thay đổi #{req_record.id}."

@@ -355,8 +355,13 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             if not accepted_answers:
                 accepted_answers = ["Đáp án"]
 
+        elif q_type_attr == "essay":
+            mapped_type = "ESSAY"
+            choices = []
+            accepted_answers = []
+
         else:
-            # Fallback for essay or custom types
+            # Fallback for custom types
             answer_nodes = node.findall("./answer")
             if answer_nodes:
                 for ans_el in answer_nodes:
@@ -408,6 +413,7 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
                 "TN nhiều đáp án" if mapped_type == "MULTIPLE_CHOICE"
                 else "Đúng / Sai" if mapped_type == "TRUE_FALSE"
                 else "Điền từ" if mapped_type == "SHORT_ANSWER"
+                else "Tự luận" if mapped_type == "ESSAY"
                 else "Trắc nghiệm 1 đáp án"
             ),
             "points": pts,

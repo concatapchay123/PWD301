@@ -49,6 +49,7 @@ from pwd301.services.assessment_service import (
     materialize_blueprint_pool,
     publish_assessment,
     remove_question_assignment,
+    reorder_assessment_questions,
     restore_assessment,
     trash_assessment,
     trigger_assessment_regrade,
@@ -814,6 +815,8 @@ def learning_units_route(course_id: str) -> Any:
                     "Yêu cầu tạo chương mục mới đã được gửi tới Quản trị viên để xét duyệt."
                 ),
                 "change_request_id": review.id,
+                "course_id": course_obj.id,
+                "proposed_title": proposed.get("title"),
             }
         ), 202
 
@@ -1052,8 +1055,12 @@ def create_lesson_route(course_id: str) -> Any:
     if not payload.get("summary"):
         payload.pop("summary", None)
 
-    # Milestone 4: Default markdown_content if blank so instructors
-    # are not forced to type manual markdown when uploading media.
+    # Milestone 4: Default markdown_content and title if blank so instructors
+    # are not forced to type manual markdown or titles when uploading media.
+    raw_title = payload.get("title")
+    if not raw_title or not isinstance(raw_title, str) or not raw_title.strip():
+        payload["title"] = "Bài giảng mới"
+
     raw_md = payload.get("markdown_content")
     if not raw_md or not raw_md.strip():
         title = payload.get("title", "Bài giảng")
@@ -2832,7 +2839,7 @@ def get_instructor_assessment_detail_route(assessment_id: str) -> Any:
     data = get_assessment_detail(actor, assessment_id, session=db.session)
     data["public_id"] = str(asm_obj.public_id)
     data["assessment_id"] = str(asm_obj.public_id)
-    data["question_assignments"] = asm_obj.question_assignments
+    data["question_assignments"] = data.get("questions", [])
 
     return jsonify(data), 200
 
@@ -2980,6 +2987,33 @@ def remove_instructor_question_route(assessment_id: str, question_id: str) -> An
         raise
 
 
+@instructor_bp.route("/assessments/<assessment_id>/questions/reorder", methods=["POST", "PUT"])
+@instructor_required
+def reorder_instructor_assessment_questions_route(assessment_id: str) -> Any:
+    """Reorder question assignments within an assessment."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    ordered_question_ids = (
+        payload.get("ordered_question_ids")
+        or payload.get("question_ids")
+        or payload.get("ordered_ids")
+    )
+    if not isinstance(ordered_question_ids, list) or not ordered_question_ids:
+        raise ValidationError("Danh sách thứ tự câu hỏi 'ordered_question_ids' không được để trống.")
+
+    assignments = reorder_assessment_questions(
+        actor=actor,
+        assessment_id=assessment_id,
+        ordered_question_ids=ordered_question_ids,
+        session=db.session,
+    )
+    return jsonify({
+        "success": True,
+        "message": f"Successfully reordered {len(assignments)} questions.",
+        "assignments": assignments,
+    }), 200
+
+
 @instructor_bp.route("/assessments/<assessment_id>/questions/create", methods=["POST"])
 @instructor_required
 def create_instructor_assessment_question_route(assessment_id: str) -> Any:
@@ -3007,10 +3041,11 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
             "MULTIPLE_CHOICE",
             "TRUE_FALSE",
             "SHORT_ANSWER",
+            "ESSAY",
         ):
             raise ValidationError(
                 f"Loại câu hỏi '{q_type}' không hợp lệ. "
-                "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER."
+                "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER, ESSAY."
             )
 
         raw_content = payload.get("content") or payload.get("prompt") or payload.get("stem") or ""
@@ -3206,10 +3241,11 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 "MULTIPLE_CHOICE",
                 "TRUE_FALSE",
                 "SHORT_ANSWER",
+                "ESSAY",
             ):
                 raise ValidationError(
                     f"Câu hỏi #{idx}: Loại câu hỏi '{q_type}' không hợp lệ. "
-                    "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER."
+                    "Chỉ hỗ trợ SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER, ESSAY."
                 )
 
             raw_content = item.get("content") or item.get("prompt") or item.get("stem") or ""

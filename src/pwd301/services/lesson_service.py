@@ -257,7 +257,11 @@ def validate_lesson_media_limits(
         raise LessonValidationError("A lesson can contain at most 5 documents.")
     unit_videos = child_videos
     for sibling in unit.lessons:
-        if sibling is lesson or sibling.deleted_at is not None or sibling.status == "TRASH":
+        if (
+            sibling is lesson
+            or sibling.deleted_at is not None
+            or sibling.status in ("TRASH", "HISTORICAL")
+        ):
             continue
         unit_videos += _external_video_count(sibling.markdown_content)
         unit_videos += sum(1 for resource in sibling.resources if resource.is_video)
@@ -523,21 +527,35 @@ def create_lesson(
             )
 
     learning_unit_id = data.get("learning_unit_id")
-    if learning_unit_id is None:
-        # Legacy clients create a one-child group while retaining the Lesson ID.
+    if (
+        learning_unit_id is None
+        or learning_unit_id == ""
+        or str(learning_unit_id).lower() in ("undefined", "null", "none")
+    ):
+        # Legacy clients or draft creations create a one-child group while retaining the Lesson ID.
         unit = create_learning_unit(actor, course.id, {"title": clean_title}, session=sess)
     else:
+        existing_unit = None
         try:
             public_unit_id = uuid.UUID(str(learning_unit_id))
+            existing_unit = (
+                sess.query(LearningUnit)
+                .filter(LearningUnit.public_id == public_unit_id)
+                .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+                .with_for_update()
+                .first()
+            )
         except (TypeError, ValueError, AttributeError):
-            raise LessonValidationError("Invalid learning unit ID.") from None
-        existing_unit = (
-            sess.query(LearningUnit)
-            .filter(LearningUnit.public_id == public_unit_id)
-            .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
-            .with_for_update()
-            .first()
-        )
+            if str(learning_unit_id).isdigit():
+                existing_unit = (
+                    sess.query(LearningUnit)
+                    .filter(LearningUnit.id == int(learning_unit_id))
+                    .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+                    .with_for_update()
+                    .first()
+                )
+            else:
+                raise LessonValidationError("Invalid learning unit ID.") from None
         if (
             existing_unit is None
             or existing_unit.course_id != course.id
@@ -550,7 +568,7 @@ def create_lesson(
             .filter(
                 Lesson.learning_unit_id == unit.id,
                 Lesson.deleted_at.is_(None),
-                Lesson.status != "TRASH",
+                Lesson.status.notin_(("TRASH", "HISTORICAL")),
             )
             .scalar()
             or 0
@@ -563,7 +581,11 @@ def create_lesson(
     # Calculate position and shift if needed
     active_lessons = (
         sess.query(Lesson)
-        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.notin_(("TRASH", "HISTORICAL")),
+        )
         .order_by(Lesson.position.asc())
         .all()
     )
@@ -994,7 +1016,11 @@ def trash_lesson(
     # Re-compact remaining active lessons to contiguous 1..(N-1)
     remaining_lessons = (
         sess.query(Lesson)
-        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.notin_(("TRASH", "HISTORICAL")),
+        )
         .order_by(Lesson.position.asc())
         .all()
     )

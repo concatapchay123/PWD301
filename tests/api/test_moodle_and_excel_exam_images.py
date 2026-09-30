@@ -126,3 +126,32 @@ def test_moodle_xml_with_embedded_base64_image(app, client: FlaskClient, instruc
         assert q_saved["image_asset_id"] is not None
         assert len(q_saved["resources"]) == 1
         assert "[[PWD301:IMAGE:" in q_saved["stem"]
+
+
+def test_moodle_xml_essay_question():
+    """Test parse_moodle_xml correctly parses essay questions."""
+    essay_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+  <question type="essay">
+    <name><text>Câu hỏi tự luận</text></name>
+    <questiontext format="html">
+      <text><![CDATA[<p>Hãy phân tích các ưu nhược điểm của kiến trúc Microservices so với Monolith.</p>]]></text>
+    </questiontext>
+    <defaultgrade>5.0</defaultgrade>
+    <generalfeedback format="html">
+      <text><![CDATA[<p>Hướng dẫn chấm: nêu rõ khả năng mở rộng, chi phí vận hành.</p>]]></text>
+    </generalfeedback>
+  </question>
+</quiz>
+"""
+    result = parse_moodle_xml(essay_xml)
+    assert result["success"] is True
+    assert result["total_questions"] == 1
+    q = result["questions"][0]
+    assert q["type"] == "ESSAY"
+    assert q["question_type"] == "Tự luận"
+    assert q["points"] == 5.0
+    assert "Microservices" in q["stem"]
+    assert "chi phí vận hành" in q["explanation"]
+    assert len(q["choices"]) == 0
+
