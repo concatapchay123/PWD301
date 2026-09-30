@@ -2592,31 +2592,6 @@ class StudentView {
                 </div>
               ` : ''}
 
-              <!-- Contextual AI Assistant Quick Prompts -->
-              <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl p-6 shadow-md space-y-4 border border-indigo-800/40">
-                <div class="flex items-center gap-3">
-                  <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc AI" class="w-10 h-10 rounded-xl object-cover border border-indigo-400/40 shadow-sm" />
-                  <div>
-                    <h4 class="font-bold text-sm">Bạch tuộc trợ lí AI</h4>
-                    <p class="text-xs text-indigo-200/80">Bạn gặp khó khăn hay cần giải thích thêm về bài giảng "${UI.escapeHtml(lesson.title)}"?</p>
-                  </div>
-                </div>
-
-                <div class="flex flex-wrap gap-2 pt-1" id="cisco-ai-chips">
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Tóm tắt 3 ý trọng tâm của bài giảng: ${UI.escapeHtml(lesson.title)}">
-                    <span>💡 Tóm tắt 3 ý chính</span>
-                  </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Giải thích chi tiết các thuật toán và khái niệm kỹ thuật trong bài: ${UI.escapeHtml(lesson.title)}">
-                    <span>🔍 Giải thích thuật toán</span>
-                  </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Cho tôi 3 bài tập thực hành ứng dụng kèm lời giải cho bài: ${UI.escapeHtml(lesson.title)}">
-                    <span>💻 Bài tập áp dụng</span>
-                  </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Tạo 3 câu hỏi trắc nghiệm ôn thi có đáp án giải thích cho bài: ${UI.escapeHtml(lesson.title)}">
-                    <span>📝 Câu hỏi ôn thi</span>
-                  </button>
-                </div>
-              </div>
 
               <!-- Bottom Action Navigation Bar -->
               <div class="flex items-center justify-between pt-4 pb-12">
@@ -2688,15 +2663,6 @@ class StudentView {
             };
           }
 
-          // AI Prompt Chips
-          contentContainer.querySelectorAll('#cisco-ai-chips .ai-chip').forEach(chip => {
-            chip.onclick = () => {
-              const query = chip.dataset.query;
-              if (window.FloatingAITutor && typeof window.FloatingAITutor.openWithQuestion === 'function') {
-                FloatingAITutor.openWithQuestion(query);
-              }
-            };
-          });
 
           // Mark Lesson Completed Controller
           const completeBtn = document.getElementById('cisco-complete-btn');
