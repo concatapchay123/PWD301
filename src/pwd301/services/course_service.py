@@ -922,6 +922,11 @@ def change_course_status(
             if les.published_at is None:
                 les.published_at = now
             les.updated_at = now
+
+        from pwd301.services.rag_service import auto_ingest_course_materials
+        import contextlib
+        with contextlib.suppress(Exception):
+            auto_ingest_course_materials(course, actor=actor, session=sess)
     elif target_status == "TRASH":
         course.deleted_at = now
         course.deleted_by_user_id = actor.id

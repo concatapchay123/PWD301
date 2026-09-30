@@ -359,6 +359,85 @@ def ingest_lesson_content(
     return doc, version, persisted_chunks
 
 
+def auto_ingest_lesson_content(
+    lesson: Lesson,
+    actor: User | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[KnowledgeDocument, KnowledgeVersion, list[KnowledgeChunk]] | None:
+    """Safely and idempotently auto-ingest a published lesson into the RAG knowledge fortress.
+
+    Invoked automatically on lesson creation/update/publish so AI assistant always possesses
+    grounded knowledge chunks without requiring manual instructor API invocation.
+    Fails safely (logs warning without breaking enclosing transaction).
+    """
+    sess = session or db.session
+    if not lesson or lesson.deleted_at is not None:
+        return None
+    if lesson.status != "PUBLISHED":
+        return None
+
+    course = lesson.course or sess.query(Course).filter(Course.id == lesson.course_id).first()
+    if not course or course.deleted_at is not None or course.status != "PUBLISHED":
+        return None
+
+    content = (lesson.markdown_content or "").strip()
+    if not content:
+        return None
+
+    # Resolve actor: use supplied actor or course owner
+    resolved_actor = actor
+    if resolved_actor is None:
+        if course.owner_instructor_id:
+            resolved_actor = sess.query(User).filter(User.id == course.owner_instructor_id).first()
+        if resolved_actor is None:
+            resolved_actor = sess.query(User).filter(User.is_admin == True).first()
+
+    if resolved_actor is None:
+        logger.warning("No authorized actor found to auto-ingest lesson %s", lesson.title)
+        return None
+
+    try:
+        return ingest_lesson_content(
+            actor=resolved_actor,
+            lesson_id=str(lesson.public_id),
+            session=sess,
+        )
+    except Exception as exc:
+        logger.warning("auto_ingest_lesson_content failed for lesson %s: %s", lesson.title, exc)
+        return None
+
+
+def auto_ingest_course_materials(
+    course: Course,
+    actor: User | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[tuple[KnowledgeDocument, KnowledgeVersion, list[KnowledgeChunk]]]:
+    """Auto-ingest all published lessons of a published course.
+
+    Invoked automatically when a course transitions to PUBLISHED.
+    """
+    sess = session or db.session
+    if not course or course.deleted_at is not None or course.status != "PUBLISHED":
+        return []
+
+    results: list[tuple[KnowledgeDocument, KnowledgeVersion, list[KnowledgeChunk]]] = []
+    lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for les in lessons:
+        res = auto_ingest_lesson_content(les, actor=actor, session=sess)
+        if res:
+            results.append(res)
+
+    return results
+
+
 def ingest_course_file(
     *,
     actor: User,

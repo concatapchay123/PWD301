@@ -662,6 +662,12 @@ def create_lesson(
             after_json=after_payload,
         )
 
+    if lesson.status == "PUBLISHED" and course.status == "PUBLISHED":
+        from pwd301.services.rag_service import auto_ingest_lesson_content
+
+        with contextlib.suppress(Exception):
+            auto_ingest_lesson_content(lesson, actor=actor, session=sess)
+
     if session is None:
         try:
             sess.commit()
@@ -843,6 +849,12 @@ def update_lesson(
             before_json=json.dumps(before_snapshot),
             after_json=json.dumps(after_snapshot),
         )
+
+    if lesson.status == "PUBLISHED" and course.status == "PUBLISHED":
+        from pwd301.services.rag_service import auto_ingest_lesson_content
+
+        with contextlib.suppress(Exception):
+            auto_ingest_lesson_content(lesson, actor=actor, session=sess)
 
     if session is None:
         try:

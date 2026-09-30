@@ -494,3 +494,44 @@ def test_rag_prompt_construction_and_citation_parsing(
     assert usage is not None
     assert usage.rank_no == 1
     assert usage.relevance_score is not None
+
+
+def test_auto_ingest_lesson_on_publish(
+    app: Flask,
+    instructor_user: User,
+    test_course: Course,
+) -> None:
+    """When a lesson is created with status PUBLISHED, it is automatically ingested into RAG chunks."""
+    from pwd301.models.ai_rag import KnowledgeDocument
+    from pwd301.services.lesson_service import create_lesson
+
+    sess: Session = db.session
+    lesson = create_lesson(
+        actor=instructor_user,
+        course_id=test_course.id,
+        data={
+            "title": "Tự động lập chỉ mục RAG",
+            "summary": "Tự động chunking và lưu trữ tri thức",
+            "markdown_content": "# Kiến trúc RAG tự động\nHệ thống PWD301 tự động ingest nội dung bài giảng khi xuất bản.",
+            "status": "PUBLISHED",
+        },
+        session=sess,
+    )
+    sess.commit()
+
+    # Verify KnowledgeDocument and KnowledgeChunk exist for this lesson
+    doc = (
+        sess.query(KnowledgeDocument)
+        .filter(
+            KnowledgeDocument.source_type == "LESSON",
+            KnowledgeDocument.source_entity_id == lesson.id,
+        )
+        .first()
+    )
+    assert doc is not None
+    assert doc.status == "ACTIVE"
+    assert len(doc.versions) >= 1
+    current_ver = next(v for v in doc.versions if v.is_current)
+    assert len(current_ver.chunks) >= 1
+    assert "Kiến trúc RAG tự động" in current_ver.chunks[0].chunk_text
+
