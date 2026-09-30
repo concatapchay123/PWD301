@@ -644,6 +644,51 @@ def get_conversation(
     return conv
 
 
+def _build_course_outline_context(course: Course) -> str:
+    """Build a concise, structured syllabus and curriculum outline for a course."""
+    parts = [
+        "<course_syllabus_outline>",
+        f"Mã khóa học: {course.course_code} - Tên khóa học: {course.title}",
+    ]
+    if course.category:
+        parts.append(f"Lĩnh vực/Danh mục: {course.category}")
+    if course.difficulty:
+        parts.append(f"Cấp độ: {course.difficulty}")
+    if course.description:
+        desc = course.description.strip()
+        if len(desc) > 500:
+            desc = desc[:500] + "..."
+        parts.append(f"Mô tả môn học: {desc}")
+
+    slos = getattr(course, "learning_objectives_list", [])
+    if slos:
+        parts.append("Mục tiêu chuẩn đầu ra (SLO): " + "; ".join(slos[:5]))
+
+    units = getattr(course, "learning_units", [])
+    lessons = getattr(course, "lessons", [])
+    if units:
+        parts.append("Cấu trúc chương/học phần:")
+        for u in units:
+            unit_lessons = [
+                l.title
+                for l in lessons
+                if l.learning_unit_id == u.id and l.status == "PUBLISHED" and l.deleted_at is None
+            ]
+            if unit_lessons:
+                parts.append(f"  + {u.title}: {', '.join(unit_lessons)}")
+            else:
+                parts.append(f"  + {u.title}")
+    elif lessons:
+        pub_lessons = [
+            l.title for l in lessons if l.status == "PUBLISHED" and l.deleted_at is None
+        ]
+        if pub_lessons:
+            parts.append("Danh sách bài học: " + ", ".join(pub_lessons))
+
+    parts.append("</course_syllabus_outline>")
+    return "\n".join(parts)
+
+
 def send_chat_message(
     *,
     actor: User,
@@ -787,6 +832,116 @@ def send_chat_message(
     conv.last_activity_at = now
     conv.expires_at = now + timedelta(seconds=inactivity_secs)
 
+    # 5.5. Grounded Context Enrichment (Lesson Markdown, RAG Materials, and Recommendations)
+    grounded_context_parts: list[str] = []
+    retrieved_chunk_records: list[dict[str, Any]] = []
+
+    # A0. Course Syllabus Outline Grounding
+    if conv.course:
+        with contextlib.suppress(Exception):
+            grounded_context_parts.append(_build_course_outline_context(conv.course))
+
+    # A. Active Lesson Markdown & Mini-Quiz Grounding
+    target_lesson_id = conv.lesson_id
+    if target_lesson_id:
+        from pwd301.models.course import Lesson
+
+        try:
+            lesson = sess.query(Lesson).filter(Lesson.id == target_lesson_id).first()
+            if lesson:
+                md_text = (lesson.markdown_content or "").strip()
+                if len(md_text) > 3500:
+                    md_text = md_text[:3500] + "\n... [Nội dung bài học được trích xuất tóm tắt]"
+                mod_title = (
+                    lesson.learning_unit.title
+                    if getattr(lesson, "learning_unit", None)
+                    else "Tổng quan"
+                )
+                lesson_block = (
+                    f"<current_lesson_content>\n"
+                    f"Tên bài học: {lesson.title}\n"
+                    f"Chương/Module: {mod_title}\n"
+                    f"Nội dung bài giảng:\n{md_text}\n"
+                )
+                quiz_data = getattr(lesson, "quiz", None)
+                if quiz_data and isinstance(quiz_data, list) and len(quiz_data) > 0:
+                    import json
+
+                    with contextlib.suppress(Exception):
+                        quiz_summary = json.dumps(quiz_data, ensure_ascii=False)
+                        if len(quiz_summary) > 1000:
+                            quiz_summary = quiz_summary[:1000] + "...]"
+                        lesson_block += f"Câu hỏi ôn tập (Mini-Quiz):\n{quiz_summary}\n"
+                lesson_block += "</current_lesson_content>"
+                grounded_context_parts.append(lesson_block)
+        except Exception as exc:
+            logger.warning("Could not ground lesson content: %s", exc)
+
+    # B. Authorized Course Knowledge Chunks (RAG)
+    if conv.course and conv.course.public_id:
+        from pwd301.services.rag_service import (
+            _format_context_boundary_blocks,
+            retrieve_relevant_chunks,
+        )
+
+        with contextlib.suppress(Exception):
+            rag_chunks = retrieve_relevant_chunks(
+                actor=actor,
+                course_id=str(conv.course.public_id),
+                query_text=sanitized_content,
+                top_k=3,
+                session=sess,
+            )
+            if rag_chunks:
+                retrieved_chunk_records = rag_chunks
+                grounded_context_parts.append(_format_context_boundary_blocks(rag_chunks))
+
+    # C. Personalized Course Recommendations (Algorithm 14)
+    is_recommendation_query = any(
+        kw in sanitized_content.lower()
+        for kw in (
+            "gợi ý",
+            "đề xuất",
+            "lộ trình",
+            "khóa học",
+            "khoá học",
+            "môn học",
+            "nên học gì",
+            "recommend",
+            "roadmap",
+            "tiếp theo",
+            "phù hợp",
+            "bắt đầu học",
+            "chọn môn",
+            "tư vấn",
+        )
+    )
+    if (conv.context_type == "GLOBAL" or not conv.course) and is_recommendation_query:
+        from pwd301.services.recommendation_service import generate_course_recommendations
+
+        with contextlib.suppress(Exception):
+            recs = generate_course_recommendations(actor=actor, limit=3, session=sess)
+            if recs:
+                rec_lines = [
+                    f"- [{r['course_code']}] {r['title']} "
+                    f"(Cấp độ: {r.get('difficulty', 'Cơ bản')}, "
+                    f"Danh mục: {r.get('category', 'CNTT')}): {r.get('explanation', '')}"
+                    for r in recs
+                ]
+                rec_block = (
+                    "<personalized_course_catalog_recommendations>\n"
+                    "Dưới đây là các khóa học phù hợp nhất từ hệ thống cho học viên "
+                    "(thuật toán Algorithm 14):\n"
+                    + "\n".join(rec_lines)
+                    + "\n"
+                    "</personalized_course_catalog_recommendations>"
+                )
+                grounded_context_parts.append(rec_block)
+
+    full_context_str = context_str
+    if grounded_context_parts:
+        full_context_str += "\n\n" + "\n\n".join(grounded_context_parts)
+
     # 6. Generate ASSISTANT reply via Gemini Client
     client = get_gemini_client()
     history = [
@@ -802,7 +957,7 @@ def send_chat_message(
 
     try:
         reply_text = client.chat_response(
-            messages=history, context=context_str, skip_scope_check=True
+            messages=history, context=full_context_str, skip_scope_check=True
         )
     except Exception as exc:
         latency_ms = int((time.time() - t_start) * 1000)
@@ -829,8 +984,8 @@ def send_chat_message(
 
     latency_ms = int((time.time() - t_start) * 1000)
 
-    # 7. Record telemetry in ai_requests
-    record_ai_telemetry(
+    # 7. Record telemetry in ai_requests and link source usage
+    ai_req = record_ai_telemetry(
         user_id=actor.id,
         conversation_id=conv.id,
         route_type="GEMINI",
@@ -841,6 +996,21 @@ def send_chat_message(
         error_code=telemetry_error,
         session=sess,
     )
+    if retrieved_chunk_records and ai_req:
+        from pwd301.models.ai_rag import AISourceUsage
+
+        with contextlib.suppress(Exception):
+            for rank_idx, chunk_item in enumerate(retrieved_chunk_records, start=1):
+                chunk_obj = chunk_item.get("chunk")
+                if chunk_obj:
+                    usage = AISourceUsage(
+                        ai_request_id=ai_req.id,
+                        knowledge_version_id=chunk_item["version_id"],
+                        knowledge_chunk_id=chunk_obj.id,
+                        rank_no=rank_idx,
+                        relevance_score=chunk_item["score"],
+                    )
+                    sess.add(usage)
     sess.flush()
 
     # 8. Record ASSISTANT message

@@ -650,3 +650,67 @@ def test_student_course_detail_filters_course_image(
     data = res.get_json()
     resource_ids = [r.get("resource_id") or r.get("id") for r in data.get("resources", [])]
     assert str(cover_asset.public_id) not in resource_ids
+
+
+def test_student_recommendations_api(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Verify GET /student/recommendations returns Algorithm 14 recommendations (ADR-002)."""
+    login_client(client, "student_stu@pwd301.local")
+    res = client.get(
+        "/student/recommendations",
+        headers={"Accept": "application/json"},
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data.get("success") is True
+    assert "recommendations" in data
+    recs = data["recommendations"]
+    assert isinstance(recs, list)
+    for r in recs:
+        assert "id" in r
+        assert uuid.UUID(r["id"])  # Valid UUID
+        assert "course_code" in r
+        assert "title" in r
+        assert "score" in r
+        assert "explanation" in r
+
+
+def test_student_can_ask_ai_about_published_course_without_enrollment(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Student browsing catalog can ask AI about course syllabus without 403 Forbidden."""
+    from pwd301.models.course import Course
+
+    course = student_fixture["course"]
+    instructor = student_fixture["instructor"]
+    sess = db.session
+
+    # Create another published course which the student is NOT enrolled in
+    unregistered_course = Course(
+        public_id=uuid.uuid4(),
+        course_code="PUB301",
+        course_code_normalized="PUB301",
+        title="Public Web Design 301",
+        title_normalized="public web design 301",
+        description="Public introductory course on web technologies.",
+        status="PUBLISHED",
+        owner_instructor_id=instructor.id,
+    )
+    sess.add(unregistered_course)
+    sess.commit()
+
+    csrf = login_client(client, "student_stu@pwd301.local")
+    resp = client.post(
+        "/student/ai/chat",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={
+            "message": "Khóa học này dạy những gì?",
+            "course_id": str(unregistered_course.public_id),
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data.get("status") == "success"
+    assert "reply" in data
+

@@ -690,3 +690,144 @@ def test_ai_rate_limit_tiered_quotas_and_retry_after(app: Flask) -> None:
     assert err.code == "RATE_LIMIT_EXCEEDED"
     assert err.retry_after > 0
     assert "Rate limit exceeded" in str(err)
+
+
+def test_send_chat_message_lesson_and_recommendation_grounding(
+    app: Flask, student_user: User, sample_course: Course
+) -> None:
+    """Verify that send_chat_message injects lesson markdown and recommendation into context."""
+    from typing import Any
+
+    from pwd301.models.course import LearningUnit, Lesson
+
+    sess: Session = db.session
+
+    # 1. Create a sample learning unit and lesson
+    unit = LearningUnit(
+        course_id=sample_course.id,
+        title="Chương 1: Khái niệm CSS Cơ bản",
+        position=1,
+    )
+    sess.add(unit)
+    sess.flush()
+
+    les = Lesson(
+        course_id=sample_course.id,
+        learning_unit_id=unit.id,
+        title="Bài 1: Tổng quan về Flexbox",
+        markdown_content="Flexbox là phương pháp dàn trang CSS một chiều theo trục chính.",
+        position=1,
+        status="PUBLISHED",
+    )
+    sess.add(les)
+    sess.commit()
+
+    # 2. Create a LESSON-scoped conversation
+    conv = create_conversation(
+        actor=student_user,
+        context_type="LESSON",
+        course_id=str(sample_course.public_id),
+        lesson_id=str(les.public_id),
+        session=sess,
+    )
+
+    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+
+    captured_context: list[str] = []
+    mock_client = MockGeminiClient()
+
+    def mock_chat_response(
+        messages: Any, context: Any = None, skip_scope_check: bool = False
+    ) -> str:
+        captured_context.append(str(context))
+        return "Chào bạn! Flexbox dùng để bố trí các phần tử linh hoạt."
+
+    mock_client.chat_response = mock_chat_response  # type: ignore[assignment]
+    set_gemini_client_override(mock_client)
+    try:
+        user_msg, asst_msg = send_chat_message(
+            actor=student_user,
+            conversation_id=str(conv.public_id),
+            content="Giải thích giúp mình khái niệm trục chính trong flexbox",
+            session=sess,
+        )
+        assert len(captured_context) == 1
+        ctx = captured_context[0]
+        assert "<current_lesson_content>" in ctx
+        assert "Bài 1: Tổng quan về Flexbox" in ctx
+        assert "Flexbox là phương pháp dàn trang CSS một chiều" in ctx
+
+        # 3. Test recommendation grounding in GLOBAL context
+        conv_global = create_conversation(
+            actor=student_user,
+            context_type="GLOBAL",
+            session=sess,
+        )
+        captured_context.clear()
+        send_chat_message(
+            actor=student_user,
+            conversation_id=str(conv_global.public_id),
+            content="Gợi ý cho mình lộ trình học môn học tiếp theo",
+            session=sess,
+        )
+        assert len(captured_context) == 1
+        ctx_global = captured_context[0]
+        assert "<personalized_course_catalog_recommendations>" in ctx_global
+    finally:
+        set_gemini_client_override(None)
+
+
+def test_course_syllabus_grounding_in_chat(
+    app: Flask, student_user: User, sample_course: Course
+) -> None:
+    """AI receives structured course syllabus when context is a Course."""
+    from pwd301.models.course import LearningUnit, Lesson
+    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+
+    sess = db.session
+    u1 = LearningUnit(course_id=sample_course.id, title="Chương 1: Cơ bản", position=1)
+    sess.add(u1)
+    sess.flush()
+    l1 = Lesson(
+        course_id=sample_course.id,
+        learning_unit_id=u1.id,
+        title="Bài 1: Giới thiệu chung",
+        position=1,
+        status="PUBLISHED",
+    )
+    sess.add(l1)
+    sess.commit()
+
+    conv = create_conversation(
+        actor=student_user,
+        context_type="COURSE",
+        course_id=str(sample_course.public_id),
+        session=sess,
+    )
+
+    captured_context: list[str] = []
+    mock_client = MockGeminiClient()
+
+    def mock_chat_response(
+        messages: Any, context: Any = None, skip_scope_check: bool = False
+    ) -> str:
+        captured_context.append(str(context))
+        return "Chào bạn! Môn này gồm các bài học cơ bản."
+
+    mock_client.chat_response = mock_chat_response  # type: ignore[assignment]
+    set_gemini_client_override(mock_client)
+    try:
+        user_msg, asst_msg = send_chat_message(
+            actor=student_user,
+            conversation_id=str(conv.public_id),
+            content="Khóa học này gồm những bài học nào?",
+            session=sess,
+        )
+        assert len(captured_context) == 1
+        ctx = captured_context[0]
+        assert "<course_syllabus_outline>" in ctx
+        assert sample_course.title in ctx
+        assert "Chương 1: Cơ bản" in ctx
+        assert "Bài 1: Giới thiệu chung" in ctx
+    finally:
+        set_gemini_client_override(None)

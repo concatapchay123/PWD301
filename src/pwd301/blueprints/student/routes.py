@@ -48,6 +48,7 @@ from pwd301.services.lesson_service import (
     get_lesson_progress,
     record_lesson_progress,
 )
+from pwd301.services.recommendation_service import generate_course_recommendations
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,29 @@ def dashboard() -> Any:
     actor = require_authenticated_actor()
     overview = get_student_learning_overview(actor, session=db.session)
     return jsonify(overview), 200
+
+
+@student_bp.route("/recommendations", methods=["GET"])
+@student_required
+def student_recommendations() -> Any:
+    """Personalized course recommendations for student adhering to Algorithm 14."""
+    actor = require_authenticated_actor()
+    try:
+        limit = int(request.args.get("limit", 4))
+    except (ValueError, TypeError):
+        limit = 4
+    recs = generate_course_recommendations(actor=actor, limit=limit, session=db.session)
+    return (
+        jsonify(
+            {
+                "success": True,
+                "recommendations": recs,
+                "items": recs,
+                "count": len(recs),
+            }
+        ),
+        200,
+    )
 
 
 @student_bp.route("/attempt/<attempt_id>", methods=["GET"])
@@ -1284,6 +1308,24 @@ def student_ai_chat() -> Any:
                 )
                 conv = None
                 session.pop("active_ai_conversation_id", None)
+            elif conv:
+                req_course = payload.get("course_id")
+                req_lesson = payload.get("lesson_id")
+                should_reset = (
+                    bool(
+                        req_course
+                        and conv.course
+                        and str(conv.course.public_id) != str(req_course)
+                    )
+                    or bool(
+                        req_lesson
+                        and conv.lesson
+                        and str(conv.lesson.public_id) != str(req_lesson)
+                    )
+                    or bool(req_lesson and not conv.lesson)
+                )
+                if should_reset:
+                    conv = None
         except Exception:
             conv = None
             session.pop("active_ai_conversation_id", None)
@@ -1308,21 +1350,28 @@ def student_ai_chat() -> Any:
                 .first()
             )
             if not enr_check:
-                return (
-                    jsonify(
-                        {
-                            "error": {
-                                "message": (
-                                    "Bạn chưa ghi danh khóa học này nên không thể "
-                                    "truy cập trợ lý AI ngữ cảnh."
-                                ),
-                                "code": "FORBIDDEN_NOT_ENROLLED",
-                            },
-                            "status": "refused",
-                        }
-                    ),
-                    403,
-                )
+                if lesson_id or (
+                    target_course.status != "PUBLISHED"
+                    and not (
+                        actor.is_admin
+                        or can_manage_course(actor, target_course, session=db.session)
+                    )
+                ):
+                    return (
+                        jsonify(
+                            {
+                                "error": {
+                                    "message": (
+                                        "Bạn chưa ghi danh khóa học này nên không thể "
+                                        "truy cập trợ lý AI ngữ cảnh bài học."
+                                    ),
+                                    "code": "FORBIDDEN_NOT_ENROLLED",
+                                },
+                                "status": "refused",
+                            }
+                        ),
+                        403,
+                    )
             course_id = str(target_course.public_id)
 
         context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
