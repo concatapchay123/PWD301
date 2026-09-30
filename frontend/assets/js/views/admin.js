@@ -211,10 +211,11 @@ class AdminView {
               <span class="material-symbols-outlined text-[18px]">campaign</span>
               <span>Phát thông báo</span>
             </button>
+            ${(adminSubRole === 'ADMIN_PRIMARY' || adminSubRole === 'ADMIN_SYSTEM_MONITORING') ? `
             <a href="#/admin/operations" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[18px]">monitoring</span>
               <span>Vận Hành</span>
-            </a>
+            </a>` : ''}
           </div>
         </section>
 
@@ -919,15 +920,20 @@ class AdminView {
         <p class="text-slate-600 dark:text-slate-300">Tài khoản: <strong>${UI.escapeHtml(userName)}</strong></p>
 
         <div class="space-y-1">
-          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do tạm ngưng</label>
+          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]" for="suspend-reason">Lý do tạm ngưng *</label>
           <textarea id="suspend-reason" rows="3" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-rose-600 resize-none" placeholder="Ghi rõ căn cứ vi phạm hoặc nghi vấn an ninh..."></textarea>
+        </div>
+
+        <div class="space-y-1">
+          <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]" for="suspend-password">Mật khẩu Quản trị viên (Bắt buộc xác thực) *</label>
+          <input type="password" id="suspend-password" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-rose-600" placeholder="Nhập mật khẩu quản trị viên để ký xác nhận..." autocomplete="current-password" />
         </div>
       </div>
     `;
 
     const footer = `
       <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100" onclick="UI.closeModal()">Hủy</button>
-      <button type="button" id="confirm-suspend-btn" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm">Xác nhận Tạm ngưng</button>
+      <button type="button" id="confirm-suspend-btn" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm">Xác nhận Tạm ngưng</button>
     `;
 
     UI.openModal({
@@ -939,12 +945,17 @@ class AdminView {
 
     document.getElementById('confirm-suspend-btn').onclick = async () => {
       const reason = document.getElementById('suspend-reason').value.trim();
+      const password = document.getElementById('suspend-password')?.value;
       if (!reason) {
         UI.showToast('Vui lòng nhập lý do phong tỏa kiểm toán.', 'warning');
         return;
       }
+      if (!password) {
+        UI.showToast('Vui lòng nhập mật khẩu quản trị viên để xác thực.', 'warning');
+        return;
+      }
       try {
-        await ApiClient.suspendUser(userId, reason);
+        await ApiClient.suspendUser(userId, reason, password);
         UI.closeModal();
         UI.showToast(`Đã tạm ngưng tài khoản ${userName} thành công! Toàn bộ phiên đã bị thu hồi.`, 'success');
         UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
@@ -972,15 +983,16 @@ class AdminView {
   }
 
   static async revokeUserSessions(userId, userName) {
-    const conf = await UI.confirm(
-      'Đăng xuất khỏi mọi thiết bị',
-      `Bạn muốn đăng xuất "${userName}" khỏi mọi thiết bị? Người này sẽ cần đăng nhập lại.`,
-      'Đăng Xuất Thiết Bị'
-    );
-    if (!conf) return;
+    const password = await UI.reauthPrompt({
+      title: 'Cưỡng chế Thu hồi Phiên (Revoke Sessions)',
+      message: `Bạn đang thực hiện thao tác cưỡng chế đăng xuất tài khoản "${userName}" khỏi mọi thiết bị và vô hiệu hóa toàn bộ Token. Vui lòng nhập mật khẩu quản trị viên để xác nhận.`,
+      actionLabel: 'Đăng xuất Mọi Thiết Bị',
+      isDanger: true
+    });
+    if (!password) return;
 
     try {
-      await ApiClient.revokeUserSessions(userId, 'Quản trị viên cưỡng chế thu hồi phiên');
+      await ApiClient.revokeUserSessions(userId, 'Quản trị viên cưỡng chế thu hồi phiên', password);
       UI.showToast(`Đã đăng xuất ${userName} khỏi mọi thiết bị.`, 'success');
     } catch (e) {
       UI.showToast(e.message || 'Không đăng xuất được các thiết bị.', 'error');
@@ -3029,14 +3041,18 @@ class AdminView {
                   <input type="text" id="override-asset-id" placeholder="VD: ast-9821-ab3f" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono text-xs" />
                 </div>
                 <div class="space-y-1">
-                  <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400">Lý do giải trình an ninh (Bắt buộc) *</label>
+                  <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400" for="override-asset-reason">Lý do giải trình an ninh (Bắt buộc) *</label>
                   <textarea id="override-asset-reason" rows="2" placeholder="Xác nhận file an toàn sau khi đã sandbox decompile..." class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs resize-none"></textarea>
+                </div>
+                <div class="space-y-1">
+                  <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400" for="override-asset-password">Mật khẩu Super Admin (Bắt buộc xác thực) *</label>
+                  <input type="password" id="override-asset-password" placeholder="Nhập mật khẩu Super Admin..." class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" autocomplete="current-password" />
                 </div>
               </div>
             `,
             footerHtml: `
               <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300" onclick="UI.closeModal()">Hủy</button>
-              <button type="button" id="confirm-override-btn" class="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">Xác nhận Giải phóng</button>
+              <button type="button" id="confirm-override-btn" class="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">Xác nhận Giải phóng</button>
             `,
             noShadow: true
           });
@@ -3044,6 +3060,7 @@ class AdminView {
           document.getElementById('confirm-override-btn').onclick = async () => {
             const assetId = document.getElementById('override-asset-id').value.trim();
             const reason = document.getElementById('override-asset-reason').value.trim();
+            const password = document.getElementById('override-asset-password')?.value;
             if (!assetId) {
               UI.showToast('Vui lòng nhập File Asset ID.', 'warning');
               return;
@@ -3052,9 +3069,13 @@ class AdminView {
               UI.showToast('Vui lòng nhập lý do giải trình chi tiết.', 'warning');
               return;
             }
+            if (!password) {
+              UI.showToast('Vui lòng nhập mật khẩu xác thực.', 'warning');
+              return;
+            }
 
             try {
-              await ApiClient.quarantineOverride(assetId, reason);
+              await ApiClient.quarantineOverride(assetId, reason, password);
               UI.closeModal();
               UI.showToast(`Đã giải phóng tệp cách ly ${assetId} thành công!`, 'success');
               UI.refreshCurrentRoute(() => AdminView.renderTabSecurity(container));
@@ -3725,27 +3746,37 @@ class AdminView {
                     <strong>Lưu ý:</strong> Khi bảo trì kích hoạt, sinh viên và giảng viên truy cập sẽ nhận mã HTTP 503. Chỉ có Quản trị viên mới tiếp tục truy cập được.
                   </div>
                   <div class="space-y-1">
-                    <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400">Lý do bảo trì *</label>
+                    <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400" for="maint-reason-input">Lý do bảo trì *</label>
                     <input type="text" id="maint-reason-input" value="Bảo trì nâng cấp hạ tầng & sao lưu CSDL" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" />
                   </div>
                   <div class="space-y-1">
-                    <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400">Thời gian dự kiến (Phút)</label>
+                    <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400" for="maint-duration-input">Thời gian dự kiến (Phút)</label>
                     <input type="number" id="maint-duration-input" value="60" min="5" max="720" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="block font-bold uppercase text-[10px] text-slate-600 dark:text-slate-400" for="maint-password-input">Mật khẩu Quản trị viên (Bắt buộc xác thực) *</label>
+                    <input type="password" id="maint-password-input" placeholder="Nhập mật khẩu quản trị viên..." class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" autocomplete="current-password" />
                   </div>
                 </div>
               `,
               footerHtml: `
                 <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600" onclick="UI.closeModal()">Hủy</button>
-                <button type="button" id="confirm-maint-btn" class="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">Kích hoạt Bảo trì</button>
+                <button type="button" id="confirm-maint-btn" class="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold">Kích hoạt Bảo trì</button>
               `
             });
 
             document.getElementById('confirm-maint-btn').onclick = async () => {
               const reason = document.getElementById('maint-reason-input').value.trim();
               const duration = parseInt(document.getElementById('maint-duration-input').value) || 60;
+              const password = document.getElementById('maint-password-input')?.value;
+
+              if (!password) {
+                UI.showToast('Vui lòng nhập mật khẩu xác thực.', 'warning');
+                return;
+              }
 
               try {
-                await ApiClient.startMaintenance(reason, duration);
+                await ApiClient.startMaintenance(reason, duration, password);
                 UI.closeModal();
                 UI.showToast('Đã kích hoạt chế độ bảo trì hệ thống!', 'warning');
                 loadMaintenanceStatus();
@@ -3827,8 +3858,16 @@ class AdminView {
           UI.showToast('Vui lòng nhập User UUID.', 'warning');
           return;
         }
+        const password = await UI.reauthPrompt({
+          title: 'Cưỡng chế Thu hồi Phiên Khẩn cấp',
+          message: `Cưỡng chế đăng xuất người dùng ${uId} khỏi toàn bộ phiên đăng nhập hệ thống. Vui lòng nhập mật khẩu quản trị viên để xác thực.`,
+          actionLabel: 'Thu hồi Phiên Ngay',
+          isDanger: true
+        });
+        if (!password) return;
+
         try {
-          await ApiClient.revokeUserSessions(uId, 'Admin emergency revoke from Operations Cockpit');
+          await ApiClient.revokeUserSessions(uId, 'Admin emergency revoke from Operations Cockpit', password);
           UI.showToast(`Đã thu hồi toàn bộ phiên đăng nhập của người dùng ${uId}!`, 'success');
           document.getElementById('quick-revoke-user-id').value = '';
         } catch (e) {

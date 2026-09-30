@@ -19,7 +19,10 @@ from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
     admin_required,
+    primary_admin_required,
+    require_admin_permission,
     require_authenticated_actor,
+    verify_sensitive_action_reauth,
 )
 from pwd301.services.course_service import (
     change_course_status,
@@ -28,6 +31,7 @@ from pwd301.services.course_service import (
 )
 from pwd301.services.exceptions import (
     AdminActionForbiddenError,
+    ForbiddenError,
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
     ValidationError,
@@ -74,6 +78,7 @@ def api_dashboard() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_admin_courses() -> tuple[Response, int] | Response:
     """Administrator courses listing endpoint."""
     require_authenticated_actor()
@@ -99,6 +104,7 @@ def api_admin_courses() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
     require_authenticated_actor()
@@ -157,6 +163,7 @@ def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/faculty/workload", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("TEACHING_ASSIGNMENT")
 def api_admin_faculty_workload() -> tuple[Response, int] | Response:
     """Retrieve faculty teaching workload metrics and SLA distribution (Admin only)."""
     require_authenticated_actor()
@@ -168,7 +175,7 @@ def api_admin_faculty_workload() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users", methods=["GET"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_users() -> tuple[Response, int] | Response:
     """Administrator users listing endpoint with server-side filter and search."""
     require_authenticated_actor()
@@ -221,7 +228,7 @@ def api_admin_users() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users/<user_id>", methods=["GET"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_get_user(user_id: str) -> tuple[Response, int] | Response:
     """Retrieve detailed user profile for administrators."""
     require_authenticated_actor()
@@ -264,7 +271,7 @@ def api_admin_analytics_overview() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users/<user_id>/roles", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     """Assign or revoke user roles adhering to AUTH-002 cumulative hierarchy."""
     actor = require_authenticated_actor()
@@ -278,6 +285,7 @@ def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     action = str(payload.get("action", "")).strip().lower()
     role_code = str(payload.get("role", "")).strip().upper()
     reason = payload.get("reason")
+    admin_sub_role = payload.get("admin_sub_role")
 
     if action not in ("assign", "remove"):
         return (
@@ -315,6 +323,7 @@ def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                 role_code=role_code,
                 assigned_by_user_id=actor.id,
                 reason=reason,
+                admin_sub_role=admin_sub_role,
                 session=sess,
             )
         else:
@@ -367,6 +376,7 @@ def api_manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/pending", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_list_pending_courses() -> tuple[Response, int] | Response:
     """List all courses currently submitted for review."""
     require_authenticated_actor()
@@ -392,6 +402,7 @@ def api_list_pending_courses() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>/review", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_review_course(course_id: str) -> tuple[Response, int] | Response:
     """Approve or reject a submitted course (Admin only)."""
     actor = require_authenticated_actor()
@@ -443,6 +454,7 @@ def api_review_course(course_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>/reassign", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("TEACHING_ASSIGNMENT")
 def api_reassign_course(course_id: str) -> tuple[Response, int] | Response:
     """Reassign course instructor ownership (Admin only)."""
     actor = require_authenticated_actor()
@@ -463,6 +475,7 @@ def api_reassign_course(course_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>/publish", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_publish_course(course_id: str) -> tuple[Response, int] | Response:
     """Publish an approved course (Admin only)."""
     actor = require_authenticated_actor()
@@ -482,11 +495,13 @@ def api_publish_course(course_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>/trash", methods=["POST", "DELETE"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_trash_course(course_id: str) -> tuple[Response, int] | Response:
     """Soft-delete a course to TRASH (Admin)."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
@@ -496,6 +511,7 @@ def api_trash_course(course_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>/restore", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("COURSE_REVIEW")
 def api_restore_course(course_id: str) -> tuple[Response, int] | Response:
     """Restore a course from TRASH back to ARCHIVED (Admin only)."""
     actor = require_authenticated_actor()
@@ -514,11 +530,12 @@ def api_restore_course(course_id: str) -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/files/<asset_id>/quarantine-override", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_override_file_quarantine(asset_id: str) -> tuple[Response, int] | Response:
     """Admin override to release a quarantined/rejected file asset."""
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason", "")
     asset = quarantine_override(
         admin_actor=actor, asset_id=asset_id, reason=reason, session=db.session
@@ -528,7 +545,7 @@ def api_override_file_quarantine(asset_id: str) -> tuple[Response, int] | Respon
 
 @api_admin_bp.route("/notifications/broadcast", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
     """Admin broadcast system notification to all or role-targeted users."""
     from pwd301.services.notification_service import broadcast_system_notification
@@ -559,6 +576,7 @@ def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/emails/retry-failed", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("SYSTEM_MONITORING")
 def api_admin_retry_failed_emails() -> tuple[Response, int] | Response:
     """Admin trigger retry of failed email deliveries."""
     from pwd301.services.email_service import retry_failed_emails
@@ -657,13 +675,14 @@ def api_get_audit_log_by_id(audit_id: str) -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users/<user_id>/suspend", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
     """Suspend a user account with mandatory fail-closed audit log (Admin only)."""
     from pwd301.services.audit_service import suspend_user_account
 
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason", "")
 
     user = suspend_user_account(
@@ -689,7 +708,7 @@ def api_admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users/<user_id>/unsuspend", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
     """Reactivate a suspended user account with mandatory fail-closed audit log (Admin only)."""
     from pwd301.services.audit_service import unsuspend_user_account
@@ -720,13 +739,14 @@ def api_admin_unsuspend_user(user_id: str) -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/users/<user_id>/revoke-sessions", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Response:
     """Force revocation of all active sessions and tokens for a user (Admin only)."""
     from pwd301.services.audit_service import force_revoke_user_sessions
 
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason")
 
     user = force_revoke_user_sessions(
@@ -751,6 +771,7 @@ def api_admin_force_revoke_sessions(user_id: str) -> tuple[Response, int] | Resp
 @api_admin_bp.route("/health", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("SYSTEM_MONITORING")
 def api_admin_health() -> tuple[Response, int] | Response:
     """Comprehensive system operational health evaluation for administrators."""
     require_authenticated_actor()
@@ -761,6 +782,7 @@ def api_admin_health() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/telemetry", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("SYSTEM_MONITORING")
 def api_admin_telemetry() -> tuple[Response, int] | Response:
     """Retrieve live physical server hardware telemetry for administrators."""
     require_authenticated_actor()
@@ -771,7 +793,7 @@ def api_admin_telemetry() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/backups", methods=["GET"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_list_backups() -> tuple[Response, int] | Response:
     """List historical database backups ordered by execution timestamp."""
     actor = require_authenticated_actor()
@@ -781,7 +803,7 @@ def api_admin_list_backups() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/backups", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_create_backup() -> tuple[Response, int] | Response:
     """Initiate an on-demand database snapshot with SHA-256 integrity calculation."""
     actor = require_authenticated_actor()
@@ -808,7 +830,7 @@ def api_admin_create_backup() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/backups/<backup_id>", methods=["GET"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_get_backup_detail(backup_id: str) -> tuple[Response, int] | Response:
     """Retrieve detailed metadata of a specific database backup snapshot."""
     require_authenticated_actor()
@@ -818,7 +840,7 @@ def api_admin_get_backup_detail(backup_id: str) -> tuple[Response, int] | Respon
 
 @api_admin_bp.route("/backups/<backup_id>/verify", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
     """Execute cryptographic SHA-256 verification and file structure check."""
     actor = require_authenticated_actor()
@@ -828,7 +850,7 @@ def api_admin_verify_backup(backup_id: str) -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/backups/<backup_id>/restore/dry-run", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_dry_run_restore(backup_id: str) -> tuple[Response, int] | Response:
     """Execute a dry-run restoration drill verifying schema compatibility with zero mutations."""
     actor = require_authenticated_actor()
@@ -838,7 +860,7 @@ def api_admin_dry_run_restore(backup_id: str) -> tuple[Response, int] | Response
 
 @api_admin_bp.route("/backups/<backup_id>/restore", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_restore_database(backup_id: str) -> tuple[Response, int] | Response:
     """Execute controlled database restoration under strict authentication safeguards."""
     actor = require_authenticated_actor()
@@ -858,11 +880,12 @@ def api_admin_restore_database(backup_id: str) -> tuple[Response, int] | Respons
 
 @api_admin_bp.route("/maintenance/start", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_start_maintenance() -> tuple[Response, int] | Response:
     """Activate system maintenance window blocking non-admin traffic with HTTP 503."""
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or {}
+    verify_sensitive_action_reauth(actor, payload)
     reason = payload.get("reason", "Scheduled platform maintenance")
     duration = int(payload.get("estimated_duration_minutes", 60))
 
@@ -885,7 +908,7 @@ def api_admin_start_maintenance() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/maintenance/end", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_end_maintenance() -> tuple[Response, int] | Response:
     """Conclude active system maintenance window and restore normal platform access."""
     actor = require_authenticated_actor()
@@ -911,6 +934,7 @@ def api_admin_end_maintenance() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/maintenance/status", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("SYSTEM_MONITORING")
 def api_admin_maintenance_status() -> tuple[Response, int] | Response:
     """Inspect current maintenance window status and parameters."""
     require_authenticated_actor()
@@ -934,6 +958,7 @@ def api_admin_maintenance_status() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/operations/jobs", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("SYSTEM_MONITORING")
 def api_admin_operations_jobs() -> tuple[Response, int] | Response:
     """List asynchronous background worker jobs with telemetry summary (Admin JWT required)."""
     require_authenticated_actor()
@@ -955,7 +980,7 @@ def api_admin_operations_jobs() -> tuple[Response, int] | Response:
 
 @api_admin_bp.route("/operations/jobs/<job_id>/retry", methods=["POST"])
 @jwt_required
-@admin_required
+@primary_admin_required
 def api_admin_retry_job(job_id: str) -> tuple[Response, int] | Response:
     """Trigger manual re-execution of a failed or stuck background job (Admin JWT required)."""
     actor = require_authenticated_actor()
@@ -973,6 +998,7 @@ def api_admin_retry_job(job_id: str) -> tuple[Response, int] | Response:
 @api_admin_bp.route("/instructor-applications", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("INSTRUCTOR_REVIEW")
 def api_admin_instructor_applications() -> tuple[Response, int] | Response:
     """List instructor applications (Admin JWT required)."""
     from pwd301.models.identity import InstructorApplication
@@ -987,9 +1013,7 @@ def api_admin_instructor_applications() -> tuple[Response, int] | Response:
 
     applications = list_instructor_applications(status=status_filter, session=sess)
     all_apps = (
-        sess.query(InstructorApplication)
-        .filter(InstructorApplication.status != "CANCELLED")
-        .all()
+        sess.query(InstructorApplication).filter(InstructorApplication.status != "CANCELLED").all()
     )
     pending_count = sum(1 for a in all_apps if a.status == "PENDING")
 
@@ -1025,6 +1049,7 @@ def api_admin_instructor_applications() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/instructor-applications/<app_id>", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("INSTRUCTOR_REVIEW")
 def api_admin_instructor_application_detail(app_id: str) -> tuple[Response, int] | Response:
     """Get single instructor application details (Admin JWT required)."""
     from pwd301.services.user_service import get_instructor_application
@@ -1067,6 +1092,7 @@ def api_admin_instructor_application_detail(app_id: str) -> tuple[Response, int]
 @api_admin_bp.route("/instructor-applications/<app_id>/review", methods=["POST"])
 @jwt_required
 @admin_required
+@require_admin_permission("INSTRUCTOR_REVIEW")
 def api_admin_review_instructor_application(app_id: str) -> tuple[Response, int] | Response:
     """Approve or reject instructor application (Admin JWT required)."""
     from pwd301.services.user_service import review_instructor_application
@@ -1106,6 +1132,7 @@ def api_admin_review_instructor_application(app_id: str) -> tuple[Response, int]
 @api_admin_bp.route("/instructor-applications/<app_id>/evidence/<filename>", methods=["GET"])
 @jwt_required
 @admin_required
+@require_admin_permission("INSTRUCTOR_REVIEW")
 def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
     """Download attached evidence file for an instructor application (Admin JWT required)."""
     from pathlib import Path
@@ -1179,6 +1206,16 @@ def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
 
     if not file_path or not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
         raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
+
+    # Fail-Closed Malware Verification (ClamAV & Heuristic Scanner)
+    from pwd301.services.scanner_service import scan_blob_file
+
+    verdict = scan_blob_file(file_path)
+    if verdict.status != "PASS":
+        sig = verdict.signature_name or verdict.details or "Malware detected"
+        raise ForbiddenError(
+            f"Tệp tin minh chứng không an toàn hoặc chưa qua kiểm duyệt bảo mật: {sig}"
+        )
 
     return send_file(
         str(file_path),

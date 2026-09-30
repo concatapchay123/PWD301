@@ -39,6 +39,7 @@ from pwd301.models.types import utc_now
 from pwd301.services.exceptions import (
     AdminActionForbiddenError,
     ForbiddenError,
+    InvalidCredentialsError,
     QuestionNotFoundError,
     ResourceNotFoundError,
     UnauthorizedError,
@@ -202,6 +203,113 @@ def require_roles(*role_codes: str) -> Callable[..., Any]:
 def admin_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Shorthand decorator requiring the ADMIN role."""
     return require_roles("ADMIN")(f)
+
+
+def primary_admin_required(f: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator requiring the primary / super administrator (ADMIN_PRIMARY)."""
+
+    @wraps(f)
+    def decorated(*args: Any, **kwargs: Any) -> Any:
+        actor = get_authenticated_actor()
+        correlation_id = getattr(g, "correlation_id", None) or str(uuid.uuid4())
+        if actor is None or not actor.is_authenticated:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "data": None,
+                        "error": {
+                            "code": "UNAUTHORIZED",
+                            "message": "Authentication required.",
+                            "field_errors": {},
+                            "correlation_id": correlation_id,
+                        },
+                    }
+                ),
+                401,
+            )
+        if not actor.is_primary_admin:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "data": None,
+                        "error": {
+                            "code": "FORBIDDEN",
+                            "message": "Yêu cầu quyền Quản trị viên Cấp cao (Super Admin).",
+                            "field_errors": {},
+                            "correlation_id": correlation_id,
+                        },
+                    }
+                ),
+                403,
+            )
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def require_admin_permission(permission: str) -> Callable[..., Any]:
+    """Decorator requiring a specific admin sub-role permission."""
+
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(f)
+        def decorated(*args: Any, **kwargs: Any) -> Any:
+            actor = get_authenticated_actor()
+            correlation_id = getattr(g, "correlation_id", None) or str(uuid.uuid4())
+            if actor is None or not actor.is_authenticated:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "data": None,
+                            "error": {
+                                "code": "UNAUTHORIZED",
+                                "message": "Authentication required.",
+                                "field_errors": {},
+                                "correlation_id": correlation_id,
+                            },
+                        }
+                    ),
+                    401,
+                )
+            if not actor.is_admin:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "data": None,
+                            "error": {
+                                "code": "FORBIDDEN",
+                                "message": "Yêu cầu quyền Quản trị viên.",
+                                "field_errors": {},
+                                "correlation_id": correlation_id,
+                            },
+                        }
+                    ),
+                    403,
+                )
+            if not actor.has_admin_permission(permission):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "data": None,
+                            "error": {
+                                "code": "FORBIDDEN",
+                                "message": f"Yêu cầu quyền quản trị chuyên biệt: {permission}.",
+                                "field_errors": {},
+                                "correlation_id": correlation_id,
+                            },
+                        }
+                    ),
+                    403,
+                )
+            return f(*args, **kwargs)
+
+        return decorated
+
+    return decorator
 
 
 def instructor_required(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -1107,3 +1215,32 @@ def record_admin_student_detail_access(
         raise
 
     return audit_entry
+
+
+def verify_sensitive_action_reauth(
+    actor: User,
+    payload: dict[str, Any],
+    expected_phrase: str | None = None,
+) -> None:
+    """Enforce fresh password re-authentication and optional confirmation phrase for destructive actions.
+
+    Protects high-risk admin operations: user suspension, session revocation,
+    maintenance activation, quarantine release, and course trashing.
+    """
+    password = (
+        payload.get("password") or payload.get("admin_password") or payload.get("current_password")
+    )
+    if not password or not actor.verify_password(str(password)):
+        raise InvalidCredentialsError(
+            "Xác thực mật khẩu quản trị viên không chính xác hoặc bị thiếu. "
+            "Thao tác nhạy cảm yêu cầu nhập mật khẩu xác nhận."
+        )
+
+    if expected_phrase is not None:
+        phrase = str(
+            payload.get("confirmation_phrase") or payload.get("confirmation_token") or ""
+        ).strip()
+        if phrase != expected_phrase:
+            raise ValidationError(
+                f"Cụm từ xác nhận không chính xác. Yêu cầu nhập đúng '{expected_phrase}'."
+            )

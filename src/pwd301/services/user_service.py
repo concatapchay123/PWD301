@@ -319,7 +319,11 @@ def change_password(
             session=sess,
         )
     except Exception as exc:
-        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
+        logger.warning(
+            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
+            user.id,
+            exc,
+        )
 
     return user
 
@@ -378,7 +382,11 @@ def set_password(
             session=sess,
         )
     except Exception as exc:
-        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
+        logger.warning(
+            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
+            user.id,
+            exc,
+        )
 
     return user
 
@@ -414,6 +422,11 @@ def suspend_user(
     if user is None:
         raise UserNotFoundError(f"User with ID {user_id} not found.")
 
+    if user.is_primary_admin:
+        raise AdminActionForbiddenError(
+            "Không thể đình chỉ tài khoản Quản trị viên Cấp cao (Super Admin)."
+        )
+
     now = utc_now()
     user.status = "SUSPENDED"
     user.suspended_at = now
@@ -447,7 +460,9 @@ def suspend_user(
             session=sess,
         )
     except Exception as exc:
-        logger.warning("Failed to dispatch ACCOUNT_SUSPENDED notification for user %s: %s", user.id, exc)
+        logger.warning(
+            "Failed to dispatch ACCOUNT_SUSPENDED notification for user %s: %s", user.id, exc
+        )
 
     return user
 
@@ -757,56 +772,52 @@ def assign_role_to_user(
     if norm_code not in ("STUDENT", "INSTRUCTOR", "ADMIN"):
         raise InvalidRoleAssignmentError(f"Invalid role code: '{role_code}'.")
 
-    if (
-        norm_code == "ADMIN"
-        and user.is_primary_admin
-        and admin_sub_role not in (None, "ADMIN_PRIMARY")
-    ):
-        raise AdminActionForbiddenError(
-            "The existing primary administrator role cannot be changed to a subordinate role."
-        )
-
-    if norm_code == "ADMIN" and admin_sub_role == "ADMIN_PRIMARY":
-        raise InvalidRoleAssignmentError(
-            "ADMIN_PRIMARY cannot be granted through ordinary role assignment."
-        )
-    if (
-        norm_code == "ADMIN"
-        and admin_sub_role is None
-        and assigned_by_user_id is not None
-        and assigned_by_user_id != user.id
-    ):
-        raise InvalidRoleAssignmentError(
-            "ADMIN_PRIMARY cannot be inferred; choose an explicit subordinate admin role."
-        )
-    if (
-        norm_code == "ADMIN"
-        and admin_sub_role is not None
-        and admin_sub_role
-        not in {
-            "ADMIN_COURSE_REVIEW",
-            "ADMIN_INSTRUCTOR_REVIEW",
-            "ADMIN_TEACHING_ASSIGNMENT",
-            "ADMIN_SYSTEM_MONITORING",
-        }
-    ):
-        raise InvalidRoleAssignmentError(f"Invalid admin sub-role: '{admin_sub_role}'.")
-
-    if assigned_by_user_id is not None:
-        assigner = sess.get(User, assigned_by_user_id)
-        if (
-            assigner is not None
-            and assigner.is_admin
-            and not assigner.is_primary_admin
-            and not (
-                allow_instructor_application_approval
-                and norm_code == "INSTRUCTOR"
-                and assigner.has_admin_permission("INSTRUCTOR_REVIEW")
-            )
-        ):
+    if norm_code == "ADMIN":
+        if user.is_primary_admin and admin_sub_role not in (None, "ADMIN_PRIMARY"):
             raise AdminActionForbiddenError(
-                "Chỉ Admin chính mới có quyền phân quyền và bổ nhiệm các Admin khác."
+                "The existing primary administrator role cannot be changed to a subordinate role."
             )
+
+        if admin_sub_role == "ADMIN_PRIMARY":
+            raise InvalidRoleAssignmentError(
+                "ADMIN_PRIMARY cannot be granted through ordinary role assignment."
+            )
+
+        if assigned_by_user_id is not None:
+            if assigned_by_user_id == user.id:
+                raise AdminActionForbiddenError(
+                    "Người dùng không thể tự cấp quyền Admin cho chính mình."
+                )
+
+            assigner = sess.get(User, assigned_by_user_id)
+            if assigner is None or not assigner.is_primary_admin:
+                raise AdminActionForbiddenError(
+                    "Chỉ Quản trị viên Cấp cao mới có quyền phân quyền và bổ nhiệm các Admin khác."
+                )
+
+            if admin_sub_role is None or admin_sub_role not in {
+                "ADMIN_COURSE_REVIEW",
+                "ADMIN_INSTRUCTOR_REVIEW",
+                "ADMIN_TEACHING_ASSIGNMENT",
+                "ADMIN_SYSTEM_MONITORING",
+            }:
+                raise InvalidRoleAssignmentError(
+                    f"Bắt buộc phải chỉ định vai trò Admin phụ hợp lệ. Giá trị không hợp lệ: '{admin_sub_role}'."
+                )
+
+    if norm_code == "INSTRUCTOR":
+        if assigned_by_user_id is not None:
+            assigner = sess.get(User, assigned_by_user_id)
+            if assigner is None or not (
+                assigner.is_primary_admin
+                or (
+                    allow_instructor_application_approval
+                    and assigner.has_admin_permission("INSTRUCTOR_REVIEW")
+                )
+            ):
+                raise AdminActionForbiddenError(
+                    "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền bổ nhiệm Giảng viên."
+                )
 
     if assigned_by_user_id is not None and reason is not None:
         clean_reason = reason.strip()
@@ -841,26 +852,25 @@ def assign_role_to_user(
             user.roles.append(role_obj)
 
     sess.flush()
-    if assigned_by_user_id is not None or reason is not None or admin_sub_role is not None:
-        for code in target_roles:
-            role_obj = sess.query(Role).filter(Role.code == code).first()
-            if role_obj is not None:
-                link = (
-                    sess.query(UserRole)
-                    .filter(UserRole.user_id == user.id, UserRole.role_id == role_obj.id)
-                    .first()
-                )
-                if link is not None:
-                    link.assigned_by_user_id = assigned_by_user_id
-                    effective_reason = reason or ""
-                    if code == "ADMIN":
-                        if assigned_by_user_id is not None and assigned_by_user_id != user.id:
-                            chosen_sub = admin_sub_role or "ADMIN_SYSTEM_MONITORING"
-                        else:
-                            chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
-                        link.assignment_reason = f"SUB_ROLE:{chosen_sub} | {effective_reason}"
+    for code in target_roles:
+        role_obj = sess.query(Role).filter(Role.code == code).first()
+        if role_obj is not None:
+            link = (
+                sess.query(UserRole)
+                .filter(UserRole.user_id == user.id, UserRole.role_id == role_obj.id)
+                .first()
+            )
+            if link is not None:
+                link.assigned_by_user_id = assigned_by_user_id
+                effective_reason = reason or ""
+                if code == "ADMIN":
+                    if assigned_by_user_id is None:
+                        chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
                     else:
-                        link.assignment_reason = effective_reason
+                        chosen_sub = admin_sub_role or "ADMIN_SYSTEM_MONITORING"
+                    link.assignment_reason = f"SUB_ROLE:{chosen_sub} | {effective_reason}"
+                elif reason is not None or assigned_by_user_id is not None:
+                    link.assignment_reason = effective_reason
 
     after_roles = sorted(new_role_codes)
     user.auth_version += 1
@@ -901,7 +911,7 @@ def assign_role_to_user(
                 "ADMIN_TEACHING_ASSIGNMENT": "Phân công Giảng dạy",
                 "ADMIN_SYSTEM_MONITORING": "Giám sát Hệ thống & Vận hành",
             }
-            is_admin_promotion = ("ADMIN" in after_roles and "ADMIN" not in before_roles)
+            is_admin_promotion = "ADMIN" in after_roles and "ADMIN" not in before_roles
             if is_admin_promotion:
                 sub_label = sub_role_names.get(
                     admin_sub_role or getattr(user, "admin_sub_role", None),

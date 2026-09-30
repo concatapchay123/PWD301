@@ -191,7 +191,11 @@ def seed_demo(session: Session | scoped_session[Any]) -> dict[str, Any]:
                             user_id=user.id,
                             role_id=r_obj.id,
                             assigned_by_user_id=user.id,
-                            assignment_reason="Demo environment initialization",
+                            assignment_reason=(
+                                "SUB_ROLE:ADMIN_PRIMARY | Demo environment initialization"
+                                if r_code == "ADMIN"
+                                else "Demo environment initialization"
+                            ),
                         )
                     )
 

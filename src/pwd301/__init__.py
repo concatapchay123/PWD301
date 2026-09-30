@@ -118,6 +118,7 @@ from pwd301.services.exceptions import (
     FileStorageError,
     FileValidationError,
     ForbiddenError,
+    InvalidCredentialsError,
     GradingError,
     ImportQuestionNotFoundError,
     LessonNotFoundError,
@@ -226,6 +227,7 @@ def _format_error_response(
 DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     # 401 Unauthorized
     UnauthorizedError: ("UNAUTHORIZED", 401),
+    InvalidCredentialsError: ("INVALID_CREDENTIALS", 401),
     # 403 Forbidden
     ForbiddenError: ("FORBIDDEN", 403),
     AdminActionForbiddenError: ("FORBIDDEN", 403),

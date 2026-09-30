@@ -683,6 +683,16 @@ def suspend_user_account(
     if target_user.id == admin_actor.id:
         raise ValidationError("Administrators cannot suspend their own account.")
 
+    # Guard: Super Admin Invariant & Peer Admin Protection
+    if target_user.is_primary_admin:
+        raise AdminActionForbiddenError(
+            "Không thể đình chỉ hoặc thu hồi phiên của Quản trị viên Cấp cao (Super Admin)."
+        )
+    if target_user.is_admin and not admin_actor.is_primary_admin:
+        raise AdminActionForbiddenError(
+            "Chỉ Quản trị viên Cấp cao mới có quyền thay đổi trạng thái tài khoản Quản trị viên khác."
+        )
+
     # Guard: Last Admin Protection
     if target_user.is_admin:
         from pwd301.models.identity import Role
@@ -802,6 +812,11 @@ def unsuspend_user_account(
     if target_user is None:
         raise ResourceNotFoundError(f"User '{target_user_id}' not found.")
 
+    if target_user.is_admin and not admin_actor.is_primary_admin:
+        raise AdminActionForbiddenError(
+            "Chỉ Quản trị viên Cấp cao mới có quyền thay đổi trạng thái tài khoản Quản trị viên khác."
+        )
+
     now = utc_now()
     clean_reason = (reason or "").strip() or None
 
@@ -881,6 +896,15 @@ def force_revoke_user_sessions(
     target_user = _resolve_user(target_user_id, session=sess)
     if target_user is None:
         raise ResourceNotFoundError(f"User '{target_user_id}' not found.")
+
+    if target_user.is_primary_admin and target_user.id != admin_actor.id:
+        raise AdminActionForbiddenError(
+            "Không thể cưỡng chế thu hồi phiên của Quản trị viên Cấp cao (Super Admin)."
+        )
+    if target_user.is_admin and not admin_actor.is_primary_admin:
+        raise AdminActionForbiddenError(
+            "Chỉ Quản trị viên Cấp cao mới có quyền thu hồi phiên của Quản trị viên khác."
+        )
 
     clean_reason = (reason or "").strip() or None
     before_state = {

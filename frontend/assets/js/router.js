@@ -463,19 +463,57 @@ class AppRouter {
 
     // --- Admin Routes ---
     else if (path === '#/admin/courses/review') {
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+      if (!isPrimary && subRole !== 'ADMIN_COURSE_REVIEW') {
+        UI.showToast('Bạn không có quyền truy cập duyệt khóa học.', 'warning');
+        this.navigate('#/admin/governance', true);
+        return;
+      }
       await AdminView.renderCourseReviewPage(viewport, query.id);
     } else if (path === '#/admin/change-requests/review') {
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+      if (!isPrimary && subRole !== 'ADMIN_COURSE_REVIEW') {
+        UI.showToast('Bạn không có quyền truy cập duyệt yêu cầu thay đổi.', 'warning');
+        this.navigate('#/admin/governance', true);
+        return;
+      }
       await AdminView.renderChangeRequestReviewPage(viewport, query.id);
     } else if (path === '#/admin/governance') {
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
       const defaultTab = {
         ADMIN_COURSE_REVIEW: 'courses',
         ADMIN_INSTRUCTOR_REVIEW: 'applications',
         ADMIN_TEACHING_ASSIGNMENT: 'reassign',
         ADMIN_SYSTEM_MONITORING: 'security',
       }[subRole] || 'users';
-      await AdminView.renderGovernance(viewport, query.tab || defaultTab, query.queue || null);
+
+      // Validate requested tab against subRole permissions
+      let requestedTab = query.tab || defaultTab;
+      if (!isPrimary) {
+        const allowedTabs = {
+          ADMIN_COURSE_REVIEW: ['courses', 'review'],
+          ADMIN_INSTRUCTOR_REVIEW: ['applications', 'instructors'],
+          ADMIN_TEACHING_ASSIGNMENT: ['reassign'],
+          ADMIN_SYSTEM_MONITORING: ['security'],
+        }[subRole] || [];
+
+        if (!allowedTabs.includes(requestedTab)) {
+          requestedTab = defaultTab;
+        }
+      }
+
+      await AdminView.renderGovernance(viewport, requestedTab, query.queue || null);
     } else if (path === '#/admin/operations') {
+      const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const isPrimary = this.currentUser?.is_primary_admin || subRole === 'ADMIN_PRIMARY';
+      if (!isPrimary && subRole !== 'ADMIN_SYSTEM_MONITORING') {
+        UI.showToast('Bạn không có quyền truy cập khu vực Vận hành hệ thống.', 'warning');
+        this.navigate('#/admin/governance', true);
+        return;
+      }
       await AdminView.renderOperations(viewport);
     }
 

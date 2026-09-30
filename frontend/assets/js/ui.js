@@ -415,6 +415,96 @@ class UI {
     });
   }
 
+  static reauthPrompt({
+    title = 'Xác thực Mật khẩu Quản trị viên',
+    message = 'Đây là thao tác an ninh nhạy cảm. Vui lòng nhập mật khẩu tài khoản của bạn để xác nhận thực hiện.',
+    actionLabel = 'Xác nhận Thao tác',
+    isDanger = true
+  } = {}) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (!settled) {
+          settled = true;
+          window._modalOnClose = null;
+          UI.closeModal();
+          resolve(value);
+        }
+      };
+
+      const inputId = 'reauth_pwd_' + Math.random().toString(36).substring(2, 7);
+      const btnColor = isDanger
+        ? 'bg-rose-600 hover:bg-rose-700 text-white'
+        : 'bg-primary hover:bg-primary-hover text-white';
+
+      const body = `
+        <div class="space-y-4 text-xs">
+          <div class="p-3.5 rounded-xl ${isDanger ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60'} leading-relaxed">
+            <div class="flex items-center gap-2 font-bold mb-1">
+              <span class="material-symbols-outlined text-[18px]">${isDanger ? 'security' : 'lock'}</span>
+              <span>Yêu cầu Tái xác thực Danh tính</span>
+            </div>
+            <p>${UI.escapeHtml(message)}</p>
+          </div>
+          <div class="space-y-1.5">
+            <label class="block font-bold text-[11px] text-slate-700 dark:text-slate-300" for="${inputId}">Mật khẩu Quản trị viên của bạn *</label>
+            <div class="relative">
+              <input type="password" id="${inputId}" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary pr-10" placeholder="Nhập mật khẩu đang đăng nhập..." autocomplete="current-password" />
+              <button type="button" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1" onclick="const inp=document.getElementById('${inputId}'); if(inp.type==='password'){inp.type='text'; this.querySelector('span').textContent='visibility_off';}else{inp.type='password'; this.querySelector('span').textContent='visibility';}">
+                <span class="material-symbols-outlined text-[18px]">visibility</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const footer = `
+        <button type="button" id="reauth-cancel-btn" class="c-btn c-btn-secondary c-btn-md px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300">
+          Hủy bỏ
+        </button>
+        <button type="button" id="reauth-action-btn" class="c-btn c-btn-md px-5 py-2.5 rounded-xl text-xs font-bold ${btnColor} shadow-sm">
+          ${UI.escapeHtml(actionLabel)}
+        </button>
+      `;
+
+      UI.openModal({
+        title,
+        bodyHtml: body,
+        footerHtml: footer,
+        size: 'sm',
+        onClose: () => {
+          if (!settled) {
+            settled = true;
+            resolve(null);
+          }
+        }
+      });
+
+      const input = document.getElementById(inputId);
+      if (input && typeof input.focus === 'function') {
+        setTimeout(() => input.focus(), 50);
+      }
+
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('reauth-action-btn')?.click();
+        }
+      });
+
+      document.getElementById('reauth-cancel-btn')?.addEventListener('click', () => finish(null));
+
+      document.getElementById('reauth-action-btn')?.addEventListener('click', () => {
+        const val = document.getElementById(inputId)?.value;
+        if (!val || !val.trim()) {
+          UI.showToast('Vui lòng nhập mật khẩu xác thực.', 'warning');
+          return;
+        }
+        finish(val);
+      });
+    });
+  }
+
   // =========================================================================
   // 3. Multi-Directional Drawer System
   // =========================================================================

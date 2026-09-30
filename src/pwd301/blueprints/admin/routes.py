@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 import sqlalchemy as sa
-from flask import Response, flash, jsonify, redirect, request, url_for
+from flask import Response, jsonify, request
 
 from pwd301.blueprints.admin import admin_bp
 from pwd301.extensions import db
@@ -427,9 +427,6 @@ def review_course(course_id: str) -> Any:
     reason = payload.get("reason")
 
     if action not in ("approve", "reject"):
-        if not _is_api_request():
-            flash("Hành động duyệt không hợp lệ (chỉ chấp nhận 'approve' hoặc 'reject').", "danger")
-            return redirect(url_for("admin.admin_courses"))
         return (
             jsonify(
                 {
@@ -445,9 +442,6 @@ def review_course(course_id: str) -> Any:
     if action == "reject":
         clean_reason = str(reason or "").strip()
         if len(clean_reason) < 5:
-            if not _is_api_request():
-                flash("Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự.", "danger")
-                return redirect(url_for("admin.admin_courses"))
             return (
                 jsonify(
                     {
@@ -469,10 +463,6 @@ def review_course(course_id: str) -> Any:
         new_status=target_status,
         reason=reason,
     )
-    if not _is_api_request():
-        status_label = "được phê duyệt" if action == "approve" else "bị từ chối (trả về bản thảo)"
-        flash(f"Khóa học '{course.title}' đã {status_label} thành công.", "success")
-        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -512,9 +502,6 @@ def publish_course(course_id: str) -> Any:
         new_status="PUBLISHED",
         reason=reason,
     )
-    if not _is_api_request():
-        flash(f"Khóa học '{course.title}' đã được xuất bản công khai.", "success")
-        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -528,9 +515,6 @@ def trash_course_route(course_id: str) -> Any:
     reason = payload.get("reason")
 
     course = trash_course(actor=actor, course_id=course_id, reason=reason)
-    if not _is_api_request():
-        flash(f"Khóa học '{course.title}' đã được chuyển vào thùng rác.", "warning")
-        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -549,9 +533,6 @@ def restore_course(course_id: str) -> Any:
         new_status="ARCHIVED",
         reason=reason,
     )
-    if not _is_api_request():
-        flash(f"Khóa học '{course.title}' đã được khôi phục về trạng thái lưu trữ.", "success")
-        return redirect(url_for("admin.admin_courses"))
     return jsonify(_serialize_course(course)), 200
 
 
@@ -711,10 +692,6 @@ def admin_suspend_user(user_id: str) -> Any:
         session=db.session,
     )
 
-    if not _is_api_request():
-        flash(f"Tài khoản {user.email} đã bị đình chỉ.", "warning")
-        return redirect(url_for("admin.admin_users"))
-
     return (
         jsonify(
             {
@@ -746,10 +723,6 @@ def admin_unsuspend_user(user_id: str) -> Any:
         session=db.session,
     )
 
-    if not _is_api_request():
-        flash(f"Tài khoản {user.email} đã được mở khóa/kích hoạt lại thành công.", "success")
-        return redirect(url_for("admin.admin_users"))
-
     return (
         jsonify(
             {
@@ -779,14 +752,6 @@ def admin_force_revoke_sessions(user_id: str) -> Any:
         reason=reason,
         session=db.session,
     )
-
-    if not _is_api_request():
-        flash(
-            f"Toàn bộ phiên đăng nhập của tài khoản {user.email} đã bị thu hồi "
-            f"(auth_version={user.auth_version}).",
-            "info",
-        )
-        return redirect(url_for("admin.admin_users"))
 
     return (
         jsonify(
@@ -848,9 +813,6 @@ def admin_create_backup() -> Any:
         notes=notes,
         session=db.session,
     )
-    if not _is_api_request():
-        flash(f"Bản sao lưu '{backup.database_backup_name}' đã được tạo thành công.", "success")
-        return redirect(url_for("admin.admin_list_backups"))
     return (
         jsonify(
             {
@@ -877,12 +839,6 @@ def admin_verify_backup(backup_id: str) -> Any:
     """Execute cryptographic SHA-256 verification and file structure check."""
     actor = require_authenticated_actor()
     result = verify_backup_integrity(actor, backup_id, session=db.session)
-    if not _is_api_request():
-        if result.get("integrity_status") == "VERIFIED":
-            flash("Xác minh tính toàn vẹn SHA-256 thành công. Bản sao lưu hợp lệ.", "success")
-        else:
-            flash(f"Xác minh bản sao lưu: {result.get('integrity_status')}.", "warning")
-        return redirect(url_for("admin.admin_list_backups"))
     return jsonify(result), 200
 
 
@@ -892,13 +848,6 @@ def admin_dry_run_restore(backup_id: str) -> Any:
     """Execute a dry-run restoration drill verifying schema compatibility with zero mutations."""
     actor = require_authenticated_actor()
     result = execute_dry_run_restore(actor, backup_id, session=db.session)
-    if not _is_api_request():
-        flash(
-            "Diễn tập khôi phục (dry-run) thành công. "
-            "Tương thích cấu trúc 100%, không ghi đè CSDL.",
-            "success",
-        )
-        return redirect(url_for("admin.admin_list_backups"))
     return jsonify(result), 200
 
 
@@ -1155,9 +1104,6 @@ def admin_review_instructor_application(app_id: str) -> Any:
             session=db.session,
         )
     except (ValidationError, ResourceNotFoundError) as exc:
-        if not _is_api_request():
-            flash(str(exc), "danger")
-            return redirect(url_for("admin.admin_instructor_applications"))
         return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
 
     msg = (
@@ -1166,10 +1112,6 @@ def admin_review_instructor_application(app_id: str) -> Any:
         if action == "approve"
         else f"Đã từ chối đơn #{app_id}. Thông báo phản hồi đã được gửi đến học viên."
     )
-
-    if not _is_api_request():
-        flash(msg, "success" if action == "approve" else "warning")
-        return redirect(url_for("admin.admin_instructor_applications"))
 
     return (
         jsonify(
@@ -1262,6 +1204,16 @@ def admin_download_application_evidence(app_id: str, filename: str) -> Any:
     # Chống Path Traversal và kiểm tra tồn tại
     if not file_path or not str(file_path).startswith(str(storage_root)) or not file_path.is_file():
         raise ResourceNotFoundError("Tệp tin minh chứng không tồn tại hoặc đã bị xóa.")
+
+    # Fail-Closed Malware Verification (ClamAV & Heuristic Scanner)
+    from pwd301.services.scanner_service import scan_blob_file
+
+    verdict = scan_blob_file(file_path)
+    if verdict.status != "PASS":
+        sig = verdict.signature_name or verdict.details or "Malware detected"
+        raise ForbiddenError(
+            f"Tệp tin minh chứng không an toàn hoặc chưa qua kiểm duyệt bảo mật: {sig}"
+        )
 
     preview = request.args.get("preview", "0") in ("1", "true", "yes")
     preview_suffix = Path(download_name).suffix.lower()
@@ -1369,7 +1321,9 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             payload_data = {}
 
         target_title = None
-        if r.change_type == "COURSE_METADATA" or (r.target_type == "COURSE" and not payload_data.get("action")):
+        if r.change_type == "COURSE_METADATA" or (
+            r.target_type == "COURSE" and not payload_data.get("action")
+        ):
             c = db.session.get(Course, r.course_id)
             if c:
                 target_title = c.title
@@ -1414,16 +1368,20 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 )
                 if orig:
                     les = orig
-            staged = (
-                db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
-            )
+            staged = db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
             if staged:
                 payload_data.setdefault("title", staged.title)
                 payload_data.setdefault("summary", staged.summary or "")
                 payload_data.setdefault("markdown_content", staged.markdown_content or "")
-                payload_data.setdefault("estimated_duration_minutes", staged.estimated_duration_minutes)
-                payload_data.setdefault("minimum_completion_seconds", staged.minimum_completion_seconds)
-                payload_data.setdefault("viewed_fraction_required", float(staged.viewed_fraction_required or 0.0))
+                payload_data.setdefault(
+                    "estimated_duration_minutes", staged.estimated_duration_minutes
+                )
+                payload_data.setdefault(
+                    "minimum_completion_seconds", staged.minimum_completion_seconds
+                )
+                payload_data.setdefault(
+                    "viewed_fraction_required", float(staged.viewed_fraction_required or 0.0)
+                )
             if les:
                 target_title = les.title
                 unit_title = les.learning_unit.title if les.learning_unit else None
@@ -1574,7 +1532,11 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = str(payload.get("reason", "")).strip()
-    raw_action = str(payload.get("action") or payload.get("decision") or payload.get("status") or "").strip().lower()
+    raw_action = (
+        str(payload.get("action") or payload.get("decision") or payload.get("status") or "")
+        .strip()
+        .lower()
+    )
     if raw_action in ("approve", "approved"):
         action = "approve"
     elif raw_action in ("reject", "rejected"):

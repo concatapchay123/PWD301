@@ -32,6 +32,14 @@ from pwd301.models.types import (
     utc_now,
 )
 
+VALID_ADMIN_SUB_ROLES: set[str] = {
+    "ADMIN_PRIMARY",
+    "ADMIN_COURSE_REVIEW",
+    "ADMIN_INSTRUCTOR_REVIEW",
+    "ADMIN_TEACHING_ASSIGNMENT",
+    "ADMIN_SYSTEM_MONITORING",
+}
+
 
 class User(Base, UserMixin):
     """User account model mapping to canonical 'users' table."""
@@ -219,7 +227,7 @@ class User(Base, UserMixin):
                             "ADMIN_SYSTEM_MONITORING",
                         ):
                             return code
-        return "ADMIN_PRIMARY"
+        return None
 
     @property
     def is_primary_admin(self) -> bool:
@@ -236,13 +244,15 @@ class User(Base, UserMixin):
             "ADMIN_TEACHING_ASSIGNMENT": "Admin phân công giảng dạy",
             "ADMIN_SYSTEM_MONITORING": "Admin giám sát hệ thống",
         }
-        return labels.get(self.admin_sub_role or "", "Admin chính")
+        return labels.get(self.admin_sub_role or "", "Quản trị viên")
 
     def has_admin_permission(self, permission: str) -> bool:
         """Check if admin user has specific sub-role permission."""
         if not self.is_admin:
             return False
-        sub = self.admin_sub_role or "ADMIN_PRIMARY"
+        sub = self.admin_sub_role
+        if not sub:
+            return False
         if sub == "ADMIN_PRIMARY":
             return True
         perm_map = {

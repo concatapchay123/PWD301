@@ -1509,10 +1509,11 @@ def quarantine_override(
     reason: str,
     session: Session | scoped_session[Any] | None = None,
 ) -> FileAsset:
-    """Admin override to release a quarantined/rejected file with justification and audit log."""
     sess = session if session is not None else db.session
-    if not admin_actor.is_admin:
-        raise FileAccessDeniedError("Administrator privileges required for quarantine override.")
+    if not (admin_actor.is_admin and getattr(admin_actor, "is_primary_admin", False)):
+        raise FileAccessDeniedError(
+            "Chỉ Quản trị viên cấp cao (Primary Admin) mới có quyền giải phóng tệp khỏi diện kiểm dịch."
+        )
 
     clean_reason = (reason or "").strip()
     if not clean_reason or len(clean_reason) < 5:

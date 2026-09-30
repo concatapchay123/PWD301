@@ -100,7 +100,11 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
                 user_id=admin_user.id,
                 role_id=target_role.id,
                 assigned_by_user_id=admin_user.id,
-                assignment_reason="Baseline root administrator initialization",
+                assignment_reason=(
+                    "SUB_ROLE:ADMIN_PRIMARY | Baseline root administrator initialization"
+                    if code == "ADMIN"
+                    else "Baseline root administrator initialization"
+                ),
             )
             session.add(link)
             summary["admin_roles_assigned"].append(code)

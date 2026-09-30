@@ -830,10 +830,12 @@ class ApiClient {
     return await ApiClient.manageUserRole(userId, 'remove', role, reason);
   }
 
-  static async suspendUser(userId, reason = '') {
+  static async suspendUser(userId, reason = '', password = '') {
+    const body = { reason };
+    if (password) body.password = password;
     return await ApiClient.request(`/admin/users/${userId}/suspend`, {
       method: 'POST',
-      body: { reason }
+      body
     });
   }
 
@@ -844,11 +846,17 @@ class ApiClient {
     });
   }
 
-  static async revokeUserSessions(userId, reason = '') {
+  static async revokeUserSessions(userId, reason = '', password = '') {
+    const body = { reason };
+    if (password) body.password = password;
     return await ApiClient.request(`/admin/users/${userId}/revoke-sessions`, {
       method: 'POST',
-      body: { reason }
+      body
     });
+  }
+
+  static async forceRevokeSessions(userId, reason = '', password = '') {
+    return await ApiClient.revokeUserSessions(userId, reason, password);
   }
 
   static async getAdminUserDetail(userId) {
@@ -903,10 +911,12 @@ class ApiClient {
     });
   }
 
-  static async trashCourseAdmin(courseId, reason = '') {
+  static async trashCourseAdmin(courseId, reason = '', password = '') {
+    const body = { reason };
+    if (password) body.password = password;
     return await ApiClient.request(`/admin/courses/${courseId}/trash`, {
       method: 'POST',
-      body: { reason }
+      body
     });
   }
 
@@ -917,10 +927,12 @@ class ApiClient {
     });
   }
 
-  static async quarantineOverride(assetId, reason = '') {
+  static async quarantineOverride(assetId, reason = '', password = '') {
+    const body = { reason };
+    if (password) body.password = password;
     return await ApiClient.request(`/admin/files/${assetId}/quarantine-override`, {
       method: 'POST',
-      body: { reason }
+      body
     });
   }
 
@@ -989,13 +1001,15 @@ class ApiClient {
     return await ApiClient.request('/admin/maintenance/status');
   }
 
-  static async startMaintenance(reason = 'Scheduled platform maintenance', durationMinutes = 60) {
+  static async startMaintenance(reason = 'Scheduled platform maintenance', durationMinutes = 60, password = '') {
+    const body = {
+      reason,
+      estimated_duration_minutes: durationMinutes
+    };
+    if (password) body.password = password;
     return await ApiClient.request('/admin/maintenance/start', {
       method: 'POST',
-      body: {
-        reason,
-        estimated_duration_minutes: durationMinutes
-      }
+      body
     });
   }
 

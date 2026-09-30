@@ -620,7 +620,9 @@ def queue_course_metadata_review(
         proposed["target_audience"] = ta.strip() if isinstance(ta, str) else ta
 
     if "completion_requirements" in data:
-        proposed["completion_requirements"] = _normalize_json_or_text(data["completion_requirements"])
+        proposed["completion_requirements"] = _normalize_json_or_text(
+            data["completion_requirements"]
+        )
 
     if "category" in data:
         cat = data["category"]
@@ -658,7 +660,9 @@ def queue_course_metadata_review(
                     raise CourseValidationError("storage_quota_bytes cannot be negative.")
                 proposed["storage_quota_bytes"] = quota_int
             except (ValueError, TypeError):
-                raise CourseValidationError("storage_quota_bytes must be a positive integer.") from None
+                raise CourseValidationError(
+                    "storage_quota_bytes must be a positive integer."
+                ) from None
         else:
             proposed["storage_quota_bytes"] = None
 
@@ -829,13 +833,21 @@ def change_course_status(
 
     # 2. Check role and ownership authorization for this specific transition
     if target_status == "APPROVED":
-        # Critical Invariant: Only ADMIN can approve courses
-        if not actor.is_admin:
-            raise ForbiddenError("Only administrators can approve courses.")
+        # Critical Invariant: Only Primary Admin or Admin with COURSE_REVIEW can approve courses
+        if not actor.is_admin or not (
+            actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW")
+        ):
+            raise ForbiddenError(
+                "Only administrators can approve courses (requires course review permission)."
+            )
     elif current_status == "TRASH" and target_status in ("ARCHIVED", "DRAFT", "PUBLISHED"):
-        # Restoring from trash requires ADMIN privilege
-        if not actor.is_admin:
-            raise ForbiddenError("Only administrators can restore courses from TRASH.")
+        # Restoring from trash requires primary admin or COURSE_REVIEW permission
+        if not actor.is_admin or not (
+            actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW")
+        ):
+            raise ForbiddenError(
+                "Only administrators can restore courses from TRASH (requires course review permission)."
+            )
     else:
         # Standard management authorization
         if not can_manage_course(actor, course, reason=reason, session=sess):
