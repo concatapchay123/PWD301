@@ -46,7 +46,9 @@ class InstructorView {
               <span class="text-xs font-bold uppercase tracking-wider text-[#8F8E8A] dark:text-[#9E9D99]">Khóa học phụ trách</span>
               <span class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-100/50 dark:border-blue-900/30 flex items-center justify-center material-symbols-outlined text-[20px]">auto_stories</span>
             </div>
-            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-courses">0</div>
+            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-courses">
+              <span class="inline-block w-12 h-7 bg-[#F4F1EA] dark:bg-[#262524] rounded-lg animate-pulse"></span>
+            </div>
             <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1">Đang xây dựng & mở lớp</div>
           </div>
 
@@ -55,7 +57,9 @@ class InstructorView {
               <span class="text-xs font-bold uppercase tracking-wider text-[#8F8E8A] dark:text-[#9E9D99]">Tổng sinh viên</span>
               <span class="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-900/30 flex items-center justify-center material-symbols-outlined text-[20px]">groups</span>
             </div>
-            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-students">0</div>
+            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-students">
+              <span class="inline-block w-12 h-7 bg-[#F4F1EA] dark:bg-[#262524] rounded-lg animate-pulse"></span>
+            </div>
             <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1">Học viên đang theo học</div>
           </div>
 
@@ -64,7 +68,9 @@ class InstructorView {
               <span class="text-xs font-bold uppercase tracking-wider text-[#8F8E8A] dark:text-[#9E9D99]">Bài giảng & Giáo trình</span>
               <span class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/30 flex items-center justify-center material-symbols-outlined text-[20px]">menu_book</span>
             </div>
-            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-lessons">0</div>
+            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-lessons">
+              <span class="inline-block w-12 h-7 bg-[#F4F1EA] dark:bg-[#262524] rounded-lg animate-pulse"></span>
+            </div>
             <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1">Bài giảng đã xuất bản</div>
           </div>
 
@@ -73,7 +79,9 @@ class InstructorView {
               <span class="text-xs font-bold uppercase tracking-wider text-[#8F8E8A] dark:text-[#9E9D99]">Kỳ thi & Đánh giá</span>
               <span class="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-100/50 dark:border-purple-900/30 flex items-center justify-center material-symbols-outlined text-[20px]">assignment</span>
             </div>
-            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-assessments">0</div>
+            <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-assessments">
+              <span class="inline-block w-12 h-7 bg-[#F4F1EA] dark:bg-[#262524] rounded-lg animate-pulse"></span>
+            </div>
             <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1">Đề thi & Bài kiểm tra đã phát hành</div>
           </div>
         </div>
@@ -103,17 +111,18 @@ class InstructorView {
     };
 
     try {
-      const [analytics, coursesData] = await Promise.all([
-        ApiClient.getInstructorDashboard().catch(() => null),
-        ApiClient.getInstructorCourses().catch(() => ({ courses: [] }))
-      ]);
+      // Single Source of Truth: Use single request to /instructor/dashboard
+      const res = await ApiClient.getInstructorDashboard();
+      const analytics = (res && res.data) ? res.data : (res || {});
 
-      const courses = coursesData.courses || [];
-      const totalStudents = analytics?.total_students || courses.reduce((acc, c) => acc + (c.enrollments_count || 0), 0);
+      const courses = analytics.courses || [];
+      const totalStudents = analytics.total_students ?? 0;
       const totalLessons = courses.reduce((acc, c) => acc + (c.lessons?.length || 0), 0);
-      const totalAssessments = analytics?.total_assessments !== undefined ? analytics.total_assessments : (courses.reduce((acc, c) => acc + (c.assessments?.length || 0), 0));
+      const totalAssessments = analytics.total_assessments !== undefined
+        ? analytics.total_assessments
+        : (courses.reduce((acc, c) => acc + (c.assessments?.length || 0), 0));
 
-      document.getElementById('ins-kpi-courses').textContent = courses.length;
+      document.getElementById('ins-kpi-courses').textContent = analytics.managed_courses_count ?? courses.length;
       document.getElementById('ins-kpi-students').textContent = totalStudents;
       document.getElementById('ins-kpi-lessons').textContent = totalLessons;
       const kpiAss = document.getElementById('ins-kpi-assessments');
@@ -167,6 +176,17 @@ class InstructorView {
       }
     } catch (e) {
       console.warn('Instructor dashboard load error:', e);
+      const tableBox = document.getElementById('ins-courses-table-box');
+      if (tableBox) {
+        tableBox.innerHTML = `
+          <div class="p-8 text-center text-rose-500 font-bold text-xs">
+            Lỗi tải dữ liệu bảng điều khiển: ${UI.escapeHtml(e.message || 'Không thể kết nối máy chủ')}
+          </div>
+        `;
+      }
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('Không thể tải dữ liệu bảng điều khiển giảng viên.', 'error');
+      }
     }
   }
 
@@ -1548,8 +1568,12 @@ class InstructorView {
         if (!conf) return;
 
         try {
-          await ApiClient.deleteLesson(cId, lId);
-          UI.showToast('Đã xóa bài giảng thành công!', 'success');
+          const res = await ApiClient.deleteLesson(cId, lId);
+          if (res && (res.pending_approval || res.status === 'pending_approval')) {
+            UI.showToast(res.message || 'Yêu cầu xóa bài giảng đã được gửi tới Ban quản trị để xét duyệt.', 'info');
+          } else {
+            UI.showToast('Đã xóa bài giảng thành công!', 'success');
+          }
           UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('course-manage-root').parentElement, cId, 'curriculum'));
         } catch (e) {
           UI.showToast(e.message || 'Lỗi xóa bài giảng.', 'error');
@@ -3378,15 +3402,9 @@ class InstructorView {
     if (!selectedUnitId && availableUnits.length > 0) {
       selectedUnitId = availableUnits[0].learning_unit_id || availableUnits[0].id;
     }
-    if (!selectedUnitId) {
-      try {
-        const newUnit = await ApiClient.createLearningUnit(courseId, { title: 'Chương 1: Khởi động' });
-        selectedUnitId = newUnit?.learning_unit_id || newUnit?.id;
-        const freshUnits = await ApiClient.getLearningUnits(courseId);
-        availableUnits = freshUnits.items || [];
-      } catch (err) {
-        console.warn('Could not create default learning unit:', err);
-      }
+    if (!selectedUnitId && availableUnits.length === 0) {
+      // Lazy creation per Section 10.7 of AGENTS.md: do not create unit on view navigation
+      selectedUnitId = null;
     }
 
     const activeUnit = availableUnits.find(u => (u.learning_unit_id || u.id) === selectedUnitId);
@@ -4019,8 +4037,12 @@ class InstructorView {
           });
 
           try {
-            await ApiClient.reorderLessons(courseId, allOrderedIds);
-            UI.showToast('Đã sắp xếp lại thứ tự bài giảng thành công!', 'success');
+            const res = await ApiClient.reorderLessons(courseId, allOrderedIds);
+            if (res && (res.pending_approval || res.status === 'pending_approval')) {
+              UI.showToast(res.message || 'Yêu cầu sắp xếp bài giảng đã được gửi tới Ban quản trị để xét duyệt.', 'info');
+            } else {
+              UI.showToast('Đã sắp xếp lại thứ tự bài giảng thành công!', 'success');
+            }
           } catch (err) {
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
             renderChildNavigator();
@@ -5647,7 +5669,8 @@ class InstructorView {
                 discardBtn.onclick = async () => {
                   if (!confirm('Bạn có chắc muốn hủy bản nháp này và khôi phục về phiên bản bài giảng đang hoạt động không?')) return;
                   try {
-                    await ApiClient.discardLessonDraft(draft.change_request_id);
+                    const targetId = existingLesson?.lesson_id || existingLesson?.id || lessonId;
+                    await ApiClient.discardLessonDraft(targetId);
                     UI.showToast('Đã hủy bản nháp bài giảng thành công.', 'success');
                     window.location.reload();
                   } catch (e) {
@@ -5679,7 +5702,8 @@ class InstructorView {
                 discardBtn.onclick = async () => {
                   if (!confirm('Bạn có chắc muốn rút lại yêu cầu xét duyệt bản sửa đổi này không?')) return;
                   try {
-                    await ApiClient.discardLessonDraft(draft.change_request_id);
+                    const targetId = existingLesson?.lesson_id || existingLesson?.id || lessonId;
+                    await ApiClient.discardLessonDraft(targetId);
                     UI.showToast('Đã hủy yêu cầu xét duyệt thành công.', 'success');
                     window.location.reload();
                   } catch (e) {
@@ -5687,6 +5711,31 @@ class InstructorView {
                   }
                 };
               }
+            }
+          }
+
+          if ((existingLesson.status === 'HISTORICAL' || existingLesson.is_historical) && existingLesson.latest_lesson_id) {
+            const draftBannerContainer = getEl('studio-draft-banner-container');
+            if (draftBannerContainer) {
+              draftBannerContainer.innerHTML = `
+                <div class="rounded-xl border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 dark:border-indigo-800 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <div class="flex items-start gap-3">
+                    <span class="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-2xl shrink-0 mt-0.5">history_toggle_off</span>
+                    <div>
+                      <h4 class="text-sm font-bold text-indigo-950 dark:text-indigo-200">Bạn đang xem phiên bản bài giảng lưu trữ (Lịch sử)</h4>
+                      <p class="text-xs text-indigo-800 dark:text-indigo-300 mt-0.5 leading-relaxed">
+                        Bài giảng này đã được nâng cấp lên phiên bản mới hơn đang phát hành cho học viên. Để chỉnh sửa phiên bản mới nhất, vui lòng chuyển sang bài giảng hiện hành.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-2">
+                    <a href="#/instructor/courses/${courseId}/lessons/${existingLesson.latest_lesson_id}/edit" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors shadow-xs inline-flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px]">sync</span>
+                      <span>Chuyển sang bản hiện hành</span>
+                    </a>
+                  </div>
+                </div>
+              `;
             }
           }
 

@@ -24,7 +24,13 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseCompletionRule, CoursePrerequisite, Enrollment
+from pwd301.models.course import (
+    Course,
+    CourseChangeRequest,
+    CourseCompletionRule,
+    CoursePrerequisite,
+    Enrollment,
+)
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.types import normalize_row_version, utc_now
@@ -365,7 +371,7 @@ def update_course(
     course_id: Course | int | uuid.UUID | str,
     data: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
-) -> Course:
+) -> Course | CourseChangeRequest:
     """Update editable course metadata with strict mass-assignment defense.
 
     Args:
@@ -395,6 +401,9 @@ def update_course(
             "Hãy rút lại yêu cầu xét duyệt nếu muốn chỉnh sửa."
         )
         raise CourseStateViolationError(msg)
+
+    if course.status in ("PUBLISHED", "ARCHIVED") and not actor.is_admin:
+        return queue_course_metadata_review(actor, course, data, session=sess)
 
     if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
         norm_client = normalize_row_version(data["row_version"])
@@ -558,6 +567,169 @@ def update_course(
         raise
 
     return course
+
+
+def queue_course_metadata_review(
+    actor: User,
+    course_id: Course | int | uuid.UUID | str,
+    data: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Queue or upsert a course metadata change request for Admin review.
+
+    Preserves published course metadata integrity while supporting autosave/idempotency.
+    """
+    sess = session if session is not None else db.session
+    course = require_course_manager(actor, course_id, session=sess)
+
+    if course.deleted_at is not None and not actor.is_admin:
+        raise ForbiddenError("Cannot propose changes to a soft-deleted course.")
+
+    # Whitelist & validate proposed metadata
+    proposed: dict[str, Any] = {}
+    if "title" in data:
+        raw_title = data["title"]
+        if not raw_title or not isinstance(raw_title, str) or not raw_title.strip():
+            raise CourseValidationError("title cannot be empty.")
+        title = raw_title.strip()
+        if len(title) > 200:
+            raise CourseValidationError("title cannot exceed 200 characters.")
+        norm_title = title.lower()
+        if norm_title != course.title_normalized:
+            existing = (
+                sess.query(Course)
+                .filter(
+                    Course.title_normalized == norm_title,
+                    Course.id != course.id,
+                    Course.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if existing is not None:
+                raise CourseAlreadyExistsError(f"A course with title '{title}' already exists.")
+        proposed["title"] = title
+
+    if "description" in data:
+        proposed["description"] = data["description"]
+
+    if "learning_objectives" in data:
+        proposed["learning_objectives"] = _normalize_json_or_text(data["learning_objectives"])
+
+    if "target_audience" in data:
+        ta = data["target_audience"]
+        proposed["target_audience"] = ta.strip() if isinstance(ta, str) else ta
+
+    if "completion_requirements" in data:
+        proposed["completion_requirements"] = _normalize_json_or_text(data["completion_requirements"])
+
+    if "category" in data:
+        cat = data["category"]
+        proposed["category"] = cat.strip() if isinstance(cat, str) else cat
+
+    if "difficulty" in data:
+        diff = data["difficulty"]
+        if diff is not None:
+            if not isinstance(diff, str) or diff.upper() not in VALID_DIFFICULTIES:
+                diffs = ", ".join(sorted(VALID_DIFFICULTIES))
+                raise CourseValidationError(f"Invalid difficulty '{diff}'. Allowed: {diffs}.")
+            proposed["difficulty"] = diff.upper()
+        else:
+            proposed["difficulty"] = None
+
+    if "capacity" in data:
+        cap = data["capacity"]
+        if cap is not None:
+            try:
+                cap_int = int(cap)
+                if cap_int < 0:
+                    raise CourseValidationError("capacity cannot be negative.")
+                proposed["capacity"] = cap_int
+            except (ValueError, TypeError):
+                raise CourseValidationError("capacity must be an integer.") from None
+        else:
+            proposed["capacity"] = None
+
+    if "storage_quota_bytes" in data:
+        quota = data["storage_quota_bytes"]
+        if quota is not None:
+            try:
+                quota_int = int(quota)
+                if quota_int < 0:
+                    raise CourseValidationError("storage_quota_bytes cannot be negative.")
+                proposed["storage_quota_bytes"] = quota_int
+            except (ValueError, TypeError):
+                raise CourseValidationError("storage_quota_bytes must be a positive integer.") from None
+        else:
+            proposed["storage_quota_bytes"] = None
+
+    if "thumbnail_file_asset_id" in data:
+        thumb = data["thumbnail_file_asset_id"]
+        if thumb is not None:
+            from pwd301.models.file_import import FileAsset
+
+            try:
+                asset_uuid = uuid.UUID(str(thumb))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise CourseValidationError("A valid cover image asset ID is required.") from exc
+            asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+            if (
+                asset is None
+                or asset.course_id != course.id
+                or asset.asset_type != "COURSE_IMAGE"
+                or asset.deleted_at is not None
+                or asset.virus_scan_status != "CLEAN"
+                or not asset.has_passed_malware_scan
+            ):
+                raise CourseValidationError(
+                    "Cover image must be a clean, scanned COURSE_IMAGE asset from this course."
+                )
+            proposed["thumbnail_file_asset_id"] = asset.id
+        else:
+            proposed["thumbnail_file_asset_id"] = None
+
+    if not proposed:
+        raise CourseValidationError("No valid metadata changes were proposed.")
+
+    # Deduplication / Upsert: Check if there is already a PENDING CourseChangeRequest
+    existing_req = (
+        sess.query(CourseChangeRequest)
+        .filter_by(
+            course_id=course.id,
+            requested_by_user_id=actor.id,
+            change_type="COURSE_METADATA",
+            status="PENDING",
+        )
+        .first()
+    )
+    now = utc_now()
+    if existing_req is not None:
+        try:
+            curr_payload = json.loads(existing_req.proposed_payload_json or "{}")
+        except Exception:
+            curr_payload = {}
+        curr_payload.update(proposed)
+        existing_req.proposed_payload_json = json.dumps(curr_payload, default=str)
+        existing_req.created_at = now
+        sess.flush()
+        req = existing_req
+    else:
+        req = CourseChangeRequest(
+            course_id=course.id,
+            requested_by_user_id=actor.id,
+            change_type="COURSE_METADATA",
+            target_type="COURSE",
+            target_id=course.id,
+            proposed_payload_json=json.dumps(proposed, default=str),
+            status="PENDING",
+            created_at=now,
+        )
+        sess.add(req)
+        sess.flush()
+
+    if session is None:
+        sess.commit()
+
+    return req
 
 
 def get_course_detail(

@@ -385,7 +385,7 @@ class AppRouter {
       await StudentView.renderMyLearning(viewport);
     } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/'))) {
       const courseId = query.id || path.replace('#/student/courses/', '');
-      await StudentView.renderCourseDetail(viewport, courseId, query.tab || 'syllabus');
+      await StudentView.renderCourseConsole(viewport, courseId, query.lesson_id || null, query.exam_id || null, query.tab || 'outline');
     } else if (path === '#/student/lessons/reader' || (path.startsWith('#/student/courses/') && path.includes('/lessons/'))) {
       let cId = query.course_id;
       let lId = query.lesson_id;
@@ -394,7 +394,7 @@ class AppRouter {
         cId = m[1];
         lId = m[2];
       }
-      await StudentView.renderLessonReader(viewport, cId, lId);
+      await StudentView.renderCourseConsole(viewport, cId, lId || null, query.exam_id || null, query.tab || 'outline');
     } else if (path === '#/student/assessments') {
       await StudentView.renderAssessmentsList(viewport);
     } else if (path === '#/student/assessments/waiting-room' || path.endsWith('/waiting-room')) {

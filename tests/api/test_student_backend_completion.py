@@ -615,3 +615,38 @@ def test_student_become_instructor_and_utf8_integrity(
     assert res_cancel.status_code == 200
     cancel_data = res_cancel.get_json()
     assert "hủy" in cancel_data.get("message", "").lower()
+
+
+def test_student_course_detail_filters_course_image(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Verify GET /student/courses/<id> filters out COURSE_IMAGE (e.g. cover photos)
+    from resources.
+    """
+    course = student_fixture["course"]
+    instructor = student_fixture["instructor"]
+    sess = db.session
+
+    # Store a COURSE_IMAGE asset (e.g. cover photo)
+    cover_asset = store_file_stream(
+        actor=instructor,
+        course_id=course.id,
+        file_stream=io.BytesIO(b"\x89PNG\r\n\x1a\nFakeCourseCoverImage"),
+        filename="course_cover.png",
+        content_type="image/png",
+        asset_type="COURSE_IMAGE",
+        title="Course Cover Photo",
+        session=sess,
+    )
+    cover_asset.status = "ACTIVE"
+    sess.commit()
+
+    login_client(client, "student_stu@pwd301.local")
+    res = client.get(
+        f"/student/courses/{course.public_id}",
+        headers={"Accept": "application/json"},
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    resource_ids = [r.get("resource_id") or r.get("id") for r in data.get("resources", [])]
+    assert str(cover_asset.public_id) not in resource_ids

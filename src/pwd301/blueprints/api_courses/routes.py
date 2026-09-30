@@ -9,7 +9,7 @@ from flask import Response, jsonify, request, send_file
 
 from pwd301.blueprints.api_courses import api_course_bp
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, Lesson
+from pwd301.models.course import Course, CourseChangeRequest, Enrollment, Lesson
 from pwd301.models.types import normalize_row_version
 from pwd301.services.analytics_service import get_instructor_course_analytics
 from pwd301.services.assessment_service import (
@@ -196,6 +196,17 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
             if norm_client is not None and norm_client != target_course.row_version:
                 raise ConflictError("Course has been modified concurrently by another transaction.")
     course = update_course(actor, course_id, payload)
+    if isinstance(course, CourseChangeRequest):
+        target_course = _resolve_course(course_id, session=db.session)
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": "Course metadata changes queued for review.",
+                "change_request_id": course.id,
+                "course": _serialize_course(target_course) if target_course else None,
+            }
+        ), 202
     return jsonify(_serialize_course(course)), 200
 
 

@@ -302,6 +302,10 @@ class ApiClient {
     return await ApiClient.request(`/student/assessments/${assessmentId}`);
   }
 
+  static async getStudentAssessment(assessmentId) {
+    return await ApiClient.getStudentAssessmentDetail(assessmentId);
+  }
+
   static async startAssessmentAttempt(assessmentId) {
     return await ApiClient.request(`/student/assessments/${assessmentId}/start`, {
       method: 'POST'
@@ -419,17 +423,6 @@ class ApiClient {
         body: payload
       });
     }
-  }
-
-  static async getLessonNotes(lessonId) {
-    return await ApiClient.request(`/student/lessons/${lessonId}/notes`);
-  }
-
-  static async saveLessonNotes(lessonId, notes) {
-    return await ApiClient.request(`/student/lessons/${lessonId}/notes`, {
-      method: 'POST',
-      body: { notes }
-    });
   }
 
   static async leaveCourse(courseId) {

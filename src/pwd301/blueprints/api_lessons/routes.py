@@ -245,6 +245,29 @@ def create_lesson_api() -> tuple[Response, int] | Response:
     course_id = payload.get("course_id")
     if not course_id:
         raise LessonValidationError("course_id is required in request body.")
+
+    from pwd301.services.authorization_service import _resolve_course
+    from pwd301.services.exceptions import ResourceNotFoundError
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        from pwd301.services.lesson_service import create_lesson_change_request
+
+        payload["change_type"] = "LESSON_STRUCTURE"
+        payload["action"] = "CREATE_LESSON"
+        req, lesson = create_lesson_change_request(actor, course.id, payload, session=db.session)
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": req.id,
+                "lesson": _serialize_lesson(lesson),
+            }
+        ), 202
+
     lesson = create_lesson(actor, course_id, payload, session=db.session)
     return jsonify(_serialize_lesson(lesson)), 201
 

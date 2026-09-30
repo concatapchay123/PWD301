@@ -381,9 +381,9 @@ def enroll_student(
     try:
         from pwd301.services.notification_service import dispatch_notification
 
-        if locked_course.instructor_user_id:
+        if locked_course.owner_instructor_id:
             dispatch_notification(
-                recipient_user=locked_course.instructor_user_id,
+                recipient_user=locked_course.owner_instructor_id,
                 event_type="STUDENT_ENROLLED",
                 title="Học viên mới tham gia khóa học",
                 body=f"Học viên {target_student.display_name} vừa đăng ký tham gia khóa học '{locked_course.title}'.",

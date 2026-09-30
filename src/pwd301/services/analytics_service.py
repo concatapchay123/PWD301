@@ -341,22 +341,76 @@ def get_instructor_overview_analytics(
         }
 
     course_ids = [c.id for c in courses]
+    active_course_ids = [c.id for c in courses if c.status != "ARCHIVED"]
+    target_course_ids = active_course_ids if active_course_ids else course_ids
 
-    # Global enrollment aggregates for managed courses
+    # 1. Total unique active students across managed courses (Deduplicated)
+    active_students_count = (
+        sess.query(func.count(func.distinct(Enrollment.student_user_id)))
+        .join(User, Enrollment.student_user_id == User.id)
+        .filter(
+            Enrollment.course_id.in_(target_course_ids),
+            Enrollment.status == "ACTIVE",
+            User.status == "ACTIVE",
+            User.suspended_at.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
+    # All-time unique students (Active + Completed)
+    all_time_unique_students = (
+        sess.query(func.count(func.distinct(Enrollment.student_user_id)))
+        .join(User, Enrollment.student_user_id == User.id)
+        .filter(
+            Enrollment.course_id.in_(course_ids),
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+            User.status == "ACTIVE",
+            User.suspended_at.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
+    # 2. Global enrollment aggregates for managed courses
     enr_stats = (
         sess.query(
-            func.count(Enrollment.id).label("total_students"),
-            func.count(case((Enrollment.status == "ACTIVE", 1))).label("active"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            Enrollment.status == "ACTIVE",
+                            User.status == "ACTIVE",
+                            User.suspended_at.is_(None),
+                        ),
+                        1,
+                    )
+                )
+            ).label("active"),
             func.count(case((Enrollment.status == "COMPLETED", 1))).label("completed"),
-            func.coalesce(func.avg(Enrollment.current_progress_percent), 0.0).label("avg_progress"),
+            func.count(Enrollment.id).label("total_enrollments"),
+            func.coalesce(
+                func.avg(
+                    case(
+                        (
+                            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+                            Enrollment.current_progress_percent,
+                        ),
+                        else_=None,
+                    )
+                ),
+                0.0,
+            ).label("avg_progress"),
         )
-        .filter(Enrollment.course_id.in_(course_ids))
+        .join(User, Enrollment.student_user_id == User.id)
+        .filter(Enrollment.course_id.in_(target_course_ids))
         .one()
     )
 
-    total_students_count = int(enr_stats.total_students or 0)
+    total_students_count = int(active_students_count)
     active_enrollments_count = int(enr_stats.active or 0)
     completed_enrollments_count = int(enr_stats.completed or 0)
+    total_enrollments_count = int(enr_stats.total_enrollments or 0)
     overall_avg_progress = round(float(enr_stats.avg_progress or 0.0), 2)
 
     # Questions count across managed courses
@@ -373,14 +427,37 @@ def get_instructor_overview_analytics(
     # All assessments are now objective and auto-graded (no pending essay grading)
     pending_grading_count = 0
 
-    # Per-course summaries (single grouped query)
+    # Per-course summaries (single grouped query excluding left/suspended students from active count)
     course_enr_rows = (
         sess.query(
             Enrollment.course_id,
-            func.count(Enrollment.id).label("enrolled_count"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            Enrollment.status == "ACTIVE",
+                            User.status == "ACTIVE",
+                            User.suspended_at.is_(None),
+                        ),
+                        1,
+                    )
+                )
+            ).label("enrolled_count"),
             func.count(case((Enrollment.status == "COMPLETED", 1))).label("completed_count"),
-            func.coalesce(func.avg(Enrollment.current_progress_percent), 0.0).label("avg_progress"),
+            func.coalesce(
+                func.avg(
+                    case(
+                        (
+                            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+                            Enrollment.current_progress_percent,
+                        ),
+                        else_=None,
+                    )
+                ),
+                0.0,
+            ).label("avg_progress"),
         )
+        .join(User, Enrollment.student_user_id == User.id)
         .filter(Enrollment.course_id.in_(course_ids))
         .group_by(Enrollment.course_id)
         .all()
@@ -401,8 +478,12 @@ def get_instructor_overview_analytics(
             {"enrolled_count": 0, "completed_count": 0, "avg_progress": 0.0},
         )
         enrolled_c = c_stat["enrolled_count"]
+        comp_count = c_stat["completed_count"]
+        total_participants = enrolled_c + comp_count
         comp_rate = (
-            round((c_stat["completed_count"] / enrolled_c) * 100.0, 2) if enrolled_c > 0 else 0.0
+            round((comp_count / total_participants) * 100.0, 2)
+            if total_participants > 0
+            else 0.0
         )
         courses_data.append(
             {
@@ -412,6 +493,7 @@ def get_instructor_overview_analytics(
                 "status": c.status,
                 "capacity": c.capacity,
                 "enrolled_count": enrolled_c,
+                "completed_count": comp_count,
                 "completion_rate_percent": comp_rate,
                 "average_progress_percent": round(c_stat["avg_progress"], 2),
                 "created_at": c.created_at.isoformat(),
@@ -424,6 +506,8 @@ def get_instructor_overview_analytics(
         "managed_courses_count": managed_courses_count,
         "total_students_count": total_students_count,
         "total_students": total_students_count,
+        "total_unique_students": int(all_time_unique_students),
+        "total_enrollments_count": total_enrollments_count,
         "total_questions": int(total_questions_count),
         "active_enrollments_count": active_enrollments_count,
         "completed_enrollments_count": completed_enrollments_count,

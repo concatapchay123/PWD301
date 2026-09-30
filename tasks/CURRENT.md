@@ -1,3 +1,21 @@
+# Active task: TASK-076 — Comprehensive Remediation: Lesson Video Delivery, Revision Lifecycle Resource Inheritance, Approval Race-Condition Hardening & Frontend Multi-Tier Fallback
+
+Status: DONE. See [TASK-076.md](TASK-076.md) for scope, acceptance criteria, verification, and completion evidence.
+
+---
+
+# Active task: TASK-075 — Unified Course & Lesson Staging Approval Pipeline & Secure Anti-Seek Video Player Remediation
+
+Status: DONE. See [TASK-075.md](TASK-075.md) for scope, acceptance criteria, verification, and completion evidence.
+
+---
+
+# Active task: TASK-074 — Cisco NetAcad Unified Learning Console & Course Navigation Redesign
+
+Status: DONE. See [TASK-074.md](TASK-074.md) for scope, acceptance criteria, verification, and completion evidence.
+
+---
+
 # Active task: TASK-073 — Instructor Course Settings & SLO Governance Redesign and Interaction Repairs
 
 Status: DONE. See [TASK-073.md](TASK-073.md) for scope, acceptance criteria, verification, and completion evidence.

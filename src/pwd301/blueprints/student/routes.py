@@ -22,7 +22,6 @@ from flask import (
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment, Lesson, LessonProgress
-from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
@@ -255,6 +254,28 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             ser_r = _serialize_lesson_resource(r)
             res_list.append(ser_r)
 
+    # Fail-safe fallback: If current lesson has no video and no resources, inherit from previous revision
+    if not video_url and not video_urls and getattr(les, "previous_lesson", None):
+        prev = les.previous_lesson
+        if hasattr(prev, "resources") and prev.resources:
+            for r in prev.resources:
+                fa = r.file_asset
+                if not fa:
+                    continue
+                if fa.status == "ACTIVE" and getattr(fa, "virus_scan_status", None) == "CLEAN":
+                    mime = (fa.mime_type or "").lower()
+                    name = (fa.original_filename or "").lower()
+                    is_vid = mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv", ".mov"))
+                    if is_vid:
+                        uploaded_url = f"/student/files/{fa.public_id}/download?disposition=inline"
+                        video_urls.append(uploaded_url)
+                        if not video_url:
+                            video_url = uploaded_url
+                            primary_video_asset_id = str(fa.public_id)
+                    elif not res_list:
+                        ser_r = _serialize_lesson_resource(r)
+                        res_list.append(ser_r)
+
     personal_notes = ""
     notes_saved_at = None
     if p and p.completion_rule_snapshot_json:
@@ -282,13 +303,18 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
     lu_title = getattr(lu, "title", None) if lu else None
     lu_pos = getattr(lu, "position", None) if lu else None
     course = getattr(les, "course", None)
-    course_id = str(getattr(course, "public_id", None)) if course and getattr(course, "public_id", None) else None
+    course_id = (
+        str(getattr(course, "public_id", None))
+        if course and getattr(course, "public_id", None)
+        else None
+    )
 
     has_newer = False
     latest_lesson_id = None
     change_summary = None
     if getattr(les, "status", None) == "HISTORICAL":
         from pwd301.models.course import Lesson
+
         newer = (
             db.session.query(Lesson)
             .filter(
@@ -365,11 +391,14 @@ def opt_in_student_lesson_revision(lesson_id: str) -> tuple[Response, int] | Res
     """Student opts in to switch to the latest published lesson revision, carrying over progress."""
     actor = require_authenticated_actor()
     from pwd301.services.lesson_service import opt_in_newer_lesson_revision
+
     latest_lesson, progress = opt_in_newer_lesson_revision(actor, lesson_id, session=db.session)
-    return jsonify({
-        "success": True,
-        "lesson": _serialize_student_lesson(latest_lesson, progress),
-    }), 200
+    return jsonify(
+        {
+            "success": True,
+            "lesson": _serialize_student_lesson(latest_lesson, progress),
+        }
+    ), 200
 
 
 @student_bp.route("/lessons/<lesson_id>/progress", methods=["POST"])
@@ -441,80 +470,6 @@ def complete_student_lesson_quiz(lesson_id: str) -> tuple[Response, int] | Respo
             "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
         }
     ), 200
-
-
-@student_bp.route("/lessons/<lesson_id>/notes", methods=["GET"])
-@student_required
-def get_student_lesson_notes(lesson_id: str) -> tuple[Response, int] | Response:
-    """Retrieve personal notes for a lesson from lesson progress or session."""
-    import json
-
-    actor = require_authenticated_actor()
-    notes = ""
-    saved_at = None
-    try:
-        progress = get_lesson_progress(actor, lesson_id, session=db.session)
-        if progress and progress.completion_rule_snapshot_json:
-            try:
-                p_data = json.loads(progress.completion_rule_snapshot_json)
-                if isinstance(p_data, dict):
-                    notes = p_data.get("personal_notes", "")
-                    saved_at = p_data.get("notes_saved_at")
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    if not notes:
-        notes = session.get(f"lesson_notes_{lesson_id}", "")
-        saved_at = session.get(f"lesson_notes_saved_{lesson_id}")
-
-    return jsonify({"notes": notes, "saved_at": saved_at}), 200
-
-
-@student_bp.route("/lessons/<lesson_id>/notes", methods=["POST"])
-@student_required
-def save_student_lesson_notes(lesson_id: str) -> tuple[Response, int] | Response:
-    """Save personal notes for a lesson into lesson progress and session."""
-    import json
-
-    actor = require_authenticated_actor()
-    payload = request.get_json(silent=True) or {}
-    notes = payload.get("notes", "")
-    now_iso = utc_now().isoformat()
-
-    session[f"lesson_notes_{lesson_id}"] = notes
-    session[f"lesson_notes_saved_{lesson_id}"] = now_iso
-
-    try:
-        progress = get_lesson_progress(actor, lesson_id, session=db.session)
-        if progress:
-            existing = {}
-            if progress.completion_rule_snapshot_json:
-                try:
-                    existing = json.loads(progress.completion_rule_snapshot_json)
-                    if not isinstance(existing, dict):
-                        existing = {}
-                except Exception:
-                    existing = {}
-            existing["personal_notes"] = notes
-            existing["notes_saved_at"] = now_iso
-            progress.completion_rule_snapshot_json = json.dumps(existing)
-            progress.updated_at = utc_now()
-            db.session.commit()
-    except Exception:
-        pass
-
-    return (
-        jsonify(
-            {
-                "notes": notes,
-                "saved_at": now_iso,
-                "message": "Đã lưu ghi chú thành công.",
-            }
-        ),
-        200,
-    )
 
 
 def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
@@ -716,8 +671,19 @@ def student_mark_all_read() -> Any:
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     category = payload.get("category") or request.args.get("category")
-    target_role = payload.get("role") or payload.get("target_role") or request.args.get("role") or request.args.get("target_role") or "STUDENT"
-    count = mark_all_as_read(actor=actor, category=category, target_role=target_role, session=db.session)
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+        or "STUDENT"
+    )
+    count = mark_all_as_read(
+        actor=actor,
+        category=category,
+        target_role=target_role,
+        session=db.session,
+    )
     return jsonify({"success": True, "marked_count": count}), 200
 
 
@@ -1577,6 +1543,7 @@ def student_course_detail(course_id: str) -> Any:
         db.session.query(FileAsset)
         .filter(
             FileAsset.course_id == course.id,
+            FileAsset.asset_type.notin_(["COURSE_IMAGE", "QUESTION_IMAGE", "IMPORT_SOURCE"]),
             FileAsset.status == "ACTIVE",
             FileAsset.deleted_at.is_(None),
         )
@@ -1586,12 +1553,18 @@ def student_course_detail(course_id: str) -> Any:
     for fa in file_assets:
         if fa.virus_scan_status != "CLEAN":
             continue
-        rev_name = fa.revisions[-1].original_filename if fa.revisions else None
+        latest_rev = fa.revisions[-1] if fa.revisions else None
+        rev_name = latest_rev.original_filename if latest_rev else None
+        byte_sz = getattr(latest_rev, "size_bytes", None) if latest_rev else None
         serialized_resources.append(
             {
                 "resource_id": str(fa.public_id),
+                "asset_id": str(fa.public_id),
+                "id": str(fa.public_id),
                 "label": fa.display_name or rev_name or "Tài liệu môn học",
                 "filename": rev_name or fa.display_name,
+                "byte_size": byte_sz,
+                "file_size": byte_sz,
                 "file_size_formatted": "Tài liệu giáo trình",
                 "download_url": (
                     f"/student/courses/{course.public_id}/files/{fa.public_id}/download"
@@ -1699,7 +1672,7 @@ def student_course_detail(course_id: str) -> Any:
         ]
         u_lesson_count = len(u_lessons)
         u_completed_count = sum(1 for les in u_lessons if les.get("is_completed"))
-        is_unit_completed = (u_lesson_count > 0 and u_completed_count >= u_lesson_count)
+        is_unit_completed = u_lesson_count > 0 and u_completed_count >= u_lesson_count
         serialized_units.append(
             {
                 "id": str(u.public_id),
@@ -1862,23 +1835,67 @@ def submit_become_instructor() -> Any:
         max_evidence_bytes = 50_000_000  # Enforce 50 MB ceiling (SEC-02 DoS prevention)
 
         # Enforce strict CV / Portfolio constraints: max 1 file, PDF only
-        cv_files = [f for f in (request.files.getlist("cv_file") + request.files.getlist("portfolio_file")) if f and f.filename and f.filename.strip()]
+        cv_files = [
+            f
+            for f in (request.files.getlist("cv_file") + request.files.getlist("portfolio_file"))
+            if f and f.filename and f.filename.strip()
+        ]
         if len(cv_files) > 1:
-            return jsonify({"error": {"code": "INVALID_FILE_COUNT", "message": "Tệp CV hoặc Portfolio chỉ được phép tải lên tối đa 1 tệp."}}), 400
+            return jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_FILE_COUNT",
+                        "message": "Tệp CV hoặc Portfolio chỉ được phép tải lên tối đa 1 tệp.",
+                    }
+                }
+            ), 400
         for f in cv_files:
-            clean_name = sanitize_filename(f.filename)
+            fname = f.filename or ""
+            clean_name = sanitize_filename(fname)
             if Path(clean_name).suffix.lower() != ".pdf":
-                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": f"Tệp CV '{clean_name}' không đúng định dạng. Chỉ chấp nhận tệp định dạng PDF."}}), 400
+                return jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": (
+                                f"Tệp CV '{clean_name}' không đúng định dạng. "
+                                "Chỉ chấp nhận tệp định dạng PDF."
+                            ),
+                        }
+                    }
+                ), 400
 
         # Enforce strict Additional Evidence constraints: max 4 files, each <= 2MB, PDF/PNG/JPG/DOCX
-        ev_files = [f for f in request.files.getlist("evidence_files") if f and f.filename and f.filename.strip()]
+        ev_files = [
+            f
+            for f in request.files.getlist("evidence_files")
+            if f and f.filename and f.filename.strip()
+        ]
         if len(ev_files) > 4:
-            return jsonify({"error": {"code": "INVALID_FILE_COUNT", "message": "Minh chứng bổ sung chỉ được phép tải lên tối đa 4 tệp."}}), 400
+            return jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_FILE_COUNT",
+                        "message": "Minh chứng bổ sung chỉ được phép tải lên tối đa 4 tệp.",
+                    }
+                }
+            ), 400
         allowed_ev_exts = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".xlsx"}
         for f in ev_files:
-            clean_name = sanitize_filename(f.filename)
+            fname = f.filename or ""
+            clean_name = sanitize_filename(fname)
             if Path(clean_name).suffix.lower() not in allowed_ev_exts:
-                return jsonify({"error": {"code": "INVALID_FILE_TYPE", "message": f"Tệp minh chứng '{clean_name}' không được hỗ trợ. Chỉ chấp nhận PDF, PNG, JPG, DOCX."}}), 400
+                return jsonify(
+                    {
+                        "error": {
+                            "code": "INVALID_FILE_TYPE",
+                            "message": (
+                                f"Tệp minh chứng '{clean_name}' không được hỗ trợ. "
+                                "Chỉ chấp nhận PDF, PNG, JPG, DOCX."
+                            ),
+                        }
+                    }
+                ), 400
 
         for field_name, doc_type in evidence_field_specs:
             if field_name not in request.files:

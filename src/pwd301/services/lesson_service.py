@@ -1286,12 +1286,22 @@ def get_course_lessons(
             or (actor.has_role("INSTRUCTOR") and course.owner_instructor_id == actor.id)
         )
     ):
-        return (
+        all_lessons = (
             sess.query(Lesson)
             .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
-            .order_by(Lesson.position.asc())
+            .order_by(Lesson.position.asc(), Lesson.id.desc())
             .all()
         )
+        active_positions = {
+            l.position
+            for l in all_lessons
+            if l.status in ("ACTIVE", "PUBLISHED", "PENDING_APPROVAL", "DRAFT")
+        }
+        return [
+            l
+            for l in all_lessons
+            if l.status != "HISTORICAL" or l.position not in active_positions
+        ]
 
     # Others see only PUBLISHED lessons of active courses
     if course.deleted_at is not None or course.status in ("TRASH", "ARCHIVED"):
@@ -1851,27 +1861,137 @@ def queue_lesson_resource_change(
     )
 
 
+def _copy_lesson_resources(
+    source_lesson_id: int | uuid.UUID | str,
+    target_lesson_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> None:
+    """Copy all active resources from source lesson to target lesson if not already present."""
+    from pwd301.models.file_import import LessonResource
+
+    sess = session if session is not None else db.session
+    src_lid = None
+    if isinstance(source_lesson_id, int):
+        src_lid = source_lesson_id
+    else:
+        src_obj = _resolve_lesson(source_lesson_id, session=sess)
+        if src_obj:
+            src_lid = src_obj.id
+
+    tgt_lid = None
+    if isinstance(target_lesson_id, int):
+        tgt_lid = target_lesson_id
+    else:
+        tgt_obj = _resolve_lesson(target_lesson_id, session=sess)
+        if tgt_obj:
+            tgt_lid = tgt_obj.id
+
+    if not src_lid or not tgt_lid or src_lid == tgt_lid:
+        return
+
+    source_resources = (
+        sess.query(LessonResource)
+        .filter(LessonResource.lesson_id == src_lid)
+        .order_by(LessonResource.position.asc())
+        .all()
+    )
+    for res in source_resources:
+        exists = (
+            sess.query(LessonResource)
+            .filter(
+                LessonResource.lesson_id == tgt_lid,
+                LessonResource.file_asset_id == res.file_asset_id,
+            )
+            .first()
+        )
+        if not exists:
+            new_res = LessonResource(
+                lesson_id=tgt_lid,
+                file_asset_id=res.file_asset_id,
+                position=res.position,
+                label=res.label,
+                is_required=res.is_required,
+                created_at=utc_now(),
+            )
+            sess.add(new_res)
+    sess.flush()
+
+
 def create_lesson_change_request(
     actor: User,
     course_id: int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
 ) -> tuple[CourseChangeRequest, Lesson]:
-    """Create a relational staged lesson change request (Defect 6).
+    """Create or upsert a relational staged lesson change request (Defect 6 & 7).
 
-    Creates a CourseChangeRequest and a corresponding Lesson in 'PENDING_APPROVAL' status,
+    Creates or updates a CourseChangeRequest and a corresponding Lesson in 'PENDING_APPROVAL' status,
     linked via change_request_id. Avoids JSON de-normalization while respecting the
     filtered unique index uq_lessons_course_position_active.
     """
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
+    original_target_id = payload.get("target_id") or payload.get("lesson_id")
+    if original_target_id is not None:
+        if isinstance(original_target_id, str):
+            try:
+                original_target_id = int(original_target_id)
+            except (ValueError, TypeError):
+                try:
+                    target_u = uuid.UUID(original_target_id)
+                    found_target = sess.query(Lesson).filter(Lesson.public_id == target_u).first()
+                    if found_target:
+                        original_target_id = found_target.id
+                except (ValueError, TypeError):
+                    pass
+
+    # Autosave Deduplication & Idempotency: Check if there is already a PENDING request for this lesson
+    if original_target_id:
+        existing_req = (
+            sess.query(CourseChangeRequest)
+            .filter_by(
+                course_id=course.id,
+                target_type="LESSON",
+                target_id=original_target_id,
+                status="PENDING",
+            )
+            .first()
+        )
+        if existing_req:
+            staged = (
+                sess.query(Lesson)
+                .filter(Lesson.change_request_id == existing_req.id)
+                .first()
+            )
+            if staged:
+                for field in (
+                    "title",
+                    "summary",
+                    "markdown_content",
+                    "estimated_duration_minutes",
+                    "minimum_completion_seconds",
+                    "viewed_fraction_required",
+                ):
+                    if field in payload and payload[field] is not None:
+                        setattr(staged, field, payload[field])
+                staged.updated_at = utc_now()
+                existing_req.proposed_payload_json = json.dumps(payload, default=str)
+                existing_req.created_at = utc_now()
+                # Ensure existing resources are also synchronized
+                _copy_lesson_resources(original_target_id, staged.id, session=sess)
+                try:
+                    sess.commit()
+                except Exception:
+                    sess.rollback()
+                    raise
+                return existing_req, staged
 
     req = CourseChangeRequest(
         course_id=course.id,
         requested_by_user_id=actor.id,
         change_type=payload.get("change_type", "LESSON_STRUCTURE"),
         target_type="LESSON",
-        target_id=payload.get("target_id"),
+        target_id=original_target_id,
         proposed_payload_json=json.dumps(payload, default=str),
         status="PENDING",
         created_at=utc_now(),
@@ -1883,7 +2003,10 @@ def create_lesson_change_request(
     lesson_data["status"] = "PENDING_APPROVAL"
     lesson_data["change_request_id"] = req.id
     staged_lesson = create_lesson(actor, course.id, lesson_data, session=sess)
-    req.target_id = staged_lesson.id
+    if original_target_id:
+        _copy_lesson_resources(original_target_id, staged_lesson.id, session=sess)
+    else:
+        req.target_id = staged_lesson.id
     sess.flush()
     try:
         sess.commit()
@@ -1903,8 +2026,10 @@ def approve_course_change_request(
     """Approve a course change request and promote staged lessons atomically (Defect 6).
 
     For any staged lesson linked to the request:
-    - Retires any currently active/published lesson at the same position by
-      setting status='HISTORICAL'.
+    - If new lesson insertion (CREATE_LESSON): shifts existing active lessons at or after
+      staged.position downwards by 1.
+    - If editing existing lesson: retires the previous revision at the same position
+      by setting status='HISTORICAL'.
     - Activates the staged lesson by setting status='PUBLISHED'.
     - Marks the change request APPROVED.
     All done within a single transaction without violating uq_lessons_course_position_active.
@@ -1921,34 +2046,65 @@ def approve_course_change_request(
         raise LessonStateViolationError(f"Cannot approve change request in '{req.status}' status.")
 
     now = utc_now()
+    p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
+    is_create_lesson = p_data.get("action") == "CREATE_LESSON"
 
     # Find staged lessons for this request
     staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
 
     for staged in staged_lessons:
-        # Check if there is an active/published lesson at the same position
-        active_at_pos = (
-            sess.query(Lesson)
-            .filter(
-                Lesson.course_id == req.course_id,
-                Lesson.position == staged.position,
-                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
-                Lesson.id != staged.id,
-                Lesson.deleted_at.is_(None),
+        if is_create_lesson:
+            # Shift existing active lessons at or after this position downwards by 1
+            # Phase 1: assign temporary non-colliding positions (+10000)
+            subsequent = (
+                sess.query(Lesson)
+                .filter(
+                    Lesson.course_id == req.course_id,
+                    Lesson.position >= staged.position,
+                    Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                    Lesson.id != staged.id,
+                    Lesson.deleted_at.is_(None),
+                )
+                .all()
             )
-            .first()
-        )
-        if active_at_pos is not None:
-            active_at_pos.status = "HISTORICAL"
-            active_at_pos.updated_at = now
-            staged.revision_no = (active_at_pos.revision_no or 1) + 1
-            staged.previous_lesson_id = active_at_pos.id
-            staged.material_change_summary = (
-                review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
-            )
+            for sub in subsequent:
+                sub.position += 10000
             sess.flush()
-        else:
+
+            # Phase 2: assign final shifted positions (-10000 + 1)
+            for sub in subsequent:
+                sub.position = (sub.position - 10000) + 1
+                sub.updated_at = now
+            sess.flush()
             staged.revision_no = 1
+        else:
+            # Check if there is an active/published lesson at the same position
+            active_at_pos = (
+                sess.query(Lesson)
+                .filter(
+                    Lesson.course_id == req.course_id,
+                    Lesson.position == staged.position,
+                    Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                    Lesson.id != staged.id,
+                    Lesson.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if active_at_pos is not None:
+                active_at_pos.status = "HISTORICAL"
+                active_at_pos.updated_at = now
+                staged.revision_no = (active_at_pos.revision_no or 1) + 1
+                staged.previous_lesson_id = active_at_pos.id
+                staged.material_change_summary = (
+                    review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
+                )
+                _copy_lesson_resources(active_at_pos.id, staged.id, session=sess)
+                sess.flush()
+            elif req.target_id:
+                _copy_lesson_resources(req.target_id, staged.id, session=sess)
+                sess.flush()
+            else:
+                staged.revision_no = 1
 
         staged.status = "PUBLISHED"
         if staged.published_at is None:
@@ -2076,6 +2232,18 @@ def discard_lesson_working_draft(
     """Discard an active working draft (PENDING or REJECTED) by marking it CANCELLED."""
     sess = session if session is not None else db.session
     lesson = _resolve_lesson(lesson_id, session=sess)
+    if lesson is None:
+        try:
+            cr_id = int(str(lesson_id))
+            cr = sess.get(CourseChangeRequest, cr_id)
+            if cr and cr.target_type == "LESSON" and cr.target_id:
+                lesson = sess.get(Lesson, cr.target_id)
+            elif cr:
+                st = sess.query(Lesson).filter(Lesson.change_request_id == cr.id).first()
+                if st:
+                    lesson = st
+        except (ValueError, TypeError):
+            pass
     if lesson is None or lesson.deleted_at is not None:
         raise LessonNotFoundError("Lesson not found.")
 
@@ -2108,6 +2276,7 @@ def discard_lesson_working_draft(
     now = utc_now()
     for req in change_reqs:
         req.status = "CANCELLED"
+        req.review_reason = "Discarded by instructor"
         req.reviewed_at = now
         staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
         for staged in staged_lessons:

@@ -1737,6 +1737,8 @@ def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
 
     return {
         "resource_id": str(res.public_id),
+        "asset_id": file_asset_id,
+        "id": str(res.public_id),
         "lesson_id": str(res.lesson.public_id) if res.lesson else None,
         "title": res.label or (fa.display_name if fa else orig_filename),
         "label": res.label,

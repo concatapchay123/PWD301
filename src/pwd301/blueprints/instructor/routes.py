@@ -290,7 +290,16 @@ def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
     children = [
         lesson for lesson in unit.lessons if lesson.deleted_at is None and lesson.status != "TRASH"
     ]
-    sorted_children = sorted(children, key=lambda les: les.position or 0)
+    active_positions = {
+        les.position
+        for les in children
+        if les.status in ("ACTIVE", "PUBLISHED", "PENDING_APPROVAL", "DRAFT")
+    }
+    visible_children = [
+        les for les in children
+        if les.status != "HISTORICAL" or les.position not in active_positions
+    ]
+    sorted_children = sorted(visible_children, key=lambda les: les.position or 0)
     return {
         "learning_unit_id": str(unit.public_id),
         "course_id": str(unit.course.public_id),
@@ -305,19 +314,34 @@ def _serialize_course(c: Course) -> dict[str, Any]:
     thumbnail = get_course_thumbnail_asset(c)
     active_lessons = []
     if hasattr(c, "lessons") and c.lessons:
+        non_deleted = [
+            les
+            for les in c.lessons
+            if not getattr(les, "deleted_at", None) and les.status != "TRASH"
+        ]
+        active_positions = {
+            les.position
+            for les in non_deleted
+            if les.status in ("ACTIVE", "PUBLISHED", "PENDING_APPROVAL", "DRAFT")
+        }
+        visible_lessons = [
+            les
+            for les in non_deleted
+            if les.status != "HISTORICAL" or les.position not in active_positions
+        ]
         active_lessons = [
             _serialize_lesson(les)
-            for les in sorted(c.lessons, key=lambda x: x.position or 0)
-            if not getattr(les, "deleted_at", None)
+            for les in sorted(visible_lessons, key=lambda x: x.position or 0)
         ]
     instructor_name = c.owner_instructor.display_name if c.owner_instructor else None
     instructor_email = c.owner_instructor.email if c.owner_instructor else None
 
-    # Accurate active enrollments count (excluding soft-deleted or withdrawn)
+    # Accurate active enrollments count (excluding withdrawn and suspended students)
     active_enrollments = [
         e
         for e in getattr(c, "enrollments", [])
-        if getattr(e, "status", None) == "ACTIVE" and getattr(e, "deleted_at", None) is None
+        if getattr(e, "status", None) == "ACTIVE"
+        and (getattr(e, "student", None) is None or getattr(e.student, "status", None) == "ACTIVE")
     ]
     enrollments_count = len(active_enrollments)
 
@@ -397,7 +421,7 @@ def dashboard() -> Any:
     """Instructor dashboard displaying courses managed by the actor with analytics overview."""
     actor = require_authenticated_actor()
     overview = get_instructor_overview_analytics(actor, session=db.session)
-    return jsonify(overview), 200
+    return jsonify({"success": True, "data": overview, **overview}), 200
 
 
 @instructor_bp.route("/courses/<course_id>/analytics", methods=["GET"])
@@ -498,6 +522,13 @@ def manage_course_hub(course_id: str) -> Any:
     actor = require_authenticated_actor()
     course = require_course_manager(actor, course_id, session=db.session)
 
+    active_count = sum(
+        1
+        for e in getattr(course, "enrollments", [])
+        if getattr(e, "status", None) == "ACTIVE"
+        and (getattr(e, "student", None) is None or getattr(e.student, "status", None) == "ACTIVE")
+    )
+
     data = {
         "course_id": str(course.public_id),
         "course_code": course.course_code,
@@ -506,8 +537,9 @@ def manage_course_hub(course_id: str) -> Any:
         "owner_instructor_id": (
             str(course.owner_instructor.public_id) if course.owner_instructor else None
         ),
-        "lessons_count": len(course.lessons),
-        "enrollments_count": len(course.enrollments),
+        "lessons_count": len([les for les in course.lessons if getattr(les, "deleted_at", None) is None]),
+        "enrollments_count": active_count,
+        "enrolled_count": active_count,
     }
     accept_header = request.headers.get("Accept", "")
     if "text/html" in accept_header and "application/json" not in accept_header:
@@ -570,6 +602,22 @@ def update_course_route(course_id: str) -> Any:
     except Exception:
         db.session.rollback()
         raise
+
+    if isinstance(course, CourseChangeRequest):
+        db.session.commit()
+        course_obj = _resolve_course(course_id, session=db.session)
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Khóa học đã ban hành. "
+                    "Yêu cầu chỉnh sửa thông tin khóa học đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": course.id,
+                "course": _serialize_course(course_obj) if course_obj else None,
+            }
+        ), 202
 
     return jsonify(_serialize_course(course)), 200
 
@@ -706,6 +754,11 @@ def trash_course_route(course_id: str) -> Any:
 @instructor_required
 def learning_units_route(course_id: str) -> Any:
     actor = require_authenticated_actor()
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+
     if request.method == "GET":
         return jsonify(
             {
@@ -715,6 +768,38 @@ def learning_units_route(course_id: str) -> Any:
             }
         ), 200
     payload = request.get_json(silent=True) or {}
+    if not actor.is_admin and course_obj.status in ("PUBLISHED", "ARCHIVED"):
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
+        proposed = {
+            "action": "CREATE_LEARNING_UNIT",
+            "title": title,
+        }
+        review = CourseChangeRequest(
+            course_id=course_obj.id,
+            requested_by_user_id=actor.id,
+            change_type="LESSON_STRUCTURE",
+            target_type="COURSE",
+            target_id=course_obj.id,
+            proposed_payload_json=json.dumps(proposed, default=str),
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        db.session.add(review)
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Khóa học đã ban hành. "
+                    "Yêu cầu tạo chương mục mới đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": review.id,
+            }
+        ), 202
+
     unit = create_learning_unit(actor, course_id, payload)
     return jsonify(_serialize_learning_unit(unit)), 201
 
@@ -723,9 +808,43 @@ def learning_units_route(course_id: str) -> Any:
 @instructor_required
 def reorder_learning_units_route(course_id: str) -> Any:
     actor = require_authenticated_actor()
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+
     payload = request.get_json(silent=True) or {}
     unit_ids = payload.get("unit_ids") or payload.get("learning_unit_ids") or []
     from pwd301.services.lesson_service import reorder_learning_units
+
+    if not actor.is_admin and course_obj.status in ("PUBLISHED", "ARCHIVED"):
+        proposed = {
+            "action": "REORDER_LEARNING_UNITS",
+            "unit_ids": [str(uid) for uid in unit_ids],
+        }
+        review = CourseChangeRequest(
+            course_id=course_obj.id,
+            requested_by_user_id=actor.id,
+            change_type="LESSON_STRUCTURE",
+            target_type="COURSE",
+            target_id=course_obj.id,
+            proposed_payload_json=json.dumps(proposed, default=str),
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        db.session.add(review)
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": (
+                    "Khóa học đã ban hành. "
+                    "Yêu cầu sắp xếp lại chương mục đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": review.id,
+            }
+        ), 202
 
     reordered = reorder_learning_units(actor, course_id, unit_ids, session=db.session)
     db.session.commit()
@@ -1394,6 +1513,20 @@ def get_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     lesson, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
     data = _serialize_lesson(lesson)
     data["working_draft"] = working_draft
+    if lesson.status == "HISTORICAL":
+        newer = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == lesson.course_id,
+                Lesson.position == lesson.position,
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                Lesson.deleted_at.is_(None),
+                Lesson.id != lesson.id,
+            )
+            .first()
+        )
+        data["is_historical"] = True
+        data["latest_lesson_id"] = str(newer.public_id) if newer else None
     return jsonify(data), 200
 
 
@@ -1901,7 +2034,41 @@ def add_course_prerequisite_route(course_id: str) -> Any:
             }
         ), 202
 
-    # Direct addition (Same instructor or Admin)
+    # Published course check: require Admin approval even if same instructor
+    if target_course.status in ("PUBLISHED", "ARCHIVED") and not actor.is_admin:
+        req_payload = {
+            "action": "ADD_PREREQUISITE",
+            "prerequisite_course_id": prereq_course.id,
+            "prerequisite_course_title": prereq_course.title,
+            "prerequisite_course_code": prereq_course.course_code,
+            "reason": payload.get("reason"),
+        }
+        change_req = CourseChangeRequest(
+            course_id=target_course.id,
+            requested_by_user_id=actor.id,
+            change_type="PREREQUISITE",
+            target_type="PREREQUISITE",
+            target_id=prereq_course.id,
+            proposed_payload_json=json.dumps(req_payload, default=str),
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        db.session.add(change_req)
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "direct": False,
+                "message": (
+                    f"Khóa học đã ban hành. "
+                    f"Yêu cầu thêm môn tiên quyết '{prereq_course.title}' đã được gửi tới Quản trị viên để xét duyệt."
+                ),
+                "change_request_id": change_req.id,
+            }
+        ), 202
+
+    # Direct addition (Same instructor on draft course or Admin)
     link = add_course_prerequisite(
         actor=actor,
         course_id=course_id,
@@ -1932,6 +2099,44 @@ def add_course_prerequisite_route(course_id: str) -> Any:
 def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
     """Remove a prerequisite dependency."""
     actor = require_authenticated_actor()
+    target_course = require_course_manager(actor, course_id, session=db.session)
+
+    if not actor.is_admin and target_course.status in ("PUBLISHED", "ARCHIVED"):
+        prereq_course = _resolve_course(prereq_id, session=db.session)
+        prereq_pk = prereq_course.id if prereq_course else None
+        if not prereq_pk:
+            try:
+                prereq_pk = int(str(prereq_id))
+            except (ValueError, TypeError):
+                pass
+        if prereq_pk:
+            req_payload = {
+                "action": "REMOVE_PREREQUISITE",
+                "prerequisite_course_id": prereq_pk,
+            }
+            change_req = CourseChangeRequest(
+                course_id=target_course.id,
+                requested_by_user_id=actor.id,
+                change_type="PREREQUISITE",
+                target_type="PREREQUISITE",
+                target_id=prereq_pk,
+                proposed_payload_json=json.dumps(req_payload, default=str),
+                status="PENDING",
+                created_at=utc_now(),
+            )
+            db.session.add(change_req)
+            db.session.commit()
+            return jsonify(
+                {
+                    "status": "pending_approval",
+                    "pending_approval": True,
+                    "message": (
+                        "Khóa học đã ban hành. "
+                        "Yêu cầu gỡ bỏ môn tiên quyết đã được gửi tới Quản trị viên để xét duyệt."
+                    ),
+                    "change_request_id": change_req.id,
+                }
+            ), 202
 
     removed = remove_course_prerequisite(
         actor=actor,

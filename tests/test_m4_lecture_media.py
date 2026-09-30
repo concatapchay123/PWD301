@@ -302,7 +302,7 @@ class TestInstructorLessonMediaAuthoring:
             content_type="multipart/form-data",
             headers={"Accept": "application/json"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code in (201, 202)
         res_json = resp.get_json()
         assert res_json["title"] == "Chương 1: Bài giảng Video MP4"
         assert len(res_json["resources"]) == 1
@@ -340,7 +340,7 @@ class TestInstructorLessonMediaAuthoring:
             content_type="multipart/form-data",
             headers={"Accept": "application/json"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code in (201, 202)
         res_json = resp.get_json()
         # Default markdown should be populated automatically
         assert "Chương 2: Slide và tài liệu mẫu" in res_json["markdown_content"]
@@ -365,7 +365,7 @@ class TestInstructorLessonMediaAuthoring:
             content_type="multipart/form-data",
             headers={"Accept": "application/json"},
         )
-        assert resp.status_code == 201
+        assert resp.status_code in (201, 202)
         res_json = resp.get_json()
         assert "# Chương 3: Video thực hành" in res_json["markdown_content"]
         assert "Tóm tắt ngắn gọn của bài học." in res_json["markdown_content"]

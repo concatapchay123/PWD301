@@ -1099,870 +1099,1223 @@ class StudentView {
   }
 
   // =========================================================================
-  // 4. Enrolled Course Hub & Academic Dossier (Variant 2 with ABET SLOs)
+  // 4. Cisco NetAcad Unified Learning Console (Immersive Course Classroom)
+  // Merges Course Hub & Lesson Reader into a single Cisco NetAcad-style Console:
+  // - Left Sidebar: Search, Tabs [Course Outline] & [Resources], Smart Accordion,
+  //   Modules with progress badges (0/12, 100%), sub-item dotted connectors,
+  //   integrated Checkpoint Exams.
+  // - Right Canvas: Floating [<] [>] navigation chevrons, exact NetAcad Locked Content card,
+  //   Video Player (Anti-seek & 100% watch enforcement), Markdown reader, Mini-Quiz,
+  //   Lesson attachments, AI Assistant, Sổ tay ghi chú with autosave.
   // =========================================================================
-  static async renderCourseDetail(container, courseId, activeTab = 'syllabus') {
+  static async renderCourseConsole(container, courseId, initialLessonId = null, initialExamId = null, initialTab = 'outline') {
     container.innerHTML = `
-      <div class="p-6 space-y-6 max-w-6xl mx-auto animate-fade-in" id="course-detail-container">
-        <div class="text-center py-16 text-slate-400">
-          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang nạp hồ sơ học vụ khóa học (Academic Dossier)...</p>
+      <div class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans animate-fade-in select-none" id="cisco-console-root">
+        <div class="flex-1 flex items-center justify-center text-slate-400">
+          <div class="text-center space-y-2">
+            <span class="inline-block animate-spin text-3xl">⏳</span>
+            <p class="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400">Đang khởi tạo Không gian học tập Cisco NetAcad...</p>
+          </div>
         </div>
       </div>
     `;
 
     try {
-      const courseData = await ApiClient.getStudentCourseDetail(courseId).catch(() => null);
-      const course = courseData?.course || await ApiClient.getCourseDetail(courseId);
-      const progressData = await ApiClient.getStudentCourseProgress(courseId).catch(() => null);
-
-      const lessons = courseData?.lessons || course.lessons || [];
-      const assessments = courseData?.assessments || course.assessments || [];
-      const resources = courseData?.resources || course.resources || [];
-      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
-      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined) || isPreview;
-
-      // Parse or provide student-friendly Learning Outcomes (SLOs)
-      let studentSLOs = [];
-      if (course.learning_objectives) {
-        if (Array.isArray(course.learning_objectives)) {
-          studentSLOs = [...course.learning_objectives];
-        } else if (typeof course.learning_objectives === 'string') {
-          try {
-            const parsed = JSON.parse(course.learning_objectives);
-            if (Array.isArray(parsed)) studentSLOs = parsed;
-          } catch {
-            studentSLOs = course.learning_objectives.split('\n').filter(s => s.trim()).map((s, i) => ({
-              title: `Kỹ năng ${i + 1}`,
-              description: s.trim()
-            }));
-          }
-        }
-      }
-      if (studentSLOs.length === 0) {
-        studentSLOs = [
-          {
-            title: 'Kỹ năng 1 • Phân tích & Đặc tả bài toán',
-            code: 'SLO-1',
-            description: 'Nắm chắc cách tiếp cận bài toán phần mềm thực tế, phân rã yêu cầu và mô hình hóa giải pháp kỹ thuật rõ ràng.',
-            weight: '30%'
-          },
-          {
-            title: 'Kỹ năng 2 • Thiết kế CSDL & Lập trình Web',
-            code: 'SLO-2',
-            description: 'Tự tay thiết kế cơ sở dữ liệu quan hệ chuẩn 3NF, lập trình hệ thống RESTful API an toàn và viết kiểm thử tự động.',
-            weight: '50%'
-          },
-          {
-            title: 'Kỹ năng 3 • Bảo mật Thông tin & Chống Tấn công',
-            code: 'SLO-3',
-            description: 'Thực thi kiểm soát phân quyền RBAC/ABAC, phòng ngừa các lỗ hổng web OWASP và quét an toàn tệp tải lên.',
-            weight: '20%'
-          }
-        ];
-      }
-
-      const renderTabContent = (tab) => {
-        if (tab === 'assessments') {
-          return `
-            <div class="space-y-4">
-              <div class="flex items-center justify-between">
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Bài tập & Khảo thí của Khóa học</h3>
-                <span class="text-xs text-slate-500">${assessments.length} bài kiểm tra</span>
-              </div>
-              <div class="space-y-3">
-                ${assessments.length === 0 ? `
-                  <div class="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm">
-                    Khóa học hiện chưa có bài khảo thí nào được giao.
-                  </div>
-                ` : assessments.map(a => `
-                  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm hover:border-primary/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${!isEnrolled ? 'opacity-85' : ''}">
-                    <div class="space-y-1">
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold uppercase tracking-wider text-purple-600 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">Khảo thí</span>
-                        ${UI.statusBadge(a.status || 'PUBLISHED')}
-                        ${!isEnrolled ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">lock</span> Khóa</span>` : ''}
-                      </div>
-                      <h4 class="font-bold text-sm text-slate-900 dark:text-white">${UI.escapeHtml(a.title)}</h4>
-                      <div class="flex items-center gap-3 text-xs text-slate-500">
-                        <span>Thời lượng: <strong>${a.time_limit_minutes || 45} phút</strong></span>
-                        <span>•</span>
-                        <span>Điểm tối đa: <strong>${a.max_points || 10}đ</strong></span>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2.5 shrink-0">
-                      ${!isEnrolled ? `
-                        <button
-                          type="button"
-                          onclick="UI.showToast('Vui lòng ghi danh môn học để tham gia khảo thí.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
-                          class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-amber-600 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
-                        >
-                          <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
-                          <span>Cần ghi danh</span>
-                        </button>
-                      ` : (a.is_attempt_limit_reached ? `
-                        <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1">
-                          <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                          <span>Xem kết quả chính thức</span>
-                        </a>
-                      ` : (a.attempts_count > 0 ? `
-                        <div class="flex items-center gap-2">
-                          <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 flex items-center gap-1" title="Xem kết quả chính thức">
-                            <span class="material-symbols-outlined text-[15px]">fact_check</span>
-                            <span>Xem kết quả</span>
-                          </a>
-                          <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1">
-                            <span class="material-symbols-outlined text-[15px]">play_arrow</span>
-                            <span>Làm bài thi</span>
-                          </a>
-                        </div>
-                      ` : `
-                        <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1">
-                          <span class="material-symbols-outlined text-[16px]">lock_open</span>
-                          <span>Vào phòng chờ thi</span>
-                        </a>
-                      `))}
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }
-
-        if (tab === 'resources') {
-          return `
-            <div class="space-y-4">
-              <div class="flex items-center justify-between">
-                <h3 class="font-bold text-sm text-slate-900 dark:text-white">Kho Tài nguyên & Giáo trình Môn học (Resource Vault)</h3>
-                <span class="text-xs text-slate-500">${resources.length} tệp tài liệu</span>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                ${resources.length === 0 ? `
-                  <div class="col-span-full p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm">
-                    Khóa học chưa có tệp đính kèm nào được tải lên.
-                  </div>
-                ` : resources.map(r => `
-                  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-2">
-                    <div class="flex items-center gap-2.5">
-                      <span class="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center material-symbols-outlined text-[18px]">description</span>
-                      <div class="font-bold text-xs text-slate-900 dark:text-white truncate flex-1">${UI.escapeHtml(r.label || r.filename)}</div>
-                    </div>
-                    <div class="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <span class="text-emerald-600 font-semibold flex items-center gap-1">
-                        <span class="material-symbols-outlined text-[14px]">verified</span> Đã quét sạch ClamAV
-                      </span>
-                      <a href="${r.download_url || `/student/courses/${courseId}/files/${r.resource_id || r.id}/download`}" target="_blank" class="text-primary font-bold hover:underline flex items-center gap-0.5">
-                        Tải về <span class="material-symbols-outlined text-[14px]">download</span>
-                      </a>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }
-
-        if (tab === 'info') {
-          return `
-            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-6">
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                  <h3 class="font-bold text-base text-slate-900 dark:text-white">Hồ sơ Giảng viên & Thông tin Học vụ</h3>
-                  <p class="text-xs text-slate-400 mt-0.5">Thông tin liên hệ giảng viên và giải thích chi tiết các quy chuẩn đào tạo của môn học.</p>
-                </div>
-                <button type="button" onclick="UI.openAcademicGlossaryModal()" class="px-3 py-1.5 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs">
-                  <span class="material-symbols-outlined text-[16px]">menu_book</span>
-                  <span>Mở Sổ tay thuật ngữ</span>
-                </button>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 space-y-3.5 border border-slate-200/80 dark:border-slate-800">
-                  <div class="flex items-center justify-between">
-                    <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <span class="material-symbols-outlined text-primary text-[20px]">person_apron</span>
-                      <span class="text-sm">Thông tin Giảng viên Phụ trách:</span>
-                    </div>
-                    <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
-                      Chính thức
-                    </span>
-                  </div>
-
-                  <div>
-                    <div class="text-base font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(course.instructor_name || 'Hội đồng Khoa học Khoa CNTT')}</div>
-                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Giảng viên / Chủ nhiệm học phần môn học</div>
-                  </div>
-
-                  <div class="space-y-2 pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
-                    <div class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                      <span class="material-symbols-outlined text-slate-400 text-[16px]">mail</span>
-                      <span>Email học vụ:</span>
-                      <a href="mailto:${UI.escapeHtml(course.contact_info?.email || course.instructor_email || 'instructor@pwd301.edu.vn')}" class="font-mono text-primary font-bold hover:underline">
-                        ${UI.escapeHtml(course.contact_info?.email || course.instructor_email || 'instructor@pwd301.edu.vn')}
-                      </a>
-                    </div>
-
-                    ${course.contact_info?.phone ? `
-                      <div class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                        <span class="material-symbols-outlined text-slate-400 text-[16px]">call</span>
-                        <span>Số điện thoại:</span>
-                        <a href="tel:${UI.escapeHtml(course.contact_info.phone)}" class="font-mono font-bold text-slate-800 dark:text-slate-200 hover:text-primary">
-                          ${UI.escapeHtml(course.contact_info.phone)}
-                        </a>
-                      </div>
-                    ` : ''}
-
-                    ${course.contact_info?.office_hours ? `
-                      <div class="flex items-start gap-2 text-slate-700 dark:text-slate-300">
-                        <span class="material-symbols-outlined text-slate-400 text-[16px] mt-0.5">schedule</span>
-                        <div>
-                          <span>Giờ tiếp sinh viên:</span>
-                          <span class="font-medium text-slate-800 dark:text-slate-200 ml-1">${UI.escapeHtml(course.contact_info.office_hours)}</span>
-                        </div>
-                      </div>
-                    ` : `
-                      <div class="flex items-start gap-2 text-slate-700 dark:text-slate-300">
-                        <span class="material-symbols-outlined text-slate-400 text-[16px] mt-0.5">schedule</span>
-                        <div>
-                          <span>Giờ tiếp sinh viên:</span>
-                          <span class="font-medium text-slate-800 dark:text-slate-200 ml-1">Thứ 3 & Thứ 5 (14:00 - 16:30)</span>
-                        </div>
-                      </div>
-                    `}
-
-                    ${course.contact_info?.group ? `
-                      <div class="pt-2">
-                        <a href="${UI.escapeHtml(course.contact_info.group)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary text-white hover:bg-primary-hover font-bold text-xs transition-colors shadow-2xs">
-                          <span class="material-symbols-outlined text-[16px]">groups</span>
-                          <span>Tham gia Group trao đổi học tập (Zalo / Teams / Telegram)</span>
-                          <span class="material-symbols-outlined text-[14px]">open_in_new</span>
-                        </a>
-                      </div>
-                    ` : ''}
-                  </div>
-                </div>
-
-                <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 space-y-3.5 border border-slate-200/80 dark:border-slate-800">
-                  <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-indigo-600 text-[20px]">account_tree</span>
-                    <span class="text-sm">Điều kiện tiên quyết (Cần học trước):</span>
-                  </div>
-                  <div class="text-slate-600 dark:text-slate-400 leading-relaxed text-xs">
-                    ${course.prerequisites ? UI.escapeHtml(course.prerequisites) : 'Không yêu cầu môn học tiên quyết bắt buộc. Khuyến nghị sinh viên nắm vững cấu trúc dữ liệu và giải thuật cơ sở.'}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sổ tay giải thích thuật ngữ học vụ cho người học -->
-              <div class="p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
-                <div class="flex items-center gap-2">
-                  <span class="material-symbols-outlined text-primary text-[20px]">help</span>
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">Tra cứu nhanh: Các thuật ngữ học vụ bạn thường gặp</h4>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                  <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                    <span class="font-mono font-bold text-primary text-[11px]">SLO</span>
-                    <p class="font-bold text-slate-800 dark:text-slate-200 text-xs">Chuẩn kỹ năng đầu ra</p>
-                    <p class="text-[11px] text-slate-500">Những việc thực tế bạn sẽ tự tay làm được sau khi học xong môn học.</p>
-                  </div>
-                  <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                    <span class="font-mono font-bold text-indigo-600 text-[11px]">ABET</span>
-                    <p class="font-bold text-slate-800 dark:text-slate-200 text-xs">Kiểm định quốc tế</p>
-                    <p class="text-[11px] text-slate-500">Khung kiểm định chất lượng đào tạo công nghệ hàng đầu thế giới của Hoa Kỳ.</p>
-                  </div>
-                  <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
-                    <span class="font-mono font-bold text-emerald-600 text-[11px]">Prerequisites</span>
-                    <p class="font-bold text-slate-800 dark:text-slate-200 text-xs">Môn học cần học trước</p>
-                    <p class="text-[11px] text-slate-500">Môn cung cấp kiến thức nền bắt buộc để bạn đủ điều kiện đăng ký môn này.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="pt-2 text-xs text-slate-500 leading-relaxed border-t border-slate-100 dark:border-slate-800 flex items-start gap-2">
-                <span class="material-symbols-outlined text-[18px] text-emerald-600 shrink-0 mt-0.5">verified</span>
-                <div>
-                  <strong>Chuẩn kiểm định chương trình (ABET Accreditation Statement):</strong> Khóa học được thiết kế và vận hành đáp ứng Tiêu chí 3 (Student Outcomes) chuẩn kiểm định chất lượng đào tạo kỹ thuật - công nghệ quốc tế ABET, bảo đảm chuẩn đầu ra năng lực phân tích, thiết kế hệ thống và đạo đức nghề nghiệp kỹ thuật.
-                </div>
-              </div>
-            </div>
-          `;
-        }
-
-        // Default: Syllabus tab — Displays ONLY Bài học (Learning Units) with sequential locking
-        const rawUnits = (courseData?.learning_units && courseData.learning_units.length > 0)
-          ? [...courseData.learning_units].sort((a, b) => (a.position || 0) - (b.position || 0))
-          : [];
-
-        // Synthesize Learning Units if course only returned flat lessons
-        const displayUnits = [...rawUnits];
-        if (displayUnits.length === 0 && lessons.length > 0) {
-          const unitMap = new Map();
-          lessons.forEach((l, idx) => {
-            const uId = l.learning_unit_id || 'default';
-            const uTitle = l.learning_unit_title || `Bài ${idx + 1}: ${l.title}`;
-            if (!unitMap.has(uId)) {
-              unitMap.set(uId, {
-                id: uId,
-                learning_unit_id: uId,
-                title: uTitle,
-                position: unitMap.size + 1,
-                lessons: []
-              });
-            }
-            unitMap.get(uId).lessons.push(l);
-          });
-          unitMap.forEach(u => {
-            u.lesson_count = u.lessons.length;
-            u.completed_lesson_count = u.lessons.filter(les => les.is_completed || les.progress?.is_completed).length;
-            u.is_completed = u.lesson_count > 0 && u.completed_lesson_count >= u.lesson_count;
-            displayUnits.push(u);
-          });
-        }
-
-        return `
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[20px]">format_list_numbered</span>
-                Đề cương Khóa học (${displayUnits.length} Bài học)
-              </h3>
-              ${isEnrolled ? `
-                <span class="text-xs text-slate-500 font-medium">Tiến độ hoàn thành: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong></span>
-              ` : `
-                <span class="text-xs font-bold text-amber-600 flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">lock</span> Chưa ghi danh</span>
-              `}
-            </div>
-
-            ${!isEnrolled ? `
-              <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                    <span class="material-symbols-outlined text-[22px]">lock</span>
-                  </div>
-                  <div>
-                    <h4 class="text-xs font-bold text-slate-900 dark:text-white">Bạn chưa ghi danh khóa học này</h4>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Vui lòng ghi danh môn học để mở khóa toàn bộ bài học, học tuần tự và tích lũy chứng nhận.</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onclick="document.getElementById('dossier-enroll-btn')?.click()"
-                  class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm shrink-0 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span class="material-symbols-outlined text-[16px]">school</span>
-                  <span>Ghi danh ngay</span>
-                </button>
-              </div>
-            ` : ''}
-
-            <div class="space-y-3">
-              ${displayUnits.length === 0 ? `
-                <div class="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm">
-                  Khóa học này đang hoàn thiện giáo trình, chưa có bài học nào được công bố.
-                </div>
-              ` : displayUnits.map((u, idx) => {
-                const uNum = idx + 1;
-                const prevUnit = idx > 0 ? displayUnits[idx - 1] : null;
-                const prevCompleted = prevUnit ? Boolean(prevUnit.is_completed || (prevUnit.lesson_count > 0 && prevUnit.completed_lesson_count >= prevUnit.lesson_count)) : true;
-                const isUnlocked = isPreview || !isEnrolled ? (isPreview) : (idx === 0 || prevCompleted);
-                const isCompleted = Boolean(u.is_completed || (u.lesson_count > 0 && u.completed_lesson_count >= u.lesson_count));
-                const unitLessons = u.lessons || [];
-                const targetLesson = unitLessons.find(l => !(l.is_completed || l.progress?.is_completed)) || unitLessons[0];
-                const targetLessonId = targetLesson ? (targetLesson.lesson_id || targetLesson.id) : '';
-
-                const cleanTitle = u.title.replace(/^Chương\s*\d+\s*:\s*/i, '').replace(/^Bài\s*\d+\s*:\s*/i, '');
-                const displayTitle = `Bài ${uNum}: ${cleanTitle}`;
-
-                if (!isEnrolled) {
-                  return `
-                    <div
-                      class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs opacity-75 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:border-amber-400 transition-all"
-                      onclick="UI.showToast('Vui lòng ghi danh môn học để bắt đầu học Bài ${uNum}.', 'warning'); document.getElementById('dossier-enroll-btn')?.scrollIntoView({behavior: 'smooth'})"
-                    >
-                      <div class="flex items-center gap-3.5">
-                        <div class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold flex items-center justify-center shrink-0 text-sm">
-                          ${uNum}
-                        </div>
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <h4 class="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-base">${UI.escapeHtml(displayTitle)}</h4>
-                            <span class="material-symbols-outlined text-[15px] text-amber-600">lock</span>
-                          </div>
-                          <p class="text-xs text-slate-400 mt-0.5">${unitLessons.length} bài giảng • Cần ghi danh môn học</p>
-                        </div>
-                      </div>
-                      <div class="text-xs font-semibold text-amber-600 flex items-center gap-1 shrink-0">
-                        <span class="material-symbols-outlined text-[15px]">lock</span>
-                        <span>Khóa</span>
-                      </div>
-                    </div>
-                  `;
-                }
-
-                if (!isUnlocked) {
-                  return `
-                    <div
-                      class="bg-slate-50/70 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 opacity-60 cursor-not-allowed select-none flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                      onclick="UI.showToast('Bạn cần hoàn thành toàn bộ bài giảng của Bài ${idx} (100%) để mở khóa ${UI.escapeHtml(displayTitle)}.', 'warning')"
-                    >
-                      <div class="flex items-center gap-3.5">
-                        <div class="w-10 h-10 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-slate-400 font-bold flex items-center justify-center shrink-0 text-sm">
-                          ${uNum}
-                        </div>
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <h4 class="font-bold text-slate-500 dark:text-slate-400 text-sm sm:text-base">${UI.escapeHtml(displayTitle)}</h4>
-                            <span class="material-symbols-outlined text-[16px] text-slate-400">lock</span>
-                          </div>
-                          <p class="text-xs text-slate-400 mt-0.5">${unitLessons.length} bài giảng • Chưa mở khóa</p>
-                        </div>
-                      </div>
-                      <div class="text-xs font-semibold text-amber-700 dark:text-amber-400/90 flex items-center gap-1 shrink-0 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-900/60">
-                        <span class="material-symbols-outlined text-[14px]">lock</span>
-                        <span>Cần hoàn thành Bài ${idx} (100%)</span>
-                      </div>
-                    </div>
-                  `;
-                }
-
-                return `
-                  <div
-                    class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md hover:border-primary/60 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group/unit"
-                    onclick="${targetLessonId ? `window.location.hash = '#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(targetLessonId)}'` : `UI.showToast('Bài học này chưa có bài giảng nào.', 'info')`}"
-                  >
-                    <div class="flex items-center gap-3.5">
-                      <div class="w-10 h-10 rounded-xl ${isCompleted ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' : 'bg-primary-subtle text-primary border border-primary/20'} font-bold flex items-center justify-center shrink-0 text-sm shadow-2xs">
-                        ${isCompleted ? '<span class="material-symbols-outlined text-[20px]">check_circle</span>' : uNum}
-                      </div>
-                      <div>
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <h4 class="font-extrabold text-slate-900 dark:text-white text-sm sm:text-base group-hover/unit:text-primary transition-colors">
-                            ${UI.escapeHtml(displayTitle)}
-                          </h4>
-                          ${isCompleted ? `
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Đã hoàn thành 100%
-                            </span>
-                          ` : (u.completed_lesson_count > 0 ? `
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary-subtle text-primary border border-primary/20">
-                              Đang học (${u.completed_lesson_count}/${u.lesson_count || unitLessons.length})
-                            </span>
-                          ` : `
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                              Sẵn sàng học
-                            </span>
-                          `)}
-                        </div>
-                        <p class="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                          <span>${unitLessons.length} bài giảng</span>
-                          <span>•</span>
-                          <span>Đã xong ${u.completed_lesson_count || 0}/${u.lesson_count || unitLessons.length}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="flex items-center gap-2 shrink-0">
-                      <span class="w-9 h-9 rounded-xl bg-slate-50 dark:bg-slate-800 group-hover/unit:bg-primary group-hover/unit:text-white text-slate-400 flex items-center justify-center transition-all shadow-2xs">
-                        <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
-                      </span>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-        `;
-      };
-
-      container.innerHTML = `
-        <div class="p-6 space-y-6 max-w-6xl mx-auto animate-fade-in">
-          ${isPreview ? `
-            <div class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
-              <div class="flex items-center gap-2.5 text-amber-900 dark:text-amber-200">
-                <span class="material-symbols-outlined text-[20px] text-amber-600">visibility</span>
-                <div>
-                  <span class="font-bold">Chế độ Xem trước của Giảng viên:</span>
-                  <span class="text-slate-600 dark:text-slate-300 ml-1">Bạn đang xem khóa học này dưới góc nhìn của Học sinh. Toàn bộ bài học và tài liệu đã được mở khóa để xem thử.</span>
-                </div>
-              </div>
-              <a href="#/instructor/courses/${courseId}/manage" class="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold transition-all shadow-sm shrink-0 flex items-center gap-1">
-                <span class="material-symbols-outlined text-[15px]">arrow_back</span>
-                <span>Quản lý môn học</span>
-              </a>
-            </div>
-          ` : ''}
-
-          <!-- Navigation Breadcrumb -->
-          <div class="flex items-center gap-2 text-xs text-slate-500">
-            <a href="${isPreview ? `#/instructor/courses/${courseId}/manage` : '#/student/courses'}" class="hover:underline flex items-center gap-1">
-              <span class="material-symbols-outlined text-[14px]">arrow_back</span>
-              ${isPreview ? 'Quay lại Quản lý môn học' : 'Khóa học của tôi'}
-            </a>
-            <span>/</span>
-            <span class="text-slate-900 dark:text-white font-bold">${UI.escapeHtml(course.course_code)}</span>
-          </div>
-
-          <!-- Course Hero Academic Dossier (Variant 2) -->
-          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex items-center gap-2">
-                <span class="px-3 py-1 rounded-full bg-primary-subtle text-primary font-mono font-bold text-xs">${UI.escapeHtml(course.course_code)}</span>
-                ${UI.difficultyBadge(course.difficulty)}
-                ${course.status && course.status !== 'ACTIVE' ? UI.statusBadge(course.status) : ''}
-                <span class="text-xs text-slate-500">• ${UI.escapeHtml(course.category || 'Chung')}</span>
-              </div>
-              <div class="flex items-center gap-3">
-                ${isEnrolled ? `
-                  <div class="flex items-center gap-3">
-                    ${!isPreview ? `
-                      <div class="text-xs text-slate-500 font-medium">
-                        Tiến độ: <strong class="text-primary font-bold">${Math.round(progressData?.progress_percent || 0)}%</strong>
-                      </div>
-                    ` : ''}
-                    ${lessons.length > 0 ? `
-                      <a
-                        href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${lessons[0].lesson_id || lessons[0].id}"
-                        class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-                      >
-                        <span class="material-symbols-outlined text-[18px]">play_circle</span>
-                        <span>Vào học ngay</span>
-                      </a>
-                    ` : ''}
-                  </div>
-                ` : `
-                  <button type="button" id="dossier-enroll-btn" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[16px]">school</span>
-                    <span>Ghi danh môn học</span>
-                  </button>
-                `}
-              </div>
-            </div>
-
-            <div>
-              <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                ${UI.escapeHtml(course.title)}
-              </h1>
-              <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-2 max-w-4xl">
-                ${UI.escapeHtml(course.description || course.summary || 'Chương trình đào tạo chuyên sâu kết hợp lý thuyết và đồ án thực tế.')}
-              </p>
-            </div>
-
-            <!-- Metadata Academic Strip (Credits removed per specification) -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
-              <div>
-                <span class="text-slate-400 block">Quy mô bài giảng:</span>
-                <span class="font-extrabold text-slate-900 dark:text-white text-sm">${lessons.length} Bài giảng</span>
-              </div>
-              <div>
-                <span class="text-slate-400 block">Đợt khảo thí:</span>
-                <span class="font-extrabold text-slate-900 dark:text-white text-sm">${assessments.length} Bài kiểm tra</span>
-              </div>
-              <div>
-                <span class="text-slate-400 block">Giảng viên phụ trách:</span>
-                <span class="font-extrabold text-primary text-sm truncate block">${UI.escapeHtml(course.instructor_name || 'Hội đồng Khoa học')}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Contextual Tabs Navigation -->
-          <div class="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 text-xs font-bold overflow-x-auto pb-px" id="course-hub-tabs">
-            <button type="button" class="tab-btn px-4 py-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'syllabus' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-tab="syllabus">
-              <span class="material-symbols-outlined text-[18px]">format_list_numbered</span>
-              Lộ trình & Bài giảng (${lessons.length})
-            </button>
-            <button type="button" class="tab-btn px-4 py-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'assessments' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-tab="assessments">
-              <span class="material-symbols-outlined text-[18px]">quiz</span>
-              Bài tập & Khảo thí (${assessments.length})
-            </button>
-            <button type="button" class="tab-btn px-4 py-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'resources' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-tab="resources">
-              <span class="material-symbols-outlined text-[18px]">folder_open</span>
-              Kho Tài nguyên (${resources.length})
-            </button>
-            <button type="button" class="tab-btn px-4 py-3 border-b-2 transition-all flex items-center gap-2 ${activeTab === 'info' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}" data-tab="info">
-              <span class="material-symbols-outlined text-[18px]">info</span>
-              Hồ sơ Giảng viên & Học vụ
-            </button>
-          </div>
-
-          <!-- Dynamic Active Tab Content -->
-          <div id="course-hub-content" class="pt-2">
-            ${renderTabContent(activeTab)}
-          </div>
-        </div>
-      `;
-
-      // Tab switching handlers
-      container.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.onclick = () => {
-          const tab = btn.dataset.tab;
-          const nextHash = `#/student/courses/detail?id=${encodeURIComponent(courseId)}&tab=${encodeURIComponent(tab)}`;
-          if (window.location.hash !== nextHash) window.location.hash = nextHash;
-        };
-      });
-
-      // Dossier Action: Enroll
-      const enrollBtn = document.getElementById('dossier-enroll-btn');
-      if (enrollBtn) {
-        enrollBtn.onclick = async () => {
-          try {
-            enrollBtn.disabled = true;
-            enrollBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
-            await ApiClient.enrollCourse(courseId);
-            UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
-            if (window.app && typeof window.app.handleRoute === 'function') {
-              await window.app.handleRoute();
-            } else {
-              await StudentView.renderCourseDetail(container, courseId, activeTab);
-            }
-          } catch (e) {
-            UI.showToast(e.message || 'Không thể ghi danh.', 'error');
-            enrollBtn.disabled = false;
-            enrollBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">school</span> <span>Ghi danh môn học</span>';
-          }
-        };
-      }
-
-
-
-    } catch (err) {
-      container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp đề cương khóa học: ${UI.escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
-  static _getEmbedVideoHtml(url, playerId = 'lesson-stream-player') {
-    if (!url) return '';
-    const trimmed = String(url).trim();
-    // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
-    const ytId = UI.parseYouTubeId(trimmed);
-    if (ytId) {
-      const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
-      const glue = baseEmbed.includes('?') ? '&' : '?';
-      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
-    }
-    // Vimeo
-    const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
-    if (vimeoMatch && vimeoMatch[1]) {
-      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-    }
-    // Direct file / HTML5 video (No download button, no playback rate change, no right click menu)
-    return `<video id="${playerId}" controls controlsList="nodownload noplaybackrate" oncontextmenu="return false;" disablePictureInPicture class="w-full h-full aspect-video rounded-xl bg-black" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>`;
-  }
-
-  // =========================================================================
-  // 5. Single-Column Focus Lesson Reader (Left Syllabus Drawer & Right Vault/Notes Drawer)
-  // =========================================================================
-  static async renderLessonReader(container, courseId, lessonId) {
-    container.innerHTML = `
-      <div class="h-full flex flex-col overflow-hidden animate-fade-in" id="lesson-reader-root">
-        <div class="text-center py-24 text-slate-400">
-          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang tải không gian đọc tập trung (Single-Column Focus Mode)...</p>
-        </div>
-      </div>
-    `;
-
-    try {
-      const [courseData, lesson] = await Promise.all([
+      // 1. Fetch course details and student learning progress in parallel
+      const [courseData, progressData] = await Promise.all([
         ApiClient.getStudentCourseDetail(courseId).catch(() => ApiClient.getCourseDetail(courseId)),
-        ApiClient.getStudentLesson(courseId, lessonId)
+        ApiClient.getStudentCourseProgress(courseId).catch(() => null)
       ]);
 
       const course = courseData?.course || courseData;
-      const lessonsList = courseData?.lessons || course.lessons || [];
-      const lessonResources = lesson.resources || [];
-      const courseResources = courseData?.resources || course.resources || [];
-
-      // Only display resources explicitly attached to the current lesson
-      const currentLessonId = String(lessonId || lesson.lesson_id || lesson.id || '');
-      const resources = (Array.isArray(lesson.resources) ? lesson.resources : [])
-        .filter(r => !r.lesson_id || String(r.lesson_id) === currentLessonId);
-      const hasVideo = Boolean(lesson.video_url);
-      let videoWatched = StudentView.isLessonVideoWatched(lesson);
-      let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
-      const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
-      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
-      const hasNewerRevision = Boolean(lesson.has_newer_revision || lesson.status === 'HISTORICAL' || (lesson.latest_lesson_id && lesson.latest_lesson_id !== lessonId));
-
-      // Find prev and next lesson
-      const currentIndex = lessonsList.findIndex(l => (l.lesson_id || l.id) === lessonId);
-      const prevLesson = currentIndex > 0 ? lessonsList[currentIndex - 1] : null;
-      const nextLesson = currentIndex < lessonsList.length - 1 ? lessonsList[currentIndex + 1] : null;
-
-      // Fetch live notes from backend with fallback
-      let savedNote = '';
-      try {
-        const notesRes = await ApiClient.getLessonNotes(lessonId);
-        savedNote = notesRes?.personal_notes || '';
-      } catch {
-        savedNote = localStorage.getItem(`notes_${courseId}_${lessonId}`) || '';
+      if (!course || !course.id) {
+        container.innerHTML = `
+          <div class="h-full flex items-center justify-center p-6 text-center">
+            <div class="max-w-md p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <span class="material-symbols-outlined text-4xl text-rose-500">error</span>
+              <h2 class="text-base font-bold text-slate-900 dark:text-white">Không tìm thấy khóa học</h2>
+              <p class="text-xs text-slate-500">Khóa học không tồn tại hoặc đã bị gỡ bỏ.</p>
+              <a href="#/student/courses" class="c-btn c-btn-primary c-btn-sm inline-flex">Quay lại Khóa học của tôi</a>
+            </div>
+          </div>
+        `;
+        return;
       }
 
-      // Find current Learning Unit and its child lessons
+      const allLessons = courseData?.lessons || course.lessons || [];
+      const allAssessments = courseData?.assessments || course.assessments || [];
+      const allResources = courseData?.resources || course.resources || [];
       const learningUnits = courseData?.learning_units || [];
-      const currentUnit = learningUnits.find(u =>
-        String(u.learning_unit_id || u.id) === String(lesson.learning_unit_id) ||
-        (Array.isArray(u.lessons) && u.lessons.some(l => String(l.lesson_id || l.id) === String(lessonId)))
-      ) || learningUnits[0] || null;
+      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
+      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined) || isPreview;
 
-      const unitLessons = (currentUnit?.lessons && currentUnit.lessons.length > 0)
-        ? [...currentUnit.lessons].sort((a, b) => (a.position || 0) - (b.position || 0))
-        : lessonsList;
-      const rawUnitTitle = currentUnit?.title || lesson.learning_unit_title || 'Bài học hiện tại';
-      const cleanUnitTitle = rawUnitTitle.replace(/^Chương\s*\d+\s*:\s*/i, '').replace(/^Bài\s*\d+\s*:\s*/i, '');
-      const unitNum = currentUnit?.position || lesson.learning_unit_position || 1;
-      const displayUnitHeader = `Bài ${unitNum}: ${cleanUnitTitle}`;
-
-      const renderUnitLessonsListHtml = () => {
-        return unitLessons.map((l, jIdx) => {
-          const isCur = String(l.lesson_id || l.id) === String(lessonId);
-          const isLesDone = Boolean(l.is_completed || l.progress?.is_completed || (isCur && isCompleted));
-          const prevLes = jIdx > 0 ? unitLessons[jIdx - 1] : null;
-          const prevLesDone = prevLes ? Boolean(prevLes.is_completed || prevLes.progress?.is_completed || (String(prevLes.lesson_id || prevLes.id) === String(lessonId) && isCompleted)) : true;
-          const isLesUnlocked = isPreview || (jIdx === 0) || prevLesDone;
-
-          if (!isLesUnlocked) {
-            return `
-              <div
-                class="p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 text-slate-400 opacity-60 cursor-not-allowed select-none space-y-1"
-                onclick="UI.showToast('Vui lòng hoàn thành bài giảng trước để mở khóa bài giảng này.', 'warning')"
-                title="Chưa mở khóa"
-              >
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-mono font-bold text-slate-400">BÀI GIẢNG ${jIdx + 1}</span>
-                  <span class="material-symbols-outlined text-[15px] text-slate-400">lock</span>
-                </div>
-                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">${UI.escapeHtml(l.title)}</div>
-                <div class="text-[10px] text-slate-400 flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[13px]">schedule</span>
-                  <span>${l.estimated_duration_minutes || 15} phút</span>
-                </div>
-              </div>
-            `;
+      // Group modules & build structured headlist
+      let modules = [];
+      if (learningUnits && learningUnits.length > 0) {
+        modules = learningUnits.map((u, uIdx) => {
+          const uLessons = (u.lessons && u.lessons.length > 0)
+            ? [...u.lessons].sort((a, b) => (a.position || 0) - (b.position || 0))
+            : allLessons.filter(l => String(l.learning_unit_id) === String(u.learning_unit_id || u.id));
+          const uAssessments = allAssessments.filter(a => String(a.learning_unit_id) === String(u.learning_unit_id || u.id));
+          return {
+            id: String(u.learning_unit_id || u.id || `unit-${uIdx}`),
+            title: u.title || `Module ${uIdx + 1}`,
+            position: u.position || uIdx + 1,
+            lessons: uLessons,
+            assessments: uAssessments
+          };
+        });
+      } else {
+        const map = new Map();
+        allLessons.forEach((l) => {
+          const uId = String(l.learning_unit_id || 'default-module');
+          const uTitle = l.learning_unit_title || 'Module 1: Chương trình học tập';
+          if (!map.has(uId)) {
+            map.set(uId, { id: uId, title: uTitle, position: map.size + 1, lessons: [], assessments: [] });
           }
+          map.get(uId).lessons.push(l);
+        });
+        modules = Array.from(map.values());
+        if (modules.length === 0) {
+          modules = [{ id: 'module-1', title: 'Module 1: Nội dung khóa học', position: 1, lessons: [], assessments: allAssessments }];
+        } else {
+          allAssessments.forEach(a => {
+            if (!a.learning_unit_id && modules.length > 0) {
+              modules[modules.length - 1].assessments.push(a);
+            }
+          });
+        }
+      }
 
-          if (isCur) {
-            return `
-              <div class="p-3 rounded-xl border-2 border-primary bg-primary-subtle dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs space-y-1">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] font-mono font-bold text-primary">BÀI GIẢNG ${jIdx + 1} • ĐANG HỌC</span>
-                  <span class="material-symbols-outlined text-[16px] text-primary" id="sidebar-cur-icon">${isLesDone ? 'check_circle' : 'play_circle'}</span>
-                </div>
-                <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(l.title)}</div>
-                <div class="text-[10px] text-primary font-medium flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[13px]">schedule</span>
-                  <span>${l.estimated_duration_minutes || 15} phút</span>
-                  ${isLesDone ? '<span class="ml-1 text-emerald-600 font-bold">• Đã xong</span>' : ''}
-                </div>
-              </div>
-            `;
-          }
+      // Calculate sequential unlock status across all lessons and items
+      let seqIndex = 0;
+      let prevLessonCompleted = true;
+      const flatNavList = [];
 
-          return `
-            <a
-              href="#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(l.lesson_id || l.id)}"
-              class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-primary/60 hover:shadow-2xs text-slate-700 dark:text-slate-300 transition-all cursor-pointer space-y-1 block group/les"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] font-mono font-bold text-slate-400 group-hover/les:text-primary transition-colors">BÀI GIẢNG ${jIdx + 1}</span>
-                ${isLesDone ? '<span class="material-symbols-outlined text-[16px] text-emerald-500">check_circle</span>' : '<span class="material-symbols-outlined text-[16px] text-slate-300 group-hover/les:text-primary transition-colors">arrow_forward</span>'}
-              </div>
-              <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover/les:text-primary transition-colors truncate">${UI.escapeHtml(l.title)}</div>
-              <div class="text-[10px] text-slate-400 flex items-center gap-1">
-                <span class="material-symbols-outlined text-[13px]">schedule</span>
-                <span>${l.estimated_duration_minutes || 15} phút</span>
-                ${isLesDone ? '<span class="ml-1 text-emerald-600 font-bold">• Đã hoàn thành</span>' : ''}
-              </div>
-            </a>
-          `;
-        }).join('');
+      modules.forEach((mod, mIdx) => {
+        let modCompletedLessons = 0;
+        mod.lessons.forEach((les, lIdx) => {
+          const isDone = Boolean(les.is_completed || les.progress?.is_completed);
+          if (isDone) modCompletedLessons++;
+
+          const isUnlocked = isPreview || (seqIndex === 0) || prevLessonCompleted;
+          les._isUnlocked = isUnlocked;
+          les._isCompleted = isDone;
+          les._seqIndex = seqIndex;
+          les._moduleTitle = mod.title;
+          les._modulePosition = mod.position || mIdx + 1;
+          les._displayCode = `${les._modulePosition}.${lIdx + 1}`;
+
+          flatNavList.push({
+            type: 'lesson',
+            id: String(les.lesson_id || les.id),
+            title: les.title,
+            displayCode: les._displayCode,
+            moduleId: mod.id,
+            moduleTitle: mod.title,
+            isUnlocked: isUnlocked,
+            isCompleted: isDone,
+            data: les
+          });
+
+          prevLessonCompleted = isDone;
+          seqIndex++;
+        });
+
+        mod.assessments.forEach((asm, aIdx) => {
+          const isAsmDone = (asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed;
+          asm._isCompleted = isAsmDone;
+          asm._isUnlocked = isPreview || (modCompletedLessons >= mod.lessons.length);
+          asm._moduleTitle = mod.title;
+
+          flatNavList.push({
+            type: 'exam',
+            id: String(asm.assessment_id || asm.id),
+            title: asm.title,
+            displayCode: `Checkpoint ${mIdx + 1}.${aIdx + 1}`,
+            moduleId: mod.id,
+            moduleTitle: mod.title,
+            isUnlocked: asm._isUnlocked,
+            isCompleted: isAsmDone,
+            data: asm
+          });
+        });
+
+        mod._completedCount = modCompletedLessons;
+        mod._totalCount = mod.lessons.length;
+        mod._isCompleted = mod.lessons.length > 0 && modCompletedLessons === mod.lessons.length;
+      });
+
+      // Add standalone course-level assessments
+      const attachedExamIds = new Set(modules.flatMap(m => m.assessments.map(a => String(a.assessment_id || a.id))));
+      const rootExams = allAssessments.filter(a => !attachedExamIds.has(String(a.assessment_id || a.id)));
+      if (rootExams.length > 0) {
+        rootExams.forEach((asm, rIdx) => {
+          flatNavList.push({
+            type: 'exam',
+            id: String(asm.assessment_id || asm.id),
+            title: asm.title,
+            displayCode: `Khảo thí ${rIdx + 1}`,
+            moduleId: 'root-exams',
+            moduleTitle: 'Khảo thí & Đánh giá Cuối khóa',
+            isUnlocked: true,
+            isCompleted: (asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed,
+            data: asm
+          });
+        });
+      }
+
+      // Initial active item determination (Auto-Resume)
+      let activeItem = null;
+      if (initialExamId) {
+        activeItem = flatNavList.find(i => i.type === 'exam' && String(i.id) === String(initialExamId)) || null;
+      }
+      if (!activeItem && initialLessonId) {
+        activeItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(initialLessonId)) || null;
+      }
+      if (!activeItem) {
+        const incompleteUnlockedLesson = flatNavList.find(i => i.type === 'lesson' && !i.isCompleted && i.isUnlocked);
+        activeItem = incompleteUnlockedLesson || flatNavList.find(i => i.type === 'lesson') || flatNavList[0] || null;
+      }
+
+      // Helper to detect non-learning or cover assets (Rule: pure learning resources only)
+      const isCoverAsset = (r) => {
+        if (!r) return true;
+        const fn = String(r.filename || r.name || r.label || '').toLowerCase();
+        return (
+          fn.includes('_cover') ||
+          fn.includes('cover_image') ||
+          r.asset_type === 'COURSE_IMAGE' ||
+          r.asset_type === 'QUESTION_IMAGE' ||
+          r.asset_type === 'IMPORT_SOURCE'
+        );
       };
 
+      // Collect all attached resource IDs across all lessons to isolate course-level general files
+      const attachedAssetIds = new Set();
+      modules.forEach(mod => {
+        (mod.lessons || []).forEach(les => {
+          (les.resources || []).forEach(r => {
+            if (isCoverAsset(r)) return;
+            const aid = r.asset_id || r.file_asset?.public_id || r.file_asset?.id || r.id;
+            if (aid) attachedAssetIds.add(String(aid));
+            if (r.resource_id) attachedAssetIds.add(String(r.resource_id));
+            if (r.filename) attachedAssetIds.add(String(r.filename));
+          });
+        });
+      });
+
+      // General course resources: files not attached to any specific lesson
+      const generalCourseResources = (allResources || []).filter(r => {
+        if (isCoverAsset(r)) return false;
+        const aid = r.asset_id || r.resource_id || r.id;
+        const fn = r.filename;
+        if (aid && attachedAssetIds.has(String(aid))) return false;
+        if (fn && attachedAssetIds.has(String(fn))) return false;
+        return true;
+      });
+
+      // Total valid study resource count
+      let totalLessonResourcesCount = 0;
+      modules.forEach(mod => {
+        (mod.lessons || []).forEach(les => {
+          const lRes = (les.resources || []).filter(r => !isCoverAsset(r));
+          totalLessonResourcesCount += lRes.length;
+        });
+      });
+      const totalResourceCount = totalLessonResourcesCount + generalCourseResources.length;
+
+      // Track active tabs & expanded accordion module IDs
+      let currentTab = initialTab === 'resources' ? 'resources' : 'outline';
+      let searchQuery = '';
+      const expandedModuleIds = new Set();
+      if (activeItem && activeItem.moduleId) {
+        expandedModuleIds.add(activeItem.moduleId);
+      } else if (modules.length > 0) {
+        expandedModuleIds.add(modules[0].id);
+      }
+
+      // Resources Accordion Expanded Sets
+      const expandedResModuleIds = new Set();
+      const expandedResLessonIds = new Set();
+      let expandedResGeneral = true;
+
+      // Default expand active lesson and its chapter in Resources tab
+      if (activeItem && activeItem.type === 'lesson') {
+        if (activeItem.moduleId) expandedResModuleIds.add(String(activeItem.moduleId));
+        expandedResLessonIds.add(String(activeItem.id));
+      }
+
+      // If active item has no resources or none expanded, auto-expand the first module & lesson that has files
+      let autoExpanded = false;
+      for (const mod of modules) {
+        for (const les of (mod.lessons || [])) {
+          const lRes = (les.resources || []).filter(r => !isCoverAsset(r));
+          if (lRes.length > 0) {
+            if (expandedResModuleIds.size === 0) {
+              expandedResModuleIds.add(String(mod.id));
+              expandedResLessonIds.add(String(les.lesson_id || les.id));
+            }
+            autoExpanded = true;
+            break;
+          }
+        }
+        if (autoExpanded && expandedResModuleIds.size > 0) break;
+      }
+
+      // Overall Progress Calculation
+      const courseProgressPercent = progressData?.progress_percent !== undefined
+        ? Math.round(progressData.progress_percent)
+        : (allLessons.length > 0 ? Math.round((allLessons.filter(l => l.is_completed || l.progress?.is_completed).length / allLessons.length) * 100) : 0);
+
+      // Render Primary Shell
       container.innerHTML = `
-        <div id="lesson-reader-root" data-lesson-id="${UI.escapeHtml(lessonId)}" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
+        <div id="cisco-console-root" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
           
-          <!-- Topbar Reader Navigation Header -->
-          <div class="h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-10 select-none">
+          <!-- 1. Top Header Bar (Cisco NetAcad Style) -->
+          <header class="h-14 px-4 sm:px-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 z-20 select-none">
             <div class="flex items-center gap-3">
-              <a
-                href="${isPreview ? `#/instructor/courses/${courseId}/manage` : `#/student/courses/${courseId}`}"
-                class="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-                title="${isPreview ? 'Quay lại Quản lý môn học' : 'Quay lại Tổng quan Khóa học'}"
+              <button
+                type="button"
+                id="sidebar-toggle-btn"
+                class="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Đóng / Mở Đề cương (Sidebar)"
               >
-                <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-                <span class="hidden sm:inline">${isPreview ? 'Quản lý' : 'Khóa học'}</span>
-              </a>
-              <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
-              <div class="truncate max-w-[200px] sm:max-w-xs md:max-w-md">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">${UI.escapeHtml(course.title)}</span>
-                  ${isPreview ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-200 dark:border-amber-800 shrink-0">Xem trước</span>` : ''}
-                </div>
-                <span class="text-[11px] text-slate-400 truncate block">${UI.escapeHtml(lesson.title)}</span>
+                <span class="material-symbols-outlined text-[20px]">menu</span>
+              </button>
+
+              <div class="h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
+
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0">
+                  ${UI.escapeHtml(course.code || 'PWD301')}
+                </span>
+                <h1 class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs md:max-w-md" title="${UI.escapeHtml(course.title)}">
+                  ${UI.escapeHtml(course.title)}
+                </h1>
+                ${isPreview ? `
+                  <span class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-200 dark:border-amber-800 shrink-0">
+                    Xem trước
+                  </span>
+                ` : ''}
               </div>
             </div>
 
             <!-- Header Action Controls -->
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                id="mobile-unit-lessons-btn"
-                class="lg:hidden px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Danh sách bài giảng trong bài học"
+            <div class="flex items-center gap-2 sm:gap-3">
+              <div class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200 dark:border-emerald-800">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Tiến độ: <strong id="console-progress-percent">${courseProgressPercent}%</strong></span>
+              </div>
+
+              <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
+
+              <a
+                href="#/student/courses"
+                id="console-exit-btn"
+                class="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-semibold cursor-pointer"
+                title="Quay lại Khóa học của tôi"
               >
-                <span class="material-symbols-outlined text-[17px] text-primary">format_list_numbered</span>
-                <span class="hidden sm:inline">Bài giảng</span>
-              </button>
-
-              <button
-                type="button"
-                id="toggle-resources-btn"
-                class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors relative cursor-pointer"
-                title="Mở tài liệu đính kèm & Sổ tay ghi chú bài học"
-              >
-                <span class="material-symbols-outlined text-[17px] text-primary">folder_open</span>
-                <span class="hidden sm:inline">Ghi chú & Tài liệu</span>
-                ${resources.length > 0 ? `
-                  <span class="w-4 h-4 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">${resources.length}</span>
-                ` : ''}
-              </button>
-
-              ${prevLesson ? `
-                <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${prevLesson.lesson_id || prevLesson.id}" class="p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1" title="Bài trước">
-                  <span class="material-symbols-outlined text-[16px]">chevron_left</span>
-                  <span class="hidden md:inline">Trước</span>
-                </a>
-              ` : ''}
-
-              ${nextLesson ? `
-                <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${nextLesson.lesson_id || nextLesson.id}" class="p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1" title="Bài tiếp">
-                  <span class="hidden md:inline">Sau</span>
-                  <span class="material-symbols-outlined text-[16px]">chevron_right</span>
-                </a>
-              ` : ''}
-
-              <button
-                type="button"
-                id="complete-lesson-btn"
-                class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-primary hover:bg-primary-hover text-white shadow-sm cursor-pointer')}"
-                ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
-              >
-                <span class="material-symbols-outlined text-[16px]" id="complete-btn-icon">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
-                <span class="hidden sm:inline" id="complete-btn-text">${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
-              </button>
+                <span class="material-symbols-outlined text-[18px]">close</span>
+                <span class="hidden sm:inline">Thoát</span>
+              </a>
             </div>
-          </div>
+          </header>
 
-          <!-- Reading Canvas + Right Sidebar Split Layout -->
-          <div class="flex-1 flex overflow-hidden">
-            <!-- Left Main Reading Pane -->
-            <div class="flex-1 overflow-y-auto p-4 sm:p-8" id="lesson-reader-main-scroll">
-              <main class="max-w-3xl mx-auto space-y-6">
+          <!-- 2. Workspace Body: Left Sidebar + Right Content Canvas -->
+          <div class="flex-1 flex overflow-hidden relative">
+            
+            <!-- Left Sidebar (Collapsible Cisco Headlist Tree) -->
+            <aside
+              id="cisco-console-sidebar"
+              class="w-80 sm:w-88 md:w-96 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 overflow-hidden transition-all duration-300 z-10"
+            >
+              <!-- Dual Tabs: Course Outline & Resources -->
+              <div class="h-12 border-b border-slate-200 dark:border-slate-800 grid grid-cols-2 text-xs font-bold select-none shrink-0" id="sidebar-tab-strip">
+                <button
+                  type="button"
+                  id="tab-btn-outline"
+                  class="flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${currentTab === 'outline' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
+                >
+                  <span class="material-symbols-outlined text-[18px]">menu_book</span>
+                  <span>Đề cương</span>
+                </button>
+                <button
+                  type="button"
+                  id="tab-btn-resources"
+                  class="flex items-center justify-center gap-2 border-b-2 transition-all cursor-pointer ${currentTab === 'resources' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}"
+                >
+                  <span class="material-symbols-outlined text-[18px]">folder_open</span>
+                  <span id="tab-resources-badge-label">Tài liệu (${totalResourceCount})</span>
+                </button>
+              </div>
+
+              <!-- Sidebar Panel 1: Course Outline -->
+              <div id="sidebar-panel-outline" class="flex-1 flex flex-col overflow-hidden ${currentTab === 'outline' ? '' : 'hidden'}">
+                <!-- Search Box -->
+                <div class="p-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                  <div class="relative">
+                    <span class="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-[18px]">search</span>
+                    <input
+                      id="outline-search-input"
+                      type="text"
+                      placeholder="Tìm kiếm đề cương khóa học..."
+                      class="w-full pl-9 pr-8 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 outline-none focus:border-emerald-500 transition-all"
+                    />
+                    <button
+                      type="button"
+                      id="outline-search-clear"
+                      class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-[16px] cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Accordion Tree List -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar" id="outline-accordion-list">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <!-- Sidebar Panel 2: Resources Vault (Grouped by Chapter & Lesson) -->
+              <div id="sidebar-panel-resources" class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar ${currentTab === 'resources' ? '' : 'hidden'}">
+                <!-- Rendered dynamically by renderSidebarResources -->
+              </div>
+            </aside>
+
+            <!-- Right Content Canvas (Scrollable) -->
+            <main
+              id="cisco-console-canvas"
+              class="flex-1 overflow-y-auto relative bg-slate-50 dark:bg-slate-950 p-4 sm:p-8 custom-scrollbar"
+            >
+              <!-- Floating Left [<] Navigation Chevron -->
+              <button
+                type="button"
+                id="floating-prev-btn"
+                class="fixed sm:absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
+                title="Bài phía trước"
+              >
+                <span class="material-symbols-outlined text-[22px]">chevron_left</span>
+              </button>
+
+              <!-- Floating Right [>] Navigation Chevron -->
+              <button
+                type="button"
+                id="floating-next-btn"
+                class="fixed sm:absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
+                title="Bài tiếp theo"
+              >
+                <span class="material-symbols-outlined text-[22px]">chevron_right</span>
+              </button>
+
+              <!-- Dynamic Inner Content Canvas -->
+              <div id="cisco-inner-content" class="max-w-3xl mx-auto space-y-6">
+                <!-- Injected via renderActiveContent() -->
+              </div>
+            </main>
+          </div>
+        </div>
+      `;
+
+      // -----------------------------------------------------------------------
+      // Controller State & Methods
+      // -----------------------------------------------------------------------
+      let activeProgressTimer = null;
+      let activeIframeMessageListener = null;
+      let activeIframePollInterval = null;
+
+      const cleanupPreviousLesson = () => {
+        if (activeProgressTimer) {
+          clearInterval(activeProgressTimer);
+          activeProgressTimer = null;
+        }
+        if (activeIframePollInterval) {
+          clearInterval(activeIframePollInterval);
+          activeIframePollInterval = null;
+        }
+        if (activeIframeMessageListener) {
+          window.removeEventListener('message', activeIframeMessageListener);
+          activeIframeMessageListener = null;
+        }
+      };
+
+      // Sidebar Toggle Handler
+      const sidebarEl = document.getElementById('cisco-console-sidebar');
+      const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+      if (sidebarToggleBtn && sidebarEl) {
+        sidebarToggleBtn.onclick = () => {
+          sidebarEl.classList.toggle('hidden');
+        };
+      }
+
+      // Tab Switching Handler
+      const tabBtnOutline = document.getElementById('tab-btn-outline');
+      const tabBtnResources = document.getElementById('tab-btn-resources');
+      const panelOutline = document.getElementById('sidebar-panel-outline');
+      const panelResources = document.getElementById('sidebar-panel-resources');
+
+      const switchSidebarTab = (tab) => {
+        currentTab = tab;
+        if (tab === 'outline') {
+          tabBtnOutline.className = 'flex items-center justify-center gap-2 border-b-2 border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20 transition-all cursor-pointer';
+          tabBtnResources.className = 'flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer';
+          panelOutline.classList.remove('hidden');
+          panelResources.classList.add('hidden');
+          renderSidebarOutline();
+        } else {
+          tabBtnResources.className = 'flex items-center justify-center gap-2 border-b-2 border-emerald-600 text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20 transition-all cursor-pointer';
+          tabBtnOutline.className = 'flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-all cursor-pointer';
+          panelResources.classList.remove('hidden');
+          panelOutline.classList.add('hidden');
+          renderSidebarResources();
+        }
+      };
+
+      if (tabBtnOutline && tabBtnResources) {
+        tabBtnOutline.onclick = () => switchSidebarTab('outline');
+        tabBtnResources.onclick = () => switchSidebarTab('resources');
+      }
+
+      // Search Box in Outline
+      const searchInput = document.getElementById('outline-search-input');
+      const searchClear = document.getElementById('outline-search-clear');
+      if (searchInput) {
+        searchInput.oninput = (e) => {
+          searchQuery = (e.target.value || '').trim().toLowerCase();
+          if (searchClear) searchClear.classList.toggle('hidden', !searchQuery);
+          renderSidebarOutline();
+        };
+      }
+      if (searchClear && searchInput) {
+        searchClear.onclick = () => {
+          searchInput.value = '';
+          searchQuery = '';
+          searchClear.classList.add('hidden');
+          renderSidebarOutline();
+        };
+      }
+
+      // Render Outline Accordion
+      const accordionContainer = document.getElementById('outline-accordion-list');
+      const renderSidebarOutline = () => {
+        if (!accordionContainer) return;
+
+        accordionContainer.innerHTML = modules.map((mod, mIdx) => {
+          const modLessons = mod.lessons;
+          const modExams = mod.assessments;
+
+          // Search filter matching
+          const matchesQuery = (text) => !searchQuery || String(text || '').toLowerCase().includes(searchQuery);
+          const hasMatchingLesson = modLessons.some(l => matchesQuery(l.title));
+          const hasMatchingExam = modExams.some(e => matchesQuery(e.title));
+          const isModMatched = matchesQuery(mod.title) || hasMatchingLesson || hasMatchingExam;
+
+          if (searchQuery && !isModMatched) {
+            return '';
+          }
+
+          const isExpanded = searchQuery ? true : expandedModuleIds.has(mod.id);
+          const modCompleted = mod._isCompleted;
+          const modProgress = mod._totalCount > 0 ? `${mod._completedCount} / ${mod._totalCount}` : '';
+
+          return `
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 overflow-hidden transition-all shadow-2xs">
+              <!-- Module Header Button -->
+              <div
+                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors select-none group/mod"
+                data-mod-id="${mod.id}"
+                onclick="window._ciscoToggleMod('${mod.id}')"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${modCompleted ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}">
+                    <span class="material-symbols-outlined text-[16px]">
+                      ${modCompleted ? 'check' : 'radio_button_unchecked'}
+                    </span>
+                  </span>
+                  <div class="min-w-0">
+                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-600 transition-colors" title="${UI.escapeHtml(mod.title)}">
+                      ${UI.escapeHtml(mod.title)}
+                    </h3>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  ${modProgress ? `
+                    <span class="text-[11px] font-mono font-semibold text-slate-400">
+                      ${modProgress}
+                    </span>
+                  ` : ''}
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              <!-- Module Sub-Items (Expanded List with Dotted Connector Line) -->
+              <div class="${isExpanded ? '' : 'hidden'} border-t border-slate-100 dark:border-slate-800/60 p-2 bg-slate-50/40 dark:bg-slate-950/30">
+                <div class="relative pl-3 ml-2 border-l-2 border-dashed border-slate-300 dark:border-slate-700 space-y-1 py-1">
+                  
+                  <!-- Sub-Lessons -->
+                  ${modLessons.map((l, lIdx) => {
+                    const lId = String(l.lesson_id || l.id);
+                    const isCur = activeItem && activeItem.type === 'lesson' && String(activeItem.id) === lId;
+                    const isDone = l._isCompleted;
+                    const isUnlocked = l._isUnlocked;
+                    const displayCode = l._displayCode || `${mod.position || mIdx+1}.${lIdx+1}`;
+
+                    if (!isUnlocked) {
+                      return `
+                        <div
+                          class="p-2 rounded-xl text-slate-400 opacity-60 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none"
+                          onclick="UI.showToast('Vui lòng hoàn thành bài học trước để mở khóa bài học này.', 'warning')"
+                          title="Chưa mở khóa"
+                        >
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span class="material-symbols-outlined text-[16px] text-slate-400 shrink-0">lock</span>
+                            <span class="truncate font-medium">${displayCode} ${UI.escapeHtml(l.title)}</span>
+                          </div>
+                        </div>
+                      `;
+                    }
+
+                    return `
+                      <div
+                        class="p-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none ${isCur ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-100 border-l-4 border-emerald-600 font-bold shadow-2xs' : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'}"
+                        onclick="window._ciscoSelectItem('lesson', '${lId}')"
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="material-symbols-outlined text-[16px] shrink-0 ${isDone ? 'text-emerald-600' : (isCur ? 'text-emerald-600' : 'text-slate-400')}">
+                            ${isDone ? 'check_circle' : (isCur ? 'play_circle' : 'radio_button_unchecked')}
+                          </span>
+                          <span class="truncate ${isCur ? 'font-bold' : 'font-medium'}">${displayCode} ${UI.escapeHtml(l.title)}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400 shrink-0 font-mono">
+                          ${l.estimated_duration_minutes || 15}p
+                        </span>
+                      </div>
+                    `;
+                  }).join('')}
+
+                  <!-- Module Checkpoint Exams -->
+                  ${modExams.map((e) => {
+                    const eId = String(e.assessment_id || e.id);
+                    const isCur = activeItem && activeItem.type === 'exam' && String(activeItem.id) === eId;
+                    const isDone = e._isCompleted;
+
+                    return `
+                      <div
+                        class="p-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none ${isCur ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-950 dark:text-purple-100 border-l-4 border-purple-600 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'}"
+                        onclick="window._ciscoSelectItem('exam', '${eId}')"
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="material-symbols-outlined text-[16px] shrink-0 ${isDone ? 'text-purple-600' : 'text-slate-400'}">
+                            ${isDone ? 'task_alt' : 'assignment'}
+                          </span>
+                          <span class="truncate font-semibold">${UI.escapeHtml(e.title)}</span>
+                        </div>
+                        <span class="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-[10px] font-bold shrink-0">
+                          Thi
+                        </span>
+                      </div>
+                    `;
+                  }).join('')}
+
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      };
+
+      // Render Resources Accordion (Grouped by Chapter & Lesson)
+      const resourcesContainer = document.getElementById('sidebar-panel-resources');
+      const renderSidebarResources = () => {
+        if (!resourcesContainer) return;
+
+        if (totalResourceCount === 0) {
+          resourcesContainer.innerHTML = `
+            <div class="text-center py-16 text-slate-400 text-xs space-y-2">
+              <span class="material-symbols-outlined text-3xl text-slate-300 dark:text-slate-700">folder_off</span>
+              <p>Khóa học hiện chưa có tệp tài liệu nào.</p>
+            </div>
+          `;
+          return;
+        }
+
+        const renderFileItem = (r) => {
+          const fname = r.filename || r.label || r.name || 'Tai-lieu.pdf';
+          const ext = (fname.split('.').pop() || 'FILE').toUpperCase();
+          const sizeBytes = r.byte_size || r.size_bytes || r.file_size;
+          const sizeKb = sizeBytes ? Math.round(sizeBytes / 1024) : null;
+          const sizeStr = sizeKb ? (sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`) : '';
+          const downloadUrl = r.download_url || `/student/files/${encodeURIComponent(r.asset_id || r.id || r.resource_id)}/download`;
+
+          let badgeColor = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800';
+          if (['PDF'].includes(ext)) {
+            badgeColor = 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
+          } else if (['MP4', 'WEBM', 'MKV', 'AVI', 'MOV'].includes(ext)) {
+            badgeColor = 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800';
+          } else if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) {
+            badgeColor = 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+          } else if (['DOC', 'DOCX'].includes(ext)) {
+            badgeColor = 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+          } else if (['PPT', 'PPTX'].includes(ext)) {
+            badgeColor = 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+          }
+
+          return `
+            <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-emerald-500/50 hover:shadow-xs transition-all flex items-center justify-between gap-2.5 group">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 border ${badgeColor}">
+                  ${ext}
+                </span>
+                <div class="min-w-0">
+                  <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-emerald-600 transition-colors" title="${UI.escapeHtml(fname)}">
+                    ${UI.escapeHtml(fname)}
+                  </p>
+                  ${sizeStr ? `<span class="text-[10px] text-slate-400 font-mono">${sizeStr}</span>` : ''}
+                </div>
+              </div>
+              <a
+                href="${downloadUrl}"
+                download
+                class="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors shrink-0"
+                title="Tải về ${UI.escapeHtml(fname)}"
+              >
+                <span class="material-symbols-outlined text-[18px]">download</span>
+              </a>
+            </div>
+          `;
+        };
+
+        let html = `
+          <div class="text-xs text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span>Tài liệu bài giảng theo chương:</span>
+            <span class="font-mono text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">${totalResourceCount} tệp</span>
+          </div>
+        `;
+
+        // 1. General Course Resources Section (if any)
+        if (generalCourseResources.length > 0) {
+          const isGenExpanded = expandedResGeneral;
+          html += `
+            <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/20 dark:bg-indigo-950/20 overflow-hidden transition-all shadow-2xs">
+              <div
+                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 transition-colors select-none group/gen"
+                onclick="window._ciscoToggleResGeneral()"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-200 dark:border-indigo-800">
+                    <span class="material-symbols-outlined text-[18px]">school</span>
+                  </span>
+                  <div class="min-w-0">
+                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/gen:text-indigo-600 transition-colors">
+                      Tài liệu chung khóa học
+                    </h3>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                    ${generalCourseResources.length} tệp
+                  </span>
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isGenExpanded ? 'rotate-180 text-indigo-600' : ''}">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              <div class="${isGenExpanded ? '' : 'hidden'} border-t border-indigo-100 dark:border-indigo-900/40 p-2.5 bg-white/60 dark:bg-slate-900/40 space-y-1.5">
+                ${generalCourseResources.map(renderFileItem).join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        // 2. Chapters (Modules) Accordion
+        modules.forEach((mod, mIdx) => {
+          // Filter lessons that actually have resources
+          const lessonsWithFiles = (mod.lessons || []).map((les, lIdx) => {
+            const lRes = (les.resources || []).filter(r => !isCoverAsset(r));
+            return {
+              les,
+              lIdx,
+              lRes,
+              lesId: String(les.lesson_id || les.id),
+              displayCode: les._displayCode || `${mod.position || mIdx + 1}.${lIdx + 1}`
+            };
+          }).filter(item => item.lRes.length > 0);
+
+          // If no lessons in this module have files, hide the module
+          if (lessonsWithFiles.length === 0) return;
+
+          const modTotalFiles = lessonsWithFiles.reduce((acc, item) => acc + item.lRes.length, 0);
+          const isModExpanded = expandedResModuleIds.has(String(mod.id));
+
+          html += `
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 overflow-hidden transition-all shadow-2xs">
+              <!-- Module Header Button -->
+              <div
+                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors select-none group/mod"
+                onclick="window._ciscoToggleResMod('${mod.id}')"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/50 dark:border-emerald-800/50">
+                    <span class="material-symbols-outlined text-[18px]">folder</span>
+                  </span>
+                  <div class="min-w-0">
+                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-600 transition-colors" title="${UI.escapeHtml(mod.title)}">
+                      ${UI.escapeHtml(mod.title)}
+                    </h3>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    ${modTotalFiles} tệp
+                  </span>
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isModExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+
+              <!-- Module Sub-Items (Lessons that have resources) -->
+              <div class="${isModExpanded ? '' : 'hidden'} border-t border-slate-100 dark:border-slate-800/60 p-2.5 bg-slate-50/40 dark:bg-slate-950/30 space-y-2">
+                ${lessonsWithFiles.map(({ les, lRes, lesId, displayCode }) => {
+                  const isLesExpanded = expandedResLessonIds.has(lesId);
+                  return `
+                    <div class="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/50 overflow-hidden">
+                      <!-- Lesson Header Toggle (does NOT navigate away, only toggles files) -->
+                      <div
+                        class="p-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors select-none group/les"
+                        onclick="window._ciscoToggleResLesson('${lesId}')"
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="material-symbols-outlined text-[16px] text-slate-400 group-hover/les:text-emerald-600 transition-colors shrink-0">
+                            description
+                          </span>
+                          <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover/les:text-emerald-600 transition-colors" title="${UI.escapeHtml(les.title)}">
+                            ${displayCode} ${UI.escapeHtml(les.title)}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            ${lRes.length} tệp
+                          </span>
+                          <span class="material-symbols-outlined text-[16px] text-slate-400 transition-transform duration-200 ${isLesExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                            expand_more
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Lesson Files List (Collapsible) -->
+                      <div class="${isLesExpanded ? '' : 'hidden'} p-2 space-y-1.5 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-950/40">
+                        ${lRes.map(renderFileItem).join('')}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        });
+
+        resourcesContainer.innerHTML = html;
+      };
+
+      // Global window helpers for inline onclick
+      window._ciscoToggleMod = (modId) => {
+        if (expandedModuleIds.has(modId)) {
+          expandedModuleIds.delete(modId);
+        } else {
+          expandedModuleIds.add(modId);
+        }
+        renderSidebarOutline();
+      };
+
+      // Global window helpers for inline onclick in Resources Tab
+      window._ciscoToggleResMod = (modId) => {
+        const idStr = String(modId);
+        if (expandedResModuleIds.has(idStr)) {
+          expandedResModuleIds.delete(idStr);
+        } else {
+          expandedResModuleIds.add(idStr);
+        }
+        renderSidebarResources();
+      };
+
+      window._ciscoToggleResLesson = (lesId) => {
+        const idStr = String(lesId);
+        if (expandedResLessonIds.has(idStr)) {
+          expandedResLessonIds.delete(idStr);
+        } else {
+          expandedResLessonIds.add(idStr);
+        }
+        renderSidebarResources();
+      };
+
+      window._ciscoToggleResGeneral = () => {
+        expandedResGeneral = !expandedResGeneral;
+        renderSidebarResources();
+      };
+
+      window._ciscoSelectItem = (itemType, itemId) => {
+        const target = flatNavList.find(i => i.type === itemType && String(i.id) === String(itemId));
+        if (!target) return;
+
+        if (target.type === 'lesson' && !target.isUnlocked) {
+          UI.showToast('Vui lòng hoàn thành bài học trước để mở khóa bài học này.', 'warning');
+          return;
+        }
+
+        activeItem = target;
+        if (target.moduleId) {
+          expandedModuleIds.add(target.moduleId);
+          expandedResModuleIds.add(String(target.moduleId));
+        }
+        if (target.type === 'lesson') {
+          expandedResLessonIds.add(String(target.id));
+        }
+
+        // Update URL hash via replaceState (Rule 10.7)
+        const newHash = `#/student/courses/${encodeURIComponent(courseId)}?${itemType === 'exam' ? 'exam_id' : 'lesson_id'}=${encodeURIComponent(itemId)}`;
+        window.history.replaceState(null, '', newHash);
+
+        renderSidebarOutline();
+        renderSidebarResources();
+        renderActiveContent();
+        updateFloatingNav();
+      };
+
+      // Floating [<] and [>] Nav Controller
+      const prevBtn = document.getElementById('floating-prev-btn');
+      const nextBtn = document.getElementById('floating-next-btn');
+
+      const updateFloatingNav = () => {
+        if (!activeItem || flatNavList.length === 0) {
+          if (prevBtn) prevBtn.classList.add('hidden');
+          if (nextBtn) nextBtn.classList.add('hidden');
+          return;
+        }
+
+        const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
+        const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
+        const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
+
+        if (prevBtn) {
+          prevBtn.classList.toggle('hidden', !prevItem);
+          if (prevItem) {
+            prevBtn.title = `Bài phía trước: ${prevItem.title}`;
+            prevBtn.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
+          }
+        }
+
+        if (nextBtn) {
+          nextBtn.classList.toggle('hidden', !nextItem);
+          if (nextItem) {
+            nextBtn.title = `Bài tiếp theo: ${nextItem.title}`;
+            nextBtn.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
+          }
+        }
+      };
+
+      // Render Active Content in Main Pane
+      const contentContainer = document.getElementById('cisco-inner-content');
+
+      const renderActiveContent = async () => {
+        cleanupPreviousLesson();
+        if (!contentContainer) return;
+
+        // If not enrolled: show Enrollment Card
+        if (!isEnrolled) {
+          contentContainer.innerHTML = `
+            <div class="py-12 px-4 text-center space-y-6 animate-fade-in">
+              <div class="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 sm:p-10 shadow-sm space-y-5">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
+                  <span class="material-symbols-outlined text-[36px]">school</span>
+                </div>
+                <div class="space-y-2">
+                  <h2 class="text-xl font-black text-slate-900 dark:text-white">Ghi danh để Bắt đầu Học tập</h2>
+                  <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    ${UI.escapeHtml(course.description || 'Tham gia khóa học để mở khóa toàn bộ lộ trình bài giảng, video hướng dẫn và các bài kiểm tra thực hành.')}
+                  </p>
+                </div>
+                <div class="pt-2">
+                  <button
+                    type="button"
+                    id="console-enroll-btn"
+                    class="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <span class="material-symbols-outlined text-[18px]">how_to_reg</span>
+                    <span>Ghi danh môn học ngay</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+
+          const enrollBtn = document.getElementById('console-enroll-btn');
+          if (enrollBtn) {
+            enrollBtn.onclick = async () => {
+              try {
+                enrollBtn.disabled = true;
+                enrollBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
+                await ApiClient.enrollCourse(courseId);
+                UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
+                await StudentView.renderCourseConsole(container, courseId);
+              } catch (err) {
+                UI.showToast(err.message || 'Không thể ghi danh.', 'error');
+                enrollBtn.disabled = false;
+                enrollBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">how_to_reg</span> <span>Ghi danh môn học ngay</span>';
+              }
+            };
+          }
+          return;
+        }
+
+        // If no active item
+        if (!activeItem) {
+          contentContainer.innerHTML = `
+            <div class="py-20 text-center text-slate-400 space-y-2">
+              <span class="material-symbols-outlined text-4xl text-slate-300">menu_book</span>
+              <p class="text-sm">Hãy chọn một bài giảng trong đề cương bên trái để bắt đầu học.</p>
+            </div>
+          `;
+          return;
+        }
+
+        // Case 1: Locked Lesson Content (Exact Cisco NetAcad Style)
+        if (activeItem.type === 'lesson' && !activeItem.isUnlocked) {
+          contentContainer.innerHTML = `
+            <div class="flex-1 flex items-center justify-center p-6 sm:p-12 min-h-[500px] animate-fade-in">
+              <div class="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 sm:p-10 shadow-sm text-center space-y-5">
+                <div class="w-16 h-16 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-500 flex items-center justify-center mx-auto border border-rose-100 dark:border-rose-900/60">
+                  <span class="material-symbols-outlined text-[34px]">lock</span>
+                </div>
+                <div class="space-y-2">
+                  <h2 class="text-xl font-black text-slate-900 dark:text-white">Nội dung bị khóa (Locked Content)</h2>
+                  <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Nội dung của bài giảng này hiện chưa thể hiển thị vì đang bị khóa. Bạn cần hoàn thành bài giảng trước đó để mở khóa bài học này.
+                  </p>
+                </div>
+                <div class="pt-2">
+                  <button
+                    type="button"
+                    id="btn-back-to-unlocked"
+                    class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                    <span>Quay lại bài học đã mở</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+
+          const backBtn = document.getElementById('btn-back-to-unlocked');
+          if (backBtn) {
+            backBtn.onclick = () => {
+              const lastUnlocked = flatNavList.filter(i => i.type === 'lesson' && i.isUnlocked).pop();
+              if (lastUnlocked) window._ciscoSelectItem(lastUnlocked.type, lastUnlocked.id);
+            };
+          }
+          return;
+        }
+
+        // Case 2: Checkpoint Exam Selected
+        if (activeItem.type === 'exam') {
+          contentContainer.innerHTML = `
+            <div class="text-center py-16 text-slate-400">
+              <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+              <p class="text-xs">Đang nạp hồ sơ khảo thí...</p>
+            </div>
+          `;
+
+          try {
+            const asmData = await ApiClient.getStudentAssessment(activeItem.id).catch(() => activeItem.data);
+            const asm = asmData?.assessment || asmData || activeItem.data;
+            const attemptsCount = asm.attempts_count || 0;
+            const attemptLimit = asm.attempt_limit || 'Không giới hạn';
+            const isLimitReached = Boolean(asm.is_attempt_limit_reached);
+            const attemptsHistory = Array.isArray(asm.attempts) ? asm.attempts : [];
+
+            contentContainer.innerHTML = `
+              <div class="space-y-6 animate-fade-in select-none">
+                <!-- Breadcrumb -->
+                <div class="flex items-center gap-2 text-xs text-slate-400">
+                  <span>${UI.escapeHtml(activeItem.moduleTitle || 'Khóa học')}</span>
+                  <span>&rsaquo;</span>
+                  <span class="font-bold text-slate-700 dark:text-slate-300">Bài kiểm tra Checkpoint</span>
+                </div>
+
+                <!-- Exam Hero Card -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-4">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-200 dark:border-purple-800">
+                      <span class="material-symbols-outlined text-[26px]">quiz</span>
+                    </div>
+                    <div>
+                      <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        ${UI.escapeHtml(asm.title)}
+                      </h1>
+                      <p class="text-xs text-slate-500 mt-1">${UI.escapeHtml(asm.description || 'Đánh giá kiến thức và kỹ năng thực hành qua bài kiểm tra.')}</p>
+                    </div>
+                  </div>
+
+                  <!-- 4 Metrics Grid -->
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                      <span class="text-slate-400 block text-[11px]">Thời gian làm bài</span>
+                      <strong class="text-sm font-bold text-slate-900 dark:text-white">${asm.duration_minutes || 45} phút</strong>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                      <span class="text-slate-400 block text-[11px]">Số lượng câu hỏi</span>
+                      <strong class="text-sm font-bold text-slate-900 dark:text-white">${asm.question_count || asm.total_questions || 30} câu</strong>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                      <span class="text-slate-400 block text-[11px]">Điểm đạt chuẩn</span>
+                      <strong class="text-sm font-bold text-emerald-600">${asm.passing_score || 50}%</strong>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                      <span class="text-slate-400 block text-[11px]">Lượt đã làm</span>
+                      <strong class="text-sm font-bold text-slate-900 dark:text-white">${attemptsCount} / ${attemptLimit}</strong>
+                    </div>
+                  </div>
+
+                  <!-- Historical Attempts Table -->
+                  ${attemptsHistory.length > 0 ? `
+                    <div class="pt-2 space-y-2">
+                      <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300">Lịch sử các lần làm bài:</h4>
+                      <div class="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <table class="w-full text-left text-xs">
+                          <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-800">
+                            <tr>
+                              <th class="p-3">Lần thi</th>
+                              <th class="p-3">Thời gian nộp</th>
+                              <th class="p-3">Điểm số</th>
+                              <th class="p-3">Kết quả</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            ${attemptsHistory.map((att, idx) => `
+                              <tr>
+                                <td class="p-3 font-bold text-slate-900 dark:text-white">Lần ${idx + 1}</td>
+                                <td class="p-3 text-slate-500">${att.submitted_at ? UI.formatDate(att.submitted_at) : 'Đang xử lý'}</td>
+                                <td class="p-3 font-mono font-bold text-slate-900 dark:text-white">${att.score !== null && att.score !== undefined ? `${att.score} / ${att.max_score || 100}` : 'Chờ công bố'}</td>
+                                <td class="p-3">
+                                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${att.passed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'}">
+                                    ${att.passed ? 'Đạt' : 'Chưa đạt'}
+                                  </span>
+                                </td>
+                              </tr>
+                            `).join('')}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <!-- Action Buttons -->
+                  <div class="pt-4 flex items-center justify-between">
+                    <div></div>
+                    <div class="flex items-center gap-3">
+                      ${isLimitReached ? `
+                        <div class="flex items-center gap-2">
+                          <span class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-bold">
+                            Đã hết lượt làm bài (${attemptsCount}/${attemptLimit})
+                          </span>
+                          ${asm.latest_attempt_id ? `
+                            <a
+                              href="#/student/assessments/attempts/${asm.latest_attempt_id}/results"
+                              class="c-btn c-btn-secondary c-btn-sm"
+                            >
+                              Xem lại kết quả
+                            </a>
+                          ` : ''}
+                        </div>
+                      ` : `
+                        <a
+                          href="#/student/assessments/waiting-room?id=${asm.assessment_id || asm.id}"
+                          class="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                        >
+                          <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                          <span>Bắt đầu làm bài thi</span>
+                        </a>
+                      `}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          } catch (err) {
+            contentContainer.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp bài kiểm tra: ${UI.escapeHtml(err.message)}</div>`;
+          }
+          return;
+        }
+
+        // Case 3: Unlocked Lesson Content
+        contentContainer.innerHTML = `
+          <div class="text-center py-20 text-slate-400">
+            <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+            <p class="text-xs">Đang nạp bài giảng...</p>
+          </div>
+        `;
+
+        try {
+          const lesson = await ApiClient.getStudentLesson(courseId, activeItem.id);
+
+          // Multi-tier Video Detection: video_url -> video_urls array -> lesson resources
+          let activeVideoUrl = lesson.video_url || null;
+          if (!activeVideoUrl && Array.isArray(lesson.video_urls) && lesson.video_urls.length > 0) {
+            activeVideoUrl = lesson.video_urls[0];
+          }
+          if (!activeVideoUrl && Array.isArray(lesson.resources)) {
+            const vidRes = lesson.resources.find(r => {
+              const mime = (r.file_asset?.mime_type || r.mime_type || '').toLowerCase();
+              const fn = (r.file_asset?.original_filename || r.filename || r.label || '').toLowerCase();
+              return mime.startsWith('video/') || fn.match(/\.(mp4|webm|mkv|mov)$/i);
+            });
+            if (vidRes) {
+              const baseUrl = vidRes.file_url || vidRes.download_url || `/student/files/${vidRes.file_asset?.public_id || vidRes.id}/download`;
+              activeVideoUrl = baseUrl.includes('disposition=') ? baseUrl : `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}disposition=inline`;
+            }
+          }
+          lesson.video_url = activeVideoUrl;
+
+          const hasVideo = Boolean(lesson.video_url);
+          let videoWatched = StudentView.isLessonVideoWatched(lesson);
+          let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
+          const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
+          const hasNewerRevision = Boolean(lesson.has_newer_revision || lesson.status === 'HISTORICAL' || (lesson.latest_lesson_id && lesson.latest_lesson_id !== activeItem.id));
+
+          // Lesson-specific resources
+          const currentLessonId = String(activeItem.id);
+          const lessonResources = (Array.isArray(lesson.resources) ? lesson.resources : [])
+            .filter(r => !r.lesson_id || String(r.lesson_id) === currentLessonId);
+
+          contentContainer.innerHTML = `
+            <div class="space-y-6 animate-fade-in" id="cisco-lesson-content-body" data-lesson-id="${UI.escapeHtml(currentLessonId)}">
+
+              <!-- Breadcrumb & Status Header -->
+              <div class="flex items-center justify-between gap-3 text-xs text-slate-400 select-none">
+                <div class="flex items-center gap-2 truncate">
+                  <span>${UI.escapeHtml(activeItem.moduleTitle || 'Chương')}</span>
+                  <span>&rsaquo;</span>
+                  <span class="font-bold text-slate-700 dark:text-slate-300 truncate">${activeItem.displayCode} ${UI.escapeHtml(lesson.title)}</span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="font-mono text-[11px]">${lesson.estimated_duration_minutes || 15} phút</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isCompleted ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}">
+                    ${isCompleted ? '✓ Đã xong' : 'Đang học'}
+                  </span>
+                </div>
+              </div>
 
               ${hasNewerRevision ? `
                 <!-- Lesson Revision Opt-In Banner -->
-                <div id="lesson-revision-update-banner" class="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/50 p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div id="cisco-revision-banner" class="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/90 dark:bg-indigo-950/50 p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div class="flex items-start gap-3">
                     <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
                       <span class="material-symbols-outlined text-[22px]">published_with_changes</span>
@@ -1971,28 +2324,26 @@ class StudentView {
                       <h3 class="text-sm font-bold text-indigo-950 dark:text-indigo-200">Đã có phiên bản bài giảng mới hơn</h3>
                       <p class="text-xs text-indigo-800/90 dark:text-indigo-300/90 mt-1 leading-relaxed">
                         ${lesson.material_change_summary ? `<strong>Thay đổi:</strong> ${UI.escapeHtml(lesson.material_change_summary)}. ` : ''}
-                        Bạn đang xem phiên bản lưu trữ an toàn để bảo lưu tiến trình học. Bạn có thể chủ động chuyển sang phiên bản mới nhất bất cứ lúc nào.
+                        Bạn đang xem phiên bản lưu trữ an toàn. Bạn có thể cập nhật sang bản mới nhất bất cứ lúc nào.
                       </p>
                     </div>
                   </div>
-                  <div class="shrink-0 flex items-center">
-                    <button
-                      type="button"
-                      id="btn-opt-in-new-revision"
-                      class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">sync</span>
-                      <span>Cập nhật bản mới</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    id="btn-opt-in-revision"
+                    class="shrink-0 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">sync</span>
+                    <span>Cập nhật bản mới</span>
+                  </button>
                 </div>
               ` : ''}
-              
-              <!-- Lesson Header & Objectives Card -->
+
+              <!-- Lesson Title & Objectives Card -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm space-y-3">
                 <div class="flex items-center gap-2 text-xs text-slate-400">
                   <span class="flex items-center gap-1">
-                    <span>Mục tiêu kỹ năng: Thiết kế & Hiện thực hóa</span>
+                    <span>Chuẩn đầu ra: Kỹ năng & Năng lực thực hành</span>
                     <button type="button" onclick="UI.openAcademicGlossaryModal()" class="cursor-pointer text-[10px] bg-slate-100 hover:bg-primary-subtle hover:text-primary dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono transition-colors" title="Bấm để xem giải thích chuẩn đầu ra (SLO)">SLO (?)</button>
                   </span>
                 </div>
@@ -2006,45 +2357,46 @@ class StudentView {
                 ` : ''}
               </div>
 
-              <!-- Media Player / Video Block (if present) -->
+              <!-- Media Player / Video Block -->
               ${lesson.video_url ? `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
                   <div class="aspect-video w-full bg-black relative">
-                    ${StudentView._getEmbedVideoHtml(lesson.video_url)}
+                    ${StudentView._getEmbedVideoHtml(lesson.video_url, 'cisco-stream-player', isCompleted)}
                   </div>
                   <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
                     <div class="flex items-center gap-2">
                       <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
                         ${isCompleted ? 'verified' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'smart_display' : 'lock_clock')}
                       </span>
-                      <span id="anti-seek-status-label" class="font-medium text-[11px] sm:text-xs">
-                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'Video YouTube: Bạn có thể tua tiến độ tùy ý.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.')}
+                      <span id="cisco-anti-seek-label" class="font-medium text-[11px] sm:text-xs">
+                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'Video YouTube: Bạn có thể theo dõi tiến độ video.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.')}
                       </span>
                     </div>
-                    <span id="anti-seek-progress-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
+                    <span id="cisco-anti-seek-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
                       ${isCompleted ? '100%' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'YouTube' : 'Tiến độ: 0%')}
                     </span>
                   </div>
                 </div>
               ` : ''}
 
+              <!-- Supplementary Videos -->
               ${(lesson.video_urls || []).filter(url => url !== lesson.video_url).map((url, index) => `
-                <section class="space-y-2" aria-label="Video bổ sung ${index + 2}">
-                  <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Video bổ sung ${index + 2}</h2>
+                <section class="space-y-2">
+                  <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300">Video bổ sung ${index + 2}</h3>
                   <div class="aspect-video rounded-xl overflow-hidden bg-slate-900">
-                    ${StudentView._getEmbedVideoHtml(url, `lesson-extra-video-${index}`)}
+                    ${StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, true)}
                   </div>
                 </section>
               `).join('')}
 
-              <!-- Clean Rendered Markdown Body -->
+              <!-- Clean Markdown Reader -->
               <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-sm text-slate-800 dark:text-slate-200 leading-relaxed text-sm sm:text-base space-y-5">
                 ${UI.renderMarkdown(lesson.markdown_content || 'Nội dung bài giảng đang được hoàn thiện.')}
               </div>
 
-              <!-- Mini-Quiz Interactive Section (Item 7) -->
+              <!-- Interactive Mini-Quiz Section -->
               ${hasMiniQuiz ? `
-                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 ${videoWatched ? '' : 'hidden'}" id="lesson-mini-quiz-section">
+                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 ${videoWatched ? '' : 'hidden'}" id="cisco-mini-quiz-section">
                   <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                     <div class="flex items-center gap-2.5">
                       <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[20px]">quiz</span>
@@ -2058,7 +2410,7 @@ class StudentView {
                     </span>
                   </div>
 
-                  <div class="space-y-6" id="mini-quiz-questions-list">
+                  <div class="space-y-6" id="cisco-mini-quiz-list">
                     ${lesson.quiz.map((q, qIdx) => {
                       const qType = q.type || 'MULTIPLE_CHOICE';
                       const isMulti = qType === 'MULTIPLE_CHOICE' && (Boolean(q.allow_multiple) || (Array.isArray(q.correct_answers) && q.correct_answers.length > 1));
@@ -2076,7 +2428,7 @@ class StudentView {
                       }
 
                       return `
-                        <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3.5 mini-quiz-card" data-qidx="${qIdx}" data-qtype="${qType}">
+                        <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3.5 cisco-quiz-card" data-qidx="${qIdx}" data-qtype="${qType}">
                           <div class="flex items-start justify-between gap-3">
                             <div class="flex items-start gap-2.5 flex-1">
                               <span class="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-mono font-bold text-xs shrink-0 mt-0.5">Câu ${qIdx + 1}</span>
@@ -2095,11 +2447,11 @@ class StudentView {
                           ${qType === 'MULTIPLE_CHOICE' ? `
                             <div class="space-y-2 pt-1">
                               ${choices.map((ch, chIdx) => `
-                                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-indigo-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-choice-label" data-chidx="${chIdx}">
+                                <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-indigo-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-choice-label" data-chidx="${chIdx}">
                                   ${isMulti ? `
-                                    <input type="checkbox" name="mini-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 rounded cursor-pointer mini-quiz-chk" />
+                                    <input type="checkbox" name="cisco-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 rounded cursor-pointer cisco-quiz-chk" />
                                   ` : `
-                                    <input type="radio" name="mini-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-radio" />
+                                    <input type="radio" name="cisco-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-radio" />
                                   `}
                                   <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge">
                                     ${String.fromCharCode(65 + chIdx)}
@@ -2113,13 +2465,13 @@ class StudentView {
                           ${qType === 'FILL_BLANK' ? `
                             <div class="space-y-2.5 pt-1">
                               ${(q.blanks || [{ accepted_answers: [] }]).map((b, bIdx) => `
-                                <div class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mini-quiz-blank-row">
+                                <div class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 cisco-quiz-blank-row">
                                   <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
                                     #${bIdx + 1}
                                   </span>
                                   <input
                                     type="text"
-                                    class="mini-quiz-blank-input flex-1 px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-emerald-500 transition-all"
+                                    class="cisco-quiz-blank-input flex-1 px-3 py-1.5 text-xs sm:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-emerald-500 transition-all"
                                     data-qidx="${qIdx}"
                                     data-bidx="${bIdx}"
                                     placeholder="Nhập câu trả lời cho chỗ trống #${bIdx + 1}..."
@@ -2132,14 +2484,14 @@ class StudentView {
                           ${qType === 'MATCHING' ? `
                             <div class="space-y-2.5 pt-1">
                               ${(q.pairs || []).map((p, pIdx) => `
-                                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 mini-quiz-matching-row" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 cisco-quiz-matching-row" data-qidx="${qIdx}" data-pidx="${pIdx}">
                                   <div class="flex items-center gap-2 sm:w-1/2 font-medium text-xs sm:text-sm text-slate-800 dark:text-slate-200">
                                     <span class="w-5 h-5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center justify-center shrink-0">${pIdx + 1}</span>
                                     <span>${UI.escapeHtml(p.left)}</span>
                                   </div>
                                   <div class="flex items-center gap-1.5 sm:w-1/2">
                                     <span class="material-symbols-outlined text-slate-400 text-[16px] hidden sm:inline">arrow_forward</span>
-                                    <select class="mini-quiz-matching-select w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-amber-500 transition-all cursor-pointer" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                    <select class="cisco-quiz-matching-select w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-amber-500 transition-all cursor-pointer" data-qidx="${qIdx}" data-pidx="${pIdx}">
                                       <option value="">-- Chọn vế ghép tương ứng --</option>
                                       ${(q.pairs || []).map(optPair => `
                                         <option value="${UI.escapeHtml(optPair.right)}">${UI.escapeHtml(optPair.right)}</option>
@@ -2153,35 +2505,35 @@ class StudentView {
 
                           ${qType === 'TRUE_FALSE' ? `
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-emerald-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-tf-label" data-qidx="${qIdx}" data-val="true">
-                                <input type="radio" name="mini-quiz-tf-${qIdx}" value="true" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-tf-radio" />
+                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-emerald-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-tf-label" data-qidx="${qIdx}" data-val="true">
+                                <input type="radio" name="cisco-quiz-tf-${qIdx}" value="true" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-tf-radio" />
                                 <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
                                 <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Đúng (True)</span>
                               </label>
-                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-rose-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all mini-quiz-tf-label" data-qidx="${qIdx}" data-val="false">
-                                <input type="radio" name="mini-quiz-tf-${qIdx}" value="false" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer mini-quiz-tf-radio" />
+                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-rose-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-tf-label" data-qidx="${qIdx}" data-val="false">
+                                <input type="radio" name="cisco-quiz-tf-${qIdx}" value="false" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-tf-radio" />
                                 <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
                                 <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Sai (False)</span>
                               </label>
                             </div>
                           ` : ''}
 
-                          <div class="mini-quiz-explanation hidden p-3.5 rounded-xl text-xs space-y-1"></div>
+                          <div class="cisco-quiz-explanation hidden p-3.5 rounded-xl text-xs space-y-1"></div>
                         </div>
                       `;
                     }).join('')}
                   </div>
 
                   <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <div id="mini-quiz-score-banner" class="text-xs text-slate-500 font-medium">
+                    <div id="cisco-quiz-score-banner" class="text-xs text-slate-500 font-medium">
                       Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.
                     </div>
                     <div class="flex items-center gap-2">
-                      <button type="button" id="mini-quiz-check-btn" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer">
+                      <button type="button" id="cisco-quiz-check-btn" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer">
                         <span class="material-symbols-outlined text-[16px]">check_circle</span>
                         <span>Kiểm tra đáp án</span>
                       </button>
-                      <button type="button" id="mini-quiz-reset-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-colors hidden cursor-pointer">
+                      <button type="button" id="cisco-quiz-reset-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-colors hidden cursor-pointer">
                         Làm lại
                       </button>
                     </div>
@@ -2189,882 +2541,870 @@ class StudentView {
                 </div>
               ` : ''}
 
-              <!-- Inline Contextual AI Mentor Card -->
+              <!-- Lesson Resources List (if any) -->
+              ${lessonResources.length > 0 ? `
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-3">
+                  <h3 class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider font-mono">Tài liệu đính kèm bài giảng (${lessonResources.length})</h3>
+                  <div class="space-y-2">
+                    ${lessonResources.map(r => `
+                      <div class="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                        <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(r.filename || r.name)}</span>
+                        <a href="/student/files/${encodeURIComponent(r.asset_id || r.id)}/download" download class="c-btn c-btn-secondary c-btn-sm inline-flex items-center gap-1 text-emerald-600">
+                          <span class="material-symbols-outlined text-[16px]">download</span> Tải về
+                        </a>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Contextual AI Assistant Quick Prompts -->
               <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl p-6 shadow-md space-y-4 border border-indigo-800/40">
                 <div class="flex items-center gap-3">
-                  <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-10 h-10 rounded-xl object-cover border border-indigo-400/40 shadow-sm" />
+                  <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc AI" class="w-10 h-10 rounded-xl object-cover border border-indigo-400/40 shadow-sm" />
                   <div>
                     <h4 class="font-bold text-sm">Bạch tuộc trợ lí AI</h4>
                     <p class="text-xs text-indigo-200/80">Bạn gặp khó khăn hay cần giải thích thêm về bài giảng "${UI.escapeHtml(lesson.title)}"?</p>
                   </div>
                 </div>
 
-                <div class="flex flex-wrap gap-2 pt-1" id="reader-ai-chips">
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1" data-query="Tóm tắt 3 ý trọng tâm của bài giảng: ${UI.escapeHtml(lesson.title)}">
+                <div class="flex flex-wrap gap-2 pt-1" id="cisco-ai-chips">
+                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Tóm tắt 3 ý trọng tâm của bài giảng: ${UI.escapeHtml(lesson.title)}">
                     <span>💡 Tóm tắt 3 ý chính</span>
                   </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1" data-query="Giải thích chi tiết các thuật toán và khái niệm kỹ thuật trong bài: ${UI.escapeHtml(lesson.title)}">
+                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Giải thích chi tiết các thuật toán và khái niệm kỹ thuật trong bài: ${UI.escapeHtml(lesson.title)}">
                     <span>🔍 Giải thích thuật toán</span>
                   </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1" data-query="Cho tôi 3 bài tập thực hành ứng dụng kèm lời giải cho bài: ${UI.escapeHtml(lesson.title)}">
+                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Cho tôi 3 bài tập thực hành ứng dụng kèm lời giải cho bài: ${UI.escapeHtml(lesson.title)}">
                     <span>💻 Bài tập áp dụng</span>
                   </button>
-                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1" data-query="Tạo 3 câu hỏi trắc nghiệm ôn thi có đáp án giải thích cho bài: ${UI.escapeHtml(lesson.title)}">
+                  <button type="button" class="ai-chip px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors flex items-center gap-1 cursor-pointer" data-query="Tạo 3 câu hỏi trắc nghiệm ôn thi có đáp án giải thích cho bài: ${UI.escapeHtml(lesson.title)}">
                     <span>📝 Câu hỏi ôn thi</span>
                   </button>
                 </div>
               </div>
 
-              <!-- Bottom Next Lesson Footer Nav -->
+              <!-- Bottom Action Navigation Bar -->
               <div class="flex items-center justify-between pt-4 pb-12">
-                ${prevLesson ? `
-                  <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${prevLesson.lesson_id || prevLesson.id}" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-primary transition-colors flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-                    <span>Bài trước: ${UI.escapeHtml(prevLesson.title)}</span>
-                  </a>
-                ` : '<div></div>'}
+                <div id="cisco-bottom-prev-box">
+                  <!-- Prev Button dynamically updated -->
+                </div>
 
-                ${nextLesson ? `
-                  <a href="#/student/lessons/reader?course_id=${courseId}&lesson_id=${nextLesson.lesson_id || nextLesson.id}" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm">
-                    <span>Bài tiếp theo: ${UI.escapeHtml(nextLesson.title)}</span>
-                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-                  </a>
-                ` : '<div></div>'}
+                <button
+                  type="button"
+                  id="cisco-complete-btn"
+                  class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer')}"
+                  ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
+                >
+                  <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
+                  <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
+                </button>
+
+                <div id="cisco-bottom-next-box">
+                  <!-- Next Button dynamically updated -->
+                </div>
               </div>
 
-            </main>
+            </div>
+          `;
+
+          // Hook Bottom Prev/Next Buttons
+          const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
+          const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
+          const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
+
+          const bottomPrevBox = document.getElementById('cisco-bottom-prev-box');
+          if (bottomPrevBox && prevItem) {
+            bottomPrevBox.innerHTML = `
+              <button type="button" title="${UI.escapeHtml(prevItem.title)}" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-emerald-600 transition-colors flex items-center gap-1.5 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                <span>Bài phía trước</span>
+              </button>
+            `;
+            bottomPrevBox.firstElementChild.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
+          }
+
+          const bottomNextBox = document.getElementById('cisco-bottom-next-box');
+          if (bottomNextBox && nextItem) {
+            bottomNextBox.innerHTML = `
+              <button type="button" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                <span>Bài tiếp theo</span>
+                <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
+            `;
+            bottomNextBox.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
+          }
+
+          // Revision Opt-In Button
+          const optInBtn = document.getElementById('btn-opt-in-revision');
+          if (optInBtn) {
+            optInBtn.onclick = async () => {
+              try {
+                optInBtn.disabled = true;
+                optInBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang chuyển đổi...';
+                const res = await ApiClient.optInLessonRevision(activeItem.id);
+                UI.showToast('Đã nâng cấp lên phiên bản bài giảng mới nhất!', 'success');
+                const targetLessonId = res?.active_lesson_id || res?.new_lesson_id || lesson.latest_lesson_id;
+                await StudentView.renderCourseConsole(container, courseId, targetLessonId);
+              } catch (err) {
+                UI.showToast(err.message || 'Không thể chuyển đổi phiên bản.', 'error');
+                optInBtn.disabled = false;
+                optInBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">sync</span> <span>Cập nhật bản mới</span>';
+              }
+            };
+          }
+
+          // AI Prompt Chips
+          contentContainer.querySelectorAll('#cisco-ai-chips .ai-chip').forEach(chip => {
+            chip.onclick = () => {
+              const query = chip.dataset.query;
+              if (window.FloatingAITutor && typeof window.FloatingAITutor.openWithQuestion === 'function') {
+                FloatingAITutor.openWithQuestion(query);
+              }
+            };
+          });
+
+          // Mark Lesson Completed Controller
+          const completeBtn = document.getElementById('cisco-complete-btn');
+          const setLessonCompleted = () => {
+            isCompleted = true;
+            activeItem.isCompleted = true;
+            activeItem.data.is_completed = true;
+            const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
+            if (targetLes) targetLes.is_completed = true;
+
+            // Recalculate unlocking of subsequent items
+            let prevDone = true;
+            flatNavList.forEach(item => {
+              if (item.type === 'lesson') {
+                if (String(item.id) === String(activeItem.id)) item.isCompleted = true;
+                item.isUnlocked = isPreview || prevDone;
+                prevDone = item.isCompleted;
+              }
+            });
+
+            renderSidebarOutline();
+            updateFloatingNav();
+
+            if (completeBtn) {
+              completeBtn.disabled = true;
+              completeBtn.className = 'px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-2 cursor-default';
+              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check_circle</span> <span>Đã hoàn thành</span>';
+            }
+          };
+
+          if (completeBtn) {
+            completeBtn.onclick = async () => {
+              if (isPreview) {
+                UI.showToast('Bạn đang xem thử với quyền Giảng viên. Tiến độ xem thử không ghi nhận vào CSDL sinh viên.', 'info');
+                return;
+              }
+              if (hasVideo && !videoWatched) {
+                UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
+                return;
+              }
+              if (hasMiniQuiz) {
+                UI.showToast('Hãy trả lời tất cả câu hỏi trong bài giảng trước khi hoàn thành.', 'warning');
+                return;
+              }
+              try {
+                const result = await ApiClient.recordLessonProgress(activeItem.id, 30, 1.0, false);
+                if (!result?.is_completed) {
+                  UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
+                  return;
+                }
+                setLessonCompleted();
+                UI.showToast('Chúc mừng bạn đã hoàn thành bài học này!', 'success');
+              } catch (e) {
+                UI.showToast('Không thể lưu trạng thái bài học.', 'error');
+              }
+            };
+          }
+
+          // Universal Video Watcher Controller
+          const videoEl = document.getElementById('cisco-stream-player');
+          const antiSeekLabel = document.getElementById('cisco-anti-seek-label');
+          const antiSeekBadge = document.getElementById('cisco-anti-seek-badge');
+
+          const updateProgressUI = (current, duration) => {
+            if (!duration || duration <= 0) return;
+            const pct = Math.min(100, Math.round((current / duration) * 100));
+            if (antiSeekBadge) {
+              antiSeekBadge.textContent = `${pct}%`;
+              if (pct >= 100) {
+                antiSeekBadge.className = 'font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+              }
+            }
+          };
+
+          let customPlayerCtrl = null;
+
+          const handleVideoCompleted = async (durationSec) => {
+            if (videoWatched) return;
+            videoWatched = true;
+            if (customPlayerCtrl) customPlayerCtrl.unlockSeeking();
+            if (antiSeekLabel) {
+              antiSeekLabel.textContent = 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.';
+            }
+            if (antiSeekBadge) {
+              antiSeekBadge.textContent = '100%';
+              antiSeekBadge.className = 'font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+            }
+            const quizSec = document.getElementById('cisco-mini-quiz-section');
+            if (quizSec) quizSec.classList.remove('hidden');
+
+            if (completeBtn && !hasMiniQuiz) {
+              completeBtn.disabled = false;
+              completeBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer';
+              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> <span>Đánh dấu hoàn thành</span>';
+            }
+
+            if (!isPreview) {
+              try {
+                const res = await ApiClient.recordLessonProgress(activeItem.id, Math.round(durationSec || 60), 1.0, false);
+                if (res?.is_completed) setLessonCompleted();
+              } catch (_) {}
+            }
+          };
+
+          if (videoEl && videoEl.tagName === 'VIDEO') {
+            customPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
+              isCompleted,
+              onProgress: (maxWatched, dur) => updateProgressUI(maxWatched, dur),
+              onComplete: (dur) => handleVideoCompleted(dur)
+            });
+          } else if (videoEl && videoEl.tagName === 'IFRAME') {
+            const iframeSrc = videoEl.src || '';
+            let iframeOrigin = '';
+            try {
+              const parsed = new URL(iframeSrc);
+              iframeOrigin = parsed.origin;
+            } catch (_) {}
+
+            let maxWatchedTime = 0;
+            let iframeDuration = 0;
+
+            activeIframeMessageListener = (event) => {
+              let data = null;
+              if (typeof event.data === 'string') {
+                try { data = JSON.parse(event.data); } catch (_) {}
+              } else if (typeof event.data === 'object' && event.data !== null) {
+                data = event.data;
+              }
+              if (!data) return;
+
+              if (data.event === 'infoDelivery' && data.info) {
+                const info = data.info;
+                if (typeof info.duration === 'number' && info.duration > 0) iframeDuration = info.duration;
+                if (typeof info.currentTime === 'number') {
+                  if (info.currentTime > maxWatchedTime) {
+                    if (isCompleted || info.currentTime - maxWatchedTime <= 3.0) {
+                      maxWatchedTime = info.currentTime;
+                    }
+                  }
+                  if (iframeDuration > 0) {
+                    updateProgressUI(maxWatchedTime, iframeDuration);
+                    if ((isCompleted || maxWatchedTime >= iframeDuration * 0.90) && info.currentTime >= iframeDuration - 2.0) {
+                      handleVideoCompleted(iframeDuration);
+                    }
+                  }
+                }
+                if (info.playerState === 0 && (isCompleted || iframeDuration <= 0 || maxWatchedTime >= iframeDuration * 0.90)) {
+                  handleVideoCompleted(iframeDuration || 60);
+                }
+              }
+
+              if (data.event === 'timeupdate' && data.data) {
+                const cur = data.data.seconds || 0;
+                const dur = data.data.duration || 0;
+                if (dur > 0) iframeDuration = dur;
+                if (cur > maxWatchedTime) {
+                  if (isCompleted || cur - maxWatchedTime <= 3.0) {
+                    maxWatchedTime = cur;
+                  }
+                }
+                if (iframeDuration > 0) {
+                  updateProgressUI(maxWatchedTime, iframeDuration);
+                  if ((isCompleted || maxWatchedTime >= iframeDuration * 0.90) && cur >= iframeDuration - 2.0) {
+                    handleVideoCompleted(iframeDuration);
+                  }
+                }
+              } else if (data.event === 'ended' && (isCompleted || iframeDuration <= 0 || maxWatchedTime >= iframeDuration * 0.90)) {
+                handleVideoCompleted(iframeDuration || 60);
+              }
+            };
+
+            window.addEventListener('message', activeIframeMessageListener);
+
+            const handshake = () => {
+              try {
+                if (!iframeOrigin) return;
+                videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), iframeOrigin);
+                videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), iframeOrigin);
+                videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), iframeOrigin);
+              } catch (_) {}
+            };
+            handshake();
+            videoEl.addEventListener('load', () => { handshake(); setTimeout(handshake, 500); });
+
+            activeIframePollInterval = setInterval(() => {
+              try {
+                videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), iframeOrigin);
+                if (iframeDuration <= 0) {
+                  videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), iframeOrigin);
+                }
+              } catch (_) {}
+            }, 1000);
+          }
+
+          // Supplementary videos setup
+          (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((_, idx) => {
+            StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
+              isCompleted: true,
+              onProgress: null,
+              onComplete: null
+            });
+          });
+
+          // Heartbeat Progress Tracker
+          if (!isPreview) {
+            activeProgressTimer = setInterval(() => {
+              const bodyRoot = document.getElementById('cisco-lesson-content-body');
+              if (!bodyRoot || bodyRoot.dataset.lessonId !== String(activeItem.id)) {
+                clearInterval(activeProgressTimer);
+                activeProgressTimer = null;
+                return;
+              }
+              ApiClient.recordLessonProgress(activeItem.id, 15, videoWatched ? 1.0 : 0.5, false)
+                .then(res => { if (res?.is_completed) setLessonCompleted(); })
+                .catch(() => {});
+            }, 15000);
+          }
+
+          // Mini-Quiz Engine Handler
+          const checkQuizBtn = document.getElementById('cisco-quiz-check-btn');
+          const resetQuizBtn = document.getElementById('cisco-quiz-reset-btn');
+          const quizSection = document.getElementById('cisco-mini-quiz-section');
+
+          if (checkQuizBtn && quizSection && lesson.quiz && lesson.quiz.length) {
+            checkQuizBtn.onclick = async () => {
+              const answers = lesson.quiz.map((q, qIdx) => {
+                const card = quizSection.querySelector(`.cisco-quiz-card[data-qidx="${qIdx}"]`);
+                const qType = q.type || 'MULTIPLE_CHOICE';
+                if (qType === 'MULTIPLE_CHOICE') {
+                  return Array.from(card.querySelectorAll(`input[name="cisco-quiz-q-${qIdx}"]:checked`))
+                    .map(inp => Number.parseInt(inp.value, 10));
+                }
+                if (qType === 'FILL_BLANK') {
+                  return Array.from(card.querySelectorAll('.cisco-quiz-blank-input')).map(inp => inp.value.trim());
+                }
+                if (qType === 'MATCHING') {
+                  return Array.from(card.querySelectorAll('.cisco-quiz-matching-select')).map(inp => inp.value);
+                }
+                if (qType === 'TRUE_FALSE') {
+                  const sel = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
+                  return sel ? sel.value : null;
+                }
+                return null;
+              });
+
+              const everyAnswerProvided = answers.every((ans, qIdx) => {
+                const qType = lesson.quiz[qIdx].type || 'MULTIPLE_CHOICE';
+                if (qType === 'MULTIPLE_CHOICE') return ans.length > 0;
+                if (qType === 'FILL_BLANK' || qType === 'MATCHING') {
+                  return ans.length > 0 && ans.every(v => String(v).trim().length > 0);
+                }
+                if (qType === 'TRUE_FALSE') return ans !== null;
+                return ans !== null && String(ans).trim().length > 0;
+              });
+
+              if (!everyAnswerProvided) {
+                UI.showToast('Hãy trả lời tất cả các câu hỏi trước khi kiểm tra.', 'warning');
+                return;
+              }
+
+              checkQuizBtn.disabled = true;
+              let correctCount = 0;
+              const cards = quizSection.querySelectorAll('.cisco-quiz-card');
+
+              cards.forEach((card, qIdx) => {
+                const qData = lesson.quiz[qIdx];
+                if (!qData) return;
+                const qType = qData.type || 'MULTIPLE_CHOICE';
+                const explDiv = card.querySelector('.cisco-quiz-explanation');
+                let isCorrect = false;
+                let feedbackDetail = '';
+
+                if (qType === 'MULTIPLE_CHOICE') {
+                  const expectedSet = new Set(
+                    Array.isArray(qData.correct_answers)
+                      ? qData.correct_answers
+                      : (typeof qData.correct_index === 'number' ? [qData.correct_index] : [0])
+                  );
+                  const selectedInputs = card.querySelectorAll(`input[name="cisco-quiz-q-${qIdx}"]:checked`);
+                  const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
+
+                  const choiceLabels = card.querySelectorAll('.cisco-quiz-choice-label');
+                  choiceLabels.forEach(lbl => {
+                    const chIdx = parseInt(lbl.dataset.chidx, 10);
+                    lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                    const badge = lbl.querySelector('.choice-badge');
+
+                    if (expectedSet.has(chIdx)) {
+                      lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                      if (badge) badge.className = 'w-6 h-6 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                    } else if (selectedSet.has(chIdx)) {
+                      lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                      if (badge) badge.className = 'w-6 h-6 rounded-lg bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
+                    }
+                  });
+
+                  isCorrect = expectedSet.size === selectedSet.size && [...expectedSet].every(x => selectedSet.has(x));
+                  const correctLetters = [...expectedSet].sort((a, b) => a - b).map(idx => String.fromCharCode(65 + idx)).join(', ');
+                  feedbackDetail = isCorrect
+                    ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Bạn đã chọn đúng tất cả đáp án.')
+                    : `Đáp án đúng là: <strong>${correctLetters}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
+
+                } else if (qType === 'FILL_BLANK') {
+                  const blankInputs = card.querySelectorAll('.cisco-quiz-blank-input');
+                  const blanks = qData.blanks || [];
+                  let allBlanksCorrect = true;
+                  const answerDetails = [];
+
+                  blankInputs.forEach(inp => {
+                    const bIdx = parseInt(inp.dataset.bidx, 10);
+                    const userVal = (inp.value || '').trim().toLowerCase();
+                    const blankDef = blanks[bIdx] || {};
+                    const rawAccepted = Array.isArray(blankDef.accepted_answers)
+                      ? blankDef.accepted_answers
+                      : (blankDef.accepted_answers ? [blankDef.accepted_answers] : []);
+                    const acceptedList = rawAccepted.map(a => String(a).trim().toLowerCase()).filter(Boolean);
+
+                    const blankMatches = userVal.length > 0 && acceptedList.includes(userVal);
+                    inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                    if (blankMatches) {
+                      inp.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                    } else {
+                      inp.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                      allBlanksCorrect = false;
+                    }
+                    answerDetails.push(`Ô #${bIdx + 1}: <strong>${UI.escapeHtml(rawAccepted.filter(Boolean).join(' / ') || '(chưa thiết lập)')}</strong>`);
+                  });
+
+                  isCorrect = allBlanksCorrect && blankInputs.length > 0;
+                  feedbackDetail = `
+                    <div>${isCorrect ? 'Tuyệt vời! Bạn đã điền chính xác tất cả chỗ trống.' : 'Đáp án được chấp nhận:'}</div>
+                    <div class="mt-1 space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${answerDetails.join(' | ')}</div>
+                    ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
+                  `;
+
+                } else if (qType === 'MATCHING') {
+                  const selectInputs = card.querySelectorAll('.cisco-quiz-matching-select');
+                  const pairs = qData.pairs || [];
+                  let allPairsCorrect = true;
+                  const correctPairsDisplay = [];
+
+                  selectInputs.forEach(sel => {
+                    const pIdx = parseInt(sel.dataset.pidx, 10);
+                    const userVal = sel.value;
+                    const expectedRight = pairs[pIdx]?.right;
+                    const row = sel.closest('.cisco-quiz-matching-row');
+
+                    if (row) {
+                      row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                      if (userVal && userVal === expectedRight) {
+                        row.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                      } else {
+                        row.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                        allPairsCorrect = false;
+                      }
+                    }
+                    if (pairs[pIdx]) {
+                      correctPairsDisplay.push(`<li><strong>${UI.escapeHtml(pairs[pIdx].left)}</strong> &rarr; ${UI.escapeHtml(pairs[pIdx].right)}</li>`);
+                    }
+                  });
+
+                  isCorrect = allPairsCorrect && selectInputs.length > 0;
+                  feedbackDetail = `
+                    <div>${isCorrect ? 'Xuất sắc! Bạn đã ghép đúng tất cả các cặp.' : 'Các cặp ghép chính xác:'}</div>
+                    <ul class="mt-1 list-disc list-inside space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${correctPairsDisplay.join('')}</ul>
+                    ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
+                  `;
+
+                } else if (qType === 'TRUE_FALSE') {
+                  const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
+                  const expectedVal = Boolean(qData.correct_value);
+                  const labels = card.querySelectorAll('.cisco-quiz-tf-label');
+
+                  labels.forEach(lbl => {
+                    const lblVal = lbl.dataset.val === 'true';
+                    lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                    if (lblVal === expectedVal) {
+                      lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
+                    } else if (selectedRadio && (selectedRadio.value === 'true') === lblVal) {
+                      lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                    }
+                  });
+
+                  isCorrect = selectedRadio && (selectedRadio.value === 'true') === expectedVal;
+                  feedbackDetail = isCorrect
+                    ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Mệnh đề này là ' + (expectedVal ? 'Đúng.' : 'Sai.'))
+                    : `Đáp án đúng là: <strong>${expectedVal ? 'Đúng (True)' : 'Sai (False)'}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
+                }
+
+                if (isCorrect) correctCount++;
+
+                if (explDiv) {
+                  explDiv.classList.remove('hidden', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'text-emerald-800', 'dark:text-emerald-200', 'border-emerald-200', 'bg-rose-50', 'dark:bg-rose-950/40', 'text-rose-800', 'dark:text-rose-200', 'border-rose-200');
+                  explDiv.classList.add('border', isCorrect ? 'bg-emerald-50' : 'bg-rose-50', isCorrect ? 'dark:bg-emerald-950/40' : 'dark:bg-rose-950/40', isCorrect ? 'text-emerald-900' : 'text-rose-900', isCorrect ? 'dark:text-emerald-200' : 'dark:text-rose-200', isCorrect ? 'border-emerald-200' : 'border-rose-200');
+                  explDiv.innerHTML = `
+                    <div class="font-bold flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[16px]">${isCorrect ? 'check_circle' : 'cancel'}</span>
+                      <span>${isCorrect ? 'Chính xác!' : 'Chưa chính xác.'}</span>
+                    </div>
+                    <div class="mt-1 leading-relaxed">${feedbackDetail}</div>
+                  `;
+                }
+              });
+
+              const banner = document.getElementById('cisco-quiz-score-banner');
+              if (banner) {
+                const percent = Math.round((correctCount / lesson.quiz.length) * 100);
+                banner.innerHTML = `
+                  <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-1 rounded-xl ${percent >= 70 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'} font-bold">
+                      Kết quả: ${correctCount}/${lesson.quiz.length} câu đúng (${percent}%)
+                    </span>
+                    <span class="text-slate-600 dark:text-slate-300">
+                      ${percent === 100 ? 'Xuất sắc! Bạn đã nắm vững toàn bộ kiến thức bài học.' : percent >= 70 ? 'Khá tốt! Bạn đã hiểu phần lớn nội dung.' : 'Hãy xem lại bài giảng và làm lại để củng cố kiến thức nhé.'}
+                    </span>
+                  </div>
+                `;
+              }
+
+              if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+              try {
+                if (hasVideo) {
+                  await ApiClient.recordLessonProgress(activeItem.id, 30, 1.0, false);
+                }
+                const result = await ApiClient.completeLessonMiniQuiz(activeItem.id, answers);
+                if (result?.is_completed) {
+                  setLessonCompleted();
+                  if (banner) banner.textContent = 'Đã lưu câu trả lời và hoàn thành bài giảng.';
+                  UI.showToast('Bạn đã trả lời hết câu hỏi và hoàn thành bài giảng.', 'success');
+                } else {
+                  UI.showToast('Câu trả lời đã lưu. Hệ thống đang cập nhật thời lượng hoàn thành.', 'info');
+                }
+              } catch (error) {
+                UI.showToast(error.message || 'Không thể lưu câu trả lời. Vui lòng thử lại.', 'error');
+              } finally {
+                checkQuizBtn.disabled = false;
+              }
+            };
+
+            if (resetQuizBtn) {
+              resetQuizBtn.onclick = () => {
+                quizSection.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
+                quizSection.querySelectorAll('.cisco-quiz-blank-input').forEach(inp => {
+                  inp.value = '';
+                  inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                });
+                quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
+                quizSection.querySelectorAll('.cisco-quiz-matching-row').forEach(row => {
+                  row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                });
+                quizSection.querySelectorAll('.cisco-quiz-explanation').forEach(e => {
+                  e.classList.add('hidden');
+                  e.innerHTML = '';
+                });
+                quizSection.querySelectorAll('.cisco-quiz-choice-label').forEach(lbl => {
+                  lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                  const badge = lbl.querySelector('.choice-badge');
+                  if (badge) badge.className = 'w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge';
+                });
+                quizSection.querySelectorAll('.cisco-quiz-tf-label').forEach(lbl => {
+                  lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
+                });
+                const banner = document.getElementById('cisco-quiz-score-banner');
+                if (banner) {
+                  banner.innerHTML = 'Hãy chọn đáp án cho tất cả câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.';
+                }
+                resetQuizBtn.classList.add('hidden');
+              };
+            }
+          }
+
+        } catch (err) {
+          contentContainer.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp nội dung bài giảng: ${UI.escapeHtml(err.message)}</div>`;
+        }
+      };
+
+      // Initial Mount of Sidebar and Main Canvas
+      renderSidebarOutline();
+      renderSidebarResources();
+      updateFloatingNav();
+      await renderActiveContent();
+
+    } catch (err) {
+      container.innerHTML = `
+        <div class="h-full flex items-center justify-center p-6 text-center animate-fade-in">
+          <div class="max-w-md p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <span class="material-symbols-outlined text-4xl text-rose-500">error</span>
+            <h2 class="text-base font-bold text-slate-900 dark:text-white">Lỗi tải không gian học tập</h2>
+            <p class="text-xs text-slate-500">${UI.escapeHtml(err.message || 'Không thể nạp dữ liệu khóa học.')}</p>
+            <div class="pt-2">
+              <a href="#/student/courses" class="c-btn c-btn-primary c-btn-sm inline-flex">Quay lại danh sách môn học</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
+  static _getEmbedVideoHtml(url, playerId = 'lesson-stream-player', isCompleted = false) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
+    const ytId = UI.parseYouTubeId(trimmed);
+    if (ytId) {
+      const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
+      const glue = baseEmbed.includes('?') ? '&' : '?';
+      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    }
+    // Vimeo
+    const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
+    if (vimeoMatch && vimeoMatch[1]) {
+      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    }
+    // Direct file / HTML5 video with Anti-Seek Custom Controls
+    return `
+      <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true">
+        <video id="${playerId}" oncontextmenu="return false;" disablePictureInPicture playsinline class="w-full h-full aspect-video bg-slate-950 object-contain cursor-pointer" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>
+
+        <!-- Big Play Button Overlay -->
+        <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-10 cursor-pointer" aria-label="Phát video">
+          <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
+        </button>
+
+        <!-- Custom Control Bar -->
+        <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
+          <!-- Scrubber Track -->
+          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Nhấp để chuyển đến đoạn đã xem">
+            <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
+            <div id="${playerId}-watched-bar" class="absolute left-0 top-0 bottom-0 bg-amber-500/30 rounded-full w-0 pointer-events-none"></div>
+            <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
           </div>
 
-          <!-- Right Column: Child Lessons in this Learning Unit with Sequential Locking -->
-          <aside class="hidden lg:flex w-80 xl:w-96 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-col shrink-0 overflow-hidden" id="lesson-unit-sidebar">
-            <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1 select-none">
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] font-bold text-primary uppercase tracking-wider font-mono">BÀI HỌC HIỆN TẠI</span>
-                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${unitLessons.length} bài giảng</span>
-              </div>
-              <h3 class="font-extrabold text-slate-900 dark:text-white text-sm truncate" title="${UI.escapeHtml(displayUnitHeader)}">
-                ${UI.escapeHtml(displayUnitHeader)}
-              </h3>
+          <div class="flex items-center justify-between text-xs text-slate-200">
+            <div class="flex items-center gap-3">
+              <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+                <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
+              </button>
+              <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+                <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
+              </button>
+              <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar" id="unit-lessons-desktop-list">
-              ${renderUnitLessonsListHtml()}
-            </div>
-
-            <div class="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-              <button
-                type="button"
-                id="sidebar-notes-btn"
-                class="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[16px] text-primary">folder_open</span>
-                <span>Mở Sổ tay & Tài liệu (${resources.length})</span>
+            <div class="flex items-center gap-2">
+              <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
+                <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
+                <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
+              </span>
+              <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+                <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
               </button>
             </div>
-          </aside>
+          </div>
         </div>
       </div>
     `;
+  }
 
-    // Hook up Revision Opt-in Button
-    const optInBtn = document.getElementById('btn-opt-in-new-revision');
-    if (optInBtn) {
-      optInBtn.onclick = async () => {
-        try {
-          optInBtn.disabled = true;
-          optInBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang chuyển đổi...';
-          const res = await ApiClient.optInLessonRevision(lessonId);
-          UI.showToast('Đã nâng cấp lên phiên bản bài giảng mới nhất!', 'success');
-          const targetLessonId = res?.active_lesson_id || res?.new_lesson_id || lesson.latest_lesson_id;
-          if (targetLessonId) {
-            window.location.hash = `#/student/lessons/reader?course_id=${encodeURIComponent(courseId)}&lesson_id=${encodeURIComponent(targetLessonId)}`;
-            window.location.reload();
+  static setupCustomVideoPlayer(playerId, options = {}) {
+    const video = document.getElementById(playerId);
+    if (!video || video.tagName !== 'VIDEO') return null;
+    const container = document.getElementById(`${playerId}-container`);
+    const bigPlayBtn = document.getElementById(`${playerId}-big-play`);
+    const playBtn = document.getElementById(`${playerId}-play-btn`);
+    const muteBtn = document.getElementById(`${playerId}-mute-btn`);
+    const timeDisplay = document.getElementById(`${playerId}-time`);
+    const track = document.getElementById(`${playerId}-progress-track`);
+    const bufferedBar = document.getElementById(`${playerId}-buffered-bar`);
+    const watchedBar = document.getElementById(`${playerId}-watched-bar`);
+    const playedBar = document.getElementById(`${playerId}-played-bar`);
+    const fullscreenBtn = document.getElementById(`${playerId}-fullscreen-btn`);
+    const lockIndicator = document.getElementById(`${playerId}-lock-indicator`);
+
+    let isDone = !!options.isCompleted;
+    let maxWatched = isDone ? 999999 : 0;
+    let lastToastTime = 0;
+
+    const showThrottleToast = (msg, type = 'warning') => {
+      const now = Date.now();
+      if (now - lastToastTime > 2500) {
+        lastToastTime = now;
+        UI.showToast(msg, type);
+      }
+    };
+
+    const formatTime = (seconds) => {
+      if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const updatePlayState = () => {
+      if (!playBtn) return;
+      const icon = playBtn.querySelector('.material-symbols-outlined');
+      if (video.paused || video.ended) {
+        if (icon) icon.textContent = 'play_arrow';
+        if (bigPlayBtn) bigPlayBtn.classList.remove('hidden');
+      } else {
+        if (icon) icon.textContent = 'pause';
+        if (bigPlayBtn) bigPlayBtn.classList.add('hidden');
+      }
+    };
+
+    const togglePlay = () => {
+      if (video.paused || video.ended) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    };
+
+    if (bigPlayBtn) bigPlayBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+    if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+    video.onclick = () => togglePlay();
+
+    if (muteBtn) {
+      muteBtn.onclick = (e) => {
+        e.stopPropagation();
+        video.muted = !video.muted;
+        const icon = muteBtn.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = video.muted ? 'volume_off' : 'volume_up';
+      };
+    }
+
+    if (fullscreenBtn && container) {
+      fullscreenBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!document.fullscreenElement) {
+          if (container.requestFullscreen) container.requestFullscreen();
+          else if (video.requestFullscreen) video.requestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+        }
+      };
+    }
+
+    // Scrubber click
+    if (track) {
+      track.onclick = (e) => {
+        e.stopPropagation();
+        const dur = video.duration;
+        if (!dur || dur <= 0) return;
+        const rect = track.getBoundingClientRect();
+        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const targetTime = clickRatio * dur;
+
+        if (isDone) {
+          video.currentTime = targetTime;
+        } else {
+          if (targetTime <= maxWatched + 1.0) {
+            video.currentTime = targetTime;
           } else {
-            window.location.reload();
+            video.currentTime = maxWatched;
+            showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
           }
-        } catch (err) {
-          UI.showToast(err.message || 'Không thể chuyển đổi phiên bản.', 'error');
-          optInBtn.disabled = false;
-          optInBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">sync</span> <span>Cập nhật bản mới</span>';
         }
       };
     }
 
-    // Hook up Mobile Unit Lessons Drawer & Sidebar Notes Button
-    const mobileLessonsBtn = document.getElementById('mobile-unit-lessons-btn');
-    if (mobileLessonsBtn) {
-      mobileLessonsBtn.onclick = () => {
-        UI.openDrawer({
-          side: 'right',
-          title: displayUnitHeader,
-          width: 'max-w-sm',
-          headerBadge: `<span class="text-xs font-bold text-primary">${unitLessons.length} bài giảng</span>`,
-          bodyHtml: `
-            <div class="space-y-2.5 p-1">
-              ${renderUnitLessonsListHtml()}
-            </div>
-          `
-        });
-      };
-    }
-    const sidebarNotesBtn = document.getElementById('sidebar-notes-btn');
-    if (sidebarNotesBtn) {
-      sidebarNotesBtn.onclick = () => {
-        document.getElementById('toggle-resources-btn')?.click();
-      };
-    }
-
-    // 1. Right Drawer Handler: Resource Vault & Personal Notepad (Syllabus removed, all files consolidated)
-    const vaultNotesBtn = document.getElementById('open-vault-notes-drawer-btn') || document.getElementById('toggle-resources-btn');
-    if (vaultNotesBtn) {
-        vaultNotesBtn.onclick = () => {
-          const hasFiles = resources.length > 0;
-          UI.openDrawer({
-            side: 'right',
-            title: 'Tài liệu & Sổ tay Ghi chú',
-            width: 'max-w-md',
-            headerBadge: '<span id="drawer-save-indicator" class="text-[10px] font-bold text-slate-400">Đã đồng bộ</span>',
-            bodyHtml: `
-              <div class="space-y-4">
-                <!-- Dual Tabs -->
-                <div class="flex items-center border-b border-slate-200 dark:border-slate-800 text-xs font-bold" id="drawer-subtabs">
-                  <button type="button" id="drawer-tab-vault" class="px-4 py-2.5 border-b-2 ${hasFiles ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'} flex items-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-outlined text-[16px]">folder_open</span>
-                    <span>Tài liệu đính kèm (${resources.length})</span>
-                  </button>
-                  <button type="button" id="drawer-tab-notes" class="px-4 py-2.5 border-b-2 ${hasFiles ? 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200' : 'border-primary text-primary'} flex items-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-outlined text-[16px]">edit_note</span>
-                    <span>Sổ tay Ghi chú</span>
-                  </button>
-                </div>
-
-                <!-- Panel: Resource Vault (Default when files exist) -->
-                <div id="drawer-panel-vault" class="space-y-3 ${hasFiles ? '' : 'hidden'}">
-                  ${resources.length === 0 ? `
-                    <div class="text-center py-12 text-slate-400 text-xs space-y-2">
-                      <span class="material-symbols-outlined text-3xl text-slate-300">folder_off</span>
-                      <p>Bài học này hiện chưa có tệp tài liệu đính kèm nào.</p>
-                    </div>
-                  ` : `
-                    <div class="space-y-2.5">
-                      ${resources.map(r => {
-                        const filename = r.filename || r.title || r.label || 'Tài liệu bài học';
-                        const ext = filename.split('.').pop().toLowerCase();
-                        let fileIcon = 'description';
-                        if (['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext)) fileIcon = 'image';
-                        else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) fileIcon = 'folder_zip';
-                        else if (['py', 'js', 'html', 'css', 'json', 'sql'].includes(ext)) fileIcon = 'code';
-                        else if (['xlsx', 'xls', 'csv'].includes(ext)) fileIcon = 'table_chart';
-
-                        const fileSizeStr = r.byte_size ? UI.formatBytes(r.byte_size) : (r.file_size_formatted || (r.file_asset?.size_bytes ? UI.formatBytes(r.file_asset.size_bytes) : 'Tài liệu học tập'));
-
-                        return `
-                          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 space-y-2.5 text-xs">
-                            <div class="flex items-start justify-between gap-2">
-                              <div class="flex items-center gap-2 min-w-0">
-                                <span class="material-symbols-outlined text-[20px] text-primary shrink-0">${fileIcon}</span>
-                                <div class="font-bold text-slate-900 dark:text-white truncate" title="${UI.escapeHtml(filename)}">
-                                  ${UI.escapeHtml(filename)}
-                                </div>
-                              </div>
-                              <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5 shrink-0">
-                                <span class="material-symbols-outlined text-[12px]">verified</span> ClamAV Sạch
-                              </span>
-                            </div>
-                            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60">
-                              <span class="flex items-center gap-1.5">
-                                <span>Kích thước: <strong>${fileSizeStr}</strong></span>
-                                ${r.is_course_level ? '<span class="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-semibold">Toàn khóa học</span>' : '<span class="px-1.5 py-0.2 rounded bg-primary/10 text-primary text-[9px] font-semibold">Bài học này</span>'}
-                              </span>
-                              <a href="${r.download_url || `/student/courses/${courseId}/files/${r.resource_id || r.id}/download`}" target="_blank" class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-colors flex items-center gap-1 shadow-2xs">
-                                <span>Tải về</span>
-                                <span class="material-symbols-outlined text-[13px]">download</span>
-                              </a>
-                            </div>
-                          </div>
-                        `;
-                      }).join('')}
-                    </div>
-                  `}
-                </div>
-
-                <!-- Panel: Personal Notes -->
-                <div id="drawer-panel-notes" class="space-y-3 ${hasFiles ? 'hidden' : ''}">
-                  <div class="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Ghi chú cá nhân (tự động lưu vào máy chủ):</span>
-                    <span id="notes-status-text" class="text-emerald-600 font-bold hidden flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[14px]">cloud_done</span> Đã lưu máy chủ
-                    </span>
-                  </div>
-                  <textarea
-                    id="drawer-notes-textarea"
-                    rows="14"
-                    placeholder="Ghi lại các ghi chú, công thức, phím tắt hoặc thắc mắc cá nhân trong lúc học bài này..."
-                    class="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-primary transition-all resize-none leading-relaxed"
-                  >${UI.escapeHtml(savedNote)}</textarea>
-                </div>
-              </div>
-            `,
-            footerHtml: `
-              <div class="flex items-center justify-between w-full">
-                <span class="text-[11px] text-slate-400">Bảo mật chuẩn PWD301 fail-closed</span>
-                <button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer" onclick="UI.closeDrawer()">
-                  Đóng
-                </button>
-              </div>
-            `
-          });
-
-          // Subtab switching
-          const tabNotes = document.getElementById('drawer-tab-notes');
-          const tabVault = document.getElementById('drawer-tab-vault');
-          const panelNotes = document.getElementById('drawer-panel-notes');
-          const panelVault = document.getElementById('drawer-panel-vault');
-
-          if (tabNotes && tabVault) {
-            tabNotes.onclick = () => {
-              tabNotes.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5 cursor-pointer';
-              tabVault.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5 cursor-pointer';
-              panelNotes.classList.remove('hidden');
-              panelVault.classList.add('hidden');
-            };
-            tabVault.onclick = () => {
-              tabVault.className = 'px-4 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5 cursor-pointer';
-              tabNotes.className = 'px-4 py-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5 cursor-pointer';
-              panelVault.classList.remove('hidden');
-              panelNotes.classList.add('hidden');
-            };
-          }
-
-          // Autosave notes in drawer
-          const textarea = document.getElementById('drawer-notes-textarea');
-          const statusText = document.getElementById('notes-status-text');
-          const topIndicator = document.getElementById('drawer-save-indicator');
-
-          if (textarea) {
-            let debounceTimer;
-            textarea.oninput = () => {
-              if (topIndicator) topIndicator.textContent = 'Đang lưu...';
-              clearTimeout(debounceTimer);
-              debounceTimer = setTimeout(async () => {
-                const textVal = textarea.value;
-                savedNote = textVal;
-                localStorage.setItem(`notes_${courseId}_${lessonId}`, textVal);
-                try {
-                  await ApiClient.saveLessonNotes(lessonId, textVal);
-                  if (statusText) {
-                    statusText.classList.remove('hidden');
-                    setTimeout(() => statusText.classList.add('hidden'), 2500);
-                  }
-                  if (topIndicator) topIndicator.textContent = 'Đã lưu máy chủ';
-                } catch (e) {
-                  if (topIndicator) topIndicator.textContent = 'Lưu cục bộ';
-                }
-              }, 800);
-            };
-          }
-        };
+    // Seeking event listener: clamp forward jumps
+    video.addEventListener('seeking', () => {
+      if (!isDone && video.currentTime > maxWatched + 1.0) {
+        video.currentTime = maxWatched;
+        showThrottleToast('Khóa tua nhanh đang bật: Không thể tua vượt quá thời lượng đã học.');
       }
+    });
 
-      // 2. AI Prompt Chips handler
-      container.querySelectorAll('#reader-ai-chips .ai-chip').forEach(chip => {
-        chip.onclick = () => {
-          const query = chip.dataset.query;
-          FloatingAITutor.openWithQuestion(query);
-        };
-      });
+    // Timeupdate listener
+    video.addEventListener('timeupdate', () => {
+      const cur = video.currentTime;
+      const dur = video.duration || 0;
 
-      // 3. Mark lesson completed handler (Enforces 100% video watch)
-      const completeBtn = document.getElementById('complete-lesson-btn');
-      const setLessonCompleted = () => {
-        isCompleted = true;
-        const desktopList = document.getElementById('unit-lessons-desktop-list');
-        if (desktopList) desktopList.innerHTML = renderUnitLessonsListHtml();
-        if (!completeBtn) return;
-        completeBtn.disabled = true;
-        completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
-        completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành</span>';
-      };
-      if (completeBtn) {
-        completeBtn.onclick = async () => {
-          if (isPreview) {
-            UI.showToast('Bạn đang xem thử bài giảng với quyền Giảng viên. Tiến độ học thử không ghi nhận vào CSDL sinh viên.', 'info');
-            return;
-          }
-          if (hasVideo && !videoWatched) {
-            UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
-            return;
-          }
-          if (hasMiniQuiz) {
-            UI.showToast('Hãy trả lời tất cả câu hỏi trong bài giảng trước khi hoàn thành.', 'warning');
-            return;
-          }
-          try {
-            const result = await ApiClient.recordLessonProgress(lessonId, 30, 1.0, false);
-            if (!result?.is_completed) {
-              UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
-              return;
-            }
-            setLessonCompleted();
-            completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1.5 cursor-default';
-            completeBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">check_circle</span> <span class="hidden sm:inline">Đã hoàn thành</span>';
-            UI.showToast('Chúc mừng bạn đã hoàn thành bài học này!', 'success');
-          } catch (e) {
-            UI.showToast('Không thể lưu trạng thái bài học.', 'error');
-          }
-        };
-      }
-
-      // 4. Universal Video Anti-Seek & 100% Watch Completion Controller
-      // Supports HTML5 <video>, YouTube <iframe> (postMessage API), and Vimeo <iframe>
-      const videoEl = document.getElementById('lesson-stream-player');
-      if (videoEl && hasVideo) {
-        let maxWatchedTime = videoWatched ? 999999 : 0;
-        let lastToastTime = 0;
-
-        const notifySeekBlocked = () => {
-          const now = Date.now();
-          if (now - lastToastTime > 2500) {
-            lastToastTime = now;
-            UI.showToast('Khóa tua nhanh: Bạn cần xem tuần tự video bài học và không thể tua trước.', 'warning');
-          }
-        };
-
-        const updateProgressUI = (curTime, totalDur) => {
-          if (!totalDur || totalDur <= 0 || videoWatched) return;
-          const pct = Math.min(100, Math.floor((curTime / totalDur) * 100));
-          const badge = document.getElementById('anti-seek-progress-badge');
-          if (badge) {
-            badge.textContent = `Tiến độ: ${pct}%`;
-          }
-          const txtEl = document.getElementById('complete-btn-text');
-          if (txtEl) {
-            txtEl.textContent = `Đã xem ${pct}% (Cần 100%)`;
-          }
-        };
-
-        const handleVideoCompleted = async (totalDuration) => {
-          if (videoWatched) return;
-          videoWatched = true;
-          maxWatchedTime = 999999;
-
-          const badge = document.getElementById('anti-seek-progress-badge');
-          if (badge) {
-            badge.className = 'font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
-            badge.textContent = '100%';
-          }
-          const statusLabel = document.getElementById('anti-seek-status-label');
-          if (statusLabel) {
-            statusLabel.textContent = 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.';
-            const icon = statusLabel.parentElement?.querySelector('.material-symbols-outlined');
-            if (icon) {
-              icon.className = 'material-symbols-outlined text-[16px] text-emerald-400';
-              icon.textContent = 'verified';
-            }
-          }
-          const quizSection = document.getElementById('lesson-mini-quiz-section');
-          if (quizSection) quizSection.classList.remove('hidden');
-          if (completeBtn) {
-            completeBtn.disabled = hasMiniQuiz;
-            completeBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 cursor-pointer';
-            completeBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${hasMiniQuiz ? 'quiz' : 'check'}</span> <span class="hidden sm:inline">${hasMiniQuiz ? 'Trả lời Mini-Quiz' : 'Hoàn thành bài học'}</span>`;
-          }
-          if (!isPreview) {
-            try {
-              const result = await ApiClient.recordLessonProgress(lessonId, Math.ceil(totalDuration || 60), 1.0, false);
-              if (result?.is_completed) setLessonCompleted();
-            } catch (err) {
-              console.error('Error saving video progress', err);
-            }
-          }
-        };
-
-        // --- Implementation A: HTML5 Video Element ---
-        if (videoEl.tagName === 'VIDEO') {
-          // Block forward seeking hotkeys (ArrowRight, ArrowUp, 'l', 'L')
-          videoEl.addEventListener('keydown', (e) => {
-            if (!videoWatched && (e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'l' || e.key === 'L')) {
-              e.preventDefault();
-              notifySeekBlocked();
-            }
-          });
-
-          // Restrict speed manipulation
-          videoEl.addEventListener('ratechange', () => {
-            if (videoEl.playbackRate > 1.5) {
-              videoEl.playbackRate = 1.0;
-              UI.showToast('Tốc độ phát bài học tối đa là 1.5x.', 'warning');
-            }
-          });
-
-          const clampSeeking = () => {
-            if (!videoWatched && videoEl.currentTime > maxWatchedTime + 1.2) {
-              videoEl.currentTime = maxWatchedTime;
-              notifySeekBlocked();
-            }
-          };
-
-          videoEl.addEventListener('seeking', clampSeeking);
-          videoEl.addEventListener('seeked', clampSeeking);
-
-          videoEl.addEventListener('timeupdate', () => {
-            if (videoWatched) return;
-            if (videoEl.currentTime > maxWatchedTime + 1.5) {
-              videoEl.currentTime = maxWatchedTime;
-              notifySeekBlocked();
-            } else {
-              if (videoEl.currentTime > maxWatchedTime) {
-                maxWatchedTime = videoEl.currentTime;
-              }
-              if (videoEl.duration > 0) {
-                updateProgressUI(maxWatchedTime, videoEl.duration);
-                if (videoEl.currentTime >= videoEl.duration - 1.5) {
-                  handleVideoCompleted(videoEl.duration);
-                }
-              }
-            }
-          });
-
-          videoEl.addEventListener('ended', () => {
-            handleVideoCompleted(videoEl.duration);
-          });
-        }
-
-        // --- Implementation B: IFrame Video (YouTube / Vimeo) ---
-        else if (videoEl.tagName === 'IFRAME') {
-          let iframeDuration = 0;
-          let iframeOrigin = '';
-          try {
-            iframeOrigin = new URL(videoEl.src, window.location.href).origin;
-          } catch (e) {}
-
-          const onIframeMessage = (event) => {
-            if (!iframeOrigin || event.source !== videoEl.contentWindow || event.origin !== iframeOrigin) return;
-            let data = null;
-            if (typeof event.data === 'string') {
-              try {
-                data = JSON.parse(event.data);
-              } catch (e) {
-                return;
-              }
-            } else if (typeof event.data === 'object' && event.data !== null) {
-              data = event.data;
-            }
-
-            if (!data) return;
-
-            // YouTube API postMessage protocol
-            if (data.event === 'infoDelivery' && data.info) {
-              const info = data.info;
-              if (typeof info.duration === 'number' && info.duration > 0) {
-                iframeDuration = info.duration;
-              }
-              if (typeof info.currentTime === 'number') {
-                const cur = info.currentTime;
-                if (cur > maxWatchedTime) {
-                  maxWatchedTime = cur;
-                }
-                if (iframeDuration > 0) {
-                  updateProgressUI(maxWatchedTime, iframeDuration);
-                  if (cur >= iframeDuration - 2.0) {
-                    handleVideoCompleted(iframeDuration);
-                  }
-                }
-              }
-
-              // PlayerState: 0 is ENDED
-              if (info.playerState === 0) {
-                handleVideoCompleted(iframeDuration || 60);
-              }
-            }
-
-            // Vimeo API postMessage protocol
-            if (data.event === 'timeupdate' && data.data) {
-              const cur = data.data.seconds || 0;
-              const dur = data.data.duration || 0;
-              if (dur > 0) iframeDuration = dur;
-
-              if (!videoWatched && cur > maxWatchedTime + 2.0) {
-                try {
-                  videoEl.contentWindow?.postMessage(JSON.stringify({
-                    method: 'setCurrentTime',
-                    value: maxWatchedTime
-                  }), iframeOrigin);
-                } catch (err) {}
-                notifySeekBlocked();
-              } else {
-                if (cur > maxWatchedTime) {
-                  maxWatchedTime = cur;
-                }
-                if (iframeDuration > 0) {
-                  updateProgressUI(maxWatchedTime, iframeDuration);
-                  if (cur >= iframeDuration - 2.0) {
-                    handleVideoCompleted(iframeDuration);
-                  }
-                }
-              }
-            } else if (data.event === 'ended') {
-              handleVideoCompleted(iframeDuration || 60);
-            }
-          };
-
-          window.addEventListener('message', onIframeMessage);
-
-          // Tell YouTube & Vimeo iframes to send state events and start polling currentTime
-          const handshakeIframe = () => {
-            try {
-              if (!iframeOrigin) return;
-              videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), iframeOrigin);
-              videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), iframeOrigin);
-              videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), iframeOrigin);
-            } catch (err) {}
-          };
-
-          handshakeIframe();
-          videoEl.addEventListener('load', () => {
-            handshakeIframe();
-            setTimeout(handshakeIframe, 500);
-            setTimeout(handshakeIframe, 1500);
-          });
-
-          // Periodic query for YouTube position
-          const iframePoll = setInterval(() => {
-            const currentEl = document.getElementById('lesson-stream-player');
-            if (!currentEl || currentEl !== videoEl) {
-              clearInterval(iframePoll);
-              window.removeEventListener('message', onIframeMessage);
-              return;
-            }
-            try {
-              currentEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), iframeOrigin);
-              if (iframeDuration <= 0) {
-                currentEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), iframeOrigin);
-              }
-            } catch (err) {}
-          }, 800);
-        }
-      }
-
-      // 5. Heartbeat progress tracking (only for enrolled students, not preview mode)
-      let progressHeartbeat;
-      if (!isPreview) {
-        progressHeartbeat = setInterval(() => {
-          const readerRoot = document.getElementById('lesson-reader-root');
-          if (!readerRoot || readerRoot.dataset.lessonId !== String(lessonId)) {
-            clearInterval(progressHeartbeat);
-            return;
-          }
-          ApiClient.recordLessonProgress(lessonId, 15, videoWatched ? 1.0 : 0.5, false)
-            .then(result => { if (result?.is_completed) setLessonCompleted(); })
-            .catch(() => {});
-        }, 15000);
-      }
-
-      // 6. Mini-Quiz interactive checker (Supports all question types)
-      const checkQuizBtn = document.getElementById('mini-quiz-check-btn');
-      const resetQuizBtn = document.getElementById('mini-quiz-reset-btn');
-      const quizSection = document.getElementById('lesson-mini-quiz-section');
-
-      if (checkQuizBtn && quizSection && lesson.quiz && lesson.quiz.length) {
-        checkQuizBtn.onclick = async () => {
-          const answers = lesson.quiz.map((question, qIdx) => {
-            const card = quizSection.querySelector(`.mini-quiz-card[data-qidx="${qIdx}"]`);
-            const questionType = question.type || 'MULTIPLE_CHOICE';
-            if (questionType === 'MULTIPLE_CHOICE') {
-              return Array.from(card.querySelectorAll(`input[name="mini-quiz-q-${qIdx}"]:checked`))
-                .map(input => Number.parseInt(input.value, 10));
-            }
-            if (questionType === 'FILL_BLANK') {
-              return Array.from(card.querySelectorAll('.mini-quiz-blank-input')).map(input => input.value.trim());
-            }
-            if (questionType === 'MATCHING') {
-              return Array.from(card.querySelectorAll('.mini-quiz-matching-select')).map(input => input.value);
-            }
-            if (questionType === 'TRUE_FALSE') {
-              const selected = card.querySelector(`input[name="mini-quiz-tf-${qIdx}"]:checked`);
-              return selected ? selected.value : null;
-            }
-            return null;
-          });
-          const everyAnswerProvided = answers.every((answer, qIdx) => {
-            const questionType = lesson.quiz[qIdx].type || 'MULTIPLE_CHOICE';
-            if (questionType === 'MULTIPLE_CHOICE') return answer.length > 0;
-            if (questionType === 'FILL_BLANK' || questionType === 'MATCHING') {
-              return answer.length > 0 && answer.every(value => String(value).trim().length > 0);
-            }
-            if (questionType === 'TRUE_FALSE') return answer !== null;
-            return answer !== null && String(answer).trim().length > 0;
-          });
-          if (!everyAnswerProvided) {
-            UI.showToast('Hãy trả lời tất cả câu hỏi trước khi tiếp tục.', 'warning');
-            return;
-          }
-
-          checkQuizBtn.disabled = true;
-          let correctCount = 0;
-          const cards = quizSection.querySelectorAll('.mini-quiz-card');
-
-          cards.forEach((card, qIdx) => {
-            const qData = lesson.quiz[qIdx];
-            if (!qData) return;
-
-            const qType = qData.type || 'MULTIPLE_CHOICE';
-            const explDiv = card.querySelector('.mini-quiz-explanation');
-            let isCorrect = false;
-            let feedbackDetail = '';
-
-            if (qType === 'MULTIPLE_CHOICE') {
-              const expectedSet = new Set(
-                Array.isArray(qData.correct_answers)
-                  ? qData.correct_answers
-                  : (typeof qData.correct_index === 'number' ? [qData.correct_index] : [0])
-              );
-
-              const selectedInputs = card.querySelectorAll(`input[name="mini-quiz-q-${qIdx}"]:checked`);
-              const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
-
-              const choiceLabels = card.querySelectorAll('.mini-quiz-choice-label');
-              choiceLabels.forEach(lbl => {
-                const chIdx = parseInt(lbl.dataset.chidx, 10);
-                lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                const badge = lbl.querySelector('.choice-badge');
-
-                if (expectedSet.has(chIdx)) {
-                  lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
-                  if (badge) badge.className = 'w-6 h-6 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
-                } else if (selectedSet.has(chIdx)) {
-                  lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                  if (badge) badge.className = 'w-6 h-6 rounded-lg bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0';
-                }
-              });
-
-              const hasSelected = selectedSet.size > 0;
-              const setsEqual = expectedSet.size === selectedSet.size && [...expectedSet].every(x => selectedSet.has(x));
-              isCorrect = hasSelected && setsEqual;
-
-              const correctLetters = [...expectedSet].sort((a, b) => a - b).map(idx => String.fromCharCode(65 + idx)).join(', ');
-              feedbackDetail = isCorrect
-                ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Bạn đã chọn đúng tất cả đáp án.')
-                : `Đáp án đúng là: <strong>${correctLetters}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
-
-            } else if (qType === 'FILL_BLANK') {
-              const blankInputs = card.querySelectorAll('.mini-quiz-blank-input');
-              const blanks = qData.blanks || [];
-              let allBlanksCorrect = true;
-              let anyFilled = false;
-              const answerDetails = [];
-
-              blankInputs.forEach(inp => {
-                const bIdx = parseInt(inp.dataset.bidx, 10);
-                const userVal = (inp.value || '').trim().toLowerCase();
-                if (userVal) anyFilled = true;
-
-                const blankDef = blanks[bIdx] || {};
-                const rawAccepted = Array.isArray(blankDef.accepted_answers)
-                  ? blankDef.accepted_answers
-                  : (blankDef.accepted_answers ? [blankDef.accepted_answers] : []);
-                const acceptedList = rawAccepted.map(a => String(a).trim().toLowerCase()).filter(Boolean);
-
-                const blankMatches = userVal.length > 0 && acceptedList.includes(userVal);
-                inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                if (blankMatches) {
-                  inp.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
-                } else {
-                  inp.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                  allBlanksCorrect = false;
-                }
-
-                const displayAnswers = rawAccepted.filter(Boolean).join(' / ');
-                answerDetails.push(`Ô #${bIdx + 1}: <strong>${UI.escapeHtml(displayAnswers || '(chưa thiết lập)')}</strong>`);
-              });
-
-              isCorrect = anyFilled && allBlanksCorrect && blankInputs.length > 0;
-              feedbackDetail = `
-                <div>${isCorrect ? 'Tuyệt vời! Bạn đã điền chính xác tất cả chỗ trống.' : 'Đáp án được chấp nhận:'}</div>
-                <div class="mt-1 space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${answerDetails.join(' | ')}</div>
-                ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
-              `;
-
-            } else if (qType === 'MATCHING') {
-              const selectInputs = card.querySelectorAll('.mini-quiz-matching-select');
-              const pairs = qData.pairs || [];
-              let allPairsCorrect = true;
-              let anySelected = false;
-              const correctPairsDisplay = [];
-
-              selectInputs.forEach(sel => {
-                const pIdx = parseInt(sel.dataset.pidx, 10);
-                const userVal = sel.value;
-                if (userVal) anySelected = true;
-
-                const expectedRight = pairs[pIdx]?.right;
-                const row = sel.closest('.mini-quiz-matching-row');
-
-                if (row) {
-                  row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                  if (userVal && userVal === expectedRight) {
-                    row.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
-                  } else {
-                    row.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                    allPairsCorrect = false;
-                  }
-                }
-
-                if (pairs[pIdx]) {
-                  correctPairsDisplay.push(`<li><strong>${UI.escapeHtml(pairs[pIdx].left)}</strong> &rarr; ${UI.escapeHtml(pairs[pIdx].right)}</li>`);
-                }
-              });
-
-              isCorrect = anySelected && allPairsCorrect && selectInputs.length > 0;
-              feedbackDetail = `
-                <div>${isCorrect ? 'Xuất sắc! Bạn đã ghép đúng tất cả các cặp.' : 'Các cặp ghép chính xác:'}</div>
-                <ul class="mt-1 list-disc list-inside space-y-0.5 text-xs text-slate-700 dark:text-slate-300">${correctPairsDisplay.join('')}</ul>
-                ${qData.explanation ? `<div class="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-slate-700 italic">${UI.escapeHtml(qData.explanation)}</div>` : ''}
-              `;
-
-            } else if (qType === 'TRUE_FALSE') {
-              const selectedRadio = card.querySelector(`input[name="mini-quiz-tf-${qIdx}"]:checked`);
-              const expectedVal = Boolean(qData.correct_value);
-              const labels = card.querySelectorAll('.mini-quiz-tf-label');
-
-              labels.forEach(lbl => {
-                const lblVal = lbl.dataset.val === 'true';
-                lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                if (lblVal === expectedVal) {
-                  lbl.classList.add('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40');
-                } else if (selectedRadio && (selectedRadio.value === 'true') === lblVal) {
-                  lbl.classList.add('border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                }
-              });
-
-              if (selectedRadio) {
-                const userVal = selectedRadio.value === 'true';
-                isCorrect = userVal === expectedVal;
-              } else {
-                isCorrect = false;
-              }
-
-              feedbackDetail = isCorrect
-                ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Mệnh đề này là ' + (expectedVal ? 'Đúng.' : 'Sai.'))
-                : `Đáp án đúng là: <strong>${expectedVal ? 'Đúng (True)' : 'Sai (False)'}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
-            }
-
-            if (isCorrect) correctCount++;
-
-            if (explDiv) {
-              explDiv.classList.remove('hidden', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'text-emerald-800', 'dark:text-emerald-200', 'border-emerald-200', 'bg-rose-50', 'dark:bg-rose-950/40', 'text-rose-800', 'dark:text-rose-200', 'border-rose-200');
-              explDiv.classList.add('border', isCorrect ? 'bg-emerald-50' : 'bg-rose-50', isCorrect ? 'dark:bg-emerald-950/40' : 'dark:bg-rose-950/40', isCorrect ? 'text-emerald-900' : 'text-rose-900', isCorrect ? 'dark:text-emerald-200' : 'dark:text-rose-200', isCorrect ? 'border-emerald-200' : 'border-rose-200');
-              explDiv.innerHTML = `
-                <div class="font-bold flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[16px]">${isCorrect ? 'check_circle' : 'cancel'}</span>
-                  <span>${isCorrect ? 'Chính xác!' : 'Chưa chính xác.'}</span>
-                </div>
-                <div class="mt-1 leading-relaxed">${feedbackDetail}</div>
-              `;
-            }
-          });
-
-          const banner = document.getElementById('mini-quiz-score-banner');
-          if (banner) {
-            const percent = Math.round((correctCount / lesson.quiz.length) * 100);
-            banner.innerHTML = `
-              <div class="flex items-center gap-2">
-                <span class="px-2.5 py-1 rounded-xl ${percent >= 70 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'} font-bold">
-                  Kết quả: ${correctCount}/${lesson.quiz.length} câu đúng (${percent}%)
-                </span>
-                <span class="text-slate-600 dark:text-slate-300">
-                  ${percent === 100 ? 'Xuất sắc! Bạn đã nắm vững toàn bộ kiến thức bài học.' : percent >= 70 ? 'Khá tốt! Bạn đã hiểu phần lớn nội dung.' : 'Hãy xem lại bài giảng và làm lại để củng cố kiến thức nhé.'}
-                </span>
-              </div>
-            `;
-          }
-
-          if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
-          try {
-            if (hasVideo) {
-              await ApiClient.recordLessonProgress(lessonId, 30, 1.0, false);
-            }
-            const result = await ApiClient.completeLessonMiniQuiz(lessonId, answers);
-            if (result?.is_completed) {
-              setLessonCompleted();
-              if (banner) banner.textContent = 'Đã lưu câu trả lời và hoàn thành bài giảng.';
-              UI.showToast('Bạn đã trả lời hết câu hỏi và hoàn thành bài giảng.', 'success');
-            } else {
-              UI.showToast('Câu trả lời đã lưu. Hệ thống đang cập nhật thời lượng hoàn thành.', 'info');
-            }
-          } catch (error) {
-            UI.showToast(error.message || 'Không thể lưu câu trả lời. Vui lòng thử lại.', 'error');
-          } finally {
-            checkQuizBtn.disabled = false;
-          }
-        };
-
-        if (resetQuizBtn) {
-          resetQuizBtn.onclick = () => {
-            quizSection.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
-            quizSection.querySelectorAll('.mini-quiz-blank-input').forEach(inp => {
-              inp.value = '';
-              inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-            });
-            quizSection.querySelectorAll('.mini-quiz-matching-select').forEach(sel => {
-              sel.value = '';
-            });
-            quizSection.querySelectorAll('.mini-quiz-matching-row').forEach(row => {
-              row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-            });
-            quizSection.querySelectorAll('.mini-quiz-explanation').forEach(e => {
-              e.classList.add('hidden');
-              e.innerHTML = '';
-            });
-            quizSection.querySelectorAll('.mini-quiz-choice-label').forEach(lbl => {
-              lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-              const badge = lbl.querySelector('.choice-badge');
-              if (badge) badge.className = 'w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge';
-            });
-            quizSection.querySelectorAll('.mini-quiz-tf-label').forEach(lbl => {
-              lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-            });
-            const banner = document.getElementById('mini-quiz-score-banner');
-            if (banner) {
-              banner.innerHTML = 'Hãy chọn đáp án cho tất cả câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.';
-            }
-            resetQuizBtn.classList.add('hidden');
-          };
-        }
-      }
-
-    } catch (err) {
-      const isForbidden = err.status === 403 || err.status_code === 403 || (err.message && (err.message.toLowerCase().includes('enrollment') || err.message.toLowerCase().includes('ghi danh') || err.message.includes('403')));
-      if (isForbidden) {
-        container.innerHTML = `
-          <div class="h-full flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-950 font-sans animate-fade-in">
-            <div class="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 text-center shadow-xl space-y-6">
-              <div class="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
-                <span class="material-symbols-outlined text-3xl">lock</span>
-              </div>
-              <div class="space-y-2">
-                <h2 class="text-xl font-black text-slate-900 dark:text-white">Bài giảng chưa được mở khóa</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Bạn cần ghi danh vào khóa học này để có quyền truy cập toàn bộ nội dung bài giảng, tài liệu đính kèm và trợ lý Bạch tuộc.
-                </p>
-              </div>
-              <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <a href="#/student/courses/detail?id=${courseId}" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5">
-                  <span class="material-symbols-outlined text-[16px]">school</span>
-                  <span>Xem hồ sơ & Ghi danh</span>
-                </a>
-                <a href="#/student/courses/catalog" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
-                  <span class="material-symbols-outlined text-[16px]">explore</span>
-                  <span>Khám phá khóa học</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        `;
+      if (!isDone && cur > maxWatched + 1.5) {
+        video.currentTime = maxWatched;
         return;
       }
-      container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi nạp bài giảng: ${UI.escapeHtml(err.message)}</div>`;
-    }
+
+      if (cur > maxWatched) {
+        maxWatched = cur;
+      }
+
+      const pct = dur > 0 ? (cur / dur) * 100 : 0;
+      const watchedPct = dur > 0 ? (maxWatched / dur) * 100 : 0;
+
+      if (playedBar) playedBar.style.width = `${pct}%`;
+      if (watchedBar) watchedBar.style.width = `${Math.min(100, watchedPct)}%`;
+      if (timeDisplay) timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+
+      if (typeof options.onProgress === 'function') {
+        options.onProgress(maxWatched, dur);
+      }
+
+      // Completion check: require at least 90% watched AND near the end
+      if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.0) {
+        if (typeof options.onComplete === 'function') {
+          options.onComplete(dur);
+        }
+      }
+    });
+
+    video.addEventListener('progress', () => {
+      if (video.buffered.length > 0 && video.duration > 0 && bufferedBar) {
+        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+        bufferedBar.style.width = `${(bufferedEnd / video.duration) * 100}%`;
+      }
+    });
+
+    video.addEventListener('play', updatePlayState);
+    video.addEventListener('pause', updatePlayState);
+    video.addEventListener('ended', () => {
+      updatePlayState();
+      const dur = video.duration || 0;
+      if (isDone || (dur > 0 && maxWatched >= dur * 0.90)) {
+        if (typeof options.onComplete === 'function') {
+          options.onComplete(dur);
+        }
+      } else {
+        showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
+      }
+    });
+
+    return {
+      unlockSeeking: () => {
+        isDone = true;
+        maxWatched = 999999;
+        if (lockIndicator) {
+          lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+          lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+        }
+      }
+    };
+  }
+
+  // Backwards-compatible proxies:
+  static async renderCourseDetail(container, courseId, activeTab = 'syllabus') {
+    return StudentView.renderCourseConsole(container, courseId, null, null, activeTab === 'resources' ? 'resources' : 'outline');
+  }
+
+  static async renderLessonReader(container, courseId, lessonId) {
+    return StudentView.renderCourseConsole(container, courseId, lessonId, null, 'outline');
   }
 
   // =========================================================================

@@ -73,14 +73,21 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
 @pytest.fixture
 def course_a(app: Flask, instructor_a: User) -> Course:
     """Course owned by Instructor A."""
-    return create_course(
+    from pwd301.services.lesson_service import create_learning_unit, create_lesson
+    sess = db.session
+    c = create_course(
         instructor_a,
         {
             "course_code": "SEC-101",
             "title": "Security 101",
             "description": "Original A description",
         },
+        session=sess,
     )
+    unit = create_learning_unit(instructor_a, c.id, {"title": "Unit 1", "position": 1}, session=sess)
+    create_lesson(instructor_a, c.id, {"title": "Lesson 1", "position": 1, "learning_unit_id": str(unit.public_id), "markdown_content": "# Security Intro Content"}, session=sess)
+    sess.commit()
+    return c
 
 
 def test_instructor_cannot_edit_other_instructor_course(

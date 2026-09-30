@@ -1369,8 +1369,23 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
             payload_data = {}
 
         target_title = None
-        original_data: dict[str, Any] = {}
-        if payload_data.get("action") == "UPDATE_LEARNING_UNIT":
+        if r.change_type == "COURSE_METADATA" or (r.target_type == "COURSE" and not payload_data.get("action")):
+            c = db.session.get(Course, r.course_id)
+            if c:
+                target_title = c.title
+                original_data = {
+                    "title": c.title,
+                    "description": c.description or "",
+                    "learning_objectives": c.learning_objectives or "",
+                    "target_audience": c.target_audience or "",
+                    "completion_requirements": c.completion_requirements or "",
+                    "category": c.category or "",
+                    "difficulty": c.difficulty or "",
+                    "capacity": c.capacity,
+                    "storage_quota_bytes": c.storage_quota_bytes,
+                    "thumbnail_file_asset_id": c.thumbnail_file_asset_id,
+                }
+        elif payload_data.get("action") == "UPDATE_LEARNING_UNIT":
             try:
                 unit_id = uuid.UUID(str(payload_data.get("learning_unit_id")))
             except (TypeError, ValueError, AttributeError):
@@ -1385,6 +1400,30 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 original_data = {"title": unit.title}
         elif r.target_type == "LESSON" and r.target_id:
             les = db.session.get(Lesson, r.target_id)
+            if les and les.status == "PENDING_APPROVAL":
+                orig = (
+                    db.session.query(Lesson)
+                    .filter(
+                        Lesson.course_id == r.course_id,
+                        Lesson.position == les.position,
+                        Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                        Lesson.id != les.id,
+                        Lesson.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if orig:
+                    les = orig
+            staged = (
+                db.session.query(Lesson).filter(Lesson.change_request_id == r.id).first()
+            )
+            if staged:
+                payload_data.setdefault("title", staged.title)
+                payload_data.setdefault("summary", staged.summary or "")
+                payload_data.setdefault("markdown_content", staged.markdown_content or "")
+                payload_data.setdefault("estimated_duration_minutes", staged.estimated_duration_minutes)
+                payload_data.setdefault("minimum_completion_seconds", staged.minimum_completion_seconds)
+                payload_data.setdefault("viewed_fraction_required", float(staged.viewed_fraction_required or 0.0))
             if les:
                 target_title = les.title
                 unit_title = les.learning_unit.title if les.learning_unit else None
@@ -1515,7 +1554,10 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
         )
 
     pending_count = sum(1 for r in visible_records if r.status == "PENDING")
-    return jsonify({"change_requests": results, "pending_count": pending_count}), 200
+    return (
+        jsonify({"change_requests": results, "items": results, "pending_count": pending_count}),
+        200,
+    )
 
 
 @admin_bp.route("/change-requests/<int:req_id>/review", methods=["POST"])
@@ -1531,10 +1573,13 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    action = str(payload.get("action", "")).strip().lower()
     reason = str(payload.get("reason", "")).strip()
-
-    if action not in ("approve", "reject"):
+    raw_action = str(payload.get("action") or payload.get("decision") or "").strip().lower()
+    if raw_action in ("approve", "approved"):
+        action = "approve"
+    elif raw_action in ("reject", "rejected"):
+        action = "reject"
+    else:
         raise ValidationError("Action must be 'approve' or 'reject'.")
 
     req_record = db.session.get(CourseChangeRequest, req_id)
@@ -1622,14 +1667,54 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                 raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
             if any(not isinstance(change, dict) for change in changes):
                 raise ValidationError("Yêu cầu tài liệu Lesson không hợp lệ.")
+            lessons_to_update = [target_lesson]
+            if target_lesson.status == "HISTORICAL":
+                newer_active = (
+                    db.session.query(Lesson)
+                    .filter(
+                        Lesson.course_id == target_lesson.course_id,
+                        Lesson.position == target_lesson.position,
+                        Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+                        Lesson.deleted_at.is_(None),
+                        Lesson.id != target_lesson.id,
+                    )
+                    .first()
+                )
+                if newer_active and newer_active not in lessons_to_update:
+                    lessons_to_update.append(newer_active)
+
             for change in sorted(changes, key=lambda item: item.get("action") != "DETACH"):
                 if change.get("action") == "DETACH":
-                    resource = db.session.get(LessonResource, change.get("resource_id"))
-                    if resource is None or resource.lesson_id != target_lesson.id:
-                        raise ValidationError("Tài liệu gỡ không thuộc Lesson này.")
-                    detach_resource_from_lesson(
-                        actor, target_lesson.id, resource.id, session=db.session, commit=False
-                    )
+                    res_id = change.get("resource_id")
+                    for l_target in lessons_to_update:
+                        resource = (
+                            db.session.get(LessonResource, res_id)
+                            if l_target.id == target_lesson.id
+                            else None
+                        )
+                        if resource is not None and resource.lesson_id == l_target.id:
+                            detach_resource_from_lesson(
+                                actor, l_target.id, resource.id, session=db.session, commit=False
+                            )
+                        elif l_target.id != target_lesson.id:
+                            orig_res = db.session.get(LessonResource, res_id)
+                            if orig_res:
+                                matching_res = (
+                                    db.session.query(LessonResource)
+                                    .filter(
+                                        LessonResource.lesson_id == l_target.id,
+                                        LessonResource.file_asset_id == orig_res.file_asset_id,
+                                    )
+                                    .first()
+                                )
+                                if matching_res:
+                                    detach_resource_from_lesson(
+                                        actor,
+                                        l_target.id,
+                                        matching_res.id,
+                                        session=db.session,
+                                        commit=False,
+                                    )
                 elif change.get("action") == "ATTACH":
                     asset = db.session.get(FileAsset, change.get("asset_id"))
                     if (
@@ -1640,14 +1725,15 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                         or asset.deleted_at is not None
                     ):
                         raise ValidationError("Tệp đề xuất không còn hợp lệ hoặc chưa quét sạch.")
-                    attach_resource_to_lesson(
-                        actor,
-                        target_lesson.id,
-                        asset.id,
-                        label=change.get("label"),
-                        session=db.session,
-                        commit=False,
-                    )
+                    for l_target in lessons_to_update:
+                        attach_resource_to_lesson(
+                            actor,
+                            l_target.id,
+                            asset.id,
+                            label=change.get("label"),
+                            session=db.session,
+                            commit=False,
+                        )
                 else:
                     raise ValidationError("Thao tác tài liệu Lesson không hợp lệ.")
             msg = f"Đã phê duyệt thay đổi tài liệu Lesson #{req_record.id}."
@@ -1729,13 +1815,50 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
             msg = f"Đã phê duyệt thay đổi nội dung bài giảng #{req_record.target_id}."
 
         elif req_record.change_type == "PREREQUISITE":
-            add_course_prerequisite(
-                actor=actor,
-                course_id=req_record.course_id,
-                prerequisite_course_id=req_record.target_id,
-                session=db.session,
-            )
-            msg = f"Đã phê duyệt thiết lập môn tiên quyết #{req_record.target_id}."
+            if p_data.get("action") == "REMOVE_PREREQUISITE":
+                from pwd301.services.course_service import remove_course_prerequisite
+
+                remove_course_prerequisite(
+                    actor=actor,
+                    course_id=req_record.course_id,
+                    prerequisite_course_id=req_record.target_id,
+                    session=db.session,
+                )
+                msg = f"Đã phê duyệt xóa môn tiên quyết #{req_record.target_id}."
+            else:
+                add_course_prerequisite(
+                    actor=actor,
+                    course_id=req_record.course_id,
+                    prerequisite_course_id=req_record.target_id,
+                    session=db.session,
+                )
+                msg = f"Đã phê duyệt thiết lập môn tiên quyết #{req_record.target_id}."
+
+        elif req_record.change_type == "COURSE_METADATA":
+            from pwd301.services.course_service import update_course
+
+            update_course(actor, req_record.course_id, p_data, session=db.session)
+            msg = f"Đã phê duyệt cập nhật thông tin khóa học #{req_record.course_id}."
+
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "CREATE_LEARNING_UNIT"
+        ):
+            from pwd301.services.lesson_service import create_learning_unit
+
+            create_learning_unit(actor, req_record.course_id, p_data, session=db.session)
+            msg = f"Đã phê duyệt tạo chương mục mới cho khóa học #{req_record.course_id}."
+
+        elif (
+            req_record.change_type == "LESSON_STRUCTURE"
+            and p_data.get("action") == "REORDER_LEARNING_UNITS"
+        ):
+            from pwd301.services.lesson_service import reorder_learning_units
+
+            unit_ids = p_data.get("unit_ids") or []
+            if unit_ids:
+                reorder_learning_units(actor, req_record.course_id, unit_ids, session=db.session)
+            msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
 
         else:
             msg = f"Đã phê duyệt yêu cầu thay đổi #{req_record.id}."
