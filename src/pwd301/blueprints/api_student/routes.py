@@ -22,6 +22,7 @@ from pwd301.services.jwt_auth_service import jwt_required
 
 
 def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
+    prog_val = float(e.current_progress_percent or 0.0)
     return {
         "enrollment_id": str(e.public_id),
         "course_id": str(e.course.public_id) if e.course else None,
@@ -30,7 +31,8 @@ def _serialize_enrollment_api(e: Enrollment) -> dict[str, Any]:
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
-        "current_progress_percent": float(e.current_progress_percent or 0.0),
+        "current_progress_percent": prog_val,
+        "progress_percent": prog_val,
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
         "detail_retention_due_at": (

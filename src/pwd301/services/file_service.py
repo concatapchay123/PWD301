@@ -1025,13 +1025,13 @@ def get_file_for_download(
         if course.status != "PUBLISHED":
             raise FileAccessDeniedError("Cannot download files from an unpublished course.")
 
-        # 2. Học viên có Enrollment ACTIVE trong khóa học
+        # 2. Học viên có Enrollment ACTIVE hoặc COMPLETED trong khóa học
         enrollment = (
             sess.query(Enrollment)
             .filter(
                 Enrollment.course_id == course.id,
                 Enrollment.student_user_id == actor.id,
-                Enrollment.status == "ACTIVE",
+                Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
             )
             .first()
         )
@@ -1738,7 +1738,6 @@ def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
     return {
         "resource_id": str(res.public_id),
         "asset_id": file_asset_id,
-        "id": str(res.public_id),
         "lesson_id": str(res.lesson.public_id) if res.lesson else None,
         "title": res.label or (fa.display_name if fa else orig_filename),
         "label": res.label,

@@ -61,7 +61,7 @@ def test_prerequisite_same_instructor_adds_directly(client: FlaskClient, instruc
         category="CNTT",
         difficulty="INTERMEDIATE",
         owner_instructor_id=instructor_user.id,
-        status="PUBLISHED",
+        status="DRAFT",
         created_at=utc_now(),
         updated_at=utc_now(),
     )

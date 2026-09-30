@@ -61,8 +61,13 @@ class StudentView {
 
   static isLessonVideoWatched(lesson) {
     if (!lesson?.video_url) return true;
-    return Number(lesson.progress?.seconds_spent || 0) >= Number(lesson.minimum_completion_seconds || 0)
-      && Number(lesson.progress?.max_view_fraction || 0) >= 1;
+    return (
+      Boolean(lesson.progress?.is_completed) ||
+      Boolean(lesson.progress?.is_video_watched) ||
+      Number(lesson.progress?.max_view_fraction || 0) >= 0.90 ||
+      (Number(lesson.progress?.seconds_spent || 0) >= Number(lesson.minimum_completion_seconds || 0) &&
+       Number(lesson.progress?.max_view_fraction || 0) >= 0.90)
+    );
   }
 
   static getPasswordRequirements(password) {
@@ -146,8 +151,8 @@ class StudentView {
           </div>
         </div>
 
-        <!-- 2. Actionable Metric Cards (2 Cards: Enrolled, Urgent Assessment) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5" id="dashboard-metric-cards">
+        <!-- 2. Actionable Metric Cards (3 Cards: Enrolled, Progress, Urgent Assessment) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="dashboard-metric-cards">
           
           <!-- Card 1: Khóa học kích hoạt -->
           <a class="group c-card c-card-hover p-5 flex flex-col justify-between" href="#/student/courses">
@@ -166,7 +171,27 @@ class StudentView {
             </div>
           </a>
 
-          <!-- Card 2: Khảo thí trọng tâm (Urgent Assessment Ticker) -->
+          <!-- Card 2: Tiến độ học tập trung bình -->
+          <a class="group c-card c-card-hover p-5 flex flex-col justify-between" href="#/student/courses">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tiến độ trung bình</span>
+              <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <span class="material-symbols-outlined text-[20px]">trending_up</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="text-2xl font-extrabold text-slate-900 dark:text-white" id="kpi-progress-pct">0% Hoàn thành</div>
+              <div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
+                <div class="bg-emerald-500 h-full rounded-full transition-all duration-500" id="kpi-progress-bar" style="width: 0%"></div>
+              </div>
+              <p class="text-xs text-slate-400 mt-1.5 flex items-center justify-between">
+                <span id="kpi-progress-ratio">0 / 0 Môn học</span>
+                <span class="material-symbols-outlined text-[14px] text-emerald-600 shrink-0">arrow_forward</span>
+              </p>
+            </div>
+          </a>
+
+          <!-- Card 3: Khảo thí trọng tâm (Urgent Assessment Ticker) -->
           <a class="c-card c-card-hover bg-amber-50/50 dark:bg-amber-950/20 border-amber-300/60 dark:border-amber-700/60 p-5 flex flex-col justify-between group" href="#/student/assessments" id="kpi-urgent-card">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -988,7 +1013,7 @@ class StudentView {
         }
 
         grid.innerHTML = filtered.map(e => {
-          const progress = Math.round(e.current_progress_percent || 0);
+          const progress = Math.round(e.current_progress_percent ?? e.progress_percent ?? 0);
           return `
             <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
               <div class="space-y-2.5">
@@ -1036,6 +1061,7 @@ class StudentView {
                     <span>Vào học tiếp tục</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </a>
+                  ${e.status === 'ACTIVE' ? `
                   <button
                     type="button"
                     class="leave-course-btn c-btn c-btn-secondary c-btn-sm text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
@@ -1045,6 +1071,7 @@ class StudentView {
                   >
                     <span class="material-symbols-outlined text-[18px]">logout</span>
                   </button>
+                  ` : ''}
                 </div>
               </div>
             </div>
@@ -1364,8 +1391,9 @@ class StudentView {
       }
 
       // Overall Progress Calculation
-      const courseProgressPercent = progressData?.progress_percent !== undefined
-        ? Math.round(progressData.progress_percent)
+      const rawProgVal = progressData?.current_progress_percent ?? progressData?.progress_percent ?? courseData?.enrollment?.current_progress_percent ?? courseData?.enrollment?.progress_percent;
+      const courseProgressPercent = rawProgVal !== undefined && rawProgVal !== null
+        ? Math.round(rawProgVal)
         : (allLessons.length > 0 ? Math.round((allLessons.filter(l => l.is_completed || l.progress?.is_completed).length / allLessons.length) * 100) : 0);
 
       // Render Primary Shell
@@ -2384,7 +2412,7 @@ class StudentView {
                 <section class="space-y-2">
                   <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300">Video bổ sung ${index + 2}</h3>
                   <div class="aspect-video rounded-xl overflow-hidden bg-slate-900">
-                    ${StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, true)}
+                    ${StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, isCompleted)}
                   </div>
                 </section>
               `).join('')}
@@ -2396,7 +2424,13 @@ class StudentView {
 
               <!-- Interactive Mini-Quiz Section -->
               ${hasMiniQuiz ? `
-                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 ${videoWatched ? '' : 'hidden'}" id="cisco-mini-quiz-section">
+                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6" id="cisco-mini-quiz-section">
+                  ${hasVideo && !videoWatched ? `
+                    <div id="cisco-quiz-video-notice" class="flex items-center gap-2 p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300 text-xs">
+                      <span class="material-symbols-outlined text-[18px]">info</span>
+                      <span>💡 <strong>Gợi ý:</strong> Bạn có thể theo dõi trước các câu hỏi củng cố bên dưới và nộp câu trả lời sau khi xem video bài giảng.</span>
+                    </div>
+                  ` : ''}
                   <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                     <div class="flex items-center gap-2.5">
                       <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[20px]">quiz</span>
@@ -2686,6 +2720,22 @@ class StudentView {
             renderSidebarOutline();
             updateFloatingNav();
 
+            // Recalculate dynamic course progress in header
+            const completedCount = allLessons.filter(l => l.is_completed || l.progress?.is_completed).length;
+            const newPercent = allLessons.length > 0 ? Math.round((completedCount / allLessons.length) * 100) : 0;
+            const progressBadge = document.getElementById('console-progress-percent');
+            if (progressBadge) {
+              progressBadge.textContent = `${newPercent}%`;
+            }
+
+            // Background reconcile authoritative backend course progress
+            ApiClient.getStudentCourseProgress(courseId).then(freshProg => {
+              const freshVal = freshProg?.current_progress_percent ?? freshProg?.progress_percent;
+              if (freshVal !== undefined && freshVal !== null && progressBadge) {
+                progressBadge.textContent = `${Math.round(freshVal)}%`;
+              }
+            }).catch(() => {});
+
             if (completeBtn) {
               completeBtn.disabled = true;
               completeBtn.className = 'px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-2 cursor-default';
@@ -2700,11 +2750,13 @@ class StudentView {
                 return;
               }
               if (hasVideo && !videoWatched) {
-                UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
+                UI.showToast('Bạn cần xem ít nhất 90% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
                 return;
               }
               if (hasMiniQuiz) {
-                UI.showToast('Hãy trả lời tất cả câu hỏi trong bài giảng trước khi hoàn thành.', 'warning');
+                const quizSection = document.getElementById('cisco-mini-quiz-section');
+                if (quizSection) quizSection.scrollIntoView({ behavior: 'smooth' });
+                UI.showToast('Hãy trả lời các câu hỏi trắc nghiệm củng cố của bài học trước khi hoàn thành.', 'warning');
                 return;
               }
               try {
@@ -2857,10 +2909,10 @@ class StudentView {
             }, 1000);
           }
 
-          // Supplementary videos setup
+          // Supplementary videos setup: strictly lock forward seeking by default
           (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((_, idx) => {
             StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
-              isCompleted: true,
+              isCompleted: isCompleted,
               onProgress: null,
               onComplete: null
             });
@@ -3179,8 +3231,8 @@ class StudentView {
     }
     // Direct file / HTML5 video with Anti-Seek Custom Controls
     return `
-      <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true">
-        <video id="${playerId}" oncontextmenu="return false;" disablePictureInPicture playsinline class="w-full h-full aspect-video bg-slate-950 object-contain cursor-pointer" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>
+      <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true" tabindex="0">
+        <video id="${playerId}" oncontextmenu="return false;" controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture playsinline class="w-full h-full aspect-video bg-slate-950 object-contain cursor-pointer" src="${UI.escapeHtml(trimmed)}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>
 
         <!-- Big Play Button Overlay -->
         <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-10 cursor-pointer" aria-label="Phát video">
@@ -3190,7 +3242,7 @@ class StudentView {
         <!-- Custom Control Bar -->
         <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
           <!-- Scrubber Track -->
-          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="Nhấp để chuyển đến đoạn đã xem">
+          <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="${isCompleted ? 'Tua video tự do' : 'Khóa tua nhanh: Chỉ có thể tua lại đoạn đã xem'}">
             <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
             <div id="${playerId}-watched-bar" class="absolute left-0 top-0 bottom-0 bg-amber-500/30 rounded-full w-0 pointer-events-none"></div>
             <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
@@ -3240,6 +3292,9 @@ class StudentView {
     let isDone = !!options.isCompleted;
     let maxWatched = isDone ? 999999 : 0;
     let lastToastTime = 0;
+
+    if (watchedBar) watchedBar.style.width = isDone ? '100%' : '0%';
+    if (playedBar) playedBar.style.width = '0%';
 
     const showThrottleToast = (msg, type = 'warning') => {
       const now = Date.now();
@@ -3301,7 +3356,7 @@ class StudentView {
       };
     }
 
-    // Scrubber click
+    // Scrubber click: STRICT anti-seek
     if (track) {
       track.onclick = (e) => {
         e.stopPropagation();
@@ -3314,7 +3369,8 @@ class StudentView {
         if (isDone) {
           video.currentTime = targetTime;
         } else {
-          if (targetTime <= maxWatched + 1.0) {
+          // Strictly lock forward seeking: only allow jumping back to segments already watched
+          if (targetTime <= maxWatched) {
             video.currentTime = targetTime;
           } else {
             video.currentTime = maxWatched;
@@ -3324,20 +3380,32 @@ class StudentView {
       };
     }
 
-    // Seeking event listener: clamp forward jumps
+    // Seeking event listener: strictly clamp forward jumps (from devtools, keyboard, or touch)
     video.addEventListener('seeking', () => {
-      if (!isDone && video.currentTime > maxWatched + 1.0) {
+      if (!isDone && video.currentTime > maxWatched + 0.3) {
         video.currentTime = maxWatched;
-        showThrottleToast('Khóa tua nhanh đang bật: Không thể tua vượt quá thời lượng đã học.');
+        showThrottleToast('Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.');
       }
     });
+
+    // Keyboard guard: prevent forward seeking keys
+    const handleKeydown = (e) => {
+      if (!isDone && (['ArrowRight', 'KeyL', 'PageDown'].includes(e.code) || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showThrottleToast('Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.');
+      }
+    };
+    if (container) container.addEventListener('keydown', handleKeydown);
+    video.addEventListener('keydown', handleKeydown);
 
     // Timeupdate listener
     video.addEventListener('timeupdate', () => {
       const cur = video.currentTime;
       const dur = video.duration || 0;
 
-      if (!isDone && cur > maxWatched + 1.5) {
+      // Disallow playback jumping forward past allowed buffer
+      if (!isDone && cur > maxWatched + 0.8) {
         video.currentTime = maxWatched;
         return;
       }
@@ -3347,7 +3415,7 @@ class StudentView {
       }
 
       const pct = dur > 0 ? (cur / dur) * 100 : 0;
-      const watchedPct = dur > 0 ? (maxWatched / dur) * 100 : 0;
+      const watchedPct = isDone ? 100 : (dur > 0 ? (maxWatched / dur) * 100 : 0);
 
       if (playedBar) playedBar.style.width = `${pct}%`;
       if (watchedBar) watchedBar.style.width = `${Math.min(100, watchedPct)}%`;
@@ -3359,6 +3427,15 @@ class StudentView {
 
       // Completion check: require at least 90% watched AND near the end
       if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.0) {
+        if (!isDone) {
+          isDone = true;
+          maxWatched = dur || 999999;
+          if (lockIndicator) {
+            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+          }
+          if (track) track.title = 'Tua video tự do';
+        }
         if (typeof options.onComplete === 'function') {
           options.onComplete(dur);
         }
@@ -3378,10 +3455,19 @@ class StudentView {
       updatePlayState();
       const dur = video.duration || 0;
       if (isDone || (dur > 0 && maxWatched >= dur * 0.90)) {
+        if (!isDone) {
+          isDone = true;
+          maxWatched = dur || 999999;
+          if (lockIndicator) {
+            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+          }
+          if (track) track.title = 'Tua video tự do';
+        }
         if (typeof options.onComplete === 'function') {
           options.onComplete(dur);
         }
-      } else {
+      } else if (!isDone) {
         showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
       }
     });
@@ -3394,9 +3480,11 @@ class StudentView {
           lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
           lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
         }
+        if (track) track.title = 'Tua video tự do';
       }
     };
   }
+
 
   // Backwards-compatible proxies:
   static async renderCourseDetail(container, courseId, activeTab = 'syllabus') {

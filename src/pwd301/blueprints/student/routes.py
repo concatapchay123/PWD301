@@ -183,13 +183,23 @@ def course_progress(course_id: str) -> Any:
     if enrollment is None:
         raise ResourceNotFoundError("Enrollment record not found for this student.")
 
+    if enrollment.current_progress_percent is None:
+        from pwd301.services.completion_service import calculate_course_progress
+
+        try:
+            calculate_course_progress(enrollment.id, session=sess)
+        except Exception:
+            pass
+
+    prog_val = float(enrollment.current_progress_percent or 0.0)
     data = {
         "course_id": str(course.public_id),
         "course_title": course.title,
         "student_id": str(actor.public_id),
-        "progress_percent": float(enrollment.current_progress_percent or 0.0),
+        "progress_percent": prog_val,
+        "current_progress_percent": prog_val,
         "status": enrollment.status,
-        "enrolled_at": enrollment.enrolled_at.isoformat(),
+        "enrolled_at": enrollment.enrolled_at.isoformat() if enrollment.enrolled_at else None,
     }
     return jsonify(data), 200
 
@@ -473,6 +483,7 @@ def complete_student_lesson_quiz(lesson_id: str) -> tuple[Response, int] | Respo
 
 
 def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
+    prog_val = float(e.current_progress_percent or 0.0)
     return {
         "enrollment_id": str(e.public_id),
         "course_id": str(e.course.public_id) if e.course else None,
@@ -486,7 +497,8 @@ def _serialize_enrollment(e: Enrollment) -> dict[str, Any]:
         "student_id": str(e.student.public_id) if e.student else None,
         "status": e.status,
         "period_no": e.current_period.period_no if e.current_period else None,
-        "current_progress_percent": float(e.current_progress_percent or 0.0),
+        "current_progress_percent": prog_val,
+        "progress_percent": prog_val,
         "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
         "left_at": e.left_at.isoformat() if e.left_at else None,
         "detail_retention_due_at": (
@@ -616,6 +628,80 @@ def get_student_course_completion_route(course_id: str) -> tuple[Response, int] 
         ),
     }
     return jsonify(data), 200
+
+
+@student_bp.route("/courses/<course_id>/certificate", methods=["GET"])
+@student_required
+def get_student_course_certificate_route(course_id: str) -> tuple[Response, int] | Response:
+    """Get the authenticated student's completion certificate for a course."""
+    actor = require_authenticated_actor()
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    summary = get_course_completion_summary(
+        actor=actor,
+        course_id=course.id,
+        student_user_id=actor.id,
+        session=db.session,
+    )
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+        )
+        .first()
+    )
+
+    is_completed = (enrollment and enrollment.status == "COMPLETED") or (
+        summary and summary.ever_completed
+    )
+    if not is_completed:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CERTIFICATE_NOT_AVAILABLE",
+                        "message": "Certificate is only available for completed courses.",
+                    },
+                }
+            ),
+            400,
+        )
+
+    completed_at = (
+        (summary.latest_completed_at or summary.first_completed_at)
+        if summary and (summary.latest_completed_at or summary.first_completed_at)
+        else (enrollment.completed_at if enrollment else None)
+    )
+    ts = int(completed_at.timestamp()) if completed_at else 0
+    cert_code = f"CERT-{course.course_code}-{actor.id}-{ts}"
+
+    instructor_name = "Ban Giảng Huấn PWD301"
+    if course.owner_instructor:
+        instructor_name = course.owner_instructor.display_name or course.owner_instructor.email
+
+    data = {
+        "certificate_code": cert_code,
+        "course_id": str(course.public_id),
+        "course_code": course.course_code,
+        "course_title": course.title,
+        "student_id": str(actor.public_id),
+        "student_name": actor.display_name or actor.email,
+        "completed_at": completed_at.isoformat() if completed_at else None,
+        "instructor_name": instructor_name,
+        "hours": 10,
+        "final_score": (
+            float(summary.final_aggregate_score)
+            if summary and summary.final_aggregate_score is not None
+            else None
+        ),
+    }
+    return jsonify({"success": True, "data": data}), 200
 
 
 @student_bp.route("/notifications", methods=["GET"])
@@ -1401,6 +1487,13 @@ def student_course_detail(course_id: str) -> Any:
         .filter(Enrollment.student_user_id == actor.id, Enrollment.course_id == course.id)
         .first()
     )
+    if enrollment and enrollment.current_progress_percent is None:
+        from pwd301.services.completion_service import calculate_course_progress
+
+        try:
+            calculate_course_progress(enrollment.id, session=db.session)
+        except Exception:
+            pass
 
     is_eligible, missing_titles = check_prerequisites_met(actor.id, course.id, session=db.session)
     prereqs = get_course_prerequisites(course_id=course.id, session=db.session)
@@ -1734,6 +1827,8 @@ def student_course_detail(course_id: str) -> Any:
                     "status": enrollment.status if enrollment else None,
                     "id": str(enrollment.public_id) if enrollment else None,
                     "enrollment_id": str(enrollment.public_id) if enrollment else None,
+                    "current_progress_percent": float(enrollment.current_progress_percent or 0.0),
+                    "progress_percent": float(enrollment.current_progress_percent or 0.0),
                 }
                 if enrollment
                 else None

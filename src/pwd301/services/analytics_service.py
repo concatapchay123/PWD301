@@ -771,6 +771,15 @@ def get_student_learning_overview(
     # 1. Student Enrollments & Course Progress
     enrollments = sess.query(Enrollment).filter(Enrollment.student_user_id == actor.id).all()
 
+    from pwd301.services.completion_service import calculate_course_progress
+
+    for e in enrollments:
+        if e.current_progress_percent is None:
+            try:
+                calculate_course_progress(e.id, session=sess)
+            except Exception:
+                pass
+
     active_enrollments = [e for e in enrollments if e.status == "ACTIVE"]
     completed_enrollments = [e for e in enrollments if e.status == "COMPLETED"]
 
@@ -805,6 +814,7 @@ def get_student_learning_overview(
                 else "Giảng viên PWD301"
             ),
             "progress_percent": round(float(e.current_progress_percent or 0.0), 2),
+            "current_progress_percent": round(float(e.current_progress_percent or 0.0), 2),
             "status": e.status,
             "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
             "lessons_count": (

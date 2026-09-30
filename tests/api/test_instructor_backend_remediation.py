@@ -131,6 +131,8 @@ def test_learning_unit_api_keeps_lessons_nested_and_private(
     client: FlaskClient, remediation_env: dict[str, Any]
 ) -> None:
     course = remediation_env["course"]
+    course.status = "DRAFT"
+    db.session.commit()
     instructor = remediation_env["instructor"]
     csrf = login_session(client, instructor.email)
     url = f"/instructor/courses/{course.public_id}/learning-units"

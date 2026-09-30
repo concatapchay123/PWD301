@@ -83,7 +83,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course_a.status = "PUBLISHED"
+    course_a.status = "DRAFT"
 
     course_b = create_course(
         actor=instructor,
@@ -95,7 +95,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course_b.status = "PUBLISHED"
+    course_b.status = "DRAFT"
 
     sess.flush()
 

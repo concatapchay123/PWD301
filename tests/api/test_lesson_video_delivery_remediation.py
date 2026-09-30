@@ -343,3 +343,59 @@ def test_instructor_curriculum_serialization_filters_historical_lessons(
     ser_course = _serialize_course(course)
     assert len(ser_course["lessons"]) == 1
     assert ser_course["lessons"][0]["lesson_id"] == str(lesson2.public_id)
+
+
+def test_student_views_multi_video_lesson_and_anti_seek_defaults_locked(
+    client: FlaskClient, app: Flask, instructor_user: User, admin_user: User, student_user: User
+) -> None:
+    """When a lesson has multiple videos, all videos must be serialized and anti-seek locked by default."""
+    sess = db.session
+    unique = uuid.uuid4().hex[:6]
+    course = create_course(
+        actor=instructor_user,
+        data={
+            "course_code": f"MVD_{unique.upper()}",
+            "title": f"Multi Video Anti Seek Course {unique}",
+            "description": "Course testing multiple video anti-seek defaults",
+        },
+        session=sess,
+    )
+    unit = create_learning_unit(instructor_user, course.id, {"title": "Chương 1"}, session=sess)
+    lesson = create_lesson(
+        actor=instructor_user,
+        course_id=course.id,
+        data={
+            "title": "Bài 1: Nhiều Video",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": '# Nhiều video <!-- video_urls: ["https://www.youtube.com/watch?v=video1", "https://www.youtube.com/watch?v=video2"] -->',
+            "status": "PUBLISHED",
+        },
+        session=sess,
+    )
+    change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
+    change_course_status(admin_user, course.id, "APPROVED", session=sess)
+    change_course_status(admin_user, course.id, "PUBLISHED", session=sess)
+    enroll_student(student_user, course.id, session=sess)
+    sess.commit()
+
+    from pwd301.blueprints.student.routes import _serialize_student_lesson
+
+    serialized = _serialize_student_lesson(lesson, None)
+    assert len(serialized["video_urls"]) == 2
+    assert serialized["progress"]["is_completed"] is False
+
+    # Check frontend code static contract: ensure supplementary videos are NOT hardcoded isCompleted: true
+    import os
+    frontend_student_js = os.path.join(
+        os.path.dirname(__file__), "..", "..", "frontend", "assets", "js", "views", "student.js"
+    )
+    with open(frontend_student_js, "r", encoding="utf-8") as f:
+        js_code = f.read()
+
+    # Must NOT have hardcoded true in _getEmbedVideoHtml call for supplementary videos
+    assert 'StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, true)' not in js_code
+    # Must pass isCompleted
+    assert 'StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, isCompleted)' in js_code
+    # Must NOT pass isCompleted: true in supplementary video setup
+    assert 'setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: true,' not in js_code
+    assert 'setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: isCompleted,' in js_code

@@ -321,11 +321,36 @@ def calculate_course_progress(
     current_period = enrollment.current_period
     if current_period is None and enrollment.current_period_id:
         current_period = sess.get(EnrollmentPeriod, enrollment.current_period_id)
+        if current_period is not None and current_period.status not in ("ACTIVE", "COMPLETED"):
+            current_period = None
 
     if current_period is None:
-        enrollment.current_progress_percent = Decimal("0.00")
+        current_period = (
+            sess.query(EnrollmentPeriod)
+            .filter(
+                EnrollmentPeriod.enrollment_id == enrollment.id,
+                EnrollmentPeriod.status.in_(["ACTIVE", "COMPLETED"]),
+            )
+            .order_by(EnrollmentPeriod.period_no.desc())
+            .first()
+        )
+
+    if current_period is None:
+        now_ts = utc_now()
+        current_period = EnrollmentPeriod(
+            enrollment_id=enrollment.id,
+            period_no=1,
+            started_at=enrollment.enrolled_at or now_ts,
+            status="ACTIVE" if enrollment.status == "ACTIVE" else "COMPLETED",
+            created_at=now_ts,
+        )
+        sess.add(current_period)
         sess.flush()
-        return 0.0
+        enrollment.current_period_id = current_period.id
+        sess.flush()
+    elif enrollment.current_period_id != current_period.id:
+        enrollment.current_period_id = current_period.id
+        sess.flush()
 
     total_published_lessons = (
         sess.query(sa.func.count(Lesson.id))
@@ -358,9 +383,8 @@ def calculate_course_progress(
             )
         )
 
-    total_required_lessons = (
-        sess.query(sa.func.count(Lesson.id)).filter(*required_lesson_filter).scalar() or 0
-    )
+    required_lessons = sess.query(Lesson).filter(*required_lesson_filter).all()
+    total_required_lessons = len(required_lessons)
 
     if total_required_lessons == 0:
         enrollment.current_progress_percent = Decimal("100.00")
@@ -368,19 +392,28 @@ def calculate_course_progress(
         sess.flush()
         return 100.0
 
-    completed_lessons = (
-        sess.query(sa.func.count(LessonProgress.id))
-        .join(Lesson, Lesson.id == LessonProgress.lesson_id)
+    completed_lp_records = (
+        sess.query(Lesson.id, Lesson.position)
+        .join(LessonProgress, Lesson.id == LessonProgress.lesson_id)
         .filter(
             LessonProgress.enrollment_period_id == current_period.id,
             LessonProgress.completed_at.isnot(None),
-            *required_lesson_filter,
+            Lesson.course_id == enrollment.course_id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.in_(["PUBLISHED", "HISTORICAL", "ACTIVE"]),
         )
-        .scalar()
-        or 0
+        .all()
     )
 
-    raw_pct = (completed_lessons / total_required_lessons) * 100.0
+    completed_ids = {r[0] for r in completed_lp_records}
+    completed_positions = {r[1] for r in completed_lp_records}
+
+    satisfied_count = sum(
+        1 for l in required_lessons
+        if l.id in completed_ids or l.position in completed_positions
+    )
+
+    raw_pct = (satisfied_count / total_required_lessons) * 100.0
     pct = min(100.0, max(0.0, round(raw_pct, 2)))
 
     enrollment.current_progress_percent = Decimal(str(pct))

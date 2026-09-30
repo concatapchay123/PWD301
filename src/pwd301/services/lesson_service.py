@@ -1247,12 +1247,51 @@ def get_lesson_detail(
         .filter(
             Enrollment.student_user_id == actor.id,
             Enrollment.course_id == course.id,
-            Enrollment.status == "ACTIVE",
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
         )
         .first()
     )
     if enrollment is None:
         raise ForbiddenError("Active course enrollment required to view this lesson.")
+
+    # If course specifies sequential learning, active students must complete prior lessons first
+    if enrollment.status == "ACTIVE" and course.completion_requirements:
+        try:
+            req_dict = json.loads(course.completion_requirements)
+            if isinstance(req_dict, dict) and req_dict.get("enforce_sequential_learning"):
+                all_lessons = (
+                    sess.query(Lesson)
+                    .filter(
+                        Lesson.course_id == course.id,
+                        Lesson.status == "PUBLISHED",
+                        Lesson.deleted_at.is_(None),
+                    )
+                    .order_by(Lesson.position.asc(), Lesson.id.asc())
+                    .all()
+                )
+                prior_ids = []
+                for les in all_lessons:
+                    if les.id == lesson.id:
+                        break
+                    prior_ids.append(les.id)
+
+                if prior_ids and enrollment.current_period_id:
+                    completed_count = (
+                        sess.query(sa.func.count(LessonProgress.id))
+                        .filter(
+                            LessonProgress.enrollment_period_id == enrollment.current_period_id,
+                            LessonProgress.lesson_id.in_(prior_ids),
+                            LessonProgress.completed_at.isnot(None),
+                        )
+                        .scalar()
+                        or 0
+                    )
+                    if completed_count < len(prior_ids):
+                        raise LessonStateViolationError(
+                            "Previous lessons must be completed first in this course."
+                        )
+        except (ValueError, TypeError):
+            pass
 
     return lesson
 
@@ -1422,7 +1461,18 @@ def record_lesson_progress(
         )
 
     if active_period is None:
-        raise LessonProgressError("No active enrollment period found for this student.")
+        now_ts = utc_now()
+        active_period = EnrollmentPeriod(
+            enrollment_id=enrollment.id,
+            period_no=1,
+            started_at=enrollment.enrolled_at or now_ts,
+            status="ACTIVE" if enrollment.status == "ACTIVE" else "COMPLETED",
+            created_at=now_ts,
+        )
+        sess.add(active_period)
+        sess.flush()
+        enrollment.current_period_id = active_period.id
+        sess.flush()
 
     # Find or create LessonProgress record
     progress = (
@@ -1477,9 +1527,15 @@ def record_lesson_progress(
 
     # Evaluate completion: monotonic, idempotent
     min_completion_seconds = lesson.minimum_completion_seconds
+    requires_video = _lesson_requires_video_watch(lesson)
     viewed_fraction_required = (
-        1.0 if _lesson_requires_video_watch(lesson) else float(lesson.viewed_fraction_required)
+        0.90 if requires_video else float(lesson.viewed_fraction_required)
     )
+
+    # When video is watched (>= 90%), automatically satisfy minimum duration requirement
+    if requires_video and float(progress.max_view_fraction) >= 0.90:
+        if min_completion_seconds > 0 and (progress.seconds_spent or 0) < min_completion_seconds:
+            progress.seconds_spent = min_completion_seconds
 
     progress_snapshot: dict[str, Any] = {}
     if progress.completion_rule_snapshot_json:
@@ -1560,12 +1616,11 @@ def complete_lesson_mini_quiz(
 
     requires_video_watch = _lesson_requires_video_watch(lesson)
     video_view_fraction_required = (
-        1.0 if requires_video_watch else float(lesson.viewed_fraction_required)
+        0.90 if requires_video_watch else float(lesson.viewed_fraction_required)
     )
     existing_progress = get_lesson_progress(actor, lesson_id, session=sess)
     video_watch_complete = bool(
         existing_progress
-        and existing_progress.seconds_spent >= lesson.minimum_completion_seconds
         and float(existing_progress.max_view_fraction) >= video_view_fraction_required
     )
     if requires_video_watch and not video_watch_complete:
@@ -1663,7 +1718,7 @@ def get_lesson_progress(
         .filter(
             Enrollment.student_user_id == actor.id,
             Enrollment.course_id == lesson.course_id,
-            Enrollment.status == "ACTIVE",
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
         )
         .first()
     )
