@@ -61,13 +61,13 @@ class StudentView {
 
   static isLessonVideoWatched(lesson) {
     if (!lesson?.video_url) return true;
-    return (
-      Boolean(lesson.progress?.is_completed) ||
-      Boolean(lesson.progress?.is_video_watched) ||
-      Number(lesson.progress?.max_view_fraction || 0) >= 0.90 ||
-      (Number(lesson.progress?.seconds_spent || 0) >= Number(lesson.minimum_completion_seconds || 0) &&
-       Number(lesson.progress?.max_view_fraction || 0) >= 0.90)
-    );
+    const fraction = Number(lesson.progress?.max_view_fraction || 0);
+    const spent = Number(lesson.progress?.seconds_spent || 0);
+    const minSec = Number(lesson.minimum_completion_seconds || 0);
+
+    if (fraction < 0.90) return false;
+    if (minSec > 0 && spent < minSec) return false;
+    return true;
   }
 
   static getPasswordRequirements(password) {
@@ -3753,7 +3753,7 @@ class StudentView {
                   <div class="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-relaxed">
                     ${(() => {
                       const grouped = parseGroupedAttemptChoices(q);
-                      const questionText = String(q.content || q.stem || '');
+                      const questionText = String(q.content || q.stem || '').replace(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):[^\]]+\]\]/gi, '').trim();
                       if (q.interaction_type === 'FILL_IN') {
                         const answers = String(q.answer_text || '').split('|||');
                         const placeholderCount = (questionText.match(/_{3,}/g) || []).length;
@@ -3810,18 +3810,36 @@ class StudentView {
                     })()}
                   </div>
 
-                  ${(q.resources || []).length > 0 ? `
-                    <div class="space-y-3">
-                      ${(q.resources || []).map((resource, imageIndex) => `
-                        <img
-                          src="${UI.escapeHtml(resource.url)}"
-                          alt="Question ${idx + 1} illustration ${imageIndex + 1}"
-                          loading="lazy"
-                          class="max-h-80 max-w-full rounded-lg border border-slate-200 dark:border-slate-700 object-contain"
-                        />
-                      `).join('')}
-                    </div>
-                  ` : ''}
+                  ${(() => {
+                    const rawContent = String(q.content || q.stem || '');
+                    const markerIds = [...rawContent.matchAll(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):([^\]]+)\]\]/gi)].map(m => m[1]);
+                    const resList = (Array.isArray(q.resources) && q.resources.length > 0)
+                      ? q.resources.map(r => r.download_url || r.url || (r.asset_id ? `/student/files/${r.asset_id}/download` : '')).filter(Boolean)
+                      : [];
+                    const idList = [
+                      ...(q.image_asset_ids || []),
+                      ...(q.image_asset_id ? [q.image_asset_id] : []),
+                      ...markerIds
+                    ].filter(Boolean);
+                    idList.forEach(aid => {
+                      const url = `/student/files/${aid}/download`;
+                      if (!resList.includes(url)) resList.push(url);
+                    });
+                    if (!resList.length) return '';
+                    return `
+                      <div class="space-y-3 my-2">
+                        ${resList.map((imgUrl, imageIndex) => `
+                          <img
+                            src="${UI.escapeHtml(imgUrl)}"
+                            alt="Question ${idx + 1} illustration ${imageIndex + 1}"
+                            loading="lazy"
+                            class="max-h-80 max-w-full rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-white dark:bg-slate-900"
+                            onerror="this.onerror=null; this.style.display='none'"
+                          />
+                        `).join('')}
+                      </div>
+                    `;
+                  })()}
 
                   <!-- Choices List -->
                   <div class="space-y-2.5 pt-1">
@@ -4588,8 +4606,34 @@ class StudentView {
 
                       <!-- Question Stem -->
                       <p class="text-sm sm:text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                        ${UI.escapeHtml(q.content || q.stem || '')}
+                        ${UI.escapeHtml(String(q.content || q.stem || '').replace(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):[^\]]+\]\]/gi, '').trim())}
                       </p>
+
+                      <!-- Question Illustration in Review -->
+                      ${(() => {
+                        const rawContent = String(q.content || q.stem || '');
+                        const markerIds = [...rawContent.matchAll(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):([^\]]+)\]\]/gi)].map(m => m[1]);
+                        const resList = (Array.isArray(q.resources) && q.resources.length > 0)
+                          ? q.resources.map(r => r.download_url || r.url || (r.asset_id ? `/student/files/${r.asset_id}/download` : '')).filter(Boolean)
+                          : [];
+                        const idList = [
+                          ...(q.image_asset_ids || []),
+                          ...(q.image_asset_id ? [q.image_asset_id] : []),
+                          ...markerIds
+                        ].filter(Boolean);
+                        idList.forEach(aid => {
+                          const url = `/student/files/${aid}/download`;
+                          if (!resList.includes(url)) resList.push(url);
+                        });
+                        if (!resList.length) return '';
+                        return `
+                          <div class="flex items-center gap-3 flex-wrap my-3">
+                            ${resList.map(imgUrl => `
+                              <img src="${UI.escapeHtml(imgUrl)}" alt="Hình ảnh câu hỏi ${idx + 1}" loading="lazy" class="max-h-72 max-w-full rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-white dark:bg-slate-900" onerror="this.onerror=null; this.style.display='none'" />
+                            `).join('')}
+                          </div>
+                        `;
+                      })()}
 
                       <!-- Options Grid (if choices available) -->
                       ${choices.length > 0 ? `

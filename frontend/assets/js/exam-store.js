@@ -113,9 +113,13 @@ class ExamStore {
   static canVisitStep(step) {
     if (step <= 1) return true;
     const draft = this.getDraft();
-    const methodReady = Boolean(draft.methodSelected && draft.courseId);
-    if (step === 2) return methodReady;
-    const questionsReady = methodReady && Array.isArray(draft.questions) && draft.questions.length > 0;
+    const hasContent = Boolean(
+      draft.methodSelected ||
+      (Array.isArray(draft.questions) && draft.questions.length > 0) ||
+      (draft.rawText && draft.rawText.trim().length > 0)
+    );
+    if (step === 2) return hasContent;
+    const questionsReady = hasContent && Array.isArray(draft.questions) && draft.questions.length > 0;
     if (step === 3) return questionsReady;
     return questionsReady && Boolean(draft.matrixConfirmed);
   }

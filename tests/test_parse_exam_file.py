@@ -80,3 +80,43 @@ def test_parse_exam_file_docx(client, app):
     assert "RESTful" in data["raw_text"]
     assert "HTTP" in data["raw_text"]
     assert data["filename"] == "de_thi_rest.docx"
+
+
+def test_parse_exam_file_docx_with_underline_and_math(client, app):
+    """Test that underlined choices are formatted as <u>...</u> and OMML fractions become LaTeX."""
+    import zipfile
+    with app.app_context():
+        user = _setup_instructor("inst_parse_math@test.edu")
+        login_web_user(client, user)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        doc_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">\n'
+            '  <w:body>\n'
+            '    <w:p><w:r><w:t>Câu 1: Cho hàm số f(x) = </w:t></w:r>'
+            '      <m:oMath><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>'
+            '      <w:r><w:t>. Chọn đáp án đúng:</w:t></w:r></w:p>\n'
+            '    <w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>A</w:t></w:r><w:r><w:t>. Bằng 0.5</w:t></w:r></w:p>\n'
+            '    <w:p><w:r><w:t>B. Bằng 1</w:t></w:r></w:p>\n'
+            '  </w:body>\n'
+            '</w:document>'
+        )
+        zf.writestr("word/document.xml", doc_xml.encode("utf-8"))
+
+    res = client.post(
+        "/instructor/exams/parse-file",
+        data={
+            "file": (io.BytesIO(buffer.getvalue()), "de_toan_omml.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        },
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    # Underlined choice A must be wrapped in <u>
+    assert "<u>A</u>" in data["raw_text"]
+    # Fraction 1/2 must be rendered with LaTeX \frac{1}{2}
+    assert r"\frac{1}{2}" in data["raw_text"]

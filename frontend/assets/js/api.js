@@ -446,12 +446,16 @@ class ApiClient {
   // =========================================================================
   // 3. Instructor Role Endpoints
   // =========================================================================
-  static async getInstructorDashboard() {
-    return await ApiClient.request('/instructor/dashboard');
+  static async getInstructorDashboard(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const url = query ? `/instructor/dashboard?${query}` : '/instructor/dashboard';
+    return await ApiClient.request(url);
   }
 
-  static async getInstructorCourses() {
-    return await ApiClient.request('/instructor/courses');
+  static async getInstructorCourses(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const url = query ? `/instructor/courses?${query}` : '/instructor/courses';
+    return await ApiClient.request(url);
   }
 
   static async createCourse(data) {

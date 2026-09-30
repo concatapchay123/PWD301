@@ -404,6 +404,17 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             if not accepted_answers:
                 accepted_answers = ["Đáp án"]
 
+        # Extract images from content
+        img_resources = []
+        for m in re.finditer(r"\[\[PWD301:IMAGE:([a-f0-9\-]+)\]\]", content, flags=re.IGNORECASE):
+            asset_uuid = m.group(1)
+            img_resources.append({
+                "asset_id": asset_uuid,
+                "position": len(img_resources) + 1,
+                "resource_role": "IMAGE",
+                "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
+            })
+
         q_obj: dict[str, Any] = {
             "id": question_counter,
             "number": question_counter,
@@ -421,6 +432,8 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             "bloom_level": bloom_level,
             "explanation": explanation,
             "choices": choices,
+            "image_asset_id": img_resources[0]["asset_id"] if img_resources else None,
+            "resources": img_resources,
         }
 
         if q_type == "SHORT_ANSWER":

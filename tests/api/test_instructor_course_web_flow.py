@@ -276,3 +276,107 @@ def test_admin_publish_draft_course_direct_success(
 
     sess.refresh(course)
     assert course.status == "PUBLISHED"
+
+
+def test_admin_actor_can_list_all_courses_in_instructor_courses_endpoint(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+    setup_roles: dict[str, Role],
+) -> None:
+    """Admin actor defaults to assigned courses, but can request scope=all for platform overview."""
+    sess: Session = db.session
+
+    # 1. Create a course owned by a regular instructor
+    create_course(
+        instructor_user,
+        {"course_code": "FLOW-TEST-101", "title": "Flow Testing Course"},
+        session=sess,
+    )
+    sess.commit()
+
+    # 2. Create an admin user who does not own the course
+    admin_user = register_user(
+        f"admin_flow_{uuid.uuid4().hex[:8]}@example.com",
+        "Password@123",
+        "Admin Flow Test",
+        session=sess,
+    )
+    assign_role_to_user(admin_user.id, "INSTRUCTOR", session=sess)
+    assign_role_to_user(admin_user.id, "ADMIN", session=sess)
+    sess.commit()
+
+    # Also create 1 course owned by admin
+    create_course(
+        admin_user,
+        {"course_code": "FLOW-ADM-101", "title": "Admin Owned Course"},
+        session=sess,
+    )
+    sess.commit()
+
+    login_web_user(client, admin_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    # Default scope is 'assigned': admin should only see their own course FLOW-ADM-101
+    resp = client.get("/instructor/courses")
+    assert resp.status_code == 200
+    assert resp.is_json
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["data"]["scope"] == "assigned"
+    assert data["data"]["is_admin"] is True
+    assert data["data"]["assigned_count"] >= 1
+    assert data["data"]["total_platform_count"] >= 2
+
+    assigned_codes = [c["course_code"] for c in data["data"]["courses"]]
+    assert "FLOW-ADM-101" in assigned_codes
+    assert "FLOW-TEST-101" not in assigned_codes
+
+    # Scope 'all': admin can see both FLOW-ADM-101 and FLOW-TEST-101
+    resp_all = client.get("/instructor/courses?scope=all")
+    assert resp_all.status_code == 200
+    data_all = resp_all.get_json()
+    assert data_all["data"]["scope"] == "all"
+    all_codes = [c["course_code"] for c in data_all["data"]["courses"]]
+    assert "FLOW-ADM-101" in all_codes
+    assert "FLOW-TEST-101" in all_codes
+
+
+def test_regular_instructor_cannot_view_all_platform_courses_via_scope(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+    setup_roles: dict[str, Role],
+) -> None:
+    """Non-admin instructor should only ever see their own courses even if requesting scope=all."""
+    sess: Session = db.session
+
+    # Create another instructor and course
+    other_ins = register_user(
+        f"other_ins_{uuid.uuid4().hex[:8]}@example.com",
+        "Password@123",
+        "Other Instructor",
+        session=sess,
+    )
+    assign_role_to_user(other_ins.id, "INSTRUCTOR", session=sess)
+    sess.commit()
+
+    create_course(
+        other_ins,
+        {"course_code": "OTHER-101", "title": "Other Instructor Course"},
+        session=sess,
+    )
+    sess.commit()
+
+    login_web_user(client, instructor_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    resp = client.get("/instructor/courses?scope=all")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["data"]["is_admin"] is False
+    codes = [c["course_code"] for c in data["data"]["courses"]]
+    assert "OTHER-101" not in codes
+

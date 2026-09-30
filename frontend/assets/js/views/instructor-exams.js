@@ -443,7 +443,9 @@
     const targetCourseId = (query && query.course_id) || new URLSearchParams(window.location.hash.split('?')[1] || '').get('course_id') || draft.courseId;
 
     ApiClient.getInstructorCourses().then(res => {
-      const courses = res.courses || [];
+      const courses = (res && res.data && Array.isArray(res.data.courses))
+        ? res.data.courses
+        : (res && Array.isArray(res.courses) ? res.courses : []);
       if (!hubCourseSelect) return;
 
       if (courses.length === 0) {
@@ -505,6 +507,21 @@
 
     // Resume / Discard draft
     document.getElementById('btn-hub-resume-draft')?.addEventListener('click', () => {
+      const draft = window.ExamStore.getDraft() || {};
+      if (!draft.courseId) {
+        let fallbackCourseId = document.getElementById('hub-course-select')?.value;
+        if (!fallbackCourseId) {
+          const selectElem = document.getElementById('hub-course-select');
+          if (selectElem && selectElem.options.length > 0) {
+            for (let opt of selectElem.options) {
+              if (opt.value) { fallbackCourseId = opt.value; break; }
+            }
+          }
+        }
+        if (fallbackCourseId) {
+          window.ExamStore.saveDraft({ courseId: fallbackCourseId });
+        }
+      }
       if (!window.ExamStore.canVisitStep(2)) {
         UI.showToast('Hãy chọn môn học và cách tạo đề để tiếp tục.', 'warning');
         return;
@@ -552,13 +569,24 @@
         }
 
         if (rawContent && rawContent.trim().length > 0) {
-          const parsed = ExamParser.parseExamRaw(rawContent, 40.0);
+          const parsed = ExamParser.parseExamRaw(rawContent, 100.0);
+          const currentDraft = window.ExamStore.getDraft() || {};
+          let courseId = currentDraft.courseId || document.getElementById('hub-course-select')?.value;
+          if (!courseId) {
+            const selectElem = document.getElementById('hub-course-select');
+            if (selectElem && selectElem.options.length > 0) {
+              for (let opt of selectElem.options) {
+                if (opt.value) { courseId = opt.value; break; }
+              }
+            }
+          }
           window.ExamStore.saveDraft({
             title: file.name.replace(/\.[^/.]+$/, ''),
             rawText: rawContent,
             questions: parsed.questions,
             sourceMethod: 'manual',
-            methodSelected: true
+            methodSelected: true,
+            courseId: courseId || ''
           });
           UI.showToast(`Đã bóc tách thành công ${parsed.questions.length} câu hỏi từ tệp!`, 'success');
           window.location.hash = '#/instructor/exams/editor';
@@ -942,16 +970,37 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           </div>
 
           <!-- Question Content -->
+          <!-- Attached Images Preview -->
+          ${(() => {
+            const allImages = (q.resources && q.resources.length > 0)
+              ? q.resources.map(r => r.asset_id || r.id).filter(Boolean)
+              : (q.image_asset_ids && q.image_asset_ids.length > 0)
+                ? q.image_asset_ids
+                : (q.image_asset_id ? [q.image_asset_id] : []);
+            if (!allImages.length) return '';
+            return `
+              <div class="flex items-center gap-3 flex-wrap p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800" onclick="event.stopPropagation()">
+                ${allImages.map((assetId, imgIdx) => `
+                  <div class="relative group/thumb rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs">
+                    <img src="/instructor/files/${assetId}/download" alt="Hình ảnh câu hỏi ${idx + 1}" class="h-28 w-auto max-w-xs object-contain cursor-pointer transition-transform hover:scale-105" onclick="window.open('/instructor/files/${assetId}/download', '_blank')" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'text-[11px] text-amber-600 p-2 block\'>🖼️ Ảnh đã gắn (${assetId.substring(0,8)}...)</span>'" />
+                    <span class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 text-white text-[9px] rounded font-mono">#${imgIdx + 1}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          })()}
+
+          <!-- Question Content -->
           <div class="flex items-center gap-2 text-[11px]" onclick="event.stopPropagation()">
             <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 hover:border-indigo-500">
               <span class="material-symbols-outlined text-[16px]">image</span>
-              <span>${q.image_asset_id ? 'Thay ảnh câu hỏi' : 'Thêm ảnh câu hỏi'}</span>
+              <span>${q.image_asset_id || (q.resources && q.resources.length > 0) ? 'Thay / thêm ảnh' : 'Thêm ảnh câu hỏi'}</span>
               <input type="file" class="raw-question-image-input sr-only" data-q-index="${idx}" accept="image/png,image/jpeg,image/webp,image/gif" />
             </label>
-            <span class="text-slate-500">${q.image_asset_id ? 'Ảnh đã gắn (đang chờ quét bảo mật)' : 'PNG, JPEG, WebP hoặc GIF; tối đa 5 MB'}</span>
+            <span class="text-slate-500">${q.image_asset_id || (q.resources && q.resources.length > 0) ? 'Đã đính kèm ảnh câu hỏi' : 'PNG, JPEG, WebP hoặc GIF; tối đa 5 MB'}</span>
           </div>
           <div class="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white leading-snug p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 focus-within:bg-white dark:focus-within:bg-slate-800 outline-none" contenteditable="true" onclick="event.stopPropagation()">
-            ${UI.escapeHtml(q.stem || q.question_text)}
+            ${UI.escapeHtml((q.stem || q.question_text || '').replace(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):[^\]]+\]\]/gi, '').trim())}
           </div>
 
           <!-- Choices -->
@@ -1385,30 +1434,56 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       try {
         const assetIds = [];
-        for (const image of images) {
+        let hasLocalFilePaths = false;
+        for (let idx = 0; idx < images.length; idx++) {
+          const image = images[idx];
           let file = image.file;
           if (!file && /^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(image.source)) {
-            const response = await fetch(image.source);
-            const blob = await response.blob();
-            file = new File([blob], `hinh-de-thi-${assetIds.length + 1}.png`, { type: blob.type });
+            try {
+              const response = await fetch(image.source);
+              const blob = await response.blob();
+              file = new File([blob], `hinh-de-thi-${assetIds.length + 1}.png`, { type: blob.type });
+            } catch (fetchErr) {
+              console.warn('Could not decode data URI image:', fetchErr);
+            }
           }
-          if (!file) throw new Error('Không đọc được ảnh trong nội dung dán. Hãy tải ảnh từ tệp gốc lên câu hỏi.');
-          if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
-            throw new Error('Ảnh đề thi phải là PNG, JPEG, WebP hoặc GIF và không quá 5 MB.');
+          if (!file && image.source && /^file:\/\//i.test(image.source)) {
+            hasLocalFilePaths = true;
           }
-          const uploaded = await ApiClient.uploadCourseFile(courseId, file);
-          const assetId = uploaded?.asset_id || uploaded?.public_id;
-          if (!assetId) throw new Error('Máy chủ không trả về mã ảnh đã tải lên.');
-          assetIds.push(assetId);
+          if (file) {
+            if (file.size <= 5 * 1024 * 1024 && ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+              try {
+                const uploaded = await ApiClient.uploadCourseFile(courseId, file);
+                const assetId = uploaded?.asset_id || uploaded?.public_id;
+                if (assetId) {
+                  assetIds.push(assetId);
+                  pasteText = pasteText.replace(`[[PWD301:PASTE_IMAGE:${idx}]]`, `\n[[PWD301:IMAGE:${assetId}]]\n`);
+                  continue;
+                }
+              } catch (upErr) {
+                console.warn('Failed to upload clipboard image:', upErr);
+              }
+            }
+          }
+          pasteText = pasteText.replace(`[[PWD301:PASTE_IMAGE:${idx}]]`, '\n[Hình ảnh đính kèm: Hãy kéo thả ảnh hoặc tải tệp .docx vào đây]\n');
         }
+
         if (document.getElementById('editor-raw-textarea') !== textarea) return;
-        const resolved = InstructorView.resolvePastedExamImages(pasteText, assetIds);
-        textarea.setRangeText(resolved, selectionStart, selectionEnd, 'end');
+        textarea.setRangeText(pasteText, selectionStart, selectionEnd, 'end');
         renderEditorPreview();
         saveEditorState();
-        UI.showToast(`Đã nhận diện ${assetIds.length} hình ảnh trong đề thi. Ảnh sẽ hiển thị sau khi quét an toàn.`, 'success');
+
+        if (assetIds.length > 0) {
+          UI.showToast(`Đã nhận diện và tải lên ${assetIds.length} hình ảnh vào đề thi.`, 'success');
+        } else if (hasLocalFilePaths) {
+          UI.showToast('Đã dán nội dung. Các hình ảnh từ Word có đường dẫn cục bộ (file:///) cần dùng nút "Tải tệp đề thi (.docx)" để hệ thống tự động bóc tách ảnh.', 'info');
+        }
       } catch (error) {
-        UI.showToast(error.message || 'Không thể nhận diện hình ảnh trong đề thi.', 'error');
+        console.error('Paste error:', error);
+        textarea.setRangeText(clipboard.getData('text/plain') || '', selectionStart, selectionEnd, 'end');
+        renderEditorPreview();
+        saveEditorState();
+        UI.showToast('Đã dán nội dung văn bản.', 'info');
       }
     });
 
@@ -3029,7 +3104,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   <h3 class="text-base font-bold text-slate-900 dark:text-white">1. Thời gian & Điều kiện làm bài</h3>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-assessment-type">
+                      Thể loại đề thi <span class="text-rose-500">*</span>
+                    </label>
+                    <select id="cfg-assessment-type" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
+                      <option value="QUIZ" ${(!config.assessmentType || config.assessmentType === 'QUIZ') ? 'selected' : ''}>Bài kiểm tra ngắn (QUIZ)</option>
+                      <option value="PRACTICE" ${config.assessmentType === 'PRACTICE' ? 'selected' : ''}>Luyện tập tự do (PRACTICE)</option>
+                      <option value="MIDTERM" ${config.assessmentType === 'MIDTERM' ? 'selected' : ''}>Thi giữa kỳ (MIDTERM)</option>
+                      <option value="FINAL" ${config.assessmentType === 'FINAL' ? 'selected' : ''}>Thi cuối kỳ (FINAL)</option>
+                      <option value="PLACEMENT" ${config.assessmentType === 'PLACEMENT' ? 'selected' : ''}>Khảo sát năng lực (PLACEMENT)</option>
+                    </select>
+                  </div>
                   <div>
                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-duration">
                       Thời lượng làm bài (Phút) <span class="text-rose-500">*</span>
@@ -3268,7 +3355,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         // 1. Create Assessment
         const created = await ApiClient.createAssessment(courseId, {
           title: title,
-          assessment_type: 'QUIZ',
+          assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
           duration_minutes: duration,
           max_attempts: maxAtt,
           require_password: false,
@@ -3285,9 +3372,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         if (asmId && questionsToSave.length > 0) {
           const batchQuestions = questionsToSave.map(q => {
             let qType = 'SINGLE_CHOICE';
-            if (q.type === 'MULTIPLE_CHOICE' || q.question_type === 'TN nhiều đáp án') qType = 'MULTIPLE_CHOICE';
+            if (q.type === 'MULTIPLE_CHOICE' || q.question_type === 'TN nhiều đáp án' || q.question_type === 'Kéo thả' || (q.stem && q.stem.includes('[[PWD301:G:DRAG:'))) qType = 'MULTIPLE_CHOICE';
             else if (q.type === 'TRUE_FALSE' || q.question_type === 'Đúng / Sai') qType = 'TRUE_FALSE';
-            else if (q.type === 'SHORT_ANSWER' || q.question_type === 'Điền từ' || q.question_type === 'Kéo thả') qType = 'SHORT_ANSWER';
+            else if (q.type === 'SHORT_ANSWER' || q.question_type === 'Điền từ') qType = 'SHORT_ANSWER';
+            else if (q.type === 'ESSAY' || q.question_type === 'Tự luận') qType = 'ESSAY';
 
             let diff = 'UNDERSTAND';
             if (q.bloom_level === 'Nhận biết') diff = 'REMEMBER';
@@ -3299,7 +3387,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               difficulty: diff,
               points: parseFloat(q.points) || 1.0,
               explanation: q.explanation || '',
-              image_asset_id: q.image_asset_id || null
+              image_asset_id: q.image_asset_id || null,
+              resources: (Array.isArray(q.resources) && q.resources.length > 0) ? q.resources : (q.image_asset_id ? [{ asset_id: q.image_asset_id, position: 1, resource_role: 'IMAGE' }] : [])
             };
 
             if (qType === 'SHORT_ANSWER') {
@@ -3339,14 +3428,16 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         if (asmId && createdQuestionsCount > 0) {
           try {
             await ApiClient.publishAssessment(asmId);
+            window.ExamStore.clearDraft();
+            UI.showToast(`Đề thi "${title}" đã xuất bản thành công kèm ${createdQuestionsCount} câu hỏi lưu vào CSDL!`, 'success');
+            window.location.hash = '#/instructor/dashboard';
           } catch (pubErr) {
-            console.warn('Lỗi kích hoạt xuất bản:', pubErr);
+            console.error('Lỗi kích hoạt xuất bản:', pubErr);
+            UI.showToast(`Đề thi đã lưu nhưng kích hoạt xuất bản thất bại: ${pubErr.message || pubErr}. Bản nháp vẫn được giữ lại để bạn kiểm tra lại.`, 'warning');
           }
+        } else {
+          UI.showToast('Không có câu hỏi nào được lưu thành công vào đề thi. Vui lòng kiểm tra lại cấu trúc câu hỏi.', 'error');
         }
-
-        window.ExamStore.clearDraft();
-        UI.showToast(`Đề thi "${title}" đã xuất bản thành công kèm ${createdQuestionsCount} câu hỏi lưu vào CSDL!`, 'success');
-        window.location.hash = '#/instructor/dashboard';
       } catch (err) {
         console.error('Lỗi xuất bản đề thi:', err);
         UI.showToast(`Lỗi xuất bản: ${err.message || err}`, 'error');

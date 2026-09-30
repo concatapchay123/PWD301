@@ -245,6 +245,12 @@ class QuestionRevision(Base):
         cascade="all, delete-orphan",
         order_by="QuestionRevisionAcceptedAnswer.position",
     )
+    resources = relationship(
+        "QuestionRevisionResource",
+        back_populates="question_revision",
+        cascade="all, delete-orphan",
+        order_by="QuestionRevisionResource.position",
+    )
 
     @property
     def prompt_markdown(self) -> str:

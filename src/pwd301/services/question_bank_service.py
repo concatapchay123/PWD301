@@ -36,6 +36,7 @@ from pwd301.models.attempt_regrade import (
     QuestionCorrection,
 )
 from pwd301.models.course import Lesson
+from pwd301.models.file_import import FileAsset, QuestionRevisionResource
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.models.question_bank import (
@@ -149,6 +150,33 @@ def _validate_points(default_points: Any) -> Decimal:
     return val
 
 
+def _resolve_file_asset(
+    asset_id: Any,
+    session: Session | scoped_session[Any],
+) -> FileAsset | None:
+    """Resolve a FileAsset by public_id UUID or internal BIGINT id."""
+    if not asset_id:
+        return None
+    try:
+        val_uuid = uuid.UUID(str(asset_id))
+        return (
+            session.query(FileAsset)
+            .filter(FileAsset.public_id == val_uuid, FileAsset.deleted_at.is_(None))
+            .first()
+        )
+    except (ValueError, TypeError, AttributeError):
+        pass
+    try:
+        val_int = int(asset_id)
+        return (
+            session.query(FileAsset)
+            .filter(FileAsset.id == val_int, FileAsset.deleted_at.is_(None))
+            .first()
+        )
+    except (ValueError, TypeError):
+        return None
+
+
 def _serialize_question_revision(
     rev: QuestionRevision,
     include_answers: bool = True,
@@ -186,6 +214,25 @@ def _serialize_question_revision(
             for a in sorted_answers
         ]
 
+    resources_data: list[dict[str, Any]] = []
+    if hasattr(rev, "resources") and rev.resources:
+        sorted_resources = sorted(rev.resources, key=lambda r: r.position)
+        for r in sorted_resources:
+            fa = r.file_asset
+            resources_data.append(
+                {
+                    "resource_id": r.id,
+                    "asset_id": str(fa.public_id) if fa else None,
+                    "filename": fa.file_name if fa else None,
+                    "file_name": fa.file_name if fa else None,
+                    "download_url": (
+                        f"/instructor/files/{fa.public_id}/download" if fa else None
+                    ),
+                    "resource_role": r.resource_role,
+                    "position": r.position,
+                }
+            )
+
     return {
         "question_id": str(question.public_id) if question else None,
         "revision_no": rev.revision_no,
@@ -201,6 +248,7 @@ def _serialize_question_revision(
         "was_used_for_grading": bool(rev.was_used_for_grading),
         "choices": choices_data,
         "accepted_answers": accepted_answers_data,
+        "resources": resources_data,
         "created_at": rev.created_at.isoformat() if rev.created_at else None,
         "approved_at": rev.approved_at.isoformat() if rev.approved_at else None,
     }
@@ -277,6 +325,25 @@ def _serialize_question(
             for a in sorted_answers
         ]
 
+    resources_data: list[dict[str, Any]] = []
+    if rev and hasattr(rev, "resources") and rev.resources:
+        sorted_resources = sorted(rev.resources, key=lambda r: r.position)
+        for r in sorted_resources:
+            fa = r.file_asset
+            resources_data.append(
+                {
+                    "resource_id": r.id,
+                    "asset_id": str(fa.public_id) if fa else None,
+                    "filename": fa.file_name if fa else None,
+                    "file_name": fa.file_name if fa else None,
+                    "download_url": (
+                        f"/instructor/files/{fa.public_id}/download" if fa else None
+                    ),
+                    "resource_role": r.resource_role,
+                    "position": r.position,
+                }
+            )
+
     return {
         "public_id": str(question.public_id),
         "question_id": str(question.public_id),
@@ -287,8 +354,13 @@ def _serialize_question(
         "status": question.status,
         "usage_count": question.usage_count,
         "default_points": 1.0,
+        "content": rev.content if rev else None,
+        "stem": rev.content if rev else None,
+        "explanation": rev.explanation if rev else None,
+        "question_type": rev.question_type if rev else None,
         "choices": choices_data,
         "accepted_answers": accepted_answers_data,
+        "resources": resources_data,
         "created_at": question.created_at.isoformat() if question.created_at else None,
         "updated_at": question.updated_at.isoformat() if question.updated_at else None,
         "deleted_at": question.deleted_at.isoformat() if question.deleted_at else None,
@@ -629,6 +701,40 @@ def create_question(
         approved_at=utc_now(),
     )
     sess.add(provenance)
+
+    # 13b. Create QuestionRevision Resources
+    raw_resources = payload.get("resources") or []
+    if not raw_resources and payload.get("image_asset_id"):
+        raw_resources = [
+            {"asset_id": payload.get("image_asset_id"), "position": 1, "resource_role": "IMAGE"}
+        ]
+    elif not raw_resources and payload.get("image_asset_ids"):
+        raw_resources = [
+            {"asset_id": aid, "position": idx, "resource_role": "IMAGE"}
+            for idx, aid in enumerate(payload.get("image_asset_ids", []), start=1)
+        ]
+
+    if isinstance(raw_resources, list):
+        for idx, r_item in enumerate(raw_resources, start=1):
+            if not isinstance(r_item, dict):
+                continue
+            r_asset_id = r_item.get("asset_id") or r_item.get("file_asset_id")
+            if not r_asset_id:
+                continue
+            target_fa = _resolve_file_asset(r_asset_id, session=sess)
+            if target_fa is None or target_fa.course_id != course.id:
+                continue
+            r_pos = int(r_item.get("position", idx))
+            r_role = str(r_item.get("resource_role", "IMAGE")).upper()
+            if r_role not in ("IMAGE", "ATTACHMENT"):
+                r_role = "IMAGE"
+            q_res = QuestionRevisionResource(
+                question_revision_id=revision.id,
+                file_asset_id=target_fa.id,
+                position=r_pos,
+                resource_role=r_role,
+            )
+            sess.add(q_res)
 
     # 14. Ghi Append-only AuditEvent
     after_data = {
@@ -1382,6 +1488,51 @@ def create_question_revision(
         )
         sess.add(answer)
 
+    # 13b. Create or Clone QuestionRevision Resources
+    if "resources" in payload or "image_asset_id" in payload or "image_asset_ids" in payload:
+        raw_resources = payload.get("resources") or []
+        if not raw_resources and payload.get("image_asset_id"):
+            raw_resources = [
+                {"asset_id": payload.get("image_asset_id"), "position": 1, "resource_role": "IMAGE"}
+            ]
+        elif not raw_resources and payload.get("image_asset_ids"):
+            raw_resources = [
+                {"asset_id": aid, "position": idx, "resource_role": "IMAGE"}
+                for idx, aid in enumerate(payload.get("image_asset_ids", []), start=1)
+            ]
+        if isinstance(raw_resources, list):
+            for idx, r_item in enumerate(raw_resources, start=1):
+                if not isinstance(r_item, dict):
+                    continue
+                r_asset_id = r_item.get("asset_id") or r_item.get("file_asset_id")
+                if not r_asset_id:
+                    continue
+                target_fa = _resolve_file_asset(r_asset_id, session=sess)
+                if target_fa is None or target_fa.course_id != question.course_id:
+                    continue
+                r_pos = int(r_item.get("position", idx))
+                r_role = str(r_item.get("resource_role", "IMAGE")).upper()
+                if r_role not in ("IMAGE", "ATTACHMENT"):
+                    r_role = "IMAGE"
+                q_res = QuestionRevisionResource(
+                    question_revision_id=new_revision.id,
+                    file_asset_id=target_fa.id,
+                    position=r_pos,
+                    resource_role=r_role,
+                )
+                sess.add(q_res)
+    else:
+        # Clone resources from latest_rev
+        if hasattr(latest_rev, "resources") and latest_rev.resources:
+            for old_r in latest_rev.resources:
+                cloned_r = QuestionRevisionResource(
+                    question_revision_id=new_revision.id,
+                    file_asset_id=old_r.file_asset_id,
+                    position=old_r.position,
+                    resource_role=old_r.resource_role,
+                )
+                sess.add(cloned_r)
+
     # 14. Update Question timestamp
     question.updated_at = utc_now()
 
@@ -1701,6 +1852,46 @@ def update_question(
                 )
                 sess.add(ans_record)
                 pos += 1
+
+        if "resources" in payload or "image_asset_id" in payload or "image_asset_ids" in payload:
+            sess.query(QuestionRevisionResource).filter(
+                QuestionRevisionResource.question_revision_id == rev.id
+            ).delete()
+            raw_resources = payload.get("resources") or []
+            if not raw_resources and payload.get("image_asset_id"):
+                raw_resources = [
+                    {
+                        "asset_id": payload.get("image_asset_id"),
+                        "position": 1,
+                        "resource_role": "IMAGE",
+                    }
+                ]
+            elif not raw_resources and payload.get("image_asset_ids"):
+                raw_resources = [
+                    {"asset_id": aid, "position": idx, "resource_role": "IMAGE"}
+                    for idx, aid in enumerate(payload.get("image_asset_ids", []), start=1)
+                ]
+            if isinstance(raw_resources, list):
+                for idx, r_item in enumerate(raw_resources, start=1):
+                    if not isinstance(r_item, dict):
+                        continue
+                    r_asset_id = r_item.get("asset_id") or r_item.get("file_asset_id")
+                    if not r_asset_id:
+                        continue
+                    target_fa = _resolve_file_asset(r_asset_id, session=sess)
+                    if target_fa is None or target_fa.course_id != question.course_id:
+                        continue
+                    r_pos = int(r_item.get("position", idx))
+                    r_role = str(r_item.get("resource_role", "IMAGE")).upper()
+                    if r_role not in ("IMAGE", "ATTACHMENT"):
+                        r_role = "IMAGE"
+                    q_res = QuestionRevisionResource(
+                        question_revision_id=rev.id,
+                        file_asset_id=target_fa.id,
+                        position=r_pos,
+                        resource_role=r_role,
+                    )
+                    sess.add(q_res)
 
     question.updated_at = utc_now()
     sess.flush()

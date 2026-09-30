@@ -1256,7 +1256,7 @@ class ExamParser {
           errors.push(`Câu ${currentQ.number}: Nội dung câu hỏi còn trống.`);
         }
         if (currentQ.choices.length < 2) {
-          errors.push(`Câu ${currentQ.number}: Cần ít nhất 2 đáp án lựa chọn (A, B, C, D).`);
+          errors.push(`Câu ${currentQ.number}: Cần ít nhất 2 đáp án lựa chọn (A, B, C, D, E, F).`);
         }
         const correctCount = currentQ.choices.filter(c => c.is_correct).length;
         if (correctCount === 0) {
@@ -1285,15 +1285,23 @@ class ExamParser {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const imageMarker = line.match(/^\[\[PWD301:IMAGE:([0-9a-f-]{36})\]\]$/i);
+      // Extract image markers on dedicated line: [[PWD301:IMAGE:...]] or [[PWD301:EXTRACTED_IMAGE:...]]
+      const imageMarker = line.match(/^\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):([^\]]+)\]\]$/i);
       if (imageMarker && currentQ) {
-        currentQ.image_asset_id = imageMarker[1];
+        const token = imageMarker[1].trim();
+        currentQ.image_asset_ids = currentQ.image_asset_ids || [];
+        currentQ.resources = currentQ.resources || [];
+        if (!currentQ.image_asset_ids.includes(token)) {
+          currentQ.image_asset_ids.push(token);
+          currentQ.resources.push({ asset_id: token, position: currentQ.resources.length + 1, resource_role: 'IMAGE' });
+        }
+        if (!currentQ.image_asset_id) currentQ.image_asset_id = token;
         continue;
       }
 
       const expMatch = line.match(/^(?:Hướng dẫn giải|Giải thích|Lời giải)[:.]\s*(.*)$/i);
-      const ansMatch = line.match(/^(?:Đáp án|Đ\/A|ĐA)[:.]\s*([A-D])/i);
-      const optMatch = line.match(/^(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*(.*)$/i);
+      const ansMatch = line.match(/^(?:Đáp án|Đ\/A|ĐA)[:.]\s*([A-F])/i);
+      const optMatch = line.match(/^(\*?\s*(?:<u>)?[A-F](?:<\/u>)?)(?:[:.)\]\s])\s*(.*)$/i);
 
       let qMatch = null;
       if (hasExplicitPrefix) {
@@ -1321,8 +1329,24 @@ class ExamParser {
           choices: [],
           explanation: '',
           points: 1.0,
-          type: 'MULTIPLE_CHOICE'
+          type: 'MULTIPLE_CHOICE',
+          resources: [],
+          image_asset_ids: [],
+          image_asset_id: null
         };
+
+        // Extract inline image markers from question stem if present
+        const inlineImgMatches = [...(cleanStem || rawStem).matchAll(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):([^\]]+)\]\]/gi)];
+        if (inlineImgMatches.length > 0) {
+          inlineImgMatches.forEach(m => {
+            const token = m[1].trim();
+            if (!currentQ.image_asset_ids.includes(token)) {
+              currentQ.image_asset_ids.push(token);
+              currentQ.resources.push({ asset_id: token, position: currentQ.resources.length + 1, resource_role: 'IMAGE' });
+            }
+            if (!currentQ.image_asset_id) currentQ.image_asset_id = token;
+          });
+        }
       } else if (expMatch && currentQ) {
         inExplanation = true;
         currentExplanation = expMatch[1] ? expMatch[1].trim() : '';
@@ -1330,13 +1354,13 @@ class ExamParser {
         currentQ.pending_correct_label = ansMatch[1].toUpperCase();
       } else if (optMatch && currentQ && !inExplanation) {
         // Check for horizontal choices on the same line: e.g. "A. Đúng  B. Sai  *C. Khác"
-        const inlineChoices = [...line.matchAll(/(?:^|\s+)(\*?\s*(?:<u>)?[A-D](?:<\/u>)?)(?:[:.)\]\s])\s*([^\n]*?)(?=(?:\s+[*]?\s*(?:<u>)?[A-D](?:<\/u>)?[:.)\]\s])|$)/gi)];
+        const inlineChoices = [...line.matchAll(/(?:^|\s+)(\*?\s*(?:<u>)?[A-F](?:<\/u>)?)(?:[:.)\]\s])\s*([^\n]*?)(?=(?:\s+[*]?\s*(?:<u>)?[A-F](?:<\/u>)?[:.)\]\s])|$)/gi)];
         if (inlineChoices.length > 1) {
           inlineChoices.forEach(match => {
             const rawPrefix = match[1].trim();
             const content = match[2] ? match[2].trim() : '';
             const isCorrect = rawPrefix.includes('*') || rawPrefix.includes('<u>') || content.includes('(đúng)') || content.includes('(chính xác)');
-            const cleanLabel = rawPrefix.replace(/[^A-D]/gi, '').toUpperCase();
+            const cleanLabel = rawPrefix.replace(/[^A-F]/gi, '').toUpperCase();
             currentQ.choices.push({
               label: cleanLabel || String.fromCharCode(65 + currentQ.choices.length),
               content: content,
@@ -1352,7 +1376,7 @@ class ExamParser {
             isCorrect = true;
           }
 
-          const cleanLabel = rawPrefix.replace(/[^A-D]/gi, '').toUpperCase();
+          const cleanLabel = rawPrefix.replace(/[^A-F]/gi, '').toUpperCase();
 
           currentQ.choices.push({
             label: cleanLabel || String.fromCharCode(65 + currentQ.choices.length),
@@ -1366,6 +1390,18 @@ class ExamParser {
         } else if (currentQ.choices.length > 0) {
           currentQ.choices[currentQ.choices.length - 1].content += '\n' + line;
         } else {
+          // Check for inline image markers in additional lines of the question stem
+          const inlineImgMatches = [...line.matchAll(/\[\[PWD301:(?:IMAGE|EXTRACTED_IMAGE):([^\]]+)\]\]/gi)];
+          if (inlineImgMatches.length > 0) {
+            inlineImgMatches.forEach(m => {
+              const token = m[1].trim();
+              if (!currentQ.image_asset_ids.includes(token)) {
+                currentQ.image_asset_ids.push(token);
+                currentQ.resources.push({ asset_id: token, position: currentQ.resources.length + 1, resource_role: 'IMAGE' });
+              }
+              if (!currentQ.image_asset_id) currentQ.image_asset_id = token;
+            });
+          }
           const addText = line.replace(/\[!b:\$\s*([\s\S]*?)\s*\$\]/g, '$1').trim();
           currentQ.question_text += '\n' + addText;
           currentQ.stem = currentQ.question_text;
@@ -1375,6 +1411,37 @@ class ExamParser {
 
     commitQuestion();
 
+    // 2nd pass: Scan for Answer Key Table at document tail (e.g. "BẢNG ĐÁP ÁN", "ĐÁP ÁN TRẮC NGHIỆM", "ĐÁP ÁN:")
+    const answerKeyTableMatch = rawText.match(/(?:BẢNG ĐÁP ÁN|BẢNG TRẢ LỜI|ĐÁP ÁN TRẮC NGHIỆM|ĐÁP ÁN\b)[\s\S]*$/i);
+    if (answerKeyTableMatch) {
+      const tableText = answerKeyTableMatch[0];
+      const pairMatches = [...tableText.matchAll(/(\d+)[\s.:-]+([A-F])\b/gi)];
+      if (pairMatches.length > 0) {
+        pairMatches.forEach(match => {
+          const qNum = parseInt(match[1], 10);
+          const correctLabel = match[2].toUpperCase();
+          const targetQ = questions.find(q => q.number === qNum);
+          if (targetQ && targetQ.choices && targetQ.choices.length > 0) {
+            let matched = false;
+            targetQ.choices.forEach(c => {
+              if (c.label.toUpperCase() === correctLabel) {
+                c.is_correct = true;
+                matched = true;
+              } else {
+                c.is_correct = false;
+              }
+            });
+            if (matched) {
+              const errIndex = errors.findIndex(e => e.startsWith(`Câu ${qNum}: Chưa đánh dấu đáp án đúng`));
+              if (errIndex !== -1) {
+                errors.splice(errIndex, 1);
+              }
+            }
+          }
+        });
+      }
+    }
+
     return {
       success: errors.length === 0,
       questions,
@@ -1382,7 +1449,7 @@ class ExamParser {
     };
   }
 
-  static parseExamRaw(rawText, totalPoints = 40.0) {
+  static parseExamRaw(rawText, totalPoints = 100.0) {
     const res = ExamParser.parse(rawText);
     const count = Math.max(res.questions.length, 1);
     const pointsPerQ = totalPoints / count;
@@ -1393,6 +1460,8 @@ class ExamParser {
         stem: q.stem || q.question_text || `Câu hỏi ${idx + 1}`,
         question_text: q.question_text || q.stem || `Câu hỏi ${idx + 1}`,
         image_asset_id: q.image_asset_id || null,
+        image_asset_ids: q.image_asset_ids || [],
+        resources: q.resources || [],
         choices: q.choices || [],
         explanation: q.explanation || '',
         points: q.points || pointsPerQ,
@@ -1411,7 +1480,19 @@ class ExamParser {
     if (!Array.isArray(questions) || questions.length === 0) return '';
     return questions.map((q, idx) => {
       const qNum = idx + 1;
-      let out = `Câu ${qNum}. ${q.stem || q.question_text}\n`;
+      let stemText = q.stem || q.question_text || '';
+      let out = `Câu ${qNum}. ${stemText}\n`;
+      // Append image markers if not already in stemText
+      if (Array.isArray(q.resources) && q.resources.length > 0) {
+        q.resources.forEach(r => {
+          const aid = r.asset_id || r.id;
+          if (aid && !stemText.includes(aid)) {
+            out += `[[PWD301:IMAGE:${aid}]]\n`;
+          }
+        });
+      } else if (q.image_asset_id && !stemText.includes(q.image_asset_id)) {
+        out += `[[PWD301:IMAGE:${q.image_asset_id}]]\n`;
+      }
       if (q.choices && Array.isArray(q.choices)) {
         q.choices.forEach(c => {
           const star = c.is_correct ? '*' : '';

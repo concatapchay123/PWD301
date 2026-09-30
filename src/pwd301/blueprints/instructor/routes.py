@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 import uuid
 from typing import Any
 
+_logger = logging.getLogger(__name__)
+
 import sqlalchemy as sa
-from flask import Response, jsonify, request, send_file
+from flask import Response, g, jsonify, request, send_file
 
 from pwd301.blueprints.instructor import instructor_bp
 from pwd301.extensions import db
@@ -420,7 +423,8 @@ def _serialize_course(c: Course) -> dict[str, Any]:
 def dashboard() -> Any:
     """Instructor dashboard displaying courses managed by the actor with analytics overview."""
     actor = require_authenticated_actor()
-    overview = get_instructor_overview_analytics(actor, session=db.session)
+    scope = request.args.get("scope", "assigned").strip().lower()
+    overview = get_instructor_overview_analytics(actor, session=db.session, scope=scope)
     return jsonify({"success": True, "data": overview, **overview}), 200
 
 
@@ -474,15 +478,44 @@ def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] 
 @instructor_bp.route("/courses", methods=["GET"])
 @instructor_required
 def my_courses() -> Any:
-    """List courses managed by the instructor."""
+    """List courses managed by the instructor or platform-wide for admin."""
     actor = require_authenticated_actor()
-    courses = (
-        db.session.query(Course)
-        .filter(Course.owner_instructor_id == actor.id, Course.deleted_at.is_(None))
-        .order_by(Course.created_at.desc())
-        .all()
+    scope = request.args.get("scope", "assigned").strip().lower()
+
+    assigned_query = db.session.query(Course).filter(
+        Course.owner_instructor_id == actor.id,
+        Course.deleted_at.is_(None),
     )
-    return jsonify({"courses": [_serialize_course(c) for c in courses]}), 200
+    assigned_count = assigned_query.count()
+
+    if actor.is_admin:
+        all_query = db.session.query(Course).filter(Course.deleted_at.is_(None))
+        total_platform_count = all_query.count()
+        query = all_query if scope == "all" else assigned_query
+        effective_scope = "all" if scope == "all" else "assigned"
+    else:
+        query = assigned_query
+        total_platform_count = assigned_count
+        effective_scope = "assigned"
+
+    courses = query.order_by(Course.created_at.desc()).all()
+    serialized = [_serialize_course(c) for c in courses]
+    data_payload = {
+        "courses": serialized,
+        "scope": effective_scope,
+        "is_admin": bool(actor.is_admin),
+        "assigned_count": assigned_count,
+        "total_platform_count": total_platform_count,
+    }
+    return jsonify({
+        "success": True,
+        "data": data_payload,
+        "courses": serialized,
+        "scope": effective_scope,
+        "is_admin": bool(actor.is_admin),
+        "assigned_count": assigned_count,
+        "total_platform_count": total_platform_count,
+    }), 200
 
 
 @instructor_bp.route("/courses", methods=["POST"])
@@ -541,23 +574,7 @@ def manage_course_hub(course_id: str) -> Any:
         "enrollments_count": active_count,
         "enrolled_count": active_count,
     }
-    accept_header = request.headers.get("Accept", "")
-    if "text/html" in accept_header and "application/json" not in accept_header:
-        from flask import get_flashed_messages
-
-        flashed = get_flashed_messages(with_categories=True)
-        flashes_html = "".join(
-            f"<div class='alert alert-{item[0]}'>{item[1]}</div>"
-            if isinstance(item, (tuple, list)) and len(item) == 2
-            else f"<div class='alert alert-info'>{item}</div>"
-            for item in flashed
-        )
-        html_body = (
-            f"<!DOCTYPE html><html><body><div id='flashes'>{flashes_html}</div></body></html>"
-        )
-        return html_body, 200, {"Content-Type": "text/html; charset=utf-8"}
-
-    return jsonify(data), 200
+    return jsonify({"success": True, "data": data, **data}), 200
 
 
 @instructor_bp.route("/courses/<course_id>", methods=["POST", "PATCH", "PUT"])
@@ -1357,31 +1374,46 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
 @instructor_required
 def upload_course_file_route(course_id: str) -> Any:
     """Upload a file asset for a course or lesson with virus scanning."""
+    import io
+
     actor = require_authenticated_actor()
     course = require_course_manager(actor, course_id, session=db.session)
 
-    if "file" not in request.files:
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "No file uploaded."}}), 400
-
-    file_obj = request.files["file"]
-    if not file_obj or not file_obj.filename:
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "Invalid filename."}}), 400
-
-    title = request.form.get("title") or file_obj.filename
+    title = request.form.get("title")
     lesson_id_str = request.form.get("lesson_id")
     asset_type = str(request.form.get("asset_type") or "RESOURCE").strip().upper()
     if asset_type not in {"RESOURCE", "COURSE_IMAGE"}:
         raise ValidationError("This upload only accepts course images or lesson resources.")
+
+    if request.files and "file" in request.files:
+        upload = request.files["file"]
+        if not upload or not upload.filename:
+            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "Invalid filename."}}), 400
+        file_stream = upload.stream
+        filename = upload.filename
+        content_type = upload.mimetype or upload.content_type
+        if not title:
+            title = filename
+    elif request.data:
+        file_stream = io.BytesIO(request.get_data())
+        filename = request.headers.get("X-File-Name") or "unnamed_file"
+        content_type = request.content_type
+        if not title:
+            title = filename
+    else:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "No file uploaded."}}), 400
+
     if asset_type == "COURSE_IMAGE":
         if lesson_id_str:
             raise ValidationError("A course image cannot be attached to a lesson.")
-        header = file_obj.stream.read(16)
-        file_obj.stream.seek(0)
+        header = file_stream.read(16)
+        file_stream.seek(0)
         is_png = header.startswith(b"\x89PNG\r\n\x1a\n")
         is_jpeg = header.startswith(b"\xff\xd8\xff")
         is_webp = header.startswith(b"RIFF") and header[8:12] == b"WEBP"
         if not (is_png or is_jpeg or is_webp):
             raise ValidationError("Choose a PNG, JPEG, or WebP image.")
+
     lesson = None
     if lesson_id_str:
         lesson = _resolve_lesson(lesson_id_str, session=db.session)
@@ -1392,9 +1424,9 @@ def upload_course_file_route(course_id: str) -> Any:
         asset = store_file_stream(
             actor=actor,
             course_id=course.id,
-            file_stream=file_obj.stream,
-            filename=file_obj.filename,
-            content_type=file_obj.content_type,
+            file_stream=file_stream,
+            filename=filename,
+            content_type=content_type,
             asset_type=asset_type,
             title=title,
             session=db.session,
@@ -1438,6 +1470,31 @@ def download_course_file_route(course_id: str, asset_id: str) -> Any:
     asset, blob, physical_path = get_file_for_download(
         actor, asset_id, revision_no=revision_no, session=db.session
     )
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+    clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
+    return send_file(
+        physical_path,
+        mimetype=blob.detected_mime_type,
+        as_attachment=(disposition == "attachment"),
+        download_name=clean_filename,
+        conditional=True,
+    )
+
+
+@instructor_bp.route("/files/<asset_id>/download", methods=["GET"])
+@instructor_required
+def download_instructor_file_direct_route(asset_id: str) -> Any:
+    """Download a course file asset directly for instructor view without requiring course_id in URL."""
+    actor = require_authenticated_actor()
+    version_param = request.args.get("version")
+    revision_no = int(version_param) if version_param and version_param.isdigit() else None
+    asset, blob, physical_path = get_file_for_download(
+        actor, asset_id, revision_no=revision_no, session=db.session
+    )
+    if asset.course_id:
+        require_course_manager(actor, asset.course_id, session=db.session)
     disposition = request.args.get("disposition", "attachment").lower()
     if disposition not in ("inline", "attachment"):
         disposition = "attachment"
@@ -3132,7 +3189,7 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
         )
 
     payload = request.get_json(silent=True) or {}
-    questions_data = payload.get("questions")
+    questions_data = payload.get("questions") or payload.get("items")
     if not isinstance(questions_data, list) or not questions_data:
         raise ValidationError("Danh sách câu hỏi 'questions' không được để trống.")
 
@@ -3230,6 +3287,13 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                                 accepted_answers.append({"answer_text": a_text, "position": a_idx})
                 q_payload["accepted_answers"] = accepted_answers
 
+            if "resources" in item:
+                q_payload["resources"] = item["resources"]
+            elif "image_asset_ids" in item:
+                q_payload["image_asset_ids"] = item["image_asset_ids"]
+            elif "image_asset_id" in item:
+                q_payload["image_asset_id"] = item["image_asset_id"]
+
             created_q = create_question(
                 actor=actor,
                 course_id=asm_obj.course_id,
@@ -3238,41 +3302,37 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
             )
 
             raw_image_asset_id = item.get("image_asset_id")
-            if raw_image_asset_id:
+            if raw_image_asset_id and not created_q.current_revision.resources:
+                image_asset_uuid = None
                 try:
                     image_asset_uuid = uuid.UUID(str(raw_image_asset_id))
-                except (TypeError, ValueError) as err:
-                    raise ValidationError(
-                        f"Question #{idx}: image_asset_id must be a valid UUID."
-                    ) from err
-                image_asset = (
-                    db.session.query(FileAsset)
-                    .filter(
-                        FileAsset.public_id == image_asset_uuid,
-                        FileAsset.course_id == asm_obj.course_id,
-                        FileAsset.deleted_at.is_(None),
+                except (TypeError, ValueError):
+                    _logger.warning("Question #%s: image_asset_id '%s' is not a valid UUID, skipping image link.", idx, raw_image_asset_id)
+
+                if image_asset_uuid is not None:
+                    image_asset = (
+                        db.session.query(FileAsset)
+                        .filter(
+                            FileAsset.public_id == image_asset_uuid,
+                            FileAsset.course_id == asm_obj.course_id,
+                            FileAsset.deleted_at.is_(None),
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if image_asset is None:
-                    raise ValidationError(f"Question #{idx}: image does not belong to this course.")
-                if (image_asset.mime_type or "").lower() not in {
-                    "image/jpeg",
-                    "image/png",
-                    "image/webp",
-                    "image/gif",
-                }:
-                    raise ValidationError(
-                        f"Question #{idx}: only PNG, JPEG, WebP, or GIF images are allowed."
-                    )
-                db.session.add(
-                    QuestionRevisionResource(
-                        question_revision_id=created_q.current_revision.id,
-                        file_asset_id=image_asset.id,
-                        position=1,
-                        resource_role="IMAGE",
-                    )
-                )
+                    if image_asset is not None and (image_asset.mime_type or "").lower() in {
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                        "image/gif",
+                    }:
+                        db.session.add(
+                            QuestionRevisionResource(
+                                question_revision_id=created_q.current_revision.id,
+                                file_asset_id=image_asset.id,
+                                position=1,
+                                resource_role="IMAGE",
+                            )
+                        )
 
             assignment = assign_question(
                 actor=actor,
@@ -3292,10 +3352,12 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
         db.session.commit()
         return jsonify(
             {
+                "success": True,
                 "status": "ok",
                 "message": f"Successfully created and assigned {len(created_items)} questions.",
                 "created_count": len(created_items),
                 "questions": created_items,
+                "data": created_items,
             }
         ), 201
     except Exception:
@@ -3828,44 +3890,6 @@ def retry_instructor_regrade_job_route(job_id: str) -> tuple[Response, int] | Re
     return jsonify(result), 200
 
 
-@instructor_bp.route("/courses/<course_id>/files", methods=["POST"])
-@instructor_required
-def instructor_upload_course_file(course_id: str) -> tuple[Response, int] | Response:
-    """Upload a new FileAsset for a managed course from Instructor Web portal."""
-    import io
-
-    from pwd301.services.exceptions import FileValidationError
-    from pwd301.services.file_service import _serialize_file_asset, store_file_stream
-
-    actor = require_authenticated_actor()
-    asset_type = request.form.get("asset_type", "RESOURCE")
-    title = request.form.get("title")
-
-    if request.files and "file" in request.files:
-        upload = request.files["file"]
-        file_stream = upload.stream
-        filename = upload.filename or "unnamed_file"
-        content_type = upload.mimetype or request.content_type
-    elif request.data:
-        file_stream = io.BytesIO(request.get_data())
-        filename = request.headers.get("X-File-Name") or "unnamed_file"
-        content_type = request.content_type
-    else:
-        raise FileValidationError("No file content provided in request.")
-
-    asset = store_file_stream(
-        actor=actor,
-        course_id=course_id,
-        file_stream=file_stream,
-        filename=filename,
-        content_type=content_type,
-        asset_type=asset_type,
-        title=title,
-        session=db.session,
-    )
-    return jsonify(_serialize_file_asset(asset)), 201
-
-
 @instructor_bp.route("/courses/<course_id>/files", methods=["GET"])
 @instructor_required
 def instructor_list_course_files(course_id: str) -> tuple[Response, int] | Response:
@@ -4215,7 +4239,7 @@ def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
     from pwd301.services.import_service import extract_text_from_docx, extract_text_from_pdf
 
     _logger = logging.getLogger(__name__)
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
     if not request.files or "file" not in request.files:
         raise ValidationError("Vui lòng chọn tệp (.docx, .pdf, .txt) để tải lên.")
 
@@ -4250,12 +4274,77 @@ def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
         tmp.write(upload.stream.read())
 
     try:
+        extracted_images: list[dict[str, Any]] = []
         if ext == ".docx":
-            lines = extract_text_from_docx(tmp_path)
+            from pwd301.services.import_service import extract_docx_with_resources
+
+            lines, extracted_images = extract_docx_with_resources(tmp_path)
         else:
             lines = extract_text_from_pdf(tmp_path)
 
         raw_text = "\n".join(lines)
+        saved_images: list[dict[str, Any]] = []
+
+        if extracted_images:
+            import io
+            from pwd301.models.course import Course
+            from pwd301.services.file_service import store_file_stream
+
+            raw_course_id = request.form.get("course_id") or request.args.get("course_id")
+            target_course: Course | None = None
+            if raw_course_id:
+                try:
+                    target_course = require_course_manager(actor, raw_course_id, session=db.session)
+                except Exception:
+                    pass
+            if target_course is None:
+                if actor.is_admin:
+                    target_course = (
+                        db.session.query(Course)
+                        .filter(Course.deleted_at.is_(None))
+                        .order_by(Course.created_at.desc())
+                        .first()
+                    )
+                else:
+                    target_course = (
+                        db.session.query(Course)
+                        .filter(
+                            Course.owner_instructor_id == actor.id,
+                            Course.deleted_at.is_(None),
+                        )
+                        .order_by(Course.created_at.desc())
+                        .first()
+                    )
+
+            if target_course is not None:
+                for img in extracted_images:
+                    try:
+                        stream = io.BytesIO(img["data"])
+                        asset = store_file_stream(
+                            actor=actor,
+                            course_id=target_course.id,
+                            file_stream=stream,
+                            filename=img["filename"],
+                            content_type=img["mime_type"],
+                            asset_type="RESOURCE",
+                            title=f"Ảnh đề thi: {img['filename']}",
+                            session=db.session,
+                        )
+                        token = img["token"]
+                        new_marker = f"[[PWD301:IMAGE:{asset.public_id}]]"
+                        raw_text = raw_text.replace(token, new_marker)
+                        saved_images.append(
+                            {
+                                "asset_id": str(asset.public_id),
+                                "url": f"/instructor/files/{asset.public_id}/download?disposition=inline",
+                                "mime_type": img["mime_type"],
+                                "filename": img["filename"],
+                            }
+                        )
+                    except Exception as img_err:
+                        _logger.warning("Failed to store extracted exam image: %s", img_err)
+                db.session.commit()
+
         return jsonify(
             {
                 "success": True,
@@ -4264,6 +4353,7 @@ def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
                 "filename": filename,
                 "format": ext.lstrip("."),
                 "lines_count": len(lines),
+                "extracted_images": saved_images,
             }
         ), 200
     except Exception as err:
@@ -4319,9 +4409,16 @@ def instructor_parse_excel_exam_route() -> tuple[Response, int] | Response:
 @instructor_required
 def instructor_parse_moodle_xml_route() -> tuple[Response, int] | Response:
     """Parse Moodle XML into standardized exam questions."""
+    import base64
+    import io
+    from pwd301.extensions import db
+    from pwd301.models.course import Course
     from pwd301.services.exceptions import ValidationError
+    from pwd301.services.file_service import store_file_stream
     from pwd301.services.moodle_exam_service import parse_moodle_xml
 
+    actor = require_authenticated_actor()
+    course_id = request.form.get("course_id") or request.args.get("course_id")
     xml_text = ""
     if "file" in request.files:
         upload = request.files["file"]
@@ -4330,11 +4427,70 @@ def instructor_parse_moodle_xml_route() -> tuple[Response, int] | Response:
     else:
         json_data = request.get_json(silent=True) or {}
         xml_text = json_data.get("xml") or json_data.get("content") or ""
+        if not course_id:
+            course_id = json_data.get("course_id")
 
     if not xml_text.strip():
         raise ValidationError("Vui lòng cung cấp tệp Moodle XML hoặc chuỗi XML hợp lệ.")
 
     res = parse_moodle_xml(xml_text)
+
+    # If course_id is provided and there are extracted_files, save them to FileAsset
+    if course_id and res.get("questions") and actor:
+        target_course: Course | None = None
+        try:
+            target_course = require_course_manager(actor, course_id, session=db.session)
+        except Exception:
+            target_course = None
+
+        if target_course is None:
+            if str(course_id).isdigit():
+                target_course = db.session.query(Course).filter_by(id=int(course_id)).first()
+            else:
+                with contextlib.suppress(Exception):
+                    import uuid
+                    target_course = db.session.query(Course).filter_by(public_id=uuid.UUID(str(course_id))).first()
+
+        if target_course:
+            for q in res["questions"]:
+                ext_files = q.get("extracted_files", [])
+                for f_info in ext_files:
+                    try:
+                        raw_data = base64.b64decode(f_info["data_base64"])
+                        fname = f_info["filename"]
+                        mime = "image/png" if fname.lower().endswith(".png") else "image/jpeg"
+                        stream = io.BytesIO(raw_data)
+                        asset = store_file_stream(
+                            actor=actor,
+                            course_id=target_course.id,
+                            file_stream=stream,
+                            filename=fname,
+                            content_type=mime,
+                            asset_type="RESOURCE",
+                            title=f"Ảnh Moodle XML: {fname}",
+                            session=db.session,
+                        )
+                        tok = f_info["token"]
+                        new_marker = f"[[PWD301:IMAGE:{asset.public_id}]]"
+                        if tok in q["stem"]:
+                            q["stem"] = q["stem"].replace(tok, new_marker)
+                        else:
+                            q["stem"] += f"\n{new_marker}"
+                        q["question_text"] = q["stem"]
+                        if not q.get("resources"):
+                            q["resources"] = []
+                        q["resources"].append({
+                            "asset_id": str(asset.public_id),
+                            "position": len(q["resources"]) + 1,
+                            "resource_role": "IMAGE",
+                            "download_url": f"/instructor/files/{asset.public_id}/download?disposition=inline",
+                        })
+                        if not q.get("image_asset_id"):
+                            q["image_asset_id"] = str(asset.public_id)
+                    except Exception as err:
+                        _logger.warning("Failed to store Moodle XML file asset: %s", err)
+            db.session.commit()
+
     return jsonify(res), 200
 
 

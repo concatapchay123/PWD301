@@ -657,7 +657,11 @@ class QuestionRevisionResource(Base):
         ),
     )
 
-    question_revision = relationship("QuestionRevision", foreign_keys=[question_revision_id])
+    question_revision = relationship(
+        "QuestionRevision",
+        foreign_keys=[question_revision_id],
+        back_populates="resources",
+    )
     file_asset = relationship("FileAsset", foreign_keys=[file_asset_id])
 
     @property

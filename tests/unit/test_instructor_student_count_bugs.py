@@ -23,8 +23,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.blueprints.instructor.routes import _serialize_course
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment
-from pwd301.models.identity import Role, User
+from pwd301.models.identity import User
 from pwd301.services.analytics_service import get_instructor_overview_analytics
 from pwd301.services.course_service import create_course
 from pwd301.services.enrollment_service import enroll_student, leave_course
@@ -312,3 +311,62 @@ def test_dashboard_endpoint_headless_envelope(
     # Backwards compatibility root level
     assert json_data["total_students"] == 1
     assert json_data["managed_courses_count"] >= 1
+
+
+def test_dashboard_endpoint_scope_assigned_vs_all_for_admin(
+    client: FlaskClient,
+    instructor_actor: User,
+    student_factory: Any,
+) -> None:
+    """Dashboard endpoint defaults to assigned courses for admin, allows scope=all."""
+    sess: Session = db.session
+
+    # 1. Course owned by regular instructor
+    c_ins = create_course(
+        instructor_actor,
+        {"course_code": f"INS-{uuid.uuid4().hex[:4]}", "title": "Instructor Course"},
+        session=sess,
+    )
+    c_ins.status = "PUBLISHED"
+
+    # 2. Admin user who owns 1 course
+    admin_u = register_user(
+        f"admin_{uuid.uuid4().hex[:6]}@example.com",
+        "Password@123",
+        "Admin Guy",
+        session=sess,
+    )
+    assign_role_to_user(admin_u.id, "INSTRUCTOR", session=sess)
+    assign_role_to_user(admin_u.id, "ADMIN", session=sess)
+    sess.commit()
+
+    c_adm = create_course(
+        admin_u,
+        {"course_code": f"ADM-{uuid.uuid4().hex[:4]}", "title": "Admin Course"},
+        session=sess,
+    )
+    c_adm.status = "PUBLISHED"
+    sess.commit()
+
+    # Login as admin
+    client.post("/auth/login", json={"email": admin_u.email, "password": "Password@123"})
+
+    # Default scope: assigned
+    resp_def = client.get("/instructor/dashboard")
+    assert resp_def.status_code == 200
+    data_def = resp_def.get_json()["data"]
+    assert data_def["scope"] == "assigned"
+    assert data_def["managed_courses_count"] == 1
+    assert len(data_def["courses"]) == 1
+    assert data_def["courses"][0]["course_code"] == c_adm.course_code
+    assert data_def["assigned_courses_count"] == 1
+    assert data_def["total_platform_courses_count"] >= 2
+
+    # Scope all
+    resp_all = client.get("/instructor/dashboard?scope=all")
+    assert resp_all.status_code == 200
+    data_all = resp_all.get_json()["data"]
+    assert data_all["scope"] == "all"
+    assert data_all["managed_courses_count"] >= 2
+    assert len(data_all["courses"]) >= 2
+

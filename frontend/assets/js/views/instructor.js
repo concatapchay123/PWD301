@@ -49,7 +49,7 @@ class InstructorView {
             <div class="text-2xl font-extrabold text-[#222120] dark:text-[#EDEDEB] mt-2" id="ins-kpi-courses">
               <span class="inline-block w-12 h-7 bg-[#F4F1EA] dark:bg-[#262524] rounded-lg animate-pulse"></span>
             </div>
-            <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1">Đang xây dựng & mở lớp</div>
+            <div class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1" id="ins-kpi-courses-sub">Đang xây dựng & mở lớp</div>
           </div>
 
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs transition-colors">
@@ -88,11 +88,29 @@ class InstructorView {
 
         <!-- Recent Courses Table Section -->
         <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary dark:text-blue-400 text-[20px]">table_chart</span>
-              Danh sách khóa học quản lý
-            </h2>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB] flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary dark:text-blue-400 text-[20px]">table_chart</span>
+                Danh sách khóa học quản lý
+              </h2>
+              <div id="ins-dash-scope-controls" class="hidden flex items-center gap-1.5 p-1 bg-[#F4F1EA] dark:bg-[#262524] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
+                <button
+                  type="button"
+                  id="btn-dash-scope-assigned"
+                  class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs"
+                >
+                  Môn tôi phụ trách
+                </button>
+                <button
+                  type="button"
+                  id="btn-dash-scope-all"
+                  class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]"
+                >
+                  Toàn trường
+                </button>
+              </div>
+            </div>
             <a href="#/instructor/courses" class="text-xs font-semibold text-primary dark:text-blue-400 hover:underline">Xem đầy đủ</a>
           </div>
 
@@ -110,84 +128,146 @@ class InstructorView {
       InstructorView.openCreateCourseModal();
     };
 
-    try {
-      // Single Source of Truth: Use single request to /instructor/dashboard
-      const res = await ApiClient.getInstructorDashboard();
-      const analytics = (res && res.data) ? res.data : (res || {});
+    let dashScope = 'assigned';
 
-      const courses = analytics.courses || [];
-      const totalStudents = analytics.total_students ?? 0;
-      const totalLessons = courses.reduce((acc, c) => acc + (c.lessons?.length || 0), 0);
-      const totalAssessments = analytics.total_assessments !== undefined
-        ? analytics.total_assessments
-        : (courses.reduce((acc, c) => acc + (c.assessments?.length || 0), 0));
+    const loadDashboardData = async (scope = 'assigned') => {
+      dashScope = scope;
+      try {
+        const res = await ApiClient.getInstructorDashboard({ scope: dashScope });
+        const analytics = (res && res.data) ? res.data : (res || {});
 
-      document.getElementById('ins-kpi-courses').textContent = analytics.managed_courses_count ?? courses.length;
-      document.getElementById('ins-kpi-students').textContent = totalStudents;
-      document.getElementById('ins-kpi-lessons').textContent = totalLessons;
-      const kpiAss = document.getElementById('ins-kpi-assessments');
-      if (kpiAss) kpiAss.textContent = totalAssessments;
+        const courses = analytics.courses || [];
+        const totalStudents = analytics.total_students ?? 0;
+        const totalLessons = courses.reduce((acc, c) => acc + (c.lessons?.length || 0), 0);
+        const totalAssessments = analytics.total_assessments !== undefined
+          ? analytics.total_assessments
+          : (courses.reduce((acc, c) => acc + (c.assessments?.length || 0), 0));
 
-      const tableBox = document.getElementById('ins-courses-table-box');
-      if (courses.length === 0) {
-        tableBox.innerHTML = `
-          <div class="text-center py-12 p-6">
-            <span class="material-symbols-outlined text-4xl text-[#8F8E8A] dark:text-[#6D6C68] mb-2">menu_book</span>
-            <p class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB]">Bạn chưa tạo khóa học nào</p>
-            <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-4">Bắt đầu bằng việc tạo một khóa học mới với mã môn và giáo trình chuẩn.</p>
-            <button type="button" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors" onclick="InstructorView.openCreateCourseModal()">
-              Tạo khóa học ngay
-            </button>
-          </div>
-        `;
-      } else {
-        tableBox.innerHTML = `
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs sm:text-sm">
-              <thead class="bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#8F8E8A] dark:text-[#9E9D99] uppercase tracking-wider text-[11px] font-bold">
-                <tr>
-                  <th class="px-5 py-3.5">Mã môn</th>
-                  <th class="px-5 py-3.5">Tên khóa học</th>
-                  <th class="px-5 py-3.5">Danh mục</th>
-                  <th class="px-5 py-3.5">Trạng thái</th>
-                  <th class="px-5 py-3.5">Sĩ số</th>
-                  <th class="px-5 py-3.5 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-[#E8E6DF] dark:divide-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB] font-medium">
-                ${courses.map(c => `
-                  <tr class="hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors">
-                    <td class="px-5 py-3.5 font-mono font-bold text-primary dark:text-blue-400">${UI.escapeHtml(c.course_code)}</td>
-                    <td class="px-5 py-3.5 font-bold text-[#222120] dark:text-[#EDEDEB] max-w-xs truncate">${UI.escapeHtml(c.title)}</td>
-                    <td class="px-5 py-3.5 text-[#5C5B57] dark:text-[#9E9D99]">${UI.escapeHtml(c.category || 'Công nghệ')}</td>
-                    <td class="px-5 py-3.5">${UI.statusBadge(c.status)}</td>
-                    <td class="px-5 py-3.5 font-semibold text-[#222120] dark:text-[#EDEDEB]">${c.enrolled_count ?? c.enrollments_count ?? 0} sinh viên</td>
-                    <td class="px-5 py-3.5 text-right">
-                      <a href="#/instructor/courses/manage?id=${c.course_id || c.id}" class="px-3 py-1.5 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] hover:bg-primary hover:text-white dark:hover:bg-primary dark:hover:text-white border border-[#E8E6DF] dark:border-[#2E2D2B] text-xs font-bold transition-colors shadow-2xs">
-                        Quản lý
-                      </a>
-                    </td>
+        document.getElementById('ins-kpi-courses').textContent = analytics.managed_courses_count ?? courses.length;
+        document.getElementById('ins-kpi-students').textContent = totalStudents;
+        document.getElementById('ins-kpi-lessons').textContent = totalLessons;
+        const kpiAss = document.getElementById('ins-kpi-assessments');
+        if (kpiAss) kpiAss.textContent = totalAssessments;
+
+        const isAdmin = Boolean(analytics.is_admin || window.app?.currentUser?.role_codes?.includes('ADMIN'));
+        const subKpi = document.getElementById('ins-kpi-courses-sub');
+        if (subKpi) {
+          if (isAdmin) {
+            subKpi.innerHTML = dashScope === 'assigned'
+              ? `Phân công: <strong class="text-primary font-bold">${analytics.assigned_courses_count ?? courses.length} môn</strong> (Toàn trường: ${analytics.total_platform_courses_count ?? courses.length} môn)`
+              : `Toàn trường: <strong class="text-primary font-bold">${analytics.total_platform_courses_count ?? courses.length} môn</strong> (Cá nhân: ${analytics.assigned_courses_count ?? 0} môn)`;
+          } else {
+            subKpi.textContent = 'Đang xây dựng & mở lớp';
+          }
+        }
+
+        const scopeControls = document.getElementById('ins-dash-scope-controls');
+        const btnAssigned = document.getElementById('btn-dash-scope-assigned');
+        const btnAll = document.getElementById('btn-dash-scope-all');
+        if (scopeControls && isAdmin) {
+          scopeControls.classList.remove('hidden');
+          if (btnAssigned) {
+            btnAssigned.textContent = `Môn tôi phụ trách (${analytics.assigned_courses_count ?? 0})`;
+            btnAssigned.className = dashScope === 'assigned'
+              ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs'
+              : 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
+          }
+          if (btnAll) {
+            btnAll.textContent = `Toàn trường (${analytics.total_platform_courses_count ?? 0})`;
+            btnAll.className = dashScope === 'all'
+              ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs'
+              : 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
+          }
+        } else if (scopeControls) {
+          scopeControls.classList.add('hidden');
+        }
+
+        const tableBox = document.getElementById('ins-courses-table-box');
+        if (courses.length === 0) {
+          tableBox.innerHTML = `
+            <div class="text-center py-12 p-6">
+              <span class="material-symbols-outlined text-4xl text-[#8F8E8A] dark:text-[#6D6C68] mb-2">menu_book</span>
+              <p class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB]">Bạn chưa được phân công hoặc chưa tạo khóa học nào</p>
+              <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-4">Bắt đầu bằng việc tạo một khóa học mới với mã môn và giáo trình chuẩn.</p>
+              <button type="button" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-colors" onclick="InstructorView.openCreateCourseModal()">
+                Tạo khóa học ngay
+              </button>
+            </div>
+          `;
+        } else {
+          const showInstructorCol = isAdmin && dashScope === 'all';
+          tableBox.innerHTML = `
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs sm:text-sm">
+                <thead class="bg-[#F4F1EA] dark:bg-[#262524] border-b border-[#E8E6DF] dark:border-[#2E2D2B] text-[#8F8E8A] dark:text-[#9E9D99] uppercase tracking-wider text-[11px] font-bold">
+                  <tr>
+                    <th class="px-5 py-3.5">Mã môn</th>
+                    <th class="px-5 py-3.5">Tên khóa học</th>
+                    ${showInstructorCol ? '<th class="px-5 py-3.5">Giảng viên</th>' : ''}
+                    <th class="px-5 py-3.5">Danh mục</th>
+                    <th class="px-5 py-3.5">Trạng thái</th>
+                    <th class="px-5 py-3.5">Sĩ số</th>
+                    <th class="px-5 py-3.5 text-right">Thao tác</th>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
+                </thead>
+                <tbody class="divide-y divide-[#E8E6DF] dark:divide-[#2E2D2B] text-[#5C5B57] dark:text-[#EDEDEB] font-medium">
+                  ${courses.map(c => `
+                    <tr class="hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors">
+                      <td class="px-5 py-3.5 font-mono font-bold text-primary dark:text-blue-400">${UI.escapeHtml(c.course_code)}</td>
+                      <td class="px-5 py-3.5 font-bold text-[#222120] dark:text-[#EDEDEB] max-w-xs truncate">${UI.escapeHtml(c.title)}</td>
+                      ${showInstructorCol ? `
+                        <td class="px-5 py-3.5 text-xs text-[#5C5B57] dark:text-[#9E9D99]">
+                          <span class="inline-flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px] text-primary">school</span>
+                            ${UI.escapeHtml(c.instructor_name || 'Chưa phân công')}
+                          </span>
+                        </td>
+                      ` : ''}
+                      <td class="px-5 py-3.5 text-[#5C5B57] dark:text-[#9E9D99]">${UI.escapeHtml(c.category || 'Công nghệ')}</td>
+                      <td class="px-5 py-3.5">${UI.statusBadge(c.status)}</td>
+                      <td class="px-5 py-3.5 font-semibold text-[#222120] dark:text-[#EDEDEB]">${c.enrolled_count ?? c.enrollments_count ?? 0} sinh viên</td>
+                      <td class="px-5 py-3.5 text-right">
+                        <a href="#/instructor/courses/manage?id=${c.course_id || c.id}" class="px-3 py-1.5 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] text-[#222120] dark:text-[#EDEDEB] hover:bg-primary hover:text-white dark:hover:bg-primary dark:hover:text-white border border-[#E8E6DF] dark:border-[#2E2D2B] text-xs font-bold transition-colors shadow-2xs">
+                          Quản lý
+                        </a>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      } catch (e) {
+        console.warn('Instructor dashboard load error:', e);
+        const tableBox = document.getElementById('ins-courses-table-box');
+        if (tableBox) {
+          tableBox.innerHTML = `
+            <div class="p-8 text-center text-rose-500 font-bold text-xs">
+              Lỗi tải dữ liệu bảng điều khiển: ${UI.escapeHtml(e.message || 'Không thể kết nối máy chủ')}
+            </div>
+          `;
+        }
+        if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+          UI.showToast('Không thể tải dữ liệu bảng điều khiển giảng viên.', 'error');
+        }
       }
-    } catch (e) {
-      console.warn('Instructor dashboard load error:', e);
-      const tableBox = document.getElementById('ins-courses-table-box');
-      if (tableBox) {
-        tableBox.innerHTML = `
-          <div class="p-8 text-center text-rose-500 font-bold text-xs">
-            Lỗi tải dữ liệu bảng điều khiển: ${UI.escapeHtml(e.message || 'Không thể kết nối máy chủ')}
-          </div>
-        `;
-      }
-      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
-        UI.showToast('Không thể tải dữ liệu bảng điều khiển giảng viên.', 'error');
-      }
+    };
+
+    const btnDashAssigned = document.getElementById('btn-dash-scope-assigned');
+    const btnDashAll = document.getElementById('btn-dash-scope-all');
+    if (btnDashAssigned) {
+      btnDashAssigned.onclick = () => {
+        if (dashScope !== 'assigned') loadDashboardData('assigned');
+      };
     }
+    if (btnDashAll) {
+      btnDashAll.onclick = () => {
+        if (dashScope !== 'all') loadDashboardData('all');
+      };
+    }
+
+    await loadDashboardData('assigned');
   }
 
   // =========================================================================
@@ -222,6 +302,28 @@ class InstructorView {
               <span>Tạo khóa học mới</span>
             </button>
           </div>
+        </div>
+
+        <!-- Admin Scope Selector (Warm Segmented Control Tabs) -->
+        <div id="ins-courses-scope-bar" class="hidden flex items-center gap-2 p-1.5 bg-[#F4F1EA] dark:bg-[#262524] rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] w-fit">
+          <button
+            type="button"
+            id="tab-scope-assigned"
+            class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B]"
+          >
+            <span class="material-symbols-outlined text-[16px]">person</span>
+            <span>Khóa học tôi phụ trách</span>
+            <span id="badge-count-assigned" class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-primary-subtle text-primary font-extrabold">0</span>
+          </button>
+          <button
+            type="button"
+            id="tab-scope-all"
+            class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]"
+          >
+            <span class="material-symbols-outlined text-[16px]">account_balance</span>
+            <span>Toàn bộ khóa học trường</span>
+            <span id="badge-count-all" class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-[#E8E6DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-extrabold">0</span>
+          </button>
         </div>
 
         <!-- Search & Filter Bar -->
@@ -278,6 +380,21 @@ class InstructorView {
     };
 
     let allCourses = [];
+    let coursesScope = 'assigned';
+
+    const updateTabsUI = () => {
+      const tabAssigned = document.getElementById('tab-scope-assigned');
+      const tabAll = document.getElementById('tab-scope-all');
+      if (!tabAssigned || !tabAll) return;
+
+      if (coursesScope === 'assigned') {
+        tabAssigned.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B]';
+        tabAll.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
+      } else {
+        tabAll.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B]';
+        tabAssigned.className = 'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
+      }
+    };
 
     const renderCards = (coursesToDisplay) => {
       const box = document.getElementById('ins-courses-cards-box');
@@ -326,12 +443,18 @@ class InstructorView {
                     `}
                   </div>
 
-                  <!-- Top Row: Code & Status -->
+                  <!-- Top Row: Code & Status & Instructor -->
                   <div class="flex items-center justify-between gap-2 flex-wrap">
                     <span class="font-mono font-extrabold text-primary text-xs px-2.5 py-1 rounded-lg bg-primary-subtle border border-primary/20">
                       ${UI.escapeHtml(c.course_code)}
                     </span>
                     <div class="flex items-center gap-1.5 flex-wrap">
+                      ${c.instructor_name ? `
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] text-[11px] font-semibold border border-[#E8E6DF] dark:border-[#2E2D2B]" title="Giảng viên phụ trách">
+                          <span class="material-symbols-outlined text-[13px]">school</span>
+                          <span>${UI.escapeHtml(c.instructor_name)}</span>
+                        </span>
+                      ` : ''}
                       ${UI.statusBadge(c.status)}
                     </div>
                   </div>
@@ -385,6 +508,7 @@ class InstructorView {
         const matchesSearch = !searchVal || 
           c.course_code.toLowerCase().includes(searchVal) || 
           c.title.toLowerCase().includes(searchVal) ||
+          (c.instructor_name && c.instructor_name.toLowerCase().includes(searchVal)) ||
           (c.category && c.category.toLowerCase().includes(searchVal));
 
         const matchesStatus = statusVal === 'ALL' || c.status === statusVal;
@@ -392,10 +516,34 @@ class InstructorView {
       });
     };
 
-    const loadData = async () => {
+    const loadData = async (scope = coursesScope) => {
+      coursesScope = scope;
       try {
-        const res = await ApiClient.getInstructorCourses();
-        allCourses = res.courses || [];
+        const res = await ApiClient.getInstructorCourses({ scope: coursesScope });
+        const resData = (res && res.data) ? res.data : (res || {});
+        allCourses = Array.isArray(resData.courses)
+          ? resData.courses
+          : (Array.isArray(res?.courses) ? res.courses : []);
+
+        const isAdmin = Boolean(resData.is_admin || res?.is_admin || window.app?.currentUser?.role_codes?.includes('ADMIN'));
+        const scopeBar = document.getElementById('ins-courses-scope-bar');
+        if (scopeBar) {
+          if (isAdmin) {
+            scopeBar.classList.remove('hidden');
+            const badgeAssigned = document.getElementById('badge-count-assigned');
+            const badgeAll = document.getElementById('badge-count-all');
+            if (badgeAssigned && resData.assigned_count !== undefined) {
+              badgeAssigned.textContent = resData.assigned_count;
+            }
+            if (badgeAll && resData.total_platform_count !== undefined) {
+              badgeAll.textContent = resData.total_platform_count;
+            }
+            updateTabsUI();
+          } else {
+            scopeBar.classList.add('hidden');
+          }
+        }
+
         renderCards(getFilteredCourses());
       } catch (e) {
         document.getElementById('ins-courses-cards-box').innerHTML = `
@@ -403,6 +551,23 @@ class InstructorView {
         `;
       }
     };
+
+    const tabAssigned = document.getElementById('tab-scope-assigned');
+    const tabAll = document.getElementById('tab-scope-all');
+    if (tabAssigned) {
+      tabAssigned.onclick = () => {
+        if (coursesScope !== 'assigned') {
+          loadData('assigned');
+        }
+      };
+    }
+    if (tabAll) {
+      tabAll.onclick = () => {
+        if (coursesScope !== 'all') {
+          loadData('all');
+        }
+      };
+    }
 
     document.getElementById('courses-filter-search').oninput = () => renderCards(getFilteredCourses());
     document.getElementById('courses-filter-status').onchange = () => renderCards(getFilteredCourses());
@@ -412,13 +577,13 @@ class InstructorView {
       if (searchInput) searchInput.value = '';
       if (statusSelect) statusSelect.value = 'ALL';
       renderCards(allCourses);
-      loadData();
+      loadData(coursesScope);
       if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
         UI.showToast('Đã làm mới danh sách và đặt lại bộ lọc.', 'info');
       }
     };
 
-    await loadData();
+    await loadData('assigned');
   }
 
   static openCreateCourseModal() {
@@ -7634,9 +7799,9 @@ class InstructorView {
           <div class="space-y-1">
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Độ khó</label>
             <select name="difficulty" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:border-primary">
-              <option value="BEGINNER">Cơ bản (BEGINNER)</option>
-              <option value="INTERMEDIATE" selected>Trung cấp (INTERMEDIATE)</option>
-              <option value="ADVANCED">Nâng cao (ADVANCED)</option>
+              <option value="REMEMBER">Nhận biết (REMEMBER)</option>
+              <option value="UNDERSTAND" selected>Thông hiểu (UNDERSTAND)</option>
+              <option value="APPLY">Vận dụng (APPLY)</option>
             </select>
           </div>
         </div>
@@ -7697,11 +7862,17 @@ class InstructorView {
       }
 
       try {
+        let normalizedDiff = (diff || 'UNDERSTAND').toUpperCase();
+        if (normalizedDiff === 'BEGINNER') normalizedDiff = 'REMEMBER';
+        else if (normalizedDiff === 'INTERMEDIATE') normalizedDiff = 'UNDERSTAND';
+        else if (normalizedDiff === 'ADVANCED') normalizedDiff = 'APPLY';
+        if (!['REMEMBER', 'UNDERSTAND', 'APPLY'].includes(normalizedDiff)) normalizedDiff = 'UNDERSTAND';
+
         await ApiClient.createQuestion(courseId || 'PWD301', {
           content: stem,
           question_type: 'SINGLE_CHOICE',
           bloom_level: bloom,
-          difficulty: diff,
+          difficulty: normalizedDiff,
           choices: choices
         });
         UI.closeModal();
@@ -7741,9 +7912,9 @@ class InstructorView {
           <div class="space-y-1">
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Độ khó</label>
             <select id="ai-draft-diff" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm outline-none focus:border-purple-600">
-              <option value="BEGINNER">Cơ bản</option>
-              <option value="INTERMEDIATE" selected>Trung cấp</option>
-              <option value="ADVANCED">Nâng cao</option>
+              <option value="REMEMBER">Nhận biết (REMEMBER)</option>
+              <option value="UNDERSTAND" selected>Thông hiểu (UNDERSTAND)</option>
+              <option value="APPLY">Vận dụng (APPLY)</option>
             </select>
           </div>
         </div>

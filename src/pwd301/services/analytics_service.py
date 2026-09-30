@@ -288,6 +288,7 @@ def get_admin_system_overview(
 def get_instructor_overview_analytics(
     actor: User,
     session: Session | scoped_session[Any],
+    scope: str = "assigned",
 ) -> dict[str, Any]:
     """Retrieve multi-course teaching analytics overview for Instructors.
 
@@ -302,25 +303,35 @@ def get_instructor_overview_analytics(
         raise ForbiddenError("Instructor access required.")
 
     sess = session
+    norm_scope = (scope or "assigned").strip().lower()
 
-    # Resolve managed courses
+    # Resolve assigned courses
+    assigned_courses = (
+        sess.query(Course)
+        .filter(
+            Course.owner_instructor_id == actor.id,
+            Course.deleted_at.is_(None),
+        )
+        .order_by(Course.created_at.desc())
+        .all()
+    )
+    assigned_courses_count = len(assigned_courses)
+
+    # Resolve platform courses for admin if requested
     if actor.is_admin:
-        courses = (
+        platform_courses = (
             sess.query(Course)
             .filter(Course.deleted_at.is_(None))
             .order_by(Course.created_at.desc())
             .all()
         )
+        total_platform_courses_count = len(platform_courses)
+        courses = platform_courses if norm_scope == "all" else assigned_courses
+        effective_scope = "all" if norm_scope == "all" else "assigned"
     else:
-        courses = (
-            sess.query(Course)
-            .filter(
-                Course.owner_instructor_id == actor.id,
-                Course.deleted_at.is_(None),
-            )
-            .order_by(Course.created_at.desc())
-            .all()
-        )
+        courses = assigned_courses
+        total_platform_courses_count = assigned_courses_count
+        effective_scope = "assigned"
 
     now = utc_now()
     managed_courses_count = len(courses)
@@ -329,6 +340,10 @@ def get_instructor_overview_analytics(
             "instructor_id": str(actor.public_id),
             "instructor_name": actor.display_name,
             "managed_courses_count": 0,
+            "assigned_courses_count": assigned_courses_count,
+            "total_platform_courses_count": total_platform_courses_count,
+            "scope": effective_scope,
+            "is_admin": bool(actor.is_admin),
             "total_students_count": 0,
             "total_students": 0,
             "total_questions": 0,
@@ -490,12 +505,23 @@ def get_instructor_overview_analytics(
                 "course_id": str(c.public_id),
                 "course_code": c.course_code,
                 "title": c.title,
+                "category": c.category,
                 "status": c.status,
                 "capacity": c.capacity,
                 "enrolled_count": enrolled_c,
+                "enrollments_count": enrolled_c,
                 "completed_count": comp_count,
                 "completion_rate_percent": comp_rate,
                 "average_progress_percent": round(c_stat["avg_progress"], 2),
+                "owner_instructor_id": (
+                    str(c.owner_instructor.public_id) if c.owner_instructor else None
+                ),
+                "instructor_name": (
+                    c.owner_instructor.display_name if c.owner_instructor else None
+                ),
+                "instructor_email": (
+                    c.owner_instructor.email if c.owner_instructor else None
+                ),
                 "created_at": c.created_at.isoformat(),
             }
         )
@@ -504,6 +530,10 @@ def get_instructor_overview_analytics(
         "instructor_id": str(actor.public_id),
         "instructor_name": actor.display_name,
         "managed_courses_count": managed_courses_count,
+        "assigned_courses_count": assigned_courses_count,
+        "total_platform_courses_count": total_platform_courses_count,
+        "scope": effective_scope,
+        "is_admin": bool(actor.is_admin),
         "total_students_count": total_students_count,
         "total_students": total_students_count,
         "total_unique_students": int(all_time_unique_students),

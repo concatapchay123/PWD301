@@ -15,12 +15,20 @@ import defusedxml.ElementTree as ET
 
 
 def _clean_html_text(raw_html: str | None) -> str:
-    """Strip HTML tags and unescape entities to return clean text."""
+    """Strip HTML tags and unescape entities to return clean text, preserving image markers."""
     if not raw_html:
         return ""
     text = html.unescape(str(raw_html))
     # Replace line breaks and paragraph tags with newlines
     text = re.sub(r"<(?:br|p|div)[^>]*>", "\n", text, flags=re.IGNORECASE)
+    # Check for img tags and convert to marker if present
+    def _img_token(m: re.Match) -> str:
+        src = m.group(1) or ""
+        fname = src.split("/")[-1]
+        return f"\n[[IMAGE:{fname}]]\n" if fname else ""
+
+    img_pattern = r'<img\s+[^>]*src=["\'](?:@@PLUGINFILE@@/)?([^"\']+)["\'][^>]*>'
+    text = re.sub(img_pattern, _img_token, text, flags=re.IGNORECASE)
     # Strip remaining HTML tags
     text = re.sub(r"<[^>]+>", "", text)
     # Normalize whitespaces while preserving intentional newlines
@@ -284,7 +292,7 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
 
             answer_nodes = node.findall("./answer")
             correct_count = 0
-            for idx, ans_el in enumerate(answer_nodes, start=1):
+            for ans_el in answer_nodes:
                 ans_text_el = ans_el.find("./text")
                 ans_content = _clean_html_text(ans_text_el.text) if ans_text_el is not None and ans_text_el.text else ""
                 if not ans_content:
@@ -351,7 +359,7 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             # Fallback for essay or custom types
             answer_nodes = node.findall("./answer")
             if answer_nodes:
-                for idx, ans_el in enumerate(answer_nodes, start=1):
+                for ans_el in answer_nodes:
                     ans_text_el = ans_el.find("./text")
                     ans_content = _clean_html_text(ans_text_el.text) if ans_text_el is not None and ans_text_el.text else ""
                     if ans_content:
@@ -366,6 +374,29 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             else:
                 mapped_type = "SHORT_ANSWER"
                 accepted_answers = ["Đáp án tự luận"]
+
+        # Check for embedded files / images in Moodle XML
+        extracted_files = []
+        for f_idx, f_el in enumerate(node.findall(".//file"), start=1):
+            enc = (f_el.attrib.get("encoding") or "").strip().lower()
+            fname = f_el.attrib.get("name") or f"image_{f_idx}.png"
+            if enc == "base64" and f_el.text and f_el.text.strip():
+                extracted_files.append({
+                    "filename": fname,
+                    "data_base64": f_el.text.strip(),
+                    "position": f_idx,
+                    "token": f"[[IMAGE:{fname}]]",
+                })
+
+        img_resources = []
+        for m in re.finditer(r"\[\[PWD301:IMAGE:([a-f0-9\-]+)\]\]", stem, flags=re.IGNORECASE):
+            asset_uuid = m.group(1)
+            img_resources.append({
+                "asset_id": asset_uuid,
+                "position": len(img_resources) + 1,
+                "resource_role": "IMAGE",
+                "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
+            })
 
         q_obj: dict[str, Any] = {
             "id": q_counter,
@@ -383,6 +414,9 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             "bloom_level": "Thông hiểu",
             "explanation": explanation,
             "choices": choices,
+            "image_asset_id": img_resources[0]["asset_id"] if img_resources else None,
+            "resources": img_resources,
+            "extracted_files": extracted_files,
         }
 
         if mapped_type == "SHORT_ANSWER":

@@ -106,15 +106,21 @@ class ParsedQuestionDraft:
 # ----------------------------------------------------------------------
 
 
-def extract_text_from_docx(file_path: Path) -> list[str]:
-    """Extract paragraphs and table text from a DOCX file using Python's standard zipfile and xml.
+def extract_docx_with_resources(
+    file_path: Path,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Extract paragraphs, table text, and embedded images from a DOCX file.
 
-    Traverses word/document.xml without any third-party C/binary dependencies.
+    Traverses word/document.xml and word/_rels/document.xml.rels without third-party binary C deps.
+    Returns:
+        tuple of (lines: list[str], extracted_images: list[dict[str, Any]])
     """
     if not file_path.exists():
         raise DocumentParsingError(f"DOCX file not found: {file_path}")
 
     lines: list[str] = []
+    extracted_images: list[dict[str, Any]] = []
+
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             # Defensive inspection against zip bomb and zip-slip attacks
@@ -164,28 +170,53 @@ def extract_text_from_docx(file_path: Path) -> list[str]:
                 )
                 raise DocumentParsingError(msg)
 
+            # Parse relationship map from word/_rels/document.xml.rels
+            rel_map: dict[str, str] = {}
+            if "word/_rels/document.xml.rels" in zf.namelist():
+                try:
+                    rels_content = zf.read("word/_rels/document.xml.rels")
+                    rels_root = defused_ET.fromstring(rels_content)
+                    for rel in rels_root.iter():
+                        tag = rel.tag.split("}")[-1] if "}" in rel.tag else rel.tag
+                        if tag == "Relationship":
+                            r_id = rel.attrib.get("Id")
+                            target = rel.attrib.get("Target", "")
+                            if r_id and target:
+                                clean_target = target.replace("\\", "/").lstrip("/")
+                                if clean_target.startswith("../"):
+                                    clean_target = clean_target[3:]
+                                if not clean_target.startswith("word/"):
+                                    clean_target = f"word/{clean_target}"
+                                rel_map[r_id] = clean_target
+                except Exception:
+                    pass
+
             xml_content = zf.read("word/document.xml")
             root = defused_ET.fromstring(xml_content)
 
             # Traverse body elements preserving order
             body = root.find("w:body", NS_MAP)
             if body is None:
-                return lines
+                return lines, extracted_images
 
             for elem in body:
                 tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
                 if tag == "p":
-                    text = _extract_paragraph_text(elem)
+                    text = _extract_paragraph_content_and_images(elem, zf, rel_map, extracted_images)
                     if text.strip():
-                        lines.append(text.strip())
+                        # Normalize multiple blank lines in paragraph
+                        clean_p = re.sub(r"\n{3,}", "\n\n", text.strip())
+                        lines.append(clean_p)
                 elif tag == "tbl":
-                    # Extract text from tables row by row, cell by cell
+                    # Extract text and images from tables row by row, cell by cell
                     for row in elem.findall(".//w:tr", NS_MAP):
                         row_texts: list[str] = []
                         for cell in row.findall(".//w:tc", NS_MAP):
                             cell_paragraphs: list[str] = []
                             for p in cell.findall(".//w:p", NS_MAP):
-                                p_text = _extract_paragraph_text(p)
+                                p_text = _extract_paragraph_content_and_images(
+                                    p, zf, rel_map, extracted_images
+                                )
                                 if p_text.strip():
                                     cell_paragraphs.append(p_text.strip())
                             if cell_paragraphs:
@@ -200,21 +231,242 @@ def extract_text_from_docx(file_path: Path) -> list[str]:
     except Exception as err:
         raise DocumentParsingError(f"Unexpected error extracting DOCX content: {err}") from err
 
+    return lines, extracted_images
+
+
+def extract_text_from_docx(file_path: Path) -> list[str]:
+    """Extract paragraphs and table text from a DOCX file (backward compatible)."""
+    lines, _ = extract_docx_with_resources(file_path)
     return lines
 
 
-def _extract_paragraph_text(p_elem: ET.Element) -> str:
-    """Extract full textual content from a w:p paragraph element."""
-    parts: list[str] = []
-    for node in p_elem.iter():
-        tag = node.tag.split("}")[-1] if "}" in node.tag else node.tag
-        if tag == "t" and node.text:
-            parts.append(node.text)
-        elif tag == "tab":
-            parts.append("\t")
-        elif tag in ("br", "cr"):
-            parts.append("\n")
+def _detect_image_mime(data: bytes, filename: str) -> str:
+    """Detect image MIME type from binary headers or file extension."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and b"WEBP" in data[:16]:
+        return "image/webp"
+
+    ext = Path(filename).suffix.lower()
+    if ext == ".png":
+        return "image/png"
+    if ext in (".jpg", ".jpeg"):
+        return "image/jpeg"
+    if ext == ".webp":
+        return "image/webp"
+    if ext == ".gif":
+        return "image/gif"
+    return "application/octet-stream"
+
+
+def _omml_to_latex(elem: ET.Element) -> str:
+    """Recursively convert Office Math Markup Language (OMML) XML element to LaTeX."""
+    tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+    if tag == "t":
+        return elem.text or ""
+    if tag == "f":
+        # Fraction: \frac{num}{den}
+        num_elem = None
+        den_elem = None
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "num":
+                num_elem = child
+            elif ctag == "den":
+                den_elem = child
+        num_str = _omml_to_latex(num_elem).strip() if num_elem is not None else ""
+        den_str = _omml_to_latex(den_elem).strip() if den_elem is not None else ""
+        return f"\\frac{{{num_str}}}{{{den_str}}}"
+    if tag == "rad":
+        # Radical: \sqrt{e} or \sqrt[deg]{e}
+        deg_str = ""
+        e_str = ""
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "radPr":
+                for pr_child in child:
+                    if (pr_child.tag.split("}")[-1] if "}" in pr_child.tag else pr_child.tag) == "deg":
+                        deg_str = _omml_to_latex(pr_child).strip()
+            elif ctag == "e":
+                e_str = _omml_to_latex(child).strip()
+        if deg_str:
+            return f"\\sqrt[{deg_str}]{{{e_str}}}"
+        return f"\\sqrt{{{e_str}}}"
+    if tag == "sSup":
+        # Superscript: {e}^{sup}
+        e_str = ""
+        sup_str = ""
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "e":
+                e_str = _omml_to_latex(child).strip()
+            elif ctag == "sup":
+                sup_str = _omml_to_latex(child).strip()
+        return f"{{{e_str}}}^{{{sup_str}}}"
+    if tag == "sSub":
+        # Subscript: {e}_{sub}
+        e_str = ""
+        sub_str = ""
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "e":
+                e_str = _omml_to_latex(child).strip()
+            elif ctag == "sub":
+                sub_str = _omml_to_latex(child).strip()
+        return f"{{{e_str}}}_{{{sub_str}}}"
+    if tag == "sSubSup":
+        e_str = ""
+        sub_str = ""
+        sup_str = ""
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "e":
+                e_str = _omml_to_latex(child).strip()
+            elif ctag == "sub":
+                sub_str = _omml_to_latex(child).strip()
+            elif ctag == "sup":
+                sup_str = _omml_to_latex(child).strip()
+        return f"{{{e_str}}}_{{{sub_str}}}^{{{sup_str}}}"
+    if tag == "d":
+        # Delimiters
+        e_parts: list[str] = []
+        for child in elem:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "e":
+                e_parts.append(_omml_to_latex(child))
+        inner = " ".join(e_parts).strip()
+        return f"\\left( {inner} \\right)"
+
+    # Default recursion through children
+    child_parts: list[str] = []
+    for child in elem:
+        child_parts.append(_omml_to_latex(child))
+    return "".join(child_parts)
+
+
+def _traverse_paragraph_node(
+    node: ET.Element,
+    zf: zipfile.ZipFile,
+    rel_map: dict[str, str],
+    extracted_images: list[dict[str, Any]],
+    seen_rel_ids_in_p: set[str],
+    is_underlined: bool = False,
+    is_bold: bool = False,
+) -> str:
+    tag = node.tag.split("}")[-1] if "}" in node.tag else node.tag
+
+    if tag in ("oMath", "oMathPara"):
+        latex = _omml_to_latex(node).strip()
+        if latex:
+            return f"${latex}$"
+        return ""
+
+    if tag == "r":
+        r_underlined = is_underlined
+        r_bold = is_bold
+        rPr = None
+        for child in node:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "rPr":
+                rPr = child
+                break
+        if rPr is not None:
+            for prop in rPr:
+                ptag = prop.tag.split("}")[-1] if "}" in prop.tag else prop.tag
+                if ptag == "u":
+                    u_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get("val", "single")
+                    if u_val != "none":
+                        r_underlined = True
+                elif ptag == "b":
+                    b_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get("val", "true")
+                    if b_val not in ("false", "0"):
+                        r_bold = True
+
+        parts = []
+        for child in node:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "rPr":
+                continue
+            parts.append(_traverse_paragraph_node(
+                child, zf, rel_map, extracted_images, seen_rel_ids_in_p,
+                is_underlined=r_underlined, is_bold=r_bold
+            ))
+        return "".join(parts)
+
+    if tag == "t" and node.text:
+        text = node.text
+        if is_underlined and text.strip():
+            l_space = len(text) - len(text.lstrip())
+            r_space = len(text) - len(text.rstrip())
+            lead = text[:l_space]
+            trail = text[len(text)-r_space:] if r_space > 0 else ""
+            core = text[l_space:len(text)-r_space] if r_space > 0 else text[l_space:]
+            return f"{lead}<u>{core}</u>{trail}"
+        return text
+
+    if tag == "tab":
+        return "\t"
+
+    if tag in ("br", "cr"):
+        return "\n"
+
+    if tag in ("drawing", "pict"):
+        parts = []
+        for sub in node.iter():
+            for attr_name, attr_val in sub.attrib.items():
+                attr_base = attr_name.split("}")[-1] if "}" in attr_name else attr_name
+                if attr_base in ("embed", "id") and attr_val in rel_map:
+                    r_id = str(attr_val)
+                    if r_id in seen_rel_ids_in_p:
+                        continue
+                    seen_rel_ids_in_p.add(r_id)
+                    target_path = rel_map[r_id]
+                    if target_path in zf.namelist():
+                        try:
+                            img_bytes = zf.read(target_path)
+                            mime = _detect_image_mime(img_bytes, target_path)
+                            if (
+                                mime in {"image/png", "image/jpeg", "image/webp", "image/gif"}
+                                and len(img_bytes) <= 10 * 1024 * 1024
+                            ):
+                                img_idx = len(extracted_images)
+                                token = f"[[PWD301:EXTRACTED_IMAGE:{img_idx}]]"
+                                extracted_images.append({
+                                    "index": img_idx,
+                                    "filename": Path(target_path).name,
+                                    "mime_type": mime,
+                                    "data": img_bytes,
+                                    "token": token,
+                                })
+                                parts.append(f"\n{token}\n")
+                        except Exception:
+                            pass
+        return "".join(parts)
+
+    parts = []
+    for child in node:
+        parts.append(_traverse_paragraph_node(
+            child, zf, rel_map, extracted_images, seen_rel_ids_in_p,
+            is_underlined=is_underlined, is_bold=is_bold
+        ))
     return "".join(parts)
+
+
+def _extract_paragraph_content_and_images(
+    p_elem: ET.Element,
+    zf: zipfile.ZipFile,
+    rel_map: dict[str, str],
+    extracted_images: list[dict[str, Any]],
+) -> str:
+    """Extract text and embed image markers for any drawings or VML shapes in paragraph."""
+    seen_rel_ids_in_p: set[str] = set()
+    return _traverse_paragraph_node(
+        p_elem, zf, rel_map, extracted_images, seen_rel_ids_in_p
+    )
 
 
 def extract_text_from_pdf(file_path: Path) -> list[str]:
