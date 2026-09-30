@@ -872,3 +872,139 @@ def test_global_recommendation_context_delivered_to_model(
         # Must NOT have broken parenthetical header stuffing
         assert "VAI TRÒ TRONG KHÓA HỌC / BÀI HỌC (" not in sys_text
         assert "DỮ LIỆU THAM CHIẾU" in sys_text or "<reference_context>" in sys_text
+
+
+def test_conversation_history_sliding_window_limits_turns(
+    app: Flask, student_user: User
+) -> None:
+    """Conversation history sent to Gemini is bounded by sliding window (max 6 turns)."""
+    from pwd301.models.ai_rag import AIMessage
+    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+
+    sess = db.session
+    conv = create_conversation(actor=student_user, context_type="GLOBAL", session=sess)
+    # Seed 10 previous message pairs (20 messages)
+    for i in range(1, 11):
+        sess.add(
+            AIMessage(
+                conversation_id=conv.id,
+                sender="USER",
+                content=f"Khóa học lập trình {i} có những nội dung gì?",
+                sequence_no=2 * i - 1,
+            )
+        )
+        sess.add(
+            AIMessage(
+                conversation_id=conv.id,
+                sender="ASSISTANT",
+                content=f"Khóa học {i} bao gồm các chủ đề cơ bản đến nâng cao.",
+                sequence_no=2 * i,
+            )
+        )
+    sess.commit()
+
+    captured_messages: list[list[dict[str, str]]] = []
+    mock_client = MockGeminiClient()
+
+    def mock_chat_response(
+        messages: Any, context: Any = None, skip_scope_check: bool = False
+    ) -> str:
+        captured_messages.append(list(messages))
+        return "Đáp án câu hỏi mới"
+
+    mock_client.chat_response = mock_chat_response  # type: ignore[assignment]
+    set_gemini_client_override(mock_client)
+    try:
+        send_chat_message(
+            actor=student_user,
+            conversation_id=str(conv.public_id),
+            content="Khóa học này gồm những bài học nào?",
+            session=sess,
+        )
+        assert len(captured_messages) == 1
+        msgs = captured_messages[0]
+        # Sliding window of 6 turns = max 12 prior items + 1 current = 13 items
+        assert len(msgs) <= 13
+        # Oldest turn 1 must be pruned
+        assert not any(m.get("content") == "Khóa học lập trình 1 có những nội dung gì?" for m in msgs)
+        assert any(m.get("content") == "Khóa học lập trình 10 có những nội dung gì?" for m in msgs)
+        assert msgs[-1].get("content") == "Khóa học này gồm những bài học nào?"
+    finally:
+        set_gemini_client_override(None)
+
+
+def test_refusal_messages_excluded_from_llm_history(
+    app: Flask, student_user: User
+) -> None:
+    """Out-of-scope refusal turns are filtered out so they do not pollute LLM prompt memory."""
+    from pwd301.models.ai_rag import AIMessage
+    from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
+    from pwd301.services.scope_classifier import REFUSAL_MESSAGE_OUT_OF_SCOPE
+
+    sess = db.session
+    conv = create_conversation(actor=student_user, context_type="GLOBAL", session=sess)
+    # Seed 1 valid academic turn
+    sess.add(
+        AIMessage(
+            conversation_id=conv.id,
+            sender="USER",
+            content="Khóa học HTML dạy gì?",
+            sequence_no=1,
+        )
+    )
+    sess.add(
+        AIMessage(
+            conversation_id=conv.id,
+            sender="ASSISTANT",
+            content="Khóa học dạy các thẻ và bố cục trang web.",
+            sequence_no=2,
+        )
+    )
+    # Seed 1 out-of-scope refusal turn
+    sess.add(
+        AIMessage(
+            conversation_id=conv.id,
+            sender="USER",
+            content="Viết bài thơ tình lãng mạn",
+            sequence_no=3,
+        )
+    )
+    sess.add(
+        AIMessage(
+            conversation_id=conv.id,
+            sender="ASSISTANT",
+            content=REFUSAL_MESSAGE_OUT_OF_SCOPE,
+            sequence_no=4,
+        )
+    )
+    sess.commit()
+
+    captured_messages: list[list[dict[str, str]]] = []
+    mock_client = MockGeminiClient()
+
+    def mock_chat_response(
+        messages: Any, context: Any = None, skip_scope_check: bool = False
+    ) -> str:
+        captured_messages.append(list(messages))
+        return "Trả lời bài học mới"
+
+    mock_client.chat_response = mock_chat_response  # type: ignore[assignment]
+    set_gemini_client_override(mock_client)
+    try:
+        send_chat_message(
+            actor=student_user,
+            conversation_id=str(conv.public_id),
+            content="Làm sao để tạo một form liên hệ trong HTML?",
+            session=sess,
+        )
+        assert len(captured_messages) == 1
+        msgs = captured_messages[0]
+        # The refusal message and its user trigger must NOT appear in history sent to Gemini
+        assert not any(REFUSAL_MESSAGE_OUT_OF_SCOPE in m.get("content", "") for m in msgs)
+        assert not any("Viết bài thơ tình" in m.get("content", "") for m in msgs)
+        # Valid academic turn must be preserved
+        assert any(m.get("content") == "Khóa học HTML dạy gì?" for m in msgs)
+        assert msgs[-1].get("content") == "Làm sao để tạo một form liên hệ trong HTML?"
+    finally:
+        set_gemini_client_override(None)
+

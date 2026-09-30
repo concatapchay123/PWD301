@@ -689,6 +689,22 @@ def _build_course_outline_context(course: Course) -> str:
     return "\n".join(parts)
 
 
+def _is_refusal_content(content: str | None) -> bool:
+    """Detect if an assistant message is a security/scope refusal to exclude from prompt memory."""
+    if not content:
+        return False
+    refusal_markers = (
+        "⚠️ Cảnh báo an ninh",
+        "⚠️ Thông báo an ninh",
+        "nằm ngoài phạm vi học tập",
+        "chỉ phục vụ mục đích học tập",
+        "không hỗ trợ lập trình gia công",
+        "Ở trang chính, Bạch Tuộc Trợ lý AI",
+        "không hỗ trợ giải đáp các câu hỏi chung ngoài lề",
+    )
+    return any(marker in content for marker in refusal_markers)
+
+
 def send_chat_message(
     *,
     actor: User,
@@ -944,11 +960,28 @@ def send_chat_message(
 
     # 6. Generate ASSISTANT reply via Gemini Client
     client = get_gemini_client()
-    history = [
-        {"sender": m.sender, "content": m.content}
-        for m in sorted(conv.messages, key=lambda x: x.sequence_no)
+
+    # Build sanitized sliding window history (max 6 turns = 12 messages),
+    # strictly isolating refusal/malicious turns from LLM prompt memory.
+    raw_prior = [
+        m for m in sorted(conv.messages, key=lambda x: x.sequence_no)
+        if m.sequence_no < next_seq
     ]
+    skip_indices: set[int] = set()
+    for idx, msg in enumerate(raw_prior):
+        if msg.sender == "ASSISTANT" and _is_refusal_content(msg.content):
+            skip_indices.add(idx)
+            if idx > 0 and raw_prior[idx - 1].sender == "USER":
+                skip_indices.add(idx - 1)
+
+    valid_prior = [m for idx, m in enumerate(raw_prior) if idx not in skip_indices]
+
+    # Limit to last 6 turns (12 messages)
+    sliding_messages = valid_prior[-12:] if len(valid_prior) > 12 else valid_prior
+    history = [{"sender": m.sender, "content": m.content} for m in sliding_messages]
+    # Append the current in-scope user turn (single append)
     history.append({"sender": "USER", "content": sanitized_content})
+
 
     t_start = time.time()
     telemetry_status = "SUCCEEDED"

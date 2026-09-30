@@ -377,19 +377,39 @@ def test_student_my_learning_dual_envelope_and_ai_rag_idor_defense(
     assert "course_code" in first_c
     assert "title" in first_c
 
-    # 2. Test AI Chat IDOR defense on unenrolled course
-    unenrolled_id = str(student_fixture["unenrolled_course"].public_id)
+    # 2. Test AI Chat IDOR defense on lesson in unenrolled course
+    sess = db.session
+    unenrolled_c = student_fixture["unenrolled_course"]
+    instructor = student_fixture["instructor"]
+    secret_lesson = create_lesson(
+        actor=instructor,
+        course_id=unenrolled_c.id,
+        data={
+            "title": "Bài giảng nâng cao bảo mật",
+            "markdown_content": "# Nội dung bài học mật chỉ dành cho học viên ghi danh",
+            "status": "PUBLISHED",
+        },
+        session=sess,
+    )
+    sess.commit()
+
+    unenrolled_id = str(unenrolled_c.public_id)
     chat_res = client.post(
         "/student/ai/chat",
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
-        json={"message": "Tom tat noi dung khoa hoc nay", "course_id": unenrolled_id},
+        json={
+            "message": "Tom tat noi dung khoa hoc nay",
+            "course_id": unenrolled_id,
+            "lesson_id": str(secret_lesson.public_id),
+        },
     )
-    # Must be forbidden or rejected due to unenrolled course
+    # Must be forbidden or rejected due to unenrolled course lesson access
     assert chat_res.status_code in (403, 400)
     err_body = chat_res.get_json()
     assert (
         "error" in err_body
         or err_body.get("status") in ("refused", "error")
+        or "ghi danh" in str(err_body).lower()
         or "enroll" in str(err_body).lower()
     )
 
@@ -713,4 +733,39 @@ def test_student_can_ask_ai_about_published_course_without_enrollment(
     data = resp.get_json()
     assert data.get("status") == "success"
     assert "reply" in data
+
+
+def test_student_ai_chat_new_session_when_conversation_id_null(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """Sending conversation_id=null actively creates a fresh session and clears previous session ID."""
+    csrf = login_client(client, "student_stu@pwd301.local")
+    # First message: creates session 1
+    resp1 = client.post(
+        "/student/ai/chat",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"message": "Khóa học này dạy những gì?"},
+    )
+    assert resp1.status_code == 200
+    conv_id_1 = resp1.get_json()["conversation_id"]
+
+    # Second message without conversation_id: reuses session 1 from session cookie
+    resp2 = client.post(
+        "/student/ai/chat",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"message": "Tôi muốn biết thêm về bài tập."},
+    )
+    assert resp2.status_code == 200
+    assert resp2.get_json()["conversation_id"] == conv_id_1
+
+    # Third message with explicit conversation_id: null -> MUST create fresh session 2
+    resp3 = client.post(
+        "/student/ai/chat",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+        json={"message": "Bắt đầu cuộc trò chuyện mới", "conversation_id": None},
+    )
+    assert resp3.status_code == 200
+    conv_id_2 = resp3.get_json()["conversation_id"]
+    assert conv_id_2 != conv_id_1
+
 

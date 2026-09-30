@@ -1295,7 +1295,14 @@ def student_ai_chat() -> Any:
     if not message:
         return jsonify({"error": {"message": "Vui lòng nhập nội dung tin nhắn."}}), 400
 
-    conv_id = payload.get("conversation_id") or session.get("active_ai_conversation_id")
+    # Explicit New Chat request: if conversation_id is explicitly passed as None or empty in payload
+    explicit_new_chat = "conversation_id" in payload and not payload.get("conversation_id")
+    if explicit_new_chat:
+        session.pop("active_ai_conversation_id", None)
+        conv_id = None
+    else:
+        conv_id = payload.get("conversation_id") or session.get("active_ai_conversation_id")
+
     conv = None
     if conv_id:
         try:
@@ -1311,21 +1318,20 @@ def student_ai_chat() -> Any:
             elif conv:
                 req_course = payload.get("course_id")
                 req_lesson = payload.get("lesson_id")
-                should_reset = (
-                    bool(
-                        req_course
-                        and conv.course
-                        and str(conv.course.public_id) != str(req_course)
-                    )
-                    or bool(
-                        req_lesson
-                        and conv.lesson
-                        and str(conv.lesson.public_id) != str(req_lesson)
-                    )
-                    or bool(req_lesson and not conv.lesson)
+                conv_course_uuid = (
+                    str(conv.course.public_id) if conv.course and conv.course.public_id else None
                 )
-                if should_reset:
+                conv_lesson_uuid = (
+                    str(conv.lesson.public_id) if conv.lesson and conv.lesson.public_id else None
+                )
+                req_course_str = str(req_course) if req_course else None
+                req_lesson_str = str(req_lesson) if req_lesson else None
+
+                course_changed = conv_course_uuid != req_course_str
+                lesson_changed = conv_lesson_uuid != req_lesson_str
+                if course_changed or lesson_changed:
                     conv = None
+                    session.pop("active_ai_conversation_id", None)
         except Exception:
             conv = None
             session.pop("active_ai_conversation_id", None)
