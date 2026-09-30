@@ -1,3 +1,9 @@
+# Active task: TASK-077 — AI Assistant Cognitive Grounding, Cisco NetAcad Learning Console AI Tab & Intelligent Course Recommendations Remediation
+
+Status: DONE. See [TASK-077.md](TASK-077.md) for scope, acceptance criteria, verification, and completion evidence.
+
+---
+
 # Active task: TASK-076 — Comprehensive Remediation: Lesson Video Delivery, Revision Lifecycle Resource Inheritance, Approval Race-Condition Hardening & Frontend Multi-Tier Fallback
 
 Status: DONE. See [TASK-076.md](TASK-076.md) for scope, acceptance criteria, verification, and completion evidence.
