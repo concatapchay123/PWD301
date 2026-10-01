@@ -72,8 +72,15 @@ _archives/
 *.swp
 *.swo
 
-# Agent worktrees
+# Agent worktrees and artifacts
 .worktrees/
+.agents/
+prompts/
+skill-observations/
+reports/
+
+# Frontend mockups / ephemeral prototypes
+frontend/pwd301_*/
 
 # Scratch files
 scratch/
