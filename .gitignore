@@ -74,3 +74,6 @@ _archives/
 
 # Agent worktrees
 .worktrees/
+
+# Scratch files
+scratch/

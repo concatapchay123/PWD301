@@ -125,17 +125,7 @@ from pwd301.services.lesson_service import (
 )
 from pwd301.services.question_bank_service import (
     _serialize_question,
-    _serialize_question_correction,
-    _serialize_question_revision,
     create_question,
-    create_question_revision,
-    get_question_detail,
-    get_question_revision_detail,
-    list_course_questions,
-    list_question_corrections,
-    list_question_revisions,
-    restore_question,
-    trash_question,
     update_question,
 )
 from pwd301.services.regrade_worker import (
@@ -203,6 +193,20 @@ def _validate_video_urls(urls: Any) -> list[str]:
             raise ValidationError("Video YouTube bị trùng trong bài học.")
         validated.append(canonical)
     return validated
+
+
+def _resolve_learning_unit(unit_id: Any, session: Any = None) -> LearningUnit | None:
+    if not unit_id:
+        return None
+    sess = session if session is not None else db.session
+    try:
+        u_guid = uuid.UUID(str(unit_id))
+        return sess.query(LearningUnit).filter(LearningUnit.public_id == u_guid).first()
+    except (ValueError, TypeError):
+        try:
+            return sess.get(LearningUnit, int(unit_id))
+        except (ValueError, TypeError):
+            return None
 
 
 def _lesson_uploaded_video_count(lesson: Lesson) -> int:
@@ -304,17 +308,60 @@ def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
         if les.status != "HISTORICAL" or les.position not in active_positions
     ]
     sorted_children = sorted(visible_children, key=lambda les: les.position or 0)
+
+    is_staged = False
+    pending_approval = False
+    change_request_id = None
+
+    c = getattr(unit, "course", None)
+    if c and c.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        if c.published_at and unit.created_at and unit.created_at > c.published_at:
+            is_staged = True
+        else:
+            is_staged = False
+
+        if is_staged:
+            from pwd301.models.course import CourseChangeRequest
+
+            approved_cr = (
+                db.session.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == unit.course_id,
+                    CourseChangeRequest.target_id == unit.id,
+                    CourseChangeRequest.status == "APPROVED",
+                )
+                .first()
+            )
+            if approved_cr:
+                is_staged = False
+            else:
+                cr = (
+                    db.session.query(CourseChangeRequest)
+                    .filter(
+                        CourseChangeRequest.course_id == unit.course_id,
+                        CourseChangeRequest.target_id == unit.id,
+                        CourseChangeRequest.status == "PENDING",
+                    )
+                    .first()
+                )
+                if cr:
+                    pending_approval = True
+                    change_request_id = cr.id
+
     return {
         "learning_unit_id": str(unit.public_id),
-        "course_id": str(unit.course.public_id),
+        "course_id": str(unit.course.public_id) if unit.course else None,
         "title": unit.title,
         "position": unit.position,
         "lesson_count": len(sorted_children),
         "lessons": [_serialize_lesson(lesson) for lesson in sorted_children],
+        "is_staged": is_staged,
+        "pending_approval": pending_approval,
+        "change_request_id": change_request_id,
     }
 
 
-def _serialize_course(c: Course) -> dict[str, Any]:
+def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
     thumbnail = get_course_thumbnail_asset(c)
     active_lessons = []
     if hasattr(c, "lessons") and c.lessons:
@@ -333,10 +380,21 @@ def _serialize_course(c: Course) -> dict[str, Any]:
             for les in non_deleted
             if les.status != "HISTORICAL" or les.position not in active_positions
         ]
-        active_lessons = [
-            _serialize_lesson(les)
-            for les in sorted(visible_lessons, key=lambda x: x.position or 0)
-        ]
+        if summary:
+            active_lessons = [
+                {
+                    "lesson_id": str(les.public_id),
+                    "title": les.title,
+                    "position": les.position,
+                    "status": les.status,
+                }
+                for les in sorted(visible_lessons, key=lambda x: x.position or 0)
+            ]
+        else:
+            active_lessons = [
+                _serialize_lesson(les)
+                for les in sorted(visible_lessons, key=lambda x: x.position or 0)
+            ]
     instructor_name = c.owner_instructor.display_name if c.owner_instructor else None
     instructor_email = c.owner_instructor.email if c.owner_instructor else None
 
@@ -408,9 +466,13 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "enrollments_count": enrollments_count,
         "enrolled_count": enrollments_count,
         "lessons": active_lessons,
-        "learning_units": [
-            _serialize_learning_unit(unit) for unit in c.learning_units if unit.deleted_at is None
-        ],
+        "learning_units": (
+            []
+            if summary
+            else [
+                _serialize_learning_unit(unit) for unit in c.learning_units if unit.deleted_at is None
+            ]
+        ),
         "last_rejection": (
             get_course_last_rejection(c.id, session=db.session) if c.status == "DRAFT" else None
         ),
@@ -500,7 +562,7 @@ def my_courses() -> Any:
         effective_scope = "assigned"
 
     courses = query.order_by(Course.created_at.desc()).all()
-    serialized = [_serialize_course(c) for c in courses]
+    serialized = [_serialize_course(c, summary=True) for c in courses]
     data_payload = {
         "courses": serialized,
         "scope": effective_scope,
@@ -786,40 +848,6 @@ def learning_units_route(course_id: str) -> Any:
             }
         ), 200
     payload = request.get_json(silent=True) or {}
-    if not actor.is_admin and course_obj.status in ("PUBLISHED", "ARCHIVED"):
-        title = str(payload.get("title") or "").strip()
-        if not title:
-            raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
-        proposed = {
-            "action": "CREATE_LEARNING_UNIT",
-            "title": title,
-        }
-        review = CourseChangeRequest(
-            course_id=course_obj.id,
-            requested_by_user_id=actor.id,
-            change_type="LESSON_STRUCTURE",
-            target_type="COURSE",
-            target_id=course_obj.id,
-            proposed_payload_json=json.dumps(proposed, default=str),
-            status="PENDING",
-            created_at=utc_now(),
-        )
-        db.session.add(review)
-        db.session.commit()
-        return jsonify(
-            {
-                "status": "pending_approval",
-                "pending_approval": True,
-                "message": (
-                    "Khóa học đã ban hành. "
-                    "Yêu cầu tạo chương mục mới đã được gửi tới Quản trị viên để xét duyệt."
-                ),
-                "change_request_id": review.id,
-                "course_id": course_obj.id,
-                "proposed_title": proposed.get("title"),
-            }
-        ), 202
-
     unit = create_learning_unit(actor, course_id, payload)
     return jsonify(_serialize_learning_unit(unit)), 201
 
@@ -870,6 +898,76 @@ def reorder_learning_units_route(course_id: str) -> Any:
     db.session.commit()
     return jsonify(
         {"success": True, "items": [_serialize_learning_unit(u) for u in reordered]}
+    ), 200
+
+
+@instructor_bp.route("/courses/<course_id>/learning-units/<unit_id>/submit", methods=["POST"])
+@instructor_bp.route("/learning-units/<unit_id>/submit", methods=["POST"])
+@instructor_required
+def submit_learning_unit_route(unit_id: str, course_id: str | None = None) -> Any:
+    """Submit an unapproved/staged learning unit to Admin for review."""
+    actor = require_authenticated_actor()
+    try:
+        u_guid = uuid.UUID(str(unit_id))
+        unit = db.session.query(LearningUnit).filter(LearningUnit.public_id == u_guid).first()
+    except (ValueError, TypeError):
+        unit = db.session.get(LearningUnit, unit_id)
+
+    if not unit or unit.deleted_at is not None:
+        raise ResourceNotFoundError("Chương bài học không tồn tại.")
+
+    course = require_course_manager(actor, unit.course_id, session=db.session)
+
+    from pwd301.models.course import CourseChangeRequest
+
+    existing_cr = (
+        db.session.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.target_id == unit.id,
+            CourseChangeRequest.status == "PENDING",
+        )
+        .first()
+    )
+    if existing_cr:
+        return jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "message": "Bài học đã được gửi tới Quản trị viên trước đó và đang chờ xét duyệt.",
+                "change_request_id": existing_cr.id,
+                "unit": _serialize_learning_unit(unit),
+            }
+        ), 200
+
+    proposed = {
+        "action": "CREATE_LEARNING_UNIT",
+        "unit_id": str(unit.public_id),
+        "unit_pk": unit.id,
+        "title": unit.title,
+        "lesson_count": len(unit.lessons),
+    }
+    review = CourseChangeRequest(
+        course_id=course.id,
+        requested_by_user_id=actor.id,
+        change_type="LESSON_STRUCTURE",
+        target_type="COURSE",
+        target_id=unit.id,
+        proposed_payload_json=json.dumps(proposed, default=str),
+        status="PENDING",
+        created_at=utc_now(),
+    )
+    db.session.add(review)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "status": "submitted",
+            "pending_approval": True,
+            "message": f"Đã gửi bài học '{unit.title}' tới Quản trị viên để xét duyệt.",
+            "change_request_id": review.id,
+            "unit": _serialize_learning_unit(unit),
+        }
     ), 200
 
 
@@ -1123,7 +1221,25 @@ def create_lesson_route(course_id: str) -> Any:
                     clean_fn = sanitize_filename(f.filename)
                     validate_file_metadata(clean_fn, getattr(f, "content_type", None))
 
-        if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        unit_is_staged = False
+        target_unit_id = payload.get("learning_unit_id")
+        if target_unit_id:
+            target_unit = _resolve_learning_unit(target_unit_id, session=db.session)
+            if target_unit and course.published_at and target_unit.created_at and target_unit.created_at > course.published_at:
+                from pwd301.models.course import CourseChangeRequest
+                approved_cr = (
+                    db.session.query(CourseChangeRequest)
+                    .filter(
+                        CourseChangeRequest.course_id == course.id,
+                        CourseChangeRequest.target_id == target_unit.id,
+                        CourseChangeRequest.status == "APPROVED",
+                    )
+                    .first()
+                )
+                if not approved_cr:
+                    unit_is_staged = True
+
+        if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and not unit_is_staged:
             from pwd301.services.lesson_service import create_lesson_change_request
 
             payload["change_type"] = "LESSON_STRUCTURE"
@@ -1133,6 +1249,8 @@ def create_lesson_route(course_id: str) -> Any:
             )
             is_staged = True
         else:
+            if unit_is_staged:
+                payload["status"] = "DRAFT"
             lesson = create_lesson(actor, course.id, payload)
             is_staged = False
         attached_count = 0
@@ -1344,8 +1462,26 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
     if lesson is None or lesson.course_id != course.id:
         raise ResourceNotFoundError("Lesson not found.")
 
-    if not actor.is_admin and (
-        course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") or lesson.status == "PUBLISHED"
+    unit_is_staged = False
+    if lesson.learning_unit_id:
+        target_unit = db.session.get(LearningUnit, lesson.learning_unit_id)
+        if target_unit and course.published_at and target_unit.created_at and target_unit.created_at > course.published_at:
+            from pwd301.models.course import CourseChangeRequest
+            approved_cr = (
+                db.session.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == course.id,
+                    CourseChangeRequest.target_id == target_unit.id,
+                    CourseChangeRequest.status == "APPROVED",
+                )
+                .first()
+            )
+            if not approved_cr:
+                unit_is_staged = True
+
+    if not actor.is_admin and not unit_is_staged and (
+        (course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and lesson.status != "DRAFT")
+        or lesson.status == "PUBLISHED"
     ):
         req = queue_lesson_review(
             actor,
@@ -1666,11 +1802,28 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
 
     # Strict Admin Approval Invariant:
     # Approved or published course changes from instructors require Admin review,
-    # EXCEPT for lessons that are still in DRAFT status.
+    unit_is_staged = False
+    if lesson.learning_unit_id:
+        target_unit = db.session.get(LearningUnit, lesson.learning_unit_id)
+        if target_unit and course.published_at and target_unit.created_at and target_unit.created_at > course.published_at:
+            from pwd301.models.course import CourseChangeRequest
+            approved_cr = (
+                db.session.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == course.id,
+                    CourseChangeRequest.target_id == target_unit.id,
+                    CourseChangeRequest.status == "APPROVED",
+                )
+                .first()
+            )
+            if not approved_cr:
+                unit_is_staged = True
+
     if (
         not actor.is_admin
         and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         and lesson.status != "DRAFT"
+        and not unit_is_staged
     ):
         has_student_activity = (
             db.session.query(LessonProgress.id)
@@ -2484,310 +2637,6 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
         session=db.session,
     )
     return jsonify(_serialize_completion_rule(course, rule)), 200
-
-
-@instructor_bp.route("/courses/<course_id>/questions", methods=["GET"])
-@instructor_required
-def list_course_questions_route(course_id: str) -> Any:
-    """List questions for a course in the instructor dashboard."""
-    actor = require_authenticated_actor()
-
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 20, type=int)
-    filters = {
-        "difficulty": request.args.get("difficulty"),
-        "question_type": request.args.get("question_type") or request.args.get("type"),
-        "lesson_id": request.args.get("lesson_id"),
-        "status": request.args.get("status"),
-        "search": request.args.get("search") or request.args.get("q"),
-    }
-
-    items, total, p, pp, total_pages = list_course_questions(
-        actor=actor,
-        course_id=course_id,
-        filters=filters,
-        page=page,
-        per_page=per_page,
-        session=db.session,
-    )
-
-    data = {
-        "items": items,
-        "total": total,
-        "page": p,
-        "per_page": pp,
-        "total_pages": total_pages,
-    }
-    return jsonify(data), 200
-
-
-@instructor_bp.route("/courses/<course_id>/questions/summary", methods=["GET"])
-@instructor_required
-def get_course_question_summary_route(course_id: str) -> Any:
-    """Retrieve aggregated question metrics (Bloom difficulty, type, lesson) for a course."""
-    actor = require_authenticated_actor()
-    course = require_course_manager(actor, course_id, session=db.session)
-    sess = db.session
-
-    total = (
-        sess.query(sa.func.count(Question.id))
-        .filter(Question.course_id == course.id, Question.status != "TRASH")
-        .scalar()
-        or 0
-    )
-
-    by_difficulty: dict[str, int] = {"REMEMBER": 0, "UNDERSTAND": 0, "APPLY": 0}
-    diff_rows = (
-        sess.query(Question.difficulty, sa.func.count(Question.id))
-        .filter(Question.course_id == course.id, Question.status != "TRASH")
-        .group_by(Question.difficulty)
-        .all()
-    )
-    for diff, count in diff_rows:
-        if diff:
-            by_difficulty[str(diff).upper()] = count
-
-    by_type: dict[str, int] = {
-        "SINGLE_CHOICE": 0,
-        "MULTIPLE_CHOICE": 0,
-        "TRUE_FALSE": 0,
-        "SHORT_ANSWER": 0,
-    }
-    type_rows = (
-        sess.query(QuestionRevision.question_type, sa.func.count(Question.id))
-        .join(
-            QuestionRevision,
-            sa.and_(
-                Question.id == QuestionRevision.question_id,
-                QuestionRevision.is_current == True,
-            ),
-        )
-        .filter(Question.course_id == course.id, Question.status != "TRASH")
-        .group_by(QuestionRevision.question_type)
-        .all()
-    )
-    for q_type, count in type_rows:
-        if q_type:
-            by_type[str(q_type).upper()] = count
-
-    lesson_rows = (
-        sess.query(Lesson.public_id, Lesson.title, sa.func.count(Question.id))
-        .join(Lesson, Question.lesson_id == Lesson.id)
-        .filter(Question.course_id == course.id, Question.status != "TRASH")
-        .group_by(Lesson.public_id, Lesson.title)
-        .all()
-    )
-    by_lesson: list[dict[str, Any]] = [
-        {
-            "lesson_id": str(lp_id),
-            "lesson_title": str(ltitle),
-            "question_count": count,
-        }
-        for lp_id, ltitle, count in lesson_rows
-    ]
-
-    unassigned_count = (
-        sess.query(sa.func.count(Question.id))
-        .filter(
-            Question.course_id == course.id,
-            Question.status != "TRASH",
-            Question.lesson_id.is_(None),
-        )
-        .scalar()
-        or 0
-    )
-    if unassigned_count > 0:
-        by_lesson.append(
-            {
-                "lesson_id": None,
-                "lesson_title": "Chưa phân bài học",
-                "question_count": unassigned_count,
-            }
-        )
-
-    return jsonify(
-        {
-            "total": total,
-            "by_difficulty": by_difficulty,
-            "by_type": by_type,
-            "by_lesson": by_lesson,
-        }
-    ), 200
-
-
-@instructor_bp.route("/courses/<course_id>/questions", methods=["POST"])
-@instructor_required
-def create_course_question_route(course_id: str) -> Any:
-    """Create a new question in the instructor question authoring workflow."""
-    actor = require_authenticated_actor()
-
-    payload: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict() or {}
-    if not request.is_json and "choices" not in payload:
-        raw_choices = []
-        correct_choice = request.form.get("correct_choice", "1")
-        for i in range(1, 10):
-            c_text = request.form.get(f"choice_{i}")
-            if c_text and c_text.strip():
-                raw_choices.append(
-                    {
-                        "content": c_text.strip(),
-                        "is_correct": str(correct_choice) == str(i),
-                        "position": i,
-                    }
-                )
-        if raw_choices:
-            payload["choices"] = raw_choices
-        elif payload.get("question_type") == "TRUE_FALSE":
-            tf_correct = request.form.get("correct_tf", "TRUE").upper() == "TRUE"
-            payload["choices"] = [
-                {"content": "Đúng (True)", "is_correct": tf_correct, "position": 1},
-                {"content": "Sai (False)", "is_correct": not tf_correct, "position": 2},
-            ]
-
-    question = create_question(actor, course_id, payload, session=db.session)
-
-    return jsonify(_serialize_question(question)), 201
-
-
-@instructor_bp.route("/questions/<question_id>", methods=["GET"])
-@instructor_required
-def get_question_detail_route(question_id: str) -> tuple[Response, int] | Response:
-    """Retrieve question details for viewing or editing."""
-    actor = require_authenticated_actor()
-
-    data = get_question_detail(actor, question_id, session=db.session)
-    return jsonify(data), 200
-
-
-@instructor_bp.route("/questions/<question_id>/trash", methods=["POST"])
-@instructor_required
-def trash_question_route(question_id: str) -> tuple[Response, int] | Response:
-    """Move a question to TRASH."""
-    actor = require_authenticated_actor()
-
-    body = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = body.get("reason")
-
-    question = trash_question(actor, question_id, reason=reason, session=db.session)
-
-    return jsonify(
-        {
-            "message": "Question moved to trash.",
-            "question": _serialize_question(question),
-        }
-    ), 200
-
-
-@instructor_bp.route("/questions/<question_id>/restore", methods=["POST"])
-@instructor_required
-def restore_question_route(question_id: str) -> tuple[Response, int] | Response:
-    """Restore a question from TRASH back to ACTIVE."""
-    actor = require_authenticated_actor()
-
-    body = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = body.get("reason")
-
-    question = restore_question(actor, question_id, reason=reason, session=db.session)
-
-    return jsonify(
-        {
-            "message": "Question restored from trash.",
-            "question": _serialize_question(question),
-        }
-    ), 200
-
-
-@instructor_bp.route("/questions/<question_id>", methods=["PATCH", "PUT"])
-@instructor_required
-def update_question_route(question_id: str) -> tuple[Response, int] | Response:
-    """Update question or create a revision if branched."""
-    actor = require_authenticated_actor()
-
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    question = update_question(actor, question_id, payload, session=db.session)
-
-    return jsonify(_serialize_question(question)), 200
-
-
-@instructor_bp.route("/questions/<question_id>/revisions", methods=["GET"])
-@instructor_required
-def list_question_revisions_route(question_id: str) -> tuple[Response, int] | Response:
-    """List revisions for a question."""
-    actor = require_authenticated_actor()
-
-    page = request.args.get("page", default=1, type=int)
-    per_page = request.args.get("per_page", default=20, type=int)
-
-    items, total, p, pp, total_pages = list_question_revisions(
-        actor=actor,
-        question_id=question_id,
-        page=page,
-        per_page=per_page,
-        session=db.session,
-    )
-
-    data = {
-        "items": items,
-        "total": total,
-        "page": p,
-        "per_page": pp,
-        "total_pages": total_pages,
-    }
-    return jsonify(data), 200
-
-
-@instructor_bp.route("/questions/<question_id>/revisions", methods=["POST"])
-@instructor_required
-def create_question_revision_route(question_id: str) -> tuple[Response, int] | Response:
-    """Create a new revision explicitly for a question."""
-    actor = require_authenticated_actor()
-
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    revision, correction = create_question_revision(
-        actor=actor,
-        question_id=question_id,
-        payload=payload,
-        session=db.session,
-    )
-
-    resp: dict[str, Any] = {
-        "revision": _serialize_question_revision(revision),
-    }
-    if correction is not None:
-        resp["correction"] = _serialize_question_correction(correction)
-
-    return jsonify(resp), 201
-
-
-@instructor_bp.route("/questions/<question_id>/revisions/<int:revision_no>", methods=["GET"])
-@instructor_required
-def get_question_revision_detail_route(
-    question_id: str, revision_no: int
-) -> tuple[Response, int] | Response:
-    """Retrieve detailed information for a specific question revision."""
-    actor = require_authenticated_actor()
-
-    data = get_question_revision_detail(
-        actor=actor,
-        question_id=question_id,
-        revision_no=revision_no,
-        session=db.session,
-    )
-    return jsonify(data), 200
-
-
-@instructor_bp.route("/questions/<question_id>/corrections", methods=["GET"])
-@instructor_required
-def list_question_corrections_route(question_id: str) -> tuple[Response, int] | Response:
-    """List corrections for a question."""
-    actor = require_authenticated_actor()
-
-    items = list_question_corrections(
-        actor=actor,
-        question_id=question_id,
-        session=db.session,
-    )
-    return jsonify({"items": items}), 200
 
 
 # ============================================================================
@@ -4132,134 +3981,6 @@ def instructor_cancel_import(job_id: str) -> tuple[Response, int] | Response:
     job = cancel_import_job(actor, job_id, reason=reason, session=db.session)
     detail = get_import_job_detail(actor, job.public_id, session=db.session)
     return jsonify(detail), 200
-
-
-@instructor_bp.route("/ai/questions/draft", methods=["POST"])
-@instructor_required
-def instructor_draft_questions_route() -> tuple[Response, int] | Response:
-    """Draft assessment questions with AI for instructor courses in Web portal."""
-    from pwd301.services.ai_service import draft_course_questions
-    from pwd301.services.exceptions import AIValidationError
-    from pwd301.services.rate_limit_service import check_ai_rate_limit
-
-    actor = require_authenticated_actor()
-    check_ai_rate_limit(actor, role=actor.primary_role, client_ip=request.remote_addr)
-    data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict() or {}
-
-    course_id = data.get("course_id")
-    if not course_id:
-        raise AIValidationError("Field 'course_id' is required.")
-
-    topic = data.get("topic") or data.get("learning_objective")
-    if not topic:
-        raise AIValidationError("Field 'topic' or 'learning_objective' is required.")
-
-    difficulty = data.get("difficulty", "UNDERSTAND")
-    q_types = data.get("question_types")
-    if q_types is None and "question_type" in data:
-        q_types = [data["question_type"]]
-    elif isinstance(q_types, str):
-        q_types = [t.strip() for t in q_types.split(",")]
-
-    try:
-        count = int(data.get("count", 3))
-    except (ValueError, TypeError):
-        count = 3
-
-    lesson_id = data.get("lesson_id")
-
-    drafts = draft_course_questions(
-        actor=actor,
-        course_id=course_id,
-        topic=topic,
-        difficulty=difficulty,
-        question_types=q_types,
-        count=count,
-        lesson_id=lesson_id,
-        session=db.session,
-    )
-
-    return (
-        jsonify(
-            {
-                "drafts": [d.to_dict() for d in drafts],
-                "count": len(drafts),
-            }
-        ),
-        201,
-    )
-
-
-@instructor_bp.route("/ai/questions/drafts", methods=["GET"])
-@instructor_required
-def instructor_list_drafts_route() -> tuple[Response, int] | Response:
-    """List pending AI question drafts for an instructor course in Web portal."""
-    from pwd301.services.ai_service import get_course_drafts
-    from pwd301.services.exceptions import AIValidationError
-
-    actor = require_authenticated_actor()
-    course_id = request.args.get("course_id")
-    if not course_id:
-        raise AIValidationError("Query parameter 'course_id' is required.")
-
-    review_state = request.args.get("review_state") or request.args.get("status")
-    drafts = get_course_drafts(
-        actor=actor,
-        course_id=course_id,
-        review_state=review_state,
-        session=db.session,
-    )
-    return jsonify({"drafts": [d.to_dict() for d in drafts], "count": len(drafts)}), 200
-
-
-@instructor_bp.route("/ai/questions/drafts/<draft_id>/approve", methods=["POST"])
-@instructor_required
-def instructor_approve_draft_route(draft_id: str) -> tuple[Response, int] | Response:
-    """Approve an AI question draft and persist to Question Bank in Web portal."""
-    from pwd301.services.ai_service import approve_question_draft
-
-    actor = require_authenticated_actor()
-    data: dict[str, Any] = request.get_json(silent=True) or request.form.to_dict() or {}
-
-    draft, question = approve_question_draft(
-        actor=actor,
-        draft_id=draft_id,
-        edits=data,
-        session=db.session,
-    )
-    return (
-        jsonify(
-            {
-                "message": "Question draft successfully approved and added to Question Bank.",
-                "draft": draft.to_dict(),
-                "question_id": str(question.public_id),
-            }
-        ),
-        200,
-    )
-
-
-@instructor_bp.route("/ai/questions/drafts/<draft_id>/reject", methods=["POST"])
-@instructor_required
-def instructor_reject_draft_route(draft_id: str) -> tuple[Response, int] | Response:
-    """Reject an AI question draft in Web portal."""
-    from pwd301.services.ai_service import reject_question_draft
-
-    actor = require_authenticated_actor()
-    draft = reject_question_draft(
-        actor=actor,
-        draft_id=draft_id,
-        session=db.session,
-    )
-    return (
-        jsonify(
-            {
-                "message": "Question draft rejected.",
-                "draft": draft.to_dict(),
-            }
-        ),
-        200,
-    )
 
 
 @instructor_bp.route("/exams/parse-file", methods=["POST"])

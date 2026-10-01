@@ -1354,20 +1354,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             ),
             {"target_url": "#/instructor/courses", "action_url": "#/instructor/courses"},
             False,
-        ),
-        (
-            instructor2,
-            "INSTRUCTOR",
-            instructor2.id,
-            "QUESTION_BANK_READY",
-            "ASSESSMENT",
-            "Ngân hàng câu hỏi CS301 đã sẵn sàng",
-            (
-                "Đã đồng bộ 25 câu hỏi trắc nghiệm chuẩn Azota vào ngân hàng "
-                "câu hỏi khảo thí học phần CS301."
-            ),
-            {"target_url": "#/instructor/questions", "action_url": "#/instructor/questions"},
-            False,
+
         ),
         # Student 1 (student1@pwd301.local - Lê Hoàng Long)
         (

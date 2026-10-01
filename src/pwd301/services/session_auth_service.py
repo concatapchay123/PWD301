@@ -182,11 +182,14 @@ def validate_auth_session(
         return None
 
     if update_last_seen:
-        auth_session.last_seen_at = now
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
+        last_seen = _ensure_utc(auth_session.last_seen_at) if auth_session.last_seen_at else None
+        # Throttle heartbeat: only update if at least 60 seconds have elapsed since last update
+        if last_seen is None or (now - last_seen).total_seconds() >= 60:
+            auth_session.last_seen_at = now
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
 
     return auth_session
 

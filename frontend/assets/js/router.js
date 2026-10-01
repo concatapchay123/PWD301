@@ -61,6 +61,9 @@ class AppRouter {
     // 3. Setup global theme listener
     this.initThemeToggle();
 
+    // 3.5 Setup Avatar & Profile Dropdown
+    this.initAvatarDropdown();
+
     // 4. Setup Notifications Bell & Badge Polling
     this.initNotifications();
 
@@ -81,6 +84,15 @@ class AppRouter {
     await this.handleRoute();
   }
 
+  closeMobileDrawer() {
+    const drawer = document.getElementById('mobile-nav-drawer');
+    const backdrop = document.getElementById('mobile-nav-backdrop');
+    const btn = document.getElementById('topbar-mobile-menu-btn');
+    if (drawer) drawer.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
   initMobileNav() {
     const btn = document.getElementById('topbar-mobile-menu-btn');
     const drawer = document.getElementById('mobile-nav-drawer');
@@ -88,15 +100,19 @@ class AppRouter {
     const closeBtn = document.getElementById('mobile-nav-close-btn');
 
     if (!btn || !drawer || !backdrop) return;
+    btn.setAttribute('aria-controls', 'mobile-nav-drawer');
+    btn.setAttribute('aria-expanded', 'false');
 
     const open = () => {
+      this.closeAvatarDropdown();
+      this.closeNotificationsDropdown();
       drawer.classList.remove('hidden');
       backdrop.classList.remove('hidden');
+      btn.setAttribute('aria-expanded', 'true');
     };
 
     const close = () => {
-      drawer.classList.add('hidden');
-      backdrop.classList.add('hidden');
+      this.closeMobileDrawer();
     };
 
     btn.onclick = open;
@@ -108,6 +124,12 @@ class AppRouter {
         close();
       }
     });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !drawer.classList.contains('hidden')) {
+        close();
+      }
+    });
   }
 
   async refreshCurrentUser() {
@@ -115,7 +137,7 @@ class AppRouter {
       const prevUserId = this.currentUser?.id;
       this.currentUser = await ApiClient.getCurrentUser();
       if (this.currentUser) {
-        this.currentRole = this.currentUser.primary_role || (this.currentUser.role_codes && this.currentUser.role_codes[0]) || 'STUDENT';
+        this.currentRole = this.currentUser.active_role || this.currentUser.primary_role || (this.currentUser.role_codes && this.currentUser.role_codes[0]) || 'STUDENT';
         if (prevUserId && prevUserId !== this.currentUser.id) {
           this.notificationsCache = null;
         }
@@ -218,7 +240,11 @@ class AppRouter {
     this.renderDynamicSidebar();
     this.updateTopbarBreadcrumb(path);
     if (this.currentRole === 'ADMIN') {
-      this.fetchAdminPendingCounts();
+      const now = Date.now();
+      if (!this._lastAdminCountsFetch || now - this._lastAdminCountsFetch > 30000) {
+        this._lastAdminCountsFetch = now;
+        this.fetchAdminPendingCounts();
+      }
     }
 
     if (typeof UI !== 'undefined') {
@@ -226,18 +252,21 @@ class AppRouter {
       if (typeof UI.closeDrawer === 'function') UI.closeDrawer();
     }
     document.querySelectorAll('body > .fixed.inset-0:not(#app-drawer-backdrop):not(#modal-container)').forEach(m => m.remove());
-
-    const isFocusRoute = path.includes('/attempt')
-      || path.includes('/waiting-room');
+    const isFocusRoute = this.isFocusRoute(path);
     document.body.classList.toggle('fullscreen-focus-mode', isFocusRoute);
 
-    const isExamActive = path.includes('/attempt') || path.includes('/waiting-room');
+    const isExamActive = isFocusRoute;
     const floatingAi = document.getElementById('floating-ai-container');
     if (!floatingAi) return;
     floatingAi.classList.toggle('hidden', isExamActive);
     if (isExamActive && window.FloatingAITutor && typeof window.FloatingAITutor.close === 'function') {
       window.FloatingAITutor.close();
     }
+  }
+
+  isFocusRoute(path = window.location.hash || '') {
+    return ((path.includes('/attempt') && !path.includes('/results'))
+      || path.includes('/waiting-room'));
   }
 
   async renderRoute(routeHash) {
@@ -278,6 +307,11 @@ class AppRouter {
           console.warn('Auto switchRole to ADMIN error:', err);
         }
         this.currentRole = 'ADMIN';
+        if (this.currentUser) this.currentUser.active_role = 'ADMIN';
+        this.notificationsCache = null;
+        this.loadCachedNotifications();
+        this.fetchNotifications(true);
+        this.fetchAdminPendingCounts();
         this._needsUserUiRefresh = true;
       }
     } else if (path.startsWith('#/instructor')) {
@@ -286,13 +320,31 @@ class AppRouter {
         this.redirectToRoleHome();
         return;
       }
-      if (this.currentRole !== 'INSTRUCTOR' && this.currentRole !== 'ADMIN') {
+      if (this.currentRole !== 'INSTRUCTOR') {
         try {
           await ApiClient.switchRole('INSTRUCTOR');
         } catch (err) {
           console.warn('Auto switchRole to INSTRUCTOR error:', err);
         }
         this.currentRole = 'INSTRUCTOR';
+        if (this.currentUser) this.currentUser.active_role = 'INSTRUCTOR';
+        this.notificationsCache = null;
+        this.loadCachedNotifications();
+        this.fetchNotifications(true);
+        this._needsUserUiRefresh = true;
+      }
+    } else if (path.startsWith('#/student')) {
+      if (this.currentRole !== 'STUDENT') {
+        try {
+          await ApiClient.switchRole('STUDENT');
+        } catch (err) {
+          console.warn('Auto switchRole to STUDENT error:', err);
+        }
+        this.currentRole = 'STUDENT';
+        if (this.currentUser) this.currentUser.active_role = 'STUDENT';
+        this.notificationsCache = null;
+        this.loadCachedNotifications();
+        this.fetchNotifications(true);
         this._needsUserUiRefresh = true;
       }
     }
@@ -328,6 +380,7 @@ class AppRouter {
         }
       } else {
         stagingViewport.remove();
+        this.viewport.removeAttribute('aria-busy');
         this._rerouteRequested = true;
       }
     } catch (error) {
@@ -340,11 +393,16 @@ class AppRouter {
   redirectToRoleHome() {
     let target = '#/student/dashboard';
     if (this.currentRole === 'ADMIN') {
-      target = '#/admin/governance';
+      const subRole = this.currentUser?.admin_sub_role;
+      if (subRole === 'ADMIN_SYSTEM_MONITORING') {
+        target = '#/admin/operations';
+      } else {
+        target = '#/admin/governance';
+      }
     } else if (this.currentRole === 'INSTRUCTOR') {
       target = '#/instructor/dashboard';
     }
-    this.navigate(target);
+    this.navigate(target, true);
   }
 
   navigate(target, replace = false) {
@@ -410,7 +468,7 @@ class AppRouter {
       await StudentView.renderAIAssistant(viewport);
     } else if (path === '#/student/become-instructor') {
       await StudentView.renderBecomeInstructor(viewport);
-    } else if (path === '#/student/settings' || path === '#/settings') {
+    } else if (path === '#/student/settings' || path === '#/settings' || path === '#/instructor/settings' || path === '#/admin/settings') {
       await StudentView.renderSettings(viewport);
     }
 
@@ -439,10 +497,7 @@ class AppRouter {
         else if (lessonId === 'undefined' || lessonId === 'null') lessonId = null;
         await InstructorView.renderLessonAuthoringStudio(viewport, courseId, lessonId, query.learning_unit_id);
       }
-    } else if (path === '#/instructor/questions/studio' || (path === '#/instructor/questions' && query.studio)) {
-      await InstructorView.renderExtendedQuestionStudio(viewport, query.course);
-    } else if (path === '#/instructor/questions') {
-      await InstructorView.renderQuestions(viewport, query.course);
+
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
       await InstructorView.renderExamsHub(viewport, query);
     } else if (path === '#/instructor/exams/editor') {
@@ -568,9 +623,51 @@ class AppRouter {
   // =========================================================================
   // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
   // =========================================================================
+  checkPathActive(currentHashOrPath = window.location.hash || '#/', menuPath = '', subRole = null) {
+    const { path: curPath, query: curQuery } = this.parseHash(currentHashOrPath);
+    const [mPath, mQueryStr] = menuPath.split('?');
+
+    let isPathMatch = (curPath === mPath);
+    if (!isPathMatch) {
+      if (mPath === '#/instructor/exams' && curPath.startsWith('#/instructor/exams/')) isPathMatch = true;
+      else if (mPath === '#/instructor/courses' && curPath.startsWith('#/instructor/courses/')) isPathMatch = true;
+      else if (mPath === '#/student/courses' && (curPath.startsWith('#/student/courses/') || curPath.startsWith('#/student/lessons/'))) isPathMatch = true;
+      else if (mPath === '#/student/assessments' && curPath.startsWith('#/student/assessments/')) isPathMatch = true;
+      else if (mPath === '#/admin/operations' && curPath.startsWith('#/admin/operations/')) isPathMatch = true;
+      else if (mPath === '#/admin/governance' && curPath === '#/admin/courses/review') {
+        if (mQueryStr && mQueryStr.includes('tab=courses')) return true;
+      }
+    }
+    if (!isPathMatch) return false;
+
+    if (!mQueryStr) {
+      return !curQuery.tab || curQuery.tab === 'users';
+    }
+    const mParams = new URLSearchParams(mQueryStr);
+    const mTab = mParams.get('tab');
+    if (mTab) {
+      if (curQuery.tab) return curQuery.tab === mTab;
+      const role = subRole || this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
+      const defaultTab = {
+        ADMIN_COURSE_REVIEW: 'courses',
+        ADMIN_INSTRUCTOR_REVIEW: 'applications',
+        ADMIN_TEACHING_ASSIGNMENT: 'reassign',
+        ADMIN_SYSTEM_MONITORING: 'security',
+      }[role] || 'users';
+      return defaultTab === mTab;
+    }
+    return true;
+  }
+
+  renderDynamicTopbar() {
+    return this.renderDynamicSidebar();
+  }
+
   renderDynamicSidebar() {
     const role = this.currentRole;
     const { path } = this.parseHash();
+    const userRoles = (this.currentUser && (this.currentUser.role_codes || [this.currentUser.primary_role || 'STUDENT'])) || ['STUDENT'];
+    const canSwitchToInstructor = userRoles.includes('INSTRUCTOR') || userRoles.includes('ADMIN');
 
     let menu = [];
 
@@ -578,22 +675,20 @@ class AppRouter {
       const subRole = this.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
       if (subRole === 'ADMIN_COURSE_REVIEW') {
         menu = [
-          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
           { label: 'Duyệt khóa học', path: '#/admin/governance?tab=courses', icon: 'fact_check', badge: this.adminNavBadges?.courses || 0 },
         ];
       } else if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
         menu = [
-          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
           { label: 'Duyệt giảng viên', path: '#/admin/governance?tab=applications', icon: 'badge', badge: this.adminNavBadges?.applications || 0 },
         ];
       } else if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
         menu = [
-          { label: 'Điều hành học vụ', path: '#/admin/governance', icon: 'manage_accounts', badge: 0 },
           { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
         ];
       } else if (subRole === 'ADMIN_SYSTEM_MONITORING') {
         menu = [
           { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
+          { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
         ];
       } else {
         // ADMIN_PRIMARY / Super Admin
@@ -618,21 +713,21 @@ class AppRouter {
         { label: 'Khám phá Khóa học', path: '#/student/catalog', icon: 'explore' },
         { label: 'Khóa học của tôi', path: '#/student/courses', icon: 'school' },
         { label: 'Bài kiểm tra', path: '#/student/assessments', icon: 'quiz' },
-        { label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge' },
-        { label: 'Cài đặt', path: '#/student/settings', icon: 'settings' },
       ];
+      if (!canSwitchToInstructor) {
+        menu.push({ label: 'Đăng ký Giảng viên', path: '#/student/become-instructor', icon: 'badge' });
+      }
+      menu.push({ label: 'Cài đặt', path: '#/student/settings', icon: 'settings' });
     }
+
+    const currentFullHash = window.location.hash || '#/';
+    const checkPathActive = (menuPath) => this.checkPathActive(currentFullHash, menuPath);
 
     // 1. Populate Desktop Topbar Navigation Items (Warm Editorial Pill Tabs)
     const topNav = document.getElementById('topbar-navigation-items');
-    const currentFullHash = window.location.hash || '#/';
     if (topNav) {
       topNav.innerHTML = menu.map(m => {
-        const isPathActive = m.path.includes('?')
-          ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
-          : (m.path === '#/admin/governance'
-            ? (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users')
-            : (currentFullHash === m.path || currentFullHash === m.path + '/' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path))));
+        const isPathActive = checkPathActive(m.path);
         const badgeNum = Number(m.badge) || 0;
         return `
           <a
@@ -654,17 +749,20 @@ class AppRouter {
           </a>
         `;
       }).join('');
+
+      topNav.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          this.closeAvatarDropdown();
+          this.closeNotificationsDropdown();
+        });
+      });
     }
 
     // 2. Populate Mobile Drawer Navigation Items
     const mobileNav = document.getElementById('mobile-navigation-items');
     if (mobileNav) {
       mobileNav.innerHTML = menu.map(m => {
-        const isPathActive = m.path.includes('?')
-          ? (currentFullHash === m.path || currentFullHash.startsWith(m.path + '&'))
-          : (m.path === '#/admin/governance'
-            ? (currentFullHash === m.path || currentFullHash === m.path + '/' || currentFullHash === m.path + '?tab=users')
-            : (currentFullHash === m.path || currentFullHash === m.path + '/' || (!currentFullHash.includes('?') && currentFullHash.startsWith(m.path))));
+        const isPathActive = checkPathActive(m.path);
         const badgeNum = Number(m.badge) || 0;
         return `
           <a
@@ -690,6 +788,12 @@ class AppRouter {
           </a>
         `;
       }).join('');
+
+      mobileNav.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          this.closeMobileDrawer();
+        });
+      });
     }
 
     // 3. Fallback compatibility for sidebar container
@@ -739,13 +843,22 @@ class AppRouter {
       }`;
     }
 
-    const avatarUrl = user.avatar_url
-      || localStorage.getItem(`pwd301:random-avatar:${user.public_id || user.id || user.email}`)
-      || localStorage.getItem('pwd301_avatar');
+    let avatarUrl = user.avatar_url;
+    if (!avatarUrl && typeof localStorage !== 'undefined') {
+      try {
+        avatarUrl = localStorage.getItem(`pwd301:random-avatar:${user.public_id || user.id || user.email}`)
+          || localStorage.getItem('pwd301_avatar');
+      } catch {
+        avatarUrl = null;
+      }
+    }
 
     if (avatarInitials) {
       if (avatarUrl) {
-        avatarInitials.innerHTML = `<img src="${avatarUrl}" alt="${UI.escapeHtml(displayName)}" class="w-full h-full object-cover rounded-full" onerror="this.remove();" />`;
+        const safeName = typeof UI !== 'undefined' && typeof UI.escapeHtml === 'function'
+          ? UI.escapeHtml(displayName)
+          : String(displayName).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        avatarInitials.innerHTML = `<img src="${avatarUrl}" alt="${safeName}" class="w-full h-full object-cover rounded-full" onerror="this.onerror=null; this.parentElement.textContent='${initials || 'US'}';" />`;
       } else {
         avatarInitials.textContent = initials || 'US';
       }
@@ -799,7 +912,7 @@ class AppRouter {
             <a
               href="#/student/become-instructor"
               class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-primary dark:text-blue-400 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors"
-              onclick="document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+              onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
             >
               <span class="material-symbols-outlined text-[16px]">badge</span>
               <span>Đăng ký làm Giảng viên</span>
@@ -809,9 +922,9 @@ class AppRouter {
 
         <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
           <a
-            href="#/student/settings"
+            href="${this.currentRole === 'ADMIN' ? '#/admin/governance?tab=security' : this.currentRole === 'INSTRUCTOR' ? '#/instructor/settings' : '#/student/settings'}"
             class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors"
-            onclick="document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
+            onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
           >
             <span class="material-symbols-outlined text-[16px]">settings</span>
             <span>Cài đặt tài khoản</span>
@@ -832,18 +945,20 @@ class AppRouter {
           const target = btn.dataset.targetRole;
           if (target === this.currentRole) return;
           try {
+            this.closeAvatarDropdown();
             await ApiClient.switchRole(target);
             this.currentRole = target;
+            if (this.currentUser) this.currentUser.active_role = target;
             if (target === 'ADMIN') {
+              this._lastAdminCountsFetch = Date.now();
               this.fetchAdminPendingCounts();
             }
             UI.showToast(`Đã chuyển sang góc nhìn ${target === 'ADMIN' ? 'Quản trị viên' : target === 'INSTRUCTOR' ? 'Giảng viên' : 'Học viên'}!`, 'info');
             this.updateUserUI();
             this.notificationsCache = null;
             this.loadCachedNotifications();
-            await this.fetchNotifications(true);
+            this.fetchNotifications(true);
             this.redirectToRoleHome();
-            roleDropdown.classList.add('hidden');
           } catch (err) {
             UI.showToast(err.message || 'Không thể chuyển đổi vai trò.', 'error');
           }
@@ -854,7 +969,7 @@ class AppRouter {
       const logoutBtn = document.getElementById('topbar-logout-btn');
       if (logoutBtn) {
         logoutBtn.onclick = async () => {
-          roleDropdown.classList.add('hidden');
+          this.closeAvatarDropdown();
           this.closeNotificationsDropdown();
           if (this.currentUser && this.currentUser.id) {
             try {
@@ -874,6 +989,7 @@ class AppRouter {
         };
       }
     }
+    this.renderDynamicSidebar();
   }
 
   initThemeToggle() {
@@ -894,24 +1010,43 @@ class AppRouter {
     }
 
     updateThemeIcon();
+  }
 
-    // Setup Avatar Dropdown Toggle
+  closeAvatarDropdown() {
+    const dropdown = document.getElementById('topbar-role-dropdown');
+    const chevron = document.getElementById('topbar-avatar-chevron');
+    const avatarBtn = document.getElementById('topbar-avatar-btn');
+    if (dropdown) dropdown.classList.add('hidden');
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+    if (avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  initAvatarDropdown() {
     const avatarBtn = document.getElementById('topbar-avatar-btn');
     const dropdown = document.getElementById('topbar-role-dropdown');
     const chevron = document.getElementById('topbar-avatar-chevron');
     if (avatarBtn && dropdown) {
+      avatarBtn.setAttribute('aria-haspopup', 'true');
+      avatarBtn.setAttribute('aria-expanded', 'false');
+      avatarBtn.setAttribute('aria-controls', 'topbar-role-dropdown');
       avatarBtn.onclick = (e) => {
         e.stopPropagation();
         this.closeNotificationsDropdown();
+        this.closeMobileDrawer?.();
         const isHidden = dropdown.classList.toggle('hidden');
         if (chevron) {
           chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
         }
+        avatarBtn.setAttribute('aria-expanded', String(!isHidden));
       };
       document.addEventListener('click', (e) => {
         if (!dropdown.contains(e.target) && !avatarBtn.contains(e.target)) {
-          dropdown.classList.add('hidden');
-          if (chevron) chevron.style.transform = 'rotate(0deg)';
+          this.closeAvatarDropdown();
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+          this.closeAvatarDropdown();
         }
       });
     }
@@ -978,10 +1113,16 @@ class AppRouter {
     const currentRole = (this.currentRole || 'STUDENT').toUpperCase();
     const rawItems = this.notificationsCache.items;
 
-    // 1. Deduplicate by (title, body): collapse duplicates, keeping only newest item
+    // 1. Partition by role first: universal ('ALL' or null) or strictly matching currentRole
+    const roleItems = rawItems.filter(item => {
+      const tr = (item.target_role || '').toUpperCase();
+      return !tr || tr === 'ALL' || tr === currentRole;
+    });
+
+    // 2. Deduplicate within role by (title, body): collapse duplicates, keeping only newest item
     const seenKeys = new Set();
     const deduplicated = [];
-    for (const item of rawItems) {
+    for (const item of roleItems) {
       const titleDecoded = AppRouter.decodeHtmlEntities(item.title || '');
       const bodyDecoded = AppRouter.decodeHtmlEntities(item.body || item.message || '');
       const key = `${titleDecoded.trim()}:::${bodyDecoded.trim()}`;
@@ -991,11 +1132,7 @@ class AppRouter {
       }
     }
 
-    // 2. Strict role partitioning: universal ('ALL' or null) or strictly matching currentRole
-    return deduplicated.filter(item => {
-      const tr = (item.target_role || '').toUpperCase();
-      return !tr || tr === 'ALL' || tr === currentRole;
-    });
+    return deduplicated;
   }
 
   updateBadgeFromCache() {
@@ -1006,8 +1143,10 @@ class AppRouter {
     if (count > 0) {
       badge.textContent = count > 99 ? '99+' : count;
       badge.classList.remove('hidden');
+      badge.style.display = 'flex';
     } else {
       badge.classList.add('hidden');
+      badge.style.display = 'none';
     }
   }
 
@@ -1041,6 +1180,12 @@ class AppRouter {
     // Initial load from cache or background fetch
     this.loadCachedNotifications();
     this.refreshNotificationBadge(true);
+
+    // Periodic background polling (every 60 seconds)
+    if (this._notifInterval) clearInterval(this._notifInterval);
+    this._notifInterval = setInterval(() => {
+      this.refreshNotificationBadge(true);
+    }, 60000);
   }
 
   toggleNotificationsDropdown() {
@@ -1056,9 +1201,8 @@ class AppRouter {
   openNotificationsDropdown() {
     const dropdown = document.getElementById('topbar-notifications-dropdown');
     const bellBtn = document.getElementById('topbar-notifications-btn');
-    const roleDropdown = document.getElementById('topbar-role-dropdown');
-
-    if (roleDropdown) roleDropdown.classList.add('hidden');
+    this.closeAvatarDropdown();
+    this.closeMobileDrawer?.();
 
     if (dropdown) {
       dropdown.classList.remove('hidden');
@@ -1242,7 +1386,7 @@ class AppRouter {
             <div
               class="notif-dropdown-item p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FAF9F5] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
               data-id="${item.id}"
-              data-link="${targetUrl ? (window.UI ? UI.escapeHtml(targetUrl) : targetUrl) : ''}"
+              data-link="${targetUrl ? targetUrl.replace(/"/g, '&quot;') : ''}"
             >
               <!-- Category Icon -->
               <div class="w-8 h-8 rounded-xl ${meta.iconColor} flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
@@ -1309,7 +1453,7 @@ class AppRouter {
       itemEl.onclick = async (e) => {
         e.stopPropagation();
         const id = itemEl.dataset.id;
-        const link = itemEl.dataset.link;
+        const link = (itemEl.dataset.link || '').replace(/&amp;/g, '&');
         await this.handleNotificationItemClick(id, link);
       };
     });

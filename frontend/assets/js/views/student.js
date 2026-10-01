@@ -587,11 +587,12 @@ class StudentView {
         }
       }
 
-      // Load AI Course Recommendations (Algorithm 14)
+      // Load AI Course Recommendations (Algorithm 14) asynchronously
       const recListEl = document.getElementById('dashboard-recommendations-list');
+      const recSection = document.getElementById('dashboard-recommendations-section');
       if (recListEl) {
-        try {
-          const recs = await ApiClient.getRecommendations(2);
+        ApiClient.getRecommendations(2).then(recs => {
+          if (!document.getElementById('dashboard-recommendations-list')) return;
           if (recs && recs.length > 0) {
             recListEl.innerHTML = recs.map(r => `
               <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3.5">
@@ -627,13 +628,13 @@ class StudentView {
               </div>
             `).join('');
           } else {
-            const recSection = document.getElementById('dashboard-recommendations-section');
-            if (recSection) recSection.classList.add('hidden');
+            const s = document.getElementById('dashboard-recommendations-section');
+            if (s) s.classList.add('hidden');
           }
-        } catch {
-          const recSection = document.getElementById('dashboard-recommendations-section');
-          if (recSection) recSection.classList.add('hidden');
-        }
+        }).catch(() => {
+          const s = document.getElementById('dashboard-recommendations-section');
+          if (s) s.classList.add('hidden');
+        });
       }
     } catch (err) {
       console.warn('Dashboard load error:', err);
@@ -833,10 +834,9 @@ class StudentView {
     };
 
     try {
-      const [resCatalog, resEnrolled, recs] = await Promise.all([
+      const [resCatalog, resEnrolled] = await Promise.all([
         ApiClient.getCatalogCourses(),
         ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] })),
-        ApiClient.getRecommendations(3).catch(() => [])
       ]);
       allCourses = resCatalog.items || resCatalog.courses || [];
       const enrolledList = resEnrolled.enrollments || resEnrolled.courses || [];
@@ -845,27 +845,35 @@ class StudentView {
         if (e.id) enrolledCourseIds.add(String(e.id));
       });
 
-      // Render recommendations spotlight banner
+      // Render recommendations spotlight banner asynchronously
       const recBanner = document.getElementById('catalog-recommendations-banner');
       const recList = document.getElementById('catalog-recommendations-list');
-      if (recBanner && recList && Array.isArray(recs) && recs.length > 0) {
-        recList.innerHTML = recs.map(r => `
-          <div class="bg-white/10 backdrop-blur-xs rounded-xl p-4 border border-white/10 flex flex-col justify-between space-y-3">
-            <div>
-              <div class="flex items-center justify-between text-[11px] font-mono text-indigo-200">
-                <span>${UI.escapeHtml(r.course_code)}</span>
-                <span class="px-1.5 py-0.5 rounded bg-white/20 text-white font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
+      ApiClient.getRecommendations(3).then(recs => {
+        if (!document.getElementById('catalog-recommendations-list')) return;
+        if (recBanner && recList && Array.isArray(recs) && recs.length > 0) {
+          recList.innerHTML = recs.map(r => `
+            <div class="bg-white/10 backdrop-blur-xs rounded-xl p-4 border border-white/10 flex flex-col justify-between space-y-3">
+              <div>
+                <div class="flex items-center justify-between text-[11px] font-mono text-indigo-200">
+                  <span>${UI.escapeHtml(r.course_code)}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-white/20 text-white font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
+                </div>
+                <h3 class="font-bold text-white text-sm mt-1 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
+                <p class="text-xs text-indigo-200 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
               </div>
-              <h3 class="font-bold text-white text-sm mt-1 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
-              <p class="text-xs text-indigo-200 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
+              <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-1.5 rounded-lg bg-white hover:bg-slate-100 text-indigo-900 font-bold text-xs text-center transition-colors shadow-xs">
+                Xem khóa học
+              </a>
             </div>
-            <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-1.5 rounded-lg bg-white hover:bg-slate-100 text-indigo-900 font-bold text-xs text-center transition-colors shadow-xs">
-              Xem khóa học
-            </a>
-          </div>
-        `).join('');
-        recBanner.classList.remove('hidden');
-      }
+          `).join('');
+          recBanner.classList.remove('hidden');
+        } else if (recBanner) {
+          recBanner.classList.add('hidden');
+        }
+      }).catch(() => {
+        const b = document.getElementById('catalog-recommendations-banner');
+        if (b) b.classList.add('hidden');
+      });
 
       renderFiltered();
     } catch (err) {
@@ -2401,33 +2409,103 @@ class StudentView {
         cleanupPreviousLesson();
         if (!contentContainer) return;
 
-        // If not enrolled: show Enrollment Card
+        // If not enrolled: show Public Course Overview or Lesson Syllabus Preview
         if (!isEnrolled) {
-          contentContainer.innerHTML = `
-            <div class="py-12 px-4 text-center space-y-6 animate-fade-in">
-              <div class="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 sm:p-10 shadow-sm space-y-5">
-                <div class="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
-                  <span class="material-symbols-outlined text-[36px]">school</span>
-                </div>
-                <div class="space-y-2">
-                  <h2 class="text-xl font-black text-slate-900 dark:text-white">Ghi danh để Bắt đầu Học tập</h2>
-                  <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                    ${UI.escapeHtml(course.description || 'Tham gia khóa học để mở khóa toàn bộ lộ trình bài giảng, video hướng dẫn và các bài kiểm tra thực hành.')}
-                  </p>
-                </div>
-                <div class="pt-2">
+          if (activeItem && activeItem.type === 'lesson') {
+            const les = activeItem.data || {};
+            const durMin = les.duration_minutes || les.duration || 45;
+            contentContainer.innerHTML = `
+              <div class="space-y-6 animate-fade-in">
+                <!-- Top Sticky Enrollment Banner -->
+                <div class="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                      <span class="material-symbols-outlined text-[22px]">lock_open</span>
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-emerald-900 dark:text-emerald-200">Bạn đang xem trước đề cương khóa học</div>
+                      <div class="text-[11px] text-emerald-700 dark:text-emerald-400">Ghi danh ngay để mở khóa toàn bộ video, tài liệu và làm bài kiểm tra.</div>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     id="console-enroll-btn"
-                    class="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                    class="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
                   >
-                    <span class="material-symbols-outlined text-[18px]">how_to_reg</span>
-                    <span>Ghi danh môn học ngay</span>
+                    <span class="material-symbols-outlined text-[16px]">how_to_reg</span>
+                    <span>Ghi danh ngay</span>
                   </button>
                 </div>
+
+                <!-- Lesson Header & Objectives Preview -->
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 space-y-4 shadow-xs">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      ${UI.escapeHtml(activeItem.displayCode || 'Bài giảng')}
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[14px]">schedule</span> ${durMin} phút
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[14px]">lock</span> Cần ghi danh
+                    </span>
+                  </div>
+
+                  <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-snug">
+                    ${UI.escapeHtml(activeItem.title)}
+                  </h1>
+
+                  <div class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed space-y-2">
+                    <p class="font-medium text-slate-800 dark:text-slate-200">
+                      Mục tiêu & Đề cương bài giảng:
+                    </p>
+                    <p class="text-slate-500 dark:text-slate-400">
+                      ${UI.escapeHtml(les.summary || les.description || course.description || 'Bài học trang bị các kiến thức nền tảng và kỹ năng thực hành theo chuẩn ABET.')}
+                    </p>
+                  </div>
+
+                  <!-- Locked Video / Content Placeholder -->
+                  <div class="mt-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-950/40 p-8 sm:p-12 text-center space-y-3">
+                    <div class="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center mx-auto">
+                      <span class="material-symbols-outlined text-[28px]">smart_display</span>
+                    </div>
+                    <div class="space-y-1">
+                      <h3 class="text-sm font-bold text-slate-800 dark:text-slate-200">Video bài giảng và bài tập thực hành được khóa</h3>
+                      <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                        Hãy ghi danh vào môn học để xem video trực tuyến, tài liệu đính kèm và nhận chứng chỉ hoàn thành môn học.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          `;
+            `;
+          } else {
+            contentContainer.innerHTML = `
+              <div class="py-8 px-4 text-center space-y-6 animate-fade-in">
+                <div class="max-w-xl mx-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 sm:p-10 shadow-sm space-y-5">
+                  <div class="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
+                    <span class="material-symbols-outlined text-[36px]">school</span>
+                  </div>
+                  <div class="space-y-2">
+                    <h2 class="text-xl font-black text-slate-900 dark:text-white">Ghi danh để Bắt đầu Học tập</h2>
+                    <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                      ${UI.escapeHtml(course.description || 'Tham gia khóa học để mở khóa toàn bộ lộ trình bài giảng, video hướng dẫn và các bài kiểm tra thực hành.')}
+                    </p>
+                  </div>
+                  <div class="pt-2">
+                    <button
+                      type="button"
+                      id="console-enroll-btn"
+                      class="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[18px]">how_to_reg</span>
+                      <span>Ghi danh môn học ngay</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
 
           const enrollBtn = document.getElementById('console-enroll-btn');
           if (enrollBtn) {
@@ -2435,9 +2513,9 @@ class StudentView {
               try {
                 enrollBtn.disabled = true;
                 enrollBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang ghi danh...';
-                await ApiClient.enrollCourse(courseId);
+                await ApiClient.enrollCourse(course.id || courseId);
                 UI.showToast(`Ghi danh thành công khóa học: ${course.title}`, 'success');
-                await StudentView.renderCourseConsole(container, courseId);
+                await StudentView.renderCourseConsole(container, courseId, activeItem?.id || null);
               } catch (err) {
                 UI.showToast(err.message || 'Không thể ghi danh.', 'error');
                 enrollBtn.disabled = false;
@@ -3224,20 +3302,20 @@ class StudentView {
 
             const handshake = () => {
               try {
-                if (!iframeOrigin) return;
-                videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), iframeOrigin);
-                videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), iframeOrigin);
-                videoEl.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), iframeOrigin);
+                if (!videoEl.contentWindow) return;
+                videoEl.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*');
+                videoEl.contentWindow.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), '*');
+                videoEl.contentWindow.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
               } catch (_) {}
             };
-            handshake();
             videoEl.addEventListener('load', () => { handshake(); setTimeout(handshake, 500); });
 
             activeIframePollInterval = setInterval(() => {
               try {
-                videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), iframeOrigin);
+                if (!videoEl.contentWindow) return;
+                videoEl.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), '*');
                 if (iframeDuration <= 0) {
-                  videoEl.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), iframeOrigin);
+                  videoEl.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), '*');
                 }
               } catch (_) {}
             }, 1000);

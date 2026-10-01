@@ -141,18 +141,6 @@ SCREEN_METADATA: dict[str, dict[str, str]] = {
         "route": "#/instructor/workspace",
         "category": "Instructor Workspace",
     },
-    "pwd301_question_bank_hub_variant_2_master_operations_table_subject_inspector": {
-        "title": "Ngân hàng Câu hỏi & Thanh tra Môn học",
-        "role": "INSTRUCTOR",
-        "route": "#/instructor/questions",
-        "category": "Question Bank",
-    },
-    "pwd301_extended_question_bank_studio_chi_ti_t_to_n_b_c_u_h_i_m_n_h_c": {
-        "title": "Studio Chi tiết Toàn bộ Câu hỏi Môn học",
-        "role": "INSTRUCTOR",
-        "route": "#/instructor/questions/studio",
-        "category": "Question Bank",
-    },
     "pwd301_lesson_authoring_tr_nh_so_n_th_o_b_i_gi_ng_tr_c_quan_th_n_thi_n_low_tech": {
         "title": "Trình Soạn thảo Bài giảng Trực quan Low-Tech",
         "role": "INSTRUCTOR",

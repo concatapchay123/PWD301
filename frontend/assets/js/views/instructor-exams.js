@@ -2636,7 +2636,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   Nạp từ Chuẩn LMS Quốc tế Moodle XML & JSON
                 </h3>
                 <p class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                  Tương thích hoàn toàn với định dạng xuất ngân hàng câu hỏi của Moodle và trao đổi dữ liệu học thuật JSON.
+                  Tương thích hoàn toàn với định dạng xuất đề thi câu hỏi của Moodle và trao đổi dữ liệu học thuật JSON.
                 </p>
               </div>
             </div>

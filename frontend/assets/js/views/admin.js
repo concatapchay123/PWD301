@@ -170,9 +170,11 @@ class AdminView {
     if (subRole === 'ADMIN_COURSE_REVIEW') {
       summary.courses = counts.courses || 0;
       summary.changes = counts.changes || 0;
-    } else if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
+    }
+    if (subRole === 'ADMIN_INSTRUCTOR_REVIEW') {
       summary.applications = counts.applications || 0;
-    } else if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
+    }
+    if (subRole === 'ADMIN_TEACHING_ASSIGNMENT') {
       summary.assignments = counts.assignments || 0;
     }
     return summary;
@@ -183,8 +185,9 @@ class AdminView {
   // =========================================================================
   static async renderGovernance(container, activeTab = 'users', subQueue = null) {
     const adminSubRole = window.app?.currentUser?.admin_sub_role || 'ADMIN_PRIMARY';
-    const showQueueSummary = adminSubRole === 'ADMIN_COURSE_REVIEW' || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
-    const isInstructorQueue = adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+    const isPrimary = adminSubRole === 'ADMIN_PRIMARY' || Boolean(window.app?.currentUser?.is_primary_admin);
+    const showQueueSummary = isPrimary || adminSubRole === 'ADMIN_COURSE_REVIEW' || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+    const isInstructorQueue = !isPrimary && adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
     container.innerHTML = `
         <div class="p-6 space-y-6 max-w-[1800px] mx-auto animate-fade-in" id="admin-governance-root">
         
@@ -251,8 +254,8 @@ class AdminView {
 
     // Load initial KPIs
     try {
-      const isCourseReviewer = adminSubRole === 'ADMIN_COURSE_REVIEW';
-      const isInstructorReviewer = adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+      const isCourseReviewer = isPrimary || adminSubRole === 'ADMIN_COURSE_REVIEW';
+      const isInstructorReviewer = isPrimary || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
       const [coursesRes, appsRes, crRes] = await Promise.allSettled([
         isCourseReviewer ? ApiClient.getPendingCourses() : Promise.resolve(null),
         isInstructorReviewer ? ApiClient.getAdminInstructorApplications('PENDING') : Promise.resolve(null),

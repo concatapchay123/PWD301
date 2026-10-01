@@ -177,8 +177,9 @@ class User(Base, UserMixin):
         """Check if user has a specific role, respecting cumulative hierarchy.
 
         Per AUTH-002:
-        - ADMIN inherits INSTRUCTOR and STUDENT capabilities.
         - INSTRUCTOR inherits STUDENT capability.
+        - ADMIN inherits STUDENT capability.
+        - INSTRUCTOR role is separate and requires explicit assignment.
         """
         norm_code = role_code.strip().upper()
         codes = self.role_codes
@@ -227,6 +228,9 @@ class User(Base, UserMixin):
                             "ADMIN_SYSTEM_MONITORING",
                         ):
                             return code
+                # Fallback: if an ADMIN has no explicit SUB_ROLE tag,
+                # do not default to ADMIN_PRIMARY (SEC-02 fail-closed)
+                return None
         return None
 
     @property

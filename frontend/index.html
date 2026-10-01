@@ -528,7 +528,7 @@
             aria-haspopup="true"
           >
             <span class="material-symbols-outlined text-[17px]">notifications</span>
-            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
+            <span id="topbar-notifications-badge" class="hidden absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-bold items-center justify-center ring-2 ring-[#FAF9F5] dark:ring-[#191919]">
               0
             </span>
           </button>
@@ -561,6 +561,9 @@
             id="topbar-avatar-btn"
             class="group flex items-center gap-2 pl-2.5 pr-2 py-1 rounded-full border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] hover:border-[#D3D0C8] dark:hover:border-[#3E3D3A] transition-all shadow-2xs select-none"
             title="Hồ sơ tài khoản & Chuyển góc nhìn"
+            aria-expanded="false"
+            aria-haspopup="true"
+            aria-controls="topbar-role-dropdown"
           >
             <div class="text-right hidden sm:block leading-none">
               <div id="topbar-user-name" class="font-bold text-xs text-[#222120] dark:text-[#EDEDEB] max-w-[110px] truncate leading-tight">Học viên</div>
@@ -588,6 +591,9 @@
           id="topbar-mobile-menu-btn"
           class="md:hidden w-8 h-8 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#202020] text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] flex items-center justify-center transition-colors"
           title="Mở menu điều hướng"
+          aria-expanded="false"
+          aria-haspopup="true"
+          aria-controls="mobile-nav-drawer"
         >
           <span class="material-symbols-outlined text-[19px]">menu</span>
         </button>
@@ -664,6 +670,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sẵn sàng giải đáp
             </div>
           </div>
+        </div>
         <div class="flex items-center gap-1">
           <button type="button" id="floating-ai-reset-btn" title="Làm mới cuộc trò chuyện" class="p-1 rounded-md text-[#8F8E8A] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] transition-colors cursor-pointer">
             <span class="material-symbols-outlined text-[16px]">refresh</span>
@@ -719,15 +726,15 @@
 
   <!-- DOMPurify for Safe WYSIWYG HTML Rendering -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
-  <script src="/frontend/assets/js/ui.js?v=3.0.5"></script>
-  <script src="/frontend/assets/js/api.js?v=3.0.5"></script>
-  <script src="/frontend/assets/js/exam-store.js?v=3.0.5"></script>
-  <script src="/frontend/assets/js/views/auth.js?v=3.0.5"></script>
-  <script src="/frontend/assets/js/views/student.js?v=3.0.6"></script>
-  <script src="/frontend/assets/js/views/instructor.js?v=3.0.6"></script>
-  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.0.6"></script>
-  <script src="/frontend/assets/js/views/admin.js?v=3.0.6"></script>
-  <script src="/frontend/assets/js/router.js?v=3.0.5"></script>
+  <script src="/frontend/assets/js/ui.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/api.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/exam-store.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/views/auth.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/views/student.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/views/instructor.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/views/admin.js?v=3.0.7"></script>
+  <script src="/frontend/assets/js/router.js?v=3.0.7"></script>
 
   <!-- Application Bootstrap -->
   <script>

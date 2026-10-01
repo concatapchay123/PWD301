@@ -87,8 +87,8 @@ test('instructor.js contains separate save draft button and publish button', () 
   assert.ok(source.includes('Xuất bản'), 'Includes Xuất bản label');
 });
 
-test('instructor.js displays chapter selector without class hidden in studio', () => {
-  assert.ok(source.includes('id="studio-learning-unit-select"'), 'Includes studio-learning-unit-select');
-  assert.ok(!source.includes('id="studio-learning-unit-select" class="hidden"'), 'Does not hide chapter select');
-  assert.ok(source.includes('Thuộc Chương:'), 'Includes Chapter label');
+test('instructor.js does not contain redundant chapter selector box in studio canvas', () => {
+  assert.ok(!source.includes('id="studio-learning-unit-select"'), 'Does not include studio-learning-unit-select');
+  assert.ok(!source.includes('Thuộc Chương:'), 'Does not include Thuộc Chương label');
 });
+

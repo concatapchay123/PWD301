@@ -21,7 +21,7 @@ test('studio navigator shows sibling lessons and marks the current lesson', () =
   assert.match(html, /href="#\/instructor\/courses\/course-1\/lessons\/lesson-1\/edit"/);
   assert.match(html, /aria-current="page"/);
   assert.match(html, /&lt;Nội dung>/);
-  assert.match(html, /learning_unit_id=unit-1/);
+  assert.match(html, /data-learning-unit-id="unit-1"/);
   assert.match(html, /2\/10 Lesson/);
 });
 

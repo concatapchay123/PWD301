@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from flask import Flask
-from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
@@ -599,61 +598,3 @@ def test_trash_and_restore_question_lifecycle(
     # Verify back in normal list
     items, total, _, _, _ = list_course_questions(instructor_user, course.id, session=db.session)
     assert total == 1
-
-
-# ==============================================================================
-# 5. INSTRUCTOR WEB UI CONTROLLER TESTS
-# ==============================================================================
-
-
-def test_instructor_web_routes(
-    client: FlaskClient, app: Flask, instructor_user: User, course: Course
-) -> None:
-    from tests.conftest import login_web_user
-
-    login_web_user(client, instructor_user)
-
-    # 1. POST create question
-    resp = client.post(
-        f"/instructor/courses/{course.public_id}/questions",
-        json={
-            "question_type": "SINGLE_CHOICE",
-            "difficulty": "REMEMBER",
-            "content": "Web route test question",
-            "choices": [
-                {"content": "Opt 1", "is_correct": True},
-                {"content": "Opt 2", "is_correct": False},
-            ],
-        },
-    )
-    assert resp.status_code == 201
-    q_data = resp.get_json()
-    q_id = q_data["question_id"]
-
-    # 2. GET list questions
-    resp = client.get(f"/instructor/courses/{course.public_id}/questions")
-    assert resp.status_code == 200
-    list_data = resp.get_json()
-    assert list_data["total"] >= 1
-
-    # 3. GET question detail
-    resp = client.get(f"/instructor/questions/{q_id}")
-    assert resp.status_code == 200
-    detail = resp.get_json()
-    assert detail["question_id"] == q_id
-
-    # 4. POST trash question
-    resp = client.post(
-        f"/instructor/questions/{q_id}/trash",
-        json={"reason": "Testing web trash"},
-    )
-    assert resp.status_code == 200
-    assert resp.get_json()["question"]["status"] == "TRASH"
-
-    # 5. POST restore question
-    resp = client.post(
-        f"/instructor/questions/{q_id}/restore",
-        json={"reason": "Testing web restore"},
-    )
-    assert resp.status_code == 200
-    assert resp.get_json()["question"]["status"] == "ACTIVE"

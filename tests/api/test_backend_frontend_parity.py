@@ -3,8 +3,7 @@
 Verifies:
 1. Course Prerequisites API Parity (DAG cycle detection, add, list, delete, ADR-002)
 2. Course Completion Rules API Parity (get defaults, update, persistence, ADR-002)
-3. Question Bank Lifecycle & Revisions Parity (create, patch, revisions, trash, restore)
-4. Frontend Static Assets & ApiClient Contract Parity (100% method alignment, 0 missing)
+3. Frontend Static Assets & ApiClient Contract Parity (100% method alignment, 0 missing)
 """
 
 from __future__ import annotations
@@ -248,119 +247,7 @@ def test_course_completion_rules_api_parity(
 
 
 # ============================================================================
-# 3. Question Bank Lifecycle & Revisions Parity
-# ============================================================================
-def test_question_bank_lifecycle_and_revisions_parity(
-    client: FlaskClient, parity_env: dict[str, Any]
-) -> None:
-    """Test Question creation, detail viewing, patch, revision incrementing, trash and restore."""
-    inst = parity_env["instructor"]
-    course = parity_env["course_a"]
-    lesson = parity_env["lesson"]
-
-    csrf_token = login_instructor(client, inst.email)
-
-    # 1. Create a question via POST /instructor/courses/<id>/questions
-    create_payload = {
-        "question_type": "SINGLE_CHOICE",
-        "difficulty": "APPLY",
-        "content": "Giao thuc nao hoat dong tai tang Transport trong mo hinh OSI?",
-        "lesson_id": str(lesson.public_id),
-        "choices": [
-            {"content": "TCP", "is_correct": True, "position": 1},
-            {"content": "IP", "is_correct": False, "position": 2},
-            {"content": "HTTP", "is_correct": False, "position": 3},
-        ],
-    }
-    create_resp = client.post(
-        f"/instructor/courses/{course.public_id}/questions",
-        json=create_payload,
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert create_resp.status_code == 201, (
-        f"Create question failed: {create_resp.get_data(as_text=True)}"
-    )
-    q_data = create_resp.get_json()
-    q_id = q_data["question_id"]
-    assert q_id is not None
-    assert_adr002(q_data)
-
-    # 2. Get question detail via GET /instructor/questions/<id>
-    detail_resp = client.get(f"/instructor/questions/{q_id}")
-    assert detail_resp.status_code == 200
-    detail_data = detail_resp.get_json()
-    assert detail_data["question_id"] == q_id
-    assert "TCP" in str(detail_data["choices"])
-    assert_adr002(detail_data)
-
-    # 3. Patch question metadata via PATCH /instructor/questions/<id>
-    patch_resp = client.patch(
-        f"/instructor/questions/{q_id}",
-        json={"difficulty": "UNDERSTAND"},
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert patch_resp.status_code == 200
-    patch_data = patch_resp.get_json()
-    assert patch_data["difficulty"] == "UNDERSTAND"
-    assert_adr002(patch_data)
-
-    # 4. Create explicit revision via POST /instructor/questions/<id>/revisions
-    rev_payload = {
-        "change_type": "CONTENT_CHANGE",
-        "reason": "Cap nhat bo sung lua chon UDP",
-        "content": "Giao thuc nao sau day thuoc tang Giao van (Transport) trong bo TCP/IP?",
-        "choices": [
-            {"content": "TCP & UDP", "is_correct": True, "position": 1},
-            {"content": "IP", "is_correct": False, "position": 2},
-            {"content": "ICMP", "is_correct": False, "position": 3},
-        ],
-    }
-    rev_create_resp = client.post(
-        f"/instructor/questions/{q_id}/revisions",
-        json=rev_payload,
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert rev_create_resp.status_code == 201, (
-        f"Create revision failed: {rev_create_resp.get_data(as_text=True)}"
-    )
-    rev_create_data = rev_create_resp.get_json()
-    assert "revision" in rev_create_data
-    assert rev_create_data["revision"]["revision_no"] >= 2
-    assert_adr002(rev_create_data)
-
-    # 5. List revisions via GET /instructor/questions/<id>/revisions
-    rev_list_resp = client.get(f"/instructor/questions/{q_id}/revisions")
-    assert rev_list_resp.status_code == 200
-    rev_list_data = rev_list_resp.get_json()
-    assert "items" in rev_list_data
-    assert rev_list_data["total"] >= 2
-    assert_adr002(rev_list_data)
-
-    # 6. Trash question via POST /instructor/questions/<id>/trash
-    trash_resp = client.post(
-        f"/instructor/questions/{q_id}/trash",
-        json={"reason": "Tam an cau hoi khoi de thi"},
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert trash_resp.status_code == 200
-    trash_data = trash_resp.get_json()
-    assert trash_data["question"]["status"] == "TRASH"
-    assert_adr002(trash_data)
-
-    # 7. Restore question via POST /instructor/questions/<id>/restore
-    restore_resp = client.post(
-        f"/instructor/questions/{q_id}/restore",
-        json={"reason": "Phuc hoi cau hoi vao ngan hang"},
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert restore_resp.status_code == 200
-    restore_data = restore_resp.get_json()
-    assert restore_data["question"]["status"] != "TRASH"
-    assert_adr002(restore_data)
-
-
-# ============================================================================
-# 4. Frontend Static Assets and Contract Parity
+# 3. Frontend Static Assets and Contract Parity
 # ============================================================================
 def test_frontend_static_assets_and_contract_parity(client: FlaskClient) -> None:
     """Verify that Frontend SPA assets are served and ApiClient covers all called methods."""
@@ -386,15 +273,8 @@ def test_frontend_static_assets_and_contract_parity(client: FlaskClient) -> None
         "deleteCoursePrerequisite",
         "getCourseCompletionRules",
         "updateCourseCompletionRules",
-        "getQuestionDetail",
-        "updateQuestion",
-        "trashQuestion",
-        "restoreQuestion",
-        "getQuestionRevisions",
-        "createQuestionRevision",
         "getEnrolledCourses",
         "getCourses",
-        "getCourseQuestionSummary",
         "attachLessonResource",
         "deleteLessonResource",
         "createAssessmentQuestion",

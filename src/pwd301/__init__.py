@@ -38,7 +38,6 @@ from pwd301.blueprints.api_files import api_file_bp
 from pwd301.blueprints.api_import import api_import_bp
 from pwd301.blueprints.api_lessons import api_lesson_bp
 from pwd301.blueprints.api_notifications import api_notification_bp
-from pwd301.blueprints.api_questions import api_question_bp
 from pwd301.blueprints.api_student import api_student_bp
 from pwd301.blueprints.auth import auth_bp
 from pwd301.blueprints.core import core_bp
@@ -797,7 +796,6 @@ def create_app(
     app.register_blueprint(api_admin_bp)
     app.register_blueprint(api_course_bp)
     app.register_blueprint(api_lesson_bp)
-    app.register_blueprint(api_question_bp)
     app.register_blueprint(api_student_bp)
     app.register_blueprint(api_assessment_bp)
     app.register_blueprint(api_attempt_bp)
@@ -816,7 +814,6 @@ def create_app(
     csrf.exempt(api_admin_bp)
     csrf.exempt(api_course_bp)
     csrf.exempt(api_lesson_bp)
-    csrf.exempt(api_question_bp)
     csrf.exempt(api_student_bp)
     csrf.exempt(api_assessment_bp)
     csrf.exempt(api_attempt_bp)

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Kiến trúc Hệ thống Toàn diện PWD301 Enterprise LMS",
+    "subtitle": "Modular Monolith Headless REST API • Single-DOM SPA • MS SQL Server 2022 • ClamAV Fail-Closed • Gemini Multi-Key Pool",
+    "output": "docs/diagrams/system-architecture.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "spa", "type": "frontend", "label": "Single-DOM Web SPA", "sublabel": "Vanilla JS • Cisco NetAcad UI", "pos": [40, 220], "size": [190, 70], "tag": "Port 5000" },
+    { "id": "api_client", "type": "external", "label": "REST API Clients", "sublabel": "Third-Party Apps • Mobile Apps", "pos": [40, 360], "size": [190, 70], "tag": "JWT Bearer" },
+    
+    { "id": "proxy", "type": "cloud", "label": "Reverse Proxy & WSGI", "sublabel": "Gunicorn Pool • HTTPS", "pos": [320, 290], "size": [160, 70] },
+    { "id": "auth_gate", "type": "security", "label": "Dual-Auth & Security Gate", "sublabel": "Session + CSRF • JWT Token", "pos": [570, 290], "size": [190, 70], "tag": "Zero-Leak" },
+    
+    { "id": "svc_curriculum", "type": "backend", "label": "Phân hệ Học vụ & Đề cương", "sublabel": "Course • Lesson • Anti-Seek", "pos": [860, 120], "size": [190, 70] },
+    { "id": "svc_exam", "type": "backend", "label": "Động cơ Khảo thí Server", "sublabel": "Exam Studio • Lease Fencing", "pos": [860, 230], "size": [190, 70], "tag": "Authoritative" },
+    { "id": "svc_ai", "type": "backend", "label": "Trợ lý AI Bạch Tuộc", "sublabel": "Multi-Key Pool • RAG Engine", "pos": [860, 340], "size": [190, 70], "tag": "4.39s Speed" },
+    { "id": "svc_ops", "type": "backend", "label": "Vận hành & An ninh", "sublabel": "5 Sub-roles • Telemetry Host", "pos": [860, 450], "size": [190, 70] },
+    
+    { "id": "clamav", "type": "security", "label": "ClamAV Antivirus Daemon", "sublabel": "Fail-Closed • /quarantine", "pos": [1180, 120], "size": [190, 70], "tag": "Port 3310" },
+    { "id": "db", "type": "database", "label": "MS SQL Server 2022", "sublabel": "73 Bảng • RFC 4122 UUID", "pos": [1180, 230], "size": [190, 70], "tag": "Port 1433" },
+    { "id": "gemini_cloud", "type": "cloud", "label": "Google Gemini Cloud API", "sublabel": "gemini-flash-latest Cascade", "pos": [1180, 340], "size": [190, 70], "tag": "External" },
+    { "id": "host_telemetry", "type": "external", "label": "Host Telemetry Bridge", "sublabel": "i9-14900HX • 31.7GB RAM", "pos": [1180, 450], "size": [190, 70], "tag": "psutil Host" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "1. Tầng Giao diện Client", "wraps": ["spa", "api_client"] },
+    { "kind": "region", "label": "2. Cổng Gateway & Auth", "wraps": ["proxy", "auth_gate"] },
+    { "kind": "region", "label": "3. Lõi Backend Flask Services", "wraps": ["svc_curriculum", "svc_exam", "svc_ai", "svc_ops"] },
+    { "kind": "region", "label": "4. Tầng Hạ tầng & CSDL MSSQL", "wraps": ["db", "clamav", "gemini_cloud", "host_telemetry"] }
+  ],
+  "connections": [
+    { "id": "spa-to-proxy", "from": "spa", "to": "proxy", "label": "Session Cookie", "variant": "emphasis" },
+    { "id": "client-to-proxy", "from": "api_client", "to": "proxy", "label": "Bearer JWT" },
+    { "id": "proxy-to-auth", "from": "proxy", "to": "auth_gate", "label": "WSGI Route" },
+    
+    { "id": "auth-to-curriculum", "from": "auth_gate", "to": "svc_curriculum", "label": "Curriculum" },
+    { "id": "auth-to-exam", "from": "auth_gate", "to": "svc_exam", "label": "Exam Studio", "variant": "emphasis" },
+    { "id": "auth-to-ai", "from": "auth_gate", "to": "svc_ai", "label": "AI Chat" },
+    { "id": "auth-to-ops", "from": "auth_gate", "to": "svc_ops", "label": "Admin Ops" },
+    
+    { "id": "curriculum-to-clamav", "from": "svc_curriculum", "to": "clamav", "label": "Quét virus", "variant": "security" },
+    { "id": "curriculum-to-db", "from": "svc_curriculum", "to": "db", "label": "ORM Courses" },
+    { "id": "exam-to-db", "from": "svc_exam", "to": "db", "label": "Snapshots", "variant": "emphasis" },
+    { "id": "ai-to-db", "from": "svc_ai", "to": "db", "label": "RAG Vectors" },
+    { "id": "ai-to-gemini", "from": "svc_ai", "to": "gemini_cloud", "label": "Key Rotation", "variant": "emphasis" },
+    { "id": "ops-to-db", "from": "svc_ops", "to": "db", "label": "Audit Logs" },
+    { "id": "ops-to-host", "from": "svc_ops", "to": "host_telemetry", "label": "Real Metrics" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Headless Decoupling", "items": ["Toàn bộ giao diện phục vụ qua Single-DOM SPA", "Backend chỉ trả về JSON envelope chuẩn hóa"] },
+    { "dot": "emerald", "title": "Robust Data Integrity", "items": ["73 bảng CSDL chuẩn hóa trên MS SQL Server 2022", "Khóa tab bài thi Single-Active Lease Fencing", "ClamAV fail-closed chống mã độc tuyệt đối"] },
+    { "dot": "rose", "title": "Resilient AI & Telemetry", "items": ["Gemini Key Pool tự phục hồi xoay vòng đa khóa", "Tốc độ AI đạt 4.39s không delay", "Telemetry đo chuẩn xác phần cứng máy thật"] }
+  ]
+}

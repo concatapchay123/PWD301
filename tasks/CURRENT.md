@@ -1,3 +1,59 @@
+# Active task: TASK-078 — Complete Decommissioning & Removal of Standalone Question Bank from PWD301
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Completed Date:** 2026-10-01  
+
+## Goal & Resolution Summary
+Eliminated all standalone "Ngân hàng câu hỏi" (Question Bank) logic, design, baseline, backend endpoints, and frontend views across the entire PWD301 system:
+
+1. **Frontend Navigation & Router**:
+   - Removed `#/instructor/questions` topbar navigation link from Instructor menu.
+   - Removed `#/instructor/questions` and `#/instructor/questions/studio` routes from router handlers and sub-path active matching (`frontend/assets/js/router.js`).
+   - Cleaned up topbar navigation unit tests (`tests/frontend/topbar_navigation.test.js`) verifying `renderDynamicTopbar` does not include Question Bank (6/6 tests passing).
+
+2. **Frontend Views & API Client**:
+   - Removed Section 4: Question Bank Hub & Subject Inspector (`renderQuestions` and `renderExtendedQuestionStudio`, ~1,672 lines) from `frontend/assets/js/views/instructor.js`.
+   - Removed Question Bank methods (`getQuestions`, `getCourseQuestionSummary`, `createQuestion`, `getQuestionDetail`, `updateQuestion`, `trashQuestion`, `restoreQuestion`, `getQuestionRevisions`, `createQuestionRevision`, `draftQuestionAI`, `approveQuestionDraft`) from `frontend/assets/js/api.js`.
+   - Deleted obsolete mock directories: `frontend/pwd301_extended_question_bank_studio_chi_ti_t_to_n_b_c_u_h_i_m_n_h_c/` and `frontend/pwd301_question_bank_hub_variant_2_master_operations_table_subject_inspector/`.
+   - Removed Question Bank prototype entries from `DEMO_VIEWS_CATALOG` in `src/pwd301/blueprints/frontend/routes.py`.
+
+3. **Backend API & Routing**:
+   - Removed blueprint `api_question_bp` registration and CSRF exemption from `src/pwd301/__init__.py`.
+   - Deleted entire blueprint directory `src/pwd301/blueprints/api_questions/`.
+   - Removed `POST/GET /<course_id>/questions` from `src/pwd301/blueprints/api_courses/routes.py`.
+   - Removed all standalone Question Bank endpoints from `src/pwd301/blueprints/instructor/routes.py`:
+     - `GET /courses/<course_id>/questions`
+     - `POST /courses/<course_id>/questions`
+     - `GET /courses/<course_id>/questions/summary`
+     - `GET /questions/<question_id>`
+     - `PATCH /questions/<question_id>`
+     - `PUT /questions/<question_id>`
+     - `POST /questions/<question_id>/trash`
+     - `POST /questions/<question_id>/restore`
+     - `GET /questions/<question_id>/revisions`
+     - `POST /questions/<question_id>/revisions`
+     - `GET /questions/<question_id>/revisions/<no>`
+     - `GET /questions/<question_id>/corrections`
+     - AI draft routes: `/ai/questions/draft`, `/ai/questions/drafts`, `/ai/questions/drafts/<id>/approve`, `/ai/questions/drafts/<id>/reject`.
+   - Retained Exam Studio authoring routes: `POST /instructor/assessments/<id>/questions/create`, `batch`, `PUT`, `DELETE`, `reorder`.
+   - Removed `QUESTION_BANK_READY` notification seed from `src/pwd301/seeds/demo.py`.
+
+4. **Integration & Parity Tests**:
+   - Removed obsolete test suites testing deleted Question Bank endpoints:
+     - `tests/api/test_question_bank_api.py`
+     - `tests/api/test_question_revision_api.py`
+     - `tests/security/test_question_bank_idor.py`
+     - `tests/security/test_question_revision_idor.py`
+   - Updated `tests/api/test_backend_frontend_parity.py`: removed `test_question_bank_lifecycle_and_revisions_parity` and cleaned `critical_methods`.
+   - Updated `tests/api/test_instructor_backend_remediation.py`: removed `test_get_course_question_summary`.
+   - Updated `tests/unit/test_question_bank_service.py`: removed `test_instructor_web_routes`.
+
+5. **Documentation & Specification Baseline**:
+   - Updated `docs/features/question-bank.md`, `docs/system/PWD301_SYSTEM_SPECIFICATION/business/06_QUESTION_BANK.md`, `docs/system/PWD301_SYSTEM_SPECIFICATION/api/06_QUESTION_BANK_API.md`, and `README.md` to document decommissioning.
+
+---
+
 # Active task: TASK-077 — AI Assistant Cognitive Grounding, Cisco NetAcad Learning Console AI Tab & Intelligent Course Recommendations Remediation
 
 Status: DONE. See [TASK-077.md](TASK-077.md) for scope, acceptance criteria, verification, and completion evidence.

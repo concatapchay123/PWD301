@@ -11,6 +11,7 @@ Implements:
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import time
 from typing import Any
@@ -21,6 +22,7 @@ from pwd301.extensions import db
 from pwd301.models.course import Course, CoursePrerequisite, Enrollment
 from pwd301.models.identity import User
 from pwd301.services.gemini_service import (
+    _GEMINI_EXECUTOR,
     get_gemini_client,
     record_ai_telemetry,
 )
@@ -201,59 +203,66 @@ def generate_course_recommendations(
         "interests": sorted(list(completed_categories)),
     }
 
+    def _get_rule_explanation(cand_course: Course, cand_reasons: list[str]) -> str:
+        if "CATEGORY_MATCH" in cand_reasons and "DIFFICULTY_PROGRESSION" in cand_reasons:
+            return (
+                f"Recommended because you completed foundational courses in "
+                f"{cand_course.category} and are ready for this "
+                f"{cand_course.difficulty} challenge."
+            )
+        elif "CATEGORY_MATCH" in cand_reasons:
+            return (
+                f"Expands your expertise in {cand_course.category} following "
+                "your completed coursework."
+            )
+        elif "PREREQUISITES_SATISFIED" in cand_reasons:
+            return (
+                "You have satisfied all prerequisites required to enroll in "
+                f"'{cand_course.title}'."
+            )
+        elif "BEGINNER_FRIENDLY" in cand_reasons:
+            return "An excellent introductory course to kickstart your learning path."
+        return (
+            f"A highly relevant {cand_course.difficulty or 'standard'} course suited for "
+            "your current learning progress."
+        )
+
     client = get_gemini_client()
     results: list[dict[str, Any]] = []
 
+    # Dispatch explanation requests concurrently on bounded global executor
+    futures_map: dict[int, tuple[Any, float]] = {}
+    for item in top_candidates:
+        c_course = item["course"]
+        c_facts = {
+            "title": c_course.title,
+            "category": c_course.category,
+            "difficulty": c_course.difficulty,
+            "has_prerequisites": item["has_prereqs"],
+        }
+        fut = _GEMINI_EXECUTOR.submit(client.explain_recommendation, student_profile, c_facts)
+        futures_map[c_course.id] = (fut, time.time())
+
+    # Collect explanation results with a strict 1.0s timeout per item
     for item in top_candidates:
         cand_course: Course = item["course"]
         cand_reasons: list[str] = item["reasons"]
-        course_facts = {
-            "title": cand_course.title,
-            "category": cand_course.category,
-            "difficulty": cand_course.difficulty,
-            "has_prerequisites": item["has_prereqs"],
-        }
+        fut, t_start = futures_map[cand_course.id]
 
-        # AI Explanation with Graceful Degradation Fallback
         explanation: str
-        t_start = time.time()
         telemetry_status = "SUCCEEDED"
         telemetry_error: str | None = None
 
         try:
-            explanation = client.explain_recommendation(student_profile, course_facts)
+            explanation = fut.result(timeout=1.0)
+        except concurrent.futures.TimeoutError:
+            telemetry_status = "TIMEOUT"
+            telemetry_error = "TimeoutError"
+            explanation = _get_rule_explanation(cand_course, cand_reasons)
         except Exception as exc:
             telemetry_status = "FAILED"
             telemetry_error = type(exc).__name__
-            logger.warning(
-                "Gemini explanation failed for course %s, falling back to rule explanation: %s",
-                cand_course.course_code,
-                exc,
-            )
-            # Default deterministic explanation fallback
-            if "CATEGORY_MATCH" in cand_reasons and "DIFFICULTY_PROGRESSION" in cand_reasons:
-                explanation = (
-                    f"Recommended because you completed foundational courses in "
-                    f"{cand_course.category} and are ready for this "
-                    f"{cand_course.difficulty} challenge."
-                )
-            elif "CATEGORY_MATCH" in cand_reasons:
-                explanation = (
-                    f"Expands your expertise in {cand_course.category} following "
-                    "your completed coursework."
-                )
-            elif "PREREQUISITES_SATISFIED" in cand_reasons:
-                explanation = (
-                    "You have satisfied all prerequisites required to enroll in "
-                    f"'{cand_course.title}'."
-                )
-            elif "BEGINNER_FRIENDLY" in cand_reasons:
-                explanation = "An excellent introductory course to kickstart your learning path."
-            else:
-                explanation = (
-                    f"A highly relevant {cand_course.difficulty or 'standard'} course suited for "
-                    "your current learning progress."
-                )
+            explanation = _get_rule_explanation(cand_course, cand_reasons)
 
         latency_ms = int((time.time() - t_start) * 1000)
 
@@ -274,11 +283,10 @@ def generate_course_recommendations(
             logger.error("Failed to commit AI telemetry for recommendation: %s", exc)
             sess.rollback()
 
-        # Strict ADR-002: Zero internal BIGINT IDs in output dictionary
+        # Strict ADR-002: Zero internal BIGINT IDs in output dictionary (use public course_id)
         results.append(
             {
                 "course_id": str(cand_course.public_id),
-                "id": str(cand_course.public_id),
                 "course_code": cand_course.course_code,
                 "title": cand_course.title,
                 "description": cand_course.description,

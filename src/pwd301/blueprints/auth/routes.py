@@ -83,6 +83,7 @@ def login() -> Any:
                             "email": current_user.email,
                             "display_name": getattr(current_user, "display_name", ""),
                             "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+                            "active_role": session.get("active_role") or getattr(current_user, "primary_role", "STUDENT"),
                             "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
                             "admin_sub_role": getattr(current_user, "admin_sub_role", None),
                             "admin_sub_role_label": (
@@ -241,6 +242,7 @@ def login() -> Any:
                         "email": user.email,
                         "display_name": user.display_name,
                         "primary_role": getattr(user, "primary_role", "STUDENT"),
+                        "active_role": session.get("active_role") or getattr(user, "primary_role", "STUDENT"),
                         "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
                         "admin_sub_role": getattr(user, "admin_sub_role", None),
                         "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
@@ -921,6 +923,7 @@ def auth_profile() -> Any:
         "email": current_user.email,
         "display_name": current_user.display_name,
         "primary_role": getattr(current_user, "primary_role", "STUDENT"),
+        "active_role": session.get("active_role") or getattr(current_user, "primary_role", "STUDENT"),
         "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
         "roles": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
         "admin_sub_role": getattr(current_user, "admin_sub_role", None),

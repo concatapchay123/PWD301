@@ -660,7 +660,7 @@ def test_t_enroll_04_retention_purging_preserves_durable_completion_summary(
 
 
 # ==============================================================================
-# 4. BỘ TIÊU CHÍ KIỂM THỬ NGÂN HÀNG CÂU HỎI (T-QB-01 ĐẾN T-QB-05)
+# 4. BỘ TIÊU CHÍ KIỂM THỬ MÔ HÌNH VÀ PHIÊN BẢN CÂU HỎI (T-QB-01 ĐẾN T-QB-05)
 # ==============================================================================
 
 

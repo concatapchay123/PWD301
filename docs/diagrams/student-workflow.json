@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Quy trình Học tập & Khảo thí Sinh viên PWD301",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/student-workflow.html"
+  },
+  "lanes": [
+    { "id": "enroll", "label": "Xác thực & Ghi danh Môn học" },
+    { "id": "learning", "label": "Bàn học Cisco NetAcad 3 Cột" },
+    { "id": "assessment", "label": "Khảo thí & Khóa Tab Độc quyền" },
+    { "id": "outcome", "label": "Trợ giảng AI & Chứng nhận" }
+  ],
+  "phases": [
+    { "id": "phase_in", "label": "Đăng ký & Vào môn", "fromCol": 0, "toCol": 1 },
+    { "id": "phase_learn", "label": "Học tập & Tương tác", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "phase_eval", "label": "Khảo thí & Điểm số", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "grp_enroll", "label": "DAG Prerequisite Validation", "lane": "enroll", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "grp_console", "label": "Unified Console & Anti-Seek", "lane": "learning", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "grp_exam", "label": "Anti-Cheat Focus & Lease Fencing", "lane": "assessment", "fromCol": 3, "toCol": 4, "variant": "security" },
+    { "id": "grp_ai", "label": "Octopus AI & Digital Credential", "lane": "outcome", "fromCol": 2, "toCol": 5, "variant": "emphasis" }
+  ],
+  "mainPath": ["auth_login", "course_catalog", "netacad_console", "antiseek_quiz", "waiting_room", "exam_focus", "cert_outcome"],
+  "nodes": [
+    { "id": "auth_login", "lane": "enroll", "col": 0, "type": "frontend", "label": "Đăng nhập & Cài đặt", "sublabel": "Dual-Auth • Checklist MK", "width": 140 },
+    { "id": "course_catalog", "lane": "enroll", "col": 1, "type": "backend", "label": "Ghi danh Khóa học", "sublabel": "DAG Check chống lặp", "tag": "1 Active Enroll", "width": 140 },
+    
+    { "id": "netacad_console", "lane": "learning", "col": 2, "type": "frontend", "label": "Cisco NetAcad Console", "sublabel": "Cây bài giảng & Markdown", "tag": "3 Cột Notion-style", "width": 140 },
+    { "id": "antiseek_quiz", "lane": "learning", "col": 3, "type": "backend", "label": "Video & Mini-Quiz", "sublabel": "Anti-Seek Player • 4 Dạng", "tag": "Bằng chứng học thật", "width": 140 },
+    
+    { "id": "ai_tutor", "lane": "outcome", "col": 2, "type": "cloud", "label": "Bạch Tuộc AI Tutor", "sublabel": "RAG theo ngữ cảnh môn", "tag": "Ẩn khi đang thi", "width": 140 },
+    
+    { "id": "waiting_room", "lane": "assessment", "col": 3, "type": "frontend", "label": "Phòng chờ Thi", "sublabel": "Số lượt thi & Bảng điểm", "tag": "Waiting Room", "width": 140 },
+    { "id": "exam_focus", "lane": "assessment", "col": 4, "type": "security", "label": "Bàn thi Focus Mode", "sublabel": "Khóa tab lease • Chống gian lận", "tag": "Server Clock", "width": 140 },
+    
+    { "id": "cert_outcome", "lane": "outcome", "col": 5, "type": "database", "label": "Kết quả & Chứng chỉ", "sublabel": "Chấm tự động • Cấp chứng chỉ", "tag": "Idempotent Submit", "width": 140 }
+  ],
+  "edges": [
+    { "id": "auth-catalog", "from": "auth_login", "to": "course_catalog", "variant": "emphasis" },
+    { "id": "catalog-netacad", "from": "course_catalog", "to": "netacad_console", "label": "vào học", "variant": "emphasis" },
+    
+    { "id": "netacad-antiseek", "from": "netacad_console", "to": "antiseek_quiz", "variant": "emphasis" },
+    { "id": "netacad-ai", "from": "netacad_console", "to": "ai_tutor", "label": "hỏi đáp AI", "variant": "dashed" },
+    
+    { "id": "quiz-waiting", "from": "antiseek_quiz", "to": "waiting_room", "label": "vào phòng thi", "variant": "emphasis" },
+    { "id": "waiting-exam", "from": "waiting_room", "to": "exam_focus", "label": "bắt đầu thi", "variant": "emphasis" },
+    
+    { "id": "exam-cert", "from": "exam_focus", "to": "cert_outcome", "label": "nộp bài", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Học tập Không Phân tâm Cisco NetAcad",
+      "items": [
+        "Console 3 cột thống nhất: Cây phân cấp môn, không gian đọc, tab AI",
+        "Trình phát video Anti-Seek: Bắt buộc xem đủ thời lượng tối thiểu",
+        "Mini-Quiz tương tác 4 dạng: Kiểm tra độ hiểu bài ngay trong bài giảng"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Khảo thí An toàn & Độc quyền",
+      "items": [
+        "Phòng chờ Waiting Room thông minh hiển thị theo số lượt thi",
+        "Khóa tab độc quyền Single-Active-Tab Lease Heartbeat ngăn mở nhiều tab",
+        "Focus Mode toàn màn hình, đếm số lần chuyển tab, khóa phím tắt nguy hiểm",
+        "Chấm điểm trắc nghiệm khách quan 100% tự động, cấp chứng chỉ chuẩn ABET"
+      ]
+    }
+  ]
+}

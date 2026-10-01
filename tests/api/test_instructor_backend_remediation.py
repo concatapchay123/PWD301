@@ -1,12 +1,11 @@
 """Tests for Backend Remediation & Instructor Portal Parity (TASK-045).
 
 Verifies:
-1. GET /instructor/courses/<course_id>/questions/summary (Bloom & type distribution)
-2. POST /instructor/assessments/<assessment_id>/questions/create (ESSAY question type)
-3. POST /instructor/assessments/<assessment_id>/questions/batch (Atomic batch question creation)
-4. DELETE /instructor/courses/<course_id>/lessons/<lesson_id>/resources/<resource_id>
-5. POST /instructor/attempts/<attempt_id>/grades/<attempt_question_id> (Rubric breakdown)
-6. POST /student/ai/chat with course_id context parameter
+1. POST /instructor/assessments/<assessment_id>/questions/create (ESSAY question type)
+2. POST /instructor/assessments/<assessment_id>/questions/batch (Atomic batch question creation)
+3. DELETE /instructor/courses/<course_id>/lessons/<lesson_id>/resources/<resource_id>
+4. POST /instructor/attempts/<attempt_id>/grades/<attempt_question_id> (Rubric breakdown)
+5. POST /student/ai/chat with course_id context parameter
 """
 
 from __future__ import annotations
@@ -216,84 +215,7 @@ def test_course_upload_route_enforces_lesson_document_cap(
 
 
 # ============================================================================
-# 1. Question Bank Summary API Test
-# ============================================================================
-def test_get_course_question_summary(client: FlaskClient, remediation_env: dict[str, Any]) -> None:
-    """Ensure GET /instructor/courses/<course_id>/questions/summary returns aggregated metrics."""
-    inst = remediation_env["instructor"]
-    course = remediation_env["course"]
-    lesson = remediation_env["lesson"]
-    sess = db.session
-
-    # Seed 3 questions of varying types and Bloom levels
-    create_question(
-        actor=inst,
-        course_id=course.id,
-        payload={
-            "difficulty": "REMEMBER",
-            "question_type": "SINGLE_CHOICE",
-            "content": "Cau hoi Nhan biet 1",
-            "lesson_id": lesson.id,
-            "choices": [
-                {"content": "Dap an A", "is_correct": True, "position": 1},
-                {"content": "Dap an B", "is_correct": False, "position": 2},
-            ],
-        },
-        session=sess,
-    )
-    create_question(
-        actor=inst,
-        course_id=course.id,
-        payload={
-            "difficulty": "UNDERSTAND",
-            "question_type": "MULTIPLE_CHOICE",
-            "content": "Cau hoi Thong hieu 2",
-            "lesson_id": lesson.id,
-            "choices": [
-                {"content": "Dap an A", "is_correct": True, "position": 1},
-                {"content": "Dap an B", "is_correct": True, "position": 2},
-            ],
-        },
-        session=sess,
-    )
-    create_question(
-        actor=inst,
-        course_id=course.id,
-        payload={
-            "difficulty": "APPLY",
-            "question_type": "SHORT_ANSWER",
-            "content": "Cau hoi Van dung 3",
-            "accepted_answers": [{"answer_text": "Answer 1"}],
-        },
-        session=sess,
-    )
-    sess.commit()
-
-    login_session(client, inst.email)
-
-    res = client.get(f"/instructor/courses/{course.public_id}/questions/summary")
-    assert res.status_code == 200, f"Error: {res.get_data(as_text=True)}"
-    data = res.get_json()
-
-    assert data["total"] == 3
-    assert "by_difficulty" in data
-    assert data["by_difficulty"]["REMEMBER"] == 1
-    assert data["by_difficulty"]["UNDERSTAND"] == 1
-    assert data["by_difficulty"]["APPLY"] == 1
-
-    assert "by_type" in data
-    assert data["by_type"]["SINGLE_CHOICE"] == 1
-    assert data["by_type"]["MULTIPLE_CHOICE"] == 1
-    assert data["by_type"]["SHORT_ANSWER"] == 1
-
-    assert "by_lesson" in data
-    assert len(data["by_lesson"]) >= 1
-
-    assert_adr002(data)
-
-
-# ============================================================================
-# 2. ESSAY Question Type in Assessment Authoring Test
+# 1. ESSAY Question Type in Assessment Authoring Test
 # ============================================================================
 def test_create_assessment_question_essay_rejected_and_short_answer_supported(
     client: FlaskClient, remediation_env: dict[str, Any]

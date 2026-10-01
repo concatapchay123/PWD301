@@ -802,7 +802,7 @@ def assign_role_to_user(
                 "ADMIN_SYSTEM_MONITORING",
             }:
                 raise InvalidRoleAssignmentError(
-                    f"Bắt buộc phải chỉ định vai trò Admin phụ hợp lệ. Giá trị không hợp lệ: '{admin_sub_role}'."
+                    f"Bắt buộc phải chỉ định vai trò Admin phụ hợp lệ. Giá trị không hợp lệ: '{admin_sub_role}'. Không thể cấp quyền ADMIN_PRIMARY ngầm định."
                 )
 
     if norm_code == "INSTRUCTOR":

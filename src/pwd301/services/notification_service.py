@@ -278,7 +278,10 @@ def _visible_notification_query(
     recipient_id: int,
     target_role: str | None = None,
 ) -> Any:
-    """Collapse duplicate notifications while retaining their audit events, optionally scoped by target_role."""
+    """Collapse duplicate notifications while retaining their audit events.
+
+    Optionally scoped by target_role.
+    """
     newer = sa.orm.aliased(Notification)
     duplicate = (
         sa.select(newer.id)
@@ -286,6 +289,10 @@ def _visible_notification_query(
             newer.recipient_user_id == recipient_id,
             newer.title == Notification.title,
             newer.body == Notification.body,
+            sa.or_(
+                newer.target_role == Notification.target_role,
+                sa.and_(newer.target_role.is_(None), Notification.target_role.is_(None)),
+            ),
             newer.id > Notification.id,
         )
         .exists()
@@ -296,6 +303,7 @@ def _visible_notification_query(
         .filter(
             Notification.recipient_user_id == recipient_id,
             ~duplicate,
+            sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
         )
     )
     if target_role:

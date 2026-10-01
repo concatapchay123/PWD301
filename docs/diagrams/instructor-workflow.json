@@ -1,0 +1,77 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Quy trình Nghiệp vụ Giảng viên PWD301",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/instructor-workflow.html"
+  },
+  "lanes": [
+    { "id": "course", "label": "Quản lý Khóa học & Học vụ" },
+    { "id": "lesson", "label": "Biên soạn Bài giảng Notion-Style" },
+    { "id": "exam", "label": "Exam Studio Soạn đề Word/Azota" },
+    { "id": "grading", "label": "Kiểm duyệt & Quản lý Điểm số" }
+  ],
+  "phases": [
+    { "id": "setup", "label": "Khởi tạo & Cài đặt", "fromCol": 0, "toCol": 1 },
+    { "id": "authoring", "label": "Biên soạn Nội dung & Đề thi", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "delivery", "label": "Xuất bản & Chấm điểm", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "grp_setup", "label": "Chuẩn đầu ra ABET SLO", "lane": "course", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "grp_lesson", "label": "Anti-Seek & Mini-Quiz", "lane": "lesson", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "grp_exam", "label": "Split-view 50/50 Studio", "lane": "exam", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "grp_regrade", "label": "Gradebook & Idempotent Regrading", "lane": "grading", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["create_course", "slo_settings", "write_lesson", "mini_quiz_studio", "submit_approval", "gradebook_monitor"],
+  "nodes": [
+    { "id": "create_course", "lane": "course", "col": 0, "type": "frontend", "label": "Tạo Khóa học", "sublabel": "Mã môn, tên, mô tả", "width": 140 },
+    { "id": "slo_settings", "lane": "course", "col": 1, "type": "backend", "label": "Chuẩn đầu ra SLO", "sublabel": "ABET SLOs • Tiêu chí đạt", "tag": "JSON Policy", "width": 140 },
+    
+    { "id": "write_lesson", "lane": "lesson", "col": 2, "type": "frontend", "label": "Soạn Bài giảng", "sublabel": "Markdown • Video Anti-Seek", "tag": "1 Trang Liền mạch", "width": 140 },
+    { "id": "mini_quiz_studio", "lane": "lesson", "col": 3, "type": "backend", "label": "Mini-Quiz Studio", "sublabel": "4 dạng câu hỏi tương tác", "tag": "Auto-Grade", "width": 140 },
+    
+    { "id": "exam_import", "lane": "exam", "col": 2, "type": "frontend", "label": "Bóc tách Đề thi Word", "sublabel": "Word .docx / Azota format", "tag": "50/50 Split-view", "width": 140 },
+    { "id": "exam_author", "lane": "exam", "col": 3, "type": "backend", "label": "Exam Studio Cốt lõi", "sublabel": "Chia điểm 100/N • LaTeX", "tag": "Đóng băng khi thi", "width": 140 },
+    
+    { "id": "submit_approval", "lane": "grading", "col": 4, "type": "security", "label": "Gửi Duyệt & Đề xuất", "sublabel": "Diff Side-by-Side Admin", "tag": "Fail-Closed", "width": 150 },
+    { "id": "gradebook_monitor", "lane": "grading", "col": 5, "type": "database", "label": "Bảng điểm & Regrading", "sublabel": "Tái chấm điểm Idempotent", "tag": "choice_key", "width": 140 }
+  ],
+  "edges": [
+    { "id": "course-slo", "from": "create_course", "to": "slo_settings", "variant": "emphasis" },
+    
+    { "id": "slo-lesson", "from": "slo_settings", "to": "write_lesson", "label": "soạn bài", "variant": "emphasis" },
+    { "id": "lesson-quiz", "from": "write_lesson", "to": "mini_quiz_studio", "variant": "emphasis" },
+    
+    { "id": "slo-exam", "from": "slo_settings", "to": "exam_import", "label": "soạn đề thi", "variant": "default" },
+    { "id": "exam-config", "from": "exam_import", "to": "exam_author", "variant": "emphasis" },
+    
+    { "id": "quiz-submit", "from": "mini_quiz_studio", "to": "submit_approval", "variant": "emphasis" },
+    { "id": "exam-submit", "from": "exam_author", "to": "submit_approval", "variant": "default" },
+    
+    { "id": "submit-gradebook", "from": "submit_approval", "to": "gradebook_monitor", "label": "phát hành môn", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Biên soạn Giáo án & Mini-Quiz",
+      "items": [
+        "Soạn thảo 1 trang liền mạch Notion-style, đính kèm tệp quét ClamAV",
+        "Video Anti-Seek: yêu cầu sinh viên xem đủ thời lượng bắt buộc",
+        "Mini-Quiz: 4 dạng câu hỏi (Trắc nghiệm, Điền khuyết, Nối từ, Đúng/Sai)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Exam Studio & Tái chấm Regrading",
+      "items": [
+        "Bóc tách đề Word .docx & cú pháp Azota với màn hình chia đôi 50/50",
+        "Chia điểm tự động 100/N, chọn công thức LaTeX 5 chuyên đề",
+        "Câu hỏi tạo trực tiếp trong đề thi (đã loại bỏ Question Bank độc lập)",
+        "Tái chấm điểm tự động (Idempotent Regrading) theo choice_key"
+      ]
+    }
+  ]
+}

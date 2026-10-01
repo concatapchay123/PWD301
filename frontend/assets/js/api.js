@@ -233,13 +233,25 @@ class ApiClient {
         // Fall back to general endpoint
       }
     }
+    const isStudentRoute = window.location.hash.startsWith('#/student');
+    if (isStudentRoute) {
+      try {
+        return await ApiClient.request(`/student/courses/${courseId}`);
+      } catch {
+        // Fall back to general endpoint
+      }
+    }
     try {
       return await ApiClient.request(`/api/courses/${courseId}`);
     } catch (err) {
       try {
-        return await ApiClient.request(`/instructor/courses/${courseId}`);
+        return await ApiClient.request(`/student/courses/${courseId}`);
       } catch {
-        throw err;
+        try {
+          return await ApiClient.request(`/instructor/courses/${courseId}`);
+        } catch {
+          throw err;
+        }
       }
     }
   }
@@ -553,6 +565,13 @@ class ApiClient {
     });
   }
 
+  static async submitLearningUnit(unitId, courseId = null) {
+    const url = courseId
+      ? `/instructor/courses/${courseId}/learning-units/${unitId}/submit`
+      : `/instructor/learning-units/${unitId}/submit`;
+    return await ApiClient.request(url, { method: 'POST' });
+  }
+
   static async getLesson(lessonId) {
     return await ApiClient.request(`/instructor/lessons/${lessonId}`);
   }
@@ -662,71 +681,6 @@ class ApiClient {
     return await ApiClient.request(`/instructor/courses/${courseId}/completion-rules`, {
       method: 'POST',
       body: data
-    });
-  }
-
-  static async getQuestions(courseId, params = {}) {
-    const query = new URLSearchParams(params).toString();
-    const url = query ? `/instructor/courses/${courseId}/questions?${query}` : `/instructor/courses/${courseId}/questions`;
-    return await ApiClient.request(url);
-  }
-
-  static async getCourseQuestionSummary(courseId) {
-    return await ApiClient.request(`/instructor/courses/${courseId}/questions/summary`);
-  }
-
-  static async createQuestion(courseId, data) {
-    return await ApiClient.request(`/instructor/courses/${courseId}/questions`, {
-      method: 'POST',
-      body: data
-    });
-  }
-
-  static async getQuestionDetail(questionId) {
-    return await ApiClient.request(`/instructor/questions/${questionId}`);
-  }
-
-  static async updateQuestion(questionId, data) {
-    return await ApiClient.request(`/instructor/questions/${questionId}`, {
-      method: 'PATCH',
-      body: data
-    });
-  }
-
-  static async trashQuestion(questionId, reason = '') {
-    return await ApiClient.request(`/instructor/questions/${questionId}/trash`, {
-      method: 'POST',
-      body: { reason }
-    });
-  }
-
-  static async restoreQuestion(questionId) {
-    return await ApiClient.request(`/instructor/questions/${questionId}/restore`, {
-      method: 'POST'
-    });
-  }
-
-  static async getQuestionRevisions(questionId) {
-    return await ApiClient.request(`/instructor/questions/${questionId}/revisions`);
-  }
-
-  static async createQuestionRevision(questionId, data) {
-    return await ApiClient.request(`/instructor/questions/${questionId}/revisions`, {
-      method: 'POST',
-      body: data
-    });
-  }
-
-  static async draftQuestionAI(data) {
-    return await ApiClient.request('/instructor/ai/questions/draft', {
-      method: 'POST',
-      body: data
-    });
-  }
-
-  static async approveQuestionDraft(draftId) {
-    return await ApiClient.request(`/instructor/ai/questions/drafts/${draftId}/approve`, {
-      method: 'POST'
     });
   }
 
@@ -1128,6 +1082,33 @@ class ApiClient {
     }
     const list = await ApiClient.getNotifications(options);
     return list.unread_count ?? (list.items || []).filter(i => !i.is_read && !i.read).length;
+  }
+
+  static async markNotificationRead(notificationId) {
+    if (!notificationId) return { success: false };
+    try {
+      return await ApiClient.request(`/auth/notifications/${notificationId}/read`, {
+        method: 'POST',
+      });
+    } catch (e) {
+      console.warn('markNotificationRead error:', e);
+      return { success: false };
+    }
+  }
+
+  static async markAllNotificationsRead(category = null, role = null) {
+    try {
+      const body = {};
+      if (category && category !== 'ALL') body.category = category;
+      if (role) body.role = role;
+      return await ApiClient.request('/auth/notifications/mark-all-read', {
+        method: 'POST',
+        body: body,
+      });
+    } catch (e) {
+      console.warn('markAllNotificationsRead error:', e);
+      return { success: false };
+    }
   }
 
   static async parseExamFile(file, courseId = null) {

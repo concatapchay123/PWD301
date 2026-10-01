@@ -163,10 +163,23 @@ def delete_learning_unit(
 
     for lesson in unit.lessons:
         if lesson.deleted_at is None:
-            lesson.learning_unit_id = None
+            lesson.deleted_at = utc_now()
             lesson.updated_at = utc_now()
 
     unit.deleted_at = utc_now()
+    from pwd301.models.course import CourseChangeRequest
+
+    pending_crs = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == unit.course_id,
+            CourseChangeRequest.target_id == unit.id,
+            CourseChangeRequest.status == "PENDING",
+        )
+        .all()
+    )
+    for pcr in pending_crs:
+        pcr.status = "CANCELLED"
     sess.flush()
 
     # Re-compact remaining active learning units to contiguous positions
@@ -2205,6 +2218,18 @@ def approve_course_change_request(
         staged.updated_at = now
         sess.flush()
 
+    if p_data.get("action") == "CREATE_LEARNING_UNIT" and req.target_id:
+        from pwd301.models.course import LearningUnit
+        target_u = sess.get(LearningUnit, req.target_id)
+        if target_u:
+            for les in target_u.lessons:
+                if les.deleted_at is None and les.status in ("DRAFT", "PENDING_APPROVAL"):
+                    les.status = "PUBLISHED"
+                    if les.published_at is None:
+                        les.published_at = now
+                    les.updated_at = now
+            sess.flush()
+
     req.status = "APPROVED"
     req.reviewed_by_user_id = actor.id
     req.review_reason = review_reason
@@ -2240,11 +2265,23 @@ def reject_course_change_request(
         raise LessonStateViolationError(f"Cannot reject change request in '{req.status}' status.")
 
     now = utc_now()
+    p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
     staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
     for staged in staged_lessons:
         staged.status = "TRASH"
         staged.deleted_at = now
         staged.updated_at = now
+
+    if p_data.get("action") == "CREATE_LEARNING_UNIT" and req.target_id:
+        from pwd301.models.course import LearningUnit
+        target_u = sess.get(LearningUnit, req.target_id)
+        if target_u:
+            target_u.deleted_at = now
+            for les in target_u.lessons:
+                les.status = "TRASH"
+                les.deleted_at = now
+                les.updated_at = now
+            sess.flush()
 
     req.status = "REJECTED"
     req.reviewed_by_user_id = actor.id

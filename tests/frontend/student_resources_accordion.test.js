@@ -83,6 +83,8 @@ function setupEnvironment() {
   const document = {
     createElement,
     getElementById: (id) => elements.get(id) || null,
+    querySelector: (sel) => elements.get(sel.replace(/^#/, '')) || null,
+    querySelectorAll: () => [],
     body: createElement('body')
   };
 
@@ -245,9 +247,6 @@ test('student resources accordion groups files by chapter and lesson, hides empt
 
   await sandbox.window.StudentView.renderCourseConsole(container, 'ops401', 'les-1-1');
 
-  // 1. Check badge count:
-  // 1 file (Bài 1) + 2 files (Bài 2) + 1 file (Bài 4) + 1 general syllabus = 5 study files
-  // ops401_cover.png MUST be excluded (was 6 files total, now 5)
   assert.equal(container.innerHTML.includes('Tài liệu (5)'), true, 'Badge in container must reflect 5 valid study files (excluding cover)');
 
   // 2. Check Resources panel content

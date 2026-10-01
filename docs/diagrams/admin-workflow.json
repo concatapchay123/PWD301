@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Quy trình Quản trị Phân quyền & Vận hành PWD301",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/admin-workflow.html"
+  },
+  "lanes": [
+    { "id": "primary", "label": "Admin Chính (ADMIN_PRIMARY)" },
+    { "id": "review", "label": "Admin Duyệt Đề cương & Hồ sơ" },
+    { "id": "ops", "label": "Admin Phân công & Giám sát" },
+    { "id": "system", "label": "Hệ thống LMS & CSDL MSSQL" }
+  ],
+  "phases": [
+    { "id": "delegation", "label": "Phân quyền & Khởi tạo", "fromCol": 0, "toCol": 1 },
+    { "id": "governance", "label": "Thẩm định & Phê duyệt", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "operations", "label": "Vận hành & Giám sát", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "subrole_group", "label": "Cơ chế Sub-role linh hoạt", "lane": "primary", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "review_group", "label": "Governance Review Flow", "lane": "review", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "ops_group", "label": "Telemetry & Security Control", "lane": "ops", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["primary_login", "delegate_roles", "course_queue", "diff_approval", "db_commit"],
+  "nodes": [
+    { "id": "primary_login", "lane": "primary", "col": 0, "type": "security", "label": "Admin Chính", "sublabel": "Toàn quyền hệ thống", "width": 140 },
+    { "id": "delegate_roles", "lane": "primary", "col": 1, "type": "backend", "label": "Cấp quyền Sub-roles", "sublabel": "SUB_ROLE:<CODE>", "tag": "Chỉ Primary Admin", "width": 140 },
+    
+    { "id": "course_queue", "lane": "review", "col": 2, "type": "frontend", "label": "Hàng đợi Khóa học", "sublabel": "Duyệt đề cương & bài học", "width": 140 },
+    { "id": "diff_approval", "lane": "review", "col": 3, "type": "security", "label": "Diff Side-by-Side", "sublabel": "Đối soát thay đổi bài học", "tag": "COURSE_REVIEW", "width": 140 },
+    
+    { "id": "instructor_apps", "lane": "ops", "col": 2, "type": "frontend", "label": "Duyệt Giảng viên", "sublabel": "Xem trước CV inline", "tag": "INSTRUCTOR_REVIEW", "width": 140 },
+    { "id": "assign_teaching", "lane": "ops", "col": 3, "type": "backend", "label": "Phân công Giảng dạy", "sublabel": "Điều phối môn học", "tag": "TEACHING_ASSIGN", "width": 140 },
+    
+    { "id": "telemetry_mon", "lane": "ops", "col": 4, "type": "cloud", "label": "Host Telemetry", "sublabel": "i9-14900HX • RAM • Disk", "tag": "SYSTEM_MONITOR", "width": 140 },
+    { "id": "live_restore", "lane": "primary", "col": 4, "type": "security", "label": "Khôi phục CSDL Live", "sublabel": "Quy trình 4 bước an toàn", "tag": "Xác thực mật khẩu", "width": 140 },
+    
+    { "id": "db_commit", "lane": "system", "col": 5, "type": "database", "label": "CSDL MSSQL 73 Bảng", "sublabel": "Ghi nhận & Audit SHA-256", "tag": "Bất biến", "width": 140 }
+  ],
+  "edges": [
+    { "id": "login-delegate", "from": "primary_login", "to": "delegate_roles", "variant": "emphasis" },
+    { "id": "delegate-course", "from": "delegate_roles", "to": "course_queue", "label": "gán quyền", "variant": "default" },
+    { "id": "delegate-instructor", "from": "delegate_roles", "to": "instructor_apps", "variant": "default" },
+    
+    { "id": "course-diff", "from": "course_queue", "to": "diff_approval", "label": "thẩm định", "variant": "emphasis" },
+    { "id": "instructor-assign", "from": "instructor_apps", "to": "assign_teaching", "label": "duyệt cấp quyền", "variant": "emphasis" },
+    
+    { "id": "diff-commit", "from": "diff_approval", "to": "db_commit", "label": "xuất bản", "variant": "emphasis" },
+    { "id": "assign-commit", "from": "assign_teaching", "to": "db_commit", "variant": "default" },
+    
+    { "id": "primary-restore", "from": "primary_login", "to": "live_restore", "label": "sự cố khẩn", "variant": "security" },
+    { "id": "restore-commit", "from": "live_restore", "to": "db_commit", "label": "áp dụng restore", "variant": "security" },
+    
+    { "id": "telemetry-audit", "from": "telemetry_mon", "to": "db_commit", "label": "ghi nhật ký", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Phân quyền 5 Nhóm Sub-roles",
+      "items": [
+        "ADMIN_PRIMARY: Toàn quyền, quản lý vai trò và khôi phục CSDL",
+        "ADMIN_COURSE_REVIEW: Duyệt đề cương và Change Requests bằng Diff",
+        "ADMIN_INSTRUCTOR_REVIEW: Thẩm định hồ sơ & xem trước CV inline",
+        "ADMIN_TEACHING_ASSIGNMENT: Phân công giảng dạy",
+        "ADMIN_SYSTEM_MONITORING: Giám sát phần cứng và Audit Trail"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "An toàn & Bất biến",
+      "items": [
+        "Lưu trữ SUB_ROLE:<CODE> bảo toàn ràng buộc MSSQL ck_roles_1",
+        "Khôi phục CSDL 4 bước bắt buộc nhập mã xác nhận và mật khẩu",
+        "Nhật ký kiểm toán Audit Trail bảo chứng toàn vẹn bằng SHA-256"
+      ]
+    }
+  ]
+}

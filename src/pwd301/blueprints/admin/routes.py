@@ -96,6 +96,32 @@ def admin_courses() -> tuple[Response, int] | Response | str:
     )
 
 
+@admin_bp.route("/courses/pending", methods=["GET"])
+@admin_required
+def list_pending_courses() -> tuple[Response, int] | Response:
+    """List all courses currently submitted for review."""
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
+
+    sess = db.session
+    pending_courses = (
+        sess.query(Course)
+        .filter(
+            Course.status == "SUBMITTED_FOR_REVIEW",
+            Course.deleted_at.is_(None),
+        )
+        .order_by(Course.created_at.desc())
+        .all()
+    )
+
+    data = {
+        "pending_count": len(pending_courses),
+        "courses": [_serialize_course(c) for c in pending_courses],
+    }
+    return jsonify(data), 200
+
+
 @admin_bp.route("/courses/<course_id>", methods=["GET"])
 @admin_required
 def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
@@ -388,32 +414,6 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     )
 
 
-@admin_bp.route("/courses/pending", methods=["GET"])
-@admin_required
-def list_pending_courses() -> tuple[Response, int] | Response:
-    """List all courses currently submitted for review."""
-    actor = require_authenticated_actor()
-    if not actor.has_admin_permission("COURSE_REVIEW"):
-        raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
-
-    sess = db.session
-    pending_courses = (
-        sess.query(Course)
-        .filter(
-            Course.status == "SUBMITTED_FOR_REVIEW",
-            Course.deleted_at.is_(None),
-        )
-        .order_by(Course.created_at.desc())
-        .all()
-    )
-
-    data = {
-        "pending_count": len(pending_courses),
-        "courses": [_serialize_course(c) for c in pending_courses],
-    }
-    return jsonify(data), 200
-
-
 @admin_bp.route("/courses/<course_id>/review", methods=["POST"])
 @admin_required
 def review_course(course_id: str) -> Any:
@@ -492,6 +492,8 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
 def publish_course(course_id: str) -> Any:
     """Publish an approved course (Admin only)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền xuất bản khóa học.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
@@ -510,6 +512,8 @@ def publish_course(course_id: str) -> Any:
 def trash_course_route(course_id: str) -> Any:
     """Soft-delete a course to TRASH (Admin)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền đưa khóa học vào thùng rác.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
@@ -523,6 +527,8 @@ def trash_course_route(course_id: str) -> Any:
 def restore_course(course_id: str) -> Any:
     """Restore a course from TRASH back to ARCHIVED (Admin only)."""
     actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền khôi phục khóa học.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason")
