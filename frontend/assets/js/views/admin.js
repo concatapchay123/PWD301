@@ -2194,15 +2194,37 @@ class AdminView {
                         ${l.summary ? `<div class="text-[11px] text-slate-400 truncate">${UI.escapeHtml(l.summary)}</div>` : ''}
                       </div>
                     </div>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${l.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}">
-                      ${l.status === 'PUBLISHED' ? 'Đã xuất bản' : 'Bản nháp'}
-                    </span>
+                    <div class="flex items-center gap-2">
+                      ${l.is_flagged ? `
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300 flex items-center gap-1">
+                          <span class="material-symbols-outlined text-[12px]">flag</span> Đã gắn cờ
+                        </span>
+                      ` : ''}
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold ${l.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}">
+                        ${l.status === 'PUBLISHED' ? 'Đã xuất bản' : 'Bản nháp'}
+                      </span>
+                    </div>
                     </summary>
                     <div class="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
+                      ${l.is_flagged ? `
+                        <div class="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-medium space-y-1">
+                          <div class="font-bold flex items-center gap-1 text-rose-700 dark:text-rose-400">
+                            <span class="material-symbols-outlined text-[15px]">flag</span> Bài học đang bị gắn cờ vi phạm:
+                          </div>
+                          <p class="text-xs leading-relaxed">${UI.escapeHtml(l.flag_reason || 'Chưa có chi tiết lý do.')}</p>
+                        </div>
+                      ` : ''}
                       <h6 class="font-semibold">Nội dung bài học</h6>
                       <pre class="whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-800 p-4 text-xs text-slate-700 dark:text-slate-200">${UI.escapeHtml(l.markdown_content || 'Chưa có nội dung.')}</pre>
                       <p class="text-slate-600 dark:text-slate-300">Tài liệu đính kèm: ${(l.resources || []).length}</p>
                       ${(l.resources || []).map(resource => `<p class="text-slate-600 dark:text-slate-300">${UI.escapeHtml(resource.label)} · ${UI.escapeHtml(resource.resource_type || '')} · ${resource.scan_status === 'CLEAN' ? 'Đã kiểm tra' : 'Chưa an toàn'}</p>`).join('')}
+                      <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <span class="text-[11px] text-slate-500 dark:text-slate-400">Quản trị viên chỉ có quyền thẩm định và gắn cờ (Read-Only)</span>
+                        <button type="button" class="btn-flag-lesson-action px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 flex items-center gap-1.5 shadow-2xs" data-lesson-id="${UI.escapeHtml(l.lesson_id)}" data-lesson-title="${UI.escapeHtml(l.title)}">
+                          <span class="material-symbols-outlined text-[15px]">flag</span>
+                          <span>${l.is_flagged ? 'Cập nhật lý do gắn cờ' : 'Gắn cờ vi phạm bài học'}</span>
+                        </button>
+                      </div>
                     </div>
                   </details>
                 `).join('')}
@@ -2223,6 +2245,33 @@ class AdminView {
               <button type="button" id="modal-approve-course-btn" class="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-slate-50">Duyệt Khóa Học</button>
             </div>` : ''}
           </main>`;
+
+      // Bind flag lesson actions
+      if (typeof container.querySelectorAll === 'function') {
+        container.querySelectorAll('.btn-flag-lesson-action').forEach(btn => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            const lId = btn.getAttribute('data-lesson-id');
+            const lTitle = btn.getAttribute('data-lesson-title');
+            const reason = await UI.prompt(
+              'Gắn cờ vi phạm nội dung',
+              `Nêu rõ lý do gắn cờ cho bài học "${lTitle}" để thông báo tới giảng viên phụ trách:`,
+              '',
+              'Nhập lý do chi tiết vi phạm (tối thiểu 5 ký tự)...',
+              5,
+              'Xác nhận gắn cờ'
+            );
+            if (!reason) return;
+            try {
+              await ApiClient.flagLessonContent(courseId, lId, reason);
+              UI.showToast(`Đã gắn cờ vi phạm bài học "${lTitle}" và gửi thông báo tới giảng viên.`, 'success');
+              await AdminView.renderCourseReviewPage(container, courseId);
+            } catch (err) {
+              UI.showToast(err.message || 'Lỗi gắn cờ bài học.', 'error');
+            }
+          };
+        });
+      }
 
       if (isPending) {
         const approveBtn = document.getElementById('modal-approve-course-btn');

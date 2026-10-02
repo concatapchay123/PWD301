@@ -512,6 +512,18 @@ class AppRouter {
       InstructorView.renderExamMatrix(viewport);
     } else if (path === '#/instructor/exams/settings') {
       InstructorView.renderExamSettings(viewport);
+    } else if (path.startsWith('#/instructor/courses/') && path.includes('/assessments/') && path.endsWith('/results')) {
+      const parts = path.split('/');
+      const courseId = parts[3];
+      const assessmentId = parts[5];
+      await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, courseId);
+    } else if (path.startsWith('#/instructor/assessments/') && path.endsWith('/results')) {
+      const parts = path.split('/');
+      const assessmentId = parts[3];
+      await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, query.course_id || null);
+    } else if (path === '#/instructor/exams/results') {
+      const assessmentId = query.id || query.assessment_id;
+      await InstructorView.renderAssessmentResultsPage(viewport, assessmentId, query.course_id || null);
     } else if (path === '#/instructor/exams/edit') {
       await InstructorView.renderExamEdit(viewport, query.id || query.assessment_id, query);
     }

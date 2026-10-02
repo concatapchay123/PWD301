@@ -17,8 +17,8 @@
   InstructorView.readExamPolicy = function (root = document) {
     return {
       exam_layout: root.getElementById('cfg-exam-layout')?.value || 'STANDARD',
-      monitoring_enabled: Boolean(root.getElementById('cfg-monitoring')?.checked),
-      request_fullscreen: Boolean(root.getElementById('cfg-fullscreen')?.checked)
+      monitoring_enabled: true,
+      request_fullscreen: true
     };
   };
 
@@ -3227,14 +3227,39 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       <option value="FOCUS" ${config.examLayout === 'FOCUS' ? 'selected' : ''}>Tập trung</option>
                     </select>
                   </div>
-                  <label class="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" id="cfg-monitoring" class="mt-1 rounded text-indigo-600 focus:ring-indigo-500" ${config.monitoringEnabled ? 'checked' : ''} />
-                    <span><strong class="block">Ghi nhận khi rời trang thi</strong><small class="block font-normal text-slate-600 dark:text-slate-300">Cảnh báo thí sinh và lưu lần rời tab, mất tiêu điểm hoặc thoát toàn màn hình để giảng viên xem lại.</small></span>
-                  </label>
-                  <label class="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" id="cfg-fullscreen" class="mt-1 rounded text-indigo-600 focus:ring-indigo-500" ${config.requestFullscreen ? 'checked' : ''} />
-                    <span><strong class="block">Đề nghị mở toàn màn hình</strong><small class="block font-normal text-slate-600 dark:text-slate-300">Trình duyệt có thể từ chối; thí sinh vẫn làm bài được. Không khóa bàn di chuột hoặc chụp màn hình.</small></span>
-                  </label>
+                  
+                  <!-- Mandatory Proctoring & Anti-Cheating Invariant Banner -->
+                  <div class="p-4 rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400">shield</span>
+                        <span class="font-bold text-xs text-indigo-900 dark:text-indigo-200">Chính sách giám sát thi tự động</span>
+                      </div>
+                      <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                        MẶC ĐỊNH BẬT 100%
+                      </span>
+                    </div>
+                    <ul class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                      <li class="flex items-start gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">fullscreen</span>
+                        <span><strong>Bắt buộc toàn màn hình:</strong> Thí sinh tự động vào toàn màn hình khi mở bài; thoát toàn màn hình sẽ bị khóa bài và yêu cầu quay lại.</span>
+                      </li>
+                      <li class="flex items-start gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">tab_inactive</span>
+                        <span><strong>Giám sát rời tab & mất tiêu điểm:</strong> Hệ thống đếm số lần và đo lường từng giây vắng mặt khỏi giao diện bài thi.</span>
+                      </li>
+                      <li class="flex items-start gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">block</span>
+                        <span><strong>Khóa thao tác gian lận:</strong> Vô hiệu hóa chuột phải (contextmenu), chặn bôi đen sao chép (copy/paste) đề thi, chặn phím tắt DevTools/F12.</span>
+                      </li>
+                      <li class="flex items-start gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">verified_user</span>
+                        <span><strong>Kiểm toán & phúc khảo:</strong> Báo cáo mốc thời gian và tổng giây rời tab được lưu vào bài nộp cho giảng viên đối soát.</span>
+                      </li>
+                    </ul>
+                    <input type="checkbox" id="cfg-monitoring" class="hidden" checked />
+                    <input type="checkbox" id="cfg-fullscreen" class="hidden" checked />
+                  </div>
                 </div>
               </div>
 
@@ -3727,25 +3752,23 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       <span class="text-slate-700 dark:text-slate-300 font-medium">Trộn thứ tự câu hỏi khi làm</span>
                     </label>
 
-                    <label class="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        id="edit-exam-monitoring"
-                        class="rounded text-primary focus:ring-primary"
-                        ${assessment.monitoring_enabled ? 'checked' : ''}
-                      />
-                      <span class="text-slate-700 dark:text-slate-300 font-medium">Bật giám sát tab rời / gian lận</span>
-                    </label>
-
-                    <label class="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        id="edit-exam-fullscreen"
-                        class="rounded text-primary focus:ring-primary"
-                        ${assessment.request_fullscreen ? 'checked' : ''}
-                      />
-                      <span class="text-slate-700 dark:text-slate-300 font-medium">Bắt buộc chế độ toàn màn hình</span>
-                    </label>
+                    <!-- Mandatory Proctoring & Anti-Cheating Invariant Banner -->
+                    <div class="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-2.5 mt-2">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                          <span class="material-symbols-outlined text-[16px] text-indigo-600 dark:text-indigo-400">shield</span>
+                          <span class="font-bold text-xs text-indigo-900 dark:text-indigo-200">Giám sát khảo thí tự động</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800">
+                          MẶC ĐỊNH BẬT
+                        </span>
+                      </div>
+                      <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Kỳ thi tự động bật: Bắt buộc toàn màn hình, theo dõi từng giây rời tab, khóa chuột phải / phím tắt DevTools và lưu nhật ký vi phạm cho giảng viên.
+                      </p>
+                      <input type="checkbox" id="edit-exam-monitoring" class="hidden" checked />
+                      <input type="checkbox" id="edit-exam-fullscreen" class="hidden" checked />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3979,8 +4002,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const scoringPolicy = document.getElementById('edit-exam-scoring-policy')?.value || 'HIGHEST';
         const examLayout = document.getElementById('edit-exam-layout')?.value || 'STANDARD';
         const shuffle = Boolean(document.getElementById('edit-exam-shuffle')?.checked);
-        const monitoring = Boolean(document.getElementById('edit-exam-monitoring')?.checked);
-        const fullscreen = Boolean(document.getElementById('edit-exam-fullscreen')?.checked);
+        const monitoring = true;
+        const fullscreen = true;
 
         if (!title) {
           UI.showToast('Tên đề thi không được để trống.', 'warning');

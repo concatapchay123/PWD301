@@ -316,22 +316,9 @@ def get_instructor_overview_analytics(
         .all()
     )
     assigned_courses_count = len(assigned_courses)
-
-    # Resolve platform courses for admin if requested
-    if actor.is_admin:
-        platform_courses = (
-            sess.query(Course)
-            .filter(Course.deleted_at.is_(None))
-            .order_by(Course.created_at.desc())
-            .all()
-        )
-        total_platform_courses_count = len(platform_courses)
-        courses = platform_courses if norm_scope == "all" else assigned_courses
-        effective_scope = "all" if norm_scope == "all" else "assigned"
-    else:
-        courses = assigned_courses
-        total_platform_courses_count = assigned_courses_count
-        effective_scope = "assigned"
+    courses = assigned_courses
+    total_platform_courses_count = assigned_courses_count
+    effective_scope = "assigned"
 
     now = utc_now()
     managed_courses_count = len(courses)

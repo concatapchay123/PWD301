@@ -22,3 +22,12 @@ test('exam policy settings use browser-observable monitoring without webcam clai
   assert.equal(policy.request_fullscreen, true);
   assert.equal(policy.proctoring, undefined);
 });
+
+test('exam policy enforces monitoring and fullscreen defaults even without form controls', () => {
+  const policy = window.InstructorView.readExamPolicy({
+    getElementById: () => null,
+  });
+  assert.equal(policy.monitoring_enabled, true);
+  assert.equal(policy.request_fullscreen, true);
+});
+

@@ -792,6 +792,8 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             is_required_for_completion=True,
             score_release_policy="IMMEDIATE",
             answer_visibility_policy="IMMEDIATE",
+            monitoring_enabled=True,
+            request_fullscreen=True,
             published_at=now - timedelta(days=7),
             first_attempt_started_at=None,
         )

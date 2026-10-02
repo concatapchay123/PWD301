@@ -56,6 +56,7 @@ desktop.ini
 build/
 dist/
 *.egg-info/
+node_modules/
 
 # Local archives and generated packages
 _archives/

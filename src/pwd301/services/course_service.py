@@ -371,6 +371,7 @@ def update_course(
     course_id: Course | int | uuid.UUID | str,
     data: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    is_approved_review: bool = False,
 ) -> Course | CourseChangeRequest:
     """Update editable course metadata with strict mass-assignment defense.
 
@@ -379,6 +380,7 @@ def update_course(
         course_id: Course model instance or identifier.
         data: Dictionary of fields to update.
         session: Optional SQLAlchemy session.
+        is_approved_review: Whether this update is being applied via approved change request.
 
     Returns:
         The updated Course instance.
@@ -390,19 +392,24 @@ def update_course(
         CourseAlreadyExistsError: If new title conflicts with an existing course.
     """
     sess = session if session is not None else db.session
-    course = require_course_manager(actor, course_id, session=sess)
+    if is_approved_review:
+        course = _resolve_course(course_id, session=sess)
+        if course is None:
+            raise ResourceNotFoundError("Course not found.")
+    else:
+        course = require_course_manager(actor, course_id, session=sess)
 
     if course.deleted_at is not None and not actor.is_admin:
         raise ForbiddenError("Cannot update a soft-deleted course.")
 
-    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
+    if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin and not is_approved_review:
         msg = (
             "Khóa học đang trong quá trình xét duyệt của Quản trị viên. "
             "Hãy rút lại yêu cầu xét duyệt nếu muốn chỉnh sửa."
         )
         raise CourseStateViolationError(msg)
 
-    if course.status in ("PUBLISHED", "ARCHIVED") and not actor.is_admin:
+    if course.status in ("PUBLISHED", "ARCHIVED") and not is_approved_review and not actor.is_admin:
         return queue_course_metadata_review(actor, course, data, session=sess)
 
     if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
@@ -848,9 +855,11 @@ def change_course_status(
             raise ForbiddenError(
                 "Only administrators can restore courses from TRASH (requires course review permission)."
             )
-    else:
-        # Standard management authorization
-        if not can_manage_course(actor, course, reason=reason, session=sess):
+        # Standard management authorization (owner instructor or authorized admin reviewer)
+        is_admin_reviewer = bool(
+            actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
+        )
+        if not (can_manage_course(actor, course, reason=reason, session=sess) or is_admin_reviewer):
             raise ForbiddenError("You do not have permission to manage this course.")
 
     # 3. Check active prerequisite dependencies and active enrollments before ARCHIVED or TRASH

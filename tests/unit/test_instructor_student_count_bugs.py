@@ -360,13 +360,12 @@ def test_dashboard_endpoint_scope_assigned_vs_all_for_admin(
     assert len(data_def["courses"]) == 1
     assert data_def["courses"][0]["course_code"] == c_adm.course_code
     assert data_def["assigned_courses_count"] == 1
-    assert data_def["total_platform_courses_count"] >= 2
 
-    # Scope all
+    # Scope all: instructor portal strictly limits to assigned courses only
     resp_all = client.get("/instructor/dashboard?scope=all")
     assert resp_all.status_code == 200
     data_all = resp_all.get_json()["data"]
-    assert data_all["scope"] == "all"
-    assert data_all["managed_courses_count"] >= 2
-    assert len(data_all["courses"]) >= 2
+    assert data_all["managed_courses_count"] == 1
+    assert len(data_all["courses"]) == 1
+    assert data_all["courses"][0]["course_code"] == c_adm.course_code
 

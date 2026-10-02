@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import time
@@ -86,11 +87,13 @@ from pwd301.services.exceptions import (
     SubmissionIdempotencyConflictError,
 )
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # AUDIT & LEASE HELPERS
 # ============================================================================
 
-FOCUS_EVENT_TYPES = {"TAB_HIDDEN", "WINDOW_BLUR", "FULLSCREEN_EXIT"}
+FOCUS_EVENT_TYPES = {"TAB_HIDDEN", "WINDOW_BLUR", "FULLSCREEN_EXIT", "SCREENSHOT_ATTEMPT"}
 
 
 def record_attempt_focus_event(
@@ -106,8 +109,11 @@ def record_attempt_focus_event(
         raise AttemptNotFoundError("Assessment attempt not found.")
     if actor.id != attempt.student_user_id:
         raise ForbiddenError("You do not own this attempt.")
-    if not attempt.assessment or not attempt.assessment.monitoring_enabled:
-        raise AttemptValidationError("Monitoring is not enabled for this assessment.")
+    if attempt.assessment and not attempt.assessment.monitoring_enabled:
+        attempt.assessment.monitoring_enabled = True
+        sess.flush()
+    if not attempt.assessment:
+        raise AttemptValidationError("Assessment not found for this attempt.")
     try:
         event_id = uuid.UUID(str(payload.get("event_id", "")))
     except (ValueError, TypeError, AttributeError) as exc:
@@ -164,23 +170,30 @@ def get_instructor_attempt_focus_events(
         .order_by(AttemptFocusEvent.started_at)
         .all()
     )
+    events_data = [
+        {
+            "event_id": str(event.public_id),
+            "event_type": event.event_type,
+            "started_at": event.started_at.isoformat(),
+            "ended_at": event.ended_at.isoformat() if event.ended_at else None,
+            "duration_seconds": max(
+                0, round((event.ended_at - event.started_at).total_seconds())
+            )
+            if event.ended_at
+            else None,
+        }
+        for event in events
+    ]
+    total_away_seconds = sum(
+        e["duration_seconds"] or 0
+        for e in events_data
+        if e["duration_seconds"] is not None
+    )
     return {
         "attempt_id": str(attempt.public_id),
-        "event_count": len(events),
-        "events": [
-            {
-                "event_id": str(event.public_id),
-                "event_type": event.event_type,
-                "started_at": event.started_at.isoformat(),
-                "ended_at": event.ended_at.isoformat() if event.ended_at else None,
-                "duration_seconds": max(
-                    0, round((event.ended_at - event.started_at).total_seconds())
-                )
-                if event.ended_at
-                else None,
-            }
-            for event in events
-        ],
+        "event_count": len(events_data),
+        "total_away_seconds": total_away_seconds,
+        "events": events_data,
     }
 
 
@@ -938,8 +951,16 @@ def get_attempt_delivery(
         "assessment_id": str(assessment.public_id) if assessment else None,
         "assessment_title": assessment.title if assessment else "",
         "exam_layout": assessment.exam_layout if assessment else "STANDARD",
-        "monitoring_enabled": assessment.monitoring_enabled if assessment else False,
-        "request_fullscreen": assessment.request_fullscreen if assessment else False,
+        "monitoring_enabled": (
+            assessment.monitoring_enabled
+            if (assessment and assessment.monitoring_enabled is not None)
+            else True
+        ),
+        "request_fullscreen": (
+            assessment.request_fullscreen
+            if (assessment and assessment.request_fullscreen is not None)
+            else True
+        ),
         "attempt_number": attempt.attempt_number,
         "status": attempt.status,
         "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
@@ -2280,7 +2301,11 @@ def calculate_attempt_result(
     if status == "RELEASED" and attempt.student_user_id:
         asm_title = attempt.assessment.title if attempt.assessment else "Khảo thí"
         asm_pub_id = str(attempt.assessment.public_id) if attempt.assessment else ""
-        action_url = f"#/student/assessments/{asm_pub_id}/results" if asm_pub_id else "#/student/assessments"
+        action_url = (
+            f"#/student/assessments/{asm_pub_id}/results"
+            if asm_pub_id
+            else "#/student/assessments"
+        )
 
         try:
             from pwd301.services.notification_service import dispatch_notification
@@ -2301,7 +2326,11 @@ def calculate_attempt_result(
                         target_role="STUDENT",
                         session=sess,
                     )
-            elif valid_reason_code in ("REGRADE", "CORRECTION") and old_score is not None and old_score != raw_score:
+            elif (
+                valid_reason_code in ("REGRADE", "CORRECTION")
+                and old_score is not None
+                and old_score != raw_score
+            ):
                 with sess.begin_nested():
                     dispatch_notification(
                         recipient_user=attempt.student_user_id,
@@ -2309,7 +2338,8 @@ def calculate_attempt_result(
                         title=f"Điểm bài thi đã thay đổi: {asm_title}",
                         body=(
                             f"Điểm bài thi của bạn đã được cập nhật từ {float(old_score):.1f} "
-                            f"thành {float(raw_score):.1f}/{float(max_score):.1f} điểm sau khi chấm lại."
+                            f"thành {float(raw_score):.1f}/{float(max_score):.1f} điểm "
+                            "sau khi chấm lại."
                         ),
                         action_url=action_url,
                         category="GRADE",
@@ -3249,6 +3279,17 @@ def list_assessment_student_results(
         .all()
     )
 
+    attempt_ids = [att.id for att in attempts]
+    violations_by_attempt: dict[int, int] = {}
+    if attempt_ids:
+        violation_counts = (
+            sess.query(AttemptFocusEvent.attempt_id, func.count(AttemptFocusEvent.id))
+            .filter(AttemptFocusEvent.attempt_id.in_(attempt_ids))
+            .group_by(AttemptFocusEvent.attempt_id)
+            .all()
+        )
+        violations_by_attempt = {row[0]: int(row[1]) for row in violation_counts}
+
     attempts_data: list[dict[str, Any]] = []
     for att in attempts:
         res = att.result
@@ -3260,6 +3301,7 @@ def list_assessment_student_results(
             else (round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0)
         )
         is_passed = bool(res.passed) if res and res.passed is not None else False
+        v_count = violations_by_attempt.get(att.id, 0)
 
         attempts_data.append(
             {
@@ -3278,6 +3320,8 @@ def list_assessment_student_results(
                 "percent_score": percent_score,
                 "is_passed": is_passed,
                 "passed": is_passed,
+                "violations_count": v_count,
+                "violation_count": v_count,
             }
         )
 

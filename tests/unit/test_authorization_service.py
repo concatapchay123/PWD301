@@ -414,18 +414,27 @@ def test_can_manage_course_rules(
     # Student CANNOT manage
     assert can_manage_course(student_user, course_sample) is False
 
-    # Admin CAN manage
+    # Admin CANNOT manage non-owned course (read-only / flagging only)
+    assert can_manage_course(admin_user, course_sample) is False
+
+    # When Admin is the owner, Admin can manage
+    course_sample.owner_instructor_id = admin_user.id
+    db.session.commit()
     assert can_manage_course(admin_user, course_sample) is True
+
+    # Reset owner
+    course_sample.owner_instructor_id = instructor_user.id
+    db.session.commit()
 
     # Unauthenticated cannot manage
     assert can_manage_course(None, course_sample) is False
 
-    # Soft-deleted course can only be managed by Admin
+    # Soft-deleted course cannot be modified
     sess: Session = db.session
     course_sample.deleted_at = utc_now()
     sess.commit()
     assert can_manage_course(instructor_user, course_sample) is False
-    assert can_manage_course(admin_user, course_sample) is True
+    assert can_manage_course(admin_user, course_sample) is False
 
 
 # ==============================================================================
@@ -527,10 +536,19 @@ def test_lesson_question_assessment_management(
     assert can_manage_question(student_user, question) is False
     assert can_manage_assessment(student_user, assessment) is False
 
-    # Admin allowed
+    # Admin denied on non-owned course sub-resources
+    assert can_manage_lesson(admin_user, lesson) is False
+    assert can_manage_question(admin_user, question) is False
+    assert can_manage_assessment(admin_user, assessment) is False
+
+    # When admin owns the course, admin can manage
+    course_sample.owner_instructor_id = admin_user.id
+    sess.commit()
     assert can_manage_lesson(admin_user, lesson) is True
     assert can_manage_question(admin_user, question) is True
     assert can_manage_assessment(admin_user, assessment) is True
+    course_sample.owner_instructor_id = instructor_user.id
+    sess.commit()
 
 
 # ==============================================================================

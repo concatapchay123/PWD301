@@ -1695,17 +1695,23 @@ Lời giải: Regression Testing (Kiểm thử hồi quy) đảm bảo các thay
 // 9. Exam Anti-Cheat & Security Manager
 // =========================================================================
 class ExamAntiCheatManager {
-  constructor({ onEvent = null, onObservation = null, watchFullscreen = false } = {}) {
+  constructor({ onEvent = null, onObservation = null, onFullscreenExit = null, onFullscreenEnter = null, watchFullscreen = true } = {}) {
     this.onEvent = onEvent;
     this.onObservation = onObservation;
+    this.onFullscreenExit = onFullscreenExit;
+    this.onFullscreenEnter = onFullscreenEnter;
     this.watchFullscreen = watchFullscreen;
     this.eventCount = 0;
+    this.totalAwaySeconds = 0;
     this.openEvents = new Map();
     this.isActive = false;
     this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
     this._handleWindowBlur = this._handleWindowBlur.bind(this);
     this._handleWindowFocus = this._handleWindowFocus.bind(this);
     this._handleFullscreenChange = this._handleFullscreenChange.bind(this);
+    this._handleContextMenu = this._handleContextMenu.bind(this);
+    this._handleCopyCut = this._handleCopyCut.bind(this);
+    this._handleKeyDown = this._handleKeyDown.bind(this);
   }
 
   start() {
@@ -1715,39 +1721,67 @@ class ExamAntiCheatManager {
     window.addEventListener('blur', this._handleWindowBlur);
     window.addEventListener('focus', this._handleWindowFocus);
     if (this.watchFullscreen) document.addEventListener('fullscreenchange', this._handleFullscreenChange);
+    document.addEventListener('contextmenu', this._handleContextMenu);
+    document.addEventListener('copy', this._handleCopyCut);
+    document.addEventListener('cut', this._handleCopyCut);
+    document.addEventListener('keydown', this._handleKeyDown);
   }
 
   stop() {
     if (!this.isActive) return;
-    for (const type of this.openEvents.keys()) this._end(type);
+    for (const type of Array.from(this.openEvents.keys())) this._end(type);
     this.isActive = false;
     document.removeEventListener('visibilitychange', this._handleVisibilityChange);
     window.removeEventListener('blur', this._handleWindowBlur);
     window.removeEventListener('focus', this._handleWindowFocus);
-    document.removeEventListener('fullscreenchange', this._handleFullscreenChange);
+    if (this.watchFullscreen) document.removeEventListener('fullscreenchange', this._handleFullscreenChange);
+    document.removeEventListener('contextmenu', this._handleContextMenu);
+    document.removeEventListener('copy', this._handleCopyCut);
+    document.removeEventListener('cut', this._handleCopyCut);
+    document.removeEventListener('keydown', this._handleKeyDown);
   }
 
   _begin(type) {
     if (!this.isActive || this.openEvents.has(type)) return;
-    const id = window.crypto.randomUUID();
-    this.openEvents.set(type, id);
+    const id = (window.crypto && window.crypto.randomUUID)
+      ? window.crypto.randomUUID()
+      : ('evt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9));
+    const startTime = Date.now();
+    this.openEvents.set(type, { id, startTime });
     this.eventCount++;
     this.onEvent?.({ event_id: id, event_type: type, phase: 'START' });
-    this.onObservation?.(this.eventCount, type);
+    this.onObservation?.(this.eventCount, type, 0, this.totalAwaySeconds);
+    if (type === 'FULLSCREEN_EXIT') {
+      this.onFullscreenExit?.();
+    }
   }
 
   _end(type) {
-    const id = this.openEvents.get(type);
-    if (!id) return;
+    const record = this.openEvents.get(type);
+    if (!record) return;
     this.openEvents.delete(type);
-    this.onEvent?.({ event_id: id, event_type: type, phase: 'END' });
+    const durationSeconds = Math.max(0, Math.round((Date.now() - record.startTime) / 1000));
+    this.totalAwaySeconds += durationSeconds;
+    this.onEvent?.({
+      event_id: record.id,
+      event_type: type,
+      phase: 'END',
+      duration_seconds: durationSeconds,
+      total_away_seconds: this.totalAwaySeconds
+    });
+    this.onObservation?.(this.eventCount, type, durationSeconds, this.totalAwaySeconds);
+    if (type === 'FULLSCREEN_EXIT') {
+      this.onFullscreenEnter?.();
+    }
   }
 
   _handleVisibilityChange() {
     if (document.hidden) {
       this._end('WINDOW_BLUR');
       this._begin('TAB_HIDDEN');
-    } else this._end('TAB_HIDDEN');
+    } else {
+      this._end('TAB_HIDDEN');
+    }
   }
 
   _handleWindowBlur() {
@@ -1759,8 +1793,51 @@ class ExamAntiCheatManager {
   }
 
   _handleFullscreenChange() {
-    if (document.fullscreenElement) this._end('FULLSCREEN_EXIT');
-    else this._begin('FULLSCREEN_EXIT');
+    if (document.fullscreenElement) {
+      this._end('FULLSCREEN_EXIT');
+    } else {
+      this._begin('FULLSCREEN_EXIT');
+    }
+  }
+
+  _handleContextMenu(e) {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+  }
+
+  _handleCopyCut(e) {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+  }
+
+  _handleKeyDown(e) {
+    if (!e) return;
+    const key = e.key || '';
+    const keyCode = e.keyCode || 0;
+    const ctrlOrMeta = Boolean(e.ctrlKey || e.metaKey);
+
+    if (key === 'PrintScreen' || keyCode === 44 || (ctrlOrMeta && (key === 'p' || key === 'P'))) {
+      e.preventDefault();
+      this._begin('SCREENSHOT_ATTEMPT');
+      setTimeout(() => this._end('SCREENSHOT_ATTEMPT'), 1000);
+      return;
+    }
+    if (key === 'F12' || keyCode === 123) {
+      e.preventDefault();
+      return;
+    }
+    if (ctrlOrMeta && e.shiftKey && (key === 'I' || key === 'i' || key === 'J' || key === 'j' || key === 'C' || key === 'c' || key === 'S' || key === 's')) {
+      e.preventDefault();
+      this._begin('SCREENSHOT_ATTEMPT');
+      setTimeout(() => this._end('SCREENSHOT_ATTEMPT'), 1000);
+      return;
+    }
+    if (ctrlOrMeta && (key === 'u' || key === 'U' || key === 's' || key === 'S')) {
+      e.preventDefault();
+      return;
+    }
   }
 }
 

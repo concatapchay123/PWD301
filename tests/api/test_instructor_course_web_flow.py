@@ -244,13 +244,13 @@ def test_instructor_publish_draft_course_warning(
     assert data["error"]["code"] == "COURSE_STATE_VIOLATION"
 
 
-def test_admin_publish_draft_course_direct_success(
+def test_admin_publish_draft_course_requires_review(
     app: Flask,
     client: FlaskClient,
     instructor_user: User,
     setup_roles: dict[str, Role],
 ) -> None:
-    """Admin publishing a course can directly advance and publish."""
+    """Admin in instructor role cannot auto-approve/direct publish; must follow review workflow."""
     sess: Session = db.session
     # Give instructor_user the ADMIN role as well
     assign_role_to_user(instructor_user.id, "ADMIN")
@@ -269,22 +269,22 @@ def test_admin_publish_draft_course_direct_success(
         f"/instructor/courses/{course.public_id}/publish",
     )
 
-    assert resp.status_code == 200
+    # Must require admin review (409 Conflict with COURSE_STATE_VIOLATION)
+    # instead of auto-publishing
+    assert resp.status_code == 409
     assert resp.is_json
     data = resp.get_json()
-    assert data["status"] == "PUBLISHED"
-
-    sess.refresh(course)
-    assert course.status == "PUBLISHED"
+    assert data["error"]["code"] == "COURSE_STATE_VIOLATION"
+    assert "Cần gửi duyệt trước khi xuất bản" in data["error"]["message"]
 
 
-def test_admin_actor_can_list_all_courses_in_instructor_courses_endpoint(
+def test_admin_actor_in_instructor_portal_cannot_list_other_courses(
     app: Flask,
     client: FlaskClient,
     instructor_user: User,
     setup_roles: dict[str, Role],
 ) -> None:
-    """Admin actor defaults to assigned courses, but can request scope=all for platform overview."""
+    """Admin actor in instructor portal only sees assigned courses, cannot view whole platform."""
     sess: Session = db.session
 
     # 1. Create a course owned by a regular instructor
@@ -325,22 +325,19 @@ def test_admin_actor_can_list_all_courses_in_instructor_courses_endpoint(
     data = resp.get_json()
     assert data["success"] is True
     assert data["data"]["scope"] == "assigned"
-    assert data["data"]["is_admin"] is True
     assert data["data"]["assigned_count"] >= 1
-    assert data["data"]["total_platform_count"] >= 2
 
     assigned_codes = [c["course_code"] for c in data["data"]["courses"]]
     assert "FLOW-ADM-101" in assigned_codes
     assert "FLOW-TEST-101" not in assigned_codes
 
-    # Scope 'all': admin can see both FLOW-ADM-101 and FLOW-TEST-101
+    # Even with scope=all, instructor portal strictly enforces assigned courses only
     resp_all = client.get("/instructor/courses?scope=all")
     assert resp_all.status_code == 200
     data_all = resp_all.get_json()
-    assert data_all["data"]["scope"] == "all"
     all_codes = [c["course_code"] for c in data_all["data"]["courses"]]
     assert "FLOW-ADM-101" in all_codes
-    assert "FLOW-TEST-101" in all_codes
+    assert "FLOW-TEST-101" not in all_codes
 
 
 def test_regular_instructor_cannot_view_all_platform_courses_via_scope(

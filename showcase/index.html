@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>PWD301 LMS — Product Launch Film</title>
+
+  <!-- Typography: Plus Jakarta Sans, Inter, JetBrains Mono, Syne for Heavy Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800;900&family=JetBrains+Mono:wght@400;600;700&family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet">
+
+  <!-- GSAP 3.14 Core -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0b0f14;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0b0f14;
+    }
+
+    /* Core Clip Container */
+    .clip {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Technical HUD Layer (Permanent Cinematic Frame) */
+    .hud-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .hud-bracket {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-color: rgba(255, 255, 255, 0.35);
+      border-style: solid;
+      border-width: 0;
+    }
+    .hud-tl { top: 40px; left: 48px; border-top-width: 2px; border-left-width: 2px; }
+    .hud-tr { top: 40px; right: 48px; border-top-width: 2px; border-right-width: 2px; }
+    .hud-bl { bottom: 40px; left: 48px; border-bottom-width: 2px; border-left-width: 2px; }
+    .hud-br { bottom: 40px; right: 48px; border-bottom-width: 2px; border-right-width: 2px; }
+
+    .hud-meta-tl {
+      position: absolute;
+      top: 48px;
+      left: 92px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hud-meta-tr {
+      position: absolute;
+      top: 48px;
+      right: 92px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .hud-pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      font-size: 11px;
+      color: #ffffff;
+      text-transform: uppercase;
+    }
+    .hud-dot-live {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+    .hud-bottom-bar {
+      position: absolute;
+      bottom: 44px;
+      left: 92px;
+      right: 92px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .hud-timeline-track {
+      flex: 1;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 0 24px;
+      position: relative;
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .hud-timeline-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: #a3e635;
+      box-shadow: 0 0 10px #a3e635;
+    }
+
+    /* Stage Stage Wrappers */
+    .stage-wrapper {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 120px 0 100px;
+    }
+
+    /* Left Typography Column */
+    .typo-col {
+      width: 680px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .typo-scene-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: #a3e635;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+    .typo-main {
+      font-family: 'Syne', sans-serif;
+      font-size: 88px;
+      font-weight: 900;
+      line-height: 0.95;
+      text-transform: uppercase;
+      letter-spacing: -0.03em;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+    .typo-accent {
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-size: 52px;
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 28px;
+      color: #a3e635;
+    }
+    .typo-sub-tags {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #cbd5e1;
+      display: flex;
+      gap: 16px;
+    }
+
+    /* Right 3D Perspective Hero UI Window */
+    .hero-window-col {
+      width: 980px;
+      height: 640px;
+      perspective: 1400px;
+      transform-style: preserve-3d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .mac-window {
+      width: 960px;
+      height: 600px;
+      background: #faf9f5;
+      border-radius: 16px;
+      box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.15);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .mac-titlebar {
+      height: 38px;
+      background: #f4f1ea;
+      border-bottom: 1px solid #e8e6df;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .mac-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .mac-dot-red { background: #ef4444; }
+    .mac-dot-yellow { background: #f59e0b; }
+    .mac-dot-green { background: #10b981; }
+    .mac-urlbar {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ffffff;
+      border: 1px solid #d3d0c8;
+      border-radius: 6px;
+      padding: 3px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #5c5b57;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mac-content {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      background: #faf9f5;
+    }
+    .screen-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+    }
+
+    /* Simulated SVG Cursor */
+    .simulated-cursor {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+      z-index: 150;
+      opacity: 0;
+    }
+    .cursor-ripple {
+      position: absolute;
+      top: -12px;
+      left: -12px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(132, 204, 22, 0.4);
+      transform: scale(0);
+      pointer-events: none;
+    }
+
+    /* 3D Kinetic Cylinder for Intro */
+    .cylinder-viewport {
+      perspective: 1000px;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cylinder-ring {
+      position: relative;
+      width: 800px;
+      height: 220px;
+      transform-style: preserve-3d;
+    }
+    .cylinder-panel {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Syne', sans-serif;
+      font-size: 54px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      backface-visibility: visible;
+    }
+
+    /* 3D Particle Cloud Canvas for Octopus AI */
+    .particle-canvas-container {
+      position: absolute;
+      right: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 480px;
+      height: 480px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* 3D Orbit Montage for Scene 11 */
+    .orbit-container {
+      position: absolute;
+      inset: 0;
+      perspective: 1600px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-style: preserve-3d;
+    }
+    .orbit-carousel {
+      position: relative;
+      width: 600px;
+      height: 380px;
+      transform-style: preserve-3d;
+    }
+    .orbit-card {
+      position: absolute;
+      inset: 0;
+      background: #1e293b;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      overflow: hidden;
+    }
+    .orbit-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Outro Center Typography */
+    .outro-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 30;
+    }
+    .outro-logo-badge {
+      width: 88px;
+      height: 88px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 40px rgba(124, 58, 237, 0.5);
+      margin-bottom: 24px;
+    }
+    .outro-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 96px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+    .outro-yellow-bar {
+      width: 0px;
+      height: 5px;
+      background: #facc15;
+      border-radius: 3px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 12px rgba(250, 204, 21, 0.6);
+    }
+    .outro-slogan {
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-size: 38px;
+      font-weight: 600;
+      color: #f4f1ea;
+      margin-bottom: 32px;
+    }
+    .outro-pills-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .outro-terminal-url {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px;
+      color: #a3e635;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .blinking-cursor {
+      display: inline-block;
+      width: 10px;
+      height: 20px;
+      background: #a3e635;
+    }
+
+    /* Ambient Dust Star Particles */
+    .ambient-dust {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Master Composition Root: 70.0s @ 1920x1080 -->
+  <div
+    id="root"
+    data-composition-id="main"
+    data-start="0"
+    data-width="1920"
+    data-height="1080"
+    data-duration="70"
+  >
+    <!-- ================================================================= -->
+    <!-- AUDIO SOUNDTRACK & MIXER (Framework Owned, Exact Millisecond Sync) -->
+    <!-- ================================================================= -->
+    <audio id="bgm-master" src="assets/audio/bgm_129bpm.mp3" data-start="0" data-duration="70" data-volume="0.85"></audio>
+    <audio id="sfx-01-whoosh" src="assets/audio/sfx_001.mp3" data-start="0.0" data-duration="5.5" data-volume="0.8"></audio>
+    <audio id="sfx-01-impact" src="assets/audio/sfx_003.mp3" data-start="1.5" data-duration="2.6" data-volume="1.0"></audio>
+    <audio id="sfx-02-impact" src="assets/audio/sfx_003.mp3" data-start="4.5" data-duration="2.6" data-volume="0.9"></audio>
+    <audio id="sfx-03-click" src="assets/audio/sfx_002.mp3" data-start="11.8" data-duration="0.4" data-volume="0.9"></audio>
+    <audio id="sfx-04-chime" src="assets/audio/sfx_005.mp3" data-start="20.2" data-duration="2.5" data-volume="0.9"></audio>
+    <audio id="sfx-05-impact" src="assets/audio/sfx_003.mp3" data-start="26.0" data-duration="2.6" data-volume="1.0"></audio>
+    <audio id="sfx-06-glitch" src="assets/audio/sfx_004.mp3" data-start="28.5" data-duration="2.6" data-volume="0.85"></audio>
+    <audio id="sfx-06-chime" src="assets/audio/sfx_005.mp3" data-start="32.5" data-duration="2.5" data-volume="0.9"></audio>
+    <audio id="sfx-07-impact" src="assets/audio/sfx_003.mp3" data-start="35.5" data-duration="2.6" data-volume="0.95"></audio>
+    <audio id="sfx-08-click" src="assets/audio/sfx_002.mp3" data-start="45.0" data-duration="0.4" data-volume="0.9"></audio>
+    <audio id="sfx-09-impact" src="assets/audio/sfx_003.mp3" data-start="49.5" data-duration="2.6" data-volume="0.95"></audio>
+    <audio id="sfx-10-glitch" src="assets/audio/sfx_004.mp3" data-start="56.5" data-duration="2.6" data-volume="0.85"></audio>
+    <audio id="sfx-11-whoosh" src="assets/audio/sfx_001.mp3" data-start="61.5" data-duration="5.5" data-volume="0.9"></audio>
+    <audio id="sfx-12-final" src="assets/audio/sfx_003.mp3" data-start="66.5" data-duration="2.6" data-volume="1.0"></audio>
+
+    <!-- ================================================================= -->
+    <!-- PERMANENT HUD FRAMING LAYER (Technical Framing + Telemetry)       -->
+    <!-- ================================================================= -->
+    <div class="hud-layer">
+      <!-- 4 Corner Brackets -->
+      <div class="hud-bracket hud-tl"></div>
+      <div class="hud-bracket hud-tr"></div>
+      <div class="hud-bracket hud-bl"></div>
+      <div class="hud-bracket hud-br"></div>
+
+      <!-- Top Left Metadata -->
+      <div class="hud-meta-tl">
+        <span class="hud-dot-live"></span>
+        <span>PWD301 // PURE HEADLESS LMS</span>
+        <span class="hud-pill-badge" id="hud-role-pill">STUDENT PERSPECTIVE</span>
+      </div>
+
+      <!-- Top Right Telemetry -->
+      <div class="hud-meta-tr">
+        <span id="hud-frame-clock">TC: 00:00:00</span>
+        <span class="hud-pill-badge">FPS 60.00</span>
+        <span class="hud-pill-badge" style="border-color: #bef264; color: #bef264;">SECURE ACTIVE LEASE</span>
+      </div>
+
+      <!-- Bottom Audio / Timeline Scrubber Bar -->
+      <div class="hud-bottom-bar">
+        <span>00.0s [START]</span>
+        <div class="hud-timeline-track">
+          <div class="hud-timeline-fill" id="hud-timeline-fill"></div>
+        </div>
+        <span id="hud-time-display">00.0s / 70.0s [MASTER REEL]</span>
+      </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 01: INTRO HOOK (00.0s – 04.5s)                             -->
+    <!-- ================================================================= -->
+    <section id="scene-01" class="clip" data-start="0" data-duration="4.5">
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle at center, #1e293b 0%, #0b0f14 80%);"></div>
+      
+      <!-- 3D Kinetic Typography Rotating Ring -->
+      <div class="cylinder-viewport" id="s1-viewport" data-layout-allow-overflow="true">
+        <div class="cylinder-ring" id="s1-ring" data-layout-allow-overlap="true" data-layout-allow-overflow="true">
+          <div class="cylinder-panel" data-layout-allow-overlap="true" data-layout-allow-overflow="true" style="transform: rotateY(0deg) translateZ(400px); color: #ffffff;">
+            LEARNING REIMAGINED
+          </div>
+          <div class="cylinder-panel" data-layout-allow-overlap="true" data-layout-allow-overflow="true" style="transform: rotateY(90deg) translateZ(400px); color: #a3e635;">
+            ONE PLATFORM · EVERYTHING
+          </div>
+          <div class="cylinder-panel" data-layout-allow-overlap="true" data-layout-allow-overflow="true" style="transform: rotateY(180deg) translateZ(400px); color: #38bdf8;">
+            PURE HEADLESS LMS
+          </div>
+          <div class="cylinder-panel" data-layout-allow-overlap="true" data-layout-allow-overflow="true" style="transform: rotateY(270deg) translateZ(400px); color: #f43f5e;">
+            SECURE ASSESSMENTS
+          </div>
+        </div>
+      </div>
+
+      <!-- Intro Subtitle -->
+      <div id="s1-intro-card" style="position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%); text-align: center; opacity: 0;">
+        <p style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 32px; color: #f4f1ea;">
+          Nền tảng học tập & khảo thí thế hệ mới
+        </p>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 02: STUDENT DASHBOARD (04.5s – 10.0s)                       -->
+    <!-- ================================================================= -->
+    <section id="scene-02" class="clip" data-start="4.5" data-duration="5.5">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);"></div>
+      
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s2-typo">
+          <div class="typo-scene-badge">01 // STUDENT DASHBOARD</div>
+          <h1 class="typo-main">STUDENT</h1>
+          <div class="typo-accent">Command Center.</div>
+          <div class="typo-sub-tags">
+            <span>5 KHÓA HỌC</span>
+            <span>·</span>
+            <span>30% HOÀN THÀNH</span>
+            <span>·</span>
+            <span>2 BÀI THI</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s2-window" style="transform: rotateY(-10deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/student/dashboard</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_02_student_dash.png" alt="Student Dashboard" class="screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 03: COURSE CATALOG & SEARCH (10.0s – 15.5s)                 -->
+    <!-- ================================================================= -->
+    <section id="scene-03" class="clip" data-start="10.0" data-duration="5.5">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s3-typo">
+          <div class="typo-scene-badge">02 // DISCOVER COURSES</div>
+          <h1 class="typo-main">DISCOVER</h1>
+          <div class="typo-accent">Instant Search.</div>
+          <div class="typo-sub-tags">
+            <span>REALTIME FILTER</span>
+            <span>·</span>
+            <span>PYTHON & FLASK</span>
+            <span>·</span>
+            <span>ENROLLED</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s3-window" style="transform: rotateY(-8deg) rotateX(3deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/student/catalog</div>
+            </div>
+            <div class="mac-content" style="position: relative;">
+              <img src="assets/screens/scr_03_catalog.png" alt="Course Catalog" class="screen-img">
+              
+              <!-- Simulated Cursor for Search Interaction -->
+              <svg class="simulated-cursor" id="s3-cursor" data-layout-allow-overflow="true" viewBox="0 0 24 24" fill="none">
+                <path d="M5.5 3.5L19 12L12 14L9 21L5.5 3.5Z" fill="#a3e635" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+                <div class="cursor-ripple" id="s3-ripple"></div>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 04: DEEP LEARNING & LESSON READER (15.5s – 21.5s)           -->
+    <!-- ================================================================= -->
+    <section id="scene-04" class="clip" data-start="15.5" data-duration="6.0">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #064e3b 0%, #022c22 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s4-typo">
+          <div class="typo-scene-badge">03 // DEEP LEARNING</div>
+          <h1 class="typo-main">LEARN</h1>
+          <div class="typo-accent" style="color: #34d399;">Your Own Pace.</div>
+          <div class="typo-sub-tags">
+            <span>SYLLABUS TREE</span>
+            <span>·</span>
+            <span>VIDEO EMBED</span>
+            <span>·</span>
+            <span>MARKDOWN</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s4-window" style="transform: rotateY(8deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/student/courses/detail?id=CS101</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_04_course_console.png" alt="Course Console & Syllabus" class="screen-img" id="s4-screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 05: EXAM ATTEMPT & RESULTS (21.5s – 28.5s)                  -->
+    <!-- ================================================================= -->
+    <section id="scene-05" class="clip" data-start="21.5" data-duration="7.0">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #020617 0%, #0f172a 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s5-typo">
+          <div class="typo-scene-badge" style="color: #38bdf8;">04 // SECURE ASSESSMENTS</div>
+          <h1 class="typo-main">ASSESS</h1>
+          <div class="typo-accent" style="color: #38bdf8;">Server-Authoritative.</div>
+          <div class="typo-sub-tags">
+            <span>SINGLE ACTIVE LEASE</span>
+            <span>·</span>
+            <span>AUTOSAVE</span>
+            <span>·</span>
+            <span>10.0 / 10.0</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <!-- Window toggles between Live Questions and 10/10 Results -->
+          <div class="mac-window" id="s5-window" style="transform: rotateY(-6deg) rotateX(3deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar" id="s5-urlbar">pwd301.local/#/student/assessments/attempt</div>
+            </div>
+            <div class="mac-content" style="position: relative;">
+              <img src="assets/screens/scr_07_exam_attempt.png" alt="Exam Attempt" class="screen-img" id="s5-img-attempt">
+              <img src="assets/screens/scr_08_exam_results.png" alt="Exam Results" class="screen-img" id="s5-img-results" style="position: absolute; inset: 0; opacity: 0;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 06: BẠCH TUỘC TRỢ LÍ AI (28.5s – 35.5s)                     -->
+    <!-- ================================================================= -->
+    <section id="scene-06" class="clip" data-start="28.5" data-duration="7.0">
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle at 75% 50%, #3b0764 0%, #1e1b4b 60%, #0b0f14 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s6-typo">
+          <div class="typo-scene-badge" style="color: #c084fc;">05 // AI ASSISTANT</div>
+          <h1 class="typo-main">ASK AI</h1>
+          <div class="typo-accent" style="color: #c084fc;">Bạch Tuộc Trợ Lí.</div>
+          <div class="typo-sub-tags">
+            <span>COURSE-GROUNDED RAG</span>
+            <span>·</span>
+            <span>5-MIN PURGE</span>
+            <span>·</span>
+            <span>ZERO-INJECTION</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col" style="position: relative;">
+          <!-- 3D Particle Cloud Canvas in Background of Window -->
+          <canvas id="s6-particle-canvas" class="particle-canvas-container" width="480" height="480"></canvas>
+
+          <div class="mac-window" id="s6-window" style="transform: rotateY(-8deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/student/ai-assistant</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_09_ai_assistant.png" alt="Octopus AI Assistant" class="screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 07: INSTRUCTOR STUDIO (35.5s – 42.5s)                       -->
+    <!-- ================================================================= -->
+    <section id="scene-07" class="clip" data-start="35.5" data-duration="7.0">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #991b1b 0%, #450a0a 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s7-typo">
+          <div class="typo-scene-badge" style="color: #f87171;">06 // INSTRUCTOR STUDIO</div>
+          <h1 class="typo-main">TEACH</h1>
+          <div class="typo-accent" style="color: #fca5a5;">Curriculum Studio.</div>
+          <div class="typo-sub-tags">
+            <span>DRAG & DROP REORDER</span>
+            <span>·</span>
+            <span>ATTACHMENTS</span>
+            <span>·</span>
+            <span>LIVE MARKDOWN</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s7-window" style="transform: rotateY(10deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/instructor/dashboard</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_10_instructor_dash.png" alt="Instructor Dashboard" class="screen-img" id="s7-img-dash">
+              <img src="assets/screens/scr_11_curriculum.png" alt="Curriculum Manager" class="screen-img" id="s7-img-curr" style="position: absolute; inset: 0; opacity: 0;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 08: EXAM MATRIX & 4 METHODS (42.5s – 49.5s)                 -->
+    <!-- ================================================================= -->
+    <section id="scene-08" class="clip" data-start="42.5" data-duration="7.0">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #365314 0%, #14532d 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s8-typo">
+          <div class="typo-scene-badge" style="color: #a3e635;">07 // EXAM MATRIX</div>
+          <h1 class="typo-main">CREATE</h1>
+          <div class="typo-accent" style="color: #a3e635;">4 Ingestion Paths.</div>
+          <div class="typo-sub-tags">
+            <span>MANUAL</span>
+            <span>·</span>
+            <span>AI INTERACTIVE</span>
+            <span>·</span>
+            <span>EXCEL & MOODLE</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s8-window" style="transform: rotateY(-8deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/instructor/exams/matrix</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_14_exam_matrix.png" alt="Exam Matrix" class="screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 09: ADMIN GOVERNANCE (49.5s – 56.5s)                        -->
+    <!-- ================================================================= -->
+    <section id="scene-09" class="clip" data-start="49.5" data-duration="7.0">
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s9-typo" data-layout-allow-occlusion="true">
+          <div class="typo-scene-badge" style="color: #94a3b8;">08 // GOVERNANCE</div>
+          <h1 class="typo-main" data-layout-allow-occlusion="true">CONTROL</h1>
+          <div class="typo-accent" style="color: #e2e8f0;">Total Governance.</div>
+          <div class="typo-sub-tags">
+            <span>USER ACCESS</span>
+            <span>·</span>
+            <span>ROLE ASSIGNMENT</span>
+            <span>·</span>
+            <span>APPROVALS</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s9-window" style="transform: rotateY(8deg) rotateX(3deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/admin/governance?tab=users</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_15_admin_users.png" alt="Admin Governance" class="screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 10: AUTHENTIC TELEMETRY (56.5s – 62.5s)                     -->
+    <!-- ================================================================= -->
+    <section id="scene-10" class="clip" data-start="56.5" data-duration="6.0">
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle at center, #022c22 0%, #020617 80%);"></div>
+
+      <div class="stage-wrapper">
+        <div class="typo-col" id="s10-typo">
+          <div class="typo-scene-badge" style="color: #2dd4bf;">09 // SYSTEM HEALTH</div>
+          <h1 class="typo-main">INSIGHTS</h1>
+          <div class="typo-accent" style="color: #2dd4bf;">Authentic Telemetry.</div>
+          <div class="typo-sub-tags">
+            <span>6/6 NODES HEALTHY</span>
+            <span>·</span>
+            <span>CLAMAV SCAN</span>
+            <span>·</span>
+            <span>REGRADE WORKER</span>
+          </div>
+        </div>
+
+        <div class="hero-window-col">
+          <div class="mac-window" id="s10-window" style="transform: rotateY(-6deg) rotateX(4deg);">
+            <div class="mac-titlebar">
+              <div class="mac-dot mac-dot-red"></div>
+              <div class="mac-dot mac-dot-yellow"></div>
+              <div class="mac-dot mac-dot-green"></div>
+              <div class="mac-urlbar">pwd301.local/#/admin/operations</div>
+            </div>
+            <div class="mac-content">
+              <img src="assets/screens/scr_17_telemetry.png" alt="Authentic Telemetry" class="screen-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 11: 3D ECOSYSTEM ORBIT (62.5s – 65.5s)                      -->
+    <!-- ================================================================= -->
+    <section id="scene-11" class="clip" data-start="62.5" data-duration="3.0">
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle at center, #1e293b 0%, #0b0f14 90%);"></div>
+
+      <div style="position: absolute; top: 100px; left: 50%; transform: translateX(-50%); text-align: center; z-index: 50;">
+        <h1 style="font-family: 'Syne', sans-serif; font-size: 72px; font-weight: 900; letter-spacing: -0.02em; color: #ffffff;">
+          ONE PLATFORM.
+        </h1>
+        <p style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 32px; color: #a3e635;">
+          Everything for Learning.
+        </p>
+      </div>
+
+      <div class="orbit-container">
+        <div class="orbit-carousel" id="s11-carousel">
+          <div class="orbit-card" style="transform: rotateY(0deg) translateZ(450px);">
+            <img src="assets/screens/scr_02_student_dash.png" alt="Orbit 1">
+          </div>
+          <div class="orbit-card" style="transform: rotateY(60deg) translateZ(450px);">
+            <img src="assets/screens/scr_07_exam_attempt.png" alt="Orbit 2">
+          </div>
+          <div class="orbit-card" style="transform: rotateY(120deg) translateZ(450px);">
+            <img src="assets/screens/scr_09_ai_assistant.png" alt="Orbit 3">
+          </div>
+          <div class="orbit-card" style="transform: rotateY(180deg) translateZ(450px);">
+            <img src="assets/screens/scr_10_instructor_dash.png" alt="Orbit 4">
+          </div>
+          <div class="orbit-card" style="transform: rotateY(240deg) translateZ(450px);">
+            <img src="assets/screens/scr_14_exam_matrix.png" alt="Orbit 5">
+          </div>
+          <div class="orbit-card" style="transform: rotateY(300deg) translateZ(450px);">
+            <img src="assets/screens/scr_17_telemetry.png" alt="Orbit 6">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SCENE 12: MASTER OUTRO & BRAND LOCKUP (65.5s – 70.0s)             -->
+    <!-- ================================================================= -->
+    <section id="scene-12" class="clip" data-start="65.5" data-duration="4.5">
+      <div style="position: absolute; inset: 0; background: #0b0f14;"></div>
+      <canvas id="s12-dust-canvas" class="ambient-dust" data-layout-allow-overflow="true" width="1920" height="1080"></canvas>
+
+      <div class="outro-center">
+        <!-- Logo Emblem -->
+        <div class="outro-logo-badge" id="s12-logo">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+        </div>
+
+        <h1 class="outro-title" id="s12-title">PWD301 LMS</h1>
+        <div class="outro-yellow-bar" id="s12-bar"></div>
+        <p class="outro-slogan" id="s12-slogan">Nền Tảng Học Tập & Khảo Thí Thế Hệ Mới</p>
+
+        <!-- Role Category Pills -->
+        <div class="outro-pills-row" id="s12-pills">
+          <span class="hud-pill-badge" style="background: rgba(37,99,235,0.2); border-color: #2563eb; color: #93c5fd;">STUDENT HUB</span>
+          <span class="hud-pill-badge" style="background: rgba(220,38,38,0.2); border-color: #dc2626; color: #fca5a5;">INSTRUCTOR STUDIO</span>
+          <span class="hud-pill-badge" style="background: rgba(124,58,237,0.2); border-color: #7c3aed; color: #d8b4fe;">BẠCH TUỘC AI</span>
+          <span class="hud-pill-badge" style="background: rgba(16,185,129,0.2); border-color: #10b981; color: #6ee7b7;">ADMIN GOVERNANCE</span>
+        </div>
+
+        <!-- Typewriter Terminal URL -->
+        <div class="outro-terminal-url" id="s12-terminal">
+          <span>—</span>
+          <span id="s12-typed-url">pwd301.local</span>
+          <span class="blinking-cursor" id="s12-cursor"></span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MASTER GSAP TIMELINE & SEED-SAFE PROCEDURAL ENGINE               -->
+  <!-- ================================================================= -->
+  <script>
+    // 1. Initialize Single Paused GSAP Master Timeline
+    const tl = gsap.timeline({ paused: true });
+
+    // 2. HUD Timeline Scrubber & Clock Updates
+    tl.to("#hud-timeline-fill", {
+      width: "100%",
+      duration: 70.0,
+      ease: "none"
+    }, 0);
+
+    // Update Telemetry TC & Clock procedurally
+    tl.to({ val: 0 }, {
+      val: 70,
+      duration: 70.0,
+      ease: "none",
+      onUpdate: function() {
+        const t = this.targets()[0].val;
+        const fillEl = document.getElementById("hud-time-display");
+        const clockEl = document.getElementById("hud-frame-clock");
+        if (fillEl) fillEl.textContent = t.toFixed(1) + "s / 70.0s [MASTER REEL]";
+        if (clockEl) {
+          const m = Math.floor(t / 60);
+          const s = Math.floor(t % 60);
+          const f = Math.floor((t % 1) * 60);
+          clockEl.textContent = `TC: 00:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}:${f < 10 ? '0' : ''}${f}`;
+        }
+      }
+    }, 0);
+
+    // Dynamic HUD Role Pill Sync
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "SYSTEM INITIALIZING"; }, null, 0.0);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "STUDENT PERSPECTIVE"; }, null, 4.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "COURSE CONSOLE"; }, null, 15.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "FOCUS ASSESSMENT MODE"; }, null, 21.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "OCTOPUS AI ASSISTANT"; }, null, 28.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "INSTRUCTOR STUDIO"; }, null, 35.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "EXAM MATRIX ENGINE"; }, null, 42.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "ADMIN GOVERNANCE"; }, null, 49.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "AUTHENTIC TELEMETRY"; }, null, 56.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "ALL-IN-ONE ECOSYSTEM"; }, null, 62.5);
+    tl.call(() => { document.getElementById("hud-role-pill").textContent = "PWD301 PLATFORM"; }, null, 65.5);
+
+    // =================================================================
+    // SCENE 01 ANIMATION (00.0s – 04.5s)
+    // =================================================================
+    tl.fromTo("#s1-ring", 
+      { rotationY: 0, scale: 0.85 }, 
+      { rotationY: -180, scale: 1.15, duration: 4.5, ease: "power2.inOut" }, 
+      0
+    );
+    tl.fromTo("#s1-intro-card",
+      { opacity: 0, y: 30 },
+      { opacity: 1, y: 0, duration: 1.2, ease: "power3.out" },
+      1.5
+    );
+
+    // =================================================================
+    // SCENE 02 ANIMATION: STUDENT DASHBOARD (04.5s – 10.0s)
+    // =================================================================
+    tl.fromTo("#s2-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      4.6
+    );
+    tl.fromTo("#s2-window", 
+      { opacity: 0, scale: 0.85, rotationY: -20 }, 
+      { opacity: 1, scale: 1.0, rotationY: -10, duration: 1.2, ease: "expo.out" }, 
+      4.6
+    );
+    tl.to("#s2-window", {
+      rotationY: -4,
+      scale: 1.04,
+      duration: 3.5,
+      ease: "power1.out"
+    }, 5.8);
+
+    // =================================================================
+    // SCENE 03 ANIMATION: COURSE CATALOG (10.0s – 15.5s)
+    // =================================================================
+    tl.fromTo("#s3-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      10.1
+    );
+    tl.fromTo("#s3-window", 
+      { opacity: 0, scale: 0.9, rotationY: -15 }, 
+      { opacity: 1, scale: 1.0, rotationY: -8, duration: 1.1, ease: "expo.out" }, 
+      10.1
+    );
+    // Cursor move & click with transform x, y
+    tl.fromTo("#s3-cursor",
+      { opacity: 0, x: 680, y: 420 },
+      { opacity: 1, x: 300, y: 130, duration: 1.2, ease: "power2.out" },
+      11.0
+    );
+    tl.fromTo("#s3-ripple",
+      { scale: 0, opacity: 1 },
+      { scale: 2.2, opacity: 0, duration: 0.5, ease: "power1.out" },
+      11.8
+    );
+    tl.to("#s3-cursor", { opacity: 0, duration: 0.4 }, 12.8);
+
+    // =================================================================
+    // SCENE 04 ANIMATION: DEEP LEARNING (15.5s – 21.5s)
+    // =================================================================
+    tl.fromTo("#s4-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      15.6
+    );
+    tl.fromTo("#s4-window", 
+      { opacity: 0, scale: 0.9, rotationY: 18 }, 
+      { opacity: 1, scale: 1.0, rotationY: 8, duration: 1.2, ease: "expo.out" }, 
+      15.6
+    );
+    tl.to("#s4-window", {
+      rotationY: 2,
+      scale: 1.03,
+      duration: 3.5,
+      ease: "power1.out"
+    }, 17.0);
+
+    // =================================================================
+    // SCENE 05 ANIMATION: EXAMS (21.5s – 28.5s)
+    // =================================================================
+    tl.fromTo("#s5-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      21.6
+    );
+    tl.fromTo("#s5-window", 
+      { opacity: 0, scale: 0.88, rotationY: -16 }, 
+      { opacity: 1, scale: 1.0, rotationY: -6, duration: 1.1, ease: "expo.out" }, 
+      21.6
+    );
+    // Switch from live attempt to results scorecard
+    tl.to("#s5-img-results", {
+      opacity: 1,
+      duration: 0.6,
+      ease: "power2.inOut",
+      onStart: () => {
+        const u = document.getElementById("s5-urlbar");
+        if (u) u.textContent = "pwd301.local/#/student/assessments/results?id=CS101-MIDTERM";
+      }
+    }, 25.8);
+    tl.to("#s5-window", {
+      scale: 1.06,
+      rotationY: 0,
+      duration: 2.0,
+      ease: "expo.out"
+    }, 25.8);
+
+    // =================================================================
+    // SCENE 06 ANIMATION: OCTOPUS AI (28.5s – 35.5s)
+    // =================================================================
+    tl.fromTo("#s6-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      28.6
+    );
+    tl.fromTo("#s6-window", 
+      { opacity: 0, scale: 0.88, rotationY: -18 }, 
+      { opacity: 1, scale: 1.0, rotationY: -8, duration: 1.2, ease: "expo.out" }, 
+      28.6
+    );
+    tl.fromTo("#s6-particle-canvas",
+      { opacity: 0, scale: 0.6 },
+      { opacity: 1, scale: 1.0, duration: 1.5, ease: "power2.out" },
+      29.0
+    );
+
+    // =================================================================
+    // SCENE 07 ANIMATION: INSTRUCTOR STUDIO (35.5s – 42.5s)
+    // =================================================================
+    tl.fromTo("#s7-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      35.6
+    );
+    tl.fromTo("#s7-window", 
+      { opacity: 0, scale: 0.88, rotationY: 20 }, 
+      { opacity: 1, scale: 1.0, rotationY: 10, duration: 1.2, ease: "expo.out" }, 
+      35.6
+    );
+    tl.to("#s7-img-curr", {
+      opacity: 1,
+      duration: 0.8,
+      ease: "power2.inOut"
+    }, 39.0);
+
+    // =================================================================
+    // SCENE 08 ANIMATION: EXAM MATRIX (42.5s – 49.5s)
+    // =================================================================
+    tl.fromTo("#s8-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      42.6
+    );
+    tl.fromTo("#s8-window", 
+      { opacity: 0, scale: 0.88, rotationY: -16 }, 
+      { opacity: 1, scale: 1.0, rotationY: -8, duration: 1.2, ease: "expo.out" }, 
+      42.6
+    );
+
+    // =================================================================
+    // SCENE 09 ANIMATION: ADMIN GOVERNANCE (49.5s – 56.5s)
+    // =================================================================
+    tl.fromTo("#s9-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      49.6
+    );
+    tl.fromTo("#s9-window", 
+      { opacity: 0, scale: 0.9, rotationY: 16 }, 
+      { opacity: 1, scale: 1.0, rotationY: 8, duration: 1.2, ease: "expo.out" }, 
+      49.6
+    );
+
+    // =================================================================
+    // SCENE 10 ANIMATION: AUTHENTIC TELEMETRY (56.5s – 62.5s)
+    // =================================================================
+    tl.fromTo("#s10-typo", 
+      { opacity: 0, x: -80 }, 
+      { opacity: 1, x: 0, duration: 0.9, ease: "expo.out" }, 
+      56.6
+    );
+    tl.fromTo("#s10-window", 
+      { opacity: 0, scale: 0.88, rotationY: -14 }, 
+      { opacity: 1, scale: 1.0, rotationY: -6, duration: 1.2, ease: "expo.out" }, 
+      56.6
+    );
+
+    // =================================================================
+    // SCENE 11 ANIMATION: 3D ECOSYSTEM ORBIT (62.5s – 65.5s)
+    // =================================================================
+    tl.fromTo("#s11-carousel",
+      { rotationY: 0, scale: 0.8 },
+      { rotationY: -360, scale: 1.05, duration: 3.0, ease: "power2.inOut" },
+      62.5
+    );
+
+    // =================================================================
+    // SCENE 12 ANIMATION: MASTER BRAND OUTRO (65.5s – 70.0s)
+    // =================================================================
+    tl.fromTo("#s12-logo",
+      { scale: 0.3, opacity: 0, rotation: -45 },
+      { scale: 1.0, opacity: 1, rotation: 0, duration: 0.8, ease: "back.out(1.7)" },
+      65.7
+    );
+    tl.fromTo("#s12-title",
+      { opacity: 0, y: 30 },
+      { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" },
+      66.0
+    );
+    tl.fromTo("#s12-bar",
+      { width: 0 },
+      { width: 180, duration: 0.6, ease: "power2.out" },
+      66.4
+    );
+    tl.fromTo("#s12-slogan",
+      { opacity: 0, y: 20 },
+      { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" },
+      66.6
+    );
+    tl.fromTo("#s12-pills",
+      { opacity: 0, scale: 0.9 },
+      { opacity: 1, scale: 1.0, duration: 0.6, ease: "power2.out" },
+      67.0
+    );
+    tl.fromTo("#s12-terminal",
+      { opacity: 0 },
+      { opacity: 1, duration: 0.4 },
+      67.4
+    );
+
+    // Typewriter effect for URL
+    const targetUrl = "pwd301.local/";
+    tl.to({ count: 0 }, {
+      count: targetUrl.length,
+      duration: 1.2,
+      ease: "steps(" + targetUrl.length + ")",
+      onUpdate: function() {
+        const c = Math.floor(this.targets()[0].count);
+        const el = document.getElementById("s12-typed-url");
+        if (el) el.textContent = targetUrl.substring(0, c);
+      }
+    }, 67.5);
+
+    // Final Fade to Black
+    tl.to("#root", {
+      opacity: 0,
+      duration: 1.2,
+      ease: "power2.in"
+    }, 68.8);
+
+    // Register Single Paused Timeline on window.__timelines
+    window.__timelines = window.__timelines || {};
+    window.__timelines["main"] = tl;
+
+    // =================================================================
+    // PROCEDURAL 3D PARTICLE SPHERE ENGINE (Canvas-based for AI Scene)
+    // =================================================================
+    (function initParticleSphere() {
+      const canvas = document.getElementById("s6-particle-canvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const numParticles = 240;
+      const radius = 160;
+      const particles = [];
+
+      // Deterministic Fibonacci Sphere Distribution
+      const phi = (1 + Math.sqrt(5)) / 2;
+      for (let i = 0; i < numParticles; i++) {
+        const y = 1 - (i / (numParticles - 1)) * 2;
+        const radiusAtY = Math.sqrt(1 - y * y);
+        const theta = 2 * Math.PI * i / phi;
+        const x = Math.cos(theta) * radiusAtY;
+        const z = Math.sin(theta) * radiusAtY;
+        particles.push({ x: x * radius, y: y * radius, z: z * radius });
+      }
+
+      function drawSphere(rotY, rotX) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
+        const cosY = Math.cos(rotY);
+        const sinY = Math.sin(rotY);
+        const cosX = Math.cos(rotX);
+        const sinX = Math.sin(rotX);
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          // Rotate around Y
+          let x1 = p.x * cosY + p.z * sinY;
+          let z1 = -p.x * sinY + p.z * cosY;
+          // Rotate around X
+          let y2 = p.y * cosX - z1 * sinX;
+          let z2 = p.y * sinX + z1 * cosX;
+
+          const perspective = 400 / (400 + z2);
+          const px = cx + x1 * perspective;
+          const py = cy + y2 * perspective;
+          const alpha = (z2 + radius) / (2 * radius) * 0.75 + 0.2;
+          const pSize = Math.max(1, perspective * 3.5);
+
+          ctx.fillStyle = `rgba(192, 132, 252, ${alpha.toFixed(2)})`;
+          ctx.beginPath();
+          ctx.arc(px, py, pSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Tie rotation to timeline progress between 28.5s and 35.5s
+      tl.to({ rot: 0 }, {
+        rot: Math.PI * 2.5,
+        duration: 7.0,
+        ease: "none",
+        onUpdate: function() {
+          const r = this.targets()[0].rot;
+          drawSphere(r, 0.35);
+        }
+      }, 28.5);
+    })();
+
+    // =================================================================
+    // PROCEDURAL AMBIENT DUST STAR PARTICLES (Outro Scene)
+    // =================================================================
+    (function initDust() {
+      const canvas = document.getElementById("s12-dust-canvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const stars = [];
+      // Deterministic seeded points
+      for (let i = 0; i < 90; i++) {
+        const sx = ((i * 137.5) % 1920);
+        const sy = ((i * 93.7) % 1080);
+        const sr = (i % 3) * 0.8 + 0.8;
+        const sa = ((i % 5) + 3) / 10;
+        stars.push({ x: sx, y: sy, r: sr, a: sa });
+      }
+
+      function renderDust(offsetY) {
+        ctx.clearRect(0, 0, 1920, 1080);
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
+          const cy = (s.y - offsetY * (s.r * 15)) % 1080;
+          ctx.fillStyle = `rgba(255, 255, 255, ${s.a})`;
+          ctx.beginPath();
+          ctx.arc(s.x, cy < 0 ? cy + 1080 : cy, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      tl.to({ dY: 0 }, {
+        dY: 1.0,
+        duration: 4.5,
+        ease: "none",
+        onUpdate: function() {
+          renderDust(this.targets()[0].dY);
+        }
+      }, 65.5);
+    })();
+  </script>
+</body>
+</html>

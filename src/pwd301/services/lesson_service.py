@@ -2146,7 +2146,12 @@ def approve_course_change_request(
     if req is None:
         raise ResourceNotFoundError("Course change request not found.")
 
-    require_course_manager(actor, req.course_id, session=sess)
+    is_admin_reviewer = bool(
+        actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
+    )
+    from pwd301.services.authorization_service import can_manage_course
+    if not (can_manage_course(actor, req.course_id, session=sess) or is_admin_reviewer):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học này.")
 
     if req.status != "PENDING":
         raise LessonStateViolationError(f"Cannot approve change request in '{req.status}' status.")
@@ -2259,7 +2264,12 @@ def reject_course_change_request(
     if req is None:
         raise ResourceNotFoundError("Course change request not found.")
 
-    require_course_manager(actor, req.course_id, session=sess)
+    is_admin_reviewer = bool(
+        actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
+    )
+    from pwd301.services.authorization_service import can_manage_course
+    if not (can_manage_course(actor, req.course_id, session=sess) or is_admin_reviewer):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học này.")
 
     if req.status != "PENDING":
         raise LessonStateViolationError(f"Cannot reject change request in '{req.status}' status.")

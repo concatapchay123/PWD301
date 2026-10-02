@@ -54,7 +54,7 @@ class AttemptFocusEvent(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "event_type IN ('TAB_HIDDEN','WINDOW_BLUR','FULLSCREEN_EXIT')",
+            "event_type IN ('TAB_HIDDEN','WINDOW_BLUR','FULLSCREEN_EXIT','SCREENSHOT_ATTEMPT')",
             name="ck_attempt_focus_events_type",
         ),
         sa.Index("ix_attempt_focus_events_attempt", "attempt_id", "started_at"),

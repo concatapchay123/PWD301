@@ -76,7 +76,9 @@ def dashboard() -> tuple[Response, int] | Response | str:
 @admin_required
 def admin_courses() -> tuple[Response, int] | Response | str:
     """Administrator courses management page."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền quản lý và thẩm định khóa học.")
     sess = db.session
     courses = (
         sess.query(Course)
@@ -148,6 +150,8 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
             "status": item.status,
             "summary": item.summary,
             "markdown_content": item.markdown_content,
+            "is_flagged": bool(item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")),
+            "flag_reason": (item.material_change_summary.replace("[FLAGGED]: ", "") if (item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")) else None),
             "resources": [
                 {
                     "label": resource.label or resource.file_asset.display_name,
@@ -421,6 +425,11 @@ def review_course(course_id: str) -> Any:
     actor = require_authenticated_actor()
     if not actor.has_admin_permission("COURSE_REVIEW"):
         raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
+
+    from pwd301.services.authorization_service import _resolve_course
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is not None and course_obj.owner_instructor_id == actor.id:
+        raise ForbiddenError("Bạn không được phép tự duyệt khóa học do chính mình làm giảng viên quản lý. Khóa học phải được Admin khác thẩm định.")
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()
@@ -1557,6 +1566,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     if req_record.status != "PENDING":
         raise ValidationError(f"Change request is already in '{req_record.status}' status.")
 
+    if req_record.requested_by_user_id == actor.id:
+        raise ForbiddenError("Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra. Yêu cầu phải được Admin khác thẩm định.")
+
     if req_record.target_type == "LESSON":
         sibling_query = db.session.query(CourseChangeRequest).filter_by(
             requested_by_user_id=req_record.requested_by_user_id,
@@ -1596,6 +1608,16 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     action_url = f"#/instructor/courses/{req_record.course.public_id}/manage"
 
     if action == "approve":
+        course_owner = (
+            req_record.course.owner_instructor
+            or (
+                db.session.get(User, req_record.course.owner_instructor_id)
+                if req_record.course and req_record.course.owner_instructor_id
+                else None
+            )
+            or req_record.requested_by
+            or actor
+        )
         if p_data.get("action") == "UPDATE_LEARNING_UNIT":
             from pwd301.services.lesson_service import update_learning_unit
 
@@ -1615,7 +1637,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
             if unit is None:
                 raise ValidationError("Bài học không thuộc khóa học được yêu cầu xét duyệt.")
             update_learning_unit(
-                actor,
+                course_owner,
                 public_unit_id,
                 {"title": p_data.get("title")},
                 session=db.session,
@@ -1662,7 +1684,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                         )
                         if resource is not None and resource.lesson_id == l_target.id:
                             detach_resource_from_lesson(
-                                actor, l_target.id, resource.id, session=db.session, commit=False
+                                course_owner, l_target.id, resource.id, session=db.session, commit=False
                             )
                         elif l_target.id != target_lesson.id:
                             orig_res = db.session.get(LessonResource, res_id)
@@ -1677,7 +1699,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                                 )
                                 if matching_res:
                                     detach_resource_from_lesson(
-                                        actor,
+                                        course_owner,
                                         l_target.id,
                                         matching_res.id,
                                         session=db.session,
@@ -1695,7 +1717,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                         raise ValidationError("Tệp đề xuất không còn hợp lệ hoặc chưa quét sạch.")
                     for l_target in lessons_to_update:
                         attach_resource_to_lesson(
-                            actor,
+                            course_owner,
                             l_target.id,
                             asset.id,
                             label=change.get("label"),
@@ -1710,7 +1732,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
             lesson_id = req_record.target_id or p_data.get("lesson_id")
             if lesson_id:
                 trash_lesson(
-                    actor,
+                    course_owner,
                     lesson_id,
                     reason=reason or "Admin phê duyệt yêu cầu xóa",
                     session=db.session,
@@ -1725,7 +1747,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             public_unit_id = p_data.get("learning_unit_id")
             if public_unit_id:
-                delete_learning_unit(actor, public_unit_id, session=db.session)
+                delete_learning_unit(course_owner, public_unit_id, session=db.session)
             msg = f"Đã phê duyệt yêu cầu xóa chương mục #{public_unit_id}."
 
         elif (
@@ -1736,14 +1758,14 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             ordered_ids = p_data.get("ordered_lesson_ids") or []
             if ordered_ids:
-                reorder_lessons(actor, req_record.course_id, ordered_ids, session=db.session)
+                reorder_lessons(course_owner, req_record.course_id, ordered_ids, session=db.session)
             msg = f"Đã phê duyệt sắp xếp lại bài giảng khóa học #{req_record.course_id}."
 
         elif req_record.change_type == "COMPLETION_RULE":
             from pwd301.services.completion_service import set_course_completion_rule
 
             set_course_completion_rule(
-                actor=actor,
+                actor=course_owner,
                 course_id=req_record.course_id,
                 payload=p_data,
                 session=db.session,
@@ -1756,7 +1778,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         ):
             from pwd301.services.lesson_service import create_learning_unit
 
-            create_learning_unit(actor, req_record.course_id, p_data, session=db.session)
+            create_learning_unit(course_owner, req_record.course_id, p_data, session=db.session)
             msg = f"Đã phê duyệt tạo chương mục mới cho khóa học #{req_record.course_id}."
 
         elif (
@@ -1767,7 +1789,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             unit_ids = p_data.get("unit_ids") or []
             if unit_ids:
-                reorder_learning_units(actor, req_record.course_id, unit_ids, session=db.session)
+                reorder_learning_units(course_owner, req_record.course_id, unit_ids, session=db.session)
             msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
 
         elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
@@ -1799,7 +1821,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                         )
                     }
                     if update_data:
-                        update_lesson(actor, lesson_id, update_data, session=db.session)
+                        update_lesson(course_owner, lesson_id, update_data, session=db.session)
             msg = f"Đã phê duyệt thay đổi nội dung bài giảng #{req_record.target_id}."
 
         elif req_record.change_type == "PREREQUISITE":
@@ -1807,7 +1829,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                 from pwd301.services.course_service import remove_course_prerequisite
 
                 remove_course_prerequisite(
-                    actor=actor,
+                    actor=course_owner,
                     course_id=req_record.course_id,
                     prerequisite_course_id=req_record.target_id,
                     session=db.session,
@@ -1815,7 +1837,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                 msg = f"Đã phê duyệt xóa môn tiên quyết #{req_record.target_id}."
             else:
                 add_course_prerequisite(
-                    actor=actor,
+                    actor=course_owner,
                     course_id=req_record.course_id,
                     prerequisite_course_id=req_record.target_id,
                     session=db.session,
@@ -1825,7 +1847,13 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         elif req_record.change_type == "COURSE_METADATA":
             from pwd301.services.course_service import update_course
 
-            update_course(actor, req_record.course_id, p_data, session=db.session)
+            update_course(
+                course_owner,
+                req_record.course_id,
+                p_data,
+                session=db.session,
+                is_approved_review=True,
+            )
             msg = f"Đã phê duyệt cập nhật thông tin khóa học #{req_record.course_id}."
 
         else:
@@ -1892,3 +1920,77 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
     db.session.commit()
     return jsonify({"status": req_record.status, "message": msg}), 200
+
+
+@admin_bp.route("/courses/<course_id>/lessons/<lesson_id>/flag", methods=["POST"])
+@admin_required
+def flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
+    """Flag a lesson or its contents (video/file/content) with reasons and notify instructor."""
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.authorization_service import _resolve_course, _resolve_lesson
+    from pwd301.services.notification_service import dispatch_notification
+
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định và gắn cờ nội dung khóa học.")
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Bài học không tồn tại trong khóa học này.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = str(payload.get("reason", "")).strip()
+    content_type = str(payload.get("content_type", "bài học")).strip()
+
+    if len(reason) < 5:
+        raise ValidationError("Lý do gắn cờ bắt buộc tối thiểu 5 ký tự.")
+
+    flag_summary = f"[FLAGGED]: {reason}"[:500]
+    lesson.material_change_summary = flag_summary
+
+    audit = AuditEvent(
+        actor_user_id=actor.id,
+        action="CONTENT_FLAGGED",
+        target_type="LESSON",
+        target_id=lesson.id,
+        reason=reason,
+        performed_as_admin=True,
+        payload_json=json.dumps({
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "content_type": content_type,
+            "reason": reason,
+        }),
+        created_at=utc_now(),
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    if course.owner_instructor_id:
+        with contextlib.suppress(Exception):
+            dispatch_notification(
+                recipient_user_ids=[course.owner_instructor_id],
+                event_type="COURSE_CONTENT_FLAGGED",
+                title=f"Nội dung bị gắn cờ: {lesson.title}",
+                body=f"Quản trị viên đã gắn cờ {content_type} '{lesson.title}' trong khóa học '{course.title}'. Lý do: {reason}",
+                category="COURSE",
+                data_payload={
+                    "course_id": str(course.public_id),
+                    "lesson_id": str(lesson.public_id),
+                    "reason": reason,
+                    "content_type": content_type,
+                },
+                session=db.session,
+            )
+
+    return jsonify({
+        "success": True,
+        "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
+        "lesson_id": str(lesson.public_id),
+        "is_flagged": True,
+        "flag_reason": reason,
+    }), 200

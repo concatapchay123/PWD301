@@ -94,22 +94,6 @@ class InstructorView {
                 <span class="material-symbols-outlined text-primary dark:text-blue-400 text-[20px]">table_chart</span>
                 Danh sách khóa học quản lý
               </h2>
-              <div id="ins-dash-scope-controls" class="hidden flex items-center gap-1.5 p-1 bg-[#F4F1EA] dark:bg-[#262524] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
-                <button
-                  type="button"
-                  id="btn-dash-scope-assigned"
-                  class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs"
-                >
-                  Môn tôi phụ trách
-                </button>
-                <button
-                  type="button"
-                  id="btn-dash-scope-all"
-                  class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]"
-                >
-                  Toàn trường
-                </button>
-              </div>
             </div>
             <a href="#/instructor/courses" class="text-xs font-semibold text-primary dark:text-blue-400 hover:underline">Xem đầy đủ</a>
           </div>
@@ -128,12 +112,9 @@ class InstructorView {
       InstructorView.openCreateCourseModal();
     };
 
-    let dashScope = 'assigned';
-
-    const loadDashboardData = async (scope = 'assigned') => {
-      dashScope = scope;
+    const loadDashboardData = async () => {
       try {
-        const res = await ApiClient.getInstructorDashboard({ scope: dashScope });
+        const res = await ApiClient.getInstructorDashboard({ scope: 'assigned' });
         const analytics = (res && res.data) ? res.data : (res || {});
 
         const courses = analytics.courses || [];
@@ -149,37 +130,9 @@ class InstructorView {
         const kpiAss = document.getElementById('ins-kpi-assessments');
         if (kpiAss) kpiAss.textContent = totalAssessments;
 
-        const isAdmin = Boolean(analytics.is_admin || window.app?.currentUser?.role_codes?.includes('ADMIN'));
         const subKpi = document.getElementById('ins-kpi-courses-sub');
         if (subKpi) {
-          if (isAdmin) {
-            subKpi.innerHTML = dashScope === 'assigned'
-              ? `Phân công: <strong class="text-primary font-bold">${analytics.assigned_courses_count ?? courses.length} môn</strong> (Toàn trường: ${analytics.total_platform_courses_count ?? courses.length} môn)`
-              : `Toàn trường: <strong class="text-primary font-bold">${analytics.total_platform_courses_count ?? courses.length} môn</strong> (Cá nhân: ${analytics.assigned_courses_count ?? 0} môn)`;
-          } else {
-            subKpi.textContent = 'Đang xây dựng & mở lớp';
-          }
-        }
-
-        const scopeControls = document.getElementById('ins-dash-scope-controls');
-        const btnAssigned = document.getElementById('btn-dash-scope-assigned');
-        const btnAll = document.getElementById('btn-dash-scope-all');
-        if (scopeControls && isAdmin) {
-          scopeControls.classList.remove('hidden');
-          if (btnAssigned) {
-            btnAssigned.textContent = `Môn tôi phụ trách (${analytics.assigned_courses_count ?? 0})`;
-            btnAssigned.className = dashScope === 'assigned'
-              ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs'
-              : 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
-          }
-          if (btnAll) {
-            btnAll.textContent = `Toàn trường (${analytics.total_platform_courses_count ?? 0})`;
-            btnAll.className = dashScope === 'all'
-              ? 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs'
-              : 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]';
-          }
-        } else if (scopeControls) {
-          scopeControls.classList.add('hidden');
+          subKpi.textContent = 'Khóa học được phân công & quản lý';
         }
 
         const tableBox = document.getElementById('ins-courses-table-box');
@@ -195,7 +148,6 @@ class InstructorView {
             </div>
           `;
         } else {
-          const showInstructorCol = isAdmin && dashScope === 'all';
           tableBox.innerHTML = `
             <div class="overflow-x-auto">
               <table class="w-full text-left text-xs sm:text-sm">
@@ -203,7 +155,6 @@ class InstructorView {
                   <tr>
                     <th class="px-5 py-3.5">Mã môn</th>
                     <th class="px-5 py-3.5">Tên khóa học</th>
-                    ${showInstructorCol ? '<th class="px-5 py-3.5">Giảng viên</th>' : ''}
                     <th class="px-5 py-3.5">Danh mục</th>
                     <th class="px-5 py-3.5">Trạng thái</th>
                     <th class="px-5 py-3.5">Sĩ số</th>
@@ -215,14 +166,6 @@ class InstructorView {
                     <tr class="hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors">
                       <td class="px-5 py-3.5 font-mono font-bold text-primary dark:text-blue-400">${UI.escapeHtml(c.course_code)}</td>
                       <td class="px-5 py-3.5 font-bold text-[#222120] dark:text-[#EDEDEB] max-w-xs truncate">${UI.escapeHtml(c.title)}</td>
-                      ${showInstructorCol ? `
-                        <td class="px-5 py-3.5 text-xs text-[#5C5B57] dark:text-[#9E9D99]">
-                          <span class="inline-flex items-center gap-1">
-                            <span class="material-symbols-outlined text-[14px] text-primary">school</span>
-                            ${UI.escapeHtml(c.instructor_name || 'Chưa phân công')}
-                          </span>
-                        </td>
-                      ` : ''}
                       <td class="px-5 py-3.5 text-[#5C5B57] dark:text-[#9E9D99]">${UI.escapeHtml(c.category || 'Công nghệ')}</td>
                       <td class="px-5 py-3.5">${UI.statusBadge(c.status)}</td>
                       <td class="px-5 py-3.5 font-semibold text-[#222120] dark:text-[#EDEDEB]">${c.enrolled_count ?? c.enrollments_count ?? 0} sinh viên</td>
@@ -302,28 +245,6 @@ class InstructorView {
               <span>Tạo khóa học mới</span>
             </button>
           </div>
-        </div>
-
-        <!-- Admin Scope Selector (Warm Segmented Control Tabs) -->
-        <div id="ins-courses-scope-bar" class="hidden flex items-center gap-2 p-1.5 bg-[#F4F1EA] dark:bg-[#262524] rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] w-fit">
-          <button
-            type="button"
-            id="tab-scope-assigned"
-            class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-2xs bg-white dark:bg-[#202020] text-primary dark:text-blue-400 border border-[#E8E6DF] dark:border-[#2E2D2B]"
-          >
-            <span class="material-symbols-outlined text-[16px]">person</span>
-            <span>Khóa học tôi phụ trách</span>
-            <span id="badge-count-assigned" class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-primary-subtle text-primary font-extrabold">0</span>
-          </button>
-          <button
-            type="button"
-            id="tab-scope-all"
-            class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#5C5B57] dark:text-[#9E9D99] hover:text-[#222120] dark:hover:text-[#EDEDEB]"
-          >
-            <span class="material-symbols-outlined text-[16px]">account_balance</span>
-            <span>Toàn bộ khóa học trường</span>
-            <span id="badge-count-all" class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-[#E8E6DF] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-extrabold">0</span>
-          </button>
         </div>
 
         <!-- Search & Filter Bar -->
@@ -516,33 +437,13 @@ class InstructorView {
       });
     };
 
-    const loadData = async (scope = coursesScope) => {
-      coursesScope = scope;
+    const loadData = async () => {
       try {
-        const res = await ApiClient.getInstructorCourses({ scope: coursesScope });
+        const res = await ApiClient.getInstructorCourses({ scope: 'assigned' });
         const resData = (res && res.data) ? res.data : (res || {});
         allCourses = Array.isArray(resData.courses)
           ? resData.courses
           : (Array.isArray(res?.courses) ? res.courses : []);
-
-        const isAdmin = Boolean(resData.is_admin || res?.is_admin || window.app?.currentUser?.role_codes?.includes('ADMIN'));
-        const scopeBar = document.getElementById('ins-courses-scope-bar');
-        if (scopeBar) {
-          if (isAdmin) {
-            scopeBar.classList.remove('hidden');
-            const badgeAssigned = document.getElementById('badge-count-assigned');
-            const badgeAll = document.getElementById('badge-count-all');
-            if (badgeAssigned && resData.assigned_count !== undefined) {
-              badgeAssigned.textContent = resData.assigned_count;
-            }
-            if (badgeAll && resData.total_platform_count !== undefined) {
-              badgeAll.textContent = resData.total_platform_count;
-            }
-            updateTabsUI();
-          } else {
-            scopeBar.classList.add('hidden');
-          }
-        }
 
         renderCards(getFilteredCourses());
       } catch (e) {
@@ -551,23 +452,6 @@ class InstructorView {
         `;
       }
     };
-
-    const tabAssigned = document.getElementById('tab-scope-assigned');
-    const tabAll = document.getElementById('tab-scope-all');
-    if (tabAssigned) {
-      tabAssigned.onclick = () => {
-        if (coursesScope !== 'assigned') {
-          loadData('assigned');
-        }
-      };
-    }
-    if (tabAll) {
-      tabAll.onclick = () => {
-        if (coursesScope !== 'all') {
-          loadData('all');
-        }
-      };
-    }
 
     document.getElementById('courses-filter-search').oninput = () => renderCards(getFilteredCourses());
     document.getElementById('courses-filter-status').onchange = () => renderCards(getFilteredCourses());
@@ -1023,6 +907,21 @@ class InstructorView {
                               <span>${videoCount}/7 video</span>
                             </span>
                           </div>
+                          ${(() => {
+                            const flaggedLessons = children.filter(l => l.is_flagged || (l.material_change_summary && l.material_change_summary.startsWith('[FLAGGED]: ')));
+                            if (flaggedLessons.length === 0) return '';
+                            return `
+                              <div class="mt-2.5 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs font-semibold space-y-1">
+                                <div class="flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
+                                  <span class="material-symbols-outlined text-[16px]">flag</span>
+                                  <span>Admin đã gắn cờ ${flaggedLessons.length} bài giảng có vấn đề:</span>
+                                </div>
+                                <ul class="list-disc list-inside font-normal text-[11px] space-y-0.5 text-rose-900 dark:text-rose-300">
+                                  ${flaggedLessons.map(fl => `<li><strong>${UI.escapeHtml(fl.title)}:</strong> ${UI.escapeHtml(fl.flag_reason || fl.material_change_summary?.replace('[FLAGGED]: ', '') || 'Cần chỉnh sửa nội dung')}</li>`).join('')}
+                                </ul>
+                              </div>
+                            `;
+                          })()}
                         </div>
                       </div>
 
@@ -2634,14 +2533,13 @@ class InstructorView {
                   <span>Xuất bản</span>
                 </button>
               ` : ''}
-              <button
-                type="button"
+              <a
+                href="#/instructor/courses/${cId}/assessments/${a.assessment_id || a.id}/results"
                 class="px-3.5 py-1.5 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                onclick="InstructorView.openAssessmentResultsModal('${cId}', '${a.assessment_id || a.id}')"
               >
                 <span class="material-symbols-outlined text-[15px]">bar_chart</span>
                 <span>Bảng điểm & Bài nộp</span>
-              </button>
+              </a>
               <a
                 href="#/instructor/exams/edit?id=${a.assessment_id || a.id}&course_id=${cId}"
                 class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors inline-flex items-center gap-1"
@@ -2681,45 +2579,56 @@ class InstructorView {
     }
   }
 
-  static async openAssessmentResultsModal(arg1, arg2) {
-    // Robust argument resolution: supports both (courseId, assessmentId) and (assessmentId, optionalTitle)
+  static openAssessmentResultsModal(arg1, arg2) {
     let assessmentId = arg1;
+    let courseId = null;
     const isIdPattern = (v) => typeof v === 'string' && (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || /^\d+$/.test(v));
     if (isIdPattern(arg1) && isIdPattern(arg2)) {
+      courseId = arg1;
       assessmentId = arg2;
     } else if (arg2 && isIdPattern(arg2)) {
       assessmentId = arg2;
     } else {
       assessmentId = arg1;
     }
+    const targetUrl = courseId
+      ? `#/instructor/courses/${courseId}/assessments/${assessmentId}/results`
+      : `#/instructor/assessments/${assessmentId}/results`;
+    window.location.hash = targetUrl;
+  }
 
-    const modalId = 'modal-assessment-results';
-    let modal = document.getElementById(modalId);
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = modalId;
-      modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in';
-      document.body.appendChild(modal);
-    }
+  static async renderAssessmentResultsPage(container, assessmentId, courseId = null) {
+    const backUrl = courseId
+      ? `#/instructor/courses/${courseId}/manage?tab=exams`
+      : '#/instructor/exams';
+    const backText = courseId ? 'Quay lại Quản lý Khóa học' : 'Quay lại Soạn đề thi';
 
-    modal.innerHTML = `
-      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div class="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div>
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary">assessment</span>
-              Bảng điểm & Kết quả Khảo thí Trắc nghiệm
-            </h2>
-            <p class="text-xs text-slate-500 mt-1" id="modal-asm-title">Đang tải dữ liệu bài nộp...</p>
-          </div>
-          <button type="button" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" onclick="document.getElementById('${modalId}').remove()">
-            <span class="material-symbols-outlined text-[20px]">close</span>
-          </button>
+    container.innerHTML = `
+      <div class="space-y-6 animate-fade-in p-4 sm:p-6 max-w-7xl mx-auto">
+        <!-- Breadcrumb & Back navigation -->
+        <div class="flex items-center justify-between gap-4">
+          <a href="${backUrl}" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-base">arrow_back</span>
+            <span>${backText}</span>
+          </a>
         </div>
-        <div class="p-6 overflow-y-auto space-y-6" id="modal-asm-content">
-          <div class="py-12 text-center text-slate-400">
-            <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-            <p class="text-xs">Đang tổng hợp điểm số thí sinh...</p>
+
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-primary text-2xl">assessment</span>
+              Bảng điểm & Kết quả Khảo thí Trắc nghiệm
+            </h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" id="asm-results-title">Đang tải dữ liệu bài nộp...</p>
+          </div>
+        </div>
+
+        <!-- Dynamic Results Content Container -->
+        <div class="space-y-6" id="asm-results-content">
+          <div class="py-16 text-center text-slate-400">
+            <span class="inline-block animate-spin text-3xl mb-2">⏳</span>
+            <p class="text-xs font-semibold">Đang tổng hợp điểm số và báo cáo vi phạm thí sinh...</p>
           </div>
         </div>
       </div>
@@ -2728,16 +2637,18 @@ class InstructorView {
     try {
       const data = await ApiClient.getAssessmentAttempts(assessmentId);
       const attempts = data.attempts || [];
-      const titleEl = document.getElementById('modal-asm-title');
-      if (titleEl) titleEl.textContent = `Đề thi: ${data.assessment_title || 'Khảo thí trắc nghiệm'} • Tổng cộng ${attempts.length} bài nộp`;
+      const titleEl = document.getElementById('asm-results-title');
+      if (titleEl) {
+        titleEl.textContent = `Đề thi: ${data.assessment_title || 'Khảo thí trắc nghiệm'} • Tổng cộng ${attempts.length} bài nộp`;
+      }
 
-      const contentEl = document.getElementById('modal-asm-content');
+      const contentEl = document.getElementById('asm-results-content');
       if (!contentEl) return;
 
       if (attempts.length === 0) {
         contentEl.innerHTML = `
-          <div class="text-center py-12">
-            <span class="material-symbols-outlined text-5xl text-slate-300 mb-2">assignment_late</span>
+          <div class="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <span class="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-600 mb-2">assignment_late</span>
             <p class="text-sm font-bold text-slate-700 dark:text-slate-300">Chưa có sinh viên nào nộp bài</p>
             <p class="text-xs text-slate-400 mt-1">Bài thi này chưa ghi nhận lượt làm bài hoặc nộp bài hoàn tất nào.</p>
           </div>
@@ -2755,31 +2666,32 @@ class InstructorView {
       contentEl.innerHTML = `
         <!-- Stats Row -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <span class="text-xs text-slate-500 font-medium">Tổng số bài nộp</span>
-            <div class="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">${totalSubmissions}</div>
+            <div class="text-2xl font-black text-slate-900 dark:text-white mt-1">${totalSubmissions}</div>
           </div>
-          <div class="bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800">
+          <div class="bg-emerald-50/50 dark:bg-emerald-950/20 p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800 shadow-xs">
             <span class="text-xs text-emerald-600 font-medium">Tỷ lệ đạt</span>
-            <div class="text-2xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">${passRate}% <span class="text-xs font-normal text-emerald-600">(${passedCount}/${totalSubmissions})</span></div>
+            <div class="text-2xl font-black text-emerald-700 dark:text-emerald-400 mt-1">${passRate}% <span class="text-xs font-normal text-emerald-600">(${passedCount}/${totalSubmissions})</span></div>
           </div>
-          <div class="bg-indigo-50 dark:bg-indigo-950/30 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800">
+          <div class="bg-indigo-50/50 dark:bg-indigo-950/20 p-5 rounded-2xl border border-indigo-200 dark:border-indigo-800 shadow-xs">
             <span class="text-xs text-indigo-600 font-medium">Điểm trung bình</span>
-            <div class="text-2xl font-extrabold text-indigo-700 dark:text-indigo-400 mt-1">${avgScore}%</div>
+            <div class="text-2xl font-black text-indigo-700 dark:text-indigo-400 mt-1">${avgScore}%</div>
           </div>
         </div>
 
-        <!-- Table of Attempts -->
-        <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <!-- Table of Attempts with Vi phạm column -->
+        <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
           <table class="w-full text-left text-xs">
             <thead class="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-bold uppercase border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th class="px-4 py-3">Thí sinh</th>
-                <th class="px-4 py-3">Thời gian nộp</th>
-                <th class="px-4 py-3">Điểm số</th>
-                <th class="px-4 py-3">Tỷ lệ</th>
-                <th class="px-4 py-3">Kết quả</th>
-                <th class="px-4 py-3 text-right">Chi tiết bài làm</th>
+                <th class="px-5 py-3.5">Thí sinh</th>
+                <th class="px-5 py-3.5">Thời gian nộp</th>
+                <th class="px-5 py-3.5">Điểm số</th>
+                <th class="px-5 py-3.5">Tỷ lệ</th>
+                <th class="px-5 py-3.5">Kết quả</th>
+                <th class="px-5 py-3.5 text-center text-rose-600 dark:text-rose-400">Vi phạm</th>
+                <th class="px-5 py-3.5 text-right">Chi tiết bài làm</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2787,24 +2699,35 @@ class InstructorView {
                 const passed = att.is_passed || att.passed;
                 const submittedDate = att.submitted_at ? new Date(att.submitted_at).toLocaleString('vi-VN') : 'Đang làm';
                 const pct = att.percentage !== undefined ? att.percentage : (att.percent_score || 0);
+                const vCount = att.violations_count ?? att.violation_count ?? 0;
                 return `
-                  <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td class="px-4 py-3">
+                  <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                    <td class="px-5 py-3.5">
                       <div class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(att.student_name || 'Học viên')}</div>
                       <div class="text-[11px] text-slate-400">${UI.escapeHtml(att.student_email || '')}</div>
                     </td>
-                    <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${submittedDate}</td>
-                    <td class="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">${att.raw_score ?? 0} / ${att.max_possible_points ?? 0}</td>
-                    <td class="px-4 py-3 font-bold ${passed ? 'text-emerald-600' : 'text-rose-600'}">${pct}%</td>
-                    <td class="px-4 py-3">
-                      <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${passed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'}">
+                    <td class="px-5 py-3.5 text-slate-600 dark:text-slate-300 font-mono">${submittedDate}</td>
+                    <td class="px-5 py-3.5 font-mono font-bold text-slate-900 dark:text-white">${att.raw_score ?? 0} / ${att.max_possible_points ?? 0}</td>
+                    <td class="px-5 py-3.5 font-bold ${passed ? 'text-emerald-600' : 'text-rose-600'}">${pct}%</td>
+                    <td class="px-5 py-3.5">
+                      <span class="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold ${passed ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800'}">
                         ${passed ? 'ĐẠT' : 'KHÔNG ĐẠT'}
                       </span>
                     </td>
-                    <td class="px-4 py-3 text-right">
+                    <td class="px-5 py-3.5 text-center">
+                      ${vCount > 0 ? `
+                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs">
+                          <span class="material-symbols-outlined text-[13px]">warning</span>
+                          <span>${vCount} lần</span>
+                        </span>
+                      ` : `
+                        <span class="text-xs font-semibold text-slate-400">0</span>
+                      `}
+                    </td>
+                    <td class="px-5 py-3.5 text-right">
                       <button
                         type="button"
-                        class="px-2.5 py-1 rounded-lg bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-colors inline-flex items-center gap-1"
+                        class="px-3 py-1.5 rounded-xl bg-primary-subtle text-primary hover:bg-primary hover:text-white text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
                         onclick="InstructorView.openAttemptDetailModal('${att.attempt_id}')"
                       >
                         <span class="material-symbols-outlined text-[14px]">visibility</span>
@@ -2819,9 +2742,9 @@ class InstructorView {
         </div>
       `;
     } catch (err) {
-      const contentEl = document.getElementById('modal-asm-content');
+      const contentEl = document.getElementById('asm-results-content');
       if (contentEl) {
-        contentEl.innerHTML = `<div class="p-6 text-center text-rose-500 text-xs">Lỗi tải kết quả khảo thí: ${UI.escapeHtml(err.message)}</div>`;
+        contentEl.innerHTML = `<div class="p-8 text-center text-rose-500 text-xs font-semibold">Lỗi tải kết quả khảo thí: ${UI.escapeHtml(err.message)}</div>`;
       }
     }
   }
@@ -2922,11 +2845,53 @@ class InstructorView {
       const focusEvents = focusRes?.events || [];
       const knownSeconds = focusEvents.reduce((sum, event) => sum + (event.duration_seconds || 0), 0);
       const focusBannerHtml = focusRes === null
-        ? '<div class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm mb-6">Không tải được ghi nhận rời trang thi. Vui lòng thử lại.</div>'
-        : `<section class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-sm mb-6">
-            <h4 class="font-bold">Ghi nhận từ trình duyệt: ${focusEvents.length} lần</h4>
-            <p class="text-slate-600 dark:text-slate-300 mt-1">Tổng thời gian đã ghi nhận: ${knownSeconds} giây. Dữ liệu trình duyệt chỉ hỗ trợ giảng viên xem lại.</p>
-            ${focusEvents.length ? `<ul class="mt-2 space-y-1">${focusEvents.map(event => `<li>${UI.escapeHtml({ TAB_HIDDEN: 'Rời tab', WINDOW_BLUR: 'Mất tiêu điểm', FULLSCREEN_EXIT: 'Thoát toàn màn hình' }[event.event_type] || event.event_type)} · ${event.duration_seconds === null ? 'Chưa xác định thời gian' : `${event.duration_seconds} giây`}</li>`).join('')}</ul>` : ''}
+        ? '<div class="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 text-xs font-semibold text-amber-800 dark:text-amber-200 mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-base">warning</span><span>Không tải được dữ liệu giám sát phòng thi. Vui lòng thử lại.</span></div>'
+        : `<section class="rounded-2xl border ${focusEvents.length > 0 ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20' : 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-950/20'} p-5 text-xs mb-6 shadow-xs space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="font-extrabold text-sm flex items-center gap-2 ${focusEvents.length > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}">
+                <span class="material-symbols-outlined text-[18px]">${focusEvents.length > 0 ? 'gavel' : 'verified_user'}</span>
+                <span>Kết quả giám sát: ${focusEvents.length} lần vi phạm</span>
+              </h4>
+              <span class="px-2.5 py-0.5 rounded-full font-bold text-[11px] ${focusEvents.length > 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 border border-rose-300 dark:border-rose-700' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300'}">
+                Tổng thời gian vi phạm: ${knownSeconds} giây
+              </span>
+            </div>
+            ${focusEvents.length ? `
+              <ul class="space-y-2 pt-2 border-t border-rose-200/80 dark:border-rose-900/40">
+                ${focusEvents.map(event => {
+                  const errorLabelMap = {
+                    FULLSCREEN_EXIT: 'Thoát toàn màn hình',
+                    SCREENSHOT_ATTEMPT: 'Chụp màn hình',
+                    TAB_HIDDEN: 'Rời khỏi tab thi',
+                    WINDOW_BLUR: 'Mất tiêu điểm / Chuyển cửa sổ'
+                  };
+                  const errorIconMap = {
+                    FULLSCREEN_EXIT: 'fullscreen_exit',
+                    SCREENSHOT_ATTEMPT: 'screenshot',
+                    TAB_HIDDEN: 'tab',
+                    WINDOW_BLUR: 'visibility_off'
+                  };
+                  const label = errorLabelMap[event.event_type] || event.event_type;
+                  const icon = errorIconMap[event.event_type] || 'warning';
+                  const timeFormatted = event.started_at ? new Date(event.started_at).toLocaleTimeString('vi-VN') : '';
+                  const durationText = event.duration_seconds === null ? 'Chưa xác định thời lượng' : `${event.duration_seconds} giây`;
+                  return `
+                    <li class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-900/50 flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                          <span class="material-symbols-outlined text-[14px]">${icon}</span>
+                          <span>${UI.escapeHtml(label)}</span>
+                        </span>
+                        ${timeFormatted ? `<span class="text-[11px] text-slate-500 font-mono">Lúc ${timeFormatted}</span>` : ''}
+                      </div>
+                      <div class="text-xs font-mono font-bold text-rose-600 dark:text-rose-400">
+                        Thời gian vi phạm: ${durationText}
+                      </div>
+                    </li>
+                  `;
+                }).join('')}
+              </ul>
+            ` : '<p class="text-emerald-700 dark:text-emerald-300 font-medium text-xs">Thí sinh làm bài nghiêm túc, không ghi nhận hành vi vi phạm nào.</p>'}
           </section>`;
       if (questions.length === 0) {
         contentEl.innerHTML = appealBannerHtml + focusBannerHtml + `<div class="text-center py-8 text-slate-400 text-xs">Không có dữ liệu câu hỏi.</div>`;

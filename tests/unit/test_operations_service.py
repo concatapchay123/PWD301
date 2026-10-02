@@ -88,7 +88,6 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     assign_role_to_user(
         user_id=user.id,
         role_code="ADMIN",
-        assigned_by_user_id=user.id,
         session=sess,
     )
     user.is_email_verified = True

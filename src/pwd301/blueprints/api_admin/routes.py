@@ -6,6 +6,8 @@ Complies with ADR-002 (Zero Internal PK Leakage) and eliminates CSRF vectors.
 
 from __future__ import annotations
 
+import contextlib
+import json
 from typing import Any
 
 import sqlalchemy as sa
@@ -15,6 +17,7 @@ from pwd301.blueprints.api_admin import api_admin_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course
 from pwd301.models.identity import User
+from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -124,6 +127,8 @@ def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
             "position": getattr(item, "position", 1),
             "status": item.status,
             "summary": item.summary,
+            "is_flagged": bool(item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")),
+            "flag_reason": (item.material_change_summary.replace("[FLAGGED]: ", "") if (item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")) else None),
         }
         for item in lessons
         if getattr(item, "deleted_at", None) is None
@@ -1222,3 +1227,76 @@ def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
         as_attachment=True,
         download_name=download_name,
     )
+
+
+@api_admin_bp.route("/courses/<course_id>/lessons/<lesson_id>/flag", methods=["POST"])
+@jwt_required
+@admin_required
+@require_admin_permission("COURSE_REVIEW")
+def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
+    """Flag a lesson or its contents (video/file/content) with reasons and notify instructor."""
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.authorization_service import _resolve_course, _resolve_lesson
+    from pwd301.services.notification_service import dispatch_notification
+
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Bài học không tồn tại trong khóa học này.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = str(payload.get("reason", "")).strip()
+    content_type = str(payload.get("content_type", "bài học")).strip()
+
+    if len(reason) < 5:
+        raise ValidationError("Lý do gắn cờ bắt buộc tối thiểu 5 ký tự.")
+
+    flag_summary = f"[FLAGGED]: {reason}"[:500]
+    lesson.material_change_summary = flag_summary
+
+    audit = AuditEvent(
+        actor_user_id=actor.id,
+        action="CONTENT_FLAGGED",
+        target_type="LESSON",
+        target_id=lesson.id,
+        reason=reason,
+        performed_as_admin=True,
+        payload_json=json.dumps({
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "content_type": content_type,
+            "reason": reason,
+        }),
+        created_at=utc_now(),
+    )
+    db.session.add(audit)
+    db.session.commit()
+
+    if course.owner_instructor_id:
+        with contextlib.suppress(Exception):
+            dispatch_notification(
+                recipient_user_ids=[course.owner_instructor_id],
+                event_type="COURSE_CONTENT_FLAGGED",
+                title=f"Nội dung bị gắn cờ: {lesson.title}",
+                body=f"Quản trị viên đã gắn cờ {content_type} '{lesson.title}' trong khóa học '{course.title}'. Lý do: {reason}",
+                category="COURSE",
+                data_payload={
+                    "course_id": str(course.public_id),
+                    "lesson_id": str(lesson.public_id),
+                    "reason": reason,
+                    "content_type": content_type,
+                },
+                session=db.session,
+            )
+
+    return jsonify({
+        "success": True,
+        "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
+        "lesson_id": str(lesson.public_id),
+        "is_flagged": True,
+        "flag_reason": reason,
+    }), 200

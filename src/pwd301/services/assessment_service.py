@@ -409,7 +409,9 @@ def _serialize_assessment(
     return data
 
 
-def _exam_policy_bool(payload: dict[str, Any], field: str, default: bool = False) -> bool:
+def _exam_policy_bool(payload: dict[str, Any], field: str, default: bool | None = None) -> bool:
+    if default is None:
+        default = field in ("monitoring_enabled", "request_fullscreen")
     if field not in payload:
         return default
     value = payload[field]

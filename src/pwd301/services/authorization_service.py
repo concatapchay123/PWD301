@@ -547,9 +547,12 @@ def can_manage_course(
 ) -> bool:
     """Determine whether an actor can edit, update, or manage a course.
 
-    Rules (02_PERMISSION_MATRIX.md & 04_ADMIN_PERMISSION_RULES.md):
-    - Admin is authorized platform-wide (sensitive edits may require audit reason).
-    - Instructors may manage only courses they currently own (owner_instructor_id == user.id).
+    Rules & Invariants (Yêu cầu 4 & 5):
+    - Instructors (even if they also hold Admin roles) may manage ONLY courses they currently own:
+      (course.owner_instructor_id == user.id).
+    - Admins who are NOT the assigned instructor cannot edit lessons/videos/materials of other instructors;
+      Admins only have Read-Only view & Flagging rights.
+    - Soft-deleted courses cannot be modified.
     - Other instructors or students are denied.
     """
     if user is None or not user.is_active:
@@ -560,12 +563,9 @@ def can_manage_course(
         return False
 
     if course.deleted_at is not None:
-        return user.is_admin
+        return False
 
-    if user.is_admin:
-        return True
-
-    return bool(user.has_role("INSTRUCTOR") and course.owner_instructor_id == user.id)
+    return bool(course.owner_instructor_id == user.id)
 
 
 def can_access_student_data(

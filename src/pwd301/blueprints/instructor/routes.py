@@ -283,6 +283,8 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "revision_no": getattr(les, "revision_no", 1) or 1,
         "previous_lesson_id": getattr(les, "previous_lesson_id", None),
         "material_change_summary": getattr(les, "material_change_summary", None),
+        "is_flagged": bool(les.material_change_summary and les.material_change_summary.startswith("[FLAGGED]: ")),
+        "flag_reason": (les.material_change_summary.replace("[FLAGGED]: ", "") if (les.material_change_summary and les.material_change_summary.startswith("[FLAGGED]: ")) else None),
         "published_at": les.published_at.isoformat() if les.published_at else None,
         "created_at": les.created_at.isoformat(),
         "updated_at": les.updated_at.isoformat(),
@@ -541,9 +543,8 @@ def get_student_detail(course_id: str, student_id: str) -> tuple[Response, int] 
 @instructor_bp.route("/courses", methods=["GET"])
 @instructor_required
 def my_courses() -> Any:
-    """List courses managed by the instructor or platform-wide for admin."""
+    """List courses managed by the instructor (never platform-wide, even if admin)."""
     actor = require_authenticated_actor()
-    scope = request.args.get("scope", "assigned").strip().lower()
 
     assigned_query = db.session.query(Course).filter(
         Course.owner_instructor_id == actor.id,
@@ -551,33 +552,23 @@ def my_courses() -> Any:
     )
     assigned_count = assigned_query.count()
 
-    if actor.is_admin:
-        all_query = db.session.query(Course).filter(Course.deleted_at.is_(None))
-        total_platform_count = all_query.count()
-        query = all_query if scope == "all" else assigned_query
-        effective_scope = "all" if scope == "all" else "assigned"
-    else:
-        query = assigned_query
-        total_platform_count = assigned_count
-        effective_scope = "assigned"
-
-    courses = query.order_by(Course.created_at.desc()).all()
+    courses = assigned_query.order_by(Course.created_at.desc()).all()
     serialized = [_serialize_course(c, summary=True) for c in courses]
     data_payload = {
         "courses": serialized,
-        "scope": effective_scope,
+        "scope": "assigned",
         "is_admin": bool(actor.is_admin),
         "assigned_count": assigned_count,
-        "total_platform_count": total_platform_count,
+        "total_platform_count": assigned_count,
     }
     return jsonify({
         "success": True,
         "data": data_payload,
         "courses": serialized,
-        "scope": effective_scope,
+        "scope": "assigned",
         "is_admin": bool(actor.is_admin),
         "assigned_count": assigned_count,
-        "total_platform_count": total_platform_count,
+        "total_platform_count": assigned_count,
     }), 200
 
 
@@ -769,47 +760,32 @@ def publish_course_route(course_id: str) -> Any:
             raise ResourceNotFoundError("Khóa học không tồn tại.")
 
         if course_obj.status == "DRAFT":
-            if actor.is_admin:
-                change_course_status(
-                    actor, course_id, "SUBMITTED_FOR_REVIEW", reason="Admin xuất bản trực tiếp"
-                )
-                change_course_status(actor, course_id, "APPROVED", reason="Admin duyệt trực tiếp")
-                course = change_course_status(
-                    actor, course_id, "PUBLISHED", reason="Admin xuất bản trực tiếp"
-                )
-            else:
-                return (
-                    jsonify(
-                        {
-                            "error": {
-                                "code": "COURSE_STATE_VIOLATION",
-                                "message": (
-                                    "Khóa học đang ở trạng thái DRAFT. "
-                                    "Cần gửi duyệt trước khi xuất bản."
-                                ),
-                            }
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "COURSE_STATE_VIOLATION",
+                            "message": (
+                                "Khóa học đang ở trạng thái DRAFT. "
+                                "Cần gửi duyệt trước khi xuất bản."
+                            ),
                         }
-                    ),
-                    409,
-                )
+                    }
+                ),
+                409,
+            )
         elif course_obj.status == "SUBMITTED_FOR_REVIEW":
-            if actor.is_admin:
-                change_course_status(actor, course_id, "APPROVED", reason="Admin duyệt trực tiếp")
-                course = change_course_status(
-                    actor, course_id, "PUBLISHED", reason="Admin xuất bản trực tiếp"
-                )
-            else:
-                return (
-                    jsonify(
-                        {
-                            "error": {
-                                "code": "COURSE_STATE_VIOLATION",
-                                "message": "Khóa học đang chờ Admin xét duyệt.",
-                            }
+            return (
+                jsonify(
+                    {
+                        "error": {
+                            "code": "COURSE_STATE_VIOLATION",
+                            "message": "Khóa học đang chờ Admin xét duyệt.",
                         }
-                    ),
-                    409,
-                )
+                    }
+                ),
+                409,
+            )
         else:
             course = change_course_status(actor, course_id, "PUBLISHED")
 
@@ -865,7 +841,7 @@ def reorder_learning_units_route(course_id: str) -> Any:
     unit_ids = payload.get("unit_ids") or payload.get("learning_unit_ids") or []
     from pwd301.services.lesson_service import reorder_learning_units
 
-    if not actor.is_admin and course_obj.status in ("PUBLISHED", "ARCHIVED"):
+    if course_obj.status in ("PUBLISHED", "ARCHIVED"):
         proposed = {
             "action": "REORDER_LEARNING_UNITS",
             "unit_ids": [str(uid) for uid in unit_ids],
@@ -990,7 +966,7 @@ def delete_learning_unit_route(unit_id: str) -> Any:
         raise ResourceNotFoundError("Learning unit not found.")
     course = require_course_manager(actor, unit.course_id, session=db.session)
 
-    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+    if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
         proposed = {
             "action": "DELETE_LEARNING_UNIT",
             "learning_unit_id": str(unit.public_id),
@@ -1071,8 +1047,7 @@ def update_learning_unit_route(unit_id: str) -> Any:
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
         raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
     if (
-        not actor.is_admin
-        and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         and title.strip() != unit.title
     ):
         proposed = {
@@ -1239,7 +1214,7 @@ def create_lesson_route(course_id: str) -> Any:
                 if not approved_cr:
                     unit_is_staged = True
 
-        if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and not unit_is_staged:
+        if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and not unit_is_staged:
             from pwd301.services.lesson_service import create_lesson_change_request
 
             payload["change_type"] = "LESSON_STRUCTURE"
@@ -1383,8 +1358,7 @@ def attach_lesson_resource_route(course_id: str, lesson_id: str) -> Any:
             session=db.session,
         )
         if (
-            not actor.is_admin
-            and lesson.status != "DRAFT"
+            lesson.status != "DRAFT"
             and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         ):
             review = queue_lesson_resource_change(
@@ -1428,8 +1402,7 @@ def detach_lesson_resource_route(course_id: str, lesson_id: str, resource_id: st
         raise ResourceNotFoundError("Lesson not found.")
 
     if (
-        not actor.is_admin
-        and lesson.status != "DRAFT"
+        lesson.status != "DRAFT"
         and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
     ):
         review = queue_lesson_resource_change(
@@ -1479,7 +1452,7 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
             if not approved_cr:
                 unit_is_staged = True
 
-    if not actor.is_admin and not unit_is_staged and (
+    if not unit_is_staged and (
         (course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") and lesson.status != "DRAFT")
         or lesson.status == "PUBLISHED"
     ):
@@ -1579,7 +1552,6 @@ def upload_course_file_route(course_id: str) -> Any:
             lesson is not None
             and lesson.status != "DRAFT"
             and course.status in {"PUBLISHED", "APPROVED", "ARCHIVED"}
-            and not actor.is_admin
         ):
             review = queue_lesson_resource_change(
                 actor, course, lesson, "ATTACH", asset=asset, label=title, session=db.session
@@ -1820,8 +1792,7 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
                 unit_is_staged = True
 
     if (
-        not actor.is_admin
-        and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         and lesson.status != "DRAFT"
         and not unit_is_staged
     ):
@@ -1886,7 +1857,7 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
         item for item in raw_ids if isinstance(item, (int, uuid.UUID, str))
     ]
 
-    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+    if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
         proposed = {
             "action": "REORDER_LESSONS",
             "ordered_lesson_ids": [str(item) for item in ordered_ids],
@@ -1957,8 +1928,7 @@ def change_lesson_status_route(lesson_id: str) -> tuple[Response, int] | Respons
 
     original = get_lesson_detail(actor, lesson_id, session=db.session)
     if (
-        not actor.is_admin
-        and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+        original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
         and new_status.strip().upper() != original.status
     ):
         review = queue_lesson_review(
@@ -1991,8 +1961,7 @@ def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
     reason = payload.get("reason")
 
     if (
-        not actor.is_admin
-        and lesson.status != "DRAFT"
+        lesson.status != "DRAFT"
         and (course.status in ("APPROVED", "PUBLISHED", "ARCHIVED") or lesson.status == "PUBLISHED")
     ):
         req = queue_lesson_review(
@@ -2252,7 +2221,7 @@ def add_course_prerequisite_route(course_id: str) -> Any:
         ), 202
 
     # Published course check: require Admin approval even if same instructor
-    if target_course.status in ("PUBLISHED", "ARCHIVED") and not actor.is_admin:
+    if target_course.status in ("PUBLISHED", "ARCHIVED"):
         req_payload = {
             "action": "ADD_PREREQUISITE",
             "prerequisite_course_id": prereq_course.id,
@@ -2318,7 +2287,7 @@ def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
     actor = require_authenticated_actor()
     target_course = require_course_manager(actor, course_id, session=db.session)
 
-    if not actor.is_admin and target_course.status in ("PUBLISHED", "ARCHIVED"):
+    if target_course.status in ("PUBLISHED", "ARCHIVED"):
         prereq_course = _resolve_course(prereq_id, session=db.session)
         prereq_pk = prereq_course.id if prereq_course else None
         if not prereq_pk:
@@ -2590,7 +2559,7 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     course = require_course_manager(actor, course_id, session=db.session)
 
-    if not actor.is_admin and course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+    if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
         proposed = dict(payload)
         pending = (
             db.session.query(CourseChangeRequest)
@@ -4055,23 +4024,15 @@ def instructor_parse_exam_file_route() -> tuple[Response, int] | Response:
                 except Exception:
                     pass
             if target_course is None:
-                if actor.is_admin:
-                    target_course = (
-                        db.session.query(Course)
-                        .filter(Course.deleted_at.is_(None))
-                        .order_by(Course.created_at.desc())
-                        .first()
+                target_course = (
+                    db.session.query(Course)
+                    .filter(
+                        Course.owner_instructor_id == actor.id,
+                        Course.deleted_at.is_(None),
                     )
-                else:
-                    target_course = (
-                        db.session.query(Course)
-                        .filter(
-                            Course.owner_instructor_id == actor.id,
-                            Course.deleted_at.is_(None),
-                        )
-                        .order_by(Course.created_at.desc())
-                        .first()
-                    )
+                    .order_by(Course.created_at.desc())
+                    .first()
+                )
 
             if target_course is not None:
                 for img in extracted_images:

@@ -109,10 +109,10 @@ class Assessment(Base):
         sa.String(16), nullable=False, default="STANDARD", server_default=sa.text("'STANDARD'")
     )
     monitoring_enabled = db.Column(
-        sa.Boolean, nullable=False, default=False, server_default=sa.text("0")
+        sa.Boolean, nullable=False, default=True, server_default=sa.text("1")
     )
     request_fullscreen = db.Column(
-        sa.Boolean, nullable=False, default=False, server_default=sa.text("0")
+        sa.Boolean, nullable=False, default=True, server_default=sa.text("1")
     )
     random_question_count = db.Column(sa.Integer, nullable=True)
     published_at = db.Column(UTCDateTime, nullable=True)

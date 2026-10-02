@@ -855,6 +855,13 @@ class ApiClient {
     });
   }
 
+  static async flagLessonContent(courseId, lessonId, reason, contentType = 'bài học') {
+    return await ApiClient.request(`/admin/courses/${courseId}/lessons/${lessonId}/flag`, {
+      method: 'POST',
+      body: { reason, content_type: contentType }
+    });
+  }
+
   static async getAdminChangeRequests(status = 'ALL') {
     return await ApiClient.request(`/admin/change-requests?status=${encodeURIComponent(status)}`);
   }

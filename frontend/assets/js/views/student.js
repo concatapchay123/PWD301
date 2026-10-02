@@ -3921,10 +3921,16 @@ class StudentView {
   static async renderWaitingRoom(container, assessmentId) {
     container.innerHTML = `
       <main class="min-h-full bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:py-12">
-        <div class="mx-auto max-w-4xl animate-pulse space-y-6">
+        <div class="mx-auto max-w-5xl animate-pulse space-y-6">
           <div class="h-5 w-36 rounded bg-slate-200 dark:bg-slate-800"></div>
           <div class="h-12 w-3/4 rounded bg-slate-200 dark:bg-slate-800"></div>
-          <div class="h-52 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="h-24 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+            <div class="h-24 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+            <div class="h-24 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+            <div class="h-24 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
+          </div>
+          <div class="h-64 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
         </div>
       </main>`;
 
@@ -3937,72 +3943,334 @@ class StudentView {
       const latest = attempts[attempts.length - 1];
       const duration = assessment.time_limit_minutes || assessment.duration_minutes || 60;
       let remaining = Math.max(0, Number(data.seconds_until_open) || 0);
-      const statusText = {
-        RESUME: 'Đang làm bài',
-        CLOSED: 'Đã đóng',
-        EXHAUSTED: 'Đã hết lượt',
-        UPCOMING: 'Chưa đến giờ',
-        READY: 'Sẵn sàng',
-        UNAVAILABLE: 'Chưa thể bắt đầu'
-      }[state];
-      const actionText = state === 'RESUME' ? 'Tiếp Tục Làm Bài' : 'Bắt Đầu Làm Bài';
+
+      const statusConfig = {
+        READY: { text: 'Sẵn sàng vào thi', class: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700' },
+        RESUME: { text: 'Đang làm dở dang', class: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700' },
+        UPCOMING: { text: 'Chưa đến giờ mở đề', class: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700' },
+        CLOSED: { text: 'Đã kết thúc', class: 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-700' },
+        EXHAUSTED: { text: 'Đã hết lượt thi', class: 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700' },
+        UNAVAILABLE: { text: 'Chưa thể bắt đầu', class: 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700' }
+      }[state] || { text: 'Chưa xác định', class: 'bg-slate-100 text-slate-700 border-slate-300' };
+
+      const actionText = state === 'RESUME' ? 'Tiếp Tục Phiên Làm Bài' : 'Bắt Đầu Làm Bài Thi';
       const canAct = state === 'READY' || state === 'RESUME';
 
-      container.innerHTML = `
-        <main class="min-h-full bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:py-12 text-slate-800 dark:text-slate-100">
-          <div class="mx-auto max-w-4xl space-y-8">
-            <a href="#/student/assessments" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-primary">
-              <span class="material-symbols-outlined text-lg">arrow_back</span> Danh Sách Bài Thi
-            </a>
-            <header class="space-y-3">
-              <span class="inline-flex rounded-full bg-indigo-100 dark:bg-indigo-950 px-3 py-1 text-xs font-bold text-indigo-800 dark:text-indigo-200">${statusText}</span>
-              <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">${UI.escapeHtml(assessment.title || data.title || 'Bài kiểm tra')}</h1>
-              <p class="text-sm text-slate-600 dark:text-slate-300">${UI.escapeHtml(assessment.course_title || assessment.course_code || 'Môn học')} · ${duration} phút · ${data.attempt_limit ? `${data.attempts_count || 0}/${data.attempt_limit} lượt đã dùng` : 'Không giới hạn lượt'}</p>
-            </header>
-            <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] items-start">
-              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-6 sm:p-8 space-y-6">
-                ${state === 'UPCOMING' ? `
-                  <div><p class="text-sm font-semibold text-slate-600 dark:text-slate-300">Bài thi mở sau</p><p id="waiting-room-countdown" class="mt-2 text-5xl font-bold tabular-nums text-indigo-700 dark:text-indigo-300">${UI.formatDuration(remaining)}</p></div>
-                  <p class="text-sm text-slate-600 dark:text-slate-300">Trang sẽ cập nhật khi đến giờ mở bài.</p>` : ''}
-                ${state === 'CLOSED' ? '<p class="text-sm">Bài thi đã đóng. Bạn có thể xem kết quả đã được công bố.</p>' : ''}
-                ${state === 'EXHAUSTED' ? '<p class="text-sm">Bạn đã dùng hết số lượt làm bài được phép.</p>' : ''}
-                ${state === 'UNAVAILABLE' ? '<p class="text-sm">Bài thi hiện chưa thể bắt đầu. Vui lòng kiểm tra lịch thi hoặc liên hệ giảng viên.</p>' : ''}
-                ${state === 'READY' ? '<p class="text-sm">Khi bắt đầu, thời gian làm bài do máy chủ tính. Đáp án được lưu trong lúc bạn làm bài.</p>' : ''}
-                ${state === 'RESUME' ? '<p class="text-sm">Bạn đang có bài thi dở. Hãy tiếp tục trong đúng phiên làm bài đó.</p>' : ''}
-                ${canAct ? `<button type="button" id="start-exam-action-btn" class="w-full sm:w-auto rounded-xl bg-indigo-700 hover:bg-indigo-800 px-6 py-3 text-sm font-bold text-slate-50">${actionText}</button>` : ''}
-                ${latest?.is_score_released ? `<a class="inline-flex rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-3 text-sm font-semibold" href="#/student/assessments/results?id=${UI.escapeHtml(latest.attempt_id)}">Xem Kết Quả Đã Công Bố</a>` : ''}
-                ${latest && !latest.is_score_released && state !== 'RESUME' ? '<p class="text-sm text-slate-600 dark:text-slate-300">Kết quả của lượt trước chưa được công bố.</p>' : ''}
-              </div>
-              <aside class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-6 space-y-4 text-sm">
-                <h2 class="font-bold text-lg">Trước khi vào thi</h2>
-                <p>Chuẩn bị kết nối mạng ổn định. Giữ trang thi mở trong suốt thời gian làm bài.</p>
-                <p>Giao diện: <strong>${assessment.exam_layout === 'FOCUS' ? 'Từng câu một' : 'Xem toàn bộ câu hỏi'}</strong>.</p>
-                ${assessment.monitoring_enabled ? '<p>Trình duyệt sẽ ghi nhận khi bạn rời tab, mất tiêu điểm hoặc thoát toàn màn hình. Giảng viên xem lại các ghi nhận này; bài thi không tự nộp vì rời trang.</p>' : ''}
-                ${assessment.request_fullscreen ? '<p>Bạn có thể chọn mở toàn màn hình sau khi vào bài. Trình duyệt có thể không hỗ trợ thao tác này.</p>' : ''}
-                <p class="text-xs text-slate-600 dark:text-slate-300">Trình duyệt không thể ngăn cử chỉ bàn di chuột hoặc phát hiện mọi ảnh chụp màn hình.</p>
-              </aside>
-            </section>
-          </div>
-        </main>`;
+      const candidateName = data.student_name || 'Thí sinh PWD301';
+      const candidateEmail = data.student_email || 'student@pwd301.edu.vn';
+      const questionsCount = data.questions_count || assessment.question_count || 'Theo đề';
+      const passScore = assessment.pass_score != null ? assessment.pass_score : '5.0';
 
+      container.innerHTML = `
+        <main class="min-h-full bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:py-10 text-slate-800 dark:text-slate-100 font-sans">
+          <div class="mx-auto max-w-5xl space-y-6">
+            
+            <!-- Breadcrumbs -->
+            <div class="flex items-center justify-between">
+              <a href="#/student/assessments" class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-primary transition-colors">
+                <span class="material-symbols-outlined text-base">arrow_back</span>
+                <span>Quay lại danh sách bài thi</span>
+              </a>
+              <span class="text-xs font-mono text-slate-400">Mã bài: #${UI.escapeHtml(assessmentId).slice(0, 8)}</span>
+            </div>
+
+            <!-- Exam Hero Header Card -->
+            <div class="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${statusConfig.class}">
+                    <span class="w-2 h-2 rounded-full bg-current animate-pulse"></span>
+                    ${statusConfig.text}
+                  </span>
+                  <span class="inline-flex items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-3 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                    <span class="material-symbols-outlined text-[15px]">security</span>
+                    Giám sát khảo thí bắt buộc 100%
+                  </span>
+                </div>
+                <div class="text-xs text-slate-500 font-mono">
+                  ${assessment.course_code ? `<span class="font-bold text-primary">${UI.escapeHtml(assessment.course_code)}</span> · ` : ''}
+                  ${UI.escapeHtml(assessment.course_title || 'Khóa học')}
+                </div>
+              </div>
+
+              <div>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  ${UI.escapeHtml(assessment.title || data.title || 'Bài kiểm tra')}
+                </h1>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Giảng viên phụ trách: <strong class="text-slate-700 dark:text-slate-300">${UI.escapeHtml(assessment.instructor_name || 'Bộ môn Khảo thí')}</strong> · Hình thức: <strong class="text-slate-700 dark:text-slate-300">Khảo thí trực tuyến có giám sát hành vi</strong>
+                </p>
+              </div>
+
+              <!-- 4 Metrics Grid -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
+                  <div class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-base text-indigo-500">timer</span>
+                    Thời lượng thi
+                  </div>
+                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">${duration} <span class="text-xs font-normal text-slate-500">phút</span></div>
+                </div>
+
+                <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
+                  <div class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-base text-sky-500">quiz</span>
+                    Số lượng câu
+                  </div>
+                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">${questionsCount} <span class="text-xs font-normal text-slate-500">câu</span></div>
+                </div>
+
+                <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
+                  <div class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-base text-emerald-500">check_circle</span>
+                    Điểm đạt yêu cầu
+                  </div>
+                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">${passScore} <span class="text-xs font-normal text-slate-500">/ 10</span></div>
+                </div>
+
+                <div class="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3.5 space-y-1">
+                  <div class="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-base text-amber-500">replay</span>
+                    Lượt làm bài
+                  </div>
+                  <div class="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white">
+                    ${data.attempt_limit ? `${data.attempts_count || 0}/${data.attempt_limit}` : 'Không giới hạn'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Two Columns Section -->
+            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+              
+              <!-- Left Column: Candidate Card, Proctoring Rules, Pledge & Action -->
+              <div class="space-y-6">
+                
+                <!-- Candidate Identity Card -->
+                <div class="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4">
+                  <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-base text-primary">badge</span>
+                      Thông tin thí sinh dự thi
+                    </div>
+                    <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Hồ sơ hợp lệ
+                    </span>
+                  </div>
+
+                  <div class="flex items-center gap-4">
+                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-primary to-indigo-500 text-white flex items-center justify-center font-bold text-xl shadow-md shrink-0">
+                      ${UI.escapeHtml(candidateName.charAt(0).toUpperCase())}
+                    </div>
+                    <div class="space-y-1 min-w-0">
+                      <div class="text-base font-extrabold text-slate-900 dark:text-white truncate">
+                        ${UI.escapeHtml(candidateName)}
+                      </div>
+                      <div class="text-xs text-slate-500 dark:text-slate-400 font-mono truncate">
+                        ${UI.escapeHtml(candidateEmail)}
+                      </div>
+                      <div class="text-[11px] text-slate-400 flex items-center gap-2 pt-0.5">
+                        <span>Thiết bị: Trình duyệt Web</span>
+                        <span>·</span>
+                        <span>Phiên đăng nhập an toàn</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Official Proctoring Regulations (Rules Box) -->
+                <div class="rounded-2xl border-2 border-rose-200 dark:border-rose-900/60 bg-gradient-to-b from-rose-50/40 to-white dark:from-rose-950/20 dark:to-slate-900 p-6 shadow-sm space-y-4">
+                  <div class="flex items-center gap-2.5 text-rose-700 dark:text-rose-400">
+                    <div class="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                      <span class="material-symbols-outlined text-xl">shield</span>
+                    </div>
+                    <div>
+                      <h2 class="text-sm font-extrabold uppercase tracking-wide">Quy chế giám sát khảo thí (Bắt buộc 100%)</h2>
+                      <p class="text-[11px] text-slate-500 dark:text-slate-400">Hệ thống áp dụng các tiêu chuẩn an toàn khảo thí nghiêm ngặt trong suốt thời gian thi</p>
+                    </div>
+                  </div>
+
+                  <div class="grid gap-3 sm:grid-cols-2 pt-1 text-xs">
+                    <div class="p-3 rounded-xl border border-rose-100 dark:border-rose-900/40 bg-white dark:bg-slate-900/80 space-y-1">
+                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-rose-500 text-base">fullscreen</span>
+                        Toàn màn hình bắt buộc
+                      </div>
+                      <p class="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                        Chế độ toàn màn hình tự động bật khi vào thi. Nếu thoát ra ngoài, hệ thống sẽ kích hoạt màn hình khóa khẩn cấp và ghi nhận vi phạm.
+                      </p>
+                    </div>
+
+                    <div class="p-3 rounded-xl border border-rose-100 dark:border-rose-900/40 bg-white dark:bg-slate-900/80 space-y-1">
+                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-rose-500 text-base">hourglass_top</span>
+                        Đo đếm thời gian vắng mặt
+                      </div>
+                      <p class="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                        Hệ thống tự động tính toán tổng số giây thí sinh rời khỏi tab hoặc mất tiêu điểm, báo cáo trực tiếp về biên bản thi của giảng viên.
+                      </p>
+                    </div>
+
+                    <div class="p-3 rounded-xl border border-rose-100 dark:border-rose-900/40 bg-white dark:bg-slate-900/80 space-y-1">
+                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-rose-500 text-base">block</span>
+                        Chặn chuột phải & Phím tắt
+                      </div>
+                      <p class="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                        Vô hiệu hóa chuột phải (Context menu), cấm sao chép nội dung (Copy/Cut), vô hiệu hóa F12 và các phím tắt công cụ nhà phát triển.
+                      </p>
+                    </div>
+
+                    <div class="p-3 rounded-xl border border-rose-100 dark:border-rose-900/40 bg-white dark:bg-slate-900/80 space-y-1">
+                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-rose-500 text-base">cloud_sync</span>
+                        Tự lưu & Khóa phiên sửa
+                      </div>
+                      <p class="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                        Lưu đáp án tự động từng câu hỏi lên máy chủ. Mỗi bài thi chỉ cho phép 01 phiên làm bài duy nhất hoạt động để chống can thiệp nhiều thiết bị.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Honor Code Pledge & Action CTA -->
+                <div class="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-6">
+                  ${state === 'UPCOMING' ? `
+                    <div class="text-center py-6 space-y-3">
+                      <div class="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Đếm ngược giờ mở đề thi</div>
+                      <div id="waiting-room-countdown" class="text-5xl font-black font-mono tracking-tight text-indigo-700 dark:text-indigo-300 tabular-nums">
+                        ${UI.formatDuration(remaining)}
+                      </div>
+                      <p class="text-xs text-slate-500">Trang phòng chờ sẽ tự động kích hoạt nút vào thi khi bộ đếm về 00:00:00.</p>
+                    </div>
+                  ` : ''}
+
+                  ${state === 'CLOSED' ? `
+                    <div class="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-1">
+                      <div class="font-bold text-sm">Bài thi đã kết thúc thời gian làm bài</div>
+                      <p>Kỳ thi này hiện đã đóng. Bạn không thể bắt đầu thêm lượt làm bài mới.</p>
+                    </div>
+                  ` : ''}
+
+                  ${state === 'EXHAUSTED' ? `
+                    <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                      <div class="font-bold text-sm">Bạn đã dùng hết số lượt làm bài được phép</div>
+                      <p>Số lượt thi tối đa là ${data.attempt_limit} lượt. Bạn đã hoàn thành tất cả các lượt thi quy định.</p>
+                    </div>
+                  ` : ''}
+
+                  ${state === 'UNAVAILABLE' ? `
+                    <div class="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                      <div class="font-bold text-sm">Bài thi hiện chưa thể bắt đầu</div>
+                      <p>Vui lòng kiểm tra lịch thi của khóa học hoặc liên hệ giảng viên phụ trách để được hướng dẫn.</p>
+                    </div>
+                  ` : ''}
+
+                  ${canAct ? `
+                    <!-- Honor Code Pledge -->
+                    <div class="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-950/30 flex items-start gap-3 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="waiting-room-pledge-check"
+                        class="mt-1 h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer shrink-0"
+                      />
+                      <label for="waiting-room-pledge-check" class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 cursor-pointer select-none leading-relaxed">
+                        Tôi xác nhận là thí sinh chính chủ, cam đoan tự giác làm bài trung thực, không gian lận, tuân thủ 100% quy chế khảo thí và đồng ý kích hoạt chế độ giám sát toàn màn hình.
+                      </label>
+                    </div>
+
+                    <!-- Action Button -->
+                    <button
+                      type="button"
+                      id="start-exam-action-btn"
+                      disabled
+                      class="w-full py-4 px-6 rounded-xl font-extrabold text-sm sm:text-base bg-indigo-700 hover:bg-indigo-800 text-white shadow-lg shadow-indigo-700/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                    >
+                      <span class="material-symbols-outlined text-xl">fullscreen</span>
+                      <span>${actionText}</span>
+                      <span class="material-symbols-outlined text-xl">arrow_forward</span>
+                    </button>
+                    <p class="text-[11px] text-center text-slate-500 dark:text-slate-400">
+                      Khi bấm nút, màn hình sẽ mở chế độ toàn màn hình và đồng hồ đếm ngược bắt đầu chạy.
+                    </p>
+                  ` : ''}
+
+                  ${latest?.is_score_released ? `
+                    <div class="pt-2">
+                      <a class="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-3 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#/student/assessments/results?id=${UI.escapeHtml(latest.attempt_id)}">
+                        <span class="material-symbols-outlined text-base">analytics</span>
+                        Xem Bảng Điểm & Kết Quả Lượt Trước
+                      </a>
+                    </div>
+                  ` : ''}
+                </div>
+
+              </div>
+
+              <!-- Right Column: Exam Instructions & Guidance -->
+              <aside class="space-y-6">
+                <!-- Exam Instructions Card -->
+                <div class="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-3 text-xs leading-relaxed">
+                  <h3 class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-base text-amber-500">lightbulb</span>
+                    Lưu ý quan trọng
+                  </h3>
+                  <ul class="space-y-2 text-slate-600 dark:text-slate-400 list-disc list-inside">
+                    <li>Giao diện thi: <strong class="text-slate-800 dark:text-slate-200">${assessment.exam_layout === 'FOCUS' ? 'Tập trung từng câu một' : 'Toàn bộ danh sách câu hỏi'}</strong>.</li>
+                    <li>Vui lòng tắt các phần mềm chat, ứng dụng ghi màn hình và thông báo trước khi bắt đầu.</li>
+                    <li>Tuyệt đối không tải lại trang (F5) hoặc đóng trình duyệt. Nếu rớt mạng, hãy giữ nguyên và kết nối lại ngay.</li>
+                    <li>Hệ thống lưu tự động theo từng câu; điểm số được chốt khi bấm "Nộp bài thi" hoặc hết giờ.</li>
+                  </ul>
+                </div>
+
+              </aside>
+            </div>
+
+          </div>
+        </main>
+      `;
+
+      // Pledge checkbox logic
+      const pledgeCheck = container.querySelector('#waiting-room-pledge-check');
       const startButton = container.querySelector('#start-exam-action-btn');
+      if (pledgeCheck && startButton) {
+        pledgeCheck.addEventListener('change', () => {
+          startButton.disabled = !pledgeCheck.checked;
+        });
+      }
+
+      // Start Exam Handler
       startButton?.addEventListener('click', async () => {
+        // Request fullscreen immediately within the user gesture click!
+        try {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          } else if (container.requestFullscreen) {
+            await container.requestFullscreen();
+          }
+        } catch (_fsErr) {
+          // Fullscreen may fail on restricted browsers; do not block learner
+        }
+
         if (state === 'RESUME') {
           window.location.hash = `#/student/assessments/attempt?id=${data.active_attempt_id}`;
           return;
         }
+
         startButton.disabled = true;
-        startButton.textContent = 'Đang Mở Bài Thi...';
+        startButton.innerHTML = '<span class="inline-block animate-spin mr-2">⏳</span> Đang Mở Bài Thi...';
         try {
           const attempt = await ApiClient.startAssessmentAttempt(assessmentId);
           window.location.hash = `#/student/assessments/attempt?id=${attempt.attempt_id}`;
         } catch (error) {
           UI.showToast(error.message || 'Không thể bắt đầu bài thi.', 'error');
           startButton.disabled = false;
-          startButton.textContent = actionText;
+          startButton.innerHTML = `<span class="material-symbols-outlined text-xl">fullscreen</span><span>${actionText}</span><span class="material-symbols-outlined text-xl">arrow_forward</span>`;
         }
       });
 
+      // Upcoming countdown ticker
       if (state === 'UPCOMING' && remaining > 0) {
         const ticker = setInterval(() => {
           const countdown = container.querySelector('#waiting-room-countdown');
@@ -4113,12 +4381,21 @@ class StudentView {
               </div>
             </div>
 
-            <!-- Autosave Indicator & Timer & Submit -->
-            <div class="flex items-center gap-4">
-              ${data.request_fullscreen ? `<button type="button" id="exam-fullscreen-btn" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200">Mở Toàn Màn Hình</button>` : ''}
+            <!-- Proctoring Status Pill & Controls -->
+            <div class="flex items-center gap-3">
+              <div id="exam-proctoring-indicator" class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all">
+                <span id="exam-proctoring-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span id="exam-proctoring-text">Giám sát trực tiếp (0 vi phạm)</span>
+              </div>
+
+              <button type="button" id="exam-fullscreen-btn" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1 transition-colors" title="Bật/Tắt Toàn Màn Hình">
+                <span class="material-symbols-outlined text-[16px]">fullscreen</span>
+                <span class="hidden md:inline">Toàn màn hình</span>
+              </button>
+
               <div id="exam-autosave-indicator" class="text-xs text-slate-400 flex items-center gap-1">
                 <span class="material-symbols-outlined text-[16px] text-emerald-500">cloud_done</span>
-                <span class="hidden sm:inline">Tự động lưu bài UTC</span>
+                <span class="hidden xl:inline">Tự động lưu bài UTC</span>
               </div>
 
               <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 font-mono font-bold text-sm">
@@ -4133,6 +4410,37 @@ class StudentView {
               >
                 <span class="material-symbols-outlined text-[16px]">send</span>
                 <span>Nộp bài thi</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Emergency Fullscreen Lockdown Overlay -->
+          <div id="exam-fullscreen-lockdown-overlay" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+            <div class="max-w-md w-full bg-white dark:bg-slate-900 border-2 border-rose-500 rounded-2xl p-6 sm:p-8 text-center space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+              <div class="w-16 h-16 mx-auto rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <span class="material-symbols-outlined text-3xl">screen_lock_portrait</span>
+              </div>
+              <div class="space-y-2">
+                <h3 class="text-xl font-extrabold text-slate-900 dark:text-white">CẢNH BÁO VI PHẠM KHẢO THÍ!</h3>
+                <p class="text-xs text-rose-600 dark:text-rose-400 font-semibold uppercase tracking-wider">Đã thoát khỏi chế độ toàn màn hình</p>
+                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Kỳ thi yêu cầu duy trì chế độ toàn màn hình liên tục để chống gian lận. Hệ thống đang tính thời gian vắng mặt và gửi báo cáo vi phạm trực tiếp về máy chủ của giảng viên.
+                </p>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-700 dark:text-slate-300 flex justify-around">
+                <div>
+                  <div class="text-[10px] text-slate-500 uppercase">Số lần vi phạm</div>
+                  <div class="text-base font-bold text-rose-600 dark:text-rose-400" id="lockdown-violation-count">1</div>
+                </div>
+                <div class="border-r border-slate-200 dark:border-slate-700"></div>
+                <div>
+                  <div class="text-[10px] text-slate-500 uppercase">Tổng thời gian rời màn</div>
+                  <div class="text-base font-bold text-amber-600 dark:text-amber-400" id="lockdown-away-seconds">0s</div>
+                </div>
+              </div>
+              <button type="button" id="lockdown-return-fullscreen-btn" class="w-full py-3 px-6 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm shadow-lg shadow-rose-600/30 transition-all flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-lg">fullscreen</span>
+                <span>QUAY LẠI TOÀN MÀN HÌNH NGAY</span>
               </button>
             </div>
           </div>
@@ -4360,38 +4668,84 @@ class StudentView {
       container.querySelector('#exam-prev-question')?.addEventListener('click', () => showQuestion(activeQuestionIndex - 1));
       container.querySelector('#exam-next-question')?.addEventListener('click', () => showQuestion(activeQuestionIndex + 1));
       if (focusLayout && questions.length) showQuestion(0);
-      container.querySelector('#exam-fullscreen-btn')?.addEventListener('click', async () => {
+      // Fullscreen controls & Emergency Lockdown Modal
+      const lockdownOverlay = container.querySelector('#exam-fullscreen-lockdown-overlay');
+      const lockdownViolations = container.querySelector('#lockdown-violation-count');
+      const lockdownAway = container.querySelector('#lockdown-away-seconds');
+      const proctoringIndicator = container.querySelector('#exam-proctoring-indicator');
+      const proctoringText = container.querySelector('#exam-proctoring-text');
+      const proctoringDot = container.querySelector('#exam-proctoring-dot');
+
+      const requestFullscreenSafe = async () => {
         try {
-          await container.requestFullscreen();
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          } else if (container.requestFullscreen) {
+            await container.requestFullscreen();
+          }
+          lockdownOverlay?.classList.add('hidden');
         } catch (_error) {
-          UI.showToast('Trình duyệt không thể mở toàn màn hình. Bạn vẫn có thể tiếp tục làm bài.', 'warning');
+          UI.showToast('Trình duyệt không thể mở toàn màn hình. Hãy tối đa hóa cửa sổ trình duyệt.', 'warning');
+        }
+      };
+
+      container.querySelector('#exam-fullscreen-btn')?.addEventListener('click', async () => {
+        if (document.fullscreenElement) {
+          try {
+            if (document.exitFullscreen) await document.exitFullscreen();
+          } catch (_e) {}
+        } else {
+          await requestFullscreenSafe();
         }
       });
 
-      // Browser observations are advisory and reviewed by the instructor.
+      container.querySelector('#lockdown-return-fullscreen-btn')?.addEventListener('click', async () => {
+        await requestFullscreenSafe();
+      });
+
+      // Browser proctoring & focus monitoring (Default 100% active)
       const focusEventStarts = new Map();
       const antiCheat = new ExamAntiCheatManager({
-        watchFullscreen: Boolean(data.request_fullscreen),
+        watchFullscreen: true,
         onEvent: event => {
           if (event.phase === 'START') {
             focusEventStarts.set(event.event_id, ApiClient.recordAttemptFocusEvent(attemptId, event)
               .then(() => true)
-              .catch(() => {
-                UI.showToast('Chưa gửi được ghi nhận rời trang thi. Vui lòng kiểm tra kết nối.', 'warning');
-                return false;
-              }));
+              .catch(() => false));
           } else {
             const started = focusEventStarts.get(event.event_id) || Promise.resolve();
             started.then(ok => ok && ApiClient.recordAttemptFocusEvent(attemptId, event))
-              .catch(() => UI.showToast('Chưa gửi được ghi nhận rời trang thi. Vui lòng kiểm tra kết nối.', 'warning'));
+              .catch(() => {});
             focusEventStarts.delete(event.event_id);
           }
         },
-        onObservation: count => {
-          UI.showToast(`Đã ghi nhận ${count} lần rời trang thi. Giảng viên sẽ xem lại sau bài thi.`, 'warning');
+        onObservation: (count, type, durationSeconds, totalAwaySeconds) => {
+          if (proctoringIndicator && proctoringText) {
+            proctoringText.textContent = `Rời màn hình: ${count} lần (${totalAwaySeconds}s)`;
+            proctoringIndicator.className = 'px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all';
+            if (proctoringDot) proctoringDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-ping';
+          }
+          if (lockdownViolations) lockdownViolations.textContent = String(count);
+          if (lockdownAway) lockdownAway.textContent = `${totalAwaySeconds}s`;
+
+          if (durationSeconds > 0) {
+            UI.showToast(`Đã quay lại bài thi. Thời gian vắng mặt: ${durationSeconds} giây (Tổng cộng: ${totalAwaySeconds}s - ${count} vi phạm).`, 'warning');
+          }
+        },
+        onFullscreenExit: () => {
+          lockdownOverlay?.classList.remove('hidden');
+        },
+        onFullscreenEnter: () => {
+          lockdownOverlay?.classList.add('hidden');
         }
       });
-      if (data.monitoring_enabled) antiCheat.start();
+
+      antiCheat.start();
+
+      // Check initial fullscreen state
+      if (!document.fullscreenElement) {
+        lockdownOverlay?.classList.remove('hidden');
+      }
 
       // Flag button handlers
       container.querySelectorAll('.flag-question-btn').forEach(btn => {
@@ -4623,6 +4977,9 @@ class StudentView {
         try {
           await ApiClient.submitAttempt(attemptId, leaseToken, StudentView.getSubmissionKey(attemptId));
           antiCheat.stop();
+          if (document.fullscreenElement && document.exitFullscreen) {
+            try { await document.exitFullscreen(); } catch (_e) {}
+          }
           UI.showToast('Nộp bài thi thành công! Đang chuyển đến bảng kết quả.', 'success');
           window.location.hash = `#/student/assessments/results?id=${attemptId}`;
         } catch (err) {
@@ -4630,6 +4987,9 @@ class StudentView {
             const result = await ApiClient.getAttemptResult(attemptId);
             if (['SUBMITTED', 'PENDING_GRADING', 'GRADED'].includes(result?.status)) {
               antiCheat.stop();
+              if (document.fullscreenElement && document.exitFullscreen) {
+                try { await document.exitFullscreen(); } catch (_e) {}
+              }
               window.location.hash = `#/student/assessments/results?id=${attemptId}`;
               return;
             }
