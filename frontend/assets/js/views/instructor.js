@@ -447,9 +447,20 @@ class InstructorView {
 
         renderCards(getFilteredCourses());
       } catch (e) {
-        document.getElementById('ins-courses-cards-box').innerHTML = `
-          <div class="p-8 text-center text-rose-500 font-bold">Lỗi tải khóa học: ${UI.escapeHtml(e.message)}</div>
-        `;
+        const box = document.getElementById('ins-courses-cards-box');
+        if (box) {
+          box.innerHTML = `
+            <div class="col-span-full p-8 rounded-2xl bg-white dark:bg-[#1A1827] border border-rose-200 dark:border-rose-900/50 text-center space-y-3 shadow-sm">
+              <span class="material-symbols-outlined text-3xl text-rose-500">sync_problem</span>
+              <p class="text-sm font-bold text-slate-900 dark:text-white">Không thể tải danh sách khóa học</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">${UI.escapeHtml(e.message || 'Lỗi kết nối máy chủ.')}</p>
+              <button type="button" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-1 cursor-pointer" onclick="UI.refreshCurrentRoute()">
+                <span class="material-symbols-outlined text-[14px]">refresh</span>
+                <span>Thử lại</span>
+              </button>
+            </div>
+          `;
+        }
       }
     };
 
@@ -603,6 +614,41 @@ class InstructorView {
   // 3. Enterprise 5-Tab Course Management Dossier (Coursera/Udemy Hybrid)
   // =========================================================================
   static async renderCourseManage(container, courseId, initialTab = 'curriculum') {
+    if (!courseId || courseId === 'undefined' || courseId === 'null' || !String(courseId).trim()) {
+      container.innerHTML = `
+        <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto animate-fade-in font-sans">
+          <div class="flex items-center justify-between text-xs text-[#5C5B57] dark:text-[#9E9D99] font-medium">
+            <a href="#/instructor/courses" class="hover:text-primary transition-colors flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+              <span>Danh sách khóa học</span>
+            </a>
+          </div>
+          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#1A1827] border border-slate-200/80 dark:border-slate-800 text-center space-y-4 shadow-sm">
+            <div class="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+              <span class="material-symbols-outlined text-[28px]">search_off</span>
+            </div>
+            <div class="space-y-1">
+              <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Chưa chọn khóa học để quản lý</h2>
+              <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                Đường dẫn không chứa mã định danh khóa học hợp lệ. Vui lòng chọn một khóa học từ danh sách phân công của bạn.
+              </p>
+            </div>
+            <div class="pt-2 flex flex-wrap items-center justify-center gap-3">
+              <a href="#/instructor/courses" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]">menu_book</span>
+                <span>Danh sách khóa học</span>
+              </a>
+              <a href="#/instructor/dashboard" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]">dashboard</span>
+                <span>Bảng điều khiển</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     const existingRoot = container.querySelector('#course-manage-root');
     const keepCurrentCourseVisible = existingRoot?.dataset.courseId === String(courseId);
     if (!keepCurrentCourseVisible) container.innerHTML = `
@@ -1374,7 +1420,41 @@ class InstructorView {
       });
 
     } catch (err) {
-      container.innerHTML = `<div class="p-8 text-center text-rose-500 font-bold">Lỗi nạp khóa học: ${UI.escapeHtml(err.message)}</div>`;
+      console.error('[InstructorView.renderCourseManage] Lỗi nạp khóa học:', err);
+      container.innerHTML = `
+        <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto animate-fade-in font-sans">
+          <div class="flex items-center justify-between text-xs text-[#5C5B57] dark:text-[#9E9D99] font-medium">
+            <a href="#/instructor/courses" class="hover:text-primary transition-colors flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+              <span>Danh sách khóa học</span>
+            </a>
+          </div>
+          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#1A1827] border border-rose-200 dark:border-rose-900/50 text-center space-y-4 shadow-sm">
+            <div class="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <span class="material-symbols-outlined text-[28px]">error_outline</span>
+            </div>
+            <div class="space-y-1">
+              <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Không thể nạp dữ liệu khóa học</h2>
+              <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                Khóa học không tồn tại, đã bị gỡ bỏ hoặc bạn không có quyền quản lý khóa học này.
+              </p>
+              <p class="text-[11px] font-mono text-rose-500/90 dark:text-rose-400/90 pt-1">
+                Chi tiết lỗi: ${UI.escapeHtml(err.message || 'Course not found.')}
+              </p>
+            </div>
+            <div class="pt-2 flex flex-wrap items-center justify-center gap-3">
+              <a href="#/instructor/courses" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                <span>Quay lại danh sách khóa học</span>
+              </a>
+              <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer" onclick="window.location.reload()">
+                <span class="material-symbols-outlined text-[16px]">refresh</span>
+                <span>Tải lại trang</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
     }
   }
 

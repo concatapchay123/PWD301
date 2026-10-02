@@ -676,13 +676,18 @@ class StudentView {
         </div>
 
         <!-- Recommended For You Spotlight Banner (Algorithm 14) -->
-        <div id="catalog-recommendations-banner" class="hidden rounded-2xl bg-linear-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 shadow-md border border-indigo-700/50 space-y-4">
+        <div id="catalog-recommendations-banner" class="hidden rounded-2xl bg-[#1E1B4B] bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 text-white p-6 shadow-xl border border-indigo-700/40 space-y-4">
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="w-8 h-8 rounded-xl bg-white/10 text-indigo-200 flex items-center justify-center material-symbols-outlined text-[20px]">auto_awesome</span>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[22px]">auto_awesome</span>
+              </div>
               <div>
-                <h2 class="font-extrabold text-base sm:text-lg text-white">Được đề xuất cho bạn (Bạch tuộc AI)</h2>
-                <p class="text-xs text-indigo-200">Các khóa học tối ưu dựa trên trình độ và môn học bạn đã hoàn thành</p>
+                <div class="flex items-center gap-2">
+                  <h2 class="font-extrabold text-base sm:text-lg text-[#F8FAFC]">Được đề xuất cho bạn</h2>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 uppercase tracking-wider">Bạch tuộc AI</span>
+                </div>
+                <p class="text-xs text-indigo-200/90 mt-0.5">Các khóa học tối ưu dựa trên trình độ và lộ trình học tập của bạn</p>
               </div>
             </div>
           </div>
@@ -852,17 +857,18 @@ class StudentView {
         if (!document.getElementById('catalog-recommendations-list')) return;
         if (recBanner && recList && Array.isArray(recs) && recs.length > 0) {
           recList.innerHTML = recs.map(r => `
-            <div class="bg-white/10 backdrop-blur-xs rounded-xl p-4 border border-white/10 flex flex-col justify-between space-y-3">
+            <div class="bg-white/10 hover:bg-white/[0.14] backdrop-blur-xs rounded-xl p-4 border border-white/15 hover:border-indigo-400/40 flex flex-col justify-between space-y-3 transition-all duration-200 shadow-sm">
               <div>
                 <div class="flex items-center justify-between text-[11px] font-mono text-indigo-200">
-                  <span>${UI.escapeHtml(r.course_code)}</span>
-                  <span class="px-1.5 py-0.5 rounded bg-white/20 text-white font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
+                  <span class="font-bold tracking-wide">${UI.escapeHtml(r.course_code)}</span>
+                  <span class="px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-100 border border-indigo-400/30 font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
                 </div>
-                <h3 class="font-bold text-white text-sm mt-1 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
-                <p class="text-xs text-indigo-200 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
+                <h3 class="font-bold text-[#F8FAFC] text-sm mt-1.5 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
+                <p class="text-xs text-indigo-100/90 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
               </div>
-              <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-1.5 rounded-lg bg-white hover:bg-slate-100 text-indigo-900 font-bold text-xs text-center transition-colors shadow-xs">
-                Xem khóa học
+              <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-950 font-bold text-xs text-center transition-all shadow-sm hover:shadow active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer">
+                <span>Xem khóa học</span>
+                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
               </a>
             </div>
           `).join('');
@@ -877,7 +883,17 @@ class StudentView {
 
       renderFiltered();
     } catch (err) {
-      grid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-500">Lỗi nạp danh mục: ${UI.escapeHtml(err.message)}</div>`;
+      grid.innerHTML = `
+        <div class="col-span-full p-8 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/50 text-center space-y-3 shadow-sm">
+          <span class="material-symbols-outlined text-3xl text-rose-500">sync_problem</span>
+          <p class="text-sm font-bold text-slate-900 dark:text-white">Không thể nạp danh mục khóa học</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">${UI.escapeHtml(err.message || 'Lỗi kết nối máy chủ.')}</p>
+          <button type="button" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-1 cursor-pointer" onclick="UI.refreshCurrentRoute()">
+            <span class="material-symbols-outlined text-[14px]">refresh</span>
+            <span>Thử lại</span>
+          </button>
+        </div>
+      `;
     }
 
     if (searchInput) searchInput.oninput = renderFiltered;

@@ -478,11 +478,22 @@ class AppRouter {
     } else if (path === '#/instructor/courses') {
       await InstructorView.renderCourses(viewport);
     } else if (path === '#/instructor/courses/manage') {
-      await InstructorView.renderCourseManage(viewport, query.id, query.tab || 'curriculum');
+      const targetCourseId = query.id;
+      if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+        UI.showToast('Vui lòng chọn một khóa học từ danh sách để quản lý.', 'info');
+        window.location.hash = '#/instructor/courses';
+        return;
+      }
+      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum');
     } else if (path.startsWith('#/instructor/courses/') && path.endsWith('/manage')) {
       const parts = path.split('/');
-      const courseId = parts[3];
-      await InstructorView.renderCourseManage(viewport, courseId, query.tab || 'curriculum');
+      const targetCourseId = parts[3];
+      if (!targetCourseId || targetCourseId === 'undefined' || targetCourseId === 'null' || !String(targetCourseId).trim()) {
+        UI.showToast('Vui lòng chọn một khóa học từ danh sách để quản lý.', 'info');
+        window.location.hash = '#/instructor/courses';
+        return;
+      }
+      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum');
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
       const parts = path.split('/');
       const courseId = parts[3];

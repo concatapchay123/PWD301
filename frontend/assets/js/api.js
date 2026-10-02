@@ -225,6 +225,9 @@ class ApiClient {
   }
 
   static async getCourseDetail(courseId) {
+    if (!courseId || courseId === 'undefined' || courseId === 'null' || !String(courseId).trim()) {
+      throw new Error('Course ID is required');
+    }
     const isInstructorRoute = window.location.hash.startsWith('#/instructor');
     if (isInstructorRoute) {
       try {
@@ -257,10 +260,16 @@ class ApiClient {
   }
 
   static async getInstructorCourseDetail(courseId) {
+    if (!courseId || courseId === 'undefined' || courseId === 'null' || !String(courseId).trim()) {
+      throw new Error('Course ID is required');
+    }
     return await ApiClient.request(`/instructor/courses/${courseId}`);
   }
 
   static async getStudentCourseDetail(courseId) {
+    if (!courseId || courseId === 'undefined' || courseId === 'null' || !String(courseId).trim()) {
+      throw new Error('Course ID is required');
+    }
     return await ApiClient.request(`/student/courses/${courseId}`);
   }
 
