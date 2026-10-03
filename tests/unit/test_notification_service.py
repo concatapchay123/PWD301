@@ -314,9 +314,7 @@ def test_broadcast_system_notification(
     assert any(item["title"] == "Maintenance Tomorrow" for item in items_s1)
 
 
-def test_target_role_isolation_and_unread_count(
-    app: Flask, setup_roles: dict[str, Role]
-) -> None:
+def test_target_role_isolation_and_unread_count(app: Flask, setup_roles: dict[str, Role]) -> None:
     """Test that notifications are strictly scoped by target_role for multi-role users."""
     u = register_user(
         f"multirole_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Multi Role User"
@@ -366,8 +364,8 @@ def test_target_role_isolation_and_unread_count(
     all_count = get_unread_count(u, session=db.session)
 
     assert instr_count == 2  # Instructor specific + global
-    assert stud_count == 2   # Student specific + global
-    assert all_count == 3    # All 3 unread
+    assert stud_count == 2  # Student specific + global
+    assert all_count == 3  # All 3 unread
 
     # Verify unread items per role
     instr_items, total_instr = list_user_notifications(
@@ -395,4 +393,3 @@ def test_target_role_isolation_and_unread_count(
     # Instructor now has 0 unread, Student still has 1 unread (the student exam notice)
     assert get_unread_count(u, target_role="INSTRUCTOR", session=db.session) == 0
     assert get_unread_count(u, target_role="STUDENT", session=db.session) == 1
-

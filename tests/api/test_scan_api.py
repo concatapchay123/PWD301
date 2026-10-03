@@ -285,7 +285,10 @@ class TestQuarantineOverrideApi:
         tokens = create_token_pair(admin_user)
         headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
-        payload = {"reason": "Approved after manual sandbox analysis."}
+        payload = {
+            "reason": "Approved after manual sandbox analysis.",
+            "password": "Password@123",
+        }
         resp = client.post(
             f"/api/admin/files/{clean_file_asset.public_id}/quarantine-override",
             json=payload,

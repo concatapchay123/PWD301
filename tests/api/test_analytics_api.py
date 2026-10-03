@@ -283,3 +283,8 @@ def test_admin_dashboard_resilient_when_telemetry_throws_exception(
     resp = client.get("/admin/dashboard")
     assert resp.status_code == 200
     assert resp.is_json
+    degraded_telemetry = resp.get_json()["telemetry"]
+    assert degraded_telemetry["status"] == "DEGRADED"
+    assert "cpu" not in degraded_telemetry
+    assert "memory" not in degraded_telemetry
+    assert "disk" not in degraded_telemetry

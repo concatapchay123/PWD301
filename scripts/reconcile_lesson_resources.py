@@ -17,17 +17,13 @@ def reconcile() -> int:
     with app.app_context():
         print("=== BẮT ĐẦU ĐỒNG BỘ & KHẮC PHỤC DỮ LIỆU TÀI NGUYÊN BÀI HỌC ===")
         active_lessons = (
-            db.session.query(Lesson)
-            .filter(Lesson.status.in_(["PUBLISHED", "ACTIVE"]))
-            .all()
+            db.session.query(Lesson).filter(Lesson.status.in_(["PUBLISHED", "ACTIVE"])).all()
         )
         reconciled_count = 0
 
         for les in active_lessons:
             initial_res_count = (
-                db.session.query(LessonResource)
-                .filter(LessonResource.lesson_id == les.id)
-                .count()
+                db.session.query(LessonResource).filter(LessonResource.lesson_id == les.id).count()
             )
 
             # 1. Backfill from predecessor chain (previous_lesson_id)
@@ -39,9 +35,7 @@ def reconcile() -> int:
                 curr = db.session.query(Lesson).get(curr.previous_lesson_id)
 
             new_res_count = (
-                db.session.query(LessonResource)
-                .filter(LessonResource.lesson_id == les.id)
-                .count()
+                db.session.query(LessonResource).filter(LessonResource.lesson_id == les.id).count()
             )
 
             diff = new_res_count - initial_res_count
@@ -59,7 +53,9 @@ def reconcile() -> int:
                 )
 
         db.session.commit()
-        print(f"=== HOÀN TẤT ĐỒNG BỘ: Đã bổ sung tổng cộng {reconciled_count} tài nguyên bị thiếu ===")
+        print(
+            f"=== HOÀN TẤT ĐỒNG BỘ: Đã bổ sung tổng cộng {reconciled_count} tài nguyên bị thiếu ==="
+        )
         return 0
 
 

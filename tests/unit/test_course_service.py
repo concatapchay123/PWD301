@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.course import CourseCompletionRule, CoursePrerequisite
 from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
+from pwd301.models.notification_audit import AuditEvent, Notification
 from pwd301.services.course_service import (
     change_course_status,
     create_course,
@@ -617,3 +617,58 @@ def test_course_soft_delete_and_reuse_code(
     assert course2.id != course1.id
     assert course2.course_code == "CS-101"
     assert course2.deleted_at is None
+
+
+def test_audit_admin_course_edit_requires_reason_and_notifies_owner(
+    app: Flask,
+    instructor_one: User,
+    admin_user: User,
+) -> None:
+    """Direct Admin edits of Instructor-owned courses are reasoned and notified."""
+    course = create_course(
+        instructor_one,
+        {"course_code": "ADMIN-EDIT-1", "title": "Owned Course", "description": "Original"},
+    )
+    course.status = "PUBLISHED"
+    db.session.commit()
+
+    with pytest.raises(CourseValidationError, match="reason"):
+        update_course(admin_user, course.id, {"description": "Unreasoned"})
+
+    db.session.refresh(course)
+    assert course.description == "Original"
+    update_course(
+        admin_user,
+        course.id,
+        {"description": "Reasoned", "reason": "Correct an approved catalog description"},
+    )
+    audit = (
+        db.session.query(AuditEvent)
+        .filter(AuditEvent.target_id == course.id, AuditEvent.action == "COURSE_ADMIN_EDIT")
+        .one()
+    )
+    assert audit.reason == "Correct an approved catalog description"
+    assert audit.performed_as_admin is True
+    assert (
+        db.session.query(Notification)
+        .filter(Notification.recipient_user_id == instructor_one.id)
+        .count()
+        >= 1
+    )
+
+
+def test_audit_non_owner_cannot_repeat_course_transition(
+    app: Flask,
+    instructor_one: User,
+    instructor_two: User,
+    admin_user: User,
+) -> None:
+    """Idempotent state transitions still authorize the concrete course first."""
+    course = create_course(
+        instructor_one,
+        {"course_code": "NOOP-AUTH-1", "title": "Private Course"},
+    )
+    change_course_status(instructor_one, course.id, "SUBMITTED_FOR_REVIEW")
+
+    with pytest.raises(ForbiddenError):
+        change_course_status(instructor_two, course.id, "SUBMITTED_FOR_REVIEW")

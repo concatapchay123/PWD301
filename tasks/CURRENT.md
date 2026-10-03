@@ -1,3 +1,49 @@
+# Active task: TASK-079 — Low-Tech Instructor Lesson Authoring & Atomic Course Changeset Approval Workflow Redesign
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Completed Date:** 2026-10-03  
+
+## Goal & Resolution Summary
+Redesigned and streamlined the instructor lesson authoring and administrative approval workflow to eliminate high cognitive friction for low-tech instructors and eliminate piecemeal fragmented approval requests ("duyệt lắt nhắt") for administrators:
+
+1. **Consolidated Course Changeset Model**:
+   - Multiple additions, edits, and deletions to lessons in a published course are staged locally into a unified course draft changeset (`COURSE_VERSION_CHANGESET`).
+   - Staged lessons stay in `DRAFT` status and are not dispatched as separate, fragmented 202 approval requests.
+   - Instructors submit a single atomic change request to Admin when their curriculum updates are finalized.
+
+2. **Seamless Lesson Studio & Save Flow**:
+   - Replaced confusing "Xuất bản" (Publish) button in Lesson Studio with a clear, single "Lưu thay đổi" (Save Changes to Draft) primary action returning 200 OK.
+   - Eliminated disruptive 202 warnings when editing published lessons.
+   - Clear working draft banner indicates the lesson is part of an uncommitted course changeset.
+
+3. **Visual Staging & Sticky Draft Action Bar in Curriculum View**:
+   - Sticky Draft Action Bar (`#curriculum-draft-bar`) displays current changeset state (`DRAFT`, `PENDING`, `REJECTED`) and real-time count summary (`📝 Bản nháp: X mới, Y sửa, Z xóa`).
+   - Provides intuitive actions: "Xem thay đổi" (Before vs. After diff modal), "Gửi duyệt toàn bộ" (Submit Changeset), "Rút lại yêu cầu" (Retract Request), and "Hủy bỏ bản nháp" (Discard Changeset).
+   - Individual lesson cards display explicit visual badges: `Đã sửa (Bản nháp)`, `Mới tạo (Chưa duyệt)`, `Đánh dấu xóa (Chờ duyệt)`.
+
+4. **All-or-Nothing Atomic Admin Changeset Approval**:
+   - In Admin portal (`tab=change-requests`), the entire course changeset is presented as a single consolidated row.
+   - Review modal inspects full Before vs. After diff covering all modified, added, and staged-deleted lessons.
+   - Atomic approval promotes draft lessons to `PUBLISHED`, marks replaced lessons as `HISTORICAL`, applies staged deletions, and resets changeset state atomically.
+
+5. **Backend Services & REST API**:
+   - Implemented `get_course_changeset_status`, `submit_course_changeset`, `retract_course_changeset`, `discard_course_changeset`, `get_course_changeset_diff`, and enhanced `apply_course_version_changeset` / `approve_course_change_request`.
+   - Added endpoints:
+     - `GET /instructor/courses/<course_id>/changeset/status`
+     - `POST /instructor/courses/<course_id>/changeset/submit`
+     - `POST /instructor/courses/<course_id>/changeset/retract`
+     - `POST /instructor/courses/<course_id>/changeset/discard`
+     - `GET /instructor/courses/<course_id>/changeset/diff`
+
+6. **Comprehensive Verification**:
+   - 11/11 tests passing in `test_course_changeset_workflow.py` and `test_lesson_change_request_flow.py`.
+   - 24/24 tests passing in `test_instructor_backend_remediation.py`, `test_lesson_api.py`, `test_lesson_authoring_remediation.py`, `test_lesson_mutations_rest_api.py`.
+   - Total 35/35 test cases passing.
+   - Ruff linter 100% clean (0 errors), JS syntax check 100% clean (0 errors).
+
+---
+
 # Active task: TASK-078 — Complete Decommissioning & Removal of Standalone Question Bank from PWD301
 
 **Status:** DONE  

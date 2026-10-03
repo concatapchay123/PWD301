@@ -44,6 +44,7 @@ from pwd301.services.authorization_service import (
     require_course_manager,
 )
 from pwd301.services.exceptions import (
+    ConflictError,
     ForbiddenError,
     LessonNotFoundError,
     LessonPositionConflictError,
@@ -191,7 +192,6 @@ def delete_learning_unit(
     )
     for idx, rem in enumerate(remaining_units, start=1):
         rem.position = idx
-        rem.updated_at = utc_now()
     sess.flush()
 
     if session is None:
@@ -606,8 +606,8 @@ def create_lesson(
     requested_position = data.get("position")
     change_req_id = data.get("change_request_id")
 
-    if change_req_id or status == "PENDING_APPROVAL":
-        # Staged lesson targeting a position for future approval
+    if change_req_id or status in ("DRAFT", "PENDING_APPROVAL") or data.get("previous_lesson_id"):
+        # Staged or draft lesson targeting a position for future approval / replacement
         assigned_position = (
             int(requested_position) if requested_position is not None else (max_position + 1)
         )
@@ -1383,14 +1383,14 @@ def get_course_lessons(
             .all()
         )
         active_positions = {
-            l.position
-            for l in all_lessons
-            if l.status in ("ACTIVE", "PUBLISHED", "PENDING_APPROVAL", "DRAFT")
+            les.position
+            for les in all_lessons
+            if les.status in ("ACTIVE", "PUBLISHED", "PENDING_APPROVAL", "DRAFT")
         }
         return [
-            l
-            for l in all_lessons
-            if l.status != "HISTORICAL" or l.position not in active_positions
+            les
+            for les in all_lessons
+            if les.status != "HISTORICAL" or les.position not in active_positions
         ]
 
     # Others see only PUBLISHED lessons of active courses
@@ -1579,14 +1579,16 @@ def record_lesson_progress(
     # Evaluate completion: monotonic, idempotent
     min_completion_seconds = lesson.minimum_completion_seconds
     requires_video = _lesson_requires_video_watch(lesson)
-    viewed_fraction_required = (
-        0.90 if requires_video else float(lesson.viewed_fraction_required)
-    )
+    viewed_fraction_required = 0.90 if requires_video else float(lesson.viewed_fraction_required)
 
     # When video is watched (>= 90%), automatically satisfy minimum duration requirement
-    if requires_video and float(progress.max_view_fraction) >= 0.90:
-        if min_completion_seconds > 0 and (progress.seconds_spent or 0) < min_completion_seconds:
-            progress.seconds_spent = min_completion_seconds
+    if (
+        requires_video
+        and float(progress.max_view_fraction) >= 0.90
+        and min_completion_seconds > 0
+        and (progress.seconds_spent or 0) < min_completion_seconds
+    ):
+        progress.seconds_spent = min_completion_seconds
 
     progress_snapshot: dict[str, Any] = {}
     if progress.completion_rule_snapshot_json:
@@ -2038,18 +2040,17 @@ def create_lesson_change_request(
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
     original_target_id = payload.get("target_id") or payload.get("lesson_id")
-    if original_target_id is not None:
-        if isinstance(original_target_id, str):
+    if isinstance(original_target_id, str):
+        try:
+            original_target_id = int(original_target_id)
+        except (ValueError, TypeError):
             try:
-                original_target_id = int(original_target_id)
+                target_u = uuid.UUID(str(original_target_id))
+                found_target = sess.query(Lesson).filter(Lesson.public_id == target_u).first()
+                if found_target:
+                    original_target_id = found_target.id
             except (ValueError, TypeError):
-                try:
-                    target_u = uuid.UUID(original_target_id)
-                    found_target = sess.query(Lesson).filter(Lesson.public_id == target_u).first()
-                    if found_target:
-                        original_target_id = found_target.id
-                except (ValueError, TypeError):
-                    pass
+                pass
 
     # Autosave Deduplication & Idempotency: Check if there is already a PENDING request for this lesson
     if original_target_id:
@@ -2064,11 +2065,7 @@ def create_lesson_change_request(
             .first()
         )
         if existing_req:
-            staged = (
-                sess.query(Lesson)
-                .filter(Lesson.change_request_id == existing_req.id)
-                .first()
-            )
+            staged = sess.query(Lesson).filter(Lesson.change_request_id == existing_req.id).first()
             if staged:
                 for field in (
                     "title",
@@ -2150,6 +2147,7 @@ def approve_course_change_request(
         actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
     )
     from pwd301.services.authorization_service import can_manage_course
+
     if not (can_manage_course(actor, req.course_id, session=sess) or is_admin_reviewer):
         raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học này.")
 
@@ -2158,10 +2156,246 @@ def approve_course_change_request(
 
     now = utc_now()
     p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
-    is_create_lesson = p_data.get("action") == "CREATE_LESSON"
+    is_create_lesson = (
+        p_data.get("action") == "CREATE_LESSON"
+        or req.change_type == "CREATE_LESSON"
+        or p_data.get("change_type") == "CREATE_LESSON"
+    )
+    is_changeset = (
+        p_data.get("action") == "COURSE_VERSION_CHANGESET"
+        or req.change_type == "COURSE_VERSION_CHANGESET"
+    )
 
     # Find staged lessons for this request
     staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
+
+    if is_changeset:
+        # Phase 1: Shift ALL course lessons to temporary positive offsets
+        # to guarantee zero collision with uq_lessons_course_position_active during promotion
+        all_course_lessons = (
+            sess.query(Lesson)
+            .filter(Lesson.course_id == req.course_id, Lesson.deleted_at.is_(None))
+            .order_by(Lesson.id.asc())
+            .all()
+        )
+        for idx, les in enumerate(all_course_lessons):
+            les.position = TEMP_POSITION_OFFSET + idx + 1
+        sess.flush()
+
+        # Phase 2: Promote staged lessons linked to this request or pending in course
+        staged_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == req.course_id,
+                Lesson.deleted_at.is_(None),
+                Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+            )
+            .all()
+        )
+        for staged in staged_lessons:
+            if staged.previous_lesson_id:
+                orig = sess.get(Lesson, staged.previous_lesson_id)
+                if orig:
+                    orig.status = "HISTORICAL"
+                    orig.updated_at = now
+                    staged.revision_no = (orig.revision_no or 1) + 1
+                    staged.material_change_summary = (
+                        review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
+                    )
+                    _copy_lesson_resources(orig.id, staged.id, session=sess)
+            else:
+                staged.revision_no = 1
+
+            staged.status = "PUBLISHED"
+            if staged.published_at is None:
+                staged.published_at = now
+            staged.updated_at = now
+
+        # Phase 3: Handle deleted lessons
+        deleted_lessons = p_data.get("deleted_lessons") or []
+        for item in deleted_lessons:
+            del_id = item.get("lesson_id") if isinstance(item, dict) else item
+            if del_id:
+                try:
+                    trash_lesson(
+                        actor,
+                        del_id,
+                        reason="Được xóa qua đợt cập nhật đã phê duyệt",
+                        session=sess,
+                    )
+                except Exception:
+                    pass
+
+        staged_del_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == req.course_id,
+                Lesson.material_change_summary == "[STAGED_DELETE]",
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for sdl in staged_del_lessons:
+            sdl.deleted_at = now
+            sdl.updated_at = now
+
+        # Phase 4: Handle modified lessons metadata updates
+        modified_lessons = p_data.get("modified_lessons") or []
+        for item in modified_lessons:
+            lid = item.get("lesson_id") or item.get("id")
+            if lid:
+                les = _resolve_lesson(lid, session=sess)
+                if les and les.course_id == req.course_id:
+                    if "title" in item and item["title"]:
+                        les.title = item["title"]
+                    if "markdown_content" in item and item["markdown_content"]:
+                        les.markdown_content = item["markdown_content"]
+                    if "summary" in item:
+                        les.summary = item["summary"]
+                    if "estimated_duration_minutes" in item:
+                        les.estimated_duration_minutes = item["estimated_duration_minutes"]
+                    les.updated_at = now
+
+        # Phase 5: Handle any added lessons in p_data not yet staged in DB
+        added_lessons = p_data.get("added_lessons") or []
+        for new_item in added_lessons:
+            temp_id = new_item.get("temp_id") or new_item.get("lesson_id")
+            already_exists = False
+            if temp_id:
+                try:
+                    t_uuid = uuid.UUID(str(temp_id))
+                    already_exists = bool(
+                        sess.query(Lesson)
+                        .filter(Lesson.public_id == t_uuid, Lesson.course_id == req.course_id)
+                        .first()
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if not already_exists:
+                unit_id = None
+                raw_unit_id = new_item.get("learning_unit_id")
+                if raw_unit_id:
+                    try:
+                        u_uuid = uuid.UUID(str(raw_unit_id))
+                        u_obj = (
+                            sess.query(LearningUnit)
+                            .filter(LearningUnit.public_id == u_uuid)
+                            .first()
+                        )
+                        if u_obj and u_obj.course_id == req.course_id:
+                            unit_id = u_obj.id
+                    except (ValueError, TypeError):
+                        if str(raw_unit_id).isdigit():
+                            unit_id = int(raw_unit_id)
+                if unit_id is None:
+                    fu = (
+                        sess.query(LearningUnit)
+                        .filter(
+                            LearningUnit.course_id == req.course_id,
+                            LearningUnit.deleted_at.is_(None),
+                        )
+                        .order_by(LearningUnit.position.asc())
+                        .first()
+                    )
+                    unit_id = fu.id if fu else None
+
+                new_lesson = Lesson(
+                    course_id=req.course_id,
+                    learning_unit_id=unit_id,
+                    title=new_item.get("title") or "Bài giảng mới",
+                    summary=new_item.get("summary"),
+                    markdown_content=new_item.get("markdown_content") or "# Bài giảng mới",
+                    estimated_duration_minutes=new_item.get("estimated_duration_minutes") or 15,
+                    position=TEMP_POSITION_OFFSET + 9999,
+                    status="PUBLISHED",
+                    published_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+                sess.add(new_lesson)
+        sess.flush()
+
+        # Phase 6: Assign contiguous 1..N positions to all active published lessons
+        live_active_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == req.course_id,
+                Lesson.deleted_at.is_(None),
+                Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+            )
+            .order_by(Lesson.id.asc())
+            .all()
+        )
+
+        reorder_plan = p_data.get("reorder_plan") or {}
+        lessons_order = reorder_plan.get("lessons_order") or []
+        order_map: dict[str, int] = {}
+        for o_idx, entry in enumerate(lessons_order):
+            lid = entry.get("lesson_id") if isinstance(entry, dict) else entry
+            if lid:
+                order_map[str(lid).lower()] = o_idx
+
+        def sort_key(l: Lesson) -> tuple[int, int]:
+            p_uuid = str(l.public_id).lower()
+            if p_uuid in order_map:
+                return (0, order_map[p_uuid])
+            if str(l.id) in order_map:
+                return (0, order_map[str(l.id)])
+            return (1, l.id)
+
+        live_active_lessons.sort(key=sort_key)
+
+        for pos_idx, les in enumerate(live_active_lessons):
+            les.position = pos_idx + 1
+            les.updated_at = now
+        sess.flush()
+
+        req.status = "APPROVED"
+        req.reviewed_by_user_id = actor.id
+        req.review_reason = review_reason or "Admin đã phê duyệt"
+        req.reviewed_at = now
+        req.applied_at = now
+
+        # Supersede any older pending requests for this course
+        other_pending = (
+            sess.query(CourseChangeRequest)
+            .filter(
+                CourseChangeRequest.course_id == req.course_id,
+                CourseChangeRequest.status == "PENDING",
+                CourseChangeRequest.id != req.id,
+            )
+            .all()
+        )
+        for op in other_pending:
+            op.status = "CANCELLED"
+            op.review_reason = f"Đã được giải quyết qua đợt phê duyệt #{req.id}"
+            op.reviewed_at = now
+
+        # Notify instructor
+        if req.requested_by:
+            with contextlib.suppress(Exception):
+                from pwd301.services.notification_service import dispatch_notification
+                course_title = req.course.title if req.course else f"#{req.course_id}"
+                c_public_id = str(req.course.public_id) if req.course else str(req.course_id)
+                dispatch_notification(
+                    recipient_user=req.requested_by,
+                    event_type="COURSE_CHANGE_APPROVED",
+                    title=f"Đợt cập nhật khóa học {req.course.course_code if req.course else ''} đã được phê duyệt",
+                    body=f"Quản trị viên đã phê duyệt đợt cập nhật giáo trình cho khóa học '{course_title}'.",
+                    action_url=f"#/instructor/courses/{c_public_id}/manage?tab=curriculum",
+                    category="COURSE",
+                    target_role="INSTRUCTOR",
+                    payload={"course_id": c_public_id, "change_request_id": req.id},
+                    session=sess,
+                )
+
+        sess.flush()
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
+        return req
 
     for staged in staged_lessons:
         if is_create_lesson:
@@ -2225,6 +2459,7 @@ def approve_course_change_request(
 
     if p_data.get("action") == "CREATE_LEARNING_UNIT" and req.target_id:
         from pwd301.models.course import LearningUnit
+
         target_u = sess.get(LearningUnit, req.target_id)
         if target_u:
             for les in target_u.lessons:
@@ -2257,7 +2492,7 @@ def reject_course_change_request(
     review_reason: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> CourseChangeRequest:
-    """Reject a course change request and trash its staged lessons."""
+    """Reject a course change request and trash or revert its staged lessons."""
     sess = session if session is not None else db.session
 
     req = sess.get(CourseChangeRequest, change_request_id)
@@ -2268,6 +2503,7 @@ def reject_course_change_request(
         actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
     )
     from pwd301.services.authorization_service import can_manage_course
+
     if not (can_manage_course(actor, req.course_id, session=sess) or is_admin_reviewer):
         raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học này.")
 
@@ -2276,7 +2512,26 @@ def reject_course_change_request(
 
     now = utc_now()
     p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
+    is_changeset = (
+        p_data.get("action") == "COURSE_VERSION_CHANGESET"
+        or req.change_type == "COURSE_VERSION_CHANGESET"
+    )
     staged_lessons = sess.query(Lesson).filter(Lesson.change_request_id == req.id).all()
+
+    if is_changeset:
+        # Revert staged lessons back to DRAFT so instructor can revise and resubmit
+        for staged in staged_lessons:
+            staged.status = "DRAFT"
+            staged.updated_at = now
+        req.status = "REJECTED"
+        req.reviewed_by_user_id = actor.id
+        req.review_reason = review_reason
+        req.reviewed_at = now
+        sess.flush()
+        if session is None:
+            sess.commit()
+        return req
+
     for staged in staged_lessons:
         staged.status = "TRASH"
         staged.deleted_at = now
@@ -2284,6 +2539,7 @@ def reject_course_change_request(
 
     if p_data.get("action") == "CREATE_LEARNING_UNIT" and req.target_id:
         from pwd301.models.course import LearningUnit
+
         target_u = sess.get(LearningUnit, req.target_id)
         if target_u:
             target_u.deleted_at = now
@@ -2297,6 +2553,25 @@ def reject_course_change_request(
     req.reviewed_by_user_id = actor.id
     req.review_reason = review_reason
     req.reviewed_at = now
+
+    if req.requested_by:
+        with contextlib.suppress(Exception):
+            from pwd301.services.notification_service import dispatch_notification
+
+            course_title = req.course.title if req.course else f"#{req.course_id}"
+            c_public_id = str(req.course.public_id) if req.course else str(req.course_id)
+            dispatch_notification(
+                recipient_user=req.requested_by,
+                event_type="COURSE_CHANGE_REJECTED",
+                title=f"Đợt cập nhật khóa học {req.course.course_code if req.course else ''} đã bị từ chối",
+                body=f"Quản trị viên đã từ chối đợt cập nhật giáo trình. Lý do: {review_reason or 'Cần hoàn thiện thêm.'}",
+                action_url=f"#/instructor/courses/{c_public_id}/manage?tab=curriculum",
+                category="COURSE",
+                target_role="INSTRUCTOR",
+                payload={"course_id": c_public_id, "change_request_id": req.id},
+                session=sess,
+            )
+
     sess.flush()
 
     try:
@@ -2535,3 +2810,995 @@ def opt_in_newer_lesson_revision(
         sess.commit()
 
     return latest_lesson, target_progress
+
+
+def submit_course_changeset(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Submit a consolidated course curriculum changeset for administrator approval.
+
+    Enforces:
+    - Actor is managing instructor or admin.
+    - Single Active Pending Lock: Exactly ONE pending changeset allowed per course at a time.
+    - Rate limit check.
+    """
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    if not actor.is_admin and course.owner_instructor_id != actor.id:
+        raise ForbiddenError("You are not authorized to manage this course.")
+
+    # Rate limit check: 15 curriculum mutations / minute
+    from pwd301.services.rate_limit_service import check_curriculum_mutation_rate_limit
+
+    check_curriculum_mutation_rate_limit(actor.id, course.id, limit=15, window_seconds=60)
+
+    # Single Active Pending Lock check
+    existing_pending = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+            CourseChangeRequest.target_type == "COURSE",
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .first()
+    )
+    if existing_pending is not None:
+        raise ConflictError(
+            "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
+            "Vui lòng chờ xét duyệt hoặc rút lại yêu cầu trước khi nộp đợt mới."
+        )
+
+    # Query all working draft lessons
+    staged_drafts = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+    deleted_staged = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.material_change_summary == "[STAGED_DELETE]",
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    modified_drafts = [les for les in staged_drafts if les.previous_lesson_id is not None]
+    added_drafts = [les for les in staged_drafts if les.previous_lesson_id is None]
+
+    now = utc_now()
+    modified_payload = []
+    for les in modified_drafts:
+        orig = sess.get(Lesson, les.previous_lesson_id)
+        if orig is not None:
+            les_title = (les.title or "").strip()
+            orig_title = (orig.title or "").strip()
+            les_summary = (les.summary or "").strip()
+            orig_summary = (orig.summary or "").strip()
+            les_content = (les.markdown_content or "").strip()
+            orig_content = (orig.markdown_content or "").strip()
+            les_dur = int(les.estimated_duration_minutes or 0)
+            orig_dur = int(orig.estimated_duration_minutes or 0)
+            les_pos = int(les.position or 0)
+            orig_pos = int(orig.position or 0)
+
+            les_res = sorted([r.file_asset_id for r in les.resources if r.file_asset_id])
+            orig_res = sorted([r.file_asset_id for r in orig.resources if r.file_asset_id])
+
+            les_rules_same = (
+                les.minimum_completion_seconds == orig.minimum_completion_seconds
+                and les.viewed_fraction_required == orig.viewed_fraction_required
+                and les.required_for_periods_starting_at == orig.required_for_periods_starting_at
+                and les.learning_unit_id == orig.learning_unit_id
+            )
+
+            if (
+                les_title == orig_title
+                and les_summary == orig_summary
+                and les_content == orig_content
+                and les_dur == orig_dur
+                and les_pos == orig_pos
+                and les_res == orig_res
+                and les_rules_same
+            ):
+                # Identical to original: Auto-skip and clean up redundant draft
+                les.deleted_at = now
+                continue
+
+        modified_payload.append({
+            "lesson_id": str(les.public_id),
+            "target_id": les.previous_lesson_id,
+            "title": les.title,
+            "summary": les.summary,
+            "markdown_content": les.markdown_content,
+            "estimated_duration_minutes": les.estimated_duration_minutes,
+            "minimum_completion_seconds": les.minimum_completion_seconds,
+            "viewed_fraction_required": les.viewed_fraction_required,
+            "required_for_periods_starting_at": les.required_for_periods_starting_at,
+            "position": les.position,
+        })
+
+    added_payload = []
+    for les in added_drafts:
+        added_payload.append({
+            "temp_id": str(les.public_id),
+            "title": les.title,
+            "summary": les.summary,
+            "markdown_content": les.markdown_content,
+            "estimated_duration_minutes": les.estimated_duration_minutes,
+            "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+            "position": les.position,
+        })
+
+    deleted_payload = [
+        {"lesson_id": str(les.public_id), "id": les.id, "title": les.title} for les in deleted_staged
+    ]
+
+    reorder_plan = payload.get("reorder_plan") or {}
+    has_reorder = bool(reorder_plan.get("lessons_order"))
+
+    if not modified_payload and not added_payload and not deleted_payload and not has_reorder:
+        sess.commit()
+        raise LessonValidationError(
+            "Không có bài giảng nào có thay đổi so với bản đã ban hành. Hệ thống tự động bỏ qua và không gửi xét duyệt."
+        )
+
+    changeset_payload = dict(payload)
+    changeset_payload["action"] = "COURSE_VERSION_CHANGESET"
+    changeset_payload.setdefault(
+        "version_title", payload.get("version_title") or "Đợt cập nhật giáo trình"
+    )
+    changeset_payload.setdefault("summary", payload.get("summary") or "Cập nhật bài giảng")
+    changeset_payload["modified_lessons"] = modified_payload
+    changeset_payload["added_lessons"] = added_payload
+    changeset_payload["deleted_lessons"] = deleted_payload
+    changeset_payload["changeset_stats"] = {
+        "modified_lessons_count": len(modified_payload),
+        "added_lessons_count": len(added_payload),
+        "deleted_lessons_count": len(deleted_payload),
+    }
+
+    now = utc_now()
+    # Supersede/cancel any older pending requests for this course to ensure 1 consolidated active row
+    older_pending = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+        )
+        .all()
+    )
+    for op in older_pending:
+        op.status = "CANCELLED"
+        op.review_reason = "Được thay thế bởi đợt cập nhật khóa học mới."
+        op.reviewed_at = now
+
+    req = CourseChangeRequest(
+        course_id=course.id,
+        requested_by_user_id=actor.id,
+        change_type="LESSON_STRUCTURE",
+        target_type="COURSE",
+        target_id=course.id,
+        proposed_payload_json=json.dumps(changeset_payload, ensure_ascii=False, default=str),
+        status="PENDING",
+        created_at=now,
+    )
+    sess.add(req)
+    sess.flush()
+
+    # Link staged lessons to request and set to PENDING_APPROVAL
+    for les in staged_drafts:
+        les.status = "PENDING_APPROVAL"
+        les.change_request_id = req.id
+
+    sess.flush()
+
+    # Notify admins with COURSE_REVIEW permission
+    from pwd301.models.identity import Role, User, UserRole
+    from pwd301.services.notification_service import dispatch_notification
+
+    admin_users = (
+        sess.query(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .filter(Role.code == "ADMIN", User.status == "ACTIVE")
+        .all()
+    )
+    for adm in admin_users:
+        if adm.is_primary_admin or adm.has_admin_permission("COURSE_REVIEW"):
+            with contextlib.suppress(Exception):
+                dispatch_notification(
+                    recipient_user=adm,
+                    event_type="COURSE_CHANGE_REQUESTED",
+                    title=f"Đợt cập nhật khóa học {course.course_code} chờ xét duyệt",
+                    body=f"Giảng viên {actor.display_name} đã nộp đợt cập nhật mới cho khóa học '{course.title}'.",
+                    action_url="#/admin/governance?tab=change-requests",
+                    category="COURSE",
+                    target_role="ADMIN",
+                    payload={"course_id": str(course.public_id), "change_request_id": req.id},
+                    session=sess,
+                )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return req
+
+
+def get_course_changeset_status(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Retrieve the current changeset approval status for a course."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    # Rule: If course has never been published (DRAFT or SUBMITTED_FOR_REVIEW),
+    # all changes belong to the initial course review, so no separate changeset draft UI is shown.
+    if course.status in ("DRAFT", "SUBMITTED_FOR_REVIEW"):
+        return {
+            "status": "NONE",
+            "has_changes": False,
+            "change_request_id": None,
+            "changes_count": 0,
+            "draft_count": 0,
+            "added_count": 0,
+            "modified_count": 0,
+            "deleted_count": 0,
+        }
+
+    # 1. Check for active PENDING changeset
+    pending_req = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+            CourseChangeRequest.target_type == "COURSE",
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .order_by(CourseChangeRequest.id.desc())
+        .first()
+    )
+
+    # 2. Check for latest REJECTED changeset
+    rejected_req = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "REJECTED",
+            CourseChangeRequest.target_type == "COURSE",
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .order_by(CourseChangeRequest.id.desc())
+        .first()
+    )
+
+    # 3. Find staged lessons
+    staged_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+    deleted_staged = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.material_change_summary == "[STAGED_DELETE]",
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    modified_drafts = [les for les in staged_lessons if les.previous_lesson_id is not None]
+    added_drafts = [les for les in staged_lessons if les.previous_lesson_id is None]
+    changes_count = len(modified_drafts) + len(added_drafts) + len(deleted_staged)
+
+    if pending_req:
+        try:
+            p_data = json.loads(pending_req.proposed_payload_json or "{}")
+        except Exception:
+            p_data = {}
+        return {
+            "status": "PENDING",
+            "has_changes": True,
+            "change_request_id": pending_req.id,
+            "version_title": p_data.get("version_title"),
+            "summary": p_data.get("summary"),
+            "created_at": pending_req.created_at.isoformat() if pending_req.created_at else None,
+            "submitted_at": pending_req.created_at.isoformat() if pending_req.created_at else None,
+            "reviewed_at": pending_req.reviewed_at.isoformat() if pending_req.reviewed_at else None,
+            "review_reason": pending_req.review_reason,
+            "changes_count": changes_count or (
+                len(p_data.get("added_lessons", []))
+                + len(p_data.get("modified_lessons", []))
+                + len(p_data.get("deleted_lessons", []))
+            ),
+            "draft_count": len(added_drafts) or len(p_data.get("added_lessons", [])),
+            "added_count": len(added_drafts) or len(p_data.get("added_lessons", [])),
+            "modified_count": len(modified_drafts) or len(p_data.get("modified_lessons", [])),
+            "deleted_count": len(deleted_staged) or len(p_data.get("deleted_lessons", [])),
+        }
+
+    if rejected_req and changes_count > 0:
+        try:
+            p_data = json.loads(rejected_req.proposed_payload_json or "{}")
+        except Exception:
+            p_data = {}
+        return {
+            "status": "REJECTED",
+            "has_changes": True,
+            "change_request_id": rejected_req.id,
+            "version_title": p_data.get("version_title"),
+            "summary": p_data.get("summary"),
+            "created_at": rejected_req.created_at.isoformat() if rejected_req.created_at else None,
+            "reviewed_at": rejected_req.reviewed_at.isoformat()
+            if rejected_req.reviewed_at
+            else None,
+            "review_reason": rejected_req.review_reason,
+            "review_comment": rejected_req.review_reason,
+            "changes_count": changes_count,
+            "draft_count": len(added_drafts),
+            "added_count": len(added_drafts),
+            "modified_count": len(modified_drafts),
+            "deleted_count": len(deleted_staged),
+        }
+
+    if changes_count > 0:
+        return {
+            "status": "DRAFT",
+            "has_changes": True,
+            "change_request_id": None,
+            "version_title": "Bản nháp cập nhật",
+            "summary": f"Có {changes_count} thay đổi trong bản nháp",
+            "changes_count": changes_count,
+            "draft_count": len(added_drafts),
+            "added_count": len(added_drafts),
+            "modified_count": len(modified_drafts),
+            "deleted_count": len(deleted_staged),
+        }
+
+    return {
+        "status": "NONE",
+        "has_changes": False,
+        "change_request_id": None,
+        "changes_count": 0,
+        "draft_count": 0,
+        "added_count": 0,
+        "modified_count": 0,
+        "deleted_count": 0,
+    }
+
+
+def retract_course_changeset(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> CourseChangeRequest:
+    """Retract an active PENDING changeset submitted by instructor."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    if not actor.is_admin and course.owner_instructor_id != actor.id:
+        raise ForbiddenError("You are not authorized to manage this course.")
+
+    req = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+            CourseChangeRequest.target_type == "COURSE",
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .order_by(CourseChangeRequest.id.desc())
+        .first()
+    )
+
+    if req is None:
+        raise ConflictError("Không có đợt cập nhật nào đang chờ duyệt để rút lại.")
+
+    now = utc_now()
+    req.status = "CANCELLED"
+    req.review_reason = "Giảng viên chủ động rút lại yêu cầu xét duyệt đợt cập nhật."
+    req.reviewed_at = now
+
+    # Reset staged lessons back to DRAFT
+    staged = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.change_request_id == req.id)
+        .all()
+    )
+    for les in staged:
+        les.status = "DRAFT"
+        les.change_request_id = None
+
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return req
+
+
+def discard_course_changeset(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Discard a course working draft changeset and cancel any pending or rejected request."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+
+    if not actor.is_admin and course.owner_instructor_id != actor.id:
+        raise ForbiddenError("You are not authorized to manage this course.")
+
+    # 1. Cancel any PENDING or REJECTED changeset requests
+    reqs = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.target_type == "COURSE",
+            CourseChangeRequest.status.in_(["PENDING", "REJECTED"]),
+            sa.or_(
+                CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                CourseChangeRequest.proposed_payload_json.like(
+                    '%"action": "COURSE_VERSION_CHANGESET"%'
+                ),
+            ),
+        )
+        .all()
+    )
+    now = utc_now()
+    for req in reqs:
+        req.status = "CANCELLED"
+        req.review_reason = "Giảng viên đã hủy bỏ đợt cập nhật này."
+        req.reviewed_at = now
+
+    # 2. Delete or purge all DRAFT or PENDING_APPROVAL lessons for this course
+    draft_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+        )
+        .all()
+    )
+    for dl in draft_lessons:
+        for r in getattr(dl, "resources", []):
+            sess.delete(r)
+        sess.delete(dl)
+
+    # 3. Clear staged delete flags
+    staged_delete_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.material_change_summary == "[STAGED_DELETE]",
+        )
+        .all()
+    )
+    for sdl in staged_delete_lessons:
+        sdl.material_change_summary = None
+
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return {
+        "status": "DISCARDED",
+        "message": "Đã hủy bỏ toàn bộ bản nháp đang soạn, khôi phục trạng thái khóa học hiện tại.",
+    }
+
+
+def get_course_changeset_diff(
+    actor: User,
+    change_request_id_or_course_id: int | uuid.UUID | str,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Calculate and return full Before vs. After diff of a course version changeset."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    req = None
+    course = None
+    if isinstance(change_request_id_or_course_id, int) or str(change_request_id_or_course_id).isdigit():
+        req = sess.get(CourseChangeRequest, int(change_request_id_or_course_id))
+        if req:
+            course = sess.get(Course, req.course_id)
+
+    if req is None:
+        course = _resolve_course(change_request_id_or_course_id, session=sess)
+        if course:
+            req = (
+                sess.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == course.id,
+                    CourseChangeRequest.target_type == "COURSE",
+                    CourseChangeRequest.status.in_(["PENDING", "REJECTED"]),
+                    sa.or_(
+                        CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                        CourseChangeRequest.proposed_payload_json.like(
+                            '%"action": "COURSE_VERSION_CHANGESET"%'
+                        ),
+                    ),
+                )
+                .order_by(CourseChangeRequest.id.desc())
+                .first()
+            )
+
+    if course is None:
+        raise ResourceNotFoundError("Khóa học hoặc yêu cầu thay đổi không tồn tại.")
+
+    p_data = {}
+    if req is not None:
+        try:
+            p_data = json.loads(req.proposed_payload_json or "{}")
+        except Exception:
+            p_data = {}
+    else:
+        # Build diff dynamically from staged draft entities
+        staged_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        deleted_staged = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == course.id,
+                Lesson.material_change_summary == "[STAGED_DELETE]",
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        modified_drafts = [les for les in staged_lessons if les.previous_lesson_id is not None]
+        added_drafts = [les for les in staged_lessons if les.previous_lesson_id is None]
+
+        if not (modified_drafts or added_drafts or deleted_staged):
+            raise ResourceNotFoundError("Chưa có thay đổi nào trong bản nháp giáo trình.")
+
+        added_lessons_list = [
+            {
+                "temp_id": str(d.public_id),
+                "title": d.title,
+                "position": d.position,
+                "learning_unit_id": str(d.learning_unit.public_id) if d.learning_unit else None,
+                "summary": d.summary,
+                "markdown_content": d.markdown_content,
+            }
+            for d in added_drafts
+        ]
+        modified_lessons_list = []
+        for d in modified_drafts:
+            orig = sess.get(Lesson, d.previous_lesson_id)
+            modified_lessons_list.append({
+                "lesson_id": str(orig.public_id) if orig else str(d.public_id),
+                "title": d.title,
+                "summary": d.summary,
+                "markdown_content": d.markdown_content,
+            })
+        deleted_lessons_list = [
+            {
+                "lesson_id": str(d.public_id),
+                "title": d.title,
+            }
+            for d in deleted_staged
+        ]
+        p_data = {
+            "version_title": "Bản nháp cập nhật",
+            "summary": f"Có {len(added_lessons_list) + len(modified_lessons_list) + len(deleted_lessons_list)} thay đổi đang chờ gửi duyệt.",
+            "added_lessons": added_lessons_list,
+            "modified_lessons": modified_lessons_list,
+            "deleted_lessons": deleted_lessons_list,
+            "reorder_plan": {"lessons_order": []},
+            "changeset_stats": {
+                "reordered_lessons_count": 0,
+                "added_lessons_count": len(added_lessons_list),
+                "modified_lessons_count": len(modified_lessons_list),
+                "deleted_lessons_count": len(deleted_lessons_list),
+            },
+        }
+
+    live_lessons = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .order_by(Lesson.position.asc())
+        .all()
+    )
+    live_curriculum = [
+        {
+            "lesson_id": str(les.public_id),
+            "internal_id": les.id,
+            "title": les.title,
+            "position": les.position,
+            "status": les.status,
+            "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+            "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
+            "summary": les.summary,
+            "estimated_duration_minutes": les.estimated_duration_minutes,
+        }
+        for les in live_lessons
+    ]
+
+    reorder_plan = p_data.get("reorder_plan") or {}
+    lessons_order = reorder_plan.get("lessons_order") or []
+    added_lessons = p_data.get("added_lessons") or []
+    modified_lessons = p_data.get("modified_lessons") or []
+    deleted_lessons = p_data.get("deleted_lessons") or []
+
+    stats = p_data.get("changeset_stats") or {
+        "reordered_lessons_count": len(lessons_order),
+        "added_lessons_count": len(added_lessons),
+        "modified_lessons_count": len(modified_lessons),
+        "deleted_lessons_count": len(deleted_lessons),
+    }
+
+    pos_map = {
+        (entry.get("lesson_id") if isinstance(entry, dict) else entry): entry.get("position")
+        for entry in lessons_order
+        if isinstance(entry, dict)
+    }
+    mod_map = {
+        (item.get("lesson_id") or item.get("id")): item
+        for item in modified_lessons
+        if isinstance(item, dict)
+    }
+    del_set = {
+        (item.get("lesson_id") if isinstance(item, dict) else item)
+        for item in deleted_lessons
+    }
+
+    proposed_curriculum = []
+    for les in live_lessons:
+        lid_str = str(les.public_id)
+        if lid_str in del_set or les.id in del_set:
+            continue
+        mod_item = mod_map.get(lid_str) or mod_map.get(les.id) or {}
+        new_pos = pos_map.get(lid_str) or pos_map.get(les.id) or les.position
+        is_reordered = new_pos != les.position
+        is_modified = bool(mod_item)
+
+        proposed_curriculum.append({
+            "lesson_id": lid_str,
+            "title": mod_item.get("title") or les.title,
+            "position": new_pos,
+            "status": "MODIFIED" if is_modified else ("REORDERED" if is_reordered else "UNCHANGED"),
+            "old_position": les.position,
+            "learning_unit_id": str(les.learning_unit.public_id) if les.learning_unit else None,
+            "learning_unit_title": les.learning_unit.title if les.learning_unit else None,
+            "summary": mod_item.get("summary") or les.summary,
+            "markdown_content": mod_item.get("markdown_content") or les.markdown_content,
+        })
+
+    for item in added_lessons:
+        proposed_curriculum.append({
+            "lesson_id": item.get("temp_id") or f"new-{uuid.uuid4().hex[:6]}",
+            "title": item.get("title") or "Bài giảng mới",
+            "position": item.get("position") or (len(proposed_curriculum) + 1),
+            "status": "ADDED",
+            "learning_unit_id": item.get("learning_unit_id"),
+            "summary": item.get("summary"),
+            "markdown_content": item.get("markdown_content"),
+        })
+
+    proposed_curriculum.sort(key=lambda x: x.get("position", 0))
+
+    return {
+        "change_request_id": req.id if req else None,
+        "course_id": course.id,
+        "course_public_id": str(course.public_id),
+        "course_code": course.course_code,
+        "course_title": course.title,
+        "requested_by_id": req.requested_by_user_id if req else actor.id,
+        "requested_by_name": (req.requested_by.display_name if req.requested_by else "Giảng viên") if req else (actor.display_name or "Giảng viên"),
+        "created_at": req.created_at.isoformat() if req and req.created_at else None,
+        "status": req.status if req else "DRAFT",
+        "review_reason": req.review_reason if req else None,
+        "version_title": p_data.get("version_title"),
+        "summary": p_data.get("summary"),
+        "changeset_stats": stats,
+        "live_curriculum": live_curriculum,
+        "proposed_curriculum": proposed_curriculum,
+        "diff": {
+            "reorder_plan": reorder_plan,
+            "added_lessons": added_lessons,
+            "modified_lessons": modified_lessons,
+            "deleted_lessons": deleted_lessons,
+        },
+    }
+
+
+def apply_course_version_changeset(
+    actor: User,
+    course_id: int | uuid.UUID | str,
+    payload: dict[str, Any],
+    session: Session | scoped_session[Any] | None = None,
+) -> None:
+    """Apply an approved course version changeset atomically to canonical tables.
+
+    Handles:
+    - modified_lessons: Update titles, contents, summaries.
+    - deleted_lessons: Soft-delete/trash removed lessons.
+    - reorder_plan: Re-assign positions of active lessons safely.
+    - added_lessons: Create and publish newly introduced lessons.
+    """
+    sess = session if session is not None else db.session
+    course = _resolve_course(course_id, session=sess)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    now = utc_now()
+
+    # Phase 1: Shift all course lessons to temporary positive offsets
+    all_course_lessons = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .order_by(Lesson.id.asc())
+        .all()
+    )
+    for idx, les in enumerate(all_course_lessons):
+        les.position = TEMP_POSITION_OFFSET + idx + 1
+    sess.flush()
+
+    # Phase 2: Promote staged lessons
+    staged_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.in_(["DRAFT", "PENDING_APPROVAL"]),
+        )
+        .all()
+    )
+    for staged in staged_lessons:
+        if staged.previous_lesson_id:
+            orig = sess.get(Lesson, staged.previous_lesson_id)
+            if orig:
+                orig.status = "HISTORICAL"
+                orig.updated_at = now
+                staged.revision_no = (orig.revision_no or 1) + 1
+                staged.material_change_summary = "Nội dung cập nhật đã được phê duyệt."
+                _copy_lesson_resources(orig.id, staged.id, session=sess)
+        else:
+            staged.revision_no = 1
+        staged.status = "PUBLISHED"
+        if staged.published_at is None:
+            staged.published_at = now
+        staged.updated_at = now
+
+    # Phase 3: Modified lessons
+    modified_lessons = payload.get("modified_lessons") or []
+    for item in modified_lessons:
+        lid = item.get("lesson_id") or item.get("id")
+        if lid:
+            les = _resolve_lesson(lid, session=sess)
+            if les and les.course_id == course.id:
+                if "title" in item and item["title"]:
+                    les.title = item["title"]
+                if "markdown_content" in item:
+                    les.markdown_content = item["markdown_content"]
+                if "summary" in item:
+                    les.summary = item["summary"]
+                if "estimated_duration_minutes" in item:
+                    les.estimated_duration_minutes = item["estimated_duration_minutes"]
+                les.updated_at = now
+
+    # Phase 4: Deleted lessons
+    deleted_lessons = payload.get("deleted_lessons") or []
+    for item in deleted_lessons:
+        lid = item.get("lesson_id") if isinstance(item, dict) else item
+        if lid:
+            trash_lesson(actor, lid, reason="Được xóa qua đợt cập nhật đã phê duyệt", session=sess)
+
+    staged_del_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.material_change_summary == "[STAGED_DELETE]",
+            Lesson.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for sdl in staged_del_lessons:
+        sdl.deleted_at = now
+        sdl.updated_at = now
+
+    # Phase 5: Added lessons
+    added_lessons = payload.get("added_lessons") or []
+    for new_item in added_lessons:
+        temp_id = new_item.get("temp_id") or new_item.get("lesson_id")
+        already_exists = False
+        if temp_id:
+            try:
+                t_uuid = uuid.UUID(str(temp_id))
+                already_exists = bool(
+                    sess.query(Lesson)
+                    .filter(Lesson.public_id == t_uuid, Lesson.course_id == course.id)
+                    .first()
+                )
+            except (ValueError, TypeError):
+                pass
+
+        if not already_exists:
+            unit_id = None
+            raw_unit_id = new_item.get("learning_unit_id")
+            if raw_unit_id:
+                try:
+                    u_uuid = uuid.UUID(str(raw_unit_id))
+                    u_obj = (
+                        sess.query(LearningUnit).filter(LearningUnit.public_id == u_uuid).first()
+                    )
+                    if u_obj and u_obj.course_id == course.id:
+                        unit_id = u_obj.id
+                except (ValueError, TypeError):
+                    if str(raw_unit_id).isdigit():
+                        unit_id = int(raw_unit_id)
+
+            if unit_id is None:
+                first_unit = (
+                    sess.query(LearningUnit)
+                    .filter(LearningUnit.course_id == course.id, LearningUnit.deleted_at.is_(None))
+                    .order_by(LearningUnit.position.asc())
+                    .first()
+                )
+                if first_unit:
+                    unit_id = first_unit.id
+                else:
+                    default_unit = LearningUnit(
+                        course_id=course.id,
+                        title="Nội dung khóa học",
+                        position=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    sess.add(default_unit)
+                    sess.flush()
+                    unit_id = default_unit.id
+
+            new_lesson = Lesson(
+                course_id=course.id,
+                learning_unit_id=unit_id,
+                title=new_item.get("title") or "Bài giảng mới",
+                summary=new_item.get("summary"),
+                markdown_content=new_item.get("markdown_content") or "# Bài giảng mới",
+                estimated_duration_minutes=new_item.get("estimated_duration_minutes") or 15,
+                position=TEMP_POSITION_OFFSET + 9999,
+                status="PUBLISHED",
+                published_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            sess.add(new_lesson)
+    sess.flush()
+
+    # Phase 6: Assign contiguous 1..N positions to all active published lessons
+    live_active_lessons = (
+        sess.query(Lesson)
+        .filter(
+            Lesson.course_id == course.id,
+            Lesson.deleted_at.is_(None),
+            Lesson.status.in_(["ACTIVE", "PUBLISHED"]),
+        )
+        .order_by(Lesson.id.asc())
+        .all()
+    )
+
+    reorder_plan = payload.get("reorder_plan") or {}
+    lessons_order = reorder_plan.get("lessons_order") or []
+    order_map: dict[str, int] = {}
+    for o_idx, entry in enumerate(lessons_order):
+        lid = entry.get("lesson_id") if isinstance(entry, dict) else entry
+        if lid:
+            order_map[str(lid).lower()] = o_idx
+
+    def sort_key(l: Lesson) -> tuple[int, int]:
+        p_uuid = str(l.public_id).lower()
+        if p_uuid in order_map:
+            return (0, order_map[p_uuid])
+        if str(l.id) in order_map:
+            return (0, order_map[str(l.id)])
+        return (1, l.id)
+
+    live_active_lessons.sort(key=sort_key)
+
+    for pos_idx, les in enumerate(live_active_lessons):
+        les.position = pos_idx + 1
+        les.updated_at = now
+    sess.flush()
+
+    # 5. Record AuditEvent
+    from pwd301.models.notification_audit import AuditEvent
+
+    actor_roles = ",".join(sorted(actor.role_codes)) if actor and actor.role_codes else "ADMIN"
+    audit = AuditEvent(
+        actor_user_id=actor.id if actor else None,
+        actor_roles_snapshot=actor_roles,
+        action="COURSE_CHANGESET_APPLIED",
+        target_type="COURSE",
+        target_id=course.id,
+        reason=payload.get("version_title") or "Áp dụng đợt cập nhật khóa học",
+        performed_as_admin=bool(actor and actor.is_admin),
+        after_json=json.dumps(
+            {
+                "course_id": str(course.public_id),
+                "version_title": payload.get("version_title"),
+                "summary": payload.get("summary"),
+                "changeset_stats": payload.get("changeset_stats"),
+            },
+            ensure_ascii=False,
+            default=str,
+        ),
+        created_at=now,
+    )
+    sess.add(audit)
+
+    sess.flush()
+    if session is None:
+        sess.commit()

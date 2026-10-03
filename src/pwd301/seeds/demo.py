@@ -1356,7 +1356,6 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             ),
             {"target_url": "#/instructor/courses", "action_url": "#/instructor/courses"},
             False,
-
         ),
         # Student 1 (student1@pwd301.local - Lê Hoàng Long)
         (

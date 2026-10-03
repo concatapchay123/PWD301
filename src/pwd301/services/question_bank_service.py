@@ -225,9 +225,7 @@ def _serialize_question_revision(
                     "asset_id": str(fa.public_id) if fa else None,
                     "filename": fa.file_name if fa else None,
                     "file_name": fa.file_name if fa else None,
-                    "download_url": (
-                        f"/instructor/files/{fa.public_id}/download" if fa else None
-                    ),
+                    "download_url": (f"/instructor/files/{fa.public_id}/download" if fa else None),
                     "resource_role": r.resource_role,
                     "position": r.position,
                 }
@@ -336,9 +334,7 @@ def _serialize_question(
                     "asset_id": str(fa.public_id) if fa else None,
                     "filename": fa.file_name if fa else None,
                     "file_name": fa.file_name if fa else None,
-                    "download_url": (
-                        f"/instructor/files/{fa.public_id}/download" if fa else None
-                    ),
+                    "download_url": (f"/instructor/files/{fa.public_id}/download" if fa else None),
                     "resource_role": r.resource_role,
                     "position": r.position,
                 }

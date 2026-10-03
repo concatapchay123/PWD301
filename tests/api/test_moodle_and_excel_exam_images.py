@@ -62,7 +62,17 @@ def test_excel_exam_with_image_markers():
     """Test parse_excel_exam extracts image tokens into resources."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.append(["STT", "Loại câu hỏi", "Nội dung câu hỏi", "Phương án A", "Phương án B", "Đáp án đúng", "Điểm số"])
+    ws.append(
+        [
+            "STT",
+            "Loại câu hỏi",
+            "Nội dung câu hỏi",
+            "Phương án A",
+            "Phương án B",
+            "Đáp án đúng",
+            "Điểm số",
+        ]
+    )
 
     asset_id = str(uuid.uuid4())
     stem = f"Quan sát sơ đồ sau:\n[[PWD301:IMAGE:{asset_id}]]\nChọn nhận định đúng?"
@@ -82,7 +92,9 @@ def test_excel_exam_with_image_markers():
     assert f"/instructor/files/{asset_id}/download" in q["resources"][0]["download_url"]
 
 
-def test_moodle_xml_with_embedded_base64_image(app, client: FlaskClient, instructor_user, sample_course):
+def test_moodle_xml_with_embedded_base64_image(
+    app, client: FlaskClient, instructor_user, sample_course
+):
     """Test parse_moodle_xml extracts base64 files and the route creates FileAsset."""
     sample_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     moodle_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -154,4 +166,3 @@ def test_moodle_xml_essay_question():
     assert "Microservices" in q["stem"]
     assert "chi phí vận hành" in q["explanation"]
     assert len(q["choices"]) == 0
-

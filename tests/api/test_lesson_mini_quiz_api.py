@@ -127,7 +127,9 @@ def test_create_and_fetch_lesson_with_all_question_types(
             "quiz": diverse_quiz,
         },
     )
-    assert res_create.status_code in (200, 201), f"Create failed: {res_create.get_data(as_text=True)}"
+    assert res_create.status_code in (200, 201), (
+        f"Create failed: {res_create.get_data(as_text=True)}"
+    )
     les_data = res_create.get_json()
     assert "lesson_id" in les_data or "id" in les_data
     lesson_id = les_data.get("lesson_id") or les_data.get("id")
@@ -284,4 +286,3 @@ def test_update_lesson_mini_quiz_questions(client: FlaskClient, quiz_instructor:
     assert len(q_data) == 2
     assert q_data[0]["type"] == "FILL_BLANK"
     assert q_data[1]["type"] == "TRUE_FALSE"
-

@@ -327,18 +327,18 @@ class TestWebAuth:
         finally:
             app.config["WTF_CSRF_ENABLED"] = False
 
-    def test_login_text_plain_json_body_fallback(
-        self, client: FlaskClient, web_user: User
-    ) -> None:
+    def test_login_text_plain_json_body_fallback(self, client: FlaskClient, web_user: User) -> None:
         """POST /auth/login with JSON body under text/plain content-type succeeds defensively."""
         import json
 
         resp = client.post(
             "/auth/login",
-            data=json.dumps({
-                "email": "student@demo.local",
-                "password": "Password123!",
-            }),
+            data=json.dumps(
+                {
+                    "email": "student@demo.local",
+                    "password": "Password123!",
+                }
+            ),
             content_type="text/plain;charset=UTF-8",
         )
         assert resp.status_code == 200
@@ -363,5 +363,6 @@ class TestWebAuth:
         resp = client.post("/auth/logout", json={})
         assert resp.status_code == 200
         set_cookies = resp.headers.getlist("Set-Cookie")
-        assert any("csrf_token=" in c and ("Max-Age=0" in c or "Expires=" in c) for c in set_cookies)
-
+        assert any(
+            "csrf_token=" in c and ("Max-Age=0" in c or "Expires=" in c) for c in set_cookies
+        )

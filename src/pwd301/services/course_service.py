@@ -412,6 +412,13 @@ def update_course(
     if course.status in ("PUBLISHED", "ARCHIVED") and not is_approved_review and not actor.is_admin:
         return queue_course_metadata_review(actor, course, data, session=sess)
 
+    admin_override = bool(actor.is_admin and course.owner_instructor_id and not is_approved_review)
+    clean_admin_reason = (data.get("reason") or "").strip()
+    if admin_override and not clean_admin_reason:
+        raise CourseValidationError(
+            "Admin direct edits to an Instructor-owned course require a reason."
+        )
+
     if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
         norm_client = normalize_row_version(data["row_version"])
         if norm_client is not None and norm_client != course.row_version:
@@ -552,15 +559,37 @@ def update_course(
     }
 
     # Audit metadata changes
+    audit_action = "COURSE_ADMIN_EDIT" if admin_override else "COURSE_UPDATED"
     _record_audit_event(
         sess=sess,
         actor=actor,
-        action="COURSE_UPDATED",
+        action=audit_action,
         target_id=course.id,
-        reason=data.get("reason"),
+        reason=clean_admin_reason if admin_override else data.get("reason"),
         before_json=json.dumps(before_state),
         after_json=json.dumps(after_state),
     )
+
+    if admin_override:
+        from pwd301.services.notification_service import dispatch_notification
+
+        dispatch_notification(
+            recipient_user=course.owner_instructor_id,
+            event_type="SYSTEM_ADMIN_INTERVENTION",
+            title=f"Quản trị viên đã chỉnh sửa khóa học {course.course_code}",
+            body=(
+                f"Quản trị viên đã cập nhật khóa học '{course.title}'. Lý do: {clean_admin_reason}"
+            ),
+            action_url=f"#/instructor/courses/manage?id={course.public_id}",
+            category="SYSTEM",
+            target_role="INSTRUCTOR",
+            payload={
+                "course_id": str(course.public_id),
+                "action": "COURSE_ADMIN_EDIT",
+                "reason": clean_admin_reason,
+            },
+            session=sess,
+        )
 
     try:
         sess.commit()
@@ -698,8 +727,20 @@ def queue_course_metadata_review(
         else:
             proposed["thumbnail_file_asset_id"] = None
 
-    if not proposed:
-        raise CourseValidationError("No valid metadata changes were proposed.")
+    # Filter out fields that are identical to current course values
+    actual_diff = {}
+    for k, v in proposed.items():
+        curr_val = getattr(course, k, None)
+        if isinstance(v, str) and isinstance(curr_val, str):
+            if v.strip() != curr_val.strip():
+                actual_diff[k] = v
+        elif v != curr_val:
+            actual_diff[k] = v
+
+    if not actual_diff:
+        # No actual differences between proposed metadata and live course: auto-skip
+        return course
+    proposed = actual_diff
 
     # Deduplication / Upsert: Check if there is already a PENDING CourseChangeRequest
     existing_req = (
@@ -827,8 +868,14 @@ def change_course_status(
 
     current_status = course.status
 
-    # Idempotent no-op
+    # Idempotent no-op is still an object-authorized action.
     if current_status == target_status:
+        is_admin_reviewer = bool(
+            actor.is_admin
+            and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
+        )
+        if not (can_manage_course(actor, course, reason=reason, session=sess) or is_admin_reviewer):
+            raise ForbiddenError("You do not have permission to manage this course.")
         return course
 
     # 1. Validate state machine transition graph
@@ -855,9 +902,11 @@ def change_course_status(
             raise ForbiddenError(
                 "Only administrators can restore courses from TRASH (requires course review permission)."
             )
+    else:
         # Standard management authorization (owner instructor or authorized admin reviewer)
         is_admin_reviewer = bool(
-            actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
+            actor.is_admin
+            and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
         )
         if not (can_manage_course(actor, course, reason=reason, session=sess) or is_admin_reviewer):
             raise ForbiddenError("You do not have permission to manage this course.")
@@ -894,6 +943,24 @@ def change_course_status(
         if len(clean_reason) < 5:
             raise CourseValidationError(
                 "Lý do từ chối đề cương kiểm toán bắt buộc tối thiểu 5 ký tự."
+            )
+
+    if target_status == "SUBMITTED_FOR_REVIEW":
+        # Validate that all attached resources across all active lessons are CLEAN
+        for cles in course.lessons:
+            if getattr(cles, "deleted_at", None) is None and getattr(cles, "status", "") != "TRASH":
+                for cres in getattr(cles, "resources", []):
+                    fa = cres.file_asset
+                    if fa is not None and fa.virus_scan_status != "CLEAN":
+                        res_name = cres.label or fa.display_name or fa.original_filename or "tệp đính kèm"
+                        raise CourseValidationError(
+                            f"Không thể gửi duyệt khóa học. Bài học '{cles.title}' chứa tệp đính kèm "
+                            f"chưa an toàn hoặc đã bị cách ly ('{res_name}'). "
+                            "Vui lòng gỡ bỏ hoặc thay thế tệp này trước khi gửi duyệt."
+                        )
+        if getattr(course, "thumbnail_file_asset", None) and course.thumbnail_file_asset.virus_scan_status != "CLEAN":
+            raise CourseValidationError(
+                "Không thể gửi duyệt khóa học do ảnh đại diện khóa học chưa được xác thực an toàn."
             )
 
     before_state = {"status": current_status}

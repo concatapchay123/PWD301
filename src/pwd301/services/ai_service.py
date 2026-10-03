@@ -951,9 +951,7 @@ def send_chat_message(
                 rec_block = (
                     "<personalized_course_catalog_recommendations>\n"
                     "Dưới đây là các khóa học phù hợp nhất từ hệ thống cho học viên "
-                    "(thuật toán Algorithm 14):\n"
-                    + "\n".join(rec_lines)
-                    + "\n"
+                    "(thuật toán Algorithm 14):\n" + "\n".join(rec_lines) + "\n"
                     "</personalized_course_catalog_recommendations>"
                 )
                 grounded_context_parts.append(rec_block)
@@ -968,8 +966,7 @@ def send_chat_message(
     # Build sanitized sliding window history (max 6 turns = 12 messages),
     # strictly isolating refusal/malicious turns from LLM prompt memory.
     raw_prior = [
-        m for m in sorted(conv.messages, key=lambda x: x.sequence_no)
-        if m.sequence_no < next_seq
+        m for m in sorted(conv.messages, key=lambda x: x.sequence_no) if m.sequence_no < next_seq
     ]
     skip_indices: set[int] = set()
     for idx, msg in enumerate(raw_prior):
@@ -985,7 +982,6 @@ def send_chat_message(
     history = [{"sender": m.sender, "content": m.content} for m in sliding_messages]
     # Append the current in-scope user turn (single append)
     history.append({"sender": "USER", "content": sanitized_content})
-
 
     t_start = time.time()
     telemetry_status = "SUCCEEDED"

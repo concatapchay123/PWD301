@@ -268,13 +268,16 @@ def test_instructor_list_assessment_attempts_api(
 
     client.post("/auth/login", json={"email": instructor_a.email, "password": "Password@123"})
 
-    resp = client.get(f"/instructor/assessments/{asm.public_id}/attempts")
+    resp = client.get(f"/instructor/assessments/{asm.public_id}/attempts?page=1&per_page=1")
     assert resp.status_code == 200
     data = resp.get_json()
 
     assert "attempts" in data
     assert "total" in data
     assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["per_page"] == 1
+    assert data["pages"] == 1
     assert len(data["attempts"]) == 1
 
     cand = data["attempts"][0]

@@ -202,7 +202,9 @@ def extract_docx_with_resources(
             for elem in body:
                 tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
                 if tag == "p":
-                    text = _extract_paragraph_content_and_images(elem, zf, rel_map, extracted_images)
+                    text = _extract_paragraph_content_and_images(
+                        elem, zf, rel_map, extracted_images
+                    )
                     if text.strip():
                         # Normalize multiple blank lines in paragraph
                         clean_p = re.sub(r"\n{3,}", "\n\n", text.strip())
@@ -289,7 +291,9 @@ def _omml_to_latex(elem: ET.Element) -> str:
             ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if ctag == "radPr":
                 for pr_child in child:
-                    if (pr_child.tag.split("}")[-1] if "}" in pr_child.tag else pr_child.tag) == "deg":
+                    if (
+                        pr_child.tag.split("}")[-1] if "}" in pr_child.tag else pr_child.tag
+                    ) == "deg":
                         deg_str = _omml_to_latex(pr_child).strip()
             elif ctag == "e":
                 e_str = _omml_to_latex(child).strip()
@@ -378,11 +382,15 @@ def _traverse_paragraph_node(
             for prop in rPr:
                 ptag = prop.tag.split("}")[-1] if "}" in prop.tag else prop.tag
                 if ptag == "u":
-                    u_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get("val", "single")
+                    u_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get(
+                        "val", "single"
+                    )
                     if u_val != "none":
                         r_underlined = True
                 elif ptag == "b":
-                    b_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get("val", "true")
+                    b_val = prop.attrib.get(f"{{{NS_MAP['w']}}}val") or prop.attrib.get(
+                        "val", "true"
+                    )
                     if b_val not in ("false", "0"):
                         r_bold = True
 
@@ -391,10 +399,17 @@ def _traverse_paragraph_node(
             ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
             if ctag == "rPr":
                 continue
-            parts.append(_traverse_paragraph_node(
-                child, zf, rel_map, extracted_images, seen_rel_ids_in_p,
-                is_underlined=r_underlined, is_bold=r_bold
-            ))
+            parts.append(
+                _traverse_paragraph_node(
+                    child,
+                    zf,
+                    rel_map,
+                    extracted_images,
+                    seen_rel_ids_in_p,
+                    is_underlined=r_underlined,
+                    is_bold=r_bold,
+                )
+            )
         return "".join(parts)
 
     if tag == "t" and node.text:
@@ -403,8 +418,8 @@ def _traverse_paragraph_node(
             l_space = len(text) - len(text.lstrip())
             r_space = len(text) - len(text.rstrip())
             lead = text[:l_space]
-            trail = text[len(text)-r_space:] if r_space > 0 else ""
-            core = text[l_space:len(text)-r_space] if r_space > 0 else text[l_space:]
+            trail = text[len(text) - r_space :] if r_space > 0 else ""
+            core = text[l_space : len(text) - r_space] if r_space > 0 else text[l_space:]
             return f"{lead}<u>{core}</u>{trail}"
         return text
 
@@ -435,13 +450,15 @@ def _traverse_paragraph_node(
                             ):
                                 img_idx = len(extracted_images)
                                 token = f"[[PWD301:EXTRACTED_IMAGE:{img_idx}]]"
-                                extracted_images.append({
-                                    "index": img_idx,
-                                    "filename": Path(target_path).name,
-                                    "mime_type": mime,
-                                    "data": img_bytes,
-                                    "token": token,
-                                })
+                                extracted_images.append(
+                                    {
+                                        "index": img_idx,
+                                        "filename": Path(target_path).name,
+                                        "mime_type": mime,
+                                        "data": img_bytes,
+                                        "token": token,
+                                    }
+                                )
                                 parts.append(f"\n{token}\n")
                         except Exception:
                             pass
@@ -449,10 +466,17 @@ def _traverse_paragraph_node(
 
     parts = []
     for child in node:
-        parts.append(_traverse_paragraph_node(
-            child, zf, rel_map, extracted_images, seen_rel_ids_in_p,
-            is_underlined=is_underlined, is_bold=is_bold
-        ))
+        parts.append(
+            _traverse_paragraph_node(
+                child,
+                zf,
+                rel_map,
+                extracted_images,
+                seen_rel_ids_in_p,
+                is_underlined=is_underlined,
+                is_bold=is_bold,
+            )
+        )
     return "".join(parts)
 
 
@@ -464,9 +488,7 @@ def _extract_paragraph_content_and_images(
 ) -> str:
     """Extract text and embed image markers for any drawings or VML shapes in paragraph."""
     seen_rel_ids_in_p: set[str] = set()
-    return _traverse_paragraph_node(
-        p_elem, zf, rel_map, extracted_images, seen_rel_ids_in_p
-    )
+    return _traverse_paragraph_node(p_elem, zf, rel_map, extracted_images, seen_rel_ids_in_p)
 
 
 def extract_text_from_pdf(file_path: Path) -> list[str]:

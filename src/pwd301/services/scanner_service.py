@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import struct
 import zipfile
@@ -32,12 +33,11 @@ EICAR_SIGNATURE_BYTES = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-
 CLAMAV_DEFAULT_MAX_STREAM_BYTES = 25 * 1024 * 1024
 
 # Dangerous PDF object markers indicating executable actions or script payloads
-# Ordered longest first to avoid prefix/substring shadowing (/JavaScript before /JS)
+# Distinct long markers avoiding false positive substring matches in compressed binary streams
 PDF_DANGEROUS_MARKERS: tuple[bytes, ...] = (
     b"/JavaScript",
     b"/EmbeddedFiles",
     b"/Launch",
-    b"/JS",
 )
 
 # File extensions that should never start with executable binary headers
@@ -272,6 +272,18 @@ class BuiltinHeuristicScanner(BaseScanner):
                         signature_name="PDF-Malicious-Object",
                         details=f"Suspicious PDF object detected: '{marker_name}'",
                     )
+            # Token-boundary inspection for /JS action payload:
+            # requires PDF delimiter and Action context
+            if re.search(rb"/JS[\s\(\<\[/]", raw_bytes) and (
+                b"/Action" in raw_bytes or b"/S" in raw_bytes or b"/JavaScript" in raw_bytes
+            ):
+                return ScanVerdict(
+                    status="FAIL",
+                    engine_name=self.ENGINE_NAME,
+                    engine_version=self.ENGINE_VERSION,
+                    signature_name="PDF-Malicious-Object",
+                    details="Suspicious PDF object detected: '/JS'",
+                )
 
         # 4. Deep OOXML / ZIP Container Inspection & Zip Bomb Mitigation
         if header_bytes.startswith(b"PK\x03\x04"):

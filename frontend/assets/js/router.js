@@ -239,9 +239,10 @@ class AppRouter {
     this.toggleShell(true);
     this.renderDynamicSidebar();
     this.updateTopbarBreadcrumb(path);
+    this.refreshNotificationBadge(false);
     if (this.currentRole === 'ADMIN') {
       const now = Date.now();
-      if (!this._lastAdminCountsFetch || now - this._lastAdminCountsFetch > 30000) {
+      if (!this._lastAdminCountsFetch || now - this._lastAdminCountsFetch > 15000) {
         this._lastAdminCountsFetch = now;
         this.fetchAdminPendingCounts();
       }
@@ -461,7 +462,7 @@ class AppRouter {
     } else if (path === '#/student/assessments/attempt' || (path.startsWith('#/student/assessments/attempts/') && !path.endsWith('/results'))) {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '');
       await StudentView.renderAttemptConsole(viewport, attId);
-    } else if (path === '#/student/assessments/results' || path.endsWith('/results')) {
+    } else if (path === '#/student/assessments/results' || (path.startsWith('#/student/') && path.endsWith('/results'))) {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
       await StudentView.renderAttemptResults(viewport, attId);
     } else if (path === '#/student/ai-assistant') {
@@ -722,6 +723,7 @@ class AppRouter {
           { label: 'Phân công giảng dạy', path: '#/admin/governance?tab=reassign', icon: 'swap_horiz', badge: 0 },
           { label: 'Bảo mật & Nhật ký', path: '#/admin/governance?tab=security', icon: 'policy', badge: 0 },
           { label: 'Vận hành hệ thống', path: '#/admin/operations', icon: 'monitoring', badge: 0 },
+          { label: 'Cài đặt tài khoản', path: '#/admin/settings', icon: 'settings', badge: 0 },
         ];
       }
     } else if (role === 'INSTRUCTOR') {
@@ -729,6 +731,7 @@ class AppRouter {
         { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
+        { label: 'Cài đặt', path: '#/instructor/settings', icon: 'settings' },
       ];
     } else {
       menu = [
@@ -945,7 +948,7 @@ class AppRouter {
 
         <div class="p-1.5 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
           <a
-            href="${this.currentRole === 'ADMIN' ? '#/admin/governance?tab=security' : this.currentRole === 'INSTRUCTOR' ? '#/instructor/settings' : '#/student/settings'}"
+            href="${this.currentRole === 'ADMIN' ? '#/admin/settings' : this.currentRole === 'INSTRUCTOR' ? '#/instructor/settings' : '#/student/settings'}"
             class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-semibold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#FAF9F5] dark:hover:bg-[#262524] hover:text-[#222120] dark:hover:text-[#EDEDEB] transition-colors"
             onclick="window.app?.closeAvatarDropdown?.() || document.getElementById('topbar-role-dropdown')?.classList.add('hidden')"
           >
@@ -1204,11 +1207,25 @@ class AppRouter {
     this.loadCachedNotifications();
     this.refreshNotificationBadge(true);
 
-    // Periodic background polling (every 60 seconds)
+    // Periodic background polling (every 8 seconds for real-time reactivity)
     if (this._notifInterval) clearInterval(this._notifInterval);
     this._notifInterval = setInterval(() => {
       this.refreshNotificationBadge(true);
-    }, 60000);
+      if (this.currentRole === 'ADMIN') {
+        this.fetchAdminPendingCounts();
+      }
+    }, 8000);
+
+    // Instant update on tab focus (silent badge sync only, never destroy and re-render route)
+    if (!this._notifFocusBound) {
+      this._notifFocusBound = true;
+      window.addEventListener('focus', () => {
+        this.refreshNotificationBadge(true);
+        if (this.currentRole === 'ADMIN') {
+          this.fetchAdminPendingCounts();
+        }
+      });
+    }
   }
 
   toggleNotificationsDropdown() {
@@ -1407,7 +1424,7 @@ class AppRouter {
 
           return `
             <div
-              class="notif-dropdown-item p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FAF9F5] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
+              class="notif-dropdown-item group p-3 sm:p-3.5 hover:bg-[#FAF9F5] dark:hover:bg-[#262524] transition-colors cursor-pointer flex items-start gap-3 relative ${isRead ? 'opacity-70 bg-[#FAF9F5] dark:bg-[#202020]' : 'bg-primary/[0.02] dark:bg-primary/[0.04]'}"
               data-id="${item.id}"
               data-link="${targetUrl ? targetUrl.replace(/"/g, '&quot;') : ''}"
             >
@@ -1425,6 +1442,14 @@ class AppRouter {
                   <div class="flex items-center gap-1.5 shrink-0">
                     <span class="text-[10.5px] text-[#8F8E8A] dark:text-[#6D6C68]">${relTime}</span>
                     ${!isRead ? '<span class="w-2 h-2 rounded-full bg-rose-600 ring-2 ring-[#FAF9F5] dark:ring-[#202020] shrink-0" title="Chưa đọc"></span>' : ''}
+                    <button
+                      type="button"
+                      class="notif-delete-btn p-1 rounded-md text-[#8F8E8A] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-80 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+                      data-id="${item.id}"
+                      title="Xóa thông báo"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">delete</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1462,6 +1487,16 @@ class AppRouter {
       };
     });
 
+    // Hook up delete buttons
+    dropdown.querySelectorAll('.notif-delete-btn').forEach(delBtn => {
+      delBtn.onclick = async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = delBtn.dataset.id;
+        await this.handleDeleteNotification(id);
+      };
+    });
+
     // Hook up mark all read
     const markAllBtn = document.getElementById('notif-dropdown-mark-all');
     if (markAllBtn) {
@@ -1480,6 +1515,31 @@ class AppRouter {
         await this.handleNotificationItemClick(id, link);
       };
     });
+  }
+
+  async handleDeleteNotification(notifId) {
+    if (!notifId || !this.notificationsCache) return;
+    const itemIndex = (this.notificationsCache.items || []).findIndex(i => String(i.id) === String(notifId));
+    if (itemIndex === -1) return;
+
+    const item = this.notificationsCache.items[itemIndex];
+    const wasUnread = !item.is_read && !item.read;
+
+    // Optimistic removal
+    this.notificationsCache.items.splice(itemIndex, 1);
+    if (wasUnread && typeof this.notificationsCache.unread_count === 'number' && this.notificationsCache.unread_count > 0) {
+      this.notificationsCache.unread_count--;
+    }
+    this.saveCachedNotifications();
+    this.updateBadgeFromCache();
+    this.renderNotificationsDropdownContent();
+
+    try {
+      await ApiClient.deleteNotification(notifId);
+      if (window.UI) UI.showToast('Đã xóa thông báo.', 'info');
+    } catch (err) {
+      console.warn('Silent deleteNotification error:', err);
+    }
   }
 
   async handleNotificationItemClick(notifId, link) {
@@ -1624,6 +1684,9 @@ class AppRouter {
         }));
         const unreadCount = data.unread_count ?? items.filter(i => !i.is_read).length;
 
+        const previousFirstId = this._lastSeenNotifId;
+        const newFirstId = items[0]?.id;
+
         this.notificationsCache = {
           items: items,
           unread_count: unreadCount,
@@ -1633,6 +1696,19 @@ class AppRouter {
         };
         this.saveCachedNotifications();
         this.updateBadgeFromCache();
+
+        // If a new unread notification arrived in the background, alert user without blowing away active route
+        if (previousFirstId && newFirstId && newFirstId !== previousFirstId) {
+          const newest = items[0];
+          if (newest && !newest.is_read) {
+            if (window.UI && typeof UI.showToast === 'function') {
+              UI.showToast(newest.title || 'Bạn có thông báo mới', 'info');
+            }
+          }
+        }
+        if (items.length > 0) {
+          this._lastSeenNotifId = items[0].id;
+        }
 
         // If dropdown is currently open or forceRender requested, re-render
         const dropdown = document.getElementById('topbar-notifications-dropdown');

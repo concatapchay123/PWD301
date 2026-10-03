@@ -116,6 +116,7 @@ class Notification(Base):
     body = db.Column(sa.Unicode(2000), nullable=False)
     read_at = db.Column(UTCDateTime, nullable=True)
     expires_at = db.Column(UTCDateTime, nullable=True)
+    deleted_at = db.Column(UTCDateTime, nullable=True)
     created_at = db.Column(
         UTCDateTime,
         nullable=False,
@@ -232,6 +233,7 @@ class Notification(Base):
             "is_read": self.is_read,
             "read_at": _to_utc_iso(self.read_at),
             "expires_at": _to_utc_iso(self.expires_at),
+            "deleted_at": _to_utc_iso(self.deleted_at),
             "created_at": _to_utc_iso(self.created_at),
             "action_url": action_url,
             "target_url": action_url,

@@ -646,7 +646,6 @@ class KnowledgeVersion(Base):
         sa.Boolean,
         nullable=False,
         default=False,
-        server_default=sa.text("0"),
     )
     source_revision_type = db.Column(sa.String(32), nullable=True)
     source_revision_id = db.Column(sa.BigInteger, nullable=True)

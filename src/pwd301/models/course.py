@@ -568,7 +568,6 @@ class Lesson(Base):
         sa.Integer,
         nullable=False,
         default=1,
-        server_default=sa.text("1"),
     )
     previous_lesson_id = db.Column(
         sa.BigInteger,

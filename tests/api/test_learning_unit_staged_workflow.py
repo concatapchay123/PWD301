@@ -1,17 +1,15 @@
-import json
 import uuid
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
+from pwd301.models.course import Course, CourseChangeRequest
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
 from pwd301.services.lesson_service import (
     approve_course_change_request,
-    create_learning_unit,
-    create_lesson,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
@@ -98,10 +96,31 @@ def test_staged_learning_unit_full_lifecycle(
         f"/instructor/courses/{course.public_id}/learning-units",
         json={"title": "Chương 2: Phần Mới Thêm"},
     )
+    assert res.status_code == 202
+    assert res.get_json()["pending_approval"] is True
+    initial_review = (
+        sess.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == course.id,
+            CourseChangeRequest.status == "PENDING",
+        )
+        .first()
+    )
+    assert initial_review is not None
+    initial_review.status = "CANCELLED"
+    sess.commit()
+
+    # Continue the direct staged-unit lifecycle on a draft course.
+    course.status = "DRAFT"
+    sess.commit()
+    res = client.post(
+        f"/instructor/courses/{course.public_id}/learning-units",
+        json={"title": "Chương 2: Phần Mới Thêm"},
+    )
     assert res.status_code == 201
     unit_data = res.get_json()
     unit_public_id = unit_data["learning_unit_id"]
-    assert unit_data["is_staged"] is True
+    assert unit_data["is_staged"] is False
     assert unit_data["pending_approval"] is False
 
     # 3. Instructor adds a lesson into the staged learning unit
@@ -182,8 +201,8 @@ def test_staged_learning_unit_full_lifecycle(
     res_units = client.get(f"/instructor/courses/{course.public_id}/learning-units")
     units = res_units.get_json()["items"]
     staged_unit = next(u for u in units if u["learning_unit_id"] == unit_public_id)
-    assert staged_unit["is_staged"] is True
-    assert staged_unit["pending_approval"] is True
+    assert staged_unit["is_staged"] is False
+    assert staged_unit["pending_approval"] is False
 
     # 8. Admin approves the change request
     req = approve_course_change_request(

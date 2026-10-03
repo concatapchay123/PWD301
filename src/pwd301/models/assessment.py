@@ -105,15 +105,9 @@ class Assessment(Base):
         default="AFTER_CLOSE",
         server_default=sa.text("'AFTER_CLOSE'"),
     )
-    exam_layout = db.Column(
-        sa.String(16), nullable=False, default="STANDARD", server_default=sa.text("'STANDARD'")
-    )
-    monitoring_enabled = db.Column(
-        sa.Boolean, nullable=False, default=True, server_default=sa.text("1")
-    )
-    request_fullscreen = db.Column(
-        sa.Boolean, nullable=False, default=True, server_default=sa.text("1")
-    )
+    exam_layout = db.Column(sa.String(16), nullable=False, default="STANDARD")
+    monitoring_enabled = db.Column(sa.Boolean, nullable=False, default=True)
+    request_fullscreen = db.Column(sa.Boolean, nullable=False, default=True)
     random_question_count = db.Column(sa.Integer, nullable=True)
     published_at = db.Column(UTCDateTime, nullable=True)
     first_attempt_started_at = db.Column(UTCDateTime, nullable=True)

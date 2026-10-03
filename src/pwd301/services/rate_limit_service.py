@@ -21,6 +21,7 @@ from typing import Any
 
 from pwd301.services.exceptions import (
     AIQuotaExceededError,
+    CurriculumRateLimitExceededError,
     EmailRateLimitExceededError,
 )
 
@@ -30,6 +31,7 @@ _lock = threading.Lock()
 _login_failed_attempts: dict[str, list[float]] = defaultdict(list)
 _ai_request_timestamps: dict[str, list[float]] = defaultdict(list)
 _email_dispatch_timestamps: dict[str, list[float]] = defaultdict(list)
+_curriculum_mutation_timestamps: dict[str, list[float]] = defaultdict(list)
 
 # Trusted loopback and proxy IP addresses exempt from whole-IP global lockout
 _TRUSTED_PROXIES: set[str] = {"127.0.0.1", "::1", "localhost", "testclient"}
@@ -287,12 +289,50 @@ def check_email_rate_limit(
         _record_file_timestamp(key, now, window_seconds=window_seconds)
 
 
+def check_curriculum_mutation_rate_limit(
+    actor_id: Any,
+    course_id: Any,
+    limit: int = 15,
+    window_seconds: int = 60,
+) -> None:
+    """Check curriculum modification rate limit per actor and course.
+
+    Limits rapid mutations (such as reordering lessons or repeatedly mutating curriculum)
+    to prevent queue flooding and denial-of-service on the database.
+
+    Raises:
+        CurriculumRateLimitExceededError: If mutation count exceeds limit within sliding window.
+    """
+    now = time.time()
+    key = f"curriculum:{actor_id}:{course_id}"
+    with _lock:
+        mem_timestamps = _clean_window(_curriculum_mutation_timestamps[key], window_seconds, now)
+        _curriculum_mutation_timestamps[key] = mem_timestamps
+        file_timestamps = _read_file_timestamps(key, window_seconds, now)
+        all_timestamps = sorted(set(mem_timestamps + file_timestamps))
+
+        if len(all_timestamps) >= limit:
+            oldest_in_window = all_timestamps[-limit]
+            remaining = int(window_seconds - (now - oldest_in_window)) + 1
+            retry_after = max(1, remaining)
+            raise CurriculumRateLimitExceededError(
+                f"Tần suất thao tác chương trình giảng dạy vượt quá giới hạn cho phép "
+                f"({len(all_timestamps)}/{limit} yêu cầu trong {window_seconds} giây). "
+                f"Vui lòng đợi {retry_after} giây trước khi thử lại.",
+                retry_after=retry_after,
+            )
+
+        _curriculum_mutation_timestamps[key].append(now)
+        _record_file_timestamp(key, now, window_seconds=window_seconds)
+
+
 def reset_all_rate_limits() -> None:
     """Reset all in-memory and shared file rate limiting state."""
     with _lock:
         _login_failed_attempts.clear()
         _ai_request_timestamps.clear()
         _email_dispatch_timestamps.clear()
+        _curriculum_mutation_timestamps.clear()
     for dir_path in [
         _get_rate_limit_dir(),
         Path(__file__).resolve().parent.parent.parent / "instance" / "rate_limits",

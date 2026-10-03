@@ -22,13 +22,13 @@ def test_admin_subroles_and_permissions(app):
         primary_admin = register_user(
             email="primary_admin_test@pwd301.local",
             password="AdminPass1234!",
-            display_name="Primary Admin"
+            display_name="Primary Admin",
         )
 
         role_admin = UserRole(
             user_id=primary_admin.id,
             role_id=admin_role.id,
-            assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Initial primary admin"
+            assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Initial primary admin",
         )
         db.session.add(role_admin)
         db.session.commit()
@@ -44,13 +44,13 @@ def test_admin_subroles_and_permissions(app):
         course_admin = register_user(
             email="course_admin_test@pwd301.local",
             password="CoursePass1234!",
-            display_name="Course Review Admin"
+            display_name="Course Review Admin",
         )
 
         role_course = UserRole(
             user_id=course_admin.id,
             role_id=admin_role.id,
-            assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | Reviewer"
+            assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | Reviewer",
         )
         db.session.add(role_course)
         db.session.commit()
@@ -64,12 +64,10 @@ def test_admin_subroles_and_permissions(app):
 
         # Cleanup
         ids = [primary_admin.id, course_admin.id]
-        db.session.query(UserRole).filter(
-            UserRole.user_id.in_(ids)
-        ).delete(synchronize_session=False)
-        db.session.query(User).filter(
-            User.id.in_(ids)
-        ).delete(synchronize_session=False)
+        db.session.query(UserRole).filter(UserRole.user_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        db.session.query(User).filter(User.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
 
 
@@ -79,15 +77,15 @@ def test_auth_profile_and_preferences(app, client):
         user = register_user(
             email="settings_user_test@pwd301.local",
             password="StudentPass1234!",
-            display_name="Test Student"
+            display_name="Test Student",
         )
         user_id = user.id
 
     # Login
-    login_res = client.post("/auth/login", json={
-        "email": "settings_user_test@pwd301.local",
-        "password": "StudentPass1234!"
-    })
+    login_res = client.post(
+        "/auth/login",
+        json={"email": "settings_user_test@pwd301.local", "password": "StudentPass1234!"},
+    )
     assert login_res.status_code == 200
 
     # GET /auth/profile
@@ -98,12 +96,16 @@ def test_auth_profile_and_preferences(app, client):
     assert pdata["email"] == "settings_user_test@pwd301.local"
 
     # PUT /auth/profile
-    update_res = client.put("/auth/profile", json={
-        "display_name": "Updated Student Name",
-        "avatar_url": "https://example.com/new-avatar.png"
-    })
+    update_res = client.put(
+        "/auth/profile",
+        json={
+            "display_name": "Updated Student Name",
+            "avatar_url": "https://example.com/new-avatar.png",
+        },
+    )
     assert update_res.status_code == 200
     assert update_res.get_json()["profile"]["display_name"] == "Updated Student Name"
+    assert update_res.get_json()["profile"]["avatar_url"] == "https://example.com/new-avatar.png"
 
     # GET /auth/preferences
     pref_res = client.get("/auth/preferences")
@@ -117,7 +119,7 @@ def test_auth_profile_and_preferences(app, client):
         "email_course": False,
         "email_assessment": True,
         "email_grade": True,
-        "email_marketing": True
+        "email_marketing": True,
     }
     update_pref_res = client.put("/auth/preferences", json={"preferences": new_prefs})
     assert update_pref_res.status_code == 200
@@ -129,8 +131,11 @@ def test_auth_profile_and_preferences(app, client):
     with app.app_context():
         from pwd301.models.identity import AuthSession
         from pwd301.models.notification_audit import NotificationPreference
+
         db.session.query(AuthSession).filter_by(user_id=user_id).delete(synchronize_session=False)
-        db.session.query(NotificationPreference).filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.query(NotificationPreference).filter_by(user_id=user_id).delete(
+            synchronize_session=False
+        )
         db.session.query(UserRole).filter_by(user_id=user_id).delete(synchronize_session=False)
         db.session.query(User).filter_by(id=user_id).delete(synchronize_session=False)
         db.session.commit()
@@ -149,12 +154,12 @@ def test_admin_subrole_rbac_enforcement(app, client):
         course_admin = register_user(
             email="course_only_admin@pwd301.local",
             password="AdminPass1234!",
-            display_name="Course Only Admin"
+            display_name="Course Only Admin",
         )
         ur_course = UserRole(
             user_id=course_admin.id,
             role_id=admin_role.id,
-            assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | Reviewer only"
+            assignment_reason="SUB_ROLE:ADMIN_COURSE_REVIEW | Reviewer only",
         )
         db.session.add(ur_course)
 
@@ -162,25 +167,24 @@ def test_admin_subrole_rbac_enforcement(app, client):
         target_student = register_user(
             email="target_student_test@pwd301.local",
             password="StudentPass1234!",
-            display_name="Target Student"
+            display_name="Target Student",
         )
         db.session.commit()
         course_admin_id = course_admin.id
         target_student_id = target_student.id
 
     # Login as course_admin
-    login_res = client.post("/auth/login", json={
-        "email": "course_only_admin@pwd301.local",
-        "password": "AdminPass1234!"
-    })
+    login_res = client.post(
+        "/auth/login",
+        json={"email": "course_only_admin@pwd301.local", "password": "AdminPass1234!"},
+    )
     assert login_res.status_code == 200
 
     # Non-primary admin attempts to manage roles -> 403 Forbidden
-    role_res = client.post(f"/admin/users/{target_student_id}/roles", json={
-        "action": "assign",
-        "role": "INSTRUCTOR",
-        "reason": "Unauthorized assignment test"
-    })
+    role_res = client.post(
+        f"/admin/users/{target_student_id}/roles",
+        json={"action": "assign", "role": "INSTRUCTOR", "reason": "Unauthorized assignment test"},
+    )
     assert role_res.status_code == 403
     assert "chính" in role_res.get_json()["error"]["message"]
 
@@ -192,19 +196,18 @@ def test_admin_subrole_rbac_enforcement(app, client):
     with app.app_context():
         from pwd301.models.identity import AuthSession
         from pwd301.models.notification_audit import NotificationPreference
+
         uids = [course_admin_id, target_student_id]
-        db.session.query(AuthSession).filter(
-            AuthSession.user_id.in_(uids)
-        ).delete(synchronize_session=False)
+        db.session.query(AuthSession).filter(AuthSession.user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
         db.session.query(NotificationPreference).filter(
             NotificationPreference.user_id.in_(uids)
         ).delete(synchronize_session=False)
-        db.session.query(UserRole).filter(
-            UserRole.user_id.in_(uids)
-        ).delete(synchronize_session=False)
-        db.session.query(User).filter(
-            User.id.in_(uids)
-        ).delete(synchronize_session=False)
+        db.session.query(UserRole).filter(UserRole.user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
+        db.session.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
         db.session.commit()
 
 
@@ -215,9 +218,7 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
             admin_role = Role(code="ADMIN", name="Administrator")
             db.session.add(admin_role)
             db.session.flush()
-        sub_admin = register_user(
-            "matrix.subadmin@pwd301.local", "AdminPass1234!", "Sub Admin"
-        )
+        sub_admin = register_user("matrix.subadmin@pwd301.local", "AdminPass1234!", "Sub Admin")
         db.session.add(
             UserRole(
                 user_id=sub_admin.id,
@@ -250,7 +251,16 @@ def test_only_primary_admin_can_list_users_or_assign_primary_role(app, client):
         "/auth/login", json={"email": "matrix.primary@pwd301.local", "password": "AdminPass1234!"}
     )
     assert primary_login.status_code == 200
-    assert primary_client.get("/admin/users").status_code == 200
+    admin_users_res = primary_client.get("/admin/users")
+    assert admin_users_res.status_code == 200
+    admin_users_list = admin_users_res.get_json()["users"]
+    assert len(admin_users_list) > 0
+    assert "avatar_url" in admin_users_list[0]
+
+    admin_user_detail = primary_client.get(f"/admin/users/{target_id}")
+    assert admin_user_detail.status_code == 200
+    assert "avatar_url" in admin_user_detail.get_json()
+
     response = primary_client.post(
         f"/admin/users/{target_id}/roles",
         json={
@@ -288,12 +298,12 @@ def test_notifications_and_evidence_preview(app, client):
         admin_user = register_user(
             email="notif_admin_test@pwd301.local",
             password="AdminPass1234!",
-            display_name="Notif Admin"
+            display_name="Notif Admin",
         )
         ur_admin = UserRole(
             user_id=admin_user.id,
             role_id=admin_role.id,
-            assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Primary"
+            assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Primary",
         )
         db.session.add(ur_admin)
 
@@ -301,7 +311,7 @@ def test_notifications_and_evidence_preview(app, client):
         applicant = register_user(
             email="applicant_test@pwd301.local",
             password="StudentPass1234!",
-            display_name="Applicant Student"
+            display_name="Applicant Student",
         )
         db.session.commit()
         admin_id = admin_user.id
@@ -311,23 +321,26 @@ def test_notifications_and_evidence_preview(app, client):
         app_record = InstructorApplication(
             applicant_user_id=applicant.id,
             status="PENDING",
-            application_note=json.dumps({
-                "institution": "Đại học Bách Khoa",
-                "specialization": "Khoa học Máy tính",
-                "attached_files": [
-                    {
-                        "doc_type": "CV_PORTFOLIO",
-                        "original_name": "CV_NguyenVanA.pdf",
-                        "saved_filename": "evidence_cv_test.pdf",
-                        "size": 102400
-                    }
-                ]
-            })
+            application_note=json.dumps(
+                {
+                    "institution": "Đại học Bách Khoa",
+                    "specialization": "Khoa học Máy tính",
+                    "attached_files": [
+                        {
+                            "doc_type": "CV_PORTFOLIO",
+                            "original_name": "CV_NguyenVanA.pdf",
+                            "saved_filename": "evidence_cv_test.pdf",
+                            "size": 102400,
+                        }
+                    ],
+                }
+            ),
         )
         db.session.add(app_record)
 
         # Create direct notification
         from pwd301.services.notification_service import dispatch_notification
+
         dispatch_notification(
             recipient_user=admin_id,
             event_type="INSTRUCTOR_APPLICATION_SUBMITTED",
@@ -336,46 +349,48 @@ def test_notifications_and_evidence_preview(app, client):
             action_url="#/admin/governance?tab=applications",
             category="SYSTEM",
             payload={"action_url": "#/admin/governance?tab=applications"},
-            session=db.session
+            session=db.session,
         )
         db.session.commit()
         app_record_id = app_record.id
 
         # Verify notification has SPA action_url
-        notif = db.session.query(Notification).filter_by(
-            recipient_user_id=admin_id,
-        ).first()
+        notif = (
+            db.session.query(Notification)
+            .filter_by(
+                recipient_user_id=admin_id,
+            )
+            .first()
+        )
         assert notif is not None
         assert notif.to_dict()["action_url"] == "#/admin/governance?tab=applications"
 
     # Login as admin
-    login_res = client.post("/auth/login", json={
-        "email": "notif_admin_test@pwd301.local",
-        "password": "AdminPass1234!"
-    })
+    login_res = client.post(
+        "/auth/login", json={"email": "notif_admin_test@pwd301.local", "password": "AdminPass1234!"}
+    )
     assert login_res.status_code == 200
 
     # Cleanup
     with app.app_context():
         from pwd301.models.identity import AuthSession
         from pwd301.models.notification_audit import NotificationPreference
+
         uids = [admin_id, applicant_id]
-        db.session.query(Notification).filter(
-            Notification.recipient_user_id.in_(uids)
-        ).delete(synchronize_session=False)
+        db.session.query(Notification).filter(Notification.recipient_user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
         db.session.query(InstructorApplication).filter(
             InstructorApplication.id == app_record_id
         ).delete(synchronize_session=False)
-        db.session.query(AuthSession).filter(
-            AuthSession.user_id.in_(uids)
-        ).delete(synchronize_session=False)
+        db.session.query(AuthSession).filter(AuthSession.user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
         db.session.query(NotificationPreference).filter(
             NotificationPreference.user_id.in_(uids)
         ).delete(synchronize_session=False)
-        db.session.query(UserRole).filter(
-            UserRole.user_id.in_(uids)
-        ).delete(synchronize_session=False)
-        db.session.query(User).filter(
-            User.id.in_(uids)
-        ).delete(synchronize_session=False)
+        db.session.query(UserRole).filter(UserRole.user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
+        db.session.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
         db.session.commit()

@@ -166,15 +166,15 @@ def test_admin_health_six_core_services(
     assert "mssql" in services
     assert "clamav" in services
     assert "storage_minio" in services
-    assert "qdrant_vector" in services
-    assert "redis_tokens" in services
+    assert "workers" in services
+    assert "mail_queue" in services
 
     assert services["web_core"]["status"] in ("HEALTHY", "DEGRADED")
     assert services["mssql"]["status"] in ("HEALTHY", "DEGRADED", "DOWN")
     assert services["clamav"]["status"] in ("HEALTHY", "DEGRADED")
     assert services["storage_minio"]["status"] in ("HEALTHY", "DEGRADED")
-    assert services["qdrant_vector"]["status"] in ("HEALTHY", "DEGRADED")
-    assert services["redis_tokens"]["status"] in ("HEALTHY", "DEGRADED")
+    assert services["workers"]["status"] in ("HEALTHY", "DEGRADED", "UNKNOWN")
+    assert services["mail_queue"]["status"] in ("HEALTHY", "DEGRADED", "UNKNOWN")
 
 
 def test_admin_security_self_demotion_blocked(

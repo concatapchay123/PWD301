@@ -1,10 +1,11 @@
 """Tests for POST /instructor/exams/parse-file endpoint."""
+
 import io
-import pytest
+
 from pwd301.extensions import db
-from pwd301.services.user_service import register_user, assign_role_to_user
-from tests.test_m3_challenger_stress import _make_sample_docx, _make_sample_pdf
+from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
+from tests.test_m3_challenger_stress import _make_sample_docx
 
 
 def _setup_instructor(email="inst_parse@test.edu"):
@@ -42,9 +43,7 @@ def test_parse_exam_file_txt(client, app):
     )
     res = client.post(
         "/instructor/exams/parse-file",
-        data={
-            "file": (io.BytesIO(txt_content.encode("utf-8")), "de_thi.txt", "text/plain")
-        },
+        data={"file": (io.BytesIO(txt_content.encode("utf-8")), "de_thi.txt", "text/plain")},
         content_type="multipart/form-data",
     )
     assert res.status_code == 200
@@ -59,18 +58,24 @@ def test_parse_exam_file_docx(client, app):
         user = _setup_instructor("inst_parse_docx@test.edu")
         login_web_user(client, user)
 
-    docx_bytes = _make_sample_docx([
-        "Câu 1: Kiến trúc RESTful dựa trên giao thức nào?",
-        "A. FTP",
-        "*B. HTTP",
-        "C. SMTP",
-        "D. SSH",
-        "Lời giải: RESTful sử dụng HTTP làm giao thức truyền thông tải dữ liệu.",
-    ])
+    docx_bytes = _make_sample_docx(
+        [
+            "Câu 1: Kiến trúc RESTful dựa trên giao thức nào?",
+            "A. FTP",
+            "*B. HTTP",
+            "C. SMTP",
+            "D. SSH",
+            "Lời giải: RESTful sử dụng HTTP làm giao thức truyền thông tải dữ liệu.",
+        ]
+    )
     res = client.post(
         "/instructor/exams/parse-file",
         data={
-            "file": (io.BytesIO(docx_bytes), "de_thi_rest.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            "file": (
+                io.BytesIO(docx_bytes),
+                "de_thi_rest.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
         },
         content_type="multipart/form-data",
     )
@@ -85,6 +90,7 @@ def test_parse_exam_file_docx(client, app):
 def test_parse_exam_file_docx_with_underline_and_math(client, app):
     """Test that underlined choices are formatted as <u>...</u> and OMML fractions become LaTeX."""
     import zipfile
+
     with app.app_context():
         user = _setup_instructor("inst_parse_math@test.edu")
         login_web_user(client, user)
@@ -95,21 +101,25 @@ def test_parse_exam_file_docx_with_underline_and_math(client, app):
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
             'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">\n'
-            '  <w:body>\n'
-            '    <w:p><w:r><w:t>Câu 1: Cho hàm số f(x) = </w:t></w:r>'
-            '      <m:oMath><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>'
-            '      <w:r><w:t>. Chọn đáp án đúng:</w:t></w:r></w:p>\n'
+            "  <w:body>\n"
+            "    <w:p><w:r><w:t>Câu 1: Cho hàm số f(x) = </w:t></w:r>"
+            "      <m:oMath><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>"
+            "      <w:r><w:t>. Chọn đáp án đúng:</w:t></w:r></w:p>\n"
             '    <w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>A</w:t></w:r><w:r><w:t>. Bằng 0.5</w:t></w:r></w:p>\n'
-            '    <w:p><w:r><w:t>B. Bằng 1</w:t></w:r></w:p>\n'
-            '  </w:body>\n'
-            '</w:document>'
+            "    <w:p><w:r><w:t>B. Bằng 1</w:t></w:r></w:p>\n"
+            "  </w:body>\n"
+            "</w:document>"
         )
         zf.writestr("word/document.xml", doc_xml.encode("utf-8"))
 
     res = client.post(
         "/instructor/exams/parse-file",
         data={
-            "file": (io.BytesIO(buffer.getvalue()), "de_toan_omml.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            "file": (
+                io.BytesIO(buffer.getvalue()),
+                "de_toan_omml.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
         },
         content_type="multipart/form-data",
     )

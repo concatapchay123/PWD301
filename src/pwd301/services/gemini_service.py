@@ -70,8 +70,7 @@ class RedactingFilter(logging.Filter):
         if record.args:
             if isinstance(record.args, dict):
                 record.args = {
-                    k: mask_api_key(v) if isinstance(v, str) else v
-                    for k, v in record.args.items()
+                    k: mask_api_key(v) if isinstance(v, str) else v for k, v in record.args.items()
                 }
             elif isinstance(record.args, tuple):
                 record.args = tuple(
@@ -265,6 +264,7 @@ class GeminiClientBase(ABC):
         self,
         messages: list[dict[str, str]],
         context: str | None = None,
+        skip_scope_check: bool = False,
     ) -> str:
         """Generate conversational LMS assistant response."""
         pass
@@ -521,9 +521,9 @@ class GeminiKeyPool:
         cleaned = raw_key.strip()
         if not cleaned or cleaned.endswith("WDXxUw"):
             return
-        is_valid_format = (
-            cleaned.startswith("AQ.") or cleaned.startswith("AIzaSy")
-        ) and len(cleaned) > 20
+        is_valid_format = (cleaned.startswith("AQ.") or cleaned.startswith("AIzaSy")) and len(
+            cleaned
+        ) > 20
         if (
             is_valid_format or (allow_test_keys and len(cleaned) > 0)
         ) and cleaned not in self._keys:

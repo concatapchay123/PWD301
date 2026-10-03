@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.attempt_regrade import (
+    AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
 from pwd301.models.course import Course, Enrollment
@@ -36,8 +37,11 @@ from pwd301.services.assessment_service import (
 from pwd301.services.attempt_service import (
     _grouped_fill_answer_correct,
     _grouped_multiple_choice_correct,
+    _isoformat_utc,
     get_attempt_delivery,
+    get_instructor_attempt_evaluation,
     grade_essay_question,
+    list_assessment_student_results,
     save_attempt_answer,
     start_assessment_attempt,
     submit_assessment_attempt,
@@ -47,10 +51,77 @@ from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.exceptions import (
     AttemptNotSubmittedError,
+    AttemptValidationError,
+    ConflictError,
     MaxPointsExceededError,
+    ValidationError,
 )
 from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
+
+
+def _create_submitted_attempt_for_regression(
+    instructor: User,
+    student: User,
+    course: Course,
+    question_type: str,
+) -> tuple[object, object]:
+    """Create one submitted attempt for focused grading regression tests."""
+    sess: Session = db.session
+    question_payload: dict[str, object] = {
+        "question_type": question_type,
+        "difficulty": "REMEMBER",
+        "content": f"Regression {question_type}",
+        "default_points": 10.0,
+    }
+    if question_type == "SINGLE_CHOICE":
+        question_payload["choices"] = [
+            {"content": "A", "is_correct": True, "position": 1},
+            {"content": "B", "is_correct": False, "position": 2},
+        ]
+    question = create_question(instructor, course.id, question_payload, session=sess)
+    assessment = create_assessment(
+        instructor,
+        course.id,
+        {"title": f"Regression {question_type} assessment", "assessment_type": "QUIZ"},
+        session=sess,
+    )
+    assign_question(
+        instructor,
+        assessment.id,
+        {"question_id": question.id, "points_assigned": 10.0},
+        session=sess,
+    )
+    publish_assessment(instructor, assessment.id, session=sess)
+    attempt, lease_token = start_assessment_attempt(student, assessment.id, session=sess)
+    aq = attempt.attempt_questions[0]
+    answer: dict[str, object] = {"client_sequence": 1}
+    if question_type == "ESSAY":
+        answer["answer_text"] = "A submitted answer"
+    else:
+        answer["selected_choice_keys"] = [str(aq.choice_snapshots[0].choice_key_snapshot)]
+    save_attempt_answer(
+        actor=student,
+        attempt_id=attempt.id,
+        attempt_question_id=aq.id,
+        payload=answer,
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+    submit_assessment_attempt(
+        actor=student,
+        attempt_id=attempt.id,
+        idempotency_key=uuid.uuid4(),
+        raw_lease_token=lease_token,
+        session=sess,
+    )
+    sess.refresh(attempt)
+    return attempt, aq
+
+
+def test_audit_result_timestamps_include_explicit_utc_offset() -> None:
+    assert _isoformat_utc(datetime(2026, 10, 3, 4, 0, 0)) == "2026-10-03T04:00:00Z"
+    assert _isoformat_utc(datetime(2026, 10, 3, 4, 0, tzinfo=UTC)) == "2026-10-03T04:00:00Z"
 
 
 @pytest.fixture
@@ -462,15 +533,12 @@ def test_grouped_multiple_choice_grades_one_correct_selection_per_group(
     publish_assessment(instructor_user, assessment.id, session=sess)
     sess.commit()
 
-    attempt, lease_token = start_assessment_attempt(
-        enrolled_student, assessment.id, session=sess
-    )
+    attempt, lease_token = start_assessment_attempt(enrolled_student, assessment.id, session=sess)
     attempt_question = attempt.attempt_questions[0]
     valid_choices = [
         choice
         for choice in attempt_question.choice_snapshots
-        if choice.content_snapshot
-        in ("[[PWD301:G:DRAG:1]]HTTP", "[[PWD301:G:DRAG:2]]Retrieval")
+        if choice.content_snapshot in ("[[PWD301:G:DRAG:1]]HTTP", "[[PWD301:G:DRAG:2]]Retrieval")
     ]
     save_attempt_answer(
         actor=enrolled_student,
@@ -605,9 +673,7 @@ def test_fill_in_blank_grades_each_blank_without_delivering_answer_keys(
     publish_assessment(instructor_user, assessment.id, session=sess)
     sess.commit()
 
-    attempt, lease_token = start_assessment_attempt(
-        enrolled_student, assessment.id, session=sess
-    )
+    attempt, lease_token = start_assessment_attempt(enrolled_student, assessment.id, session=sess)
     attempt_question = attempt.attempt_questions[0]
     delivery = get_attempt_delivery(enrolled_student, attempt.id, session=sess)
     delivered_question = delivery["questions"][0]
@@ -1082,3 +1148,147 @@ def test_course_completion_recalculated_on_assessment_pass(
     sess.refresh(enrollment)
     assert enrollment.status == "COMPLETED"
     assert enrollment.completed_at is not None
+
+
+def test_audit_invalid_manual_scores_are_validation_errors(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """Non-numeric and non-finite manual scores must fail before mutation."""
+    attempt, aq = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "ESSAY"
+    )
+
+    for invalid in ("bogus", "NaN", "Infinity", "-Infinity"):
+        with pytest.raises((AttemptValidationError, MaxPointsExceededError)):
+            grade_essay_question(
+                instructor_user,
+                attempt.id,
+                aq.id,
+                invalid,
+                reason="Invalid score regression",
+                session=db.session,
+            )
+        db.session.rollback()
+
+
+def test_audit_essay_grading_rejects_objective_snapshot(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """The essay endpoint cannot mutate a choice-question snapshot."""
+    attempt, aq = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "SINGLE_CHOICE"
+    )
+
+    with pytest.raises(AttemptValidationError, match="ESSAY"):
+        grade_essay_question(
+            instructor_user,
+            attempt.id,
+            aq.id,
+            0,
+            reason="Must not rewrite objective grade",
+            session=db.session,
+        )
+
+
+def test_audit_score_revision_requires_real_reason_and_pending_is_in_gradebook(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """Pending attempts stay listed and score revisions require a reason."""
+    attempt, aq = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "ESSAY"
+    )
+
+    grade_essay_question(
+        instructor_user,
+        attempt.id,
+        aq.id,
+        7,
+        reason="Initial manual assessment",
+        session=db.session,
+    )
+    db.session.refresh(attempt)
+    with pytest.raises(AttemptValidationError, match="reason"):
+        grade_essay_question(
+            instructor_user,
+            attempt.id,
+            aq.id,
+            8,
+            reason="   ",
+            session=db.session,
+        )
+
+    result = list_assessment_student_results(
+        instructor_user,
+        attempt.assessment,
+        session=db.session,
+    )
+    assert result["total"] == 1
+
+
+def test_audit_admin_individual_result_requires_reason(
+    app: Flask,
+    admin_user: User,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """Admin aggregate access does not grant unreasoned individual detail access."""
+    attempt, _ = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "ESSAY"
+    )
+
+    with pytest.raises(ValidationError, match="Reason"):
+        get_instructor_attempt_evaluation(admin_user, attempt.id, session=db.session)
+
+
+def test_audit_grade_revision_requires_matching_row_version(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """A stale or missing version cannot overwrite an existing grade."""
+    attempt, aq = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "ESSAY"
+    )
+    grade_essay_question(
+        instructor_user,
+        attempt.id,
+        aq.id,
+        5,
+        reason="Initial grade",
+        session=db.session,
+    )
+    grade = db.session.get(AttemptQuestionGrade, aq.id)
+    assert grade is not None
+    grade.row_version = b"v1"
+    db.session.commit()
+
+    with pytest.raises(ConflictError):
+        grade_essay_question(
+            instructor_user,
+            attempt.id,
+            aq.id,
+            6,
+            reason="Concurrent revision without version",
+            session=db.session,
+        )
+    with pytest.raises(ConflictError):
+        grade_essay_question(
+            instructor_user,
+            attempt.id,
+            aq.id,
+            6,
+            reason="Concurrent revision with stale version",
+            expected_row_version="stale",
+            session=db.session,
+        )

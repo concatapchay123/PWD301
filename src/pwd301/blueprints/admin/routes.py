@@ -150,13 +150,31 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
             "status": item.status,
             "summary": item.summary,
             "markdown_content": item.markdown_content,
-            "is_flagged": bool(item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")),
-            "flag_reason": (item.material_change_summary.replace("[FLAGGED]: ", "") if (item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")) else None),
+            "is_flagged": bool(
+                item.material_change_summary
+                and item.material_change_summary.startswith("[FLAGGED]: ")
+            ),
+            "flag_reason": (
+                item.material_change_summary.replace("[FLAGGED]: ", "")
+                if (
+                    item.material_change_summary
+                    and item.material_change_summary.startswith("[FLAGGED]: ")
+                )
+                else None
+            ),
             "resources": [
                 {
+                    "resource_id": resource.id,
+                    "asset_id": str(resource.file_asset.public_id),
                     "label": resource.label or resource.file_asset.display_name,
+                    "filename": resource.file_asset.original_filename or resource.file_asset.display_name,
+                    "mime_type": resource.file_asset.mime_type or "application/octet-stream",
+                    "file_url": f"/student/files/{resource.file_asset.public_id}/download?disposition=inline",
+                    "download_url": f"/student/files/{resource.file_asset.public_id}/download",
                     "resource_type": resource.resource_type,
                     "scan_status": resource.file_asset.virus_scan_status,
+                    "is_clean": resource.file_asset.virus_scan_status == "CLEAN",
+                    "is_video": resource.file_asset.is_video,
                 }
                 for resource in item.resources
                 if resource.file_asset is not None
@@ -248,6 +266,7 @@ def admin_users() -> tuple[Response, int] | Response | str:
                         "user_id": str(u.public_id),
                         "email": u.email,
                         "display_name": u.display_name,
+                        "avatar_url": u.avatar_url,
                         "status": u.status,
                         "roles": sorted(u.role_codes),
                         "admin_sub_role": u.admin_sub_role,
@@ -283,6 +302,7 @@ def admin_get_user(user_id: str) -> tuple[Response, int] | Response:
                 "user_id": str(target_user.public_id),
                 "email": target_user.email,
                 "display_name": target_user.display_name,
+                "avatar_url": target_user.avatar_url,
                 "status": target_user.status,
                 "roles": sorted(target_user.role_codes),
                 "admin_sub_role": target_user.admin_sub_role,
@@ -427,9 +447,12 @@ def review_course(course_id: str) -> Any:
         raise ForbiddenError("Bạn không có quyền thẩm định đề cương khóa học.")
 
     from pwd301.services.authorization_service import _resolve_course
+
     course_obj = _resolve_course(course_id, session=db.session)
     if course_obj is not None and course_obj.owner_instructor_id == actor.id:
-        raise ForbiddenError("Bạn không được phép tự duyệt khóa học do chính mình làm giảng viên quản lý. Khóa học phải được Admin khác thẩm định.")
+        raise ForbiddenError(
+            "Bạn không được phép tự duyệt khóa học do chính mình làm giảng viên quản lý. Khóa học phải được Admin khác thẩm định."
+        )
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     action = str(payload.get("action", "")).strip().lower()
@@ -1302,30 +1325,47 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
     query = db.session.query(CourseChangeRequest).order_by(
         CourseChangeRequest.created_at.desc(), CourseChangeRequest.id.desc()
     )
-    if status_filter != "ALL":
+    if status_filter == "ALL":
+        # In the admin review queue, completed requests (APPROVED, REJECTED, CANCELLED)
+        # must automatically disappear, including from the 'ALL' tab. The queue only holds
+        # active actionable requests waiting for admin review.
+        query = query.filter(CourseChangeRequest.status == "PENDING")
+    elif status_filter == "PENDING":
+        query = query.filter(CourseChangeRequest.status == "PENDING")
+    else:
         query = query.filter(CourseChangeRequest.status == status_filter)
 
     records = query.all()
-    visible_records = []
-    seen_pending: set[tuple[Any, ...]] = set()
+    # Consolidate PENDING records per course to enforce exactly 1 consolidated row per course
+    pending_by_course: dict[int, list[CourseChangeRequest]] = {}
+    other_records: list[CourseChangeRequest] = []
     for record in records:
-        if record.status == "PENDING" and record.target_type == "LESSON":
+        if record.status == "PENDING" and record.course_id:
+            pending_by_course.setdefault(record.course_id, []).append(record)
+        else:
+            other_records.append(record)
+
+    consolidated_pending: list[CourseChangeRequest] = []
+    for _cid, cr_list in pending_by_course.items():
+        changeset_req = None
+        for r in sorted(cr_list, key=lambda x: x.id, reverse=True):
             try:
-                proposal = json.loads(record.proposed_payload_json or "{}")
-                action = proposal.get("action") if isinstance(proposal, dict) else None
-            except (TypeError, ValueError):
-                action = None
-            key = (
-                record.requested_by_user_id,
-                record.target_type,
-                record.target_id,
-                record.change_type,
-                action,
-            )
-            if key in seen_pending:
-                continue
-            seen_pending.add(key)
-        visible_records.append(record)
+                p = json.loads(r.proposed_payload_json or "{}")
+            except Exception:
+                p = {}
+            if (
+                r.change_type == "COURSE_VERSION_CHANGESET"
+                or (isinstance(p, dict) and p.get("action") == "COURSE_VERSION_CHANGESET")
+            ):
+                changeset_req = r
+                break
+        if changeset_req:
+            consolidated_pending.append(changeset_req)
+        else:
+            consolidated_pending.append(max(cr_list, key=lambda x: x.id))
+
+    visible_records = consolidated_pending + other_records
+    visible_records.sort(key=lambda x: x.id, reverse=True)
     results = []
     for r in visible_records:
         try:
@@ -1420,9 +1460,14 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                     "resources": [
                         {
                             "resource_id": resource.id,
-                            "title": resource.label or resource.file_asset.display_name,
+                            "asset_id": str(resource.file_asset.public_id) if resource.file_asset else None,
+                            "title": resource.label or (resource.file_asset.display_name if resource.file_asset else "Tệp đính kèm"),
+                            "filename": resource.file_asset.original_filename if resource.file_asset else (resource.label or "file"),
+                            "mime_type": resource.file_asset.mime_type if resource.file_asset else "application/octet-stream",
+                            "file_url": f"/student/files/{resource.file_asset.public_id}/download" if resource.file_asset else None,
                         }
                         for resource in les.resources
+                        if resource.file_asset is not None
                     ],
                 }
                 if payload_data.get("action") == "RESOURCE_CHANGES":
@@ -1433,6 +1478,9 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                             asset = db.session.get(FileAsset, change.get("asset_id"))
                             if asset and asset.course_id == r.course_id:
                                 change["title"] = change.get("label") or asset.display_name
+                                change["filename"] = asset.original_filename or asset.display_name
+                                change["mime_type"] = asset.mime_type
+                                change["file_url"] = f"/student/files/{asset.public_id}/download"
                         elif change.get("action") == "DETACH":
                             resource = db.session.get(LessonResource, change.get("resource_id"))
                             if resource and resource.lesson_id == les.id:
@@ -1449,12 +1497,17 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 }
         elif (
             r.target_type == "COURSE"
-            or r.change_type in ("COURSE_METADATA", "COURSE_UPDATE", "COURSE_STATUS")
+            or r.change_type in ("COURSE_METADATA", "COURSE_UPDATE", "COURSE_STATUS", "COURSE_VERSION_CHANGESET", "COMPLETION_RULE")
+            or payload_data.get("action") == "COURSE_VERSION_CHANGESET"
         ) and (r.target_id or r.course_id):
             cid = r.target_id or r.course_id
             c = db.session.get(Course, cid)
             if c:
-                target_title = c.title
+                target_title = (
+                    payload_data.get("version_title")
+                    if (r.change_type == "COURSE_VERSION_CHANGESET" or payload_data.get("action") == "COURSE_VERSION_CHANGESET")
+                    else c.title
+                ) or c.title
                 original_data = {
                     "course_id": str(c.public_id),
                     "course_code": c.course_code,
@@ -1462,6 +1515,31 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                     "description": c.description or "",
                     "category": getattr(c, "category", "") or "",
                     "status": c.status,
+                    "completion_requirements": c.completion_requirements,
+                    "course_lessons": [
+                        {
+                            "id": cles.id,
+                            "public_id": str(cles.public_id),
+                            "title": cles.title,
+                            "summary": cles.summary,
+                            "markdown_content": cles.markdown_content,
+                            "estimated_duration_minutes": cles.estimated_duration_minutes,
+                            "resources": [
+                                {
+                                    "resource_id": cres.id,
+                                    "asset_id": str(cres.file_asset.public_id) if cres.file_asset else None,
+                                    "title": cres.label or (cres.file_asset.display_name if cres.file_asset else "Tệp đính kèm"),
+                                    "filename": cres.file_asset.original_filename if cres.file_asset else (cres.label or "file"),
+                                    "mime_type": cres.file_asset.mime_type if cres.file_asset else "application/octet-stream",
+                                    "file_url": f"/student/files/{cres.file_asset.public_id}/download" if cres.file_asset else None,
+                                }
+                                for cres in cles.resources
+                                if cres.file_asset is not None
+                            ],
+                        }
+                        for cles in c.lessons
+                        if cles.deleted_at is None and cles.status != "TRASH"
+                    ],
                 }
 
         if not target_title and r.course:
@@ -1486,6 +1564,75 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 payload_data["learning_unit_id"] = str(staged_lesson.learning_unit_id)
                 if staged_lesson.learning_unit:
                     payload_data["learning_unit_title"] = staged_lesson.learning_unit.title
+            if "resources" not in payload_data or not payload_data["resources"]:
+                payload_data["resources"] = [
+                    {
+                        "resource_id": resource.id,
+                        "asset_id": str(resource.file_asset.public_id) if resource.file_asset else None,
+                        "title": resource.label or (resource.file_asset.display_name if resource.file_asset else "Tệp đính kèm"),
+                        "filename": resource.file_asset.original_filename if resource.file_asset else (resource.label or "file"),
+                        "mime_type": resource.file_asset.mime_type if resource.file_asset else "application/octet-stream",
+                        "file_url": (
+                            f"/student/files/{resource.file_asset.public_id}/download?disposition=inline"
+                            if resource.file_asset
+                            else None
+                        ),
+                    }
+                    for resource in staged_lesson.resources
+                    if resource.file_asset is not None
+                ]
+
+        # Ensure course_lessons is populated for any change request associated with a course
+        course_obj = r.course or (db.session.get(Course, r.course_id) if r.course_id else None)
+        course_lessons_data = []
+        if course_obj:
+            from pwd301.blueprints.instructor.routes import _extract_video_urls_from_markdown
+
+            active_lessons = [
+                les for les in course_obj.lessons
+                if les.deleted_at is None and les.status != "TRASH"
+            ]
+            active_lessons.sort(key=lambda x: (x.position or 0, x.id))
+            for cles in active_lessons:
+                course_lessons_data.append({
+                    "id": cles.id,
+                    "public_id": str(cles.public_id),
+                    "title": cles.title,
+                    "summary": cles.summary,
+                    "markdown_content": cles.markdown_content,
+                    "estimated_duration_minutes": cles.estimated_duration_minutes,
+                    "position": cles.position,
+                    "status": cles.status,
+                    "video_urls": _extract_video_urls_from_markdown(cles.markdown_content) if cles.markdown_content else [],
+                    "resources": [
+                        {
+                            "resource_id": cres.id,
+                            "asset_id": str(cres.file_asset.public_id) if cres.file_asset else None,
+                            "title": cres.label or (cres.file_asset.display_name if cres.file_asset else "Tệp đính kèm"),
+                            "filename": cres.file_asset.original_filename if cres.file_asset else (cres.label or "file"),
+                            "mime_type": cres.file_asset.mime_type if cres.file_asset else "application/octet-stream",
+                            "file_url": f"/student/files/{cres.file_asset.public_id}/download?disposition=inline" if cres.file_asset else None,
+                            "is_video": (
+                                (cres.file_asset.mime_type or "").lower().startswith("video/")
+                                or (cres.file_asset.original_filename or "").lower().endswith((".mp4", ".webm", ".mkv", ".mov"))
+                            ) if cres.file_asset else False,
+                        }
+                        for cres in cles.resources
+                        if cres.file_asset is not None
+                    ],
+                })
+
+        lesson_detail_data = None
+        if staged_lesson:
+            lesson_detail_data = {
+                "id": staged_lesson.id,
+                "public_id": str(staged_lesson.public_id),
+                "title": staged_lesson.title,
+                "summary": staged_lesson.summary,
+                "markdown_content": staged_lesson.markdown_content,
+                "estimated_duration_minutes": staged_lesson.estimated_duration_minutes,
+                "resources": payload_data.get("resources", []),
+            }
 
         results.append(
             {
@@ -1519,6 +1666,8 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
                 "target_title": target_title,
                 "original_data": original_data,
                 "proposed_payload": payload_data,
+                "course_lessons": course_lessons_data,
+                "lesson": lesson_detail_data,
                 "status": r.status,
                 "review_reason": r.review_reason,
                 "created_at": r.created_at.isoformat(),
@@ -1559,6 +1708,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     else:
         raise ValidationError("Action must be 'approve' or 'reject'.")
 
+    if action == "reject" and len(reason) < 5:
+        raise ValidationError("Lý do từ chối yêu cầu bắt buộc tối thiểu 5 ký tự.")
+
     req_record = db.session.get(CourseChangeRequest, req_id)
     if req_record is None:
         raise ResourceNotFoundError("Change request not found.")
@@ -1567,7 +1719,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         raise ValidationError(f"Change request is already in '{req_record.status}' status.")
 
     if req_record.requested_by_user_id == actor.id:
-        raise ForbiddenError("Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra. Yêu cầu phải được Admin khác thẩm định.")
+        raise ForbiddenError(
+            "Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra. Yêu cầu phải được Admin khác thẩm định."
+        )
 
     if req_record.target_type == "LESSON":
         sibling_query = db.session.query(CourseChangeRequest).filter_by(
@@ -1603,6 +1757,11 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         subject = f"Lesson '{lesson_title}'"
     elif req_record.change_type == "PREREQUISITE":
         subject = f"Điều kiện tiên quyết của khóa học '{req_record.course.title}'"
+    elif (
+        req_record.change_type == "COURSE_VERSION_CHANGESET"
+        or p_data.get("action") == "COURSE_VERSION_CHANGESET"
+    ):
+        subject = f"Đợt cập nhật khóa học '{req_record.course.title}'"
     else:
         subject = f"Khóa học '{req_record.course.title}'"
     action_url = f"#/instructor/courses/{req_record.course.public_id}/manage"
@@ -1684,7 +1843,11 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
                         )
                         if resource is not None and resource.lesson_id == l_target.id:
                             detach_resource_from_lesson(
-                                course_owner, l_target.id, resource.id, session=db.session, commit=False
+                                course_owner,
+                                l_target.id,
+                                resource.id,
+                                session=db.session,
+                                commit=False,
                             )
                         elif l_target.id != target_lesson.id:
                             orig_res = db.session.get(LessonResource, res_id)
@@ -1745,10 +1908,21 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
         ):
             from pwd301.services.lesson_service import delete_learning_unit
 
-            public_unit_id = p_data.get("learning_unit_id")
-            if public_unit_id:
-                delete_learning_unit(course_owner, public_unit_id, session=db.session)
-            msg = f"Đã phê duyệt yêu cầu xóa chương mục #{public_unit_id}."
+            target_unit_id = p_data.get("learning_unit_id")
+            if target_unit_id:
+                delete_learning_unit(course_owner, target_unit_id, session=db.session)
+            msg = f"Đã phê duyệt yêu cầu xóa chương mục #{target_unit_id}."
+
+        elif (
+            req_record.change_type == "COURSE_VERSION_CHANGESET"
+            or p_data.get("action") == "COURSE_VERSION_CHANGESET"
+        ):
+            from pwd301.services.lesson_service import approve_course_change_request
+
+            approve_course_change_request(
+                actor, req_record.id, review_reason=reason, session=db.session
+            )
+            msg = f"Đã phê duyệt đợt cập nhật khóa học #{req_record.course_id}."
 
         elif (
             req_record.change_type == "LESSON_STRUCTURE"
@@ -1789,7 +1963,9 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             unit_ids = p_data.get("unit_ids") or []
             if unit_ids:
-                reorder_learning_units(course_owner, req_record.course_id, unit_ids, session=db.session)
+                reorder_learning_units(
+                    course_owner, req_record.course_id, unit_ids, session=db.session
+                )
             msg = f"Đã phê duyệt sắp xếp lại chương mục cho khóa học #{req_record.course_id}."
 
         elif req_record.change_type in ("LESSON_CONTENT", "LESSON_STRUCTURE"):
@@ -1826,7 +2002,7 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
         elif req_record.change_type == "PREREQUISITE":
             if p_data.get("action") == "REMOVE_PREREQUISITE":
-                from pwd301.services.course_service import remove_course_prerequisite
+                from pwd301.services.enrollment_service import remove_course_prerequisite
 
                 remove_course_prerequisite(
                     actor=course_owner,
@@ -1922,6 +2098,188 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
     return jsonify({"status": req_record.status, "message": msg}), 200
 
 
+@admin_bp.route("/course-changes/<int:req_id>/diff", methods=["GET"])
+@admin_bp.route("/courses/<course_id>/changeset/diff", methods=["GET"])
+@admin_required
+def get_course_changeset_diff_route(
+    req_id: int | None = None, course_id: str | None = None
+) -> tuple[Response, int] | Response:
+    """Get full Before vs. After diff of a course version changeset."""
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
+
+    from pwd301.services.lesson_service import get_course_changeset_diff
+
+    target = req_id if req_id is not None else course_id
+    diff_data = get_course_changeset_diff(actor, target, session=db.session)
+    return jsonify(diff_data), 200
+
+
+@admin_bp.route("/course-changes/<int:req_id>/approve", methods=["POST"])
+@admin_bp.route("/courses/<course_id>/changeset/approve", methods=["POST"])
+@admin_required
+def approve_course_changeset_route(
+    req_id: int | None = None, course_id: str | None = None
+) -> tuple[Response, int] | Response:
+    """Atomically approve and apply a course version changeset."""
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = str(payload.get("reason", "")).strip()
+
+    target_req = None
+    if req_id is not None:
+        target_req = db.session.get(CourseChangeRequest, req_id)
+    elif course_id:
+        from pwd301.services.authorization_service import _resolve_course
+
+        course = _resolve_course(course_id, session=db.session)
+        if course:
+            target_req = (
+                db.session.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == course.id,
+                    CourseChangeRequest.status == "PENDING",
+                    CourseChangeRequest.target_type == "COURSE",
+                )
+                .order_by(CourseChangeRequest.id.desc())
+                .first()
+            )
+
+    if target_req is None:
+        raise ResourceNotFoundError("Yêu cầu thay đổi không tồn tại.")
+
+    if target_req.status != "PENDING":
+        raise ValidationError(
+            f"Yêu cầu đang ở trạng thái '{target_req.status}', không thể phê duyệt."
+        )
+
+    if target_req.requested_by_user_id == actor.id:
+        raise ForbiddenError("Bạn không được phép tự duyệt yêu cầu thay đổi do chính mình tạo ra.")
+
+    from pwd301.services.lesson_service import approve_course_change_request
+
+    approved_req = approve_course_change_request(
+        actor,
+        target_req.id,
+        review_reason=reason or "Quản trị viên đã phê duyệt đợt cập nhật.",
+        session=db.session,
+    )
+    return (
+        jsonify(
+            {
+                "success": True,
+                "status": "APPROVED",
+                "message": "Đã phê duyệt và áp dụng đợt cập nhật thành công.",
+                "change_request_id": approved_req.id,
+            }
+        ),
+        200,
+    )
+
+
+@admin_bp.route("/course-changes/<int:req_id>/reject", methods=["POST"])
+@admin_bp.route("/courses/<course_id>/changeset/reject", methods=["POST"])
+@admin_required
+def reject_course_changeset_route(
+    req_id: int | None = None, course_id: str | None = None
+) -> tuple[Response, int] | Response:
+    """Reject a course version changeset with mandatory reason."""
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("COURSE_REVIEW"):
+        raise ForbiddenError("Bạn không có quyền thẩm định yêu cầu thay đổi khóa học.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    reason = str(payload.get("reason", "")).strip()
+    if len(reason) < 5:
+        raise ValidationError("Lý do từ chối yêu cầu bắt buộc tối thiểu 5 ký tự.")
+
+    target_req = None
+    if req_id is not None:
+        target_req = db.session.get(CourseChangeRequest, req_id)
+    elif course_id:
+        from pwd301.services.authorization_service import _resolve_course
+
+        course = _resolve_course(course_id, session=db.session)
+        if course:
+            target_req = (
+                db.session.query(CourseChangeRequest)
+                .filter(
+                    CourseChangeRequest.course_id == course.id,
+                    CourseChangeRequest.status == "PENDING",
+                    CourseChangeRequest.target_type == "COURSE",
+                )
+                .order_by(CourseChangeRequest.id.desc())
+                .first()
+            )
+
+    if target_req is None:
+        raise ResourceNotFoundError("Yêu cầu thay đổi không tồn tại.")
+
+    if target_req.status != "PENDING":
+        raise ValidationError(
+            f"Yêu cầu đang ở trạng thái '{target_req.status}', không thể từ chối."
+        )
+
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.notification_service import dispatch_notification
+
+    now = utc_now()
+    target_req.status = "REJECTED"
+    target_req.reviewed_by_user_id = actor.id
+    target_req.review_reason = reason
+    target_req.reviewed_at = now
+
+    actor_roles = ",".join(sorted(actor.role_codes)) if actor and actor.role_codes else "ADMIN"
+    audit = AuditEvent(
+        actor_user_id=actor.id,
+        actor_roles_snapshot=actor_roles,
+        action="COURSE_CHANGESET_REJECTED",
+        target_type="COURSE",
+        target_id=target_req.course_id,
+        reason=reason,
+        performed_as_admin=True,
+        after_json=json.dumps(
+            {
+                "course_id": str(target_req.course_id),
+                "change_request_id": target_req.id,
+                "reason": reason,
+            },
+            ensure_ascii=False,
+        ),
+        created_at=now,
+    )
+    db.session.add(audit)
+
+    if target_req.requested_by:
+        with contextlib.suppress(Exception):
+            dispatch_notification(
+                recipient_user=target_req.requested_by,
+                event_type="COURSE_CHANGE_REJECTED",
+                title=f"Đợt cập nhật khóa học #{target_req.course_id} cần chỉnh sửa lại",
+                body=f"Quản trị viên đã từ chối đợt cập nhật. Lý do: {reason}",
+                action_url=f"#/instructor/courses/manage?id={target_req.course_id}",
+                category="COURSE",
+                target_role="INSTRUCTOR",
+                payload={
+                    "course_id": str(target_req.course_id),
+                    "change_request_id": target_req.id,
+                    "reason": reason,
+                },
+                session=db.session,
+            )
+
+    db.session.commit()
+    return (
+        jsonify({"success": True, "status": "REJECTED", "message": "Đã từ chối đợt cập nhật."}),
+        200,
+    )
+
+
+
 @admin_bp.route("/courses/<course_id>/lessons/<lesson_id>/flag", methods=["POST"])
 @admin_required
 def flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
@@ -1959,12 +2317,14 @@ def flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] |
         target_id=lesson.id,
         reason=reason,
         performed_as_admin=True,
-        payload_json=json.dumps({
-            "course_id": str(course.public_id),
-            "lesson_id": str(lesson.public_id),
-            "content_type": content_type,
-            "reason": reason,
-        }),
+        payload_json=json.dumps(
+            {
+                "course_id": str(course.public_id),
+                "lesson_id": str(lesson.public_id),
+                "content_type": content_type,
+                "reason": reason,
+            }
+        ),
         created_at=utc_now(),
     )
     db.session.add(audit)
@@ -1973,12 +2333,12 @@ def flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] |
     if course.owner_instructor_id:
         with contextlib.suppress(Exception):
             dispatch_notification(
-                recipient_user_ids=[course.owner_instructor_id],
+                recipient_user=course.owner_instructor_id,
                 event_type="COURSE_CONTENT_FLAGGED",
                 title=f"Nội dung bị gắn cờ: {lesson.title}",
                 body=f"Quản trị viên đã gắn cờ {content_type} '{lesson.title}' trong khóa học '{course.title}'. Lý do: {reason}",
                 category="COURSE",
-                data_payload={
+                payload={
                     "course_id": str(course.public_id),
                     "lesson_id": str(lesson.public_id),
                     "reason": reason,
@@ -1987,10 +2347,12 @@ def flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] |
                 session=db.session,
             )
 
-    return jsonify({
-        "success": True,
-        "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
-        "lesson_id": str(lesson.public_id),
-        "is_flagged": True,
-        "flag_reason": reason,
-    }), 200
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
+            "lesson_id": str(lesson.public_id),
+            "is_flagged": True,
+            "flag_reason": reason,
+        }
+    ), 200

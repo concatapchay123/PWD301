@@ -379,6 +379,10 @@ class ApiClient {
     return await ApiClient.request(`/student/attempts/${attemptId}/appeal`);
   }
 
+  static async getAttemptGradeHistory(attemptId) {
+    return await ApiClient.request(`/student/attempts/${attemptId}/grade-history`);
+  }
+
   static async reviewAttemptAppeal(attemptId, payload) {
     return await ApiClient.request(`/instructor/attempts/${attemptId}/appeal/review`, {
       method: 'POST',
@@ -611,6 +615,36 @@ class ApiClient {
     });
   }
 
+  static async getCourseChangesetStatus(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/changeset/status`);
+  }
+
+  static async submitCourseChangeset(courseId, changesetData) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/changeset/submit`, {
+      method: 'POST',
+      body: changesetData
+    });
+  }
+
+  static async retractCourseChangeset(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/changeset/retract`, {
+      method: 'POST'
+    });
+  }
+
+  static async discardCourseChangeset(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/changeset/discard`, {
+      method: 'POST'
+    });
+  }
+
+  static async getCourseChangesetDiff(idOrCourseId) {
+    if (typeof idOrCourseId === 'number' || /^\d+$/.test(String(idOrCourseId))) {
+      return await ApiClient.request(`/admin/course-changes/${idOrCourseId}/diff`);
+    }
+    return await ApiClient.request(`/instructor/courses/${idOrCourseId}/changeset/diff`);
+  }
+
   static async changeLessonStatus(lessonId, status) {
     return await ApiClient.request(`/instructor/lessons/${lessonId}/status`, {
       method: 'POST',
@@ -766,12 +800,14 @@ class ApiClient {
     return await ApiClient.createAssessmentQuestionsBatch(assessmentId, questions);
   }
 
-  static async getAssessmentAttempts(assessmentId) {
-    return await ApiClient.request(`/instructor/assessments/${assessmentId}/attempts`);
+  static async getAssessmentAttempts(assessmentId, page = 1, perPage = 50) {
+    const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    return await ApiClient.request(`/instructor/assessments/${assessmentId}/attempts?${query.toString()}`);
   }
 
-  static async getInstructorAttemptResult(attemptId) {
-    return await ApiClient.request(`/instructor/attempts/${attemptId}/results`);
+  static async getInstructorAttemptResult(attemptId, reason = '') {
+    const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    return await ApiClient.request(`/instructor/attempts/${attemptId}/results${query}`);
   }
 
   static async getInstructorAttemptFocusEvents(attemptId) {
@@ -879,6 +915,24 @@ class ApiClient {
     return await ApiClient.request(`/admin/change-requests/${requestId}/review`, {
       method: 'POST',
       body: data
+    });
+  }
+
+  static async getAdminCourseChangesetDiff(changeRequestId) {
+    return await ApiClient.request(`/admin/course-changes/${changeRequestId}/diff`);
+  }
+
+  static async approveCourseChangeset(changeRequestId, reason = '') {
+    return await ApiClient.request(`/admin/course-changes/${changeRequestId}/approve`, {
+      method: 'POST',
+      body: { reason }
+    });
+  }
+
+  static async rejectCourseChangeset(changeRequestId, reason = '') {
+    return await ApiClient.request(`/admin/course-changes/${changeRequestId}/reject`, {
+      method: 'POST',
+      body: { reason }
     });
   }
 
@@ -1123,6 +1177,30 @@ class ApiClient {
       });
     } catch (e) {
       console.warn('markAllNotificationsRead error:', e);
+      return { success: false };
+    }
+  }
+
+  static async deleteNotification(notificationId) {
+    if (!notificationId) return { success: false };
+    try {
+      return await ApiClient.request(`/auth/notifications/${notificationId}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.warn('deleteNotification error:', e);
+      return { success: false };
+    }
+  }
+
+  static async clearNotifications(role = null) {
+    try {
+      return await ApiClient.request('/auth/notifications/clear', {
+        method: 'POST',
+        body: role ? { role } : {},
+      });
+    } catch (e) {
+      console.warn('clearNotifications error:', e);
       return { success: false };
     }
   }

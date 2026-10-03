@@ -16,6 +16,8 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import (
+    FileInfectedError,
+    FileSecurityQuarantineError,
     FileSizeLimitExceededError,
     FileValidationError,
 )
@@ -215,6 +217,17 @@ def upload_file_generic_api() -> tuple[Response, int] | Response:
         title=title,
         session=db.session,
     )
+    if asset.virus_scan_status != "CLEAN":
+        clean_name = asset.original_filename or asset.display_name or filename or "Tệp tin"
+        if asset.virus_scan_status == "INFECTED":
+            raise FileInfectedError(
+                f"Tệp '{clean_name}' bị từ chối do phát hiện mã độc hoặc cấu trúc nguy hiểm. "
+                "Hệ thống đã tự động chặn tải lên và cách ly tệp này."
+            )
+        raise FileSecurityQuarantineError(
+            f"Tệp '{clean_name}' chưa vượt qua kiểm tra an ninh (trạng thái: {asset.virus_scan_status}). "
+            "Không thể tải lên hệ thống."
+        )
     return jsonify(_serialize_file_asset(asset)), 201
 
 

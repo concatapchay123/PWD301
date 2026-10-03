@@ -358,6 +358,23 @@ def test_update_profile(app):
         updated = update_profile(user.id, display_name="Updated Name")
         assert updated.display_name == "Updated Name"
 
+        # Valid Dicebear avatar URL
+        dicebear_url = "https://api.dicebear.com/10.x/adventurer/svg?seed=user_test_123"
+        updated_avatar = update_profile(user.id, avatar_url=dicebear_url)
+        assert updated_avatar.avatar_url == dicebear_url
+
+        # Clear avatar
+        cleared = update_profile(user.id, avatar_url="")
+        assert cleared.avatar_url is None
+
+        # Reject dangerous scheme
+        with pytest.raises(ValueError):
+            update_profile(user.id, avatar_url="javascript:alert('xss')")
+
+        # Reject control characters
+        with pytest.raises(ValueError):
+            update_profile(user.id, avatar_url="https://example.com/avatar<script>.png")
+
         with pytest.raises(ValueError):
             update_profile(user.id, display_name="   ")
 

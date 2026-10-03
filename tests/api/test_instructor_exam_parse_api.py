@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
-import tempfile
 import uuid
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Lesson
+from pwd301.models.course import Course
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import create_course
-from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.api.test_docx_image_extraction import create_sample_docx_with_images
-
-
 from tests.conftest import login_web_user
 
 

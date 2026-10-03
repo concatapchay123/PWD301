@@ -48,6 +48,7 @@ def instructor_actor(app: Flask) -> User:
 @pytest.fixture
 def student_factory(app: Flask) -> Any:
     """Factory to create student users."""
+
     def _create(name: str = "Student") -> User:
         sess: Session = db.session
         u = register_user(
@@ -59,6 +60,7 @@ def student_factory(app: Flask) -> Any:
         u.email_verified_at = u.created_at
         sess.commit()
         return u
+
     return _create
 
 
@@ -368,4 +370,3 @@ def test_dashboard_endpoint_scope_assigned_vs_all_for_admin(
     assert data_all["managed_courses_count"] == 1
     assert len(data_all["courses"]) == 1
     assert data_all["courses"][0]["course_code"] == c_adm.course_code
-

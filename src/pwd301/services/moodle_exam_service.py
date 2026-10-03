@@ -21,6 +21,7 @@ def _clean_html_text(raw_html: str | None) -> str:
     text = html.unescape(str(raw_html))
     # Replace line breaks and paragraph tags with newlines
     text = re.sub(r"<(?:br|p|div)[^>]*>", "\n", text, flags=re.IGNORECASE)
+
     # Check for img tags and convert to marker if present
     def _img_token(m: re.Match) -> str:
         src = m.group(1) or ""
@@ -33,7 +34,7 @@ def _clean_html_text(raw_html: str | None) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     # Normalize whitespaces while preserving intentional newlines
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
-    clean_lines = [l for l in lines if l]
+    clean_lines = [line_item for line_item in lines if line_item]
     return "\n".join(clean_lines).strip()
 
 
@@ -294,7 +295,11 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             correct_count = 0
             for ans_el in answer_nodes:
                 ans_text_el = ans_el.find("./text")
-                ans_content = _clean_html_text(ans_text_el.text) if ans_text_el is not None and ans_text_el.text else ""
+                ans_content = (
+                    _clean_html_text(ans_text_el.text)
+                    if ans_text_el is not None and ans_text_el.text
+                    else ""
+                )
                 if not ans_content:
                     continue
 
@@ -304,13 +309,15 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
                     correct_count += 1
 
                 label = chr(64 + len(choices) + 1) if len(choices) < 26 else str(len(choices) + 1)
-                choices.append({
-                    "label": label,
-                    "content": ans_content,
-                    "is_correct": is_corr,
-                    "position": len(choices) + 1,
-                    "fraction": fraction,
-                })
+                choices.append(
+                    {
+                        "label": label,
+                        "content": ans_content,
+                        "is_correct": is_corr,
+                        "position": len(choices) + 1,
+                        "fraction": fraction,
+                    }
+                )
 
             if not is_single or correct_count > 1:
                 mapped_type = "MULTIPLE_CHOICE"
@@ -319,7 +326,9 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
 
             if correct_count == 0 and choices:
                 choices[0]["is_correct"] = True
-                warnings.append(f"Câu {q_counter}: Không có đáp án đúng được đánh dấu, hệ thống tự động gán đáp án A.")
+                warnings.append(
+                    f"Câu {q_counter}: Không có đáp án đúng được đánh dấu, hệ thống tự động gán đáp án A."
+                )
 
         elif q_type_attr == "truefalse":
             mapped_type = "TRUE_FALSE"
@@ -348,7 +357,11 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
                 fraction = float(ans_el.attrib.get("fraction", 0.0) or 0.0)
                 if fraction > 0:
                     ans_text_el = ans_el.find("./text")
-                    ans_txt = _clean_html_text(ans_text_el.text) if ans_text_el is not None and ans_text_el.text else ""
+                    ans_txt = (
+                        _clean_html_text(ans_text_el.text)
+                        if ans_text_el is not None and ans_text_el.text
+                        else ""
+                    )
                     if ans_txt and ans_txt not in accepted_answers:
                         accepted_answers.append(ans_txt)
 
@@ -366,15 +379,21 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             if answer_nodes:
                 for ans_el in answer_nodes:
                     ans_text_el = ans_el.find("./text")
-                    ans_content = _clean_html_text(ans_text_el.text) if ans_text_el is not None and ans_text_el.text else ""
+                    ans_content = (
+                        _clean_html_text(ans_text_el.text)
+                        if ans_text_el is not None and ans_text_el.text
+                        else ""
+                    )
                     if ans_content:
                         fraction = float(ans_el.attrib.get("fraction", 0.0) or 0.0)
-                        choices.append({
-                            "label": chr(64 + len(choices) + 1),
-                            "content": ans_content,
-                            "is_correct": fraction > 0,
-                            "position": len(choices) + 1,
-                        })
+                        choices.append(
+                            {
+                                "label": chr(64 + len(choices) + 1),
+                                "content": ans_content,
+                                "is_correct": fraction > 0,
+                                "position": len(choices) + 1,
+                            }
+                        )
                 mapped_type = "SINGLE_CHOICE"
             else:
                 mapped_type = "SHORT_ANSWER"
@@ -386,22 +405,26 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             enc = (f_el.attrib.get("encoding") or "").strip().lower()
             fname = f_el.attrib.get("name") or f"image_{f_idx}.png"
             if enc == "base64" and f_el.text and f_el.text.strip():
-                extracted_files.append({
-                    "filename": fname,
-                    "data_base64": f_el.text.strip(),
-                    "position": f_idx,
-                    "token": f"[[IMAGE:{fname}]]",
-                })
+                extracted_files.append(
+                    {
+                        "filename": fname,
+                        "data_base64": f_el.text.strip(),
+                        "position": f_idx,
+                        "token": f"[[IMAGE:{fname}]]",
+                    }
+                )
 
-        img_resources = []
+        img_resources: list[dict[str, Any]] = []
         for m in re.finditer(r"\[\[PWD301:IMAGE:([a-f0-9\-]+)\]\]", stem, flags=re.IGNORECASE):
             asset_uuid = m.group(1)
-            img_resources.append({
-                "asset_id": asset_uuid,
-                "position": len(img_resources) + 1,
-                "resource_role": "IMAGE",
-                "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
-            })
+            img_resources.append(
+                {
+                    "asset_id": asset_uuid,
+                    "position": len(img_resources) + 1,
+                    "resource_role": "IMAGE",
+                    "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
+                }
+            )
 
         q_obj: dict[str, Any] = {
             "id": q_counter,
@@ -410,10 +433,14 @@ def parse_moodle_xml(xml_content: str) -> dict[str, Any]:
             "question_text": stem,
             "type": mapped_type,
             "question_type": (
-                "TN nhiều đáp án" if mapped_type == "MULTIPLE_CHOICE"
-                else "Đúng / Sai" if mapped_type == "TRUE_FALSE"
-                else "Điền từ" if mapped_type == "SHORT_ANSWER"
-                else "Tự luận" if mapped_type == "ESSAY"
+                "TN nhiều đáp án"
+                if mapped_type == "MULTIPLE_CHOICE"
+                else "Đúng / Sai"
+                if mapped_type == "TRUE_FALSE"
+                else "Điền từ"
+                if mapped_type == "SHORT_ANSWER"
+                else "Tự luận"
+                if mapped_type == "ESSAY"
                 else "Trắc nghiệm 1 đáp án"
             ),
             "points": pts,
@@ -491,7 +518,13 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
             warnings.append(f"Mục #{idx} không phải là đối tượng JSON câu hỏi hợp lệ.")
             continue
 
-        raw_stem = item.get("content") or item.get("stem") or item.get("question_text") or item.get("prompt") or ""
+        raw_stem = (
+            item.get("content")
+            or item.get("stem")
+            or item.get("question_text")
+            or item.get("prompt")
+            or ""
+        )
         stem = str(raw_stem).strip()
         if not stem:
             warnings.append(f"Mục #{idx}: Thiếu nội dung câu hỏi, bỏ qua.")
@@ -539,12 +572,14 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
                     is_c = False
                     lbl = chr(64 + c_idx)
                 if c_txt:
-                    choices.append({
-                        "label": lbl,
-                        "content": c_txt,
-                        "is_correct": is_c,
-                        "position": len(choices) + 1,
-                    })
+                    choices.append(
+                        {
+                            "label": lbl,
+                            "content": c_txt,
+                            "is_correct": is_c,
+                            "position": len(choices) + 1,
+                        }
+                    )
 
             # Check correctness
             corr_count = sum(1 for c in choices if c["is_correct"])
@@ -552,7 +587,9 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
                 q_type = "MULTIPLE_CHOICE"
             elif corr_count == 0 and choices:
                 choices[0]["is_correct"] = True
-                warnings.append(f"Câu #{idx}: Chưa có đáp án đúng, hệ thống tự động gán đáp án {choices[0]['label']}.")
+                warnings.append(
+                    f"Câu #{idx}: Chưa có đáp án đúng, hệ thống tự động gán đáp án {choices[0]['label']}."
+                )
 
         elif q_type == "TRUE_FALSE":
             # Check if choices provided or synthesize
@@ -560,7 +597,10 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
             if isinstance(raw_choices, list) and raw_choices:
                 for c in raw_choices:
                     if isinstance(c, dict) and c.get("is_correct"):
-                        is_t_corr = "đúng" in str(c.get("content") or "").lower() or str(c.get("label")).upper() == "A"
+                        is_t_corr = (
+                            "đúng" in str(c.get("content") or "").lower()
+                            or str(c.get("label")).upper() == "A"
+                        )
             choices = [
                 {"label": "A", "content": "Đúng", "is_correct": is_t_corr, "position": 1},
                 {"label": "B", "content": "Sai", "is_correct": not is_t_corr, "position": 2},
@@ -572,7 +612,9 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
             if isinstance(raw_acc, list):
                 for a in raw_acc:
                     if isinstance(a, dict):
-                        a_txt = str(a.get("content") or a.get("answer_text") or a.get("text") or "").strip()
+                        a_txt = str(
+                            a.get("content") or a.get("answer_text") or a.get("text") or ""
+                        ).strip()
                     else:
                         a_txt = str(a).strip()
                     if a_txt:
@@ -590,9 +632,12 @@ def parse_moodle_json(json_content: str) -> dict[str, Any]:
             "question_text": stem,
             "type": q_type,
             "question_type": (
-                "TN nhiều đáp án" if q_type == "MULTIPLE_CHOICE"
-                else "Đúng / Sai" if q_type == "TRUE_FALSE"
-                else "Điền từ" if q_type == "SHORT_ANSWER"
+                "TN nhiều đáp án"
+                if q_type == "MULTIPLE_CHOICE"
+                else "Đúng / Sai"
+                if q_type == "TRUE_FALSE"
+                else "Điền từ"
+                if q_type == "SHORT_ANSWER"
                 else "Trắc nghiệm 1 đáp án"
             ),
             "points": pts,

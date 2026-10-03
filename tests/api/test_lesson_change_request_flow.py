@@ -1,5 +1,4 @@
 import io
-import json
 import uuid
 
 import pytest
@@ -10,7 +9,6 @@ from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, Lesson
 from pwd301.models.file_import import LessonResource
 from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.models.types import utc_now
 from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
 from pwd301.services.lesson_service import create_learning_unit, create_lesson
@@ -86,81 +84,70 @@ def test_update_and_delete_lesson_in_published_course_requires_admin_approval(
 
     login_web_user(client, instructor_user)
 
-    # 2. Instructor attempts to edit lesson -> should return 202 pending_approval
+    # 2. Instructor edits lesson -> saves to working draft with 200 OK
     res_edit = client.put(
         f"/instructor/lessons/{lesson.id}",
         json={"title": "Updated Title That Needs Admin Approval"},
     )
-    assert res_edit.status_code == 202
+    assert res_edit.status_code == 200
     edit_data = res_edit.get_json()
-    assert edit_data["pending_approval"] is True
-    edit_req_id = edit_data["change_request_id"]
+    assert edit_data["is_draft"] is True
 
     # Lesson title in DB remains unchanged until approved
     sess.expire_all()
     lesson_check = sess.get(Lesson, lesson.id)
     assert lesson_check.title == "Initial Lesson Title"
 
-    # 3. Instructor attempts to delete lesson -> should return 202 pending_approval
+    # 3. Instructor stages deletion of lesson -> returns 200 OK
     res_del = client.post(
         f"/instructor/courses/{course.id}/lessons/{lesson.id}/delete",
         json={"reason": "Request to remove obsolete chapter"},
     )
-    assert res_del.status_code == 202
+    assert res_del.status_code == 200
     del_data = res_del.get_json()
-    assert del_data["pending_approval"] is True
-    del_req_id = del_data["change_request_id"]
+    assert del_data.get("is_staged_delete") is True
 
     # Lesson is NOT trashed yet
     sess.expire_all()
     assert lesson_check.deleted_at is None
 
-    # 4. Admin logs in and checks change requests
+    # 4. Instructor submits consolidated changeset -> returns 202
+    res_submit = client.post(
+        f"/instructor/courses/{course.id}/changeset/submit",
+        json={
+            "version_title": "Cap Nhat Hoc Ky 1",
+            "summary": "Sua tieu de bai hoc va xoa bai",
+        },
+    )
+    assert res_submit.status_code == 202
+    changeset_req_id = res_submit.get_json()["change_request_id"]
+
+    # 5. Admin logs in and checks change requests
     login_web_user(client, admin_user)
 
     list_res = client.get("/admin/change-requests")
     assert list_res.status_code == 200
     list_json = list_res.get_json()
-    assert list_json["pending_count"] >= 2
+    assert list_json["pending_count"] >= 1
 
-    # 5. Admin approves the edit request
-    approve_edit_res = client.post(
-        f"/admin/change-requests/{edit_req_id}/review",
+    # 6. Admin approves the changeset
+    approve_res = client.post(
+        f"/admin/change-requests/{changeset_req_id}/review",
         json={"action": "approve", "reason": "Syllabus revision accepted"},
     )
-    assert approve_edit_res.status_code == 200
-    assert approve_edit_res.get_json()["status"] == "APPROVED"
+    assert approve_res.status_code == 200
+    assert approve_res.get_json()["status"] == "APPROVED"
 
-    # Lesson title is now updated
+    # Live database reflects the approved updates
     sess.expire_all()
-    lesson_updated = sess.get(Lesson, lesson.id)
-    assert lesson_updated.title == "Updated Title That Needs Admin Approval"
-    approved_notice = (
-        sess.query(Notification)
-        .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
-        .filter(
-            Notification.recipient_user_id == instructor_user.id,
-            NotificationEvent.event_type == "COURSE_CHANGE_APPROVED",
-        )
-        .order_by(Notification.id.desc())
-        .first()
+    active_lessons = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None))
+        .all()
     )
-    assert approved_notice is not None
-    assert "Lesson" in approved_notice.title
-    assert "đề cương" not in approved_notice.body.lower()
-
-    # 6. Admin approves the delete request
-    approve_del_res = client.post(
-        f"/admin/change-requests/{del_req_id}/review",
-        json={"action": "approve", "reason": "Removal approved"},
-    )
-    assert approve_del_res.status_code == 200
-    assert approve_del_res.get_json()["status"] == "APPROVED"
-
-    # Lesson is now trashed (soft-deleted)
-    sess.expire_all()
-    lesson_trashed = sess.get(Lesson, lesson.id)
-    assert lesson_trashed.deleted_at is not None
+    assert any(les.title == "Updated Title That Needs Admin Approval" for les in active_lessons)
+    lesson_orig = sess.get(Lesson, lesson.id)
+    assert lesson_orig.status == "HISTORICAL" or lesson_orig.deleted_at is not None
 
 
 def test_repeated_lesson_edit_reuses_pending_review_and_notification(
@@ -191,32 +178,14 @@ def test_repeated_lesson_edit_reuses_pending_review_and_notification(
     first = client.put(f"/instructor/lessons/{lesson.id}", json={"title": "Revision A"})
     second = client.put(f"/instructor/lessons/{lesson.id}", json={"title": "Revision A"})
     third = client.put(f"/instructor/lessons/{lesson.id}", json={"title": "Revision B"})
-    assert [response.status_code for response in (first, second, third)] == [202, 202, 202]
-    assert (
-        len({response.get_json()["change_request_id"] for response in (first, second, third)}) == 1
-    )
-    pending = (
-        sess.query(CourseChangeRequest)
-        .filter_by(
-            target_type="LESSON",
-            target_id=lesson.id,
-            change_type="LESSON_CONTENT",
-            status="PENDING",
-        )
+    assert [response.status_code for response in (first, second, third)] == [200, 200, 200]
+    drafts = (
+        sess.query(Lesson)
+        .filter_by(course_id=course.id, status="DRAFT", previous_lesson_id=lesson.id)
         .all()
     )
-    assert len(pending) == 1
-    assert "Revision B" in pending[0].proposed_payload_json
-    notices = (
-        sess.query(Notification)
-        .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
-        .filter(
-            Notification.recipient_user_id == admin_user.id,
-            NotificationEvent.event_type == "LESSON_CHANGE_REQUEST",
-        )
-        .all()
-    )
-    assert len(notices) == 1
+    assert len(drafts) == 1
+    assert drafts[0].title == "Revision B"
     sess.refresh(lesson)
     assert lesson.title == "Original lesson"
 
@@ -247,16 +216,16 @@ def test_partial_lesson_edit_preserves_fields_already_waiting_for_review(
     sess.commit()
     login_web_user(client, instructor_user)
     first = client.patch(f"/instructor/lessons/{lesson.id}", json={"title": "New title"})
-    second = client.patch(
-        f"/instructor/lessons/{lesson.id}", json={"summary": "New summary"}
+    second = client.patch(f"/instructor/lessons/{lesson.id}", json={"summary": "New summary"})
+    assert first.status_code == second.status_code == 200
+    draft = (
+        sess.query(Lesson)
+        .filter_by(course_id=course.id, status="DRAFT", previous_lesson_id=lesson.id)
+        .first()
     )
-    assert first.status_code == second.status_code == 202
-    assert first.get_json()["change_request_id"] == second.get_json()["change_request_id"]
-    review = sess.get(CourseChangeRequest, first.get_json()["change_request_id"])
-    assert json.loads(review.proposed_payload_json) == {
-        "title": "New title",
-        "summary": "New summary",
-    }
+    assert draft is not None
+    assert draft.title == "New title"
+    assert draft.summary == "New summary"
 
 
 def test_admin_approval_applies_lesson_completion_rules(
@@ -288,20 +257,27 @@ def test_admin_approval_applies_lesson_completion_rules(
         f"/instructor/lessons/{lesson.id}",
         json={"minimum_completion_seconds": 90, "viewed_fraction_required": 0.9},
     )
-    assert response.status_code == 202
-    request_id = response.get_json()["change_request_id"]
+    assert response.status_code == 200
+    res_sub = client.post(
+        f"/instructor/courses/{course.id}/changeset/submit",
+        json={"version_title": "Cap nhat quy tac", "summary": "Sua completion rules"},
+    )
+    assert res_sub.status_code == 202
+    request_id = res_sub.get_json()["change_request_id"]
     login_web_user(client, admin_user)
-    listed = client.get("/admin/change-requests?status=PENDING").get_json()
-    proposal = next(item for item in listed["change_requests"] if item["id"] == request_id)
-    assert proposal["original_data"]["minimum_completion_seconds"] == 30
     reviewed = client.post(
         f"/admin/change-requests/{request_id}/review",
         json={"action": "approve"},
     )
     assert reviewed.status_code == 200
-    sess.refresh(lesson)
-    assert lesson.minimum_completion_seconds == 90
-    assert float(lesson.viewed_fraction_required) == 0.9
+    sess.expire_all()
+    active_lesson = (
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None))
+        .first()
+    )
+    assert active_lesson.minimum_completion_seconds == 90
+    assert float(active_lesson.viewed_fraction_required) == 0.9
 
 
 def test_admin_queue_shows_latest_legacy_duplicate_only(
@@ -425,16 +401,24 @@ def test_published_lesson_resources_change_only_after_admin_approval(
     sess.add(course)
     sess.commit()
     lesson = create_lesson(
-        instructor_user, course.id,
+        instructor_user,
+        course.id,
         {"title": "Lesson", "markdown_content": "Content", "status": "PUBLISHED"},
         session=sess,
     )
     old_asset = store_file_stream(
-        instructor_user, course.id, io.BytesIO(b"old file"),
-        "old.pdf", "application/pdf", session=sess,
+        instructor_user,
+        course.id,
+        io.BytesIO(b"old file"),
+        "old.pdf",
+        "application/pdf",
+        session=sess,
     )
     old_resource = attach_resource_to_lesson(
-        instructor_user, lesson.id, old_asset.id, session=sess,
+        instructor_user,
+        lesson.id,
+        old_asset.id,
+        session=sess,
     )
     course.status = "PUBLISHED"
     sess.commit()

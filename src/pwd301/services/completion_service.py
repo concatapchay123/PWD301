@@ -409,8 +409,9 @@ def calculate_course_progress(
     completed_positions = {r[1] for r in completed_lp_records}
 
     satisfied_count = sum(
-        1 for l in required_lessons
-        if l.id in completed_ids or l.position in completed_positions
+        1
+        for req_les in required_lessons
+        if req_les.id in completed_ids or req_les.position in completed_positions
     )
 
     raw_pct = (satisfied_count / total_required_lessons) * 100.0

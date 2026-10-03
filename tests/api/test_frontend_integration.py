@@ -118,7 +118,6 @@ def test_frontend_video_embed_csp_directives(client: FlaskClient) -> None:
     assert "https://cdnjs.cloudflare.com" in csp
 
 
-
 def test_frontend_admin_views_and_api_assets(client: FlaskClient) -> None:
     """Verify admin view and api JS assets are served with proper headers and complete contracts."""
     # 1. admin.js view asset
@@ -270,4 +269,3 @@ def test_frontend_js_syntax_integrity() -> None:
         result = subprocess.run([node_bin, "--check", js_path], capture_output=True, text=True)
         fname = os.path.basename(js_path)
         assert result.returncode == 0, f"Syntax error in {fname}:\n{result.stderr}"
-

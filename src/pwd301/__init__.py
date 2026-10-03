@@ -96,6 +96,7 @@ from pwd301.services.exceptions import (
     CourseNotAvailableError,
     CourseStateViolationError,
     CourseValidationError,
+    CurriculumRateLimitExceededError,
     DocumentImportError,
     DocumentImportJobNotFoundError,
     DocumentImportStateViolationError,
@@ -117,9 +118,9 @@ from pwd301.services.exceptions import (
     FileStorageError,
     FileValidationError,
     ForbiddenError,
-    InvalidCredentialsError,
     GradingError,
     ImportQuestionNotFoundError,
+    InvalidCredentialsError,
     LessonNotFoundError,
     LessonPositionConflictError,
     LessonProgressError,
@@ -327,6 +328,7 @@ DOMAIN_EXCEPTION_HANDLERS: dict[type[Exception], tuple[str, int]] = {
     # 429 Rate Limit Exceeded
     EmailRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
     AIQuotaExceededError: ("RATE_LIMIT_EXCEEDED", 429),
+    CurriculumRateLimitExceededError: ("RATE_LIMIT_EXCEEDED", 429),
     # 500 Internal Error
     FileStorageError: ("INTERNAL_ERROR", 500),
     FileError: ("INTERNAL_ERROR", 500),
@@ -469,6 +471,7 @@ def create_app(
         )
 
     app = Flask(__name__, static_folder=None, template_folder=None)
+    app.json.ensure_ascii = False  # type: ignore[attr-defined]
     config_cls = config_by_name[config_name]
     config_obj = config_cls() if isinstance(config_cls, type) else config_cls
     app.config.from_object(config_obj)
@@ -756,7 +759,31 @@ def create_app(
             request.endpoint == "admin.admin_download_application_evidence"
             and request.args.get("preview", "0").lower() in ("1", "true", "yes")
         )
-        allows_same_origin_frame = is_frontend or is_application_evidence_preview
+        is_file_inline_preview = (
+            request.args.get("disposition", "").lower() == "inline"
+            or request.args.get("preview", "0").lower() in ("1", "true", "yes")
+        ) and (
+            request.path.startswith((
+                "/student/files/",
+                "/student/courses/",
+                "/instructor/courses/",
+                "/api/files/",
+                "/api/v1/files/",
+                "/api/courses/",
+                "/admin/files/",
+                "/admin/courses/",
+            ))
+            or request.endpoint in (
+                "student.download_student_course_file_route",
+                "student.download_lesson_file",
+                "instructor.download_instructor_course_file_route",
+                "api_file.download_file_generic_api",
+                "admin.admin_download_application_evidence",
+            )
+        )
+        allows_same_origin_frame = (
+            is_frontend or is_application_evidence_preview or is_file_inline_preview
+        )
         response.headers["X-Frame-Options"] = "SAMEORIGIN" if allows_same_origin_frame else "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         if is_frontend and app.config.get("WTF_CSRF_ENABLED", True) and "csrf_token" in session:

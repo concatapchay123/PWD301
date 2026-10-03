@@ -299,7 +299,9 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                 if fa.status == "ACTIVE" and getattr(fa, "virus_scan_status", None) == "CLEAN":
                     mime = (fa.mime_type or "").lower()
                     name = (fa.original_filename or "").lower()
-                    is_vid = mime.startswith("video/") or name.endswith((".mp4", ".webm", ".mkv", ".mov"))
+                    is_vid = mime.startswith("video/") or name.endswith(
+                        (".mp4", ".webm", ".mkv", ".mov")
+                    )
                     if is_vid:
                         uploaded_url = f"/student/files/{fa.public_id}/download?disposition=inline"
                         video_urls.append(uploaded_url)
@@ -1212,7 +1214,9 @@ def assessment_detail_view(assessment_id: str) -> Any:
                 "remaining_attempts": remaining_attempts,
                 "is_attempt_limit_reached": is_attempt_limit_reached,
                 "can_start": can_start,
-                "student_name": actor.display_name or getattr(actor, "full_name", None) or "Học viên",
+                "student_name": (
+                    actor.display_name or getattr(actor, "full_name", None) or "Học viên"
+                ),
                 "student_email": actor.email,
                 "proctoring_config": {
                     "monitoring_enabled": True,
@@ -1265,6 +1269,15 @@ def attempt_result_view(attempt_id: str) -> Any:
         result_data["submitted_at"] = (
             attempt.submitted_at.isoformat() if attempt.submitted_at else None
         )
+        candidate = getattr(attempt, "user", None)
+        if candidate:
+            cand_name = (
+                getattr(candidate, "full_name", None)
+                or getattr(candidate, "display_name", None)
+                or getattr(candidate, "name", "")
+            )
+            result_data["candidate_name"] = cand_name
+            result_data["candidate_email"] = getattr(candidate, "email", "")
     result_data["is_released"] = result_data.get("score_status") == "RELEASED"
 
     return jsonify(result_data), 200
@@ -1376,21 +1389,21 @@ def student_ai_chat() -> Any:
                     )
                 )
             ):
-                    return (
-                        jsonify(
-                            {
-                                "error": {
-                                    "message": (
-                                        "Bạn chưa ghi danh khóa học này nên không thể "
-                                        "truy cập trợ lý AI ngữ cảnh bài học."
-                                    ),
-                                    "code": "FORBIDDEN_NOT_ENROLLED",
-                                },
-                                "status": "refused",
-                            }
-                        ),
-                        403,
-                    )
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "message": (
+                                    "Bạn chưa ghi danh khóa học này nên không thể "
+                                    "truy cập trợ lý AI ngữ cảnh bài học."
+                                ),
+                                "code": "FORBIDDEN_NOT_ENROLLED",
+                            },
+                            "status": "refused",
+                        }
+                    ),
+                    403,
+                )
             course_id = str(target_course.public_id)
 
         context_type = "LESSON" if lesson_id else ("COURSE" if course_id else "GLOBAL")
@@ -1611,7 +1624,8 @@ def student_course_detail(course_id: str) -> Any:
         .scalar()
         or 0
     )
-    is_full = bool(course.capacity and course.capacity > 0 and active_count >= course.capacity)
+    # Si so toi da la khong gioi han theo quy dinh he thong moi
+    is_full = False
 
     from pwd301.models.assessment import Assessment
     from pwd301.models.attempt_regrade import AssessmentAttempt
@@ -2296,6 +2310,20 @@ def get_attempt_appeal_route(attempt_id: str) -> Any:
         "score_delta": data.get("score_delta"),
     }
     return jsonify({"appeal": appeal_info}), 200
+
+
+@student_bp.route("/attempts/<attempt_id>/grade-history", methods=["GET"])
+@student_required
+def get_student_attempt_grade_history_route(attempt_id: str) -> Any:
+    """Return only persisted score-revision history for the attempt owner."""
+    from pwd301.services.attempt_service import get_attempt_grade_history
+
+    result = get_attempt_grade_history(
+        actor=require_authenticated_actor(),
+        attempt_id=attempt_id,
+        session=db.session,
+    )
+    return jsonify(result), 200
 
 
 @student_bp.route("/become-instructor/cancel", methods=["POST"])

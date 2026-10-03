@@ -61,7 +61,6 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     assign_role_to_user(
         user_id=user.id,
         role_code="ADMIN",
-        assigned_by_user_id=user.id,
         session=sess,
     )
     user.is_email_verified = True
@@ -308,7 +307,11 @@ def test_adr002_zero_internal_pk_leakage(client: FlaskClient, admin_user: User) 
     # 3. Maintenance start
     resp_maint = client.post(
         "/api/admin/maintenance/start",
-        json={"reason": "ADR-002 check", "estimated_duration_minutes": 30},
+        json={
+            "reason": "ADR-002 check",
+            "estimated_duration_minutes": 30,
+            "password": "Password123!",
+        },
         headers=headers,
     )
     assert resp_maint.status_code == 201

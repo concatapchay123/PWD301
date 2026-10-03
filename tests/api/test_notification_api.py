@@ -354,5 +354,3 @@ def test_notification_deduplication_collapsing(
     assert resp.status_code == 200
     api_items = [i for i in resp.get_json()["items"] if i["title"] == "Bảo trì hệ thống định kỳ"]
     assert len(api_items) == 1
-
-

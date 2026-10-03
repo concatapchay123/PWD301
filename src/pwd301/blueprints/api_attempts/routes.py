@@ -252,12 +252,14 @@ def grade_attempt_question_route(
 
         raise ValidationError("awarded_points is required.")
     reason = payload.get("reason") or payload.get("feedback")
+    expected_row_version = payload.get("row_version")
     result = grade_essay_question(
         actor=actor,
         attempt_id=attempt_id,
         attempt_question_id=attempt_question_id,
         awarded_points=awarded_points,
         reason=reason,
+        expected_row_version=expected_row_version,
         session=db.session,
     )
     return jsonify(result), 200

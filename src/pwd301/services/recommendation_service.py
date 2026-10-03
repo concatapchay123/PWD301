@@ -217,8 +217,7 @@ def generate_course_recommendations(
             )
         elif "PREREQUISITES_SATISFIED" in cand_reasons:
             return (
-                "You have satisfied all prerequisites required to enroll in "
-                f"'{cand_course.title}'."
+                f"You have satisfied all prerequisites required to enroll in '{cand_course.title}'."
             )
         elif "BEGINNER_FRIENDLY" in cand_reasons:
             return "An excellent introductory course to kickstart your learning path."

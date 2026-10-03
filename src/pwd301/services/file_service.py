@@ -384,10 +384,14 @@ def store_file_stream(
         digest_bytes = hasher.digest()
         hex_hash = hasher.hexdigest()
 
-        # Multi-engine malware scanning while quarantined
+        # Multi-engine malware scanning while quarantined (single-pass)
         now = utc_now()
         scan_verdicts = scan_file_all_engines(temp_path)
         main_verdict = scan_blob_file(temp_path)
+        if main_verdict.status != "PASS" and not any(
+            v.status == main_verdict.status for v in scan_verdicts
+        ):
+            scan_verdicts.insert(0, main_verdict)
 
         valid_asset_types = {
             "RESOURCE",
@@ -560,9 +564,11 @@ def store_file_stream(
                     recipient_user=actor.id,
                     event_type="FILE_REJECTED",
                     title="Tệp tải lên bị từ chối do nhiễm mã độc",
-                    body=f"Tệp '{clean_filename}' đã bị từ chối và cách ly vì phát hiện mã độc ({sig_desc}).",
+                    body=(
+                        f"Tệp '{clean_filename}' đã bị từ chối và cách ly "
+                        f"vì phát hiện mã độc ({sig_desc})."
+                    ),
                     category="SECURITY",
-                    force_email=True,
                     target_role="INSTRUCTOR",
                     session=sess,
                 )
@@ -622,7 +628,7 @@ def store_file_stream(
             enqueue_background_job(
                 job_type="FILE_SCAN",
                 payload={"asset_id": asset.id, "user_id": actor.id},
-                run_async=False,
+                run_async=True,
                 session=sess,
             )
 
@@ -847,7 +853,10 @@ def add_file_revision(
                     recipient_user=actor.id,
                     event_type="FILE_REJECTED",
                     title="Phiên bản tệp bị từ chối do nhiễm mã độc",
-                    body=f"Phiên bản mới của tệp '{clean_filename}' đã bị từ chối vì phát hiện mã độc ({sig_desc}).",
+                    body=(
+                        f"Phiên bản mới của tệp '{clean_filename}' đã bị từ chối "
+                        f"vì phát hiện mã độc ({sig_desc})."
+                    ),
                     category="SECURITY",
                     force_email=True,
                     target_role="INSTRUCTOR",
@@ -1512,7 +1521,8 @@ def quarantine_override(
     sess = session if session is not None else db.session
     if not (admin_actor.is_admin and getattr(admin_actor, "is_primary_admin", False)):
         raise FileAccessDeniedError(
-            "Chỉ Quản trị viên cấp cao (Primary Admin) mới có quyền giải phóng tệp khỏi diện kiểm dịch."
+            "Chỉ Quản trị viên cấp cao (Primary Admin) mới có quyền "
+            "giải phóng tệp khỏi diện kiểm dịch."
         )
 
     clean_reason = (reason or "").strip()
@@ -1661,11 +1671,19 @@ def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
     """Serialize FileAsset exposing only public UUIDs and safe metadata."""
     cur_rev = asset.current_revision or (asset.revisions[-1] if asset.revisions else None)
     effective_status = asset.status
-    if cur_rev:
+    scan_status = getattr(asset, "virus_scan_status", "CLEAN")
+    if asset.status in ("TRASH", "DELETED") or asset.deleted_at is not None:
+        effective_status = "TRASH"
+    elif cur_rev:
         if cur_rev.status == "REJECTED":
             effective_status = "INFECTED"
+            scan_status = "INFECTED"
         elif cur_rev.status == "QUARANTINED":
             effective_status = "QUARANTINED"
+            scan_status = "SCANNING"
+        elif cur_rev.status == "ACTIVE":
+            effective_status = "ACTIVE"
+            scan_status = "CLEAN"
 
     return {
         "asset_id": str(asset.public_id),
@@ -1688,7 +1706,7 @@ def _serialize_file_asset(asset: FileAsset) -> dict[str, Any]:
         "status": effective_status,
         "asset_status": asset.status,
         "revision_status": cur_rev.status if cur_rev else asset.status,
-        "virus_scan_status": getattr(asset, "virus_scan_status", "CLEAN"),
+        "virus_scan_status": scan_status,
         "current_version": cur_rev.revision_no if cur_rev else 1,
         "revision_no": cur_rev.revision_no if cur_rev else 1,
         "created_at": asset.created_at.isoformat() if asset.created_at else None,

@@ -257,7 +257,6 @@ def _serialize_assignment(
     }
 
 
-
 def _serialize_blueprint_rule(rule: AssessmentBlueprintRule) -> dict[str, Any]:
     """Serialize an AssessmentBlueprintRule masking BIGINT PK (ADR-002)."""
     synthetic_id = str(
@@ -1700,7 +1699,10 @@ def reorder_assessment_questions(
         sess.rollback()
         raise
 
-    return [_serialize_assignment(a, include_answers=True) for a in sorted(assignments, key=lambda x: x.position)]
+    return [
+        _serialize_assignment(a, include_answers=True)
+        for a in sorted(assignments, key=lambda x: x.position)
+    ]
 
 
 # ============================================================================

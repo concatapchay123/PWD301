@@ -4,6 +4,75 @@
  */
 
 class AuthView {
+  static isCapsLockActive = false;
+
+  static checkCapsLock(event) {
+    if (!event || typeof event.getModifierState !== 'function') {
+      return false;
+    }
+    return Boolean(event.getModifierState('CapsLock'));
+  }
+
+  static setupCapsLockWarning(inputElement, warningElement) {
+    if (!inputElement || !warningElement) return null;
+
+    const show = () => warningElement.classList.remove('hidden');
+    const hide = () => warningElement.classList.add('hidden');
+
+    const onKey = (e) => {
+      if (!e || typeof e.getModifierState !== 'function') return;
+      const isCaps = e.getModifierState('CapsLock');
+      AuthView.isCapsLockActive = isCaps;
+      if (isCaps) {
+        show();
+      } else {
+        hide();
+      }
+    };
+
+    const onClick = (e) => {
+      if (e && typeof e.getModifierState === 'function') {
+        const isCaps = e.getModifierState('CapsLock');
+        AuthView.isCapsLockActive = isCaps;
+        if (isCaps) {
+          show();
+          return;
+        }
+      }
+      if (AuthView.isCapsLockActive) {
+        show();
+      } else {
+        hide();
+      }
+    };
+
+    const onFocus = () => {
+      if (AuthView.isCapsLockActive) {
+        show();
+      }
+    };
+
+    const onBlur = () => {
+      hide();
+    };
+
+    inputElement.addEventListener('keydown', onKey);
+    inputElement.addEventListener('keyup', onKey);
+    inputElement.addEventListener('click', onClick);
+    inputElement.addEventListener('focus', onFocus);
+    inputElement.addEventListener('blur', onBlur);
+
+    return {
+      cleanup: () => {
+        inputElement.removeEventListener('keydown', onKey);
+        inputElement.removeEventListener('keyup', onKey);
+        inputElement.removeEventListener('click', onClick);
+        inputElement.removeEventListener('focus', onFocus);
+        inputElement.removeEventListener('blur', onBlur);
+      }
+    };
+  }
+
   static render() {
     return `
       <div class="min-h-full w-full flex flex-col justify-center items-center px-4 py-8 sm:py-14 bg-[#FAF9F5] dark:bg-[#191919] font-sans selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
@@ -62,6 +131,11 @@ class AuthView {
                     class="c-input pl-9"
                   />
                 </div>
+                <!-- Caps Lock Warning for Email -->
+                <div id="login-email-capslock-warning" class="hidden px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all" role="alert" aria-live="polite">
+                  <span class="material-symbols-outlined text-[15px] shrink-0 text-amber-600 dark:text-amber-400">keyboard_capslock</span>
+                  <span>Đang bật Caps Lock</span>
+                </div>
               </div>
 
               <!-- Password Input -->
@@ -95,6 +169,11 @@ class AuthView {
                   >
                     <span class="material-symbols-outlined text-[16px]" id="password-eye-icon">visibility</span>
                   </button>
+                </div>
+                <!-- Caps Lock Warning for Password -->
+                <div id="login-capslock-warning" class="hidden px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all" role="alert" aria-live="polite">
+                  <span class="material-symbols-outlined text-[15px] shrink-0 text-amber-600 dark:text-amber-400">keyboard_capslock</span>
+                  <span>Đang bật Caps Lock</span>
                 </div>
               </div>
 
@@ -273,6 +352,12 @@ class AuthView {
                   </button>
                 </div>
 
+                <!-- Caps Lock Warning for Register Password -->
+                <div id="register-capslock-warning" class="hidden px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all" role="alert" aria-live="polite">
+                  <span class="material-symbols-outlined text-[15px] shrink-0 text-amber-600 dark:text-amber-400">keyboard_capslock</span>
+                  <span>Đang bật Caps Lock</span>
+                </div>
+
                 <!-- Live Password Rules Checklist -->
                 <div class="p-2.5 rounded-lg bg-[#FAF9F5] dark:bg-[#262524] border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-1 mt-1.5 text-[11px]">
                   <div class="font-semibold text-[#8F8E8A] text-[10px] uppercase tracking-wider mb-1">Yêu cầu bảo mật mật khẩu:</div>
@@ -313,6 +398,11 @@ class AuthView {
                     placeholder="Nhập lại mật khẩu..."
                     class="c-input pl-9"
                   />
+                </div>
+                <!-- Caps Lock Warning for Register Confirm Password -->
+                <div id="register-confirm-capslock-warning" class="hidden px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all" role="alert" aria-live="polite">
+                  <span class="material-symbols-outlined text-[15px] shrink-0 text-amber-600 dark:text-amber-400">keyboard_capslock</span>
+                  <span>Đang bật Caps Lock</span>
                 </div>
               </div>
 
@@ -435,6 +525,29 @@ class AuthView {
     const registerErrorText = document.getElementById('register-error-text');
     const toggleRegisterPassBtn = document.getElementById('toggle-register-pass-btn');
     const registerPassEyeIcon = document.getElementById('register-pass-eye-icon');
+
+    // Caps Lock Warning Elements & Handlers
+    const loginEmailWarn = document.getElementById('login-email-capslock-warning');
+    const loginPassWarn = document.getElementById('login-capslock-warning');
+    const regPassWarn = document.getElementById('register-capslock-warning');
+    const regConfirmPassWarn = document.getElementById('register-confirm-capslock-warning');
+
+    AuthView.setupCapsLockWarning(emailInput, loginEmailWarn);
+    AuthView.setupCapsLockWarning(passInput, loginPassWarn);
+    AuthView.setupCapsLockWarning(registerPassInput, regPassWarn);
+    AuthView.setupCapsLockWarning(registerConfirmPassInput, regConfirmPassWarn);
+
+    // Global keyboard listener to track Caps Lock state
+    if (typeof document !== 'undefined' && !AuthView._globalKeyListening) {
+      AuthView._globalKeyListening = true;
+      const updateGlobal = (e) => {
+        if (e && typeof e.getModifierState === 'function') {
+          AuthView.isCapsLockActive = e.getModifierState('CapsLock');
+        }
+      };
+      document.addEventListener('keydown', updateGlobal);
+      document.addEventListener('keyup', updateGlobal);
+    }
 
     // Nav buttons
     const tabNavLogin = document.getElementById('tab-nav-login');

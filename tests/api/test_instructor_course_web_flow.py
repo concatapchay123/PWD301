@@ -376,4 +376,3 @@ def test_regular_instructor_cannot_view_all_platform_courses_via_scope(
     assert data["data"]["is_admin"] is False
     codes = [c["course_code"] for c in data["data"]["courses"]]
     assert "OTHER-101" not in codes
-

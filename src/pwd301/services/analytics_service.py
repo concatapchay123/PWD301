@@ -198,44 +198,8 @@ def get_admin_system_overview(
     except Exception as telem_exc:
         logger.warning("Failed to collect system hardware telemetry: %s", telem_exc)
         telemetry = {
-            "hostname": "server",
-            "os": "Unknown",
             "status": "DEGRADED",
-            "node_label": "Node-01",
-            "cpu": {
-                "percent": 0.0,
-                "cores": 1,
-                "frequency_mhz": None,
-                "model": "Standard CPU",
-                "load_avg": None,
-                "label": "1 vCPU",
-            },
-            "memory": {
-                "percent": 0.0,
-                "total_gb": 0.0,
-                "used_gb": 0.0,
-                "available_gb": 0.0,
-                "label": "0.0 / 0.0 GB",
-                "available_label": "0.0 GB khả dụng",
-            },
-            "disk": {
-                "percent": 0.0,
-                "total_gb": 0.0,
-                "used_gb": 0.0,
-                "free_gb": 0.0,
-                "label": "0.0 GB / 0.0 GB",
-                "free_label": "0.0 GB còn trống",
-            },
-            "network": {
-                "bytes_sent": 0,
-                "bytes_recv": 0,
-                "packets_sent": 0,
-                "packets_recv": 0,
-                "traffic_label": "Gửi: 0 B • Nhận: 0 B",
-                "total_formatted": "0 B",
-            },
-            "uptime": "Đang hoạt động",
-            "uptime_seconds": 0,
+            "available": False,
             "collected_at": utc_now().isoformat(),
             "error": str(telem_exc),
         }
@@ -303,7 +267,6 @@ def get_instructor_overview_analytics(
         raise ForbiddenError("Instructor access required.")
 
     sess = session
-    norm_scope = (scope or "assigned").strip().lower()
 
     # Resolve assigned courses
     assigned_courses = (
@@ -483,9 +446,7 @@ def get_instructor_overview_analytics(
         comp_count = c_stat["completed_count"]
         total_participants = enrolled_c + comp_count
         comp_rate = (
-            round((comp_count / total_participants) * 100.0, 2)
-            if total_participants > 0
-            else 0.0
+            round((comp_count / total_participants) * 100.0, 2) if total_participants > 0 else 0.0
         )
         courses_data.append(
             {
@@ -506,9 +467,7 @@ def get_instructor_overview_analytics(
                 "instructor_name": (
                     c.owner_instructor.display_name if c.owner_instructor else None
                 ),
-                "instructor_email": (
-                    c.owner_instructor.email if c.owner_instructor else None
-                ),
+                "instructor_email": (c.owner_instructor.email if c.owner_instructor else None),
                 "created_at": c.created_at.isoformat(),
             }
         )

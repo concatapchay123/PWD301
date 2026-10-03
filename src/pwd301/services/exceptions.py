@@ -155,6 +155,19 @@ class LessonProgressError(LessonError):
     """Raised when lesson progress tracking encounters an error or tampering."""
 
 
+class CurriculumRateLimitExceededError(LessonError):
+    """Raised when curriculum modification requests exceed allowed rate limit."""
+
+    def __init__(
+        self,
+        message: str = "Tần suất thao tác chương trình giảng dạy vượt quá giới hạn cho phép. Vui lòng thử lại sau.",
+        retry_after: int = 60,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.code = "RATE_LIMIT_EXCEEDED"
+
+
 class EnrollmentError(ServiceError):
     """Base exception for all enrollment and prerequisite domain errors."""
 

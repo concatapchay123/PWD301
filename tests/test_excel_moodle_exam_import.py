@@ -2,7 +2,6 @@
 
 import io
 import json
-import pytest
 
 from pwd301.extensions import db
 from pwd301.services.excel_exam_service import generate_excel_exam_template, parse_excel_exam
@@ -117,7 +116,11 @@ def test_excel_endpoints(client, app):
     upload_res = client.post(
         "/instructor/exams/parse-excel",
         data={
-            "file": (io.BytesIO(excel_bytes), "de_thi_test.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            "file": (
+                io.BytesIO(excel_bytes),
+                "de_thi_test.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
         },
         content_type="multipart/form-data",
     )
@@ -153,9 +156,7 @@ def test_moodle_xml_endpoints(client, app):
     # 3. Parse via multipart file upload
     post_file_res = client.post(
         "/instructor/exams/parse-moodle-xml",
-        data={
-            "file": (io.BytesIO(xml_str.encode("utf-8")), "moodle.xml", "application/xml")
-        },
+        data={"file": (io.BytesIO(xml_str.encode("utf-8")), "moodle.xml", "application/xml")},
         content_type="multipart/form-data",
     )
     assert post_file_res.status_code == 200

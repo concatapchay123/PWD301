@@ -86,7 +86,10 @@ def test_admin_suspend_user_flow(client: FlaskClient, admin_user: User, student_
 
     resp_suspend = client.post(
         f"/api/admin/users/{target_id}/suspend",
-        json={"reason": "Security violation: automated scraping detected"},
+        json={
+            "reason": "Security violation: automated scraping detected",
+            "password": "Password@123",
+        },
         headers=admin_headers,
     )
     assert resp_suspend.status_code == 200
@@ -178,7 +181,10 @@ def test_admin_force_revoke_sessions_flow(
     target_id = str(student_user.public_id)
     resp_revoke = client.post(
         f"/api/admin/users/{target_id}/revoke-sessions",
-        json={"reason": "User reported compromised credentials"},
+        json={
+            "reason": "User reported compromised credentials",
+            "password": "Password@123",
+        },
         headers=admin_headers,
     )
     assert resp_revoke.status_code == 200

@@ -390,12 +390,20 @@ def test_audit_scope_filters_list_and_hides_out_of_scope_detail(app, student_use
         db.session.flush()
         db.session.query(AuditEvent).delete()
         in_scope = record_audit_event(
-            actor=reviewer, action="COURSE_CHANGE_APPROVED", target_type="COURSE", target_id=5,
-            reason="Approved", session=db.session,
+            actor=reviewer,
+            action="COURSE_CHANGE_APPROVED",
+            target_type="COURSE",
+            target_id=5,
+            reason="Approved",
+            session=db.session,
         )
         out_of_scope = record_audit_event(
-            actor=reviewer, action="USER_SUSPEND", target_type="USER", target_id=student_user.id,
-            reason="Suspended", session=db.session,
+            actor=reviewer,
+            action="USER_SUSPEND",
+            target_type="USER",
+            target_id=student_user.id,
+            reason="Suspended",
+            session=db.session,
         )
         db.session.commit()
 
@@ -412,7 +420,9 @@ def test_audit_scope_filters_list_and_hides_out_of_scope_detail(app, student_use
             "COURSE_CHANGE_APPROVED",
             "USER_SUSPEND",
         }
-        assert get_audit_log_detail(actor=monitor, audit_id=out_of_scope.event_id, session=db.session)
+        assert get_audit_log_detail(
+            actor=monitor, audit_id=out_of_scope.event_id, session=db.session
+        )
 
 
 def test_suspend_and_unsuspend_user_workflow(

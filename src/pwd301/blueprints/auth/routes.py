@@ -20,6 +20,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 
 from pwd301.blueprints.auth import auth_bp
+from pwd301.models.types import utc_now
 from pwd301.services.email_service import enqueue_email
 from pwd301.services.exceptions import InvalidPasswordError, ServiceError
 from pwd301.services.rate_limit_service import (
@@ -82,8 +83,12 @@ def login() -> Any:
                             "id": str(getattr(current_user, "public_id", current_user.id)),
                             "email": current_user.email,
                             "display_name": getattr(current_user, "display_name", ""),
+                            "full_name": getattr(current_user, "full_name", None)
+                            or getattr(current_user, "display_name", "")
+                            or "",
                             "primary_role": getattr(current_user, "primary_role", "STUDENT"),
-                            "active_role": session.get("active_role") or getattr(current_user, "primary_role", "STUDENT"),
+                            "active_role": session.get("active_role")
+                            or getattr(current_user, "primary_role", "STUDENT"),
                             "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
                             "admin_sub_role": getattr(current_user, "admin_sub_role", None),
                             "admin_sub_role_label": (
@@ -241,8 +246,12 @@ def login() -> Any:
                         "public_id": str(user.public_id),
                         "email": user.email,
                         "display_name": user.display_name,
+                        "full_name": getattr(user, "full_name", None)
+                        or getattr(user, "display_name", "")
+                        or "",
                         "primary_role": getattr(user, "primary_role", "STUDENT"),
-                        "active_role": session.get("active_role") or getattr(user, "primary_role", "STUDENT"),
+                        "active_role": session.get("active_role")
+                        or getattr(user, "primary_role", "STUDENT"),
                         "role_codes": sorted(getattr(user, "role_codes", ["STUDENT"])),
                         "admin_sub_role": getattr(user, "admin_sub_role", None),
                         "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
@@ -875,9 +884,75 @@ def auth_mark_all_notifications_read() -> Any:
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     category = payload.get("category") or request.args.get("category")
-    target_role = payload.get("role") or payload.get("target_role") or request.args.get("role") or request.args.get("target_role")
-    count = mark_all_as_read(actor=current_user, category=category, target_role=target_role, session=db.session)
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+    )
+    count = mark_all_as_read(
+        actor=current_user, category=category, target_role=target_role, session=db.session
+    )
     return jsonify({"success": True, "marked_count": count}), 200
+
+
+@auth_bp.route("/notifications/<notification_id>", methods=["DELETE", "POST"])
+@auth_bp.route("/notifications/<notification_id>/delete", methods=["POST"])
+def auth_delete_notification(notification_id: str) -> Any:
+    """Soft-delete an in-app notification for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import dismiss_notification
+
+    result = dismiss_notification(
+        actor=current_user,
+        notification_id=notification_id,
+        session=db.session,
+    )
+    return jsonify({"success": True, **result}), 200
+
+
+@auth_bp.route("/notifications", methods=["DELETE"])
+@auth_bp.route("/notifications/clear", methods=["POST"])
+def auth_clear_all_notifications() -> Any:
+    """Soft-delete all notifications for the authenticated session user."""
+    if not current_user.is_authenticated:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Authentication required to modify notifications.",
+                    }
+                }
+            ),
+            401,
+        )
+
+    from pwd301.extensions import db
+    from pwd301.services.notification_service import delete_all_notifications
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    target_role = (
+        payload.get("role")
+        or payload.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+    )
+    count = delete_all_notifications(actor=current_user, target_role=target_role, session=db.session)
+    return jsonify({"success": True, "deleted_count": count}), 200
 
 
 @auth_bp.route("/profile", methods=["GET", "PUT", "POST"])
@@ -901,6 +976,7 @@ def auth_profile() -> Any:
     if request.method in ("PUT", "POST"):
         payload = request.get_json(silent=True) or request.form.to_dict() or {}
         display_name = str(payload.get("display_name") or payload.get("name") or "").strip()
+        avatar_url = payload.get("avatar_url")
         if display_name:
             if len(display_name) < 2 or len(display_name) > 150:
                 return (
@@ -915,7 +991,25 @@ def auth_profile() -> Any:
                     400,
                 )
             current_user.display_name = display_name
-            db.session.commit()
+        if avatar_url is not None:
+            from pwd301.services.user_service import validate_avatar_url
+
+            try:
+                current_user.avatar_url = validate_avatar_url(avatar_url)
+            except ValueError as val_err:
+                return (
+                    jsonify(
+                        {
+                            "error": {
+                                "code": "VALIDATION_ERROR",
+                                "message": str(val_err),
+                            }
+                        }
+                    ),
+                    400,
+                )
+        current_user.updated_at = utc_now()
+        db.session.commit()
 
     user_payload = {
         "id": str(getattr(current_user, "public_id", current_user.id)),
@@ -923,16 +1017,15 @@ def auth_profile() -> Any:
         "email": current_user.email,
         "display_name": current_user.display_name,
         "primary_role": getattr(current_user, "primary_role", "STUDENT"),
-        "active_role": session.get("active_role") or getattr(current_user, "primary_role", "STUDENT"),
+        "active_role": session.get("active_role")
+        or getattr(current_user, "primary_role", "STUDENT"),
         "role_codes": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
         "roles": sorted(getattr(current_user, "role_codes", ["STUDENT"])),
         "admin_sub_role": getattr(current_user, "admin_sub_role", None),
         "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
         "is_primary_admin": getattr(current_user, "is_primary_admin", False),
         "avatar_url": getattr(current_user, "avatar_url", None),
-        "created_at": (
-            current_user.created_at.isoformat() if current_user.created_at else None
-        ),
+        "created_at": (current_user.created_at.isoformat() if current_user.created_at else None),
     }
 
     return (
@@ -978,6 +1071,8 @@ def auth_preferences() -> Any:
                 cat_key = k.upper().replace("EMAIL_", "")
                 mapped_prefs[cat_key] = bool(v)
             raw_prefs = mapped_prefs
+        elif not isinstance(raw_prefs, list):
+            raw_prefs = {}
 
         try:
             updated_prefs = update_user_preferences(
@@ -985,10 +1080,7 @@ def auth_preferences() -> Any:
                 preferences_payload=raw_prefs,
                 session=db.session,
             )
-            map_dict = {
-                f"email_{p['category'].lower()}": p["email_enabled"]
-                for p in updated_prefs
-            }
+            map_dict = {f"email_{p['category'].lower()}": p["email_enabled"] for p in updated_prefs}
             res_dict: dict[str, Any] = {
                 "status": "ok",
                 "preferences": updated_prefs,
@@ -1000,11 +1092,7 @@ def auth_preferences() -> Any:
             return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
 
     prefs = get_user_preferences(actor=current_user, session=db.session)
-    map_dict = {
-        f"email_{p['category'].lower()}": p["email_enabled"]
-        for p in prefs
-    }
+    map_dict = {f"email_{p['category'].lower()}": p["email_enabled"] for p in prefs}
     res_dict = {"status": "ok", "preferences": prefs, "preferences_map": map_dict}
     res_dict.update(map_dict)
     return jsonify(res_dict), 200
-

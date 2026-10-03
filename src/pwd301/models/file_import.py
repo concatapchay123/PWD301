@@ -356,7 +356,6 @@ class FileRevision(Base):
         sa.Boolean,
         nullable=False,
         default=False,
-        server_default=sa.text("0"),
     )
     blob_id = db.Column(
         sa.BigInteger,

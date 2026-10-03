@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import io
+
 from flask import Flask
+from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course
-from pwd301.models.file_import import FileAsset, QuestionRevisionResource
-from pwd301.models.identity import Role, User
-from pwd301.models.question_bank import Question
+from pwd301.models.identity import Role
 from pwd301.services.course_service import create_course
 from pwd301.services.file_service import store_file_stream
 from pwd301.services.question_bank_service import (
@@ -80,7 +79,9 @@ def test_question_multi_resources_create_clone_and_update(app: Flask) -> None:
     assert len(detail["resources"]) == 2
     assert detail["resources"][0]["asset_id"] == str(asset_1.public_id)
     assert detail["resources"][0]["filename"] == "diagram1.png"
-    assert detail["resources"][0]["download_url"] == f"/instructor/files/{asset_1.public_id}/download"
+    assert (
+        detail["resources"][0]["download_url"] == f"/instructor/files/{asset_1.public_id}/download"
+    )
     assert detail["resources"][1]["asset_id"] == str(asset_2.public_id)
 
     # 3. Test clone resources when creating revision without specifying resources
@@ -183,4 +184,3 @@ def test_batch_create_assessment_questions_with_resources(app: Flask, client: Fl
     q_detail = get_question_detail(instructor, created_q_id, session=sess)
     assert len(q_detail["resources"]) == 1
     assert q_detail["resources"][0]["asset_id"] == str(asset.public_id)
-

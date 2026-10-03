@@ -273,8 +273,12 @@ class TestFileApiEndpoints:
         assert res_resp.get_json()["status"] == "ACTIVE"
 
     def test_lesson_resource_attach_and_detach_rest_api(
-        self, client: FlaskClient, instructor_user: User, admin_user: User,
-        test_course: Course, test_lesson: Lesson
+        self,
+        client: FlaskClient,
+        instructor_user: User,
+        admin_user: User,
+        test_course: Course,
+        test_lesson: Lesson,
     ) -> None:
         """Published Lesson resource links change only after Admin approval."""
         tokens = create_token_pair(instructor_user)

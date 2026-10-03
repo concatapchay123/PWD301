@@ -412,6 +412,14 @@ def test_mixed_quiz_essay_pending_manual_grading_flow(
     assert pending_list[0]["attempt_id"] == str(attempt.public_id)
     assert pending_list[0]["pending_essay_count"] == 1
 
+    overview_resp = client.get(
+        "/instructor/grading",
+        headers=_auth_headers(instructor_user),
+    )
+    assert overview_resp.status_code == 200
+    assert overview_resp.json["total"] == 1
+    assert overview_resp.json["pending_attempts"][0]["attempt_id"] == str(attempt.public_id)
+
     # 6. Instructor views attempt grading detail
     detail_resp = client.get(
         f"/instructor/attempts/{attempt.public_id}/grading",

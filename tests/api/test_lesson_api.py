@@ -135,21 +135,33 @@ def test_rest_lesson_resource_changes_wait_for_review(
 ) -> None:
     course, lesson = published_course_and_lesson
     old_asset = store_file_stream(
-        instructor_user, course.id, io.BytesIO(b"old API file"),
-        "old-api.pdf", "application/pdf", session=db.session,
+        instructor_user,
+        course.id,
+        io.BytesIO(b"old API file"),
+        "old-api.pdf",
+        "application/pdf",
+        session=db.session,
     )
     resource = attach_resource_to_lesson(
-        instructor_user, lesson.id, old_asset.id, session=db.session,
+        instructor_user,
+        lesson.id,
+        old_asset.id,
+        session=db.session,
     )
     new_asset = store_file_stream(
-        instructor_user, course.id, io.BytesIO(b"new API file"),
-        "new-api.pdf", "application/pdf", session=db.session,
+        instructor_user,
+        course.id,
+        io.BytesIO(b"new API file"),
+        "new-api.pdf",
+        "application/pdf",
+        session=db.session,
     )
     tokens = create_token_pair(instructor_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     attached = client.post(
         f"/api/lessons/{lesson.public_id}/resources",
-        headers=headers, json={"file_asset_id": str(new_asset.public_id)},
+        headers=headers,
+        json={"file_asset_id": str(new_asset.public_id)},
     )
     assert attached.status_code == 202
     removed = client.delete(
@@ -297,3 +309,30 @@ def test_api_record_progress_invalid_payload(
     )
     assert resp.status_code == 400
     assert resp.get_json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_rest_lesson_edit_identical_payload_auto_skipped(
+    client: FlaskClient,
+    instructor_user: User,
+    published_course_and_lesson: tuple[Course, Lesson],
+) -> None:
+    """When lesson update payload is 100% identical to current live lesson, auto-skip without creating PENDING change request."""
+    _, lesson = published_course_and_lesson
+    tokens = create_token_pair(instructor_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    # Patch with exact same title as existing
+    response = client.patch(
+        f"/api/lessons/{lesson.public_id}",
+        headers=headers,
+        json={"title": lesson.title},
+    )
+    assert response.status_code == 200
+    assert response.get_json().get("auto_skipped") is True
+    assert (
+        db.session.query(CourseChangeRequest)
+        .filter_by(target_type="LESSON", target_id=lesson.id, status="PENDING")
+        .count()
+        == 0
+    )
+

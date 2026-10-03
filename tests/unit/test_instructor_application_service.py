@@ -261,7 +261,9 @@ def test_instructor_reviewer_can_approve_and_is_audited(app, student_user, valid
         assert event.actor_user_id == reviewer.id
 
 
-def test_course_reviewer_cannot_approve_instructor_application(app, student_user, valid_application_data):
+def test_course_reviewer_cannot_approve_instructor_application(
+    app, student_user, valid_application_data
+):
     from pwd301.models.identity import Role, UserRole
 
     with app.app_context():
@@ -388,8 +390,12 @@ def test_submit_instructor_application_freelancer_niche_success(app, student_use
 
 def test_submit_instructor_application_missing_specialization(app, student_user):
     """Submitting application without specialization raises ValidationError."""
-    with app.app_context(), pytest.raises(
-        ValidationError, match="Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy hoặc ngành ngách"
+    with (
+        app.app_context(),
+        pytest.raises(
+            ValidationError,
+            match="Vui lòng cung cấp lĩnh vực / chuyên môn giảng dạy hoặc ngành ngách",
+        ),
     ):
         submit_instructor_application(
             user_id=student_user,

@@ -72,6 +72,7 @@ class User(Base, UserMixin):
         ),
         nullable=True,
     )
+    _avatar_url = db.Column("avatar_url", sa.Unicode(500), nullable=True)
     status = db.Column(
         sa.String(24),
         nullable=False,
@@ -269,10 +270,16 @@ class User(Base, UserMixin):
 
     @property
     def avatar_url(self) -> str | None:
-        """Return direct download URL for user's uploaded avatar asset if present."""
+        """Return direct download URL for user's uploaded avatar asset or custom avatar URL."""
+        if self._avatar_url:
+            return self._avatar_url
         if self.avatar_file_asset_id:
             return f"/api/v1/files/{self.avatar_file_asset_id}/download?disposition=inline"
         return None
+
+    @avatar_url.setter
+    def avatar_url(self, value: str | None) -> None:
+        self._avatar_url = value
 
 
 class AnonymousUser(AnonymousUserMixin):

@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import io
 import uuid
-from typing import Any
 
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, Lesson
-from pwd301.models.file_import import FileAsset, LessonResource
 from pwd301.models.identity import Role, User
-from pwd301.models.types import utc_now
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
@@ -236,7 +232,13 @@ def test_resource_change_request_attaches_to_active_published_lesson_when_target
     sess.flush()
 
     res_req = queue_lesson_resource_change(
-        instructor_user, course, lesson1, "ATTACH", asset=video_asset, label="Video demo", session=sess
+        instructor_user,
+        course,
+        lesson1,
+        "ATTACH",
+        asset=video_asset,
+        label="Video demo",
+        session=sess,
     )
     sess.commit()
 
@@ -386,16 +388,25 @@ def test_student_views_multi_video_lesson_and_anti_seek_defaults_locked(
 
     # Check frontend code static contract: ensure supplementary videos are NOT hardcoded isCompleted: true
     import os
+
     frontend_student_js = os.path.join(
         os.path.dirname(__file__), "..", "..", "frontend", "assets", "js", "views", "student.js"
     )
-    with open(frontend_student_js, "r", encoding="utf-8") as f:
+    with open(frontend_student_js, encoding="utf-8") as f:
         js_code = f.read()
 
     # Must NOT have hardcoded true in _getEmbedVideoHtml call for supplementary videos
-    assert 'StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, true)' not in js_code
+    assert "StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, true)" not in js_code
     # Must pass isCompleted
-    assert 'StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, isCompleted)' in js_code
+    assert (
+        "StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, isCompleted)" in js_code
+    )
     # Must NOT pass isCompleted: true in supplementary video setup
-    assert 'setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: true,' not in js_code
-    assert 'setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: isCompleted,' in js_code
+    assert (
+        "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: true,"
+        not in js_code
+    )
+    assert (
+        "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: isCompleted,"
+        in js_code
+    )

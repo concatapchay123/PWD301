@@ -4,6 +4,7 @@ Tempo: 129.0 BPM (Electronic / Tech / Punchy / Modern SaaS)
 Duration: 70.0 Seconds
 Outputs: showcase/assets/audio/bgm_129bpm.wav & .mp3
 """
+
 import numpy as np
 import scipy.io.wavfile as wavfile
 import subprocess
@@ -47,6 +48,7 @@ ohat_len = int(SAMPLE_RATE * 0.2)
 t_oh = np.arange(ohat_len) / SAMPLE_RATE
 ohat = np.random.uniform(-1, 1, ohat_len) * np.exp(-t_oh * 18.0) * 0.4
 
+
 # Bass Synth Note Generator
 def get_bass_note(freq, duration_sec):
     n_samples = int(SAMPLE_RATE * duration_sec)
@@ -57,19 +59,26 @@ def get_bass_note(freq, duration_sec):
     env = np.exp(-t * (4.0 / duration_sec))
     return np.tanh((saw * 0.6 + sub) * 1.5) * env * 0.5
 
+
 # Pluck / Arp Note Generator
 def get_pluck_note(freq, duration_sec=0.25):
     n_samples = int(SAMPLE_RATE * duration_sec)
     t = np.arange(n_samples) / SAMPLE_RATE
-    wave = np.sin(2.0 * np.pi * freq * t) + 0.4 * np.sin(2.0 * np.pi * freq * 2.0 * t) + 0.2 * np.sin(2.0 * np.pi * freq * 3.0 * t)
+    wave = (
+        np.sin(2.0 * np.pi * freq * t)
+        + 0.4 * np.sin(2.0 * np.pi * freq * 2.0 * t)
+        + 0.2 * np.sin(2.0 * np.pi * freq * 3.0 * t)
+    )
     env = np.exp(-t * 16.0)
     return wave * env * 0.35
+
 
 # Pitch map (D minor pentatonic / tech scale)
 # D2=73.42, F2=87.31, G2=98.00, A2=110.0, C3=130.81, D3=146.83, F3=174.61, A3=220.0, C4=261.63, D4=293.66, F4=349.23, A4=440.0
 PITCH_D2, PITCH_F2, PITCH_G2, PITCH_A2 = 73.42, 87.31, 98.00, 110.00
 PITCH_C3, PITCH_D3, PITCH_F3, PITCH_A3 = 130.81, 146.83, 174.61, 220.00
 PITCH_C4, PITCH_D4, PITCH_F4, PITCH_A4 = 261.63, 293.66, 349.23, 440.00
+
 
 def mix_sample(dest, src, start_sample, volume=1.0, pan=0.0):
     end_sample = min(start_sample + len(src), total_samples)
@@ -80,6 +89,7 @@ def mix_sample(dest, src, start_sample, volume=1.0, pan=0.0):
     r_gain = np.clip(1.0 + pan, 0.0, 1.0) * volume
     audio_left[start_sample:end_sample] += src[:actual_len] * l_gain
     audio_right[start_sample:end_sample] += src[:actual_len] * r_gain
+
 
 print("[Soundtrack] Generating rhythm and synth arrangement...")
 
@@ -133,7 +143,16 @@ for b in range(n_beats):
 
         # Arpeggio Lead (from Bar 6 onward)
         if bar_num >= 6:
-            arp_notes = [PITCH_D3, PITCH_F3, PITCH_A3, PITCH_D4, PITCH_C4, PITCH_A3, PITCH_F3, PITCH_A3]
+            arp_notes = [
+                PITCH_D3,
+                PITCH_F3,
+                PITCH_A3,
+                PITCH_D4,
+                PITCH_C4,
+                PITCH_A3,
+                PITCH_F3,
+                PITCH_A3,
+            ]
             for s in range(2):
                 note_pitch = arp_notes[(b * 2 + s) % len(arp_notes)]
                 arp_samp = get_pluck_note(note_pitch, SIXTEENTH * 1.5)
@@ -145,15 +164,19 @@ for b in range(n_beats):
     elif bar_num < 36:
         # Rapid staccato kicks and claps matching the 3D ecosystem orbit
         mix_sample(audio_left, kick, sample_idx, volume=0.9, pan=0.0)
-        mix_sample(audio_left, snare, sample_idx + int(SIXTEENTH * 2 * SAMPLE_RATE), volume=0.8, pan=0.0)
+        mix_sample(
+            audio_left, snare, sample_idx + int(SIXTEENTH * 2 * SAMPLE_RATE), volume=0.8, pan=0.0
+        )
 
     # Grand Outro (Bars 36+: 66.5s - 70.0s)
     else:
-        if b == 36 * 4: # Exactly at 66.97s (Scene 12 Logo Reveal)
+        if b == 36 * 4:  # Exactly at 66.97s (Scene 12 Logo Reveal)
             # Massive sub bass hit
             sub_len = int(SAMPLE_RATE * 3.0)
             t_sub = np.arange(sub_len) / SAMPLE_RATE
-            sub_hit = np.sin(2.0 * np.pi * (50.0 * np.exp(-t_sub * 0.8)) * t_sub) * np.exp(-t_sub * 0.8)
+            sub_hit = np.sin(2.0 * np.pi * (50.0 * np.exp(-t_sub * 0.8)) * t_sub) * np.exp(
+                -t_sub * 0.8
+            )
             mix_sample(audio_left, np.tanh(sub_hit * 2.0), sample_idx, volume=1.0, pan=0.0)
             # Outro chord
             for f in [PITCH_D3, PITCH_A3, PITCH_D4, PITCH_F4]:
@@ -174,17 +197,16 @@ audio_left[-fade_samples:] *= fade_env
 audio_right[-fade_samples:] *= fade_env
 
 # 4. Save to WAV
-out_wav = os.path.abspath('showcase/assets/audio/bgm_129bpm.wav')
-stereo = np.vstack([
-    (audio_left * 32767).astype(np.int16),
-    (audio_right * 32767).astype(np.int16)
-]).T
+out_wav = os.path.abspath("showcase/assets/audio/bgm_129bpm.wav")
+stereo = np.vstack(
+    [(audio_left * 32767).astype(np.int16), (audio_right * 32767).astype(np.int16)]
+).T
 wavfile.write(out_wav, SAMPLE_RATE, stereo)
 print(f"[Soundtrack] Saved WAV: {out_wav} ({os.path.getsize(out_wav)} bytes)")
 
 # Convert to MP3 via ffmpeg
-out_mp3 = os.path.abspath('showcase/assets/audio/bgm_129bpm.mp3')
-ffmpeg_bin = r'C:\Users\LENOVO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.EXE'
-cmd = [ffmpeg_bin, '-y', '-i', out_wav, '-b:a', '192k', out_mp3]
+out_mp3 = os.path.abspath("showcase/assets/audio/bgm_129bpm.mp3")
+ffmpeg_bin = r"C:\Users\LENOVO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.EXE"
+cmd = [ffmpeg_bin, "-y", "-i", out_wav, "-b:a", "192k", out_mp3]
 subprocess.run(cmd, capture_output=True)
 print(f"[Soundtrack] Converted MP3: {out_mp3} ({os.path.getsize(out_mp3)} bytes)")

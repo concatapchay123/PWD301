@@ -123,10 +123,13 @@ class AdminView {
   }
 
   static renderLessonMarkdown(markdown) {
+    const cleaned = String(markdown || '')
+      .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
+      .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '');
     if (typeof UI !== 'undefined' && typeof UI.renderMarkdown === 'function') {
-      return UI.renderMarkdown(String(markdown || ''));
+      return UI.renderMarkdown(cleaned);
     }
-    return typeof UI !== 'undefined' ? UI.escapeHtml(String(markdown || '')) : '';
+    return typeof UI !== 'undefined' ? UI.escapeHtml(cleaned) : '';
   }
 
   static renderDiffOriginal(origText, propText) {
@@ -167,6 +170,12 @@ class AdminView {
 
   static getQueueSummary(subRole, counts = {}) {
     const summary = { courses: 0, changes: 0, applications: 0, assignments: 0 };
+    if (subRole === 'ADMIN_PRIMARY' || !subRole) {
+      summary.courses = counts.courses || 0;
+      summary.changes = counts.changes || 0;
+      summary.applications = counts.applications || 0;
+      summary.assignments = counts.assignments || 0;
+    }
     if (subRole === 'ADMIN_COURSE_REVIEW') {
       summary.courses = counts.courses || 0;
       summary.changes = counts.changes || 0;
@@ -188,6 +197,8 @@ class AdminView {
     const isPrimary = adminSubRole === 'ADMIN_PRIMARY' || Boolean(window.app?.currentUser?.is_primary_admin);
     const showQueueSummary = isPrimary || adminSubRole === 'ADMIN_COURSE_REVIEW' || adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
     const isInstructorQueue = !isPrimary && adminSubRole === 'ADMIN_INSTRUCTOR_REVIEW';
+    const isHomeTab = (!activeTab || activeTab === 'users');
+
     container.innerHTML = `
         <div class="p-6 space-y-6 max-w-[1800px] mx-auto animate-fade-in" id="admin-governance-root">
         
@@ -222,29 +233,97 @@ class AdminView {
           </div>
         </section>
 
-        <!-- 3 Core KPI Cards with Deep Link Navigation -->
-        <div class="${showQueueSummary ? '' : 'hidden'}">
-          
-          <!-- KPI 1: Đề cương chờ duyệt -->
-          <div class="${showQueueSummary ? '' : 'hidden'} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 hover:border-primary/40 shadow-sm transition-all" onclick="window.location.hash = '#/admin/governance?tab=${isInstructorQueue ? 'applications' : 'courses'}'">
-            <div class="flex items-center justify-between">
-              <span data-queue-summary-title class="text-xs font-bold text-slate-500 flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[22px]">fact_check</span>
-                Duyệt khóa học & Bản sửa đổi
-              </span>
-              <span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-[11px] font-bold" id="kpi-courses-badge">Đang tải...</span>
+        <!-- Approval & Governance Action Hub (Only shown on Admin Home Tab) -->
+        <section id="admin-approval-hub" class="${(isHomeTab && showQueueSummary) ? '' : 'hidden'} bg-gradient-to-br from-amber-500/5 via-primary/5 to-slate-50/50 dark:from-amber-950/20 dark:via-primary-950/10 dark:to-slate-900/50 rounded-2xl p-6 border border-amber-200/80 dark:border-amber-900/40 shadow-sm space-y-5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span id="hub-status-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                  <span id="hub-pulse-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                  <span id="kpi-courses-badge">Đang kiểm tra hàng đợi...</span>
+                </span>
+                <span class="text-xs text-slate-400 font-medium">Quy chuẩn ABET CAC</span>
+              </div>
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-outlined text-amber-600 text-[26px]">fact_check</span>
+                <span>${isInstructorQueue ? 'Hồ sơ Giảng viên Chờ Xét duyệt' : 'Nhiệm vụ Phê duyệt & Thẩm định Cần Xử lý'}</span>
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
+                ${isInstructorQueue ? 'Danh sách hồ sơ giảng viên ứng tuyển cần kiểm tra bằng cấp, CV và hồ sơ học thuật.' : 'Tổng hợp toàn bộ khóa học mới, bản sửa đổi đề cương và hồ sơ giảng viên đang chờ bạn thẩm định và ra quyết định.'}
+              </p>
             </div>
-            <div class="flex items-baseline gap-3 my-2">
-              <span class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono" id="kpi-courses-pending">--</span>
-              <span data-queue-summary-description class="text-xs text-slate-400">Khóa học / Bản sửa chờ duyệt</span>
-            </div>
-            <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs transition-colors">
-              <span class="text-slate-500" id="kpi-courses-subtext">Hàng đợi xét duyệt ABET CAC</span>
-              <span class="font-bold text-primary flex items-center gap-1">Xem chi tiết <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+            <div class="flex items-center gap-4 bg-white dark:bg-slate-900 px-5 py-3 rounded-2xl border border-amber-200/90 dark:border-amber-900/60 shadow-xs shrink-0">
+              <div class="text-right">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tổng việc cần duyệt</div>
+                <div class="text-xs font-semibold text-amber-700 dark:text-amber-400" id="kpi-courses-subtext">Hàng đợi xét duyệt</div>
+              </div>
+              <div class="text-3xl sm:text-4xl font-black text-amber-600 dark:text-amber-400 font-mono tracking-tight" id="kpi-courses-pending">--</div>
             </div>
           </div>
 
-        </div>
+          <!-- 3 Quick Action Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="approval-hub-cards">
+            <!-- Card 1: Khóa học mới -->
+            <div class="${isInstructorQueue ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=courses&queue=courses'">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm">
+                    <span class="material-symbols-outlined text-[18px]">menu_book</span>
+                  </span>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" id="hub-courses-count">--</span>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 transition-colors">Khóa học mới chờ duyệt</h3>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Khóa học mới gửi đề cương, thẩm định cấu trúc chương mục và chuẩn đầu ra.</p>
+                </div>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                <span>Vào duyệt khóa học</span>
+                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+              </div>
+            </div>
+
+            <!-- Card 2: Bản sửa đổi -->
+            <div class="${isInstructorQueue ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=courses&queue=changes'">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm">
+                    <span class="material-symbols-outlined text-[18px]">rule</span>
+                  </span>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" id="hub-changes-count">--</span>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-amber-600 transition-colors">Bản sửa đổi & Đề xuất</h3>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Yêu cầu chỉnh sửa đề cương, thêm bớt bài học trên các khóa học đã xuất bản.</p>
+                </div>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                <span>Xem bản sửa đổi</span>
+                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+              </div>
+            </div>
+
+            <!-- Card 3: Hồ sơ giảng viên -->
+            <div class="${adminSubRole === 'ADMIN_COURSE_REVIEW' ? 'hidden' : ''} cursor-pointer group bg-white dark:bg-slate-900 hover:bg-amber-50/30 dark:hover:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500 transition-all shadow-xs flex flex-col justify-between" onclick="window.location.hash = '#/admin/governance?tab=applications'">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm">
+                    <span class="material-symbols-outlined text-[18px]">badge</span>
+                  </span>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" id="hub-apps-count">--</span>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 transition-colors">Hồ sơ giảng viên ứng tuyển</h3>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">Đơn ứng tuyển nâng cấp quyền Giảng viên mới nộp lên hệ thống.</p>
+                </div>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                <span>Duyệt hồ sơ giảng viên</span>
+                <span class="material-symbols-outlined text-[15px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- Tab Content Box -->
         <div id="admin-tab-content-box" class="min-h-[400px]"></div>
@@ -283,19 +362,35 @@ class AdminView {
       const totalCourseWork = queueSummary.courses + queueSummary.changes + queueSummary.applications;
       const el = document.getElementById('kpi-courses-pending');
       const badge = document.getElementById('kpi-courses-badge');
+      const subtext = document.getElementById('kpi-courses-subtext');
+      const hubCoursesEl = document.getElementById('hub-courses-count');
+      const hubChangesEl = document.getElementById('hub-changes-count');
+      const hubAppsEl = document.getElementById('hub-apps-count');
+      const hubStatusPill = document.getElementById('hub-status-pill');
+      const hubPulseDot = document.getElementById('hub-pulse-dot');
 
-      if (isInstructorQueue) {
-        const queueCard = el?.closest('div[onclick]');
-        const queueTitle = queueCard?.querySelector('[data-queue-summary-title]');
-        const queueDescription = queueCard?.querySelector('[data-queue-summary-description]');
-        const queueSubtext = document.getElementById('kpi-courses-subtext');
-        if (queueTitle?.lastChild) queueTitle.lastChild.textContent = ' Hồ sơ giảng viên chờ duyệt';
-        if (queueDescription) queueDescription.textContent = 'Hồ sơ đang chờ xét duyệt';
-        if (queueSubtext) queueSubtext.textContent = 'Hàng đợi xét duyệt giảng viên';
-      }
+      if (hubCoursesEl) hubCoursesEl.textContent = `${pendingCoursesCount} khóa`;
+      if (hubChangesEl) hubChangesEl.textContent = `${pendingCrCount} bản sửa`;
+      if (hubAppsEl) hubAppsEl.textContent = `${pendingAppsCount} hồ sơ`;
 
       if (el) el.textContent = String(totalCourseWork).padStart(2, '0');
-      if (badge) badge.textContent = `${totalCourseWork} chờ duyệt`;
+      if (badge) {
+        if (totalCourseWork > 0) {
+          badge.textContent = `${totalCourseWork} việc cần xử lý ngay`;
+          if (subtext) subtext.textContent = 'Cần hành động ngay';
+          if (hubStatusPill) {
+            hubStatusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60';
+          }
+          if (hubPulseDot) hubPulseDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
+        } else {
+          badge.textContent = `Tất cả đã hoàn tất (0 việc)`;
+          if (subtext) subtext.textContent = 'Không có việc tồn đọng';
+          if (hubStatusPill) {
+            hubStatusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60';
+          }
+          if (hubPulseDot) hubPulseDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+        }
+      }
 
       // Synchronize Real-time Superscript Exponent Badges to Topbar
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
@@ -331,6 +426,16 @@ class AdminView {
         }
       }
 
+      // Toggle Approval Hub: only show on Home Tab (tab-users)
+      const hub = document.getElementById('admin-approval-hub');
+      if (hub) {
+        if (tabKey === 'tab-users' && showQueueSummary) {
+          hub.classList.remove('hidden');
+        } else {
+          hub.classList.add('hidden');
+        }
+      }
+
       if (tabKey === 'tab-users') {
         AdminView.renderTabUsers(contentBox);
       } else if (tabKey === 'tab-courses-review' || tabKey === 'tab-review') {
@@ -354,6 +459,40 @@ class AdminView {
             ? 'tab-reassign'
             : 'tab-users';
     AdminView.switchTab(targetTab, subQueue, false);
+  }
+
+  static renderUserAvatar(u) {
+    const initials = (u.display_name || u.email || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const avatarBg = u.roles && u.roles.includes('ADMIN') ? 'bg-primary text-white' : u.roles && u.roles.includes('INSTRUCTOR') ? 'bg-indigo-600 text-white' : 'bg-slate-500 text-white';
+    let avatarUrl = u.avatar_url;
+    if (!avatarUrl && typeof StudentView !== 'undefined' && typeof StudentView.getStoredRandomAvatarUrl === 'function') {
+      avatarUrl = StudentView.getStoredRandomAvatarUrl(u.user_id || u.id);
+    }
+    if (!avatarUrl && window.app?.currentUser && (window.app.currentUser.public_id === u.user_id || window.app.currentUser.id === u.user_id || window.app.currentUser.email === u.email)) {
+      avatarUrl = window.app.currentUser.avatar_url;
+    }
+
+    const escape = typeof UI !== 'undefined' && typeof UI.escapeHtml === 'function'
+      ? UI.escapeHtml
+      : (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    if (avatarUrl) {
+      return `
+        <div class="w-9 h-9 rounded-xl ${avatarBg} font-bold flex items-center justify-center text-xs shrink-0 shadow-xs overflow-hidden relative border border-slate-200/60 dark:border-slate-700/60">
+          <img src="${escape(avatarUrl)}"
+               alt="${escape(u.display_name || u.email)}"
+               class="w-full h-full object-cover"
+               loading="lazy"
+               onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.classList.remove('hidden');" />
+          <span class="hidden items-center justify-center w-full h-full text-xs font-bold">${initials}</span>
+        </div>
+      `;
+    }
+    return `
+      <div class="w-9 h-9 rounded-xl ${avatarBg} font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
+        <span class="flex items-center justify-center w-full h-full text-xs font-bold">${initials}</span>
+      </div>
+    `;
   }
 
   // =========================================================================
@@ -462,17 +601,14 @@ class AdminView {
 
         tbody.innerHTML = userList.map(u => {
           const isSuspended = u.status === 'SUSPENDED';
-          const initials = (u.display_name || u.email || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-          const avatarBg = u.roles && u.roles.includes('ADMIN') ? 'bg-primary text-white' : u.roles && u.roles.includes('INSTRUCTOR') ? 'bg-indigo-600 text-white' : 'bg-slate-500 text-white';
           const revocableRoles = (u.roles || []).filter(r => r !== 'STUDENT');
+          const avatarContent = AdminView.renderUserAvatar(u);
 
           return `
             <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
               <td class="py-4 px-3 align-middle">
                 <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-xl ${avatarBg} font-bold flex items-center justify-center text-xs shrink-0 shadow-xs">
-                    ${initials}
-                  </div>
+                  ${avatarContent}
                   <div>
                     <div class="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
                       ${UI.escapeHtml(u.display_name || 'Chưa cập nhật tên')}
@@ -1086,14 +1222,16 @@ class AdminView {
   // Tab 2: Duyệt Khóa học & Hàng đợi Bản sửa đổi (Course Review & Change Requests)
   // =========================================================================
   static async renderTabCoursesReview(container, subQueue = null) {
-    container.innerHTML = `
-      <div class="space-y-6 animate-fade-in" id="courses-review-box">
-        <div class="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-          <p class="text-sm">Đang tải khóa học và yêu cầu chờ duyệt...</p>
+    if (!document.getElementById('courses-review-box')) {
+      container.innerHTML = `
+        <div class="space-y-6 animate-fade-in" id="courses-review-box">
+          <div class="p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+            <p class="text-sm">Đang tải khóa học và yêu cầu chờ duyệt...</p>
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
 
     try {
       const [pendingCoursesRes, changeReqsRes] = await Promise.allSettled([
@@ -1102,11 +1240,13 @@ class AdminView {
       ]);
 
       const pendingCourses = (pendingCoursesRes.status === 'fulfilled' && pendingCoursesRes.value) ? (pendingCoursesRes.value.courses || []) : [];
-      const changeRequests = (changeReqsRes.status === 'fulfilled' && changeReqsRes.value) ? (changeReqsRes.value.change_requests || []) : [];
-      const pendingChangeRequests = changeRequests.filter(r => r.status === 'PENDING');
+      const rawChangeRequests = (changeReqsRes.status === 'fulfilled' && changeReqsRes.value) ? (changeReqsRes.value.change_requests || []) : [];
+      // Clean queue contract: Mọi yêu cầu khi được Admin xét duyệt xong (dù duyệt chấp thuận hay từ chối) hoặc hủy
+      // đều tự động biến mất hoàn toàn khỏi hàng đợi, biến mất luôn cả ở tab "Tất cả". Hàng đợi chỉ chứa yêu cầu chờ duyệt.
+      const changeRequests = rawChangeRequests.filter(r => r.status === 'PENDING');
 
       // Update badge
-      const totalPending = pendingCourses.length + pendingChangeRequests.length;
+      const totalPending = pendingCourses.length + changeRequests.length;
       if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
         window.app.updateAdminNavBadges({ courses: totalPending });
       }
@@ -1168,10 +1308,8 @@ class AdminView {
               <p class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">So sánh nội dung hiện tại và đề xuất trước khi duyệt.</p>
             </div>
             <div class="flex items-center gap-1.5" id="cr-status-filter-group">
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="ALL">Tất cả (${changeRequests.length})</button>
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="PENDING">Chờ duyệt (${pendingChangeRequests.length})</button>
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="APPROVED">Đã duyệt</button>
-              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="REJECTED">Từ chối</button>
+              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white" data-status="PENDING">Chờ duyệt (<span id="cr-badge-pending">${changeRequests.length}</span>)</button>
+              <button type="button" class="cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200" data-status="ALL">Tất cả (<span id="cr-badge-all">${changeRequests.length}</span>)</button>
             </div>
           </div>
 
@@ -1207,18 +1345,39 @@ class AdminView {
         };
       });
 
+      const updateCrFilterBadges = () => {
+        const pCount = changeRequests.filter(r => r.status === 'PENDING').length;
+
+        const badgeP = document.getElementById('cr-badge-pending');
+        const badgeAll = document.getElementById('cr-badge-all');
+
+        if (badgeP) badgeP.textContent = String(pCount);
+        if (badgeAll) badgeAll.textContent = String(pCount);
+
+        const totalP = pendingCourses.length + pCount;
+        if (window.app && typeof window.app.updateAdminNavBadges === 'function') {
+          window.app.updateAdminNavBadges({ courses: totalP });
+        }
+        const elPending = document.getElementById('kpi-courses-pending');
+        const badgePending = document.getElementById('kpi-courses-badge');
+        if (elPending) elPending.textContent = String(totalP).padStart(2, '0');
+        if (badgePending) badgePending.textContent = `${totalP} chờ duyệt`;
+      };
+
       // Filter change requests
-      const renderChangeRequestRows = (statusFilter = 'ALL') => {
+      const renderChangeRequestRows = (_statusFilter = 'PENDING') => {
         const tbody = document.getElementById('change-requests-tbody');
         if (!tbody) return;
 
-        const filtered = changeRequests.filter(r => statusFilter === 'ALL' || r.status === statusFilter);
+        const filtered = changeRequests.filter(r => r.status === 'PENDING');
 
         if (filtered.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="7" class="py-8 text-center text-slate-400 text-xs">
-                Không có yêu cầu thay đổi nào trong danh mục này.
+              <td colspan="7" class="py-12 text-center text-slate-400 text-xs">
+                <span class="material-symbols-outlined text-emerald-500 text-3xl mb-2 block">task_alt</span>
+                <p class="font-bold text-slate-700 dark:text-slate-300">Không có yêu cầu thay đổi nào đang chờ duyệt.</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Các yêu cầu sau khi được admin xét duyệt xong sẽ tự động hoàn tất và rời khỏi hàng đợi.</p>
               </td>
             </tr>
           `;
@@ -1230,7 +1389,10 @@ class AdminView {
           let typeBadge = 'bg-slate-100 text-slate-700 border-slate-200';
           let typeLabel = 'Thay đổi khác';
 
-          if (r.change_type === 'LESSON_STRUCTURE' && payload.action === 'DELETE') {
+          if (r.change_type === 'COURSE_VERSION_CHANGESET' || payload.action === 'COURSE_VERSION_CHANGESET') {
+            typeBadge = 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800';
+            typeLabel = 'Đợt cập nhật khóa học';
+          } else if (r.change_type === 'LESSON_STRUCTURE' && payload.action === 'DELETE') {
             typeBadge = 'bg-rose-50 text-rose-700 border-rose-200';
             typeLabel = 'Xóa bài giảng';
           } else if (payload.action === 'UPDATE_LEARNING_UNIT') {
@@ -1268,7 +1430,14 @@ class AdminView {
               <td class="px-3.5 py-3.5 align-middle">
                 <div class="font-bold text-slate-800 dark:text-slate-200 text-xs break-words">${UI.escapeHtml(r.target_title || 'Nội dung được đề xuất')}</div>
                 ${r.status === 'REJECTED' && r.review_reason ? `<p class="mt-2 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 text-xs text-rose-800 dark:text-rose-200 break-words"><strong>Ghi chú từ chối:</strong> ${UI.escapeHtml(r.review_reason)}</p>` : ''}
-                ${payload.action === 'DELETE' ? `
+                ${(r.change_type === 'COURSE_VERSION_CHANGESET' || payload.action === 'COURSE_VERSION_CHANGESET') ? `
+                  <div class="text-[11px] text-indigo-700 dark:text-indigo-300 font-medium mt-1 flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[13px]">tune</span>
+                      ${payload.changeset_stats ? `${payload.changeset_stats.added_lessons_count || 0} mới • ${payload.changeset_stats.modified_lessons_count || 0} sửa • ${payload.changeset_stats.deleted_lessons_count || 0} xóa` : (payload.summary || 'Đợt cập nhật giáo trình')}
+                    </span>
+                  </div>
+                ` : payload.action === 'DELETE' ? `
                   <div class="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5 truncate max-w-[320px]" title="${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}">
                     <strong>Lý do xóa:</strong> ${UI.escapeHtml(payload.reason || 'Yêu cầu gỡ bỏ')}
                   </div>
@@ -1290,8 +1459,14 @@ class AdminView {
                 ${UI.formatDate(r.created_at)}
               </td>
               <td class="px-3.5 py-3.5 text-right space-x-1.5 whitespace-nowrap align-middle">
-                <button type="button" class="px-4 py-2 rounded-lg ${r.status === 'PENDING' ? 'bg-primary hover:bg-primary-hover text-white' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-colors view-diff-cr-btn" data-req-id="${r.id}">
-                  ${r.status === 'PENDING' ? 'Xét duyệt' : 'Xem bản sửa'}
+                ${r.status === 'PENDING' ? `
+                  <button type="button" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs quick-pass-cr-btn cursor-pointer inline-flex items-center gap-1" data-req-id="${r.id}" title="Phê duyệt nhanh">
+                    <span class="material-symbols-outlined text-[15px]">check</span>
+                    <span>Duyệt</span>
+                  </button>
+                ` : ''}
+                <button type="button" class="px-3.5 py-1.5 rounded-lg ${r.status === 'PENDING' ? 'bg-primary hover:bg-primary-hover text-white' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-colors view-diff-cr-btn cursor-pointer" data-req-id="${r.id}">
+                  ${r.status === 'PENDING' ? 'Xét duyệt' : 'Xem chi tiết'}
                 </button>
                 ${r.status !== 'PENDING' ? `
                   <span class="text-xs text-slate-400 italic">${UI.escapeHtml(r.review_reason || 'Đã giải quyết')}</span>
@@ -1301,6 +1476,54 @@ class AdminView {
           `;
         }).join('');
 
+        tbody.querySelectorAll('.quick-pass-cr-btn').forEach(btn => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            const reqId = btn.dataset.reqId;
+            const targetReq = changeRequests.find(item => String(item.id) === String(reqId));
+            if (!targetReq) return;
+            const confirmed = await UI.confirm('Phê duyệt yêu cầu', `Bạn có chắc muốn phê duyệt yêu cầu #${reqId} không?`, 'Phê duyệt', 'Hủy');
+            if (!confirmed) return;
+            try {
+              btn.disabled = true;
+              const isChangeset = targetReq.change_type === 'COURSE_VERSION_CHANGESET' || (targetReq.proposed_payload && targetReq.proposed_payload.action === 'COURSE_VERSION_CHANGESET');
+              if (isChangeset) {
+                await ApiClient.approveCourseChangeset(targetReq.id, 'Phê duyệt đợt cập nhật giáo trình.');
+              } else {
+                await ApiClient.reviewAdminChangeRequest(targetReq.id, { action: 'approve' });
+              }
+
+              // Remove directly from changeRequests array so it disappears from ALL tabs (including 'Tất cả')
+              const reqIdx = changeRequests.findIndex(item => String(item.id) === String(reqId));
+              if (reqIdx !== -1) {
+                changeRequests.splice(reqIdx, 1);
+              }
+
+              // Animate row removal from DOM immediately
+              const rowEl = btn.closest('tr');
+              if (rowEl) {
+                rowEl.style.transition = 'all 0.25s ease-out';
+                rowEl.style.opacity = '0';
+                rowEl.style.transform = 'translateX(20px)';
+                setTimeout(() => {
+                  rowEl.remove();
+                  renderChangeRequestRows(AdminView._activeCrFilter || 'PENDING');
+                }, 250);
+              } else {
+                renderChangeRequestRows(AdminView._activeCrFilter || 'PENDING');
+              }
+
+              updateCrFilterBadges();
+              UI.showToast(`Đã duyệt và áp dụng yêu cầu #${reqId} thành công!`, 'success');
+              window.app?.refreshNotificationBadge?.(true);
+              window.app?.fetchAdminPendingCounts?.();
+            } catch (err) {
+              btn.disabled = false;
+              UI.showToast(err.message || 'Lỗi phê duyệt yêu cầu.', 'error');
+            }
+          };
+        });
+
         tbody.querySelectorAll('.view-diff-cr-btn').forEach(btn => {
           btn.onclick = () => {
             window.location.hash = `#/admin/change-requests/review?id=${encodeURIComponent(btn.dataset.reqId)}`;
@@ -1309,11 +1532,18 @@ class AdminView {
 
       };
 
-      renderChangeRequestRows('PENDING');
+      const activeFilter = AdminView._activeCrFilter || 'PENDING';
+      renderChangeRequestRows(activeFilter);
 
       const crFilterBtns = box.querySelectorAll('.cr-filter-btn');
       crFilterBtns.forEach(btn => {
+        if (btn.dataset.status === activeFilter) {
+          btn.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-primary text-white';
+        } else {
+          btn.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
+        }
         btn.onclick = () => {
+          AdminView._activeCrFilter = btn.dataset.status;
           crFilterBtns.forEach(b => {
             b.className = 'cr-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
           });
@@ -1369,15 +1599,98 @@ class AdminView {
     }
   }
 
+  // =========================================================================
+  // Modal Preview for Attached Documents (PDF, Video, Images, Text, Office)
+  // =========================================================================
+  static openDocumentPreviewModal(title, fileUrl, mimeType = '') {
+    if (!fileUrl) {
+      UI.showToast('Không tìm thấy liên kết tệp tin.', 'warning');
+      return;
+    }
+    const safeTitle = UI.escapeHtml(title || 'Tài liệu đính kèm');
+    const inlineUrl = fileUrl.includes('disposition=') ? fileUrl : (fileUrl + (fileUrl.includes('?') ? '&' : '?') + 'disposition=inline');
+    const mime = (mimeType || '').toLowerCase();
+    const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(fileUrl) || /\.pdf$/i.test(title);
+    const isImage = mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(fileUrl) || /\.(png|jpe?g|webp|gif|svg)$/i.test(title);
+    const isVideo = mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(fileUrl) || /\.(mp4|webm|mov|mkv)$/i.test(title);
+    const isText = mime.startsWith('text/') || mime.includes('markdown') || /\.(txt|md|html)$/i.test(fileUrl) || /\.(txt|md|html)$/i.test(title);
+
+    let contentHtml = '';
+    if (isPdf) {
+      contentHtml = `
+        <div class="w-full h-[650px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-inner">
+          <iframe src="${inlineUrl}" class="w-full h-full block" title="${safeTitle}"></iframe>
+        </div>
+      `;
+    } else if (isImage) {
+      contentHtml = `
+        <div class="flex items-center justify-center p-4 bg-slate-950 rounded-xl max-h-[650px] overflow-auto">
+          <img src="${inlineUrl}" alt="${safeTitle}" class="max-h-[600px] max-w-full object-contain rounded-lg shadow-lg" />
+        </div>
+      `;
+    } else if (isVideo) {
+      contentHtml = `
+        <div class="bg-black rounded-xl overflow-hidden flex items-center justify-center max-h-[650px]">
+          <video controls autoplay class="max-h-[600px] max-w-full rounded-lg shadow-lg block" preload="metadata" playsinline>
+            <source src="${inlineUrl}" type="${mime || 'video/mp4'}">
+            Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
+          </video>
+        </div>
+      `;
+    } else if (isText) {
+      contentHtml = `
+        <div class="w-full h-[600px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white">
+          <iframe src="${inlineUrl}" class="w-full h-full block" title="${safeTitle}"></iframe>
+        </div>
+      `;
+    } else {
+      contentHtml = `
+        <div class="p-8 text-center space-y-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40">
+          <div class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+            <span class="material-symbols-outlined text-[32px]">draft</span>
+          </div>
+          <div class="space-y-1">
+            <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200">${safeTitle}</h4>
+            <p class="text-xs text-slate-500 max-w-md mx-auto">Định dạng tệp này không hỗ trợ hiển thị xem trước trực tiếp trên trình duyệt. Bạn có thể tải tệp tin về máy tính để mở bằng phần mềm tương ứng.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    const footerHtml = `
+      <div class="flex items-center justify-between w-full">
+        <span class="text-xs text-slate-400 font-mono truncate max-w-xs">${safeTitle}</span>
+        <div class="flex items-center gap-2">
+          <a href="${fileUrl}" download="${safeTitle}" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+            <span class="material-symbols-outlined text-[16px]">download</span>
+            <span>Tải về tệp này</span>
+          </a>
+          <button type="button" class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-300 transition-colors" onclick="UI.closeModal()">
+            Đóng
+          </button>
+        </div>
+      </div>
+    `;
+
+    UI.openModal({
+      title: `Xem trước tài liệu: ${title}`,
+      bodyHtml: contentHtml,
+      footerHtml: footerHtml,
+      size: 'xl'
+    });
+  }
+
   static renderChangeRequestReviewDetail(container, r, siblingRequests = []) {
     const orig = r.original_data || {};
     const prop = r.proposed_payload || {};
     const isDelete = prop.action === 'DELETE';
     const isLearningUnit = prop.action === 'UPDATE_LEARNING_UNIT';
     const isResourceChange = prop.action === 'RESOURCE_CHANGES';
+    const isChangeset = prop.action === 'COURSE_VERSION_CHANGESET' || (r.change_type === 'LESSON_STRUCTURE' && (prop.version_title || prop.added_lessons || prop.reorder_plan));
     const isPending = r.status === 'PENDING';
 
     const isCourse = r.target_type === 'COURSE' || (!r.target_type && (orig.course_code || prop.course_code));
+    const isCompletionRule = r.change_type === 'COMPLETION_RULE' || Boolean(orig.completion_requirements) || Boolean(prop.completion_requirements) || prop.minimum_grade_score !== undefined;
 
     const titleChanged = prop.title && prop.title !== orig.title;
     const summaryChanged = prop.summary !== undefined && prop.summary !== orig.summary;
@@ -1386,6 +1699,17 @@ class AdminView {
     const contentChanged = prop.markdown_content !== undefined && prop.markdown_content !== orig.markdown_content;
     const durationChanged = prop.estimated_duration_minutes && prop.estimated_duration_minutes !== orig.estimated_duration_minutes;
     const statusChanged = prop.status !== undefined && prop.status !== orig.status;
+
+    // Completion requirements comparison
+    const origReq = orig.completion_requirements || {};
+    const propReq = prop.completion_requirements || (prop.minimum_grade_score !== undefined ? prop : {});
+    const minScoreChanged = propReq.minimum_grade_score !== undefined && propReq.minimum_grade_score !== origReq.minimum_grade_score;
+    const minProgChanged = propReq.minimum_progress_percent !== undefined && propReq.minimum_progress_percent !== origReq.minimum_progress_percent;
+    const reqLessonsChanged = propReq.require_all_required_lessons !== undefined && propReq.require_all_required_lessons !== origReq.require_all_required_lessons;
+    const reqAsmChanged = propReq.require_required_assessments !== undefined && propReq.require_required_assessments !== origReq.require_required_assessments;
+    const certChanged = propReq.allow_certificate !== undefined && propReq.allow_certificate !== origReq.allow_certificate;
+    const graceDaysChanged = propReq.completion_grace_days !== undefined && propReq.completion_grace_days !== origReq.completion_grace_days;
+
     const lessonRuleRows = [
       ['minimum_completion_seconds', 'Thời gian học tối thiểu', value => `${value ?? 0} giây`],
       ['viewed_fraction_required', 'Tỷ lệ xem yêu cầu', value => `${Math.round(Number(value ?? 0) * 100)}%`],
@@ -1401,6 +1725,7 @@ class AdminView {
         <div class="text-slate-800 dark:text-slate-200 mt-0.5 text-xs">${UI.escapeHtml(display(prop[key]))}</div>
       </div>
     `).join('');
+
     const currentResources = Array.isArray(orig.resources) ? orig.resources : [];
     const proposedResources = new Map(currentResources.map(item => [String(item.resource_id), item.title]));
     for (const change of Array.isArray(prop.changes) ? prop.changes : []) {
@@ -1412,31 +1737,88 @@ class AdminView {
       ? `<ul class="space-y-2">${titles.map(title => `<li class="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 break-words flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-emerald-600">description</span><span>${UI.escapeHtml(title)}</span></li>`).join('')}</ul>`
       : '<p class="text-slate-500 dark:text-slate-400 italic">Chưa có tài liệu đính kèm.</p>';
 
-    // Prepare Preview Data for Student Perspective
-    const previewTitle = prop.title || orig.title || 'Tiêu đề bài học';
-    const previewSummary = prop.summary ?? orig.summary ?? '';
-    const previewDuration = prop.estimated_duration_minutes || orig.estimated_duration_minutes || 15;
-    const rawMarkdown = prop.markdown_content ?? orig.markdown_content ?? '';
-    let previewVideoUrls = [];
-    const ytListMatch = rawMarkdown.match(/<!--\s*video_urls?:\s*(\[.*?\])\s*-->/);
-    if (ytListMatch) {
-      try { previewVideoUrls = JSON.parse(ytListMatch[1]); } catch (_) {}
-    }
-    if (!previewVideoUrls.length) {
-      const singleYt = rawMarkdown.match(/<!--\s*video_url:\s*(\S+?)\s*-->/);
-      if (singleYt) previewVideoUrls = [singleYt[1]];
-    }
-    let previewMiniQuiz = [];
-    const quizMatch = rawMarkdown.match(/<!--\s*mini_quiz:\s*(.+?)\s*-->/s);
-    if (quizMatch) {
-      try { previewMiniQuiz = JSON.parse(quizMatch[1]); } catch (_) {}
-    }
-    const cleanPreviewMarkdown = rawMarkdown
-      .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
-      .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '');
+    // Prepare Course Lessons for multi-lesson preview
+    const courseLessons = (Array.isArray(r.course_lessons) && r.course_lessons.length)
+      ? r.course_lessons
+      : (Array.isArray(orig.course_lessons) ? orig.course_lessons : []);
+    let activePreviewLessonIndex = 0;
 
-    const primaryVideoUrl = previewVideoUrls.length ? previewVideoUrls[0] : null;
-    const parsedYtId = primaryVideoUrl ? UI.parseYouTubeId(primaryVideoUrl) : null;
+    // Helper to extract preview data from a specific lesson object or change request payload
+    const getPreviewData = (lesObj) => {
+      const activeObj = lesObj || (courseLessons.length > 0 ? courseLessons[0] : null);
+      const pTitle = activeObj ? (activeObj.title || 'Bài học') : (prop.title || orig.title || 'Tiêu đề bài học');
+      const pSummary = activeObj ? (activeObj.summary || '') : (prop.summary ?? orig.summary ?? '');
+      const pDuration = activeObj ? (activeObj.estimated_duration_minutes || 15) : (prop.estimated_duration_minutes || orig.estimated_duration_minutes || 15);
+      const rawMd = activeObj ? (activeObj.markdown_content || '') : (prop.markdown_content ?? orig.markdown_content ?? '');
+
+      let pVideos = [];
+      const ytListMatch = rawMd.match(/<!--\s*video_urls?:\s*(\[.*?\])\s*-->/);
+      if (ytListMatch) {
+        try { pVideos = JSON.parse(ytListMatch[1]).map(u => ({ type: 'YOUTUBE', url: u, title: 'Video YouTube' })); } catch (_) {}
+      }
+      if (!pVideos.length) {
+        const singleYt = rawMd.match(/<!--\s*video_url:\s*(\S+?)\s*-->/);
+        if (singleYt) pVideos = [{ type: 'YOUTUBE', url: singleYt[1], title: 'Video YouTube' }];
+      }
+
+      // Collect attached resources
+      let rawResList = [];
+      if (activeObj && Array.isArray(activeObj.resources)) {
+        rawResList = activeObj.resources;
+      } else if (Array.isArray(orig.resources)) {
+        rawResList = orig.resources;
+      }
+      if (Array.isArray(prop.changes)) {
+        for (const ch of prop.changes) {
+          if (ch.action === 'ATTACH') rawResList.push(ch);
+        }
+      }
+
+      const cleanResList = [];
+      for (const res of rawResList) {
+        if (!res) continue;
+        const fn = res.filename || res.title || res.label || 'Tài liệu';
+        const mime = (res.mime_type || '').toLowerCase();
+        const assetId = res.asset_id || (res.file_asset ? res.file_asset.public_id : null) || res.resource_id;
+        const fileUrl = res.file_url || (assetId ? `/student/files/${assetId}/download` : null);
+        const isVid = mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(fn);
+
+        if (isVid && fileUrl) {
+          pVideos.push({
+            type: 'UPLOAD',
+            url: fileUrl.includes('disposition=') ? fileUrl : `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}disposition=inline`,
+            title: fn,
+            mime: mime || 'video/mp4'
+          });
+        }
+        cleanResList.push({
+          title: res.title || fn,
+          filename: fn,
+          mime_type: mime,
+          file_url: fileUrl,
+          asset_id: assetId
+        });
+      }
+
+      let pQuiz = [];
+      const quizMatch = rawMd.match(/<!--\s*mini_quiz:\s*(.+?)\s*-->/s);
+      if (quizMatch) {
+        try { pQuiz = JSON.parse(quizMatch[1]); } catch (_) {}
+      }
+      const cleanMd = rawMd
+        .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
+        .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '');
+
+      return {
+        title: pTitle,
+        summary: pSummary,
+        duration: pDuration,
+        videos: pVideos,
+        resources: cleanResList,
+        quiz: pQuiz,
+        cleanMarkdown: cleanMd
+      };
+    };
 
     const chapterTitle = r.learning_unit_title || orig.learning_unit_title || prop.learning_unit_title;
 
@@ -1453,11 +1835,11 @@ class AdminView {
                 ${UI.escapeHtml(r.target_title || orig.title || 'Yêu cầu #' + r.id)}
               </span>
               <span class="text-[11px] font-mono text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">
-                ID bài học: ${r.target_id || r.id}
+                ${isCourse ? 'Mã khóa học: ' + (orig.course_code || r.course_code || r.target_id) : 'ID bài học: ' + (r.target_id || r.id)}
               </span>
             </div>
 
-            <!-- Chapter (Learning Unit) and Context Hierarchy -->
+            <!-- Context Hierarchy -->
             <div class="flex items-center gap-2.5 flex-wrap text-xs text-slate-500 dark:text-slate-400 pt-0.5">
               <span class="flex items-center gap-1 font-medium">
                 <span class="material-symbols-outlined text-[16px] text-slate-400">school</span>
@@ -1528,7 +1910,7 @@ class AdminView {
             </button>
             <button type="button" id="cr-tab-preview-btn" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
               <span class="material-symbols-outlined text-[16px]">visibility</span>
-              <span>Xem trước bài học (Preview)</span>
+              <span>Xem trước</span>
             </button>
           </div>
           <span class="text-[11px] text-slate-400 hidden sm:inline">Chuyển sang chế độ Xem trước để đối chiếu góc nhìn sinh viên</span>
@@ -1581,6 +1963,72 @@ class AdminView {
                 <strong>Lý do yêu cầu xóa:</strong> ${UI.escapeHtml(prop.reason || 'Không có lý do chi tiết.')}
               </div>
             </div>
+          ` : isChangeset ? `
+            <div class="space-y-4">
+              <!-- Changeset Summary Banner -->
+              <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div class="flex items-center gap-2.5">
+                    <span class="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center material-symbols-outlined text-[20px]">difference</span>
+                    <div>
+                      <h3 class="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        ${UI.escapeHtml(prop.version_title || 'Đợt Cập Nhật Giáo Trình')}
+                      </h3>
+                      <p class="text-xs text-slate-500 dark:text-slate-400">
+                        ${UI.escapeHtml(prop.summary || 'Đợt cập nhật gộp cấu trúc chương trình học')}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                      +${(prop.added_lessons || []).length} bài mới
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                      ~${(prop.modified_lessons || []).length} bài sửa
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                      -${(prop.deleted_lessons || []).length} bài xóa
+                    </span>
+                    ${(prop.reorder_plan?.lessons_order || []).length ? `
+                      <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                        🔄 Sắp xếp lại
+                      </span>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2-Column Changeset Inspection -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="changeset-diff-grid">
+                <!-- Column 1: Live / Before -->
+                <div class="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-2xs">
+                  <div class="bg-slate-100 dark:bg-slate-800 px-4 py-2.5 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span class="flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px] text-slate-400">history</span>
+                      <span>Giáo trình Hiện tại (Live)</span>
+                    </span>
+                    <span class="text-[10px] px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">Đang áp dụng</span>
+                  </div>
+                  <div class="p-4 space-y-2 text-xs" id="changeset-live-curriculum-box">
+                    <div class="text-slate-400 italic py-4 text-center">Đang tải đối chiếu giáo trình...</div>
+                  </div>
+                </div>
+
+                <!-- Column 2: Proposed / After -->
+                <div class="rounded-2xl border border-primary/30 dark:border-primary/40 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-2xs">
+                  <div class="bg-primary-subtle dark:bg-[#1E293B] px-4 py-2.5 border-b border-primary/20 dark:border-primary/30 font-bold text-primary dark:text-[#93C5FD] flex items-center justify-between">
+                    <span class="flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px]">verified</span>
+                      <span>Giáo trình Đề xuất (Sau khi duyệt)</span>
+                    </span>
+                    <span class="text-[10px] px-2 py-0.5 rounded-md bg-primary text-white font-semibold">Đề xuất</span>
+                  </div>
+                  <div class="p-4 space-y-2 text-xs" id="changeset-proposed-curriculum-box">
+                    <div class="text-slate-400 italic py-4 text-center">Đang tải cấu trúc đề xuất...</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           ` : `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Left: Original Version -->
@@ -1603,6 +2051,42 @@ class AdminView {
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mô tả khóa học</div>
                       <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${UI.escapeHtml(orig.description || '(Trống)')}</div>
                     </div>
+                    ${isCompletionRule ? `
+                      <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <span class="material-symbols-outlined text-[16px] text-slate-400">rule</span>
+                          <span>Tiêu chí hoàn thành khóa học (Completion Rules)</span>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                          <div class="flex items-center justify-between">
+                            <span class="text-slate-500">Điểm tối thiểu hoàn thành:</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.minimum_grade_score !== undefined ? `${origReq.minimum_grade_score} / 10` : 'Không đặt'}</span>
+                          </div>
+                          <div class="flex items-center justify-between">
+                            <span class="text-slate-500">Tiến độ bài học yêu cầu:</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.minimum_progress_percent !== undefined ? `${origReq.minimum_progress_percent}%` : 'Không đặt'}</span>
+                          </div>
+                          <div class="flex items-center justify-between">
+                            <span class="text-slate-500">Bắt buộc học tất cả bài giảng:</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.require_all_required_lessons ? 'Có (Bắt buộc)' : 'Không'}</span>
+                          </div>
+                          <div class="flex items-center justify-between">
+                            <span class="text-slate-500">Bắt buộc làm bài khảo thí/kiểm tra:</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.require_required_assessments ? 'Có (Bắt buộc)' : 'Không'}</span>
+                          </div>
+                          <div class="flex items-center justify-between">
+                            <span class="text-slate-500">Cấp chứng chỉ tốt nghiệp:</span>
+                            <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.allow_certificate ? 'Có' : 'Không'}</span>
+                          </div>
+                          ${origReq.completion_grace_days ? `
+                            <div class="flex items-center justify-between">
+                              <span class="text-slate-500">Thời gian gia hạn nộp bài:</span>
+                              <span class="font-bold text-slate-800 dark:text-slate-200">${origReq.completion_grace_days} ngày</span>
+                            </div>
+                          ` : ''}
+                        </div>
+                      </div>
+                    ` : ''}
                   ` : `
                     <div>
                       <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tiêu đề bài học</div>
@@ -1657,6 +2141,60 @@ class AdminView {
                       </div>
                       <div class="mt-1 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap">${UI.escapeHtml(prop.description || orig.description || '(Trống)')}</div>
                     </div>
+                    ${isCompletionRule ? `
+                      <div class="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <div class="text-[11px] font-bold text-primary dark:text-[#93C5FD] flex items-center gap-1">
+                          <span class="material-symbols-outlined text-[16px]">rule</span>
+                          <span>Tiêu chí hoàn thành khóa học (Đề xuất thay đổi)</span>
+                        </div>
+                        <div class="p-3 rounded-xl bg-primary-subtle/50 dark:bg-slate-800/80 border border-primary/30 dark:border-primary/40 space-y-2 text-xs">
+                          <div class="flex items-center justify-between ${minScoreChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                            <span class="${minScoreChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Điểm tối thiểu hoàn thành:</span>
+                            <span class="font-bold ${minScoreChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                              ${propReq.minimum_grade_score !== undefined ? `${propReq.minimum_grade_score} / 10` : (origReq.minimum_grade_score !== undefined ? `${origReq.minimum_grade_score} / 10` : 'Không đặt')}
+                              ${minScoreChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                            </span>
+                          </div>
+                          <div class="flex items-center justify-between ${minProgChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                            <span class="${minProgChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Tiến độ bài học yêu cầu:</span>
+                            <span class="font-bold ${minProgChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                              ${propReq.minimum_progress_percent !== undefined ? `${propReq.minimum_progress_percent}%` : (origReq.minimum_progress_percent !== undefined ? `${origReq.minimum_progress_percent}%` : 'Không đặt')}
+                              ${minProgChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                            </span>
+                          </div>
+                          <div class="flex items-center justify-between ${reqLessonsChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                            <span class="${reqLessonsChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Bắt buộc học tất cả bài giảng:</span>
+                            <span class="font-bold ${reqLessonsChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                              ${(propReq.require_all_required_lessons ?? origReq.require_all_required_lessons) ? 'Có (Bắt buộc)' : 'Không'}
+                              ${reqLessonsChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                            </span>
+                          </div>
+                          <div class="flex items-center justify-between ${reqAsmChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                            <span class="${reqAsmChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Bắt buộc làm bài khảo thí/kiểm tra:</span>
+                            <span class="font-bold ${reqAsmChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                              ${(propReq.require_required_assessments ?? origReq.require_required_assessments) ? 'Có (Bắt buộc)' : 'Không'}
+                              ${reqAsmChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                            </span>
+                          </div>
+                          <div class="flex items-center justify-between ${certChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                            <span class="${certChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Cấp chứng chỉ tốt nghiệp:</span>
+                            <span class="font-bold ${certChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                              ${(propReq.allow_certificate ?? origReq.allow_certificate) ? 'Có' : 'Không'}
+                              ${certChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                            </span>
+                          </div>
+                          ${(propReq.completion_grace_days || origReq.completion_grace_days) ? `
+                            <div class="flex items-center justify-between ${graceDaysChanged ? 'p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800' : ''}">
+                              <span class="${graceDaysChanged ? 'font-bold text-emerald-800 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400'}">Thời gian gia hạn nộp bài:</span>
+                              <span class="font-bold ${graceDaysChanged ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'}">
+                                ${propReq.completion_grace_days ?? origReq.completion_grace_days} ngày
+                                ${graceDaysChanged ? '<span class="text-[10px] ml-1 bg-emerald-600 text-white px-1.5 py-0.2 rounded font-mono font-bold">Đã sửa</span>' : ''}
+                              </span>
+                            </div>
+                          ` : ''}
+                        </div>
+                      </div>
+                    ` : ''}
                   ` : `
                     <div class="${titleChanged ? 'p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800' : ''}">
                       <div class="text-[10px] font-bold ${titleChanged ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'} uppercase tracking-wider flex items-center gap-1">
@@ -1694,98 +2232,37 @@ class AdminView {
           `}
         </div>
 
-        <!-- Tab 2: Student Preview Mode Mockup -->
-        <div id="cr-preview-container" class="hidden space-y-6">
-          <div class="p-6 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-subtle space-y-6 max-w-4xl mx-auto">
-            <!-- Preview Banner -->
-            <div class="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-700">
-              <span class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[15px]">visibility</span>
-                <span>Chế độ Xem trước (Góc nhìn Học viên)</span>
-              </span>
-              <span class="text-xs text-slate-400 font-mono">Thời lượng: ${previewDuration} phút</span>
-            </div>
-
-            <!-- Video Player Preview (if any) -->
-            ${primaryVideoUrl ? `
-              <div class="rounded-2xl overflow-hidden bg-black aspect-video max-h-[380px] w-full border border-slate-800 shadow-subtle flex items-center justify-center">
-                ${parsedYtId ? `
-                  <iframe
-                    class="w-full h-full aspect-video block"
-                    src="${UI.getYouTubeEmbedUrl(parsedYtId)}"
-                    title="Video bài học"
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen
-                  ></iframe>
-                ` : `
-                  <video controls class="max-h-[380px] max-w-full mx-auto my-auto object-contain block" src="${UI.escapeHtml(primaryVideoUrl)}" preload="metadata">
-                    Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
-                  </video>
-                `}
+        <!-- Tab 2: Cisco NetAcad Student Preview Mode -->
+        <div id="cr-preview-container" class="hidden space-y-4">
+          ${courseLessons.length > 1 ? `
+            <!-- Lesson Selector for Course-Level Preview -->
+            <div class="p-3.5 rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-2xs space-y-2">
+              <div class="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                <span class="flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[18px] text-primary">menu_book</span>
+                  <span>Đề cương ${courseLessons.length} bài giảng trong khóa học:</span>
+                </span>
+                <span class="text-[11px] text-slate-400 font-normal">Chọn bài giảng để xem trước giao diện học viên</span>
               </div>
-            ` : `
-              <div class="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400 space-y-1">
-                <span class="material-symbols-outlined text-[28px] text-slate-300">smart_display</span>
-                <p>Bài học này không chứa liên kết video.</p>
+              <div class="flex items-center gap-2 overflow-x-auto pb-1" id="cr-preview-lesson-pills">
+                ${courseLessons.map((cl, idx) => `
+                  <button
+                    type="button"
+                    class="cr-preview-lesson-btn px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${idx === 0 ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'}"
+                    data-lesson-idx="${idx}"
+                  >
+                    <span class="w-5 h-5 rounded-md bg-white/20 dark:bg-slate-700 flex items-center justify-center text-[10px] font-mono">${idx + 1}</span>
+                    <span>${UI.escapeHtml(cl.title)}</span>
+                    ${cl.resources && cl.resources.length ? `<span class="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-1 rounded">${cl.resources.length} tệp</span>` : ''}
+                  </button>
+                `).join('')}
               </div>
-            `}
-
-            <!-- Heading & Summary -->
-            <div class="space-y-2">
-              <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
-                ${UI.escapeHtml(previewTitle)}
-              </h2>
-              ${previewSummary ? `
-                <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed italic">
-                  ${UI.escapeHtml(previewSummary)}
-                </p>
-              ` : ''}
             </div>
+          ` : ''}
 
-            <!-- Rendered Rich Markdown Content -->
-            <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 pt-2 border-t border-slate-100 dark:border-slate-800">
-              ${UI.renderMarkdown(cleanPreviewMarkdown || '*Chưa có nội dung văn bản cho bài giảng này.*')}
-            </div>
-
-            <!-- Attached Documents List -->
-            <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[16px] text-emerald-600">attach_file</span>
-                <span>Tài liệu đính kèm bài giảng</span>
-              </h3>
-              ${resourceList([...proposedResources.values()])}
-            </div>
-
-            <!-- Mini-Quiz Preview (if available) -->
-            ${previewMiniQuiz && previewMiniQuiz.length ? `
-              <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-[16px] text-purple-600">quiz</span>
-                  <span>Bài kiểm tra củng cố (${previewMiniQuiz.length} câu hỏi)</span>
-                </h3>
-                <div class="space-y-3">
-                  ${previewMiniQuiz.map((q, idx) => `
-                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                      <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span class="w-5 h-5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 flex items-center justify-center text-[10px] font-bold">${idx + 1}</span>
-                        <span>${UI.escapeHtml(q.question || 'Câu hỏi củng cố')}</span>
-                      </div>
-                      ${q.options && Array.isArray(q.options) ? `
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          ${q.options.map((opt, oIdx) => `
-                            <div class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2">
-                              <span class="w-4 h-4 rounded-full border border-slate-300 flex items-center justify-center text-[9px] font-bold text-slate-500">${String.fromCharCode(65 + oIdx)}</span>
-                              <span>${UI.escapeHtml(opt)}</span>
-                            </div>
-                          `).join('')}
-                        </div>
-                      ` : ''}
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
+          <!-- Cisco NetAcad Lesson Workspace -->
+          <div id="cr-preview-lesson-workspace" class="space-y-6">
+            <!-- Dynamically populated by renderActivePreviewLesson -->
           </div>
         </div>
 
@@ -1823,6 +2300,302 @@ class AdminView {
       </main>
     `;
 
+    // Render Preview Workspace according to Cisco NetAcad Student Experience
+    const renderActivePreviewLesson = (targetLessonIdx = 0) => {
+      const workspaceEl = document.getElementById('cr-preview-lesson-workspace');
+      if (!workspaceEl) return;
+
+      const targetLesson = courseLessons.length > 0 ? courseLessons[targetLessonIdx] : null;
+      const pData = getPreviewData(targetLesson);
+
+      const hasVideos = pData.videos.length > 0;
+      const primaryVideo = hasVideos ? pData.videos[0] : null;
+      const parsedYtId = (primaryVideo && primaryVideo.type === 'YOUTUBE') ? UI.parseYouTubeId(primaryVideo.url) : null;
+
+      workspaceEl.innerHTML = `
+        <div class="rounded-2xl bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 shadow-subtle overflow-hidden space-y-6 max-w-4xl mx-auto p-6 sm:p-8">
+          
+          <!-- Top Cisco NetAcad Console Bar -->
+          <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700 flex-wrap gap-2 select-none">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Góc nhìn Học viên (Cisco NetAcad Style)</span>
+              </span>
+              <span class="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                ${r.course_code || orig.course_code || 'PWD301'}
+              </span>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-slate-500">
+              <span class="flex items-center gap-1">
+                <span class="material-symbols-outlined text-[16px] text-slate-400">schedule</span>
+                <span class="font-mono">${pData.duration} phút</span>
+              </span>
+              <span class="text-slate-300">•</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                Xem toàn quyền (Admin)
+              </span>
+            </div>
+          </div>
+
+          <!-- Video Player Container (Supports Uploaded MP4 & YouTube Embeds) -->
+          ${hasVideos ? `
+            <div class="space-y-2">
+              ${pData.videos.length > 1 ? `
+                <!-- Video selector tabs if multiple videos exist -->
+                <div class="flex items-center gap-2 overflow-x-auto pb-1">
+                  <span class="text-xs font-bold text-slate-500 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[16px]">video_library</span>
+                    <span>Video bài giảng:</span>
+                  </span>
+                  ${pData.videos.map((vid, vIdx) => `
+                    <button
+                      type="button"
+                      class="cr-vid-switch-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${vIdx === 0 ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}"
+                      data-vidx="${vIdx}"
+                    >
+                      <span>${vIdx + 1}. ${UI.escapeHtml(vid.title)}</span>
+                    </button>
+                  `).join('')}
+                </div>
+              ` : ''}
+
+              <!-- Main Video Frame -->
+              <div id="cr-preview-video-frame" class="rounded-2xl overflow-hidden bg-black aspect-video max-h-[460px] w-full border border-slate-800 shadow-md flex items-center justify-center">
+                ${(primaryVideo.type === 'YOUTUBE' && parsedYtId) ? `
+                  <iframe
+                    class="w-full h-full aspect-video block"
+                    src="${UI.getYouTubeEmbedUrl(parsedYtId)}"
+                    title="Video bài học YouTube"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen
+                  ></iframe>
+                ` : `
+                  <video controls class="max-h-[460px] max-w-full mx-auto my-auto object-contain block" src="${UI.escapeHtml(primaryVideo.url)}" preload="metadata" playsinline>
+                    Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
+                  </video>
+                `}
+              </div>
+
+              <!-- Stream Info Bar -->
+              <div class="px-4 py-2 bg-slate-900/95 rounded-xl border border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[16px] text-emerald-400">verified</span>
+                  <span class="font-medium text-[11px] sm:text-xs">
+                    Chế độ Thẩm định & Xem trước của Ban Quản Trị • Cho phép xem trực tiếp toàn bộ video và kiểm tra chất lượng giảng dạy.
+                  </span>
+                </div>
+                <span class="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                  ${primaryVideo.type === 'UPLOAD' ? 'Video Tự tải lên' : 'YouTube'}
+                </span>
+              </div>
+            </div>
+          ` : `
+            <div class="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400 space-y-1">
+              <span class="material-symbols-outlined text-[28px] text-slate-300">menu_book</span>
+              <p>Bài học này định dạng văn bản & bài tập thực hành (không có video đính kèm).</p>
+            </div>
+          `}
+
+          <!-- Heading & Summary Card -->
+          <div class="space-y-3">
+            <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-snug">
+              ${UI.escapeHtml(pData.title)}
+            </h2>
+            ${pData.summary ? `
+              <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                <strong>Mục tiêu trọng tâm:</strong> ${UI.escapeHtml(pData.summary)}
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Rendered Rich Markdown Content -->
+          <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 pt-3 border-t border-slate-100 dark:border-slate-800">
+            ${UI.renderMarkdown(pData.cleanMarkdown || '*Chưa có nội dung văn bản cho bài giảng này.*')}
+          </div>
+
+          <!-- Attached Documents Vault (Cisco NetAcad Style) -->
+          <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5 font-mono">
+                <span class="material-symbols-outlined text-[16px] text-emerald-600">attach_file</span>
+                <span>Tài liệu đính kèm bài giảng (${pData.resources.length})</span>
+              </h3>
+              <span class="text-[11px] text-slate-400 font-medium">Bấm "Xem trước" để duyệt tài liệu hoặc "Tải về" để lưu máy</span>
+            </div>
+
+            ${pData.resources.length > 0 ? `
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                ${pData.resources.map(res => {
+                  const fn = res.filename || res.title;
+                  const mime = (res.mime_type || '').toLowerCase();
+                  let extBadge = 'FILE';
+                  let badgeClass = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+                  if (mime === 'application/pdf' || fn.endsWith('.pdf')) {
+                    extBadge = 'PDF';
+                    badgeClass = 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+                  } else if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(fn)) {
+                    extBadge = 'IMG';
+                    badgeClass = 'bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border-purple-200 dark:border-purple-800';
+                  } else if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(fn)) {
+                    extBadge = 'VID';
+                    badgeClass = 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+                  } else if (/\.(docx?|odt)$/i.test(fn) || mime.includes('word')) {
+                    extBadge = 'DOC';
+                    badgeClass = 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+                  } else if (/\.(html|md|txt)$/i.test(fn) || mime.startsWith('text/')) {
+                    extBadge = 'TXT';
+                    badgeClass = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+                  }
+
+                  return `
+                    <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 hover:border-emerald-500/50 transition-all flex items-center justify-between gap-3 shadow-2xs">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 border ${badgeClass}">
+                          ${extBadge}
+                        </span>
+                        <div class="min-w-0">
+                          <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" title="${UI.escapeHtml(fn)}">
+                            ${UI.escapeHtml(fn)}
+                          </p>
+                          <span class="text-[10px] text-slate-400 font-mono">${extBadge} Document</span>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-1 shrink-0">
+                        ${res.file_url ? `
+                          <button
+                            type="button"
+                            class="cr-doc-preview-btn px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-slate-700 dark:text-slate-200 hover:text-emerald-600 text-xs font-semibold border border-slate-200 dark:border-slate-600 transition-colors flex items-center gap-1 cursor-pointer"
+                            data-title="${UI.escapeHtml(fn)}"
+                            data-file-url="${UI.escapeHtml(res.file_url)}"
+                            data-mime="${UI.escapeHtml(res.mime_type || '')}"
+                            title="Xem trước tệp này"
+                          >
+                            <span class="material-symbols-outlined text-[15px]">visibility</span>
+                            <span>Xem trước</span>
+                          </button>
+                          <a
+                            href="${UI.escapeHtml(res.file_url)}"
+                            download="${UI.escapeHtml(fn)}"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-primary-subtle transition-colors shrink-0"
+                            title="Tải về máy tính"
+                          >
+                            <span class="material-symbols-outlined text-[18px]">download</span>
+                          </a>
+                        ` : `
+                          <span class="text-[10px] text-slate-400 italic">Đang cập nhật link</span>
+                        `}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : `
+              <p class="text-slate-400 italic text-xs py-2">Bài học này không đính kèm tệp tài liệu.</p>
+            `}
+          </div>
+
+          <!-- Mini-Quiz Interactive Preview (if available) -->
+          ${pData.quiz && pData.quiz.length ? `
+            <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">quiz</span>
+                  <span>Bài kiểm tra Củng cố Kiến thức (${pData.quiz.length} câu hỏi)</span>
+                </h3>
+                <span class="text-[11px] text-slate-400 font-mono">Hỗ trợ làm thử & kiểm tra đáp án</span>
+              </div>
+              <div class="space-y-3">
+                ${pData.quiz.map((q, idx) => `
+                  <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs cr-quiz-item" data-qidx="${idx}">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <span class="w-5 h-5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 flex items-center justify-center text-[10px] font-bold">${idx + 1}</span>
+                      <span>${UI.escapeHtml(q.question || 'Câu hỏi')}</span>
+                    </div>
+                    ${q.options && Array.isArray(q.options) ? `
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        ${q.options.map((opt, oIdx) => `
+                          <label class="p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center gap-2 cursor-pointer hover:border-purple-300 transition-colors">
+                            <input type="radio" name="cr-quiz-q-${idx}" value="${oIdx}" class="text-purple-600 focus:ring-purple-500 w-3.5 h-3.5" />
+                            <span class="w-4 h-4 rounded-full border border-slate-300 flex items-center justify-center text-[9px] font-bold text-slate-500">${String.fromCharCode(65 + oIdx)}</span>
+                            <span class="text-slate-800 dark:text-slate-200">${UI.escapeHtml(opt)}</span>
+                          </label>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+        </div>
+      `;
+
+      // Hook Document Preview Buttons
+      workspaceEl.querySelectorAll('.cr-doc-preview-btn').forEach(btn => {
+        btn.onclick = () => {
+          const t = btn.dataset.title;
+          const u = btn.dataset.fileUrl;
+          const m = btn.dataset.mime;
+          AdminView.openDocumentPreviewModal(t, u, m);
+        };
+      });
+
+      // Hook Video Switcher Buttons
+      workspaceEl.querySelectorAll('.cr-vid-switch-btn').forEach(btn => {
+        btn.onclick = () => {
+          const vIdx = parseInt(btn.dataset.vidx, 10);
+          const targetVid = pData.videos[vIdx];
+          const frame = document.getElementById('cr-preview-video-frame');
+          if (frame && targetVid) {
+            workspaceEl.querySelectorAll('.cr-vid-switch-btn').forEach(b => {
+              b.className = 'cr-vid-switch-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200';
+            });
+            btn.className = 'cr-vid-switch-btn px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer bg-primary text-white shadow-xs';
+
+            const yId = targetVid.type === 'YOUTUBE' ? UI.parseYouTubeId(targetVid.url) : null;
+            if (targetVid.type === 'YOUTUBE' && yId) {
+              frame.innerHTML = `
+                <iframe
+                  class="w-full h-full aspect-video block"
+                  src="${UI.getYouTubeEmbedUrl(yId)}"
+                  title="${UI.escapeHtml(targetVid.title)}"
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                ></iframe>
+              `;
+            } else {
+              frame.innerHTML = `
+                <video controls autoplay class="max-h-[460px] max-w-full mx-auto my-auto object-contain block" src="${UI.escapeHtml(targetVid.url)}" preload="metadata" playsinline>
+                  Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
+                </video>
+              `;
+            }
+          }
+        };
+      });
+    };
+
+    // Initial render of preview lesson
+    renderActivePreviewLesson(0);
+
+    // Hook Lesson Selector Pills in Course Preview
+    const lessonPills = typeof container?.querySelectorAll === 'function' ? container.querySelectorAll('.cr-preview-lesson-btn') : [];
+    lessonPills.forEach(pill => {
+      pill.onclick = () => {
+        lessonPills.forEach(p => {
+          p.className = 'cr-preview-lesson-btn px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200';
+        });
+        pill.className = 'cr-preview-lesson-btn px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer bg-primary text-white shadow-xs';
+        const idx = parseInt(pill.dataset.lessonIdx, 10);
+        renderActivePreviewLesson(idx);
+      };
+    });
+
     // Hook up View Mode tabs
     const diffBtn = document.getElementById('cr-tab-diff-btn');
     const previewBtn = document.getElementById('cr-tab-preview-btn');
@@ -1845,12 +2618,85 @@ class AdminView {
       };
     }
 
+    if (isChangeset) {
+      setTimeout(async () => {
+        try {
+          const diffRes = await ApiClient.getCourseChangesetDiff(r.id);
+          const liveBox = document.getElementById('changeset-live-curriculum-box');
+          const propBox = document.getElementById('changeset-proposed-curriculum-box');
+          if (liveBox && propBox && diffRes) {
+            const liveList = diffRes.live_curriculum || [];
+            const propList = diffRes.proposed_curriculum || [];
+
+            liveBox.innerHTML = liveList.length ? `
+              <div class="space-y-1.5">
+                ${liveList.map(item => `
+                  <div class="p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center justify-center shrink-0">
+                        ${item.position}
+                      </span>
+                      <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                        ${UI.escapeHtml(item.title)}
+                      </span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            ` : '<p class="text-slate-400 italic">Khóa học chưa có bài học nào.</p>';
+
+            propBox.innerHTML = propList.length ? `
+              <div class="space-y-1.5">
+                ${propList.map(item => {
+                  let badge = '';
+                  let borderClass = 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50';
+                  if (item.change_status === 'ADDED') {
+                    badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Mới</span>';
+                    borderClass = 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20';
+                  } else if (item.change_status === 'MODIFIED') {
+                    badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">Đã sửa</span>';
+                    borderClass = 'border-blue-200 dark:border-blue-800/60 bg-blue-50/50 dark:bg-blue-950/20';
+                  } else if (item.change_status === 'DELETED') {
+                    badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Xóa</span>';
+                    borderClass = 'border-rose-200 dark:border-rose-800/60 bg-rose-50/50 dark:bg-rose-950/20 opacity-60 line-through';
+                  }
+                  return `
+                    <div class="p-2.5 rounded-xl border ${borderClass} flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-6 h-6 rounded-lg bg-primary-subtle text-primary text-[11px] font-bold flex items-center justify-center shrink-0">
+                          ${item.position}
+                        </span>
+                        <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          ${UI.escapeHtml(item.title)}
+                        </span>
+                      </div>
+                      ${badge}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : '<p class="text-slate-400 italic">Không có dữ liệu bài học đề xuất.</p>';
+          }
+        } catch (err) {
+          console.warn('Failed to fetch changeset diff:', err);
+        }
+      }, 0);
+    }
+
     if (isPending) {
       document.getElementById('diff-approve-btn').onclick = async () => {
         try {
-          await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
+          if (isChangeset) {
+            await ApiClient.approveCourseChangeset(r.id, 'Phê duyệt đợt cập nhật giáo trình.');
+          } else {
+            await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
+          }
           UI.showToast(`Đã phê duyệt và áp dụng bản sửa đổi #${r.id} thành công!`, 'success');
+          AdminView._activeCrFilter = 'PENDING';
+          window.app?.refreshNotificationBadge?.(true);
+          window.app?.fetchAdminPendingCounts?.();
           window.location.hash = '#/admin/governance?tab=courses';
+          UI.refreshCurrentRoute();
         } catch (e) {
           UI.showToast(e.message || 'Lỗi phê duyệt yêu cầu.', 'error');
         }
@@ -1861,15 +2707,23 @@ class AdminView {
           'Từ chối bản sửa đổi',
           `Nhập lý do từ chối yêu cầu sửa đổi #${r.id}:`,
           '',
-          'Nhập lý do chi tiết (tối thiểu 3 ký tự)...',
-          3,
+          'Nhập lý do chi tiết (tối thiểu 5 ký tự)...',
+          5,
           'Từ Chối Bản Sửa'
         );
         if (!reason) return;
         try {
-          await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });
+          if (isChangeset) {
+            await ApiClient.rejectCourseChangeset(r.id, reason);
+          } else {
+            await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });
+          }
           UI.showToast(`Đã từ chối yêu cầu #${r.id}.`, 'info');
+          AdminView._activeCrFilter = 'PENDING';
+          window.app?.refreshNotificationBadge?.(true);
+          window.app?.fetchAdminPendingCounts?.();
           window.location.hash = '#/admin/governance?tab=courses';
+          UI.refreshCurrentRoute();
         } catch (e) {
           UI.showToast(e.message || 'Lỗi từ chối yêu cầu.', 'error');
         }
@@ -2214,10 +3068,102 @@ class AdminView {
                           <p class="text-xs leading-relaxed">${UI.escapeHtml(l.flag_reason || 'Chưa có chi tiết lý do.')}</p>
                         </div>
                       ` : ''}
-                      <h6 class="font-semibold">Nội dung bài học</h6>
-                      <pre class="whitespace-pre-wrap break-words rounded-lg bg-slate-50 dark:bg-slate-800 p-4 text-xs text-slate-700 dark:text-slate-200">${UI.escapeHtml(l.markdown_content || 'Chưa có nội dung.')}</pre>
-                      <p class="text-slate-600 dark:text-slate-300">Tài liệu đính kèm: ${(l.resources || []).length}</p>
-                      ${(l.resources || []).map(resource => `<p class="text-slate-600 dark:text-slate-300">${UI.escapeHtml(resource.label)} · ${UI.escapeHtml(resource.resource_type || '')} · ${resource.scan_status === 'CLEAN' ? 'Đã kiểm tra' : 'Chưa an toàn'}</p>`).join('')}
+                      <div class="space-y-2">
+                        <div class="flex items-center justify-between text-xs text-slate-500 font-semibold">
+                          <span class="flex items-center gap-1.5 text-primary font-bold">
+                            <span class="material-symbols-outlined text-[16px]">description</span>
+                            <span>Bản xem trước giáo trình (Định dạng văn bản Word chuẩn)</span>
+                          </span>
+                          <span class="text-[11px] text-slate-400">Đã tự động ẩn thẻ kỹ thuật nội bộ</span>
+                        </div>
+                        <div class="max-w-4xl mx-auto bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shadow-sm rounded-xl p-6 sm:p-10 font-sans text-slate-800 dark:text-slate-100 min-h-[220px]">
+                          <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed space-y-2">
+                            ${UI.renderMarkdown(
+                              (l.markdown_content || '*Chưa có nội dung bài giảng.*')
+                                .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
+                                .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '')
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="space-y-2 pt-2">
+                        <div class="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <span class="flex items-center gap-1.5">
+                            <span class="material-symbols-outlined text-[16px] text-primary">attachment</span>
+                            <span>Tài liệu đính kèm bài học (${(l.resources || []).length})</span>
+                          </span>
+                        </div>
+                        ${(l.resources || []).length === 0 ? `
+                          <p class="text-xs text-slate-400 italic">Bài học này không có tài liệu đính kèm.</p>
+                        ` : `
+                          <div class="space-y-2">
+                            ${(l.resources || []).map(resource => {
+                              const isClean = resource.is_clean ?? (resource.scan_status === 'CLEAN');
+                              const title = resource.filename || resource.label || 'Tài liệu';
+                              const mime = resource.mime_type || '';
+                              const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(title);
+                              let extBadge = isPdf ? 'PDF' : (/\.(docx?|odt)$/i.test(title) ? 'DOC' : 'FILE');
+                              let badgeClass = isPdf ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-blue-100 text-blue-700 border-blue-200';
+
+                              return `
+                                <div class="p-3 rounded-xl border ${isClean ? 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40' : 'border-rose-300 dark:border-rose-800 bg-rose-50/40 dark:bg-rose-950/20'} flex items-center justify-between gap-3 shadow-2xs">
+                                  <div class="flex items-center gap-2.5 min-w-0">
+                                    <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 border ${badgeClass}">
+                                      ${extBadge}
+                                    </span>
+                                    <div class="min-w-0">
+                                      <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" title="${UI.escapeHtml(title)}">
+                                        ${UI.escapeHtml(title)}
+                                      </p>
+                                      <div class="flex items-center gap-2 mt-0.5">
+                                        <span class="text-[10px] text-slate-400 font-mono">${extBadge} Document</span>
+                                        ${isClean ? `
+                                          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 flex items-center gap-0.5">
+                                            <span class="material-symbols-outlined text-[11px]">verified_user</span> Đã kiểm tra an toàn
+                                          </span>
+                                        ` : `
+                                          <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 flex items-center gap-0.5">
+                                            <span class="material-symbols-outlined text-[11px]">gpp_maybe</span> Chưa an toàn / Đã cách ly
+                                          </span>
+                                        `}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div class="flex items-center gap-1.5 shrink-0">
+                                    ${isClean && resource.file_url ? `
+                                      <button
+                                        type="button"
+                                        class="course-doc-preview-btn px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950 text-slate-700 dark:text-slate-200 hover:text-emerald-600 text-xs font-semibold border border-slate-200 dark:border-slate-600 transition-colors flex items-center gap-1 cursor-pointer"
+                                        data-title="${UI.escapeHtml(title)}"
+                                        data-file-url="${UI.escapeHtml(resource.file_url)}"
+                                        data-mime="${UI.escapeHtml(mime)}"
+                                        title="Xem trước tệp này"
+                                      >
+                                        <span class="material-symbols-outlined text-[15px]">visibility</span>
+                                        <span>Xem trước</span>
+                                      </button>
+                                      <a
+                                        href="${UI.escapeHtml(resource.download_url || resource.file_url)}"
+                                        download="${UI.escapeHtml(title)}"
+                                        class="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-primary-subtle transition-colors shrink-0"
+                                        title="Tải về máy tính"
+                                      >
+                                        <span class="material-symbols-outlined text-[18px]">download</span>
+                                      </a>
+                                    ` : `
+                                      <span class="text-[10px] text-rose-600 dark:text-rose-400 italic font-medium flex items-center gap-1">
+                                        <span class="material-symbols-outlined text-[14px]">lock</span>
+                                        Bị khóa (Fail-Closed)
+                                      </span>
+                                    `}
+                                  </div>
+                                </div>
+                              `;
+                            }).join('')}
+                          </div>
+                        `}
+                      </div>
                       <div class="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
                         <span class="text-[11px] text-slate-500 dark:text-slate-400">Quản trị viên chỉ có quyền thẩm định và gắn cờ (Read-Only)</span>
                         <button type="button" class="btn-flag-lesson-action px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 flex items-center gap-1.5 shadow-2xs" data-lesson-id="${UI.escapeHtml(l.lesson_id)}" data-lesson-title="${UI.escapeHtml(l.title)}">
@@ -2247,7 +3193,18 @@ class AdminView {
           </main>`;
 
       // Bind flag lesson actions
+      // Bind document preview buttons
       if (typeof container.querySelectorAll === 'function') {
+        container.querySelectorAll('.course-doc-preview-btn').forEach(btn => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            const t = btn.dataset.title;
+            const u = btn.dataset.fileUrl;
+            const m = btn.dataset.mime;
+            AdminView.openDocumentPreviewModal(t, u, m);
+          };
+        });
+
         container.querySelectorAll('.btn-flag-lesson-action').forEach(btn => {
           btn.onclick = async (e) => {
             e.stopPropagation();
@@ -3374,33 +4331,39 @@ class AdminView {
 
               <!-- 6 Micro Service Cards Grid -->
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5" id="services-health-grid">
+                <div class="col-span-full p-6 text-center text-slate-400 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
+                  Äang kiá»ƒm tra tráº¡ng thÃ¡i dá»‹ch vá»¥ tá»« mÃ¡y chá»§...
+                </div>
+              </div>
+
+              <div class="hidden" aria-hidden="true">
                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase text-slate-500">PWD-WebCore</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">100%</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold">Chưa xác định</span>
                   </div>
                   <div>
                     <div class="text-sm font-bold text-slate-900 dark:text-white">Flask & REST Engine</div>
-                    <div class="text-xs text-slate-400">Response time: ~22ms</div>
+                    <div class="text-xs text-slate-400">Độ trễ: Chưa có dữ liệu từ health API</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
-                    <span>Active workers: 8</span>
-                    <span class="text-emerald-600 font-bold">Healthy</span>
+                    <span>Workers: Chưa có dữ liệu</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
 
                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-bold uppercase text-slate-500">MS SQL Server 2022</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">100%</span>
+                    <span class="text-xs font-bold uppercase text-slate-500">Cơ sở dữ liệu</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold">Chưa xác định</span>
                   </div>
                   <div>
                     <div class="text-sm font-bold text-slate-900 dark:text-white">Relational DB Engine</div>
-                    <div class="text-xs text-slate-400">Filtered Unique Indexes Active</div>
+                    <div class="text-xs text-slate-400">Chưa có chi tiết cấu hình từ health API</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
                     <span>Target: MSSQL</span>
-                    <span class="text-emerald-600 font-bold">Connected</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
 
@@ -3414,23 +4377,23 @@ class AdminView {
                     <div class="text-xs text-slate-400">Quarantine Sandbox Isolation</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
-                    <span>Heuristic Engine</span>
-                    <span class="text-amber-600 font-bold">Active</span>
+                    <span>Chi tiết scanner: Chưa có dữ liệu</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
 
                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold uppercase text-slate-500">MinIO / S3 Storage</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">100%</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold">Chưa xác định</span>
                   </div>
                   <div>
                     <div class="text-sm font-bold text-slate-900 dark:text-white">Object Storage</div>
-                    <div class="text-xs text-slate-400">Dung lượng: 1.84 TB / 5 TB</div>
+                    <div class="text-xs text-slate-400">Dung lượng: Chưa có dữ liệu từ health API</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
                     <span>S3 Compatible</span>
-                    <span class="text-emerald-600 font-bold">Sẵn sàng</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
 
@@ -3441,18 +4404,18 @@ class AdminView {
                   </div>
                   <div>
                     <div class="text-sm font-bold text-slate-900 dark:text-white">RAG Vector Engine</div>
-                    <div class="text-xs text-slate-400">148k Giáo trình Embeddings</div>
+                    <div class="text-xs text-slate-400">Số lượng: Chưa có dữ liệu từ health API</div>
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
-                    <span>Query: 28ms</span>
-                    <span class="text-emerald-600 font-bold">Tối ưu</span>
+                    <span>Độ trễ truy vấn: Chưa có dữ liệu</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
 
                 <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-bold uppercase text-slate-500">Redis Token Engine</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold">100%</span>
+                    <span class="text-xs font-bold uppercase text-slate-500">Phiên đăng nhập</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold">Chưa xác định</span>
                   </div>
                   <div>
                     <div class="text-sm font-bold text-slate-900 dark:text-white">Phiên đăng nhập</div>
@@ -3460,7 +4423,7 @@ class AdminView {
                   </div>
                   <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
                     <span>Trạng thái</span>
-                    <span class="text-emerald-600 font-bold">Đã đồng bộ</span>
+                    <span class="text-slate-500 font-bold">Chưa xác định</span>
                   </div>
                 </div>
               </div>
@@ -3474,12 +4437,20 @@ class AdminView {
                   <p class="text-xs text-slate-400">Hàng đợi tái cấu trúc điểm số, nạp bộ đề và quét tệp định kỳ.</p>
                 </div>
                 <span class="font-mono text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
-                  Daemon Threads: 8 Active
+                  Chưa có dữ liệu worker từ API.
                 </span>
+                <button type="button" class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm flex items-center gap-1.5" id="check-bg-jobs-btn">
+                  <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span>
+                  <span>Kiểm tra hàng đợi</span>
+                </button>
               </div>
 
-              <!-- Regrading Job Card -->
-              <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col gap-3">
+              <div id="background-jobs-summary" class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+                Đang tải tác vụ nền từ máy chủ...
+              </div>
+
+              <!-- Legacy policy panel is retained only as a hidden compatibility shell; job state comes from the API. -->
+              <div class="hidden p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col gap-3" aria-hidden="true">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-lg bg-primary-subtle text-primary flex items-center justify-center font-mono text-xs font-bold shrink-0">
@@ -3488,7 +4459,7 @@ class AdminView {
                     <div>
                       <div class="flex items-center gap-2">
                         <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Chấm lại bài thi trắc nghiệm (Regrade Worker)</span>
-                        <span class="font-mono text-xs text-primary bg-primary-subtle px-2 py-0.5 rounded font-bold">#RG-2026-LIVE</span>
+                        <span class="font-mono text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-bold">Chưa có mã job</span>
                       </div>
                       <div class="text-xs text-slate-400 mt-0.5">
                         Chính sách: <strong class="text-slate-700 dark:text-slate-300">Answer-only recompute</strong> (Bảo lưu mốc nộp bài gốc & idempotent)
@@ -3496,7 +4467,7 @@ class AdminView {
                     </div>
                   </div>
                   <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button type="button" class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm flex items-center gap-1.5" id="check-bg-jobs-btn">
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm flex items-center gap-1.5" id="legacy-check-bg-jobs-btn">
                       <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span>
                       <span>Kiểm tra trạng thái & Hàng đợi</span>
                     </button>
@@ -3509,7 +4480,6 @@ class AdminView {
                     <span class="font-mono font-bold text-primary">Idempotent Safe</span>
                   </div>
                   <div class="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                    <div class="h-full bg-primary rounded-full" style="width: 100%;"></div>
                   </div>
                 </div>
               </div>
@@ -3528,7 +4498,7 @@ class AdminView {
                   </p>
                 </div>
                 <span class="text-xs font-bold uppercase px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  AIR-GAPPED REPLICA
+                  Guardrails khôi phục
                 </span>
               </div>
 
@@ -3542,7 +4512,7 @@ class AdminView {
                   </div>
                 </div>
                 <span class="text-xs font-mono px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-primary font-bold shrink-0">
-                  Staging Host: stg-eval-pwd.edu.vn
+                  Mục tiêu staging: Chưa được cấu hình
                 </span>
               </div>
 
@@ -3652,9 +4622,9 @@ class AdminView {
         }
 
         containerEl.innerHTML = backups.map(b => {
-          const rawSha = b.checksum_sha256 || '9b2df41e88b63dc4e9a3efd8e23910c2';
+          const rawSha = b.checksum_sha256 || 'Chưa ghi nhận';
           const displaySha = rawSha.length > 16 ? `${rawSha.slice(0, 8)}...${rawSha.slice(-8)}` : rawSha;
-          const sizeMb = b.file_size_bytes ? (b.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB' : '14.82 MB';
+          const sizeMb = b.file_size_bytes ? (b.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB' : 'Chưa có dữ liệu';
 
           return `
             <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 overflow-hidden">
@@ -3843,6 +4813,54 @@ class AdminView {
       }
     };
 
+    // Load background jobs dynamically from backend; never infer worker count or progress.
+    const loadBackgroundJobsSummary = async () => {
+      const summaryEl = document.getElementById('background-jobs-summary');
+      if (!summaryEl) return;
+
+      try {
+        const result = await ApiClient.getAdminBackgroundJobs({ per_page: 5 });
+        const items = Array.isArray(result?.items) ? result.items : [];
+        const summary = result?.summary || {};
+        const counts = ['queued', 'running', 'failed', 'succeeded']
+          .filter(key => Number.isFinite(Number(summary[key])))
+          .map(key => `${key}: ${Number(summary[key])}`)
+          .join(' · ');
+
+        if (items.length === 0) {
+          summaryEl.innerHTML = `
+            <div class="space-y-2">
+              <div class="font-bold text-slate-700 dark:text-slate-200">Chưa có tác vụ nền được ghi nhận.</div>
+              <div class="text-slate-400">${UI.escapeHtml(counts || 'Chưa có số liệu tổng hợp từ máy chủ.')}</div>
+            </div>
+          `;
+          return;
+        }
+
+        summaryEl.innerHTML = `
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="font-bold text-slate-700 dark:text-slate-200">Tác vụ gần đây</div>
+              <div class="font-mono text-[11px] text-slate-500">${UI.escapeHtml(counts || 'Chưa có số liệu tổng hợp')}</div>
+            </div>
+            <div class="space-y-2">
+              ${items.map(job => `
+                <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+                  <span class="font-semibold text-slate-700 dark:text-slate-200">${UI.escapeHtml(job.job_type || 'Không xác định')}</span>
+                  <span class="font-mono text-[11px] text-slate-500">${UI.escapeHtml(job.status || 'UNKNOWN')}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        summaryEl.innerHTML = `
+          <div class="text-amber-700 dark:text-amber-300">Không tải được trạng thái tác vụ nền từ máy chủ.</div>
+          <div class="mt-1 text-slate-400">${UI.escapeHtml(error?.message || 'Không có chi tiết lỗi.')}</div>
+        `;
+      }
+    };
+
     // Load Service Health Matrix dynamically from backend
     const loadHealthMatrix = async () => {
       const gridEl = document.getElementById('services-health-grid');
@@ -3873,11 +4891,11 @@ class AdminView {
             return `
               <div class="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border ${borderClass} flex flex-col justify-between gap-3">
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold uppercase text-slate-500">${UI.escapeHtml(s.service_name || k)}</span>
+                  <span class="text-xs font-bold uppercase text-slate-500">${UI.escapeHtml(s.name || s.service_name || k)}</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${badgeClass} text-[11px] font-bold">${UI.escapeHtml(s.status)}</span>
                 </div>
                 <div>
-                  <div class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(s.service_name || k)}</div>
+                  <div class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(s.name || s.service_name || k)}</div>
                   <div class="text-xs text-slate-400">Độ trễ: ${s.latency_ms !== null && s.latency_ms !== undefined ? s.latency_ms + 'ms' : 'N/A'}</div>
                 </div>
                 <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 font-mono">
@@ -3935,7 +4953,7 @@ class AdminView {
     }
 
     document.getElementById('refresh-operations-btn').onclick = async () => {
-      await Promise.allSettled([loadBackups(), loadMaintenanceStatus(), loadHealthMatrix()]);
+      await Promise.allSettled([loadBackups(), loadMaintenanceStatus(), loadHealthMatrix(), loadBackgroundJobsSummary()]);
     };
 
     document.getElementById('emergency-backup-btn').onclick = () => {
@@ -3946,6 +4964,7 @@ class AdminView {
     loadBackups();
     loadMaintenanceStatus();
     loadHealthMatrix();
+    loadBackgroundJobsSummary();
   }
 
   static openCreateBackupModal(onSuccess = null) {

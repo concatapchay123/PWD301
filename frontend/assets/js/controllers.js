@@ -92,6 +92,14 @@ class Controllers {
     } else if (submitBtn) {
       submitBtn.onclick = handleLogin;
     }
+
+    // Attach Caps Lock warning if available
+    const loginPassWarn = container.querySelector('#login-capslock-warning');
+    const loginEmailWarn = container.querySelector('#login-email-capslock-warning');
+    if (window.AuthView && typeof window.AuthView.setupCapsLockWarning === 'function') {
+      if (passInput && loginPassWarn) window.AuthView.setupCapsLockWarning(passInput, loginPassWarn);
+      if (emailInput && loginEmailWarn) window.AuthView.setupCapsLockWarning(emailInput, loginEmailWarn);
+    }
   }
 
   // =========================================================================

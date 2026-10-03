@@ -3,6 +3,7 @@
 Provides real-time validation for YouTube video embeddability, availability,
 and automated scanning to notify instructors when linked videos are deleted or blocked.
 """
+
 from __future__ import annotations
 
 import json
@@ -132,7 +133,9 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
 
     If a broken video is detected, dispatches an in-app notification to the course instructor.
     """
-    query = db.session.query(Course).filter(Course.status != "ARCHIVED", Course.deleted_at.is_(None))
+    query = db.session.query(Course).filter(
+        Course.status != "ARCHIVED", Course.deleted_at.is_(None)
+    )
     if course_id:
         query = query.filter(Course.id == course_id)
 
@@ -187,7 +190,9 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
                                     session=db.session,
                                 )
                             except Exception as notif_err:
-                                logger.error("Failed to dispatch broken video notification: %s", notif_err)
+                                logger.error(
+                                    "Failed to dispatch broken video notification: %s", notif_err
+                                )
 
     if broken_reports:
         try:

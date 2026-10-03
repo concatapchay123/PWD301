@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import hmac
+import logging
 import secrets
 from typing import Any
 
@@ -32,6 +33,8 @@ from pwd301.services.exceptions import (
     UserNotFoundError,
 )
 from pwd301.services.user_service import normalize_email, validate_password
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityTokenPurpose:
@@ -346,7 +349,11 @@ def reset_password_with_token(
             session=sess,
         )
     except Exception as exc:
-        logger.warning("Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s", user.id, exc)
+        logger.warning(
+            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
+            user.id,
+            exc,
+        )
 
     return user
 

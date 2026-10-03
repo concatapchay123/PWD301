@@ -7,23 +7,22 @@ from __future__ import annotations
 import json
 import uuid
 
+import pytest
 from flask import Flask
 from flask.testing import FlaskClient
-import pytest
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
+from pwd301.models.course import Course, CourseChangeRequest, Lesson
 from pwd301.models.identity import Role, User
-from pwd301.services.user_service import assign_role_to_user, register_user
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.lesson_service import (
-    approve_course_change_request,
     create_learning_unit,
     create_lesson,
     create_lesson_change_request,
     discard_lesson_working_draft,
 )
+from pwd301.services.user_service import assign_role_to_user, register_user
 from tests.conftest import login_web_user
 
 
@@ -84,7 +83,16 @@ def test_published_course_metadata_update_creates_change_request(
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    create_lesson(instructor_user, course.id, {"title": "Lesson 1", "learning_unit_id": str(unit.public_id), "markdown_content": "Content"}, session=sess)
+    create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "Lesson 1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "Content",
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -134,7 +142,16 @@ def test_admin_change_requests_diff_payload_and_original_data(
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    create_lesson(instructor_user, course.id, {"title": "Lesson 1", "learning_unit_id": str(unit.public_id), "markdown_content": "Content"}, session=sess)
+    create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "Lesson 1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "Content",
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -157,7 +174,9 @@ def test_admin_change_requests_diff_payload_and_original_data(
     resp_admin = client.get("/admin/change-requests")
     assert resp_admin.status_code == 200
     items = resp_admin.get_json().get("items", [])
-    course_req = next((item for item in items if str(item.get("course_id")) == str(course.public_id)), None)
+    course_req = next(
+        (item for item in items if str(item.get("course_id")) == str(course.public_id)), None
+    )
     assert course_req is not None
     assert course_req["original_data"]["title"] == "Course Diff Test"
     assert course_req["proposed_payload"]["title"] == "Proposed New Diff Title"
@@ -181,7 +200,16 @@ def test_admin_approves_course_metadata_change_request(
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    create_lesson(instructor_user, course.id, {"title": "Lesson 1", "learning_unit_id": str(unit.public_id), "markdown_content": "Content"}, session=sess)
+    create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "Lesson 1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "Content",
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -230,8 +258,28 @@ def test_published_course_create_lesson_approval_and_order_shift(
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    l1 = create_lesson(instructor_user, course.id, {"title": "Existing Lesson 1", "learning_unit_id": str(unit.public_id), "markdown_content": "L1", "position": 1}, session=sess)
-    l2 = create_lesson(instructor_user, course.id, {"title": "Existing Lesson 2", "learning_unit_id": str(unit.public_id), "markdown_content": "L2", "position": 2}, session=sess)
+    l1 = create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "Existing Lesson 1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "L1",
+            "position": 1,
+        },
+        session=sess,
+    )
+    l2 = create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "Existing Lesson 2",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "L2",
+            "position": 2,
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -292,7 +340,16 @@ def test_published_course_lesson_autosave_deduplication(
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    l1 = create_lesson(instructor_user, course.id, {"title": "L1", "learning_unit_id": str(unit.public_id), "markdown_content": "Base content"}, session=sess)
+    l1 = create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "L1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "Base content",
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -314,9 +371,7 @@ def test_published_course_lesson_autosave_deduplication(
 
     assert req1.id == req2.id
     total_pending = (
-        sess.query(CourseChangeRequest)
-        .filter_by(course_id=course.id, status="PENDING")
-        .count()
+        sess.query(CourseChangeRequest).filter_by(course_id=course.id, status="PENDING").count()
     )
     assert total_pending == 1
     stored_payload = json.loads(req2.proposed_payload_json)
@@ -332,11 +387,23 @@ def test_discard_lesson_working_draft_with_target_id(
     sess: Session = db.session
     course = create_course(
         instructor_user,
-        {"course_code": f"CS-REMED-{uuid.uuid4().hex[:4].upper()}", "title": "Discard Draft Course"},
+        {
+            "course_code": f"CS-REMED-{uuid.uuid4().hex[:4].upper()}",
+            "title": "Discard Draft Course",
+        },
         session=sess,
     )
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit 1"}, session=sess)
-    l1 = create_lesson(instructor_user, course.id, {"title": "L1", "learning_unit_id": str(unit.public_id), "markdown_content": "Original Content"}, session=sess)
+    l1 = create_lesson(
+        instructor_user,
+        course.id,
+        {
+            "title": "L1",
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "Original Content",
+        },
+        session=sess,
+    )
     course = change_course_status(instructor_user, course.id, "SUBMITTED_FOR_REVIEW", session=sess)
     course = change_course_status(admin_user, course.id, "APPROVED", session=sess)
     course = change_course_status(instructor_user, course.id, "PUBLISHED", session=sess)
@@ -345,7 +412,11 @@ def test_discard_lesson_working_draft_with_target_id(
     req, _ = create_lesson_change_request(
         actor=instructor_user,
         course_id=course.id,
-        payload={"target_id": l1.id, "title": "L1 Staged Draft", "markdown_content": "Staged Content"},
+        payload={
+            "target_id": l1.id,
+            "title": "L1 Staged Draft",
+            "markdown_content": "Staged Content",
+        },
         session=sess,
     )
     sess.commit()

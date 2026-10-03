@@ -22,8 +22,6 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-
-logger = logging.getLogger(__name__)
 from pwd301.models.course import (
     Course,
     CourseCompletionSummary,
@@ -53,6 +51,8 @@ from pwd301.services.exceptions import (
     PrerequisiteCycleError,
     UserNotFoundError,
 )
+
+logger = logging.getLogger(__name__)
 
 # Standard retention window for detailed learning data after course withdrawal (in days)
 ENROLLMENT_DETAIL_RETENTION_DAYS = 30
@@ -317,20 +317,8 @@ def enroll_student(
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
-    if locked_course.capacity is not None and locked_course.capacity > 0:
-        active_count = (
-            sess.query(sa.func.count(Enrollment.id))
-            .filter(
-                Enrollment.course_id == locked_course.id,
-                Enrollment.status == "ACTIVE",
-            )
-            .scalar()
-            or 0
-        )
-        if active_count >= locked_course.capacity:
-            raise EnrollmentCapacityExceededError(
-                f"Course capacity of {locked_course.capacity} has been reached."
-            )
+    # Sĩ số tối đa là không giới hạn (Unlimited capacity policy)
+    # Không áp đặt trần sĩ số và không chặn sinh viên ghi danh mới.
 
     # 8. Create new Enrollment and EnrollmentPeriod (period_no = 1)
     now = utc_now()
@@ -609,20 +597,8 @@ def re_enroll_student(
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
-    if locked_course.capacity is not None and locked_course.capacity > 0:
-        active_count = (
-            sess.query(sa.func.count(Enrollment.id))
-            .filter(
-                Enrollment.course_id == locked_course.id,
-                Enrollment.status == "ACTIVE",
-            )
-            .scalar()
-            or 0
-        )
-        if active_count >= locked_course.capacity:
-            raise EnrollmentCapacityExceededError(
-                f"Course capacity of {locked_course.capacity} has been reached."
-            )
+    # Sĩ số tối đa là không giới hạn (Unlimited capacity policy)
+    # Không áp đặt trần sĩ số và không chặn sinh viên tái ghi danh.
 
     # 7. Determine next period_no
     last_period_no = (

@@ -74,6 +74,7 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
 def course_a(app: Flask, instructor_a: User) -> Course:
     """Course owned by Instructor A."""
     from pwd301.services.lesson_service import create_learning_unit, create_lesson
+
     sess = db.session
     c = create_course(
         instructor_a,
@@ -84,8 +85,20 @@ def course_a(app: Flask, instructor_a: User) -> Course:
         },
         session=sess,
     )
-    unit = create_learning_unit(instructor_a, c.id, {"title": "Unit 1", "position": 1}, session=sess)
-    create_lesson(instructor_a, c.id, {"title": "Lesson 1", "position": 1, "learning_unit_id": str(unit.public_id), "markdown_content": "# Security Intro Content"}, session=sess)
+    unit = create_learning_unit(
+        instructor_a, c.id, {"title": "Unit 1", "position": 1}, session=sess
+    )
+    create_lesson(
+        instructor_a,
+        c.id,
+        {
+            "title": "Lesson 1",
+            "position": 1,
+            "learning_unit_id": str(unit.public_id),
+            "markdown_content": "# Security Intro Content",
+        },
+        session=sess,
+    )
     sess.commit()
     return c
 
@@ -252,7 +265,10 @@ def test_admin_can_manage_and_review_any_course(
     resp = client.patch(
         f"/instructor/courses/{course_a.public_id}",
         headers=headers_admin,
-        json={"title": "Admin Verified Security 101"},
+        json={
+            "title": "Admin Verified Security 101",
+            "reason": "Correcting the published course metadata after review.",
+        },
     )
     assert resp.status_code == 200
     assert resp.get_json()["title"] == "Admin Verified Security 101"

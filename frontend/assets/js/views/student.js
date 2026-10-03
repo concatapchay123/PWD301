@@ -34,6 +34,42 @@ function parseGroupedAttemptChoices(question) {
 }
 
 class StudentView {
+  static getAttemptScoreState(data) {
+    const released = data?.score_status === 'RELEASED' || data?.is_released === true;
+    if (!released) {
+      return {
+        released: false,
+        totalScore: null,
+        maxPoints: null,
+        passingScore: null,
+        isPassed: null,
+        scorePct: null,
+      };
+    }
+
+    const numberOrNull = value => {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    };
+    const totalScore = numberOrNull(data.total_score ?? data.raw_score ?? data.score);
+    const maxPoints = numberOrNull(data.max_points ?? data.max_score);
+    const passingScore = numberOrNull(
+      data.passing_score ?? (maxPoints === null ? null : maxPoints * 0.5),
+    );
+    const isPassed = data.is_passed !== undefined
+      ? Boolean(data.is_passed)
+      : (totalScore !== null && passingScore !== null ? totalScore >= passingScore : null);
+
+    return {
+      released: true,
+      totalScore,
+      maxPoints,
+      passingScore,
+      isPassed,
+      scorePct: totalScore !== null && maxPoints > 0 ? (totalScore / maxPoints) * 10 : null,
+    };
+  }
+
   static getSubmissionKey(attemptId) {
     if (!attemptId || !window.crypto?.randomUUID || !window.sessionStorage) return '';
     try {
@@ -902,16 +938,18 @@ class StudentView {
 
   static async openEnrollmentModal(courseOrId, onEnrolledCallback = null) {
     try {
-      const course = (typeof courseOrId === 'object' && courseOrId !== null)
+      let course = (typeof courseOrId === 'object' && courseOrId !== null)
         ? courseOrId
         : await ApiClient.getCourseDetail(courseOrId);
       if (!course) return;
+      const courseObj = course.course ? { ...course.course, lessons: course.lessons || [] } : course;
+      course = courseObj;
 
       const courseId = course.id || course.public_id || (typeof courseOrId === 'string' ? courseOrId : '');
 
       const lessons = course.lessons || [];
       const lessonCount = lessons.length;
-      const capacityText = course.capacity ? `${course.capacity} sinh viên` : 'Không giới hạn';
+      const capacityText = 'Không giới hạn';
       const instructorName = course.instructor_name || 'Hội đồng Khoa học & Bộ môn';
 
       const body = `
@@ -1310,8 +1348,9 @@ class StudentView {
       const allAssessments = courseData?.assessments || course.assessments || [];
       const allResources = courseData?.resources || course.resources || [];
       const learningUnits = courseData?.learning_units || [];
-      const isPreview = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN');
-      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined) || isPreview;
+      const isPreview = (window.location.hash.includes('preview=1') || window.location.hash.includes('preview=true'));
+      const canBypassLock = (window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN' || isPreview);
+      const isEnrolled = !!(courseData?.enrollment || progressData?.is_enrolled || progressData?.progress_percent !== undefined) || canBypassLock;
 
       // Group modules & build structured headlist
       let modules = [];
@@ -1362,7 +1401,7 @@ class StudentView {
           const isDone = Boolean(les.is_completed || les.progress?.is_completed);
           if (isDone) modCompletedLessons++;
 
-          const isUnlocked = isPreview || (seqIndex === 0) || prevLessonCompleted;
+          const isUnlocked = canBypassLock || (seqIndex === 0) || prevLessonCompleted;
           les._isUnlocked = isUnlocked;
           les._isCompleted = isDone;
           les._seqIndex = seqIndex;
@@ -1389,7 +1428,7 @@ class StudentView {
         mod.assessments.forEach((asm, aIdx) => {
           const isAsmDone = (asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed;
           asm._isCompleted = isAsmDone;
-          asm._isUnlocked = isPreview || (modCompletedLessons >= mod.lessons.length);
+          asm._isUnlocked = canBypassLock || (modCompletedLessons >= mod.lessons.length);
           asm._moduleTitle = mod.title;
 
           flatNavList.push({
@@ -1558,11 +1597,11 @@ class StudentView {
                 <h1 class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs md:max-w-md" title="${UI.escapeHtml(course.title)}">
                   ${UI.escapeHtml(course.title)}
                 </h1>
-                ${isPreview ? `
-                  <span class="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold border border-amber-200 dark:border-amber-800 shrink-0">
-                    Xem trước
-                  </span>
-                ` : ''}
+
+
+
+
+
               </div>
             </div>
 
@@ -3131,25 +3170,61 @@ class StudentView {
           const setLessonCompleted = () => {
             isCompleted = true;
             activeItem.isCompleted = true;
-            activeItem.data.is_completed = true;
+            if (activeItem.data) {
+              activeItem.data.is_completed = true;
+              activeItem.data._isCompleted = true;
+            }
             const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
-            if (targetLes) targetLes.is_completed = true;
+            if (targetLes) {
+              targetLes.is_completed = true;
+              targetLes._isCompleted = true;
+            }
 
             // Recalculate unlocking of subsequent items
             let prevDone = true;
             flatNavList.forEach(item => {
               if (item.type === 'lesson') {
-                if (String(item.id) === String(activeItem.id)) item.isCompleted = true;
+                if (String(item.id) === String(activeItem.id)) {
+                  item.isCompleted = true;
+                  if (item.data) {
+                    item.data.is_completed = true;
+                    item.data._isCompleted = true;
+                  }
+                }
                 item.isUnlocked = isPreview || prevDone;
                 prevDone = item.isCompleted;
               }
+            });
+
+            // Reconcile module counts and status for sidebar outline
+            modules.forEach(mod => {
+              let compCount = 0;
+              (mod.lessons || []).forEach(l => {
+                if (String(l.lesson_id || l.id) === String(activeItem.id)) {
+                  l.is_completed = true;
+                  l._isCompleted = true;
+                }
+                const navItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(l.lesson_id || l.id));
+                if (navItem) {
+                  l._isUnlocked = navItem.isUnlocked;
+                  if (navItem.isCompleted) {
+                    l.is_completed = true;
+                    l._isCompleted = true;
+                  }
+                }
+                if (l._isCompleted || l.is_completed) {
+                  compCount++;
+                }
+              });
+              mod._completedCount = compCount;
+              mod._isCompleted = mod.lessons.length > 0 && compCount === mod.lessons.length;
             });
 
             renderSidebarOutline();
             updateFloatingNav();
 
             // Recalculate dynamic course progress in header
-            const completedCount = allLessons.filter(l => l.is_completed || l.progress?.is_completed).length;
+            const completedCount = allLessons.filter(l => l._isCompleted || l.is_completed || l.progress?.is_completed).length;
             const newPercent = allLessons.length > 0 ? Math.round((completedCount / allLessons.length) * 100) : 0;
             const progressBadge = document.getElementById('console-progress-percent');
             if (progressBadge) {
@@ -5069,10 +5144,20 @@ class StudentView {
       ]);
       if (!data) return;
 
-      const totalScore = parseFloat(data.total_score ?? data.score ?? 0);
-      const maxPoints = parseFloat(data.max_points || 10);
-      const passingScore = parseFloat(data.passing_score || (maxPoints * 0.5));
-      const isPassed = data.is_passed !== undefined ? data.is_passed : (totalScore >= passingScore);
+      const scoreState = StudentView.getAttemptScoreState(data);
+      if (!scoreState.released) {
+        container.innerHTML = `
+          <div class="p-8 text-center max-w-xl mx-auto space-y-3">
+            <span class="material-symbols-outlined text-4xl text-amber-500">hourglass_top</span>
+            <h1 class="text-xl font-bold text-slate-900 dark:text-white">Điểm chưa được công bố</h1>
+            <p class="text-sm text-slate-600 dark:text-slate-300">Bài làm đã được ghi nhận. Kết quả sẽ hiển thị sau khi hoàn tất chấm và công bố.</p>
+            <button type="button" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold" onclick="window.history.back()">Quay lại</button>
+          </div>
+        `;
+        return;
+      }
+
+      const { totalScore, maxPoints, passingScore, isPassed, scorePct } = scoreState;
       const questions = data.questions || [];
       const assessType = (data.assessment_type || data.type || 'QUIZ').toUpperCase();
       const isFormalExam = assessType === 'MIDTERM' || assessType === 'FINAL_EXAM' || maxPoints >= 10;
@@ -5083,37 +5168,17 @@ class StudentView {
       const correctQuestions = questions.filter(q => q.is_correct);
       const correctCount = correctQuestions.length;
       const wrongCount = questions.length - correctCount;
-      const scorePct = maxPoints > 0 ? (totalScore / maxPoints) * 10 : 0;
-
       // Candidate Profile extraction
-      const studentName = currentUser?.full_name || currentUser?.name || 'Nguyễn Minh Anh';
+      const studentName = data.candidate_name || currentUser?.full_name || currentUser?.display_name || currentUser?.name || 'Học viên';
+      const studentEmail = data.candidate_email || currentUser?.email || '';
       const nameParts = studentName.trim().split(/\s+/);
       const studentInitials = nameParts.length >= 2
         ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
         : studentName.slice(0, 2).toUpperCase();
-      const studentCode = currentUser?.student_code || currentUser?.mssv || (currentUser?.id ? `MA-${String(currentUser.id).padStart(4, '0')}` : 'MA-8392');
 
-      // Calculate letter grade & academic percentile
-      let letterGrade = 'F';
-      let gradeDescriptor = 'Không đạt';
-      let percentileText = 'Cần nỗ lực bổ sung kiến thức';
-      if (scorePct >= 8.5) {
-        letterGrade = 'A';
-        gradeDescriptor = 'Xuất sắc (Excellent)';
-        percentileText = 'Thuộc top 15% điểm cao nhất đợt khảo thí';
-      } else if (scorePct >= 7.0) {
-        letterGrade = 'B';
-        gradeDescriptor = 'Giỏi (Good)';
-        percentileText = 'Thuộc top 35% sinh viên có kết quả tốt';
-      } else if (scorePct >= 5.5) {
-        letterGrade = 'C';
-        gradeDescriptor = 'Khá (Fair)';
-        percentileText = 'Đạt yêu cầu chuẩn đầu ra môn học';
-      } else if (scorePct >= 4.0) {
-        letterGrade = 'D';
-        gradeDescriptor = 'Trung bình (Pass)';
-        percentileText = 'Đạt điểm tối thiểu qua môn';
-      }
+      const letterGrade = data.letter_grade || 'Chưa có dữ liệu';
+      const gradeDescriptor = data.grade_descriptor || 'Chưa có dữ liệu';
+      const percentileText = data.percentile_text || 'Chưa có dữ liệu';
 
       container.innerHTML = `
         <div class="space-y-6 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 animate-fade-in font-sans">
@@ -5135,7 +5200,7 @@ class StudentView {
           </header>
 
           <!-- Grade Revision Notice Banner (Mode B / Formal Exam) -->
-          ${isFormalExam ? `
+          ${data.appeal && ['PENDING', 'APPROVED', 'REJECTED'].includes(data.appeal.status) ? `
             <div class="bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
               <div class="flex items-center gap-3">
                 <span class="p-2 bg-primary text-white rounded-xl flex items-center justify-center shrink-0 shadow-xs">
@@ -5177,11 +5242,12 @@ class StudentView {
                         <span class="material-symbols-outlined text-[16px]">verified</span>
                       </span>
                     </div>
-                    <p class="text-xs text-slate-500 font-mono mt-0.5">MSSV: ${studentCode} • ${UI.escapeHtml(courseCode)}_L04</p>
-                    <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
-                      <span class="material-symbols-outlined text-[13px]">mail</span>
-                      <span class="truncate">${UI.escapeHtml(currentUser?.email || 'student@pwd301.edu.vn')}</span>
-                    </p>
+                    ${studentEmail ? `
+                      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 truncate">
+                        <span class="material-symbols-outlined text-[14px] text-slate-400 shrink-0">mail</span>
+                        <span class="truncate">${UI.escapeHtml(studentEmail)}</span>
+                      </p>
+                    ` : ''}
                   </div>
                 </div>
               </div>
@@ -5509,157 +5575,65 @@ class StudentView {
       // 1. Audit Drawer Handler (Review Detail Drawer)
       // 1. Audit Drawer Handler (Review Detail Drawer)
       const openAuditDrawer = async () => {
-        let appealData = null;
+        let appealData;
+        let historyData;
         try {
-          appealData = await ApiClient.getAttemptAppeal(attemptId);
-        } catch {
-          // Appeal not found or not yet submitted
+          [appealData, historyData] = await Promise.all([
+            ApiClient.getAttemptAppeal(attemptId),
+            ApiClient.getAttemptGradeHistory(attemptId),
+          ]);
+        } catch (error) {
+          UI.openDrawer({
+            side: 'right',
+            title: 'Không thể tải lịch sử kết quả',
+            width: 'max-w-xl',
+            bodyHtml: `
+              <div class="p-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                <p>Hệ thống chưa tải được dữ liệu phúc khảo và lịch sử điểm. Vui lòng thử lại.</p>
+                <p class="text-xs text-rose-600">${UI.escapeHtml(error?.message || 'Lỗi kết nối')}</p>
+                <button type="button" id="retry-audit-drawer-btn" class="px-4 py-2 rounded-xl bg-primary text-white font-semibold">Thử lại</button>
+              </div>
+            `,
+          });
+          const retryButton = document.getElementById('retry-audit-drawer-btn');
+          if (retryButton) retryButton.onclick = openAuditDrawer;
+          return;
         }
+
+        const appeal = appealData?.appeal;
+        const historyItems = [
+          ...(historyData?.overall_history || []).map(item => ({ ...item, scope: 'Tổng điểm' })),
+          ...(historyData?.question_history || []).map(item => ({ ...item, scope: 'Câu hỏi' })),
+        ].sort((left, right) => String(left.created_at || '').localeCompare(String(right.created_at || '')));
+        const appealHtml = appeal
+          ? `<div class="p-3 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-1">
+              <strong>Phúc khảo: ${UI.escapeHtml(appeal.status || 'PENDING')}</strong>
+              <div>Lý do: ${UI.escapeHtml(appeal.reason || 'Không có')}</div>
+              <div>Ghi chú: ${UI.escapeHtml(appeal.note || 'Không có')}</div>
+              <div class="text-xs text-slate-500">${UI.formatDateTime(appeal.created_at)}</div>
+            </div>`
+          : '<p class="text-sm text-slate-500">Chưa có đơn phúc khảo được lưu.</p>';
+        const historyHtml = historyItems.length
+          ? historyItems.map(item => `
+              <li class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
+                <div class="flex justify-between gap-3 font-semibold"><span>${UI.escapeHtml(item.scope)}</span><span class="text-xs text-slate-500">${UI.formatDateTime(item.created_at)}</span></div>
+                <div class="text-xs">${item.old_score ?? item.old_points ?? '—'} → ${item.new_score ?? item.new_points ?? '—'}</div>
+                <div class="text-xs text-slate-500">${UI.escapeHtml(item.reason || item.reason_code || 'Không có lý do')}</div>
+              </li>
+            `).join('')
+          : '<li class="text-sm text-slate-500">Chưa có bản ghi điều chỉnh điểm được lưu.</li>';
 
         UI.openDrawer({
           side: 'right',
-          title: 'Chi Tiết Phúc Khảo',
+          title: 'Chi tiết phúc khảo',
           width: 'max-w-xl',
-          headerBadge: `<span class="px-2 py-0.5 rounded-lg bg-indigo-50 text-primary dark:bg-indigo-950 dark:text-indigo-300 text-[11px] font-bold font-mono">#PK-${String(attemptId).slice(0, 4).toUpperCase()}</span>`,
-          bodyHtml: `
-            <div class="space-y-6 text-xs text-slate-700 dark:text-slate-300">
-              
-              <!-- Student Header in Drawer -->
-              <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
-                <div class="font-bold text-slate-900 dark:text-white text-sm">Học phần: ${UI.escapeHtml(courseCode)} — ${UI.escapeHtml(assessmentTitle)}</div>
-                <div class="text-slate-500">Thí sinh: <strong>${UI.escapeHtml(studentName)}</strong> (MSSV: ${studentCode})</div>
-                <div class="text-slate-400">Giảng viên phụ trách: ${UI.escapeHtml(instructorName)}</div>
-              </div>
-
-              <!-- Score Summary in Drawer -->
-              <div class="p-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 space-y-2">
-                <div class="font-bold text-primary text-xs uppercase tracking-wider">Tổng hợp điểm số khảo thí</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div>Tổng điểm: <strong class="text-primary font-mono text-sm">${totalScore} / ${maxPoints}đ</strong></div>
-                  <div>Điểm chuẩn đạt: <strong class="font-mono text-sm">${passingScore}đ</strong></div>
-                  <div>Đúng hoàn toàn: <strong class="text-emerald-600 font-mono">${correctCount} câu</strong></div>
-                  <div>Sai / Bỏ qua: <strong class="text-rose-600 font-mono">${wrongCount} câu</strong></div>
-                </div>
-              </div>
-
-              ${appealData && appealData.appeal ? `
-                <!-- Appeal Status Box -->
-                <div class="p-4 rounded-xl border ${appealData.appeal.status === 'APPROVED' ? 'border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/30' : appealData.appeal.status === 'REJECTED' ? 'border-rose-300 bg-rose-50/50 dark:bg-rose-950/30' : 'border-amber-300 bg-amber-50/50 dark:bg-amber-950/30'} space-y-2">
-                  <div class="flex items-center justify-between">
-                    <span class="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[16px]">gavel</span>
-                      <span>Đơn yêu cầu phúc khảo của thí sinh</span>
-                    </span>
-                    <span class="px-2 py-0.5 rounded text-[11px] font-bold ${appealData.appeal.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : appealData.appeal.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}">
-                      ${appealData.appeal.status === 'APPROVED' ? 'ĐÃ DUYỆT' : appealData.appeal.status === 'REJECTED' ? 'TỪ CHỐI' : 'CHỜ DUYỆT'}
-                    </span>
-                  </div>
-                  <div class="space-y-1 text-[11px]">
-                    <div><strong>Lý do:</strong> ${UI.escapeHtml(appealData.appeal.reason || 'Yêu cầu chấm lại')}</div>
-                    <div><strong>Ghi chú thí sinh:</strong> <span class="italic">${UI.escapeHtml(appealData.appeal.note || 'Không có')}</span></div>
-                    <div><strong>Thời gian gửi:</strong> ${UI.formatDateTime(appealData.appeal.created_at)}</div>
-                    ${appealData.appeal.reviewer_note ? `
-                      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-                        <strong>Kết luận hội đồng / Giảng viên:</strong> ${UI.escapeHtml(appealData.appeal.reviewer_note)}
-                      </div>
-                    ` : ''}
-                  </div>
-                </div>
-              ` : ''}
-
-              <!-- Immutable Revision Timeline -->
-              <div>
-                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-primary text-[16px]">history</span>
-                  <span>Lịch Sử Điều Chỉnh Điểm Bất Biến (Audit Trail)</span>
-                </h4>
-                <div class="space-y-3">
-                  <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 space-y-1.5">
-                    <div class="flex items-center justify-between font-bold">
-                      <span class="text-slate-800 dark:text-slate-200">#01 • Chấm sơ bộ tự động qua Server</span>
-                      <span class="font-mono text-slate-400 text-[11px]">${UI.formatDateTime(data.submitted_at)}</span>
-                    </div>
-                    <p class="text-slate-500 text-[11px]">Hệ thống ghi nhận câu trả lời và tính điểm tự động cho đợt thi.</p>
-                    <div class="flex items-center justify-between font-mono bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px]">
-                      <span>Điểm gốc: <strong>${Math.max(0, totalScore - 1.5).toFixed(1)} / ${maxPoints}</strong></span>
-                      <span class="text-slate-400 uppercase">GỐC</span>
-                    </div>
-                  </div>
-
-                  <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 space-y-1.5">
-                    <div class="flex items-center justify-between font-bold">
-                      <span class="text-slate-800 dark:text-slate-200">#02 • Tiếp nhận & Rà soát học bạ</span>
-                      <span class="font-mono text-slate-400 text-[11px]">Hội đồng Khảo thí</span>
-                    </div>
-                    <p class="text-slate-500 text-[11px]">Bộ môn kiểm tra tính toàn vẹn dữ liệu nộp bài và đối soát mã nguồn test suite.</p>
-                  </div>
-
-                  <div class="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-1.5">
-                    <div class="flex items-center justify-between font-bold text-emerald-800 dark:text-emerald-300">
-                      <span>#03 • Phê duyệt kết quả chính thức</span>
-                      <span class="font-mono text-[11px]">Trưởng bộ môn</span>
-                    </div>
-                    <p class="text-emerald-700/90 dark:text-emerald-400/90 text-[11px]">
-                      Điểm được công nhận chính thức: <strong class="font-mono">${totalScore} / ${maxPoints}đ</strong> (Hạng ${letterGrade}).
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ABET Rubric Criteria Table -->
-              <div class="space-y-2">
-                <div class="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-primary text-[16px]">rubric</span>
-                  <span>Tiêu chí đánh giá Rubric (ABET Standards)</span>
-                </div>
-                <div class="space-y-2">
-                  <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1">
-                    <div class="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
-                      <span>1. Kiến thức nền tảng & Cú pháp</span>
-                      <span class="text-primary font-mono">${(Math.round(scorePct * 0.4 * 10) / 10).toFixed(1)} / 4.0đ</span>
-                    </div>
-                    <p class="text-[11px] text-slate-400">Mức độ hiểu biết cú pháp, kiểu dữ liệu và mô hình lập trình.</p>
-                  </div>
-
-                  <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1">
-                    <div class="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
-                      <span>2. Tư duy giải thuật & Tối ưu</span>
-                      <span class="text-primary font-mono">${(Math.round(scorePct * 0.4 * 10) / 10).toFixed(1)} / 4.0đ</span>
-                    </div>
-                    <p class="text-[11px] text-slate-400">Năng lực phân tích độ phức tạp thuật toán và tổ chức dữ liệu hợp lý.</p>
-                  </div>
-
-                  <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1">
-                    <div class="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
-                      <span>3. An toàn thông tin & Kỷ luật mã nguồn</span>
-                      <span class="text-primary font-mono">${(Math.round(scorePct * 0.2 * 10) / 10).toFixed(1)} / 2.0đ</span>
-                    </div>
-                    <p class="text-[11px] text-slate-400">Tuân thủ các nguyên tắc an ninh, phòng tránh lỗ hổng bảo mật.</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Proctoring Audit Integrity Stamp -->
-              <div class="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-1">
-                <div class="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[16px]">verified_user</span>
-                  <span>Xác thực tính toàn vẹn phòng thi (Server UTC Lock)</span>
-                </div>
-                <p class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 leading-relaxed">
-                  Phiên khảo thí hoàn thành theo đúng quy chế thi trực tuyến PWD301. Khóa giám sát ghi nhận không có vi phạm chuyển tab quá giới hạn hoặc can thiệp đồng hồ client.
-                </p>
-              </div>
-
-            </div>
-          `,
-          footerHtml: `
-            <div class="flex justify-end w-full">
-              <button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-200" onclick="UI.closeDrawer()">
-                Đóng ngăn kéo
-              </button>
-            </div>
-          `
+          bodyHtml: `<div class="space-y-5 text-xs text-slate-700 dark:text-slate-300">
+            <section><h4 class="font-bold text-sm mb-2">Trạng thái phúc khảo</h4>${appealHtml}</section>
+            <section><h4 class="font-bold text-sm mb-2">Lịch sử điều chỉnh điểm đã lưu</h4><ol class="space-y-2">${historyHtml}</ol></section>
+          </div>`,
+          footerHtml: '<div class="flex justify-end w-full"><button type="button" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-semibold" onclick="UI.closeDrawer()">Đóng</button></div>',
         });
+        return;
       };
 
       const noticeBtn = document.getElementById('notice-audit-drawer-btn');
@@ -5689,8 +5663,8 @@ class StudentView {
             appealBtn.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-300');
           }
         }
-      } catch {
-        // No existing appeal
+      } catch (error) {
+        UI.showToast('Không thể tải trạng thái phúc khảo. Bạn có thể thử lại.', 'warning');
       }
 
       // Handle Appeal Button Click
@@ -5700,8 +5674,11 @@ class StudentView {
           let currentAppeal = null;
           try {
             currentAppeal = await ApiClient.getAttemptAppeal(attemptId);
-          } catch {
-            // Not found
+          } catch (error) {
+            if (error?.status !== 404) {
+              UI.showToast('Không thể kiểm tra trạng thái phúc khảo. Vui lòng thử lại.', 'error');
+              return;
+            }
           }
 
           if (currentAppeal && currentAppeal.appeal && currentAppeal.appeal.status === 'PENDING') {
@@ -5870,27 +5847,47 @@ class StudentView {
       });
 
     } catch (err) {
-      container.innerHTML = `<div class="p-8 text-center text-rose-500">Lỗi tải kết quả: ${UI.escapeHtml(err.message)}</div>`;
+      container.innerHTML = `
+        <div class="p-8 text-center space-y-3 text-rose-600">
+          <p class="text-sm font-semibold">Không thể tải kết quả bài thi.</p>
+          <p class="text-xs">${UI.escapeHtml(err.message || 'Lỗi hệ thống')}</p>
+          <div class="flex justify-center gap-2">
+            <button type="button" class="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold" onclick="window.history.back()">Quay lại</button>
+            <button type="button" id="retry-student-result-btn" class="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold">Thử lại</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('retry-student-result-btn')?.addEventListener(
+        'click',
+        () => StudentView.renderAttemptResults(container, attemptId),
+      );
     }
   }
 
   // =========================================================================
   // 8b. Student Assessments Master List View
   // =========================================================================
+  // 9. Assessments Suite: Assessment List Grouped by Course
+  // =========================================================================
   static async renderAssessmentsList(container) {
     container.innerHTML = `
-      <div class="p-6 space-y-6 max-w-6xl mx-auto animate-fade-in">
-        <div class="flex items-center justify-between">
+      <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto animate-fade-in font-sans">
+        <!-- Page Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h1 class="text-2xl font-extrabold text-slate-900 dark:text-white">Danh sách Bài thi & Khảo thí</h1>
-            <p class="text-sm text-slate-500 mt-0.5">Tất cả các bài kiểm tra trắc nghiệm, giữa kỳ và cuối kỳ trong các khóa học bạn tham gia.</p>
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-[26px]">quiz</span>
+              <h1 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Danh sách Bài thi & Khảo thí</h1>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Theo dõi, tham gia làm bài và đối chiếu điểm số các đợt khảo thí theo từng học phần bạn đang học.</p>
           </div>
+          <div id="student-assessments-stats" class="hidden sm:flex items-center gap-3"></div>
         </div>
 
-        <div id="student-assessments-grid" class="space-y-3">
-          <div class="text-center py-16 text-slate-400">
-            <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
-            <p class="text-sm">Đang tải danh sách bài thi...</p>
+        <div id="student-assessments-grid" class="space-y-6">
+          <div class="text-center py-20 text-slate-400">
+            <span class="inline-block animate-spin text-3xl mb-3">⏳</span>
+            <p class="text-sm font-medium">Đang tải danh sách bài thi và học phần...</p>
           </div>
         </div>
       </div>
@@ -5900,59 +5897,175 @@ class StudentView {
       const data = await ApiClient.getStudentAssessments();
       const items = data.assessments || data.items || [];
       const grid = document.getElementById('student-assessments-grid');
+      const statsBox = document.getElementById('student-assessments-stats');
 
       if (items.length === 0) {
         grid.innerHTML = `
-          <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm">
-            <span class="material-symbols-outlined text-4xl mb-2 text-slate-300">quiz</span>
-            <p class="font-bold text-slate-700 dark:text-slate-300">Không có bài thi nào</p>
-            <p class="text-xs text-slate-400 mt-1">Khi giảng viên mở đề thi trong các khóa học bạn ghi danh, bài thi sẽ hiển thị ở đây.</p>
+          <div class="p-16 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-slate-400 text-sm space-y-2">
+            <span class="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-600">assignment_turned_in</span>
+            <p class="font-bold text-base text-slate-700 dark:text-slate-300">Không có bài thi nào</p>
+            <p class="text-xs text-slate-400 max-w-md mx-auto">Hiện tại các học phần bạn tham gia chưa có đợt khảo thí đang mở. Khi giảng viên mở bài thi, bài sẽ hiển thị phân loại theo môn tại đây.</p>
           </div>
         `;
         return;
       }
 
-      grid.innerHTML = items.map(a => `
-        <div class="c-card c-card-hover p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono font-bold text-primary bg-primary-subtle px-2 py-0.5 rounded">${UI.escapeHtml(a.course_code || 'CRS')}</span>
-              ${UI.statusBadge(a.status || 'PUBLISHED')}
+      // Group assessments by course
+      const grouped = {};
+      let completedExamsCount = 0;
+
+      items.forEach(a => {
+        const cCode = a.course_code || 'CRS';
+        const cTitle = a.course_title || `Học phần ${cCode}`;
+        const key = a.course_id ? String(a.course_id) : cCode;
+        if (!grouped[key]) {
+          grouped[key] = {
+            course_id: a.course_id || '',
+            course_code: cCode,
+            course_title: cTitle,
+            assessments: []
+          };
+        }
+        grouped[key].assessments.push(a);
+        if (a.is_attempt_limit_reached || a.attempts_count > 0) {
+          completedExamsCount++;
+        }
+      });
+
+      const courseGroups = Object.values(grouped);
+
+      // Render top overview stats badges
+      if (statsBox) {
+        statsBox.innerHTML = `
+          <div class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+            <span class="material-symbols-outlined text-[16px] text-primary">school</span>
+            <span><strong>${courseGroups.length}</strong> học phần</span>
+          </div>
+          <div class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700">
+            <span class="material-symbols-outlined text-[16px] text-emerald-600">fact_check</span>
+            <span><strong>${completedExamsCount}</strong>/${items.length} bài đã nộp</span>
+          </div>
+        `;
+      }
+
+      // Render Course-Grouped Sections
+      grid.innerHTML = courseGroups.map(group => `
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden space-y-0">
+
+          <!-- Course Section Header -->
+          <div class="px-5 py-4 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <span class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-primary flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[20px]">menu_book</span>
+              </span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono font-bold text-xs px-2.5 py-0.5 rounded-md bg-primary-subtle text-primary border border-primary/20">
+                    ${UI.escapeHtml(group.course_code)}
+                  </span>
+                  <h2 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                    ${UI.escapeHtml(group.course_title)}
+                  </h2>
+                </div>
+              </div>
             </div>
-            <h3 class="font-bold text-base text-slate-900 dark:text-white">${UI.escapeHtml(a.title)}</h3>
-            <div class="flex items-center gap-3 text-xs text-slate-500">
-              <span>Thời lượng: <strong>${a.time_limit_minutes || 45} phút</strong></span>
-              <span>•</span>
-              <span>Điểm tối đa: <strong>${a.max_points || 10}đ</strong></span>
+
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-semibold text-slate-500 bg-white dark:bg-slate-900 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                ${group.assessments.length} bài kiểm tra
+              </span>
+              ${group.course_id ? `
+                <a href="#/student/courses/detail?id=${group.course_id}" class="text-xs font-bold text-primary hover:underline flex items-center gap-0.5" title="Đến trang học phần">
+                  <span>Vào môn</span>
+                  <span class="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </a>
+              ` : ''}
             </div>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            ${a.is_attempt_limit_reached ? `
-              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1">
-                <span class="material-symbols-outlined text-[16px]">fact_check</span>
-                <span>Xem kết quả chính thức</span>
-              </a>
-            ` : (a.attempts_count > 0 ? `
-              <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1" title="Xem kết quả chính thức">
-                <span class="material-symbols-outlined text-[15px]">fact_check</span>
-                <span>Xem kết quả</span>
-              </a>
-              <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
-                <span class="material-symbols-outlined text-[15px]">play_arrow</span>
-                <span>Làm bài thi</span>
-              </a>
-            ` : `
-              <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1">
-                <span class="material-symbols-outlined text-[16px]">lock_open</span>
-                <span>Vào phòng chờ</span>
-              </a>
-            `)}
+
+          <!-- Assessment Cards in Course -->
+          <div class="divide-y divide-slate-100 dark:divide-slate-800">
+            ${group.assessments.map(a => {
+              const assessType = (a.assessment_type || a.type || 'QUIZ').toUpperCase();
+              let typeLabel = 'Trắc nghiệm củng cố';
+              let typeClass = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+              if (assessType === 'MIDTERM') {
+                typeLabel = 'Khảo thí Giữa kỳ';
+                typeClass = 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800';
+              } else if (assessType === 'FINAL_EXAM') {
+                typeLabel = 'Khảo thí Cuối kỳ';
+                typeClass = 'bg-purple-50 text-purple-800 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800';
+              }
+
+              return `
+                <div class="p-5 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div class="space-y-1.5 min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-[11px] font-bold px-2 py-0.5 rounded-md ${typeClass}">
+                        ${typeLabel}
+                      </span>
+                      ${UI.statusBadge(a.status || 'PUBLISHED')}
+                      ${a.attempts_count > 0 ? `
+                        <span class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                          <span class="material-symbols-outlined text-[13px]">done</span>
+                          <span>Đã làm (${a.attempts_count} lượt)</span>
+                        </span>
+                      ` : ''}
+                    </div>
+
+                    <h3 class="font-bold text-sm sm:text-base text-slate-900 dark:text-white leading-snug">
+                      ${UI.escapeHtml(a.title)}
+                    </h3>
+
+                    <div class="flex items-center gap-3 text-xs text-slate-500 pt-0.5 flex-wrap">
+                      <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[15px] text-slate-400">timer</span>
+                        <span>Thời lượng: <strong>${a.time_limit_minutes || 45} phút</strong></span>
+                      </span>
+                      <span>•</span>
+                      <span class="flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[15px] text-slate-400">grade</span>
+                        <span>Điểm tối đa: <strong>${a.max_points || 10}đ</strong></span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
+                    ${a.is_attempt_limit_reached ? `
+                      <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1.5 font-bold shadow-2xs">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-600">fact_check</span>
+                        <span>Xem kết quả chính thức</span>
+                      </a>
+                    ` : (a.attempts_count > 0 ? `
+                      <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1 font-bold" title="Xem kết quả bài làm trước">
+                        <span class="material-symbols-outlined text-[15px]">fact_check</span>
+                        <span>Xem kết quả</span>
+                      </a>
+                      <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1.5 font-bold shadow-2xs">
+                        <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+                        <span>Làm bài tiếp</span>
+                      </a>
+                    ` : `
+                      <a href="#/student/assessments/waiting-room?id=${a.assessment_id || a.id}" class="c-btn c-btn-primary c-btn-sm flex items-center gap-1.5 font-bold shadow-2xs">
+                        <span class="material-symbols-outlined text-[16px]">lock_open</span>
+                        <span>Vào phòng chờ</span>
+                      </a>
+                    `)}
+                  </div>
+                </div>
+              `;
+            }).join('')}
           </div>
+
         </div>
       `).join('');
+
     } catch (err) {
       document.getElementById('student-assessments-grid').innerHTML = `
-        <div class="p-8 text-center text-rose-500">Lỗi nạp bài khảo thí: ${UI.escapeHtml(err.message)}</div>
+        <div class="p-8 text-center text-rose-500 bg-rose-50 dark:bg-rose-950/20 rounded-2xl border border-rose-200 dark:border-rose-900">
+          Lỗi nạp bài khảo thí: ${UI.escapeHtml(err.message)}
+        </div>
       `;
     }
   }
@@ -6882,8 +6995,8 @@ class StudentView {
                   </label>
                   <div class="relative">
                     <input type="password" id="settings-curr-password" required placeholder="Nhập mật khẩu đang sử dụng..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
-                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-curr-password">
-                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 z-10 cursor-pointer text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 flex items-center justify-center transition-colors" data-target="settings-curr-password" aria-label="Hiện/ẩn mật khẩu">
+                      <span class="material-symbols-outlined text-[18px] pointer-events-none select-none">visibility</span>
                     </button>
                   </div>
                 </div>
@@ -6894,8 +7007,8 @@ class StudentView {
                   </label>
                   <div class="relative">
                     <input type="password" id="settings-new-password" required minlength="8" placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
-                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-new-password">
-                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 z-10 cursor-pointer text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 flex items-center justify-center transition-colors" data-target="settings-new-password" aria-label="Hiện/ẩn mật khẩu">
+                      <span class="material-symbols-outlined text-[18px] pointer-events-none select-none">visibility</span>
                     </button>
                   </div>
 
@@ -6926,8 +7039,8 @@ class StudentView {
                   </label>
                   <div class="relative">
                     <input type="password" id="settings-conf-password" required minlength="8" placeholder="Nhập lại mật khẩu mới..." class="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-primary transition-colors" />
-                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" data-target="settings-conf-password">
-                      <span class="material-symbols-outlined text-[18px]">visibility</span>
+                    <button type="button" class="toggle-pwd-visibility absolute right-3 top-2.5 z-10 cursor-pointer text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 flex items-center justify-center transition-colors" data-target="settings-conf-password" aria-label="Hiện/ẩn mật khẩu">
+                      <span class="material-symbols-outlined text-[18px] pointer-events-none select-none">visibility</span>
                     </button>
                   </div>
                   <div id="pwd-match-feedback" class="text-[11px] font-bold mt-1 text-slate-400"></div>
@@ -7100,24 +7213,35 @@ class StudentView {
           }
 
           try {
-            const res = await ApiClient.updateProfile({
+            const updatePayload = {
               display_name: newName
-            });
+            };
+            const targetAvatarUrl = generatedAvatarUrl || currentAvatarUrl;
+            if (targetAvatarUrl) {
+              updatePayload.avatar_url = targetAvatarUrl;
+            }
+            const res = await ApiClient.updateProfile(updatePayload);
             const avatarStored = !generatedAvatarUrl
               || StudentView.storeRandomAvatarUrl(profileIdentity, generatedAvatarUrl);
 
             UI.showToast(
               avatarStored
                 ? 'Cập nhật thông tin hồ sơ cá nhân thành công!'
-                : 'Đã lưu tên hiển thị, nhưng trình duyệt không lưu được avatar ngẫu nhiên.',
-              avatarStored ? 'success' : 'warning'
+                : 'Đã lưu thông tin hồ sơ cá nhân thành công!',
+              'success'
             );
+            const updatedProfile = res?.profile || res?.user || {};
+            const resolvedAvatar = updatedProfile.avatar_url || targetAvatarUrl;
             if (window.app && window.app.currentUser) {
               window.app.currentUser.display_name = newName;
+              if (resolvedAvatar) {
+                window.app.currentUser.avatar_url = resolvedAvatar;
+              }
             }
             try {
               const cached = JSON.parse(localStorage.getItem('pwd301_user') || '{}');
               cached.display_name = newName;
+              if (resolvedAvatar) cached.avatar_url = resolvedAvatar;
               localStorage.setItem('pwd301_user', JSON.stringify(cached));
             } catch (_) {}
 
@@ -7143,19 +7267,20 @@ class StudentView {
 
       // 4. Password Toggle & Validation
       container.querySelectorAll('.toggle-pwd-visibility').forEach(btn => {
-        btn.onclick = () => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
           const targetId = btn.dataset.target;
-          const input = container.querySelector('#' + targetId);
+          const input = document.getElementById(targetId) || container.querySelector('#' + targetId);
           if (input) {
-            if (input.type === 'password') {
-              input.type = 'text';
-              btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility_off</span>';
-            } else {
-              input.type = 'password';
-              btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility</span>';
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            const icon = btn.querySelector('.material-symbols-outlined');
+            if (icon) {
+              icon.textContent = isPassword ? 'visibility_off' : 'visibility';
             }
           }
-        };
+        });
       });
 
       const newPwdInput = container.querySelector('#settings-new-password');

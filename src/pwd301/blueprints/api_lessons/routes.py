@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from flask import Response, jsonify, request
@@ -51,6 +53,16 @@ def _serialize_lesson(les: Lesson, include_content: bool = True) -> dict[str, An
     }
     if include_content:
         data["markdown_content"] = les.markdown_content
+        m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", les.markdown_content or "", re.DOTALL)
+        if m:
+            try:
+                parsed_q = json.loads(m.group(1))
+                if isinstance(parsed_q, list):
+                    data["quiz"] = parsed_q
+            except Exception:
+                data["quiz"] = []
+        else:
+            data["quiz"] = []
     return data
 
 
@@ -77,8 +89,16 @@ def get_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     actor = get_authenticated_actor()
     lesson = get_lesson_detail(actor, lesson_id)
     data = _serialize_lesson(lesson)
-    if actor and (actor.is_admin or (actor.has_role("INSTRUCTOR") and lesson.course and lesson.course.owner_instructor_id == actor.id)):
+    if actor and (
+        actor.is_admin
+        or (
+            actor.has_role("INSTRUCTOR")
+            and lesson.course
+            and lesson.course.owner_instructor_id == actor.id
+        )
+    ):
         from pwd301.services.lesson_service import get_lesson_detail_with_draft
+
         _, working_draft = get_lesson_detail_with_draft(actor, lesson_id, session=db.session)
         data["working_draft"] = working_draft
     return jsonify(data), 200
@@ -285,6 +305,27 @@ def update_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
         and original.status != "DRAFT"
         and original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
     ):
+        # Check if proposed changes are completely identical to original lesson
+        proposed_title = payload.get("title")
+        proposed_summary = payload.get("summary")
+        proposed_content = payload.get("markdown_content")
+        proposed_duration = payload.get("estimated_duration_minutes")
+
+        is_identical = (
+            (proposed_title is None or proposed_title == original.title)
+            and (proposed_summary is None or proposed_summary == original.summary)
+            and (proposed_content is None or proposed_content == original.markdown_content)
+            and (proposed_duration is None or proposed_duration == original.estimated_duration_minutes)
+        )
+        if is_identical:
+            return jsonify(
+                {
+                    "message": "Bài giảng không có thay đổi so với bản hiện hành, hệ thống tự động bỏ qua.",
+                    "auto_skipped": True,
+                    "lesson": _serialize_lesson(original),
+                }
+            ), 200
+
         review = queue_lesson_review(actor, original.course, original, "LESSON_CONTENT", payload)
         return jsonify(
             {
@@ -308,9 +349,13 @@ def trash_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
     payload = request.get_json(silent=True) or {}
     reason = payload.get("reason")
     original = get_lesson_detail(actor, lesson_id)
-    if not actor.is_admin and original.status != "DRAFT" and (
-        original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
-        or original.status == "PUBLISHED"
+    if (
+        not actor.is_admin
+        and original.status != "DRAFT"
+        and (
+            original.course.status in ("APPROVED", "PUBLISHED", "ARCHIVED")
+            or original.status == "PUBLISHED"
+        )
     ):
         review = queue_lesson_review(
             actor,
@@ -378,6 +423,7 @@ def discard_lesson_draft_api(lesson_id: str) -> tuple[Response, int] | Response:
     """Discard an active working draft for a lesson."""
     actor = require_authenticated_actor()
     from pwd301.services.lesson_service import discard_lesson_working_draft
+
     discarded = discard_lesson_working_draft(actor, lesson_id, session=db.session)
     return jsonify({"success": True, "discarded": discarded}), 200
 
@@ -389,9 +435,12 @@ def opt_in_lesson_revision_api(lesson_id: str) -> tuple[Response, int] | Respons
     """Student opts in to the latest published lesson revision."""
     actor = require_authenticated_actor()
     from pwd301.services.lesson_service import opt_in_newer_lesson_revision
+
     latest_lesson, progress = opt_in_newer_lesson_revision(actor, lesson_id, session=db.session)
-    return jsonify({
-        "success": True,
-        "lesson": _serialize_lesson(latest_lesson),
-        "progress": _serialize_progress(progress),
-    }), 200
+    return jsonify(
+        {
+            "success": True,
+            "lesson": _serialize_lesson(latest_lesson),
+            "progress": _serialize_progress(progress),
+        }
+    ), 200

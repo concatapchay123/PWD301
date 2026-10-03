@@ -128,9 +128,7 @@ def test_real_gemini_client_rotates_on_401_unauthorized() -> None:
         # Good key succeeds
         mock_resp = unittest.mock.MagicMock()
         payload = {
-            "candidates": [
-                {"content": {"parts": [{"text": "Hello from resilient key fallback!"}]}}
-            ]
+            "candidates": [{"content": {"parts": [{"text": "Hello from resilient key fallback!"}]}}]
         }
         mock_resp.read.return_value = json.dumps(payload).encode("utf-8")
         mock_resp.__enter__.return_value = mock_resp

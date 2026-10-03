@@ -1,4 +1,3 @@
-import json
 import uuid
 
 import pytest
@@ -6,7 +5,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CourseChangeRequest, LearningUnit, Lesson
+from pwd301.models.course import Course, LearningUnit, Lesson
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
 from pwd301.services.lesson_service import (
@@ -96,7 +95,9 @@ def test_admin_approve_learning_unit_creation_on_published_course(
         .filter(LearningUnit.course_id == course.id, LearningUnit.title == "Chương mới qua duyệt")
         .first()
     )
-    assert created_unit is not None, "LearningUnit was NOT created in DB! (Shadowed branch bug BE-01)"
+    assert created_unit is not None, (
+        "LearningUnit was NOT created in DB! (Shadowed branch bug BE-01)"
+    )
 
 
 def test_admin_approve_learning_unit_reordering_on_published_course(
@@ -144,9 +145,7 @@ def test_admin_approve_learning_unit_reordering_on_published_course(
     assert refreshed_u1.position == 2
 
 
-def test_create_lesson_ignores_historical_lessons_for_unit_limit(
-    app: Flask, instructor_user: User
-):
+def test_create_lesson_ignores_historical_lessons_for_unit_limit(app: Flask, instructor_user: User):
     """BE-02: 10 lessons per unit limit must NOT count HISTORICAL lessons."""
     sess = db.session
     course = Course(
@@ -162,14 +161,20 @@ def test_create_lesson_ignores_historical_lessons_for_unit_limit(
     sess.add(course)
     sess.commit()
 
-    unit = create_learning_unit(instructor_user, course.id, {"title": "Unit With Revisions"}, session=sess)
+    unit = create_learning_unit(
+        instructor_user, course.id, {"title": "Unit With Revisions"}, session=sess
+    )
     sess.commit()
 
     # Create 1 active lesson
     lesson = create_lesson(
         actor=instructor_user,
         course_id=course.id,
-        data={"title": "Active Lesson", "markdown_content": "# Active", "learning_unit_id": str(unit.public_id)},
+        data={
+            "title": "Active Lesson",
+            "markdown_content": "# Active",
+            "learning_unit_id": str(unit.public_id),
+        },
         session=sess,
     )
     sess.commit()
@@ -194,16 +199,18 @@ def test_create_lesson_ignores_historical_lessons_for_unit_limit(
     new_lesson = create_lesson(
         actor=instructor_user,
         course_id=course.id,
-        data={"title": "Second Active Lesson", "markdown_content": "# Active 2", "learning_unit_id": str(unit.public_id)},
+        data={
+            "title": "Second Active Lesson",
+            "markdown_content": "# Active 2",
+            "learning_unit_id": str(unit.public_id),
+        },
         session=sess,
     )
     assert new_lesson is not None
     assert new_lesson.title == "Second Active Lesson"
 
 
-def test_validate_media_limits_ignores_historical_videos(
-    app: Flask, instructor_user: User
-):
+def test_validate_media_limits_ignores_historical_videos(app: Flask, instructor_user: User):
     """BE-03: 7 videos per unit limit must NOT count videos in HISTORICAL lessons."""
     sess = db.session
     course = Course(
@@ -246,9 +253,7 @@ def test_validate_media_limits_ignores_historical_videos(
     )
 
 
-def test_create_lesson_max_position_ignores_historical_and_trash(
-    app: Flask, instructor_user: User
-):
+def test_create_lesson_max_position_ignores_historical_and_trash(app: Flask, instructor_user: User):
     """BE-04: max_position should only count active lessons, not HISTORICAL or TRASH."""
     sess = db.session
     course = Course(
@@ -270,7 +275,11 @@ def test_create_lesson_max_position_ignores_historical_and_trash(
     l1 = create_lesson(
         actor=instructor_user,
         course_id=course.id,
-        data={"title": "Lesson 1", "markdown_content": "# L1", "learning_unit_id": str(unit.public_id)},
+        data={
+            "title": "Lesson 1",
+            "markdown_content": "# L1",
+            "learning_unit_id": str(unit.public_id),
+        },
         session=sess,
     )
     sess.commit()
@@ -293,15 +302,17 @@ def test_create_lesson_max_position_ignores_historical_and_trash(
     l2 = create_lesson(
         actor=instructor_user,
         course_id=course.id,
-        data={"title": "Lesson 2", "markdown_content": "# L2", "learning_unit_id": str(unit.public_id)},
+        data={
+            "title": "Lesson 2",
+            "markdown_content": "# L2",
+            "learning_unit_id": str(unit.public_id),
+        },
         session=sess,
     )
     assert l2.position == 2
 
 
-def test_trash_lesson_recompact_preserves_historical_records(
-    app: Flask, instructor_user: User
-):
+def test_trash_lesson_recompact_preserves_historical_records(app: Flask, instructor_user: User):
     """BE-05: trash_lesson recompact must not alter position of HISTORICAL lessons."""
     sess = db.session
     course = Course(
@@ -320,9 +331,24 @@ def test_trash_lesson_recompact_preserves_historical_records(
     unit = create_learning_unit(instructor_user, course.id, {"title": "Unit BE05"}, session=sess)
     sess.commit()
 
-    l1 = create_lesson(actor=instructor_user, course_id=course.id, data={"title": "L1", "markdown_content": "# L1", "learning_unit_id": str(unit.public_id)}, session=sess)
-    l2 = create_lesson(actor=instructor_user, course_id=course.id, data={"title": "L2", "markdown_content": "# L2", "learning_unit_id": str(unit.public_id)}, session=sess)
-    l3 = create_lesson(actor=instructor_user, course_id=course.id, data={"title": "L3", "markdown_content": "# L3", "learning_unit_id": str(unit.public_id)}, session=sess)
+    l1 = create_lesson(
+        actor=instructor_user,
+        course_id=course.id,
+        data={"title": "L1", "markdown_content": "# L1", "learning_unit_id": str(unit.public_id)},
+        session=sess,
+    )
+    l2 = create_lesson(
+        actor=instructor_user,
+        course_id=course.id,
+        data={"title": "L2", "markdown_content": "# L2", "learning_unit_id": str(unit.public_id)},
+        session=sess,
+    )
+    l3 = create_lesson(
+        actor=instructor_user,
+        course_id=course.id,
+        data={"title": "L3", "markdown_content": "# L3", "learning_unit_id": str(unit.public_id)},
+        session=sess,
+    )
 
     hist = Lesson(
         course_id=course.id,
@@ -348,12 +374,12 @@ def test_trash_lesson_recompact_preserves_historical_records(
 
     assert refreshed_l1.position == 1
     assert refreshed_l3.position == 2
-    assert refreshed_hist.position == 999, "HISTORICAL lesson position was altered during recompact! (BE-05)"
+    assert refreshed_hist.position == 999, (
+        "HISTORICAL lesson position was altered during recompact! (BE-05)"
+    )
 
 
-def test_create_lesson_title_fallback_in_route(
-    client: FlaskClient, instructor_user: User
-):
+def test_create_lesson_title_fallback_in_route(client: FlaskClient, instructor_user: User):
     """BE-08: create_lesson route should supply fallback title if title is missing."""
     sess = db.session
     course = Course(
@@ -377,14 +403,14 @@ def test_create_lesson_title_fallback_in_route(
         f"/instructor/courses/{course.id}/lessons",
         json={"learning_unit_id": str(unit.public_id), "markdown_content": "# Blank Title Test"},
     )
-    assert res.status_code == 201, f"Expected 201 with fallback title, got {res.status_code}: {res.get_data(as_text=True)}"
+    assert res.status_code == 201, (
+        f"Expected 201 with fallback title, got {res.status_code}: {res.get_data(as_text=True)}"
+    )
     data = res.get_json()
     assert data["title"] == "Bài giảng mới"
 
 
-def test_create_lesson_handles_blank_or_undefined_unit_id(
-    app: Flask, instructor_user: User
-):
+def test_create_lesson_handles_blank_or_undefined_unit_id(app: Flask, instructor_user: User):
     """BE-07: create_lesson should gracefully handle undefined or blank learning_unit_id."""
     sess = db.session
     course = Course(
@@ -404,7 +430,11 @@ def test_create_lesson_handles_blank_or_undefined_unit_id(
     l1 = create_lesson(
         actor=instructor_user,
         course_id=course.id,
-        data={"title": "Test Undefined Unit", "markdown_content": "# Undefined Unit", "learning_unit_id": "undefined"},
+        data={
+            "title": "Test Undefined Unit",
+            "markdown_content": "# Undefined Unit",
+            "learning_unit_id": "undefined",
+        },
         session=sess,
     )
     assert l1 is not None

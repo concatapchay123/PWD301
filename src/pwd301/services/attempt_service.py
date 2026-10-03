@@ -22,14 +22,15 @@ import secrets
 import time
 import unicodedata
 import uuid
-from datetime import datetime, timedelta
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy import func
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
-from sqlalchemy.orm import Session, joinedload, scoped_session
+from sqlalchemy.orm import Session, joinedload, scoped_session, selectinload
 
 from pwd301.extensions import db
 from pwd301.models.assessment import (
@@ -50,7 +51,7 @@ from pwd301.models.attempt_regrade import (
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
-from pwd301.models.course import Enrollment, EnrollmentPeriod
+from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
 from pwd301.models.file_import import QuestionRevisionResource
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -59,7 +60,7 @@ from pwd301.models.question_bank import (
     QuestionRevision,
     QuestionRevisionChoice,
 )
-from pwd301.models.types import utc_now
+from pwd301.models.types import normalize_row_version, utc_now
 from pwd301.services.assessment_service import _normalize_dt, _resolve_assessment
 from pwd301.services.authorization_service import (
     _resolve_attempt,
@@ -79,15 +80,26 @@ from pwd301.services.exceptions import (
     AttemptNotFoundError,
     AttemptNotSubmittedError,
     AttemptValidationError,
+    ConflictError,
     ForbiddenError,
     MaxPointsExceededError,
     ScoreReleasePolicyError,
     StaleAnswerSequenceError,
     StaleLeaseEpochError,
     SubmissionIdempotencyConflictError,
+    ValidationError,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _isoformat_utc(value: datetime | None) -> str | None:
+    """Serialize a database timestamp with an explicit UTC designator."""
+    if value is None:
+        return None
+    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return normalized.isoformat().replace("+00:00", "Z")
+
 
 # ============================================================================
 # AUDIT & LEASE HELPERS
@@ -174,20 +186,16 @@ def get_instructor_attempt_focus_events(
         {
             "event_id": str(event.public_id),
             "event_type": event.event_type,
-            "started_at": event.started_at.isoformat(),
-            "ended_at": event.ended_at.isoformat() if event.ended_at else None,
-            "duration_seconds": max(
-                0, round((event.ended_at - event.started_at).total_seconds())
-            )
+            "started_at": _isoformat_utc(event.started_at),
+            "ended_at": _isoformat_utc(event.ended_at),
+            "duration_seconds": max(0, round((event.ended_at - event.started_at).total_seconds()))
             if event.ended_at
             else None,
         }
         for event in events
     ]
     total_away_seconds = sum(
-        e["duration_seconds"] or 0
-        for e in events_data
-        if e["duration_seconds"] is not None
+        e["duration_seconds"] or 0 for e in events_data if e["duration_seconds"] is not None
     )
     return {
         "attempt_id": str(attempt.public_id),
@@ -362,18 +370,16 @@ def _serialize_attempt(attempt: AssessmentAttempt) -> dict[str, Any]:
         "assessment_id": assessment_pub_id,
         "attempt_number": attempt.attempt_number,
         "status": attempt.status,
-        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
-        "deadline_at": attempt.deadline_at.isoformat() if attempt.deadline_at else None,
-        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-        "finalized_at": attempt.finalized_at.isoformat() if attempt.finalized_at else None,
-        "graded_at": attempt.graded_at.isoformat() if attempt.graded_at else None,
-        "lease_expires_at": (
-            attempt.lease_expires_at.isoformat() if attempt.lease_expires_at else None
-        ),
+        "started_at": _isoformat_utc(attempt.started_at),
+        "deadline_at": _isoformat_utc(attempt.deadline_at),
+        "submitted_at": _isoformat_utc(attempt.submitted_at),
+        "finalized_at": _isoformat_utc(attempt.finalized_at),
+        "graded_at": _isoformat_utc(attempt.graded_at),
+        "lease_expires_at": (_isoformat_utc(attempt.lease_expires_at)),
         "lease_epoch": attempt.lease_epoch or 1,
         "is_detail_purged": bool(attempt.is_detail_purged),
-        "created_at": attempt.created_at.isoformat() if attempt.created_at else None,
-        "updated_at": attempt.updated_at.isoformat() if attempt.updated_at else None,
+        "created_at": _isoformat_utc(attempt.created_at),
+        "updated_at": _isoformat_utc(attempt.updated_at),
     }
 
 
@@ -963,9 +969,9 @@ def get_attempt_delivery(
         ),
         "attempt_number": attempt.attempt_number,
         "status": attempt.status,
-        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
-        "deadline_at": attempt.deadline_at.isoformat() if attempt.deadline_at else None,
-        "server_time": now.isoformat(),
+        "started_at": _isoformat_utc(attempt.started_at),
+        "deadline_at": _isoformat_utc(attempt.deadline_at),
+        "server_time": _isoformat_utc(now),
         "remaining_seconds": remaining_seconds,
         "total_questions": len(questions_data),
         "total_points": float(total_points),
@@ -1117,10 +1123,10 @@ def renew_attempt_lease(
     return {
         "attempt_id": str(attempt.public_id),
         "status": attempt.status,
-        "lease_expires_at": attempt.lease_expires_at.isoformat(),
+        "lease_expires_at": _isoformat_utc(attempt.lease_expires_at),
         "remaining_seconds": remaining_seconds,
         "lease_epoch": attempt.lease_epoch or 1,
-        "server_time": now.isoformat(),
+        "server_time": _isoformat_utc(now),
     }
 
 
@@ -1479,9 +1485,9 @@ def save_attempt_answer(
                     answer_record.last_client_sequence if answer_record else client_seq
                 ),
                 "saved_at": (
-                    answer_record.saved_at.isoformat()
+                    _isoformat_utc(answer_record.saved_at)
                     if answer_record and answer_record.saved_at
-                    else now.isoformat()
+                    else _isoformat_utc(now)
                 ),
                 "lease_epoch": attempt.lease_epoch or 1,
             }
@@ -1497,7 +1503,9 @@ def save_attempt_answer(
             "answer_version": answer_record.answer_version or 1,
             "last_client_sequence": answer_record.last_client_sequence or client_seq,
             "saved_at": (
-                answer_record.saved_at.isoformat() if answer_record.saved_at else now.isoformat()
+                _isoformat_utc(answer_record.saved_at)
+                if answer_record.saved_at
+                else _isoformat_utc(now)
             ),
             "lease_epoch": attempt.lease_epoch or 1,
         }
@@ -1637,7 +1645,9 @@ def save_attempt_answer(
         "answer_version": answer_record.answer_version,
         "last_client_sequence": answer_record.last_client_sequence,
         "saved_at": (
-            answer_record.saved_at.isoformat() if answer_record.saved_at else now.isoformat()
+            _isoformat_utc(answer_record.saved_at)
+            if answer_record.saved_at
+            else _isoformat_utc(now)
         ),
         "lease_epoch": attempt.lease_epoch or 1,
     }
@@ -1947,12 +1957,8 @@ def submit_assessment_attempt(
                 "attempt_id": str(attempt.public_id),
                 "status": attempt.status,
                 "attempt_number": attempt.attempt_number,
-                "submitted_at": (
-                    attempt.submitted_at.isoformat() if attempt.submitted_at else None
-                ),
-                "finalized_at": (
-                    attempt.finalized_at.isoformat() if attempt.finalized_at else None
-                ),
+                "submitted_at": (_isoformat_utc(attempt.submitted_at)),
+                "finalized_at": (_isoformat_utc(attempt.finalized_at)),
                 "submission_idempotency_key": str(attempt.submission_idempotency_key),
                 "is_idempotent_replay": True,
                 "message": "Assessment attempt already submitted (idempotent replay).",
@@ -2050,12 +2056,8 @@ def submit_assessment_attempt(
                     "attempt_id": str(reloaded.public_id),
                     "status": reloaded.status,
                     "attempt_number": reloaded.attempt_number,
-                    "submitted_at": (
-                        reloaded.submitted_at.isoformat() if reloaded.submitted_at else None
-                    ),
-                    "finalized_at": (
-                        reloaded.finalized_at.isoformat() if reloaded.finalized_at else None
-                    ),
+                    "submitted_at": (_isoformat_utc(reloaded.submitted_at)),
+                    "finalized_at": (_isoformat_utc(reloaded.finalized_at)),
                     "submission_idempotency_key": str(reloaded.submission_idempotency_key),
                     "is_idempotent_replay": True,
                     "message": "Assessment attempt already submitted (idempotent replay).",
@@ -2109,8 +2111,8 @@ def submit_assessment_attempt(
         "attempt_id": str(attempt.public_id),
         "status": attempt.status,
         "attempt_number": attempt.attempt_number,
-        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-        "finalized_at": attempt.finalized_at.isoformat() if attempt.finalized_at else None,
+        "submitted_at": _isoformat_utc(attempt.submitted_at),
+        "finalized_at": _isoformat_utc(attempt.finalized_at),
         "submission_idempotency_key": str(attempt.submission_idempotency_key),
         "is_idempotent_replay": False,
         "raw_score": raw_sc,
@@ -2137,7 +2139,7 @@ def _serialize_attempt_grade(grade: AttemptQuestionGrade, aq: AttemptQuestion) -
         "awarded_points": float(grade.awarded_points),
         "grading_status": grade.grading_status,
         "grading_rule": grade.grading_rule,
-        "graded_at": grade.graded_at.isoformat() if grade.graded_at else None,
+        "graded_at": _isoformat_utc(grade.graded_at),
         "manual_reason": grade.manual_reason,
     }
 
@@ -2155,9 +2157,9 @@ def _serialize_assessment_result(
         "percent_score": float(result.percent_score) if result.percent_score is not None else None,
         "passed": result.passed,
         "status": result.status,
-        "released_at": result.released_at.isoformat() if result.released_at else None,
-        "graded_at": result.graded_at.isoformat() if result.graded_at else None,
-        "updated_at": result.updated_at.isoformat() if result.updated_at else None,
+        "released_at": _isoformat_utc(result.released_at),
+        "graded_at": _isoformat_utc(result.graded_at),
+        "updated_at": _isoformat_utc(result.updated_at),
     }
 
 
@@ -2302,9 +2304,7 @@ def calculate_attempt_result(
         asm_title = attempt.assessment.title if attempt.assessment else "Khảo thí"
         asm_pub_id = str(attempt.assessment.public_id) if attempt.assessment else ""
         action_url = (
-            f"#/student/assessments/{asm_pub_id}/results"
-            if asm_pub_id
-            else "#/student/assessments"
+            f"#/student/assessments/{asm_pub_id}/results" if asm_pub_id else "#/student/assessments"
         )
 
         try:
@@ -2563,6 +2563,7 @@ def grade_essay_question(
     attempt_question_id: AttemptQuestion | int | uuid.UUID | str,
     awarded_points: float | Decimal | int | str,
     reason: str | None = None,
+    expected_row_version: bytes | str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> dict[str, Any]:
     """Grade or update manual score for an essay question.
@@ -2608,10 +2609,18 @@ def grade_essay_question(
     if aq is None or aq.attempt_id != attempt.id:
         raise AttemptValidationError("Attempt question not found for this attempt.")
 
+    if aq.question_type_snapshot not in {"ESSAY", "SHORT_ANSWER"}:
+        raise AttemptValidationError(
+            "Only ESSAY or SHORT_ANSWER question snapshots can be graded by this endpoint."
+        )
+
     try:
         dec_points = Decimal(str(awarded_points))
-    except (ValueError, TypeError) as err:
+    except (InvalidOperation, ValueError, TypeError) as err:
         raise AttemptValidationError("Invalid awarded_points value; must be numeric.") from err
+
+    if not dec_points.is_finite():
+        raise AttemptValidationError("awarded_points must be a finite number.")
 
     if dec_points < Decimal("0"):
         raise MaxPointsExceededError("Awarded points cannot be negative.")
@@ -2628,6 +2637,15 @@ def grade_essay_question(
     )
     old_points = grade.awarded_points if grade else None
 
+    clean_reason = (reason or "").strip()
+    if old_points is not None and not clean_reason:
+        raise AttemptValidationError("A reason is required when revising an existing grade.")
+
+    if grade is not None and grade.row_version is not None:
+        expected_version = normalize_row_version(expected_row_version)
+        if expected_version is None or grade.row_version != expected_version:
+            raise ConflictError("This grade was modified by another transaction.")
+
     if grade is None:
         grade = AttemptQuestionGrade(
             attempt_question_id=aq.id,
@@ -2637,16 +2655,39 @@ def grade_essay_question(
             graded_against_revision_id=aq.source_question_revision_id,
             graded_by_user_id=actor.id,
             graded_at=now,
-            manual_reason=reason,
+            manual_reason=clean_reason or None,
         )
         sess.add(grade)
     else:
-        grade.awarded_points = dec_points
-        grade.grading_status = "MANUAL_GRADED"
-        grade.grading_rule = "MANUAL"
-        grade.graded_by_user_id = actor.id
-        grade.graded_at = now
-        grade.manual_reason = reason
+        if grade.row_version is not None:
+            expected_version = normalize_row_version(expected_row_version)
+            update_result = sess.execute(
+                sa.update(AttemptQuestionGrade)
+                .where(
+                    AttemptQuestionGrade.attempt_question_id == aq.id,
+                    AttemptQuestionGrade.row_version == expected_version,
+                )
+                .values(
+                    awarded_points=dec_points,
+                    grading_status="MANUAL_GRADED",
+                    grading_rule="MANUAL",
+                    graded_by_user_id=actor.id,
+                    graded_at=now,
+                    manual_reason=clean_reason,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if getattr(update_result, "rowcount", 0) != 1:
+                raise ConflictError("This grade was modified by another transaction.")
+            sess.expire(grade)
+            sess.refresh(grade)
+        else:
+            grade.awarded_points = dec_points
+            grade.grading_status = "MANUAL_GRADED"
+            grade.grading_rule = "MANUAL"
+            grade.graded_by_user_id = actor.id
+            grade.graded_at = now
+            grade.manual_reason = clean_reason
 
     rev_target = aq.source_question_revision or (
         sess.get(QuestionRevision, aq.source_question_revision_id)
@@ -2663,7 +2704,7 @@ def grade_essay_question(
         old_points=old_points,
         new_points=dec_points,
         reason_code="MANUAL_REVISION",
-        reason=reason or "Manual essay grade by instructor",
+        reason=clean_reason or "Initial manual essay grade",
         actor_user_id=actor.id,
         created_at=now,
     )
@@ -2688,7 +2729,7 @@ def grade_essay_question(
         res = calculate_attempt_result(
             attempt=attempt,
             actor=actor,
-            reason=reason or "Manual grading finalized",
+            reason=clean_reason or "Manual grading finalized",
             reason_code="MANUAL",
             session=sess,
         )
@@ -2702,7 +2743,7 @@ def grade_essay_question(
         res = calculate_attempt_result(
             attempt=attempt,
             actor=actor,
-            reason=reason or "Manual grade updated",
+            reason=clean_reason or "Manual grade updated",
             reason_code="MANUAL",
             session=sess,
         )
@@ -2891,32 +2932,6 @@ def get_attempt_result_for_student(
     )
     is_passed = bool(result.passed) if result and result.passed is not None else False
 
-    pct = (raw_score / max_score * 10.0) if max_score > 0 else 0.0
-    letter_grade = "F"
-    grade_descriptor = "Không đạt"
-    gpa = 0.0
-    percentile_text = "Cần nỗ lực bổ sung kiến thức"
-    if pct >= 8.5:
-        letter_grade = "A"
-        grade_descriptor = "Xuất sắc (Excellent)"
-        gpa = 4.0
-        percentile_text = "Thuộc top 15% điểm cao nhất đợt khảo thí"
-    elif pct >= 7.0:
-        letter_grade = "B"
-        grade_descriptor = "Giỏi (Good)"
-        gpa = 3.0
-        percentile_text = "Thuộc top 35% sinh viên có kết quả tốt"
-    elif pct >= 5.5:
-        letter_grade = "C"
-        grade_descriptor = "Khá (Fair)"
-        gpa = 2.0
-        percentile_text = "Đạt yêu cầu chuẩn đầu ra môn học"
-    elif pct >= 4.0:
-        letter_grade = "D"
-        grade_descriptor = "Trung bình (Pass)"
-        gpa = 1.0
-        percentile_text = "Đạt điểm tối thiểu qua môn"
-
     return {
         "attempt_id": str(attempt.public_id),
         "assessment_id": str(assessment.public_id) if assessment else None,
@@ -2932,13 +2947,8 @@ def get_attempt_result_for_student(
         "percent_score": percent_score,
         "passed": is_passed,
         "is_passed": is_passed,
-        "letter_grade": letter_grade,
-        "grade_descriptor": grade_descriptor,
-        "gpa": gpa,
-        "percentile_text": percentile_text,
-        "proctoring_verified": True,
-        "released_at": (result.released_at.isoformat() if result and result.released_at else None),
-        "graded_at": result.graded_at.isoformat() if result and result.graded_at else None,
+        "released_at": _isoformat_utc(result.released_at) if result else None,
+        "graded_at": _isoformat_utc(result.graded_at) if result else None,
         "questions": question_grades,
     }
 
@@ -2989,7 +2999,7 @@ def list_pending_grading_attempts(
                 "student_id": str(att.student.public_id) if att.student else None,
                 "student_name": att.student.display_name if att.student else None,
                 "status": att.status,
-                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "submitted_at": _isoformat_utc(att.submitted_at),
                 "total_questions": len(att.attempt_questions),
                 "pending_essay_count": pending_count,
             }
@@ -2997,9 +3007,58 @@ def list_pending_grading_attempts(
     return results
 
 
+def list_pending_grading_overview(
+    actor: User,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """List pending attempts across every course the actor currently manages."""
+    sess = session if session is not None else db.session
+    if not actor.is_active or not (actor.is_admin or actor.has_role("INSTRUCTOR")):
+        raise ForbiddenError("You do not have permission to view grading work.")
+
+    query = (
+        sess.query(AssessmentAttempt)
+        .join(Assessment, Assessment.id == AssessmentAttempt.assessment_id)
+        .join(Course, Course.id == Assessment.course_id)
+        .options(
+            joinedload(AssessmentAttempt.student),
+            joinedload(AssessmentAttempt.assessment),
+        )
+        .filter(AssessmentAttempt.status == "PENDING_GRADING")
+    )
+    if not actor.is_admin:
+        query = query.filter(Course.owner_instructor_id == actor.id)
+
+    attempts = query.order_by(AssessmentAttempt.submitted_at.asc()).all()
+    return [
+        {
+            "attempt_id": str(att.public_id),
+            "assessment_id": str(att.assessment.public_id) if att.assessment else None,
+            "assessment_title": att.assessment.title if att.assessment else None,
+            "course_id": str(att.assessment.course.public_id)
+            if att.assessment and att.assessment.course
+            else None,
+            "attempt_number": att.attempt_number,
+            "student_id": str(att.student.public_id) if att.student else None,
+            "student_name": att.student.display_name if att.student else None,
+            "status": att.status,
+            "submitted_at": _isoformat_utc(att.submitted_at),
+            "total_questions": len(att.attempt_questions),
+            "pending_essay_count": sum(
+                1
+                for question in att.attempt_questions
+                if question.current_grade is None
+                or question.current_grade.grading_status == "PENDING"
+            ),
+        }
+        for att in attempts
+    ]
+
+
 def get_attempt_grading_detail(
     actor: User,
     attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    reason: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> dict[str, Any]:
     """Retrieve detailed attempt question and answer information for instructor grading.
@@ -3015,6 +3074,17 @@ def get_attempt_grading_detail(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, attempt.assessment.course_id, session=sess)
+
+    if actor.is_admin:
+        from pwd301.services.authorization_service import record_admin_student_detail_access
+
+        record_admin_student_detail_access(
+            actor,
+            attempt.student_user_id,
+            attempt.assessment.course_id,
+            reason or "",
+            session=sess,
+        )
 
     questions_data: list[dict[str, Any]] = []
     for aq in sorted(attempt.attempt_questions, key=lambda q: q.position):
@@ -3078,6 +3148,7 @@ def get_attempt_grading_detail(
                 "awarded_points": float(grade.awarded_points) if grade else 0.0,
                 "grading_status": grade.grading_status if grade else "PENDING",
                 "manual_reason": grade.manual_reason if grade else None,
+                "row_version": grade.row_version.hex() if grade and grade.row_version else None,
                 "student_answer_text": ans.answer_text if ans else None,
                 "selected_choice_keys": selected_keys,
                 "choices": choices_data,
@@ -3094,9 +3165,9 @@ def get_attempt_grading_detail(
         "status": attempt.status,
         "student_id": str(attempt.student.public_id) if attempt.student else None,
         "student_name": attempt.student.display_name if attempt.student else None,
-        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
-        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-        "graded_at": attempt.graded_at.isoformat() if attempt.graded_at else None,
+        "started_at": _isoformat_utc(attempt.started_at),
+        "submitted_at": _isoformat_utc(attempt.submitted_at),
+        "graded_at": _isoformat_utc(attempt.graded_at),
         "raw_score": float(res.raw_score) if res else None,
         "max_score": float(res.max_score) if res else None,
         "percent_score": (
@@ -3194,7 +3265,7 @@ def get_attempt_grade_history(
                 if h.regrade_job_id
                 else None
             ),
-            "created_at": h.created_at.isoformat() if h.created_at else None,
+            "created_at": _isoformat_utc(h.created_at),
         }
         for h in result_history
     ]
@@ -3239,7 +3310,7 @@ def get_attempt_grade_history(
                 if qh.question_correction_id
                 else None
             ),
-            "created_at": qh.created_at.isoformat() if qh.created_at else None,
+            "created_at": _isoformat_utc(qh.created_at),
         }
         for qh in q_histories
     ]
@@ -3255,6 +3326,11 @@ def get_attempt_grade_history(
 def list_assessment_student_results(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
+    *,
+    page: int = 1,
+    per_page: int = 50,
+    status: str | None = None,
+    student_id: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> dict[str, Any]:
     """List all candidate attempts and objective grades for an assessment.
@@ -3269,13 +3345,34 @@ def list_assessment_student_results(
 
     require_course_manager(actor, assessment.course_id, session=sess)
 
+    page = max(1, int(page))
+    per_page = min(100, max(1, int(per_page)))
+    allowed_statuses = {"SUBMITTED", "GRADED", "PENDING_GRADING", "IN_PROGRESS"}
+    query = sess.query(AssessmentAttempt).filter(
+        AssessmentAttempt.assessment_id == assessment.id,
+        AssessmentAttempt.status.in_(allowed_statuses),
+    )
+    if status:
+        if status not in allowed_statuses:
+            raise ValidationError("Unsupported attempt status filter.")
+        query = query.filter(AssessmentAttempt.status == status)
+    if student_id:
+        query = query.join(User, User.id == AssessmentAttempt.student_user_id).filter(
+            User.public_id == student_id
+        )
+
+    total = query.count()
     attempts = (
-        sess.query(AssessmentAttempt)
-        .filter(
-            AssessmentAttempt.assessment_id == assessment.id,
-            AssessmentAttempt.status.in_(("SUBMITTED", "GRADED", "IN_PROGRESS")),
+        query.options(
+            joinedload(AssessmentAttempt.student),
+            joinedload(AssessmentAttempt.result),
+            selectinload(AssessmentAttempt.attempt_questions).joinedload(
+                AttemptQuestion.current_grade
+            ),
         )
         .order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
 
@@ -3293,14 +3390,21 @@ def list_assessment_student_results(
     attempts_data: list[dict[str, Any]] = []
     for att in attempts:
         res = att.result
-        raw_score = float(res.raw_score) if res and res.raw_score is not None else 0.0
-        max_score = float(res.max_score) if res and res.max_score is not None else 0.0
+        has_final_score = bool(
+            res and res.status in ("FINAL", "RELEASED") and res.raw_score is not None
+        )
+        raw_score = float(res.raw_score) if has_final_score else None
+        max_score = float(res.max_score) if res and res.max_score is not None else None
         percent_score = (
             float(res.percent_score)
-            if res and res.percent_score is not None
-            else (round((raw_score / max_score) * 100.0, 2) if max_score > 0 else 0.0)
+            if has_final_score and res.percent_score is not None
+            else (
+                round((raw_score / max_score) * 100.0, 2)
+                if has_final_score and raw_score is not None and max_score and max_score > 0
+                else None
+            )
         )
-        is_passed = bool(res.passed) if res and res.passed is not None else False
+        is_passed = bool(res.passed) if has_final_score and res.passed is not None else None
         v_count = violations_by_attempt.get(att.id, 0)
 
         attempts_data.append(
@@ -3312,8 +3416,11 @@ def list_assessment_student_results(
                 "student_name": att.student.display_name if att.student else None,
                 "student_email": att.student.email if att.student else None,
                 "status": att.status,
-                "started_at": att.started_at.isoformat() if att.started_at else None,
-                "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
+                "score_status": "RELEASED"
+                if has_final_score
+                else ("PENDING_GRADING" if att.status == "PENDING_GRADING" else "NOT_GRADED"),
+                "started_at": _isoformat_utc(att.started_at),
+                "submitted_at": _isoformat_utc(att.submitted_at),
                 "raw_score": raw_score,
                 "max_possible_points": max_score,
                 "percentage": percent_score,
@@ -3328,7 +3435,10 @@ def list_assessment_student_results(
     return {
         "assessment_id": str(assessment.public_id),
         "assessment_title": assessment.title,
-        "total": len(attempts_data),
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page,
         "attempts": attempts_data,
     }
 
@@ -3336,6 +3446,7 @@ def list_assessment_student_results(
 def get_instructor_attempt_evaluation(
     actor: User,
     attempt_id: AssessmentAttempt | int | uuid.UUID | str,
+    reason: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> dict[str, Any]:
     """Retrieve detailed objective attempt results for an instructor.
@@ -3352,6 +3463,17 @@ def get_instructor_attempt_evaluation(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, attempt.assessment.course_id, session=sess)
+
+    if actor.is_admin:
+        from pwd301.services.authorization_service import record_admin_student_detail_access
+
+        record_admin_student_detail_access(
+            actor,
+            attempt.student_user_id,
+            attempt.assessment.course_id,
+            reason or "",
+            session=sess,
+        )
 
     res = attempt.result
     raw_score = float(res.raw_score) if res and res.raw_score is not None else 0.0
@@ -3447,9 +3569,9 @@ def get_instructor_attempt_evaluation(
         "student_id": str(attempt.student.public_id) if attempt.student else None,
         "student_name": attempt.student.display_name if attempt.student else None,
         "student_email": attempt.student.email if attempt.student else None,
-        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
-        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-        "graded_at": attempt.graded_at.isoformat() if attempt.graded_at else None,
+        "started_at": _isoformat_utc(attempt.started_at),
+        "submitted_at": _isoformat_utc(attempt.submitted_at),
+        "graded_at": _isoformat_utc(attempt.graded_at),
         "raw_score": raw_score,
         "total_awarded_points": raw_score,
         "max_score": max_score,

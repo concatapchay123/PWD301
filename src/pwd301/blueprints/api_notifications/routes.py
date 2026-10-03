@@ -106,7 +106,12 @@ def mark_all_read_api() -> tuple[Response, int] | Response:
     actor = require_authenticated_actor()
     data: dict[str, Any] = request.get_json(silent=True) or {}
     category = data.get("category") or request.args.get("category")
-    target_role = data.get("role") or data.get("target_role") or request.args.get("role") or request.args.get("target_role")
+    target_role = (
+        data.get("role")
+        or data.get("target_role")
+        or request.args.get("role")
+        or request.args.get("target_role")
+    )
 
     count = mark_all_as_read(
         actor=actor,

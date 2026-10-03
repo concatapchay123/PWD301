@@ -373,7 +373,9 @@ def query_audit_logs(
                 or_(*(AuditEvent.action.like(f"{prefix}%") for prefix in prefixes))
             )
         else:
-            query = query.filter(False)
+            from sqlalchemy import false
+
+            query = query.filter(false())
 
     active_filters = filters or {}
 

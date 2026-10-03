@@ -353,9 +353,12 @@ class UI {
     });
   }
 
-  static prompt(title, message, defaultValue = '', placeholder = '', minLength = 1, actionLabel = 'Lưu') {
+  static prompt(title, message, defaultValue = '', placeholder = '', minLength = 1, actionLabel = 'Lưu', options = {}) {
     return new Promise((resolve) => {
       let settled = false;
+      const maxLength = options.maxLength || 200;
+      const multiline = Boolean(options.multiline);
+
       const finish = (value) => {
         if (!settled) {
           settled = true;
@@ -366,10 +369,18 @@ class UI {
       };
 
       const inputId = 'prompt_input_' + Math.random().toString(36).substring(2, 7);
+      const inputEl = multiline
+        ? `<textarea id="${inputId}" rows="3" maxlength="${maxLength}" class="c-input resize-none text-xs" placeholder="${UI.escapeHtml(placeholder)}">${UI.escapeHtml(defaultValue)}</textarea>`
+        : `<input type="text" id="${inputId}" maxlength="${maxLength}" class="c-input text-xs" placeholder="${UI.escapeHtml(placeholder)}" value="${UI.escapeHtml(defaultValue)}" autocomplete="off" />`;
+
       const body = `
         <div class="space-y-2.5">
           <p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] leading-relaxed">${UI.escapeHtml(message)}</p>
-          <textarea id="${inputId}" rows="3" class="c-input resize-none text-xs" placeholder="${UI.escapeHtml(placeholder)}">${UI.escapeHtml(defaultValue)}</textarea>
+          ${inputEl}
+          <div class="flex justify-between items-center text-[10px] text-slate-400">
+            <span>Nhấn Enter để hoàn tất</span>
+            <span>Tối đa ${maxLength} ký tự</span>
+          </div>
         </div>
       `;
       const footer = `
@@ -395,23 +406,263 @@ class UI {
       });
 
       const input = document.getElementById(inputId);
-      if (input) {
-        if (typeof input.focus === 'function') input.focus();
-        if (typeof input.setSelectionRange === 'function' && typeof input.value === 'string') {
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
-      }
-
-      document.getElementById('prompt-cancel-btn')?.addEventListener('click', () => finish(null));
-
-      document.getElementById('prompt-action-btn')?.addEventListener('click', () => {
+      const triggerSubmit = () => {
         const val = document.getElementById(inputId)?.value?.trim();
         if (minLength > 0 && (!val || val.length < minLength)) {
           UI.showToast(`Nội dung bắt buộc tối thiểu ${minLength} ký tự.`, 'warning');
           return;
         }
         finish(val);
-      });
+      };
+
+      if (input) {
+        if (typeof input.focus === 'function') input.focus();
+        if (typeof input.setSelectionRange === 'function' && typeof input.value === 'string') {
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            if (!multiline || (!e.shiftKey && !e.ctrlKey)) {
+              e.preventDefault();
+              triggerSubmit();
+            }
+          }
+        });
+      }
+
+      document.getElementById('prompt-cancel-btn')?.addEventListener('click', () => finish(null));
+      document.getElementById('prompt-action-btn')?.addEventListener('click', triggerSubmit);
+    });
+  }
+
+  static cropImage(file, { aspectRatio = 16 / 9, title = 'Tùy chỉnh vùng hiển thị ảnh bìa' } = {}) {
+    return new Promise((resolve) => {
+      if (!file || !file.type || !file.type.startsWith('image/')) {
+        resolve(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let settled = false;
+          const finish = (result) => {
+            if (!settled) {
+              settled = true;
+              UI.closeModal();
+              resolve(result);
+            }
+          };
+
+          const canvasWidth = 560;
+          const canvasHeight = 350;
+          const cropW = 480;
+          const cropH = Math.round(cropW / aspectRatio);
+          const cropX = Math.round((canvasWidth - cropW) / 2);
+          const cropY = Math.round((canvasHeight - cropH) / 2);
+
+          const minScale = Math.max(cropW / img.width, cropH / img.height);
+          let scale = minScale;
+          let posX = (canvasWidth - img.width * scale) / 2;
+          let posY = (canvasHeight - img.height * scale) / 2;
+          let isDragging = false;
+          let startDragX = 0;
+          let startDragY = 0;
+
+          const modalBody = `
+            <div class="space-y-4 select-none">
+              <p class="text-xs text-[#5C5B57] dark:text-[#9E9D99]">
+                Kéo thả để điều chỉnh góc nhìn và sử dụng thanh trượt để phóng to/thu nhỏ khung hình chuẩn 16:9.
+              </p>
+              <div class="relative w-full overflow-hidden rounded-xl bg-slate-950 flex items-center justify-center border border-slate-800" style="max-height: 380px;">
+                <canvas id="crop-canvas" width="${canvasWidth}" height="${canvasHeight}" class="cursor-grab active:cursor-grabbing w-full h-auto" style="aspect-ratio: ${canvasWidth}/${canvasHeight}; max-width: 100%;"></canvas>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[18px] text-slate-400">zoom_out</span>
+                <input type="range" id="crop-zoom-slider" min="1" max="3" step="0.05" value="1" class="flex-1 accent-primary cursor-pointer">
+                <span class="material-symbols-outlined text-[18px] text-slate-400">zoom_in</span>
+              </div>
+            </div>
+          `;
+
+          const modalFooter = `
+            <button type="button" id="crop-cancel-btn" class="c-btn c-btn-secondary c-btn-md">Hủy</button>
+            <button type="button" id="crop-apply-btn" class="c-btn c-btn-primary c-btn-md flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">crop</span>
+              <span>Áp dụng ảnh bìa</span>
+            </button>
+          `;
+
+          UI.openModal({
+            title,
+            bodyHtml: modalBody,
+            footerHtml: modalFooter,
+            size: 'md',
+            onClose: () => {
+              if (!settled) {
+                settled = true;
+                resolve(null);
+              }
+            }
+          });
+
+          const canvas = document.getElementById('crop-canvas');
+          if (!canvas) {
+            resolve(file);
+            return;
+          }
+          const ctx = canvas.getContext('2d');
+
+          const draw = () => {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+            ctx.drawImage(img, posX, posY, img.width * scale, img.height * scale);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+            ctx.fillRect(0, 0, canvasWidth, cropY);
+            ctx.fillRect(0, cropY + cropH, canvasWidth, canvasHeight - (cropY + cropH));
+            ctx.fillRect(0, cropY, cropX, cropH);
+            ctx.fillRect(cropX + cropW, cropY, canvasWidth - (cropX + cropW), cropH);
+
+            ctx.strokeStyle = '#2563EB';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cropX, cropY, cropW, cropH);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cropX, cropY + cropH / 3);
+            ctx.lineTo(cropX + cropW, cropY + cropH / 3);
+            ctx.moveTo(cropX, cropY + (cropH * 2) / 3);
+            ctx.lineTo(cropX + cropW, cropY + (cropH * 2) / 3);
+            ctx.moveTo(cropX + cropW / 3, cropY);
+            ctx.lineTo(cropX + cropW / 3, cropY + cropH);
+            ctx.moveTo(cropX + (cropW * 2) / 3, cropY);
+            ctx.lineTo(cropX + (cropW * 2) / 3, cropY + cropH);
+            ctx.stroke();
+          };
+
+          draw();
+
+          const onMouseDown = (cx, cy) => {
+            isDragging = true;
+            startDragX = cx - posX;
+            startDragY = cy - posY;
+          };
+
+          const onMouseMove = (cx, cy) => {
+            if (!isDragging) return;
+            posX = cx - startDragX;
+            posY = cy - startDragY;
+
+            const curW = img.width * scale;
+            const curH = img.height * scale;
+            if (posX > cropX) posX = cropX;
+            if (posY > cropY) posY = cropY;
+            if (posX + curW < cropX + cropW) posX = cropX + cropW - curW;
+            if (posY + curH < cropY + cropH) posY = cropY + cropH - curH;
+
+            draw();
+          };
+
+          const onMouseUp = () => {
+            isDragging = false;
+          };
+
+          const getCanvasPoint = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const factorX = canvasWidth / rect.width;
+            const factorY = canvasHeight / rect.height;
+            return {
+              x: (e.clientX - rect.left) * factorX,
+              y: (e.clientY - rect.top) * factorY
+            };
+          };
+
+          canvas.addEventListener('mousedown', (e) => {
+            const pt = getCanvasPoint(e);
+            onMouseDown(pt.x, pt.y);
+          });
+          window.addEventListener('mousemove', (e) => {
+            const pt = getCanvasPoint(e);
+            onMouseMove(pt.x, pt.y);
+          });
+          window.addEventListener('mouseup', onMouseUp);
+
+          canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+              const pt = getCanvasPoint(e.touches[0]);
+              onMouseDown(pt.x, pt.y);
+            }
+          });
+          window.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+              const pt = getCanvasPoint(e.touches[0]);
+              onMouseMove(pt.x, pt.y);
+            }
+          });
+          window.addEventListener('touchend', onMouseUp);
+
+          const zoomSlider = document.getElementById('crop-zoom-slider');
+          if (zoomSlider) {
+            zoomSlider.addEventListener('input', (e) => {
+              const zoomFactor = parseFloat(e.target.value);
+              const oldScale = scale;
+              scale = minScale * zoomFactor;
+
+              const centerX = cropX + cropW / 2;
+              const centerY = cropY + cropH / 2;
+              posX = centerX - (centerX - posX) * (scale / oldScale);
+              posY = centerY - (centerY - posY) * (scale / oldScale);
+
+              const curW = img.width * scale;
+              const curH = img.height * scale;
+              if (posX > cropX) posX = cropX;
+              if (posY > cropY) posY = cropY;
+              if (posX + curW < cropX + cropW) posX = cropX + cropW - curW;
+              if (posY + curH < cropY + cropH) posY = cropY + cropH - curH;
+
+              draw();
+            });
+          }
+
+          document.getElementById('crop-cancel-btn')?.addEventListener('click', () => finish(null));
+
+          document.getElementById('crop-apply-btn')?.addEventListener('click', () => {
+            const outputCanvas = document.createElement('canvas');
+            const targetOutputW = 1280;
+            const targetOutputH = Math.round(targetOutputW / aspectRatio);
+            outputCanvas.width = targetOutputW;
+            outputCanvas.height = targetOutputH;
+            const outCtx = outputCanvas.getContext('2d');
+
+            const srcX = (cropX - posX) / scale;
+            const srcY = (cropY - posY) / scale;
+            const srcW = cropW / scale;
+            const srcH = cropH / scale;
+
+            outCtx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, targetOutputW, targetOutputH);
+
+            outputCanvas.toBlob((blob) => {
+              if (blob) {
+                const finalFile = new File([blob], (file.name || 'cover').replace(/\.[^.]+$/, '') + '_cropped.jpg', {
+                  type: 'image/jpeg',
+                  lastModified: Date.now()
+                });
+                finish(finalFile);
+              } else {
+                finish(file);
+              }
+            }, 'image/jpeg', 0.92);
+          });
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
     });
   }
 

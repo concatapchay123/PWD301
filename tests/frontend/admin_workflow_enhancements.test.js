@@ -93,11 +93,11 @@ test('clicking an admin review notification opens its queue directly', async () 
   assert.equal(openedModal, false);
 });
 
-test('primary-admin summary omits subordinate queues while assigned roles retain their own counts', () => {
+test('primary-admin summary aggregates all subordinate queues while assigned roles retain their own counts', () => {
   const AdminView = loadView('../../frontend/assets/js/views/admin.js', 'AdminView');
   const counts = { courses: 4, changes: 3, applications: 6, assignments: 2 };
 
-  assert.deepEqual({ ...AdminView.getQueueSummary('ADMIN_PRIMARY', counts) }, { courses: 0, changes: 0, applications: 0, assignments: 0 });
+  assert.deepEqual({ ...AdminView.getQueueSummary('ADMIN_PRIMARY', counts) }, { courses: 4, changes: 3, applications: 6, assignments: 2 });
   assert.deepEqual({ ...AdminView.getQueueSummary('ADMIN_COURSE_REVIEW', counts) }, { courses: 4, changes: 3, applications: 0, assignments: 0 });
   assert.deepEqual({ ...AdminView.getQueueSummary('ADMIN_INSTRUCTOR_REVIEW', counts) }, { courses: 0, changes: 0, applications: 6, assignments: 0 });
 });
@@ -148,4 +148,33 @@ test('audit action filters use canonical actions emitted by the backend', () => 
   for (const action of ['USER_ROLE_ASSIGN', 'SESSIONS_REVOKED', 'LESSON_DELETED', 'ASSESSMENT_PUBLISH']) {
     assert.equal(actions.includes(action), false, `${action} is not a canonical emitted action`);
   }
+});
+
+test('AdminView.renderUserAvatar renders img tag when avatar_url is provided and initials when absent', () => {
+  const AdminView = loadView('../../frontend/assets/js/views/admin.js', 'AdminView', {
+    UI: { escapeHtml: s => s },
+  });
+
+  const userWithAvatar = {
+    user_id: 'u-1',
+    display_name: 'John Doe',
+    email: 'john@example.com',
+    avatar_url: 'https://api.dicebear.com/10.x/adventurer/svg?seed=john',
+    roles: ['STUDENT'],
+  };
+  const htmlWithAvatar = AdminView.renderUserAvatar(userWithAvatar);
+  assert.match(htmlWithAvatar, /<img\s+src="https:\/\/api\.dicebear\.com\/10\.x\/adventurer\/svg\?seed=john"/);
+  assert.match(htmlWithAvatar, /onerror=/);
+  assert.match(htmlWithAvatar, /JD/);
+
+  const userWithoutAvatar = {
+    user_id: 'u-2',
+    display_name: 'Jane Smith',
+    email: 'jane@example.com',
+    roles: ['ADMIN'],
+  };
+  const htmlWithoutAvatar = AdminView.renderUserAvatar(userWithoutAvatar);
+  assert.doesNotMatch(htmlWithoutAvatar, /<img/);
+  assert.match(htmlWithoutAvatar, /JS/);
+  assert.match(htmlWithoutAvatar, /bg-primary/);
 });

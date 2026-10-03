@@ -467,10 +467,57 @@ def suspend_user(
     return user
 
 
+def validate_avatar_url(url: str | None) -> str | None:
+    """Validate and sanitize an avatar URL string.
+
+    Accepts:
+    - None or empty/whitespace string (to clear avatar, returns None)
+    - Valid Dicebear SVG URL
+    - Internal relative file download path (/api/v1/files/... or /student/files/...)
+    - Safe HTTPS URL (<= 500 chars)
+
+    Raises:
+        ValueError: If URL format is invalid, unsafe, or exceeds length limit.
+    """
+    if url is None:
+        return None
+    cleaned = url.strip()
+    if not cleaned:
+        return None
+
+    if len(cleaned) > 500:
+        raise ValueError("Đường dẫn ảnh đại diện không được vượt quá 500 ký tự.")
+
+    if any(c in cleaned for c in ("\r", "\n", "<", ">", '"', "'", "`")):
+        raise ValueError("Đường dẫn ảnh đại diện chứa ký tự không an toàn.")
+
+    lower = cleaned.lower()
+    if lower.startswith(("javascript:", "data:", "file:", "vbscript:")):
+        raise ValueError("Scheme đường dẫn ảnh đại diện không an toàn.")
+
+    if cleaned.startswith(("/api/v1/files/", "/student/files/")):
+        return cleaned
+
+    dicebear_regex = re.compile(
+        r"^https://api\.dicebear\.com/(?:7\.x/bottts|10\.x/(?:adventurer|lorelei|fun-emoji|pixel-art|thumbs|bottts))/svg\?seed=[a-zA-Z0-9_%-]+$"
+    )
+    if dicebear_regex.match(cleaned):
+        return cleaned
+
+    https_regex = re.compile(
+        r"^https://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?::[0-9]+)?(?:/[^\s<>'\"`]*)?$"
+    )
+    if https_regex.match(cleaned):
+        return cleaned
+
+    raise ValueError("Định dạng đường dẫn ảnh đại diện không hợp lệ.")
+
+
 def update_profile(
     user_id: int,
     display_name: str | None = None,
     avatar_file_asset_id: int | None = None,
+    avatar_url: str | None = None,
     session: Session | scoped_session[Any] | None = None,
 ) -> User:
     """Update basic profile information for a user.
@@ -479,6 +526,7 @@ def update_profile(
         user_id: Primary key of the user.
         display_name: Optional new display name.
         avatar_file_asset_id: Optional avatar FileAsset ID.
+        avatar_url: Optional avatar URL string.
         session: Optional SQLAlchemy database session.
 
     Returns:
@@ -486,7 +534,7 @@ def update_profile(
 
     Raises:
         UserNotFoundError: If user does not exist.
-        ValueError: If display_name is provided but empty.
+        ValueError: If display_name is provided but empty, or avatar_url is invalid.
     """
     sess = session if session is not None else db.session
     user = sess.get(User, user_id)
@@ -501,6 +549,9 @@ def update_profile(
 
     if avatar_file_asset_id is not None:
         user.avatar_file_asset_id = avatar_file_asset_id
+
+    if avatar_url is not None:
+        user.avatar_url = validate_avatar_url(avatar_url)
 
     user.updated_at = utc_now()
     try:
@@ -788,36 +839,39 @@ def assign_role_to_user(
                 raise AdminActionForbiddenError(
                     "Người dùng không thể tự cấp quyền Admin cho chính mình."
                 )
+            else:
+                assigner = sess.get(User, assigned_by_user_id)
+                if assigner is None or not assigner.is_primary_admin:
+                    raise AdminActionForbiddenError(
+                        "Chỉ Quản trị viên Cấp cao mới có quyền phân quyền và bổ nhiệm các Admin khác."
+                    )
 
-            assigner = sess.get(User, assigned_by_user_id)
-            if assigner is None or not assigner.is_primary_admin:
-                raise AdminActionForbiddenError(
-                    "Chỉ Quản trị viên Cấp cao mới có quyền phân quyền và bổ nhiệm các Admin khác."
-                )
+                if admin_sub_role is None or admin_sub_role not in {
+                    "ADMIN_COURSE_REVIEW",
+                    "ADMIN_INSTRUCTOR_REVIEW",
+                    "ADMIN_TEACHING_ASSIGNMENT",
+                    "ADMIN_SYSTEM_MONITORING",
+                }:
+                    raise InvalidRoleAssignmentError(
+                        f"Bắt buộc phải chỉ định vai trò Admin phụ hợp lệ. Giá trị không hợp lệ: '{admin_sub_role}'. Không thể cấp quyền ADMIN_PRIMARY ngầm định."
+                    )
 
-            if admin_sub_role is None or admin_sub_role not in {
-                "ADMIN_COURSE_REVIEW",
-                "ADMIN_INSTRUCTOR_REVIEW",
-                "ADMIN_TEACHING_ASSIGNMENT",
-                "ADMIN_SYSTEM_MONITORING",
-            }:
-                raise InvalidRoleAssignmentError(
-                    f"Bắt buộc phải chỉ định vai trò Admin phụ hợp lệ. Giá trị không hợp lệ: '{admin_sub_role}'. Không thể cấp quyền ADMIN_PRIMARY ngầm định."
-                )
-
-    if norm_code == "INSTRUCTOR":
-        if assigned_by_user_id is not None:
-            assigner = sess.get(User, assigned_by_user_id)
-            if assigner is None or not (
-                assigner.is_primary_admin
-                or (
-                    allow_instructor_application_approval
-                    and assigner.has_admin_permission("INSTRUCTOR_REVIEW")
-                )
-            ):
-                raise AdminActionForbiddenError(
-                    "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền bổ nhiệm Giảng viên."
-                )
+    if (
+        norm_code == "INSTRUCTOR"
+        and assigned_by_user_id is not None
+        and assigned_by_user_id != user.id
+    ):
+        assigner = sess.get(User, assigned_by_user_id)
+        if assigner is None or not (
+            assigner.is_primary_admin
+            or (
+                allow_instructor_application_approval
+                and assigner.has_admin_permission("INSTRUCTOR_REVIEW")
+            )
+        ):
+            raise AdminActionForbiddenError(
+                "Chỉ Admin chính hoặc Admin duyệt giảng viên mới có quyền bổ nhiệm Giảng viên."
+            )
 
     if assigned_by_user_id is not None and reason is not None:
         clean_reason = reason.strip()
@@ -864,7 +918,7 @@ def assign_role_to_user(
                 link.assigned_by_user_id = assigned_by_user_id
                 effective_reason = reason or ""
                 if code == "ADMIN":
-                    if assigned_by_user_id is None:
+                    if assigned_by_user_id is None or assigned_by_user_id == user.id:
                         chosen_sub = admin_sub_role or "ADMIN_PRIMARY"
                     else:
                         chosen_sub = admin_sub_role or "ADMIN_SYSTEM_MONITORING"
@@ -913,8 +967,9 @@ def assign_role_to_user(
             }
             is_admin_promotion = "ADMIN" in after_roles and "ADMIN" not in before_roles
             if is_admin_promotion:
+                sub_role_key = str(admin_sub_role or getattr(user, "admin_sub_role", "") or "")
                 sub_label = sub_role_names.get(
-                    admin_sub_role or getattr(user, "admin_sub_role", None),
+                    sub_role_key,
                     user.admin_sub_role_label or "Quản trị viên phụ",
                 )
                 notif_title = "🎉 Chúc mừng bạn đã được bổ nhiệm làm Quản trị viên hệ thống"

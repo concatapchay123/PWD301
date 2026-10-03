@@ -293,11 +293,23 @@ def get_screen_html(folder_name: str) -> Response:
     frontend_dir = _get_frontend_dir()
     code_path = os.path.join(frontend_dir, folder_name, "code.html")
 
-    if not os.path.isfile(code_path):
-        abort(404)
-
-    with open(code_path, encoding="utf-8") as f:
-        content = f.read()
+    if os.path.isfile(code_path):
+        with open(code_path, encoding="utf-8") as f:
+            content = f.read()
+    else:
+        meta = SCREEN_METADATA[folder_name]
+        content = (
+            f'<div class="screen-view p-6" data-screen-id="{folder_name}">\n'
+            f'  <div class="screen-header mb-4">\n'
+            f'    <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600">PWD301 LMS - Học tập</span>\n'
+            f'    <h2 class="text-xl font-bold mt-1 mb-2">{meta["title"]}</h2>\n'
+            f'    <p class="text-sm text-gray-500">Vai trò: {meta["role"]} | Danh mục: {meta["category"]}</p>\n'
+            f"  </div>\n"
+            f'  <div class="screen-content bg-white p-4 rounded-lg shadow-sm border border-gray-100">\n'
+            f'    <p class="text-gray-700">Giao diện {meta["title"]} kết nối trực tiếp với Pure Headless REST API.</p>\n'
+            f"  </div>\n"
+            f"</div>"
+        )
 
     resp = make_response(content)
     resp.mimetype = "text/html; charset=utf-8"

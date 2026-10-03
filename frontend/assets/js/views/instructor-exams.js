@@ -58,13 +58,20 @@
     const currentTitle = draft.title || 'De_thi_moi.docx';
     const step2Route = draft.sourceMethod === 'manual' ? 'editor' : draft.sourceMethod;
     const canVisit = step => window.ExamStore?.canVisitStep(step);
+    const step2Label = (activeStep === 2 && stepTitle) ? stepTitle : (draft.step2Title || 'Tự soạn đề thi');
+    if (activeStep === 2 && stepTitle && window.ExamStore?.saveDraft) {
+      if (draft.step2Title !== stepTitle) {
+        draft.step2Title = stepTitle;
+        try { window.ExamStore.saveDraft({ step2Title }); } catch (_) {}
+      }
+    }
 
     return `
       <header class="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs select-none shrink-0">
-        <div class="max-w-[1920px] mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-3">
+        <div class="max-w-[1920px] mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-3 relative">
           
           <!-- Left: Back & Exam Title -->
-          <div class="flex items-center gap-2.5 min-w-0">
+          <div class="flex items-center gap-2.5 min-w-0 z-10">
             <button type="button" id="workflow-back-btn" class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Quay lại">
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
             </button>
@@ -83,8 +90,8 @@
             </div>
           </div>
 
-          <!-- Center: 4-Step Stepper Navigation -->
-          <nav class="hidden lg:flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+          <!-- Center: 4-Step Stepper Navigation (Position strictly locked at screen center) -->
+          <nav class="hidden lg:flex items-center absolute left-1/2 -translate-x-1/2 pointer-events-auto bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 z-10">
             <!-- Step 1 -->
             <a
               href="#/instructor/exams"
@@ -104,7 +111,7 @@
               <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${activeStep === 2 ? 'bg-indigo-600 text-white font-bold' : (activeStep > 2 ? 'bg-emerald-600 text-white' : 'border border-slate-300 text-slate-600')}">
                 ${activeStep > 2 ? '✓' : '2'}
               </span>
-              <span>${stepTitle || 'Soạn thảo & Nhập liệu'}</span>
+              <span>${step2Label}</span>
             </a>
 
             <!-- Step 3 -->

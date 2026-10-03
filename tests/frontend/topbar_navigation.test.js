@@ -198,11 +198,11 @@ test('updateUserUI configures settings link tailored to the current role', () =>
   const instructorDropdown = instructor.elements.get('topbar-role-dropdown');
   assert.ok(instructorDropdown.innerHTML.includes('#/instructor/settings'));
 
-  // Admin settings -> Security tab in Governance
+  // Admin settings -> Settings page
   const admin = createTestRouter('ADMIN');
   admin.router.updateUserUI();
   const adminDropdown = admin.elements.get('topbar-role-dropdown');
-  assert.ok(adminDropdown.innerHTML.includes('#/admin/governance?tab=security'));
+  assert.ok(adminDropdown.innerHTML.includes('#/admin/settings'));
 });
 
 test('ApiClient exposes markNotificationRead and markAllNotificationsRead', () => {

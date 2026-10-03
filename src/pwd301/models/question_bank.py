@@ -152,7 +152,6 @@ class QuestionRevision(Base):
         sa.Boolean,
         nullable=False,
         default=False,
-        server_default=sa.text("0"),
     )
     question_type = db.Column(sa.String(24), nullable=False)
     content = db.Column(NVarCharMax, nullable=False)

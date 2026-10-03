@@ -390,7 +390,15 @@ def auto_ingest_lesson_content(
         if course.owner_instructor_id:
             resolved_actor = sess.query(User).filter(User.id == course.owner_instructor_id).first()
         if resolved_actor is None:
-            resolved_actor = sess.query(User).filter(User.is_admin == True).first()
+            from pwd301.models.identity import Role, UserRole
+
+            resolved_actor = (
+                sess.query(User)
+                .join(UserRole, User.id == UserRole.user_id)
+                .join(Role, UserRole.role_id == Role.id)
+                .filter(Role.code == "ADMIN")
+                .first()
+            )
 
     if resolved_actor is None:
         logger.warning("No authorized actor found to auto-ingest lesson %s", lesson.title)

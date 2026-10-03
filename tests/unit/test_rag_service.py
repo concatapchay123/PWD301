@@ -507,8 +507,7 @@ def test_auto_ingest_lesson_on_publish(
 
     sess: Session = db.session
     md_content = (
-        "# Kiến trúc RAG tự động\n"
-        "Hệ thống PWD301 tự động ingest nội dung bài giảng khi xuất bản."
+        "# Kiến trúc RAG tự động\nHệ thống PWD301 tự động ingest nội dung bài giảng khi xuất bản."
     )
     lesson = create_lesson(
         actor=instructor_user,
@@ -538,4 +537,3 @@ def test_auto_ingest_lesson_on_publish(
     current_ver = next(v for v in doc.versions if v.is_current)
     assert len(current_ver.chunks) >= 1
     assert "Kiến trúc RAG tự động" in current_ver.chunks[0].chunk_text
-

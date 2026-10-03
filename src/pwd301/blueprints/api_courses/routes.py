@@ -88,9 +88,7 @@ def _serialize_course(c: Course) -> dict[str, Any]:
         "difficulty": c.difficulty,
         "capacity": c.capacity,
         "status": c.status,
-        "thumbnail_url": f"/api/courses/{c.public_id}/thumbnail"
-        if thumbnail
-        else None,
+        "thumbnail_url": f"/api/courses/{c.public_id}/thumbnail" if thumbnail else None,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
         "published_at": c.published_at.isoformat() if c.published_at else None,
         "created_at": c.created_at.isoformat(),
@@ -157,7 +155,7 @@ def get_course_thumbnail_api(course_id: str) -> Response:
     asset = get_course_thumbnail_asset(course)
     if asset is None:
         raise ResourceNotFoundError("Course cover image not found.")
-    is_public = (course.status == "PUBLISHED")
+    is_public = course.status == "PUBLISHED"
     _asset, blob, physical_path = get_file_for_download(
         actor,
         asset,
@@ -564,8 +562,6 @@ def get_course_progress_api(course_id: str) -> tuple[Response, int] | Response:
     return jsonify(data), 200
 
 
-
-
 @api_course_bp.route("/<course_id>/assessments", methods=["POST"])
 @jwt_required
 def create_course_assessment_route(course_id: str) -> tuple[Response, int] | Response:
@@ -632,7 +628,12 @@ def list_course_assessments_route(course_id: str) -> tuple[Response, int] | Resp
 @jwt_required
 def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
     """Upload a new FileAsset for a course (JWT required)."""
-    from pwd301.services.exceptions import FileSizeLimitExceededError, FileValidationError
+    from pwd301.services.exceptions import (
+        FileInfectedError,
+        FileSecurityQuarantineError,
+        FileSizeLimitExceededError,
+        FileValidationError,
+    )
     from pwd301.services.file_service import _serialize_file_asset, store_file_stream
 
     actor = require_authenticated_actor()
@@ -670,6 +671,17 @@ def upload_course_file_api(course_id: str) -> tuple[Response, int] | Response:
         title=title,
         session=db.session,
     )
+    if asset.virus_scan_status != "CLEAN":
+        clean_name = asset.original_filename or asset.display_name or filename or "Tệp tin"
+        if asset.virus_scan_status == "INFECTED":
+            raise FileInfectedError(
+                f"Tệp '{clean_name}' bị từ chối do phát hiện mã độc hoặc cấu trúc nguy hiểm. "
+                "Hệ thống đã tự động chặn tải lên và cách ly tệp này."
+            )
+        raise FileSecurityQuarantineError(
+            f"Tệp '{clean_name}' chưa vượt qua kiểm tra an ninh (trạng thái: {asset.virus_scan_status}). "
+            "Không thể tải lên khóa học."
+        )
     return jsonify(_serialize_file_asset(asset)), 201
 
 

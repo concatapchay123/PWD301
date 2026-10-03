@@ -127,8 +127,18 @@ def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
             "position": getattr(item, "position", 1),
             "status": item.status,
             "summary": item.summary,
-            "is_flagged": bool(item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")),
-            "flag_reason": (item.material_change_summary.replace("[FLAGGED]: ", "") if (item.material_change_summary and item.material_change_summary.startswith("[FLAGGED]: ")) else None),
+            "is_flagged": bool(
+                item.material_change_summary
+                and item.material_change_summary.startswith("[FLAGGED]: ")
+            ),
+            "flag_reason": (
+                item.material_change_summary.replace("[FLAGGED]: ", "")
+                if (
+                    item.material_change_summary
+                    and item.material_change_summary.startswith("[FLAGGED]: ")
+                )
+                else None
+            ),
         }
         for item in lessons
         if getattr(item, "deleted_at", None) is None
@@ -217,6 +227,7 @@ def api_admin_users() -> tuple[Response, int] | Response:
                         "user_id": str(u.public_id),
                         "email": u.email,
                         "display_name": u.display_name,
+                        "avatar_url": u.avatar_url,
                         "status": u.status,
                         "roles": sorted(u.role_codes),
                         "suspended_at": u.suspended_at.isoformat() if u.suspended_at else None,
@@ -248,6 +259,7 @@ def api_admin_get_user(user_id: str) -> tuple[Response, int] | Response:
                 "user_id": str(target_user.public_id),
                 "email": target_user.email,
                 "display_name": target_user.display_name,
+                "avatar_url": target_user.avatar_url,
                 "status": target_user.status,
                 "roles": sorted(target_user.role_codes),
                 "auth_version": target_user.auth_version,
@@ -1265,12 +1277,14 @@ def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, in
         target_id=lesson.id,
         reason=reason,
         performed_as_admin=True,
-        payload_json=json.dumps({
-            "course_id": str(course.public_id),
-            "lesson_id": str(lesson.public_id),
-            "content_type": content_type,
-            "reason": reason,
-        }),
+        payload_json=json.dumps(
+            {
+                "course_id": str(course.public_id),
+                "lesson_id": str(lesson.public_id),
+                "content_type": content_type,
+                "reason": reason,
+            }
+        ),
         created_at=utc_now(),
     )
     db.session.add(audit)
@@ -1279,12 +1293,12 @@ def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, in
     if course.owner_instructor_id:
         with contextlib.suppress(Exception):
             dispatch_notification(
-                recipient_user_ids=[course.owner_instructor_id],
+                recipient_user=course.owner_instructor_id,
                 event_type="COURSE_CONTENT_FLAGGED",
                 title=f"Nội dung bị gắn cờ: {lesson.title}",
                 body=f"Quản trị viên đã gắn cờ {content_type} '{lesson.title}' trong khóa học '{course.title}'. Lý do: {reason}",
                 category="COURSE",
-                data_payload={
+                payload={
                     "course_id": str(course.public_id),
                     "lesson_id": str(lesson.public_id),
                     "reason": reason,
@@ -1293,10 +1307,12 @@ def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, in
                 session=db.session,
             )
 
-    return jsonify({
-        "success": True,
-        "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
-        "lesson_id": str(lesson.public_id),
-        "is_flagged": True,
-        "flag_reason": reason,
-    }), 200
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Đã gắn cờ vi phạm nội dung '{lesson.title}' và gửi thông báo cho giảng viên thành công.",
+            "lesson_id": str(lesson.public_id),
+            "is_flagged": True,
+            "flag_reason": reason,
+        }
+    ), 200

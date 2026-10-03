@@ -212,7 +212,9 @@ def send_single_email(
     s.flush()
 
     sub = subject or delivery.subject or f"PWD301 Notification: {delivery.template_code}"
-    body = body_text or delivery.body_text or f"You have a notification for {delivery.template_code}."
+    body = (
+        body_text or delivery.body_text or f"You have a notification for {delivery.template_code}."
+    )
 
     try:
         client.send(

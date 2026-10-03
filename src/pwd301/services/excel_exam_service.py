@@ -21,7 +21,10 @@ def generate_excel_exam_template() -> bytes:
     Returns the Excel file content as bytes.
     """
     wb = openpyxl.Workbook()
-    ws = wb.active
+    from openpyxl.worksheet.worksheet import Worksheet
+
+    ws: Worksheet = wb.active  # type: ignore[assignment]
+    assert ws is not None
     ws.title = "Đề thi - Câu hỏi"
 
     # Header styling
@@ -119,7 +122,9 @@ def generate_excel_exam_template() -> bytes:
     for row_idx, row_data in enumerate(sample_rows, start=2):
         ws.row_dimensions[row_idx].height = 28
         for col_idx, value in enumerate(row_data, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell = ws.cell(
+                row=row_idx, column=col_idx, value=str(value) if value is not None else ""
+            )
             cell.font = data_font
             cell.border = border
             if col_idx in (1, 8, 9, 10):
@@ -129,15 +134,15 @@ def generate_excel_exam_template() -> bytes:
 
     # Auto-adjust column widths with generous padding
     col_widths = {
-        1: 8,    # STT
-        2: 24,   # Loại câu
-        3: 45,   # Nội dung
-        4: 20,   # A
-        5: 20,   # B
-        6: 20,   # C
-        7: 20,   # D
-        8: 15,   # Đáp án đúng
-        9: 10,   # Điểm
+        1: 8,  # STT
+        2: 24,  # Loại câu
+        3: 45,  # Nội dung
+        4: 20,  # A
+        5: 20,  # B
+        6: 20,  # C
+        7: 20,  # D
+        8: 15,  # Đáp án đúng
+        9: 10,  # Điểm
         10: 16,  # Bloom
         11: 35,  # Giải thích
     }
@@ -149,7 +154,9 @@ def generate_excel_exam_template() -> bytes:
     guide_ws = wb.create_sheet(title="Hướng dẫn định dạng")
     guide_ws.views.sheetView[0].showGridLines = True
     guide_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-    guide_title = guide_ws.cell(row=1, column=1, value="HƯỚNG DẪN ĐỊNH DẠNG TỆP CÂU HỎI EXCEL CHO GIẢNG VIÊN")
+    guide_title = guide_ws.cell(
+        row=1, column=1, value="HƯỚNG DẪN ĐỊNH DẠNG TỆP CÂU HỎI EXCEL CHO GIẢNG VIÊN"
+    )
     guide_title.font = Font(name="Arial", size=12, bold=True, color="FFFFFF")
     guide_title.fill = guide_fill
     guide_ws.merge_cells("A1:C1")
@@ -158,18 +165,38 @@ def generate_excel_exam_template() -> bytes:
     guide_lines = [
         ("Cột", "Quy định bắt buộc", "Ví dụ / Gợi ý"),
         ("STT", "Số thứ tự câu hỏi tăng dần (1, 2, 3...)", "1, 2, 3"),
-        ("Loại câu hỏi", "Hỗ trợ: 'Trắc nghiệm 1 đáp án', 'TN nhiều đáp án', 'Đúng / Sai', 'Điền từ'", "Trắc nghiệm 1 đáp án"),
-        ("Nội dung câu hỏi", "Nội dung câu hỏi, có thể chèn công thức $...$ hoặc khoảng trống ___", "Đâu là giao thức...?"),
-        ("Phương án A, B, C, D", "Các đáp án lựa chọn cho câu trắc nghiệm. Bỏ trống nếu là câu Điền từ", "HTTPS, HTTP, ..."),
-        ("Đáp án đúng", "Chữ cái đáp án đúng (A, B, C, D) hoặc danh sách đáp án nhiều lựa chọn ('A, B' hoặc 'A;C') hoặc 'Đúng'/'Sai' hoặc từ khóa điền.", "B hoặc A, C hoặc JWT"),
+        (
+            "Loại câu hỏi",
+            "Hỗ trợ: 'Trắc nghiệm 1 đáp án', 'TN nhiều đáp án', 'Đúng / Sai', 'Điền từ'",
+            "Trắc nghiệm 1 đáp án",
+        ),
+        (
+            "Nội dung câu hỏi",
+            "Nội dung câu hỏi, có thể chèn công thức $...$ hoặc khoảng trống ___",
+            "Đâu là giao thức...?",
+        ),
+        (
+            "Phương án A, B, C, D",
+            "Các đáp án lựa chọn cho câu trắc nghiệm. Bỏ trống nếu là câu Điền từ",
+            "HTTPS, HTTP, ...",
+        ),
+        (
+            "Đáp án đúng",
+            "Chữ cái đáp án đúng (A, B, C, D) hoặc danh sách đáp án nhiều lựa chọn ('A, B' hoặc 'A;C') hoặc 'Đúng'/'Sai' hoặc từ khóa điền.",
+            "B hoặc A, C hoặc JWT",
+        ),
         ("Điểm số", "Điểm phân bổ cho câu hỏi (số dương, ví dụ: 1.0, 1.5, 2.0)", "1.0"),
         ("Mức độ Bloom", "Các mức độ: 'Nhận biết', 'Thông hiểu', 'Vận dụng'", "Thông hiểu"),
-        ("Giải thích / Lời giải", "Lời giải thích củng cố kiến thức cho sinh viên sau khi nộp bài", "Giải thích chi tiết..."),
+        (
+            "Giải thích / Lời giải",
+            "Lời giải thích củng cố kiến thức cho sinh viên sau khi nộp bài",
+            "Giải thích chi tiết...",
+        ),
     ]
 
     for r_idx, (c1, c2, c3) in enumerate(guide_lines, start=3):
         guide_ws.row_dimensions[r_idx].height = 24
-        is_hd = (r_idx == 3)
+        is_hd = r_idx == 3
         for c_idx, val in enumerate([c1, c2, c3], start=1):
             c = guide_ws.cell(row=r_idx, column=c_idx, value=val)
             c.border = border
@@ -211,10 +238,7 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
         "errors": list[str]
     }
     """
-    if isinstance(file_stream, bytes):
-        stream = io.BytesIO(file_stream)
-    else:
-        stream = file_stream
+    stream = io.BytesIO(file_stream) if isinstance(file_stream, bytes) else file_stream
 
     try:
         wb = openpyxl.load_workbook(stream, data_only=True)
@@ -225,7 +249,9 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             "total_questions": 0,
             "total_points": 0.0,
             "warnings": [],
-            "errors": [f"Không thể đọc tệp Excel. Vui lòng đảm bảo tệp định dạng .xlsx hợp lệ: {err}"],
+            "errors": [
+                f"Không thể đọc tệp Excel. Vui lòng đảm bảo tệp định dạng .xlsx hợp lệ: {err}"
+            ],
         }
 
     ws = wb.active
@@ -257,7 +283,9 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
 
     for r_idx, row in enumerate(rows[:10]):
         row_strs = [str(c).strip().lower() for c in row if c is not None]
-        if any("nội dung" in c or "câu hỏi" in c or "stem" in c or "question" in c for c in row_strs):
+        if any(
+            "nội dung" in c or "câu hỏi" in c or "stem" in c or "question" in c for c in row_strs
+        ):
             header_row_idx = r_idx
             break
 
@@ -277,7 +305,9 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
         elif any(kw in h for kw in ("loại câu", "dạng câu", "question type", "type")):
             col_mapping.setdefault("type", col_idx)
             is_known_col = True
-        elif any(kw in h for kw in ("nội dung", "câu hỏi", "stem", "question", "content", "đề bài")):
+        elif any(
+            kw in h for kw in ("nội dung", "câu hỏi", "stem", "question", "content", "đề bài")
+        ):
             col_mapping.setdefault("content", col_idx)
             is_known_col = True
         elif any(kw in h for kw in ("đáp án đúng", "key", "correct", "đáp án chính xác", "đ/a")):
@@ -295,7 +325,10 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
 
         if not is_known_col:
             # Detect choice options: Phương án A, Đáp án A, Option A, hoặc cột mang tên A, B, C, D...
-            opt_match = re.search(r"^(?:phương án|đáp án|lựa chọn|option|choice)\s*([a-f])(?:\b|$|\.|\:)|^([a-f])(?:\b|$|\.|\:)", h)
+            opt_match = re.search(
+                r"^(?:phương án|đáp án|lựa chọn|option|choice)\s*([a-f])(?:\b|$|\.|\:)|^([a-f])(?:\b|$|\.|\:)",
+                h,
+            )
             if opt_match:
                 opt_label = (opt_match.group(1) or opt_match.group(2)).upper()
                 choice_cols.append((opt_label, col_idx))
@@ -317,7 +350,7 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
     errors: list[str] = []
     total_points = 0.0
 
-    data_rows = rows[header_row_idx + 1:]
+    data_rows = rows[header_row_idx + 1 :]
     question_counter = 1
 
     for row_idx, row in enumerate(data_rows, start=header_row_idx + 2):
@@ -326,31 +359,55 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
         if all(c is None or str(c).strip() == "" for c in row):
             continue
 
-        raw_content = row[col_mapping["content"]] if col_mapping.get("content") is not None and col_mapping["content"] < len(row) else None
+        raw_content = (
+            row[col_mapping["content"]]
+            if col_mapping.get("content") is not None and col_mapping["content"] < len(row)
+            else None
+        )
         if not raw_content or str(raw_content).strip() == "":
             continue
 
         content = str(raw_content).strip()
 
         # Question Type
-        raw_type = row[col_mapping["type"]] if col_mapping.get("type") is not None and col_mapping["type"] < len(row) else ""
+        raw_type = (
+            row[col_mapping["type"]]
+            if col_mapping.get("type") is not None and col_mapping["type"] < len(row)
+            else ""
+        )
         type_str = str(raw_type or "").strip().lower()
         q_type = "SINGLE_CHOICE"
         if any(kw in type_str for kw in ("nhiều", "multiple", "đa đáp án")):
             q_type = "MULTIPLE_CHOICE"
-        elif any(kw in type_str for kw in ("đúng/sai", "đúng / sai", "true/false", "true_false", "đúng sai")):
+        elif any(
+            kw in type_str
+            for kw in ("đúng/sai", "đúng / sai", "true/false", "true_false", "đúng sai")
+        ):
             q_type = "TRUE_FALSE"
         elif any(kw in type_str for kw in ("điền", "fill", "short", "trả lời ngắn")):
             q_type = "SHORT_ANSWER"
 
         # Correct Answer
-        raw_correct = row[col_mapping["correct_answer"]] if col_mapping.get("correct_answer") is not None and col_mapping["correct_answer"] < len(row) else ""
+        raw_correct = (
+            row[col_mapping["correct_answer"]]
+            if col_mapping.get("correct_answer") is not None
+            and col_mapping["correct_answer"] < len(row)
+            else ""
+        )
         correct_str = str(raw_correct or "").strip()
 
         # Points
-        raw_pts = row[col_mapping["points"]] if col_mapping.get("points") is not None and col_mapping["points"] < len(row) else 1.0
+        raw_pts = (
+            row[col_mapping["points"]]
+            if col_mapping.get("points") is not None and col_mapping["points"] < len(row)
+            else 1.0
+        )
         try:
-            pts = float(raw_pts) if raw_pts is not None and str(raw_pts).strip() != "" else 1.0
+            pts = (
+                float(str(raw_pts).strip())
+                if raw_pts is not None and str(raw_pts).strip() != ""
+                else 1.0
+            )
             if pts <= 0:
                 pts = 1.0
         except (ValueError, TypeError):
@@ -358,7 +415,11 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             warnings.append(f"Dòng {row_idx}: Điểm không hợp lệ, đặt mặc định 1.0đ")
 
         # Bloom
-        raw_bloom = row[col_mapping["bloom"]] if col_mapping.get("bloom") is not None and col_mapping["bloom"] < len(row) else ""
+        raw_bloom = (
+            row[col_mapping["bloom"]]
+            if col_mapping.get("bloom") is not None and col_mapping["bloom"] < len(row)
+            else ""
+        )
         bloom_str = str(raw_bloom or "").strip()
         bloom_level = "Thông hiểu"
         if any(kw in bloom_str.lower() for kw in ("nhận biết", "remember", "dễ")):
@@ -367,37 +428,54 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             bloom_level = "Vận dụng"
 
         # Explanation
-        raw_exp = row[col_mapping["explanation"]] if col_mapping.get("explanation") is not None and col_mapping["explanation"] < len(row) else ""
+        raw_exp = (
+            row[col_mapping["explanation"]]
+            if col_mapping.get("explanation") is not None and col_mapping["explanation"] < len(row)
+            else ""
+        )
         explanation = str(raw_exp or "").strip()
 
         # Process choices
         choices: list[dict[str, Any]] = []
         if q_type == "TRUE_FALSE":
-            is_true_correct = "đúng" in correct_str.lower() or correct_str.upper() in ("A", "TRUE", "T", "1")
+            is_true_correct = "đúng" in correct_str.lower() or correct_str.upper() in (
+                "A",
+                "TRUE",
+                "T",
+                "1",
+            )
             choices = [
                 {"label": "A", "content": "Đúng", "is_correct": is_true_correct, "position": 1},
                 {"label": "B", "content": "Sai", "is_correct": not is_true_correct, "position": 2},
             ]
         elif q_type in ("SINGLE_CHOICE", "MULTIPLE_CHOICE"):
-            correct_keys = [k.strip().upper() for k in re.split(r"[,;/|\s]+", correct_str) if k.strip()]
+            correct_keys = [
+                k.strip().upper() for k in re.split(r"[,;/|\s]+", correct_str) if k.strip()
+            ]
             for label, c_col in choice_cols:
                 if c_col < len(row) and row[c_col] is not None:
                     c_val = str(row[c_col]).strip()
                     if c_val:
-                        is_corr = label in correct_keys or (len(correct_keys) == 1 and correct_keys[0] == c_val.upper())
-                        choices.append({
-                            "label": label,
-                            "content": c_val,
-                            "is_correct": is_corr,
-                            "position": len(choices) + 1,
-                        })
+                        is_corr = label in correct_keys or (
+                            len(correct_keys) == 1 and correct_keys[0] == c_val.upper()
+                        )
+                        choices.append(
+                            {
+                                "label": label,
+                                "content": c_val,
+                                "is_correct": is_corr,
+                                "position": len(choices) + 1,
+                            }
+                        )
 
             corr_count = sum(1 for c in choices if c["is_correct"])
             if corr_count > 1:
                 q_type = "MULTIPLE_CHOICE"
             elif corr_count == 0 and choices:
                 choices[0]["is_correct"] = True
-                warnings.append(f"Dòng {row_idx} (Câu {question_counter}): Chưa đánh dấu đáp án đúng, hệ thống tạm gán phương án {choices[0]['label']}.")
+                warnings.append(
+                    f"Dòng {row_idx} (Câu {question_counter}): Chưa đánh dấu đáp án đúng, hệ thống tạm gán phương án {choices[0]['label']}."
+                )
 
         elif q_type == "SHORT_ANSWER":
             accepted_answers = [a.strip() for a in re.split(r"[,;/|]+", correct_str) if a.strip()]
@@ -405,15 +483,17 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
                 accepted_answers = ["Đáp án"]
 
         # Extract images from content
-        img_resources = []
+        img_resources: list[dict[str, Any]] = []
         for m in re.finditer(r"\[\[PWD301:IMAGE:([a-f0-9\-]+)\]\]", content, flags=re.IGNORECASE):
             asset_uuid = m.group(1)
-            img_resources.append({
-                "asset_id": asset_uuid,
-                "position": len(img_resources) + 1,
-                "resource_role": "IMAGE",
-                "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
-            })
+            img_resources.append(
+                {
+                    "asset_id": asset_uuid,
+                    "position": len(img_resources) + 1,
+                    "resource_role": "IMAGE",
+                    "download_url": f"/instructor/files/{asset_uuid}/download?disposition=inline",
+                }
+            )
 
         q_obj: dict[str, Any] = {
             "id": question_counter,
@@ -422,9 +502,12 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
             "stem": content,
             "question_text": content,
             "question_type": (
-                "TN nhiều đáp án" if q_type == "MULTIPLE_CHOICE"
-                else "Đúng / Sai" if q_type == "TRUE_FALSE"
-                else "Điền từ" if q_type == "SHORT_ANSWER"
+                "TN nhiều đáp án"
+                if q_type == "MULTIPLE_CHOICE"
+                else "Đúng / Sai"
+                if q_type == "TRUE_FALSE"
+                else "Điền từ"
+                if q_type == "SHORT_ANSWER"
                 else "Trắc nghiệm 1 đáp án"
             ),
             "type": q_type,
@@ -445,7 +528,9 @@ def parse_excel_exam(file_stream: io.BytesIO | bytes) -> dict[str, Any]:
         question_counter += 1
 
     if not parsed_questions:
-        errors.append("Không bóc tách được câu hỏi nào từ tệp Excel. Vui lòng kiểm tra lại cấu trúc bảng tính.")
+        errors.append(
+            "Không bóc tách được câu hỏi nào từ tệp Excel. Vui lòng kiểm tra lại cấu trúc bảng tính."
+        )
 
     return {
         "success": len(errors) == 0 and len(parsed_questions) > 0,

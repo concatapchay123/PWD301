@@ -302,6 +302,7 @@ def _visible_notification_query(
         .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
         .filter(
             Notification.recipient_user_id == recipient_id,
+            Notification.deleted_at.is_(None),
             ~duplicate,
             sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
         )
@@ -389,7 +390,11 @@ def mark_notification_as_read(
     except ValueError:
         raise NotificationNotFoundError(f"Notification '{notification_id}' not found.") from None
 
-    notification = s.query(Notification).filter_by(public_id=pub_id).first()
+    notification = (
+        s.query(Notification)
+        .filter(Notification.public_id == pub_id, Notification.deleted_at.is_(None))
+        .first()
+    )
     if notification is None:
         raise NotificationNotFoundError(f"Notification '{notification_id}' not found.")
 
@@ -421,6 +426,7 @@ def mark_all_as_read(
     query = s.query(Notification).filter(
         Notification.recipient_user_id == actor.id,
         Notification.read_at.is_(None),
+        Notification.deleted_at.is_(None),
     )
     if target_role:
         upper_role = target_role.strip().upper()
@@ -450,7 +456,7 @@ def dismiss_notification(
     notification_id: str | uuid.UUID,
     session: Session | scoped_session | None = None,
 ) -> dict[str, Any]:
-    """Dismiss or delete a notification, enforcing strict ownership."""
+    """Soft delete a notification, enforcing strict ownership."""
     s = session or db.session
     if not actor:
         raise ForbiddenError("Actor context required.")
@@ -460,20 +466,58 @@ def dismiss_notification(
     except ValueError:
         raise NotificationNotFoundError(f"Notification '{notification_id}' not found.") from None
 
-    notification = s.query(Notification).filter_by(public_id=pub_id).first()
+    notification = (
+        s.query(Notification)
+        .filter(Notification.public_id == pub_id, Notification.deleted_at.is_(None))
+        .first()
+    )
     if notification is None:
         raise NotificationNotFoundError(f"Notification '{notification_id}' not found.")
 
     if notification.recipient_user_id != actor.id:
         raise ForbiddenError("You are not authorized to modify this notification.")
 
-    s.delete(notification)
+    notification.deleted_at = utc_now()
     try:
         s.commit()
     except Exception:
         s.rollback()
         raise
-    return {"id": str(pub_id), "status": "dismissed"}
+    return {"id": str(pub_id), "status": "deleted"}
+
+
+def delete_all_notifications(
+    actor: User,
+    target_role: str | None = None,
+    session: Session | scoped_session | None = None,
+) -> int:
+    """Soft delete all notifications for actor, optionally scoped to a target role."""
+    s = session or db.session
+    if not actor:
+        raise ForbiddenError("Actor context required.")
+
+    query = s.query(Notification).filter(
+        Notification.recipient_user_id == actor.id,
+        Notification.deleted_at.is_(None),
+    )
+    if target_role:
+        upper_role = target_role.strip().upper()
+        query = query.filter(
+            sa.or_(Notification.target_role == upper_role, Notification.target_role.is_(None))
+        )
+
+    now = utc_now()
+    count = 0
+    for notif in query.all():
+        notif.deleted_at = now
+        count += 1
+
+    try:
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    return count
 
 
 def get_user_preferences(

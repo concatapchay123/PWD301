@@ -264,7 +264,7 @@ def test_student_assessments_endpoint_payload_parity(
     assert target["status"] == "PUBLISHED"
 
 
-def test_student_attempt_result_academic_metrics_and_release_policy(
+def test_student_attempt_result_exposes_only_persisted_metrics_and_release_policy(
     client: FlaskClient, student_fixture: dict[str, Any]
 ) -> None:
     """Verify attempt result provides server-authoritative metrics and honors release policy."""
@@ -307,12 +307,16 @@ def test_student_attempt_result_academic_metrics_and_release_policy(
     res_data = result_res.get_json()
 
     # Server-authoritative academic indicators
-    assert res_data.get("letter_grade") == "A"
-    assert "Xuất sắc" in (res_data.get("grade_descriptor") or "")
-    assert float(res_data.get("gpa") or 0.0) == 4.0
+    assert res_data.get("letter_grade") is None
+    assert res_data.get("grade_descriptor") is None
+    assert res_data.get("gpa") is None
     assert res_data.get("is_passed") is True
-    assert res_data.get("proctoring_verified") is True
-    assert "percentile_text" in res_data
+    assert res_data.get("proctoring_verified") is None
+    assert res_data.get("percentile_text") is None
+
+    history_res = client.get(f"/student/attempts/{attempt_id}/grade-history")
+    assert history_res.status_code == 200
+    assert history_res.get_json()["attempt_id"] == attempt_id
 
 
 def test_student_course_detail_adr002_and_clamav_fail_closed(
@@ -672,9 +676,7 @@ def test_student_course_detail_filters_course_image(
     assert str(cover_asset.public_id) not in resource_ids
 
 
-def test_student_recommendations_api(
-    client: FlaskClient, student_fixture: dict[str, Any]
-) -> None:
+def test_student_recommendations_api(client: FlaskClient, student_fixture: dict[str, Any]) -> None:
     """Verify GET /student/recommendations returns Algorithm 14 recommendations (ADR-002)."""
     login_client(client, "student_stu@pwd301.local")
     res = client.get(
@@ -688,8 +690,8 @@ def test_student_recommendations_api(
     recs = data["recommendations"]
     assert isinstance(recs, list)
     for r in recs:
-        assert "id" in r
-        assert uuid.UUID(r["id"])  # Valid UUID
+        assert "course_id" in r
+        assert uuid.UUID(r["course_id"])  # Valid UUID
         assert "course_code" in r
         assert "title" in r
         assert "score" in r
@@ -766,5 +768,3 @@ def test_student_ai_chat_new_session_when_conversation_id_null(
     assert resp3.status_code == 200
     conv_id_2 = resp3.get_json()["conversation_id"]
     assert conv_id_2 != conv_id_1
-
-

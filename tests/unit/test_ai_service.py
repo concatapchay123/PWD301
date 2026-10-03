@@ -832,9 +832,7 @@ def test_course_syllabus_grounding_in_chat(
         set_gemini_client_override(None)
 
 
-def test_global_recommendation_context_delivered_to_model(
-    app: Flask, student_user: User
-) -> None:
+def test_global_recommendation_context_delivered_to_model(app: Flask, student_user: User) -> None:
     """When on GLOBAL context, course recommendations are included in the prompt payload."""
     from pwd301.services.gemini_service import RealGeminiClient
 
@@ -844,9 +842,7 @@ def test_global_recommendation_context_delivered_to_model(
             "candidates": [
                 {
                     "content": {
-                        "parts": [
-                            {"text": "Dưới đây là các khóa học gợi ý phù hợp nhất cho bạn."}
-                        ]
+                        "parts": [{"text": "Dưới đây là các khóa học gợi ý phù hợp nhất cho bạn."}]
                     }
                 }
             ]
@@ -873,9 +869,7 @@ def test_global_recommendation_context_delivered_to_model(
         assert "DỮ LIỆU THAM CHIẾU" in sys_text or "<reference_context>" in sys_text
 
 
-def test_conversation_history_sliding_window_limits_turns(
-    app: Flask, student_user: User
-) -> None:
+def test_conversation_history_sliding_window_limits_turns(app: Flask, student_user: User) -> None:
     """Conversation history sent to Gemini is bounded by sliding window (max 6 turns)."""
     from pwd301.models.ai_rag import AIMessage
     from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
@@ -933,9 +927,7 @@ def test_conversation_history_sliding_window_limits_turns(
         set_gemini_client_override(None)
 
 
-def test_refusal_messages_excluded_from_llm_history(
-    app: Flask, student_user: User
-) -> None:
+def test_refusal_messages_excluded_from_llm_history(app: Flask, student_user: User) -> None:
     """Out-of-scope refusal turns are filtered out so they do not pollute LLM prompt memory."""
     from pwd301.models.ai_rag import AIMessage
     from pwd301.services.gemini_service import MockGeminiClient, set_gemini_client_override
@@ -1007,4 +999,3 @@ def test_refusal_messages_excluded_from_llm_history(
         assert msgs[-1].get("content") == "Làm sao để tạo một form liên hệ trong HTML?"
     finally:
         set_gemini_client_override(None)
-
