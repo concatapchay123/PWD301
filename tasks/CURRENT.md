@@ -1,8 +1,63 @@
-# Active task: TASK-079 — Low-Tech Instructor Lesson Authoring & Atomic Course Changeset Approval Workflow Redesign
+# Active task: TASK-082 — Curriculum & Exam Studio Full Streamlining & Modernization
+
+**Status:** IN_PROGRESS  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-10-07  
+
+## Canonical Workflow Invariants (Zero-Ambiguity Contract)
+All previous obsolete workflows and legacy designs are purged and superseded:
+1. **Course Cover Photo Gating**: Standalone yellow missing cover warning banner is permanently abolished. Cover warning and upload action are integrated directly into the course header cover frame. Courses lacking a cover photo (`thumbnail_url`) are strictly forbidden from submitting for admin review (`submit_course_for_review`), enforced fail-closed at both UI and Backend API.
+2. **Curriculum Content Toolbar & Multi-Type Questions**: The content toolbar header is strictly `"THÊM NỘI DUNG:"` with zero `+` signs. Buttons are named `"Bài học"`, `"Video"`, `"Tài liệu"`, `"Câu hỏi"`. Question blocks inside lessons support 3 compact formats via segmented tabs: **Trắc nghiệm** (Multiple/Single choice), **Điền khuyết** (Fill in the blank with `[___]`), and **Nối từ** (Matching pairs).
+3. **Decommissioning of Estimated Duration**: The `"Thời lượng ước tính (Phút)"` (`estimated_duration_minutes`) field is abolished from all lesson creation, editing, UI cards, API contracts, and validation services.
+4. **Curriculum Outline Sidebar Modernization**: The redundant `"Thêm bài"` button in the top curriculum outline toolbar is eliminated; instructors create lessons via `"Thêm bài giảng vào chương này"` inside each unit. Full HTML5 Drag & Drop enables reordering chapters and moving lessons within/across chapters. A resizable drag splitter allows instructors to adjust the curriculum sidebar width (280px-600px) with persistent memory in `localStorage`.
+5. **Exam Timing & Attempt Limits Unconstrained**: `"Thời lượng làm bài (Phút)"` is replaced by `"Thời gian làm bài"` with all preset buttons abolished; instructors enter a custom duration or leave blank for unlimited time. `"Số lần làm bài tối đa"` is an open number input (blank = unlimited). `"Xáo trộn ngẫu nhiên..."` is renamed to `"Trộn câu hỏi và đáp án"`. `"2. Thời gian giao & Hạn bài thi"` is renamed to `"Thời gian"`. Hourly exam schedule activation is a modern Toggle Switch.
+6. **Academic Matrix, Dynamic Score Scaling, Question Classification & Lesson-Linked Exams**:
+   - `"1. Xác định Bối cảnh & Phạm vi Học vụ"` is renamed to `"Hình thức kiểm tra"`; `"Hình thức tổ chức đề thi"` is removed.
+   - `"Phân bổ Mức độ Bloom"` is renamed to `"Phân loại"`; instructors can freely choose question classification (Nhận biết / Thông hiểu / Vận dụng) via dropdown on each question card and in the matrix table.
+   - `"Thang điểm tính toán"` supports a custom target score (e.g. 10.0 or 100) with a `"Chia đều điểm"` auto-distribution action while maintaining per-question point editability.
+   - `"Liên kết theo Bài học (Lesson-Linked)"` provides cascading selection (Course -> Unit -> Lesson) and attaches the exam directly to the lesson; students see a prominent assessment card at the end of the lesson view.
+
+---
+
+# Completed task: TASK-081 — Academic Exam Result PDF Engine (ReportLab), Attempt Flow Auto-Redirect, Wide Layout Expansion & Studio Video Upload System
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Completed Date:** 2026-10-06  
+
+## Goal & Resolution Summary
+Complete system-wide modernization and bug resolution based on user feedback and /grill-me consensus:
+1. **Spec & Memory Purge**: Cleaned all legacy references to old raw ASCII PDF drawing, old narrow container tokens (`max-w-4xl`, `max-w-7xl`), and old unhandled attempt states from documentation and specifications.
+2. **Academic Exam Result PDF Engine (ReportLab Unicode)**: Full vector PDF report with Unicode font (`Arial` / `arialbd.ttf`), Vietnamese accents, student details (`attempt.student`), score breakdown, and pass/fail badges.
+3. **Attempt Completion Flow Auto-Redirect & Error Resilience**: Visiting completed/graded attempts automatically redirects to `#/student/assessments/results?id=<attempt_id>` without 400 exceptions or blank error screens. Fixed null-safe `scorePct.toFixed(1)`. Standardized academic state cards.
+4. **Wide Layout Expansion**: Expanded all major page views to `max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10`, reducing side gutters to 1/3.
+5. **Studio Video Upload & Button Cleanup**: Video block in Single-Page Studio features top YouTube bar and bottom multi-file drag & drop upload zone (< 1GB) with HTML5 preview. Removed all redundant `+` signs (`+ +`) across curriculum outline trees.
+6. **Real Browser Verification**: Interactive E2E verification via Chrome DevTools MCP on running server.
+
+---
+
+# Completed task: TASK-080 — Low-Tech Single-Page Curriculum Studio with Modular Vertical Block Cards, Fail-Closed Pending Lock & Real Browser E2E Verification
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Completed Date:** 2026-10-06  
+
+## Goal & Resolution Summary
+Complete system-wide consolidation of instructor curriculum authoring and administrative approval:
+1. **Spec & Memory Purge**: Cleaned all legacy references to fragmented per-lesson approvals, 202 status codes, and separate complex Lesson Studio from documentation and specifications.
+2. **Single-Page Curriculum Studio**: Left column presents curriculum outline (Chapters & Lessons), Right column provides in-place authoring with intuitive Vertical Block Cards (Text, Video, Document, Quiz) with simple [↑] [↓] [✕] buttons.
+3. **Fail-Closed Pending Lock**: When instructor submits changeset to Admin, all mutations (POST, PUT, DELETE) are locked with 409 Conflict until Admin acts or instructor retracts.
+4. **Admin Side-by-Side Diff & Atomic Action**: Admin inspects consolidated diff with clear red/green highlighting, approving or rejecting with reason in a single atomic action.
+5. **Real Browser Verification**: Interactive E2E verification using live browser on running server before declaration of completion.
+
+---
+
+# Completed task: TASK-079 — Low-Tech Instructor Lesson Authoring & Atomic Course Changeset Approval Workflow Redesign
 
 **Status:** DONE  
 **Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
 **Completed Date:** 2026-10-03  
+
 
 ## Goal & Resolution Summary
 Redesigned and streamlined the instructor lesson authoring and administrative approval workflow to eliminate high cognitive friction for low-tech instructors and eliminate piecemeal fragmented approval requests ("duyệt lắt nhắt") for administrators:
