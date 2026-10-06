@@ -196,6 +196,62 @@ def _validate_video_urls(urls: Any) -> list[str]:
     return validated
 
 
+def _attach_uploaded_lesson_files(
+    actor: User,
+    course_id: int,
+    lesson: Lesson,
+    uploaded_files: Any,
+) -> None:
+    """Persist multipart lesson files and link them to the staged lesson."""
+    media_file = uploaded_files.get("media_file")
+    if media_file and media_file.filename:
+        media_asset = store_file_stream(
+            actor=actor,
+            course_id=course_id,
+            file_stream=media_file.stream,
+            filename=media_file.filename,
+            content_type=media_file.content_type,
+            asset_type="RESOURCE",
+            title=f"Bài giảng: {lesson.title}",
+            session=db.session,
+        )
+        attach_resource_to_lesson(
+            actor=actor,
+            lesson_id=lesson.id,
+            asset_id=media_asset.id,
+            is_downloadable=True,
+            label=media_file.filename,
+            session=db.session,
+        )
+
+    resource_files: list[Any] = []
+    for key in ("resource_files", "resource_file", "file"):
+        resource_files.extend(uploaded_files.getlist(key))
+
+    for resource_file in resource_files:
+        if resource_file and resource_file.filename and resource_file != media_file:
+            resource_asset = store_file_stream(
+                actor=actor,
+                course_id=course_id,
+                file_stream=resource_file.stream,
+                filename=resource_file.filename,
+                content_type=resource_file.content_type,
+                asset_type="RESOURCE",
+                title=resource_file.filename,
+                session=db.session,
+            )
+            attach_resource_to_lesson(
+                actor=actor,
+                lesson_id=lesson.id,
+                asset_id=resource_asset.id,
+                is_downloadable=True,
+                label=resource_file.filename,
+                session=db.session,
+            )
+
+    db.session.expire(lesson, ["resources"])
+
+
 def _resolve_learning_unit(unit_id: Any, session: Any = None) -> LearningUnit | None:
     if not unit_id:
         return None
@@ -325,9 +381,7 @@ def _serialize_learning_unit(unit: LearningUnit) -> dict[str, Any]:
         if les.previous_lesson_id and les.status in ("DRAFT", "PENDING_APPROVAL")
     }
     visible_children = [
-        les
-        for les in children
-        if les.id not in replaced_orig_ids and les.status != "HISTORICAL"
+        les for les in children if les.id not in replaced_orig_ids and les.status != "HISTORICAL"
     ]
     sorted_children = sorted(visible_children, key=lambda les: les.position or 0)
 
@@ -757,6 +811,9 @@ def submit_course_route(course_id: str) -> Any:
         )
         raise CourseValidationError(msg)
 
+    if not course_obj.thumbnail_url or not str(course_obj.thumbnail_url).strip():
+        raise CourseValidationError("Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản.")
+
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason", "Giảng viên đề xuất phê duyệt giáo trình và xuất bản khóa học.")
     try:
@@ -863,32 +920,6 @@ def learning_units_route(course_id: str) -> Any:
             }
         ), 200
     payload = request.get_json(silent=True) or {}
-    if course_obj.status in ("PUBLISHED", "ARCHIVED"):
-        proposed = {"action": "CREATE_LEARNING_UNIT", **payload}
-        review = CourseChangeRequest(
-            course_id=course_obj.id,
-            requested_by_user_id=actor.id,
-            change_type="LESSON_STRUCTURE",
-            target_type="COURSE",
-            target_id=course_obj.id,
-            proposed_payload_json=json.dumps(proposed, default=str),
-            status="PENDING",
-            created_at=utc_now(),
-        )
-        db.session.add(review)
-        db.session.commit()
-        return jsonify(
-            {
-                "status": "pending_approval",
-                "pending_approval": True,
-                "message": (
-                    "Khóa học đã ban hành. "
-                    "Yêu cầu tạo chương mục mới đã được gửi tới Quản trị viên để xét duyệt."
-                ),
-                "change_request_id": review.id,
-            }
-        ), 202
-
     unit = create_learning_unit(actor, course_id, payload)
     return jsonify(_serialize_learning_unit(unit)), 201
 
@@ -1169,6 +1200,10 @@ def update_learning_unit_route(unit_id: str) -> Any:
                         ),
                         action_url=f"#/admin/change-requests/review?id={review.id}",
                         category="COURSE",
+                        event_key=uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"pwd301:course-change:{review.id}:LESSON_CHANGE_REQUEST:{adm.id}",
+                        ),
                         session=db.session,
                     )
         else:
@@ -1292,7 +1327,6 @@ def create_lesson_route(course_id: str) -> Any:
 
         if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
             from pwd301.models.course import CourseChangeRequest
-            from pwd301.services.lesson_service import create_lesson_change_request
 
             pending_cr = (
                 db.session.query(CourseChangeRequest)
@@ -1315,54 +1349,9 @@ def create_lesson_route(course_id: str) -> Any:
                     "Vui lòng rút lại xét duyệt trước khi tiếp tục thêm bài giảng."
                 )
 
-            has_active_draft = (
-                db.session.query(Lesson.id)
-                .filter(
-                    Lesson.course_id == course.id,
-                    Lesson.status == "DRAFT",
-                    Lesson.deleted_at.is_(None),
-                )
-                .first()
-                is not None
-            )
-            is_changeset_flow = (
-                has_active_draft
-                or request.args.get("as_draft") == "true"
-                or request.args.get("changeset") == "true"
-                or (
-                    isinstance(payload, dict)
-                    and (
-                        payload.get("as_draft") is True
-                        or payload.get("changeset") is True
-                        or payload.get("in_changeset") is True
-                    )
-                )
-            )
-            if is_changeset_flow:
-                payload["status"] = "DRAFT"
-                lesson = create_lesson(actor, course.id, payload)
-            else:
-                payload["change_type"] = "LESSON_STRUCTURE"
-                payload["action"] = "CREATE_LESSON"
-                req, lesson = create_lesson_change_request(
-                    actor=actor,
-                    course_id=course.id,
-                    payload=payload,
-                    session=db.session,
-                )
-                db.session.commit()
-                serialized = _serialize_lesson(lesson)
-                return jsonify({
-                    **serialized,
-                    "status": "pending_approval",
-                    "pending_approval": True,
-                    "message": (
-                        "Khóa học đã ban hành. "
-                        "Yêu cầu tạo bài giảng mới đã được gửi tới Quản trị viên để xét duyệt."
-                    ),
-                    "change_request_id": req.id,
-                    "lesson": serialized,
-                }), 202
+            # All lesson additions to published courses are staged as DRAFT in the unified course changeset
+            payload["status"] = "DRAFT"
+            lesson = create_lesson(actor, course.id, payload)
         else:
             if unit_is_staged:
                 payload["status"] = "DRAFT"
@@ -1437,14 +1426,16 @@ def create_lesson_route(course_id: str) -> Any:
 
         db.session.commit()
         serialized = _serialize_lesson(lesson)
-        return jsonify({
-            **serialized,
-            "success": True,
-            "message": "Đã thêm bài giảng mới vào bản nháp cập nhật.",
-            "is_draft": True,
-            "status": lesson.status,
-            "lesson": serialized,
-        }), 201
+        return jsonify(
+            {
+                **serialized,
+                "success": True,
+                "message": "Đã thêm bài giảng mới vào bản nháp cập nhật.",
+                "is_draft": True,
+                "status": lesson.status,
+                "lesson": serialized,
+            }
+        ), 201
     except Exception:
         raise
 
@@ -1601,22 +1592,26 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
                 db.session.delete(lesson)
                 db.session.commit()
                 return (
-                    jsonify({
-                        "success": True,
-                        "status": "success",
-                        "message": "Đã hủy bỏ bản nháp chỉnh sửa bài giảng.",
-                    }),
+                    jsonify(
+                        {
+                            "success": True,
+                            "status": "success",
+                            "message": "Đã hủy bỏ bản nháp chỉnh sửa bài giảng.",
+                        }
+                    ),
                     200,
                 )
             # Un-submitted new draft lesson
             trash_lesson(actor, lesson.id, reason="Xóa bài giảng nháp", session=db.session)
             db.session.commit()
             return (
-                jsonify({
-                    "success": True,
-                    "status": "success",
-                    "message": "Đã xóa bài giảng khỏi bản nháp.",
-                }),
+                jsonify(
+                    {
+                        "success": True,
+                        "status": "success",
+                        "message": "Đã xóa bài giảng khỏi bản nháp.",
+                    }
+                ),
                 200,
             )
 
@@ -1624,13 +1619,15 @@ def delete_lesson_from_hub_route(course_id: str, lesson_id: str) -> Any:
         lesson.material_change_summary = "[STAGED_DELETE]"
         db.session.commit()
         return (
-            jsonify({
-                "success": True,
-                "status": "success",
-                "is_staged_delete": True,
-                "message": "Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.",
-                "lesson": _serialize_lesson(lesson),
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "status": "success",
+                    "is_staged_delete": True,
+                    "message": "Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.",
+                    "lesson": _serialize_lesson(lesson),
+                }
+            ),
             200,
         )
 
@@ -1993,9 +1990,7 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         )
         # Check if incoming payload produces any actual difference from the live lesson
         new_title = (payload.get("title") or lesson.title or "").strip()
-        new_summary = (
-            payload.get("summary") if "summary" in payload else (lesson.summary or "")
-        )
+        new_summary = payload.get("summary") if "summary" in payload else (lesson.summary or "")
         new_summary = (new_summary or "").strip()
         new_content = (
             payload.get("markdown_content")
@@ -2019,10 +2014,23 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         orig_dur_int = int(lesson.estimated_duration_minutes or 0)
 
         rules_changed = (
-            ("minimum_completion_seconds" in payload and payload["minimum_completion_seconds"] != lesson.minimum_completion_seconds)
-            or ("viewed_fraction_required" in payload and payload["viewed_fraction_required"] != lesson.viewed_fraction_required)
-            or ("required_for_periods_starting_at" in payload and payload["required_for_periods_starting_at"] != lesson.required_for_periods_starting_at)
-            or ("learning_unit_id" in payload and str(payload["learning_unit_id"]) != str(lesson.learning_unit_id))
+            (
+                "minimum_completion_seconds" in payload
+                and payload["minimum_completion_seconds"] != lesson.minimum_completion_seconds
+            )
+            or (
+                "viewed_fraction_required" in payload
+                and payload["viewed_fraction_required"] != lesson.viewed_fraction_required
+            )
+            or (
+                "required_for_periods_starting_at" in payload
+                and payload["required_for_periods_starting_at"]
+                != lesson.required_for_periods_starting_at
+            )
+            or (
+                "learning_unit_id" in payload
+                and str(payload["learning_unit_id"]) != str(lesson.learning_unit_id)
+            )
         )
 
         is_identical = (
@@ -2035,31 +2043,36 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
 
         if is_identical:
             if existing_draft:
-                from pwd301.utils.datetime import utc_now
+                from pwd301.models.types import utc_now
+
                 existing_draft.deleted_at = utc_now()
                 db.session.commit()
             serialized = _serialize_lesson(lesson)
-            return jsonify({
-                **serialized,
-                "success": True,
-                "message": "Nội dung bài giảng không có thay đổi so với bản đã ban hành. Hệ thống tự động bỏ qua.",
-                "is_draft": False,
-                "status": lesson.status,
-                "lesson": serialized,
-            }), 200
+            return jsonify(
+                {
+                    **serialized,
+                    "success": True,
+                    "message": "Nội dung bài giảng không có thay đổi so với bản đã ban hành. Hệ thống tự động bỏ qua.",
+                    "is_draft": False,
+                    "status": lesson.status,
+                    "lesson": serialized,
+                }
+            ), 200
 
         if existing_draft:
             updated = update_lesson(actor, existing_draft.id, payload, session=db.session)
             db.session.commit()
             serialized = _serialize_lesson(updated)
-            return jsonify({
-                **serialized,
-                "success": True,
-                "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
-                "is_draft": True,
-                "status": "DRAFT",
-                "lesson": serialized,
-            }), 200
+            return jsonify(
+                {
+                    **serialized,
+                    "success": True,
+                    "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+                    "is_draft": True,
+                    "status": "DRAFT",
+                    "lesson": serialized,
+                }
+            ), 200
 
         # Create new staged draft revision
         draft_data = dict(payload)
@@ -2105,27 +2118,31 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         _copy_lesson_resources(lesson.id, staged.id, session=db.session)
         db.session.commit()
         serialized = _serialize_lesson(staged)
-        return jsonify({
-            **serialized,
-            "success": True,
-            "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
-            "is_draft": True,
-            "status": "DRAFT",
-            "lesson": serialized,
-        }), 200
+        return jsonify(
+            {
+                **serialized,
+                "success": True,
+                "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+                "is_draft": True,
+                "status": "DRAFT",
+                "lesson": serialized,
+            }
+        ), 200
 
     # Otherwise (e.g. course in DRAFT or lesson already DRAFT)
     updated_lesson = update_lesson(actor, lesson_id, payload, session=db.session)
     db.session.commit()
     serialized = _serialize_lesson(updated_lesson)
-    return jsonify({
-        **serialized,
-        "success": True,
-        "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
-        "is_draft": True,
-        "status": updated_lesson.status,
-        "lesson": serialized,
-    }), 200
+    return jsonify(
+        {
+            **serialized,
+            "success": True,
+            "message": "Đã lưu thay đổi vào bản nháp cập nhật của khóa học.",
+            "is_draft": True,
+            "status": updated_lesson.status,
+            "lesson": serialized,
+        }
+    ), 200
 
 
 @instructor_bp.route("/courses/<course_id>/lessons/reorder", methods=["POST"])
@@ -2279,7 +2296,6 @@ def get_course_changeset_diff_route(course_id: str) -> tuple[Response, int] | Re
     return jsonify(diff_data), 200
 
 
-
 @instructor_bp.route("/lessons/<lesson_id>/status", methods=["POST"])
 @instructor_required
 def change_lesson_status_route(lesson_id: str) -> tuple[Response, int] | Response:
@@ -2315,6 +2331,7 @@ def change_lesson_status_route(lesson_id: str) -> tuple[Response, int] | Respons
     return jsonify(_serialize_lesson(lesson)), 200
 
 
+@instructor_bp.route("/lessons/<lesson_id>", methods=["DELETE"])
 @instructor_bp.route("/lessons/<lesson_id>/trash", methods=["POST", "DELETE"])
 @instructor_required
 def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
@@ -2359,22 +2376,26 @@ def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
                 db.session.delete(lesson)
                 db.session.commit()
                 return (
-                    jsonify({
-                        "success": True,
-                        "status": "success",
-                        "message": "Đã hủy bỏ bản nháp chỉnh sửa bài giảng.",
-                    }),
+                    jsonify(
+                        {
+                            "success": True,
+                            "status": "success",
+                            "message": "Đã hủy bỏ bản nháp chỉnh sửa bài giảng.",
+                        }
+                    ),
                     200,
                 )
             # Un-submitted new draft lesson
             trash_lesson(actor, lesson.id, reason=reason, session=db.session)
             db.session.commit()
             return (
-                jsonify({
-                    "success": True,
-                    "status": "success",
-                    "message": "Đã xóa bài giảng khỏi bản nháp.",
-                }),
+                jsonify(
+                    {
+                        "success": True,
+                        "status": "success",
+                        "message": "Đã xóa bài giảng khỏi bản nháp.",
+                    }
+                ),
                 200,
             )
 
@@ -2382,13 +2403,15 @@ def trash_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         lesson.material_change_summary = "[STAGED_DELETE]"
         db.session.commit()
         return (
-            jsonify({
-                "success": True,
-                "status": "success",
-                "is_staged_delete": True,
-                "message": "Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.",
-                "lesson": _serialize_lesson(lesson),
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "status": "success",
+                    "is_staged_delete": True,
+                    "message": "Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.",
+                    "lesson": _serialize_lesson(lesson),
+                }
+            ),
             200,
         )
 
@@ -2411,8 +2434,11 @@ def _serialize_enrolled_student(e: Enrollment) -> dict[str, Any]:
 
 
 def _serialize_prerequisite_course(c: Course) -> dict[str, Any]:
+    cid = str(c.public_id)
     return {
-        "course_id": str(c.public_id),
+        "id": cid,
+        "course_id": cid,
+        "prerequisite_course_id": cid,
         "course_code": c.course_code,
         "title": c.title,
         "category": c.category,
@@ -2602,6 +2628,10 @@ def add_course_prerequisite_route(course_id: str) -> Any:
                     ),
                     action_url=f"#/instructor/courses/manage?id={prereq_course.public_id}",
                     category="COURSE",
+                    event_key=uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"pwd301:course-change:{change_req.id}:COURSE_PREREQUISITE_REQUEST:{prereq_owner.id}",
+                    ),
                     session=db.session,
                 )
 
@@ -2880,6 +2910,10 @@ def review_instructor_prerequisite_request_route(req_id: int) -> tuple[Response,
                     ),
                     action_url=f"#/instructor/courses/manage?id={req_record.course.public_id}",
                     category="COURSE",
+                    event_key=uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"pwd301:course-change:{req_record.id}:COURSE_PREREQUISITE_APPROVED:{req_record.requested_by_user_id}",
+                    ),
                     session=db.session,
                 )
 
@@ -2905,6 +2939,10 @@ def review_instructor_prerequisite_request_route(req_id: int) -> tuple[Response,
                     ),
                     action_url=f"#/instructor/courses/manage?id={req_record.course.public_id}",
                     category="COURSE",
+                    event_key=uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"pwd301:course-change:{req_record.id}:COURSE_PREREQUISITE_REJECTED:{req_record.requested_by_user_id}",
+                    ),
                     session=db.session,
                 )
 

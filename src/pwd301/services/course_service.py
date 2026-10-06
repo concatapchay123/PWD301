@@ -30,9 +30,10 @@ from pwd301.models.course import (
     CourseCompletionRule,
     CoursePrerequisite,
     Enrollment,
+    Lesson,
 )
 from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
+from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
 from pwd301.models.types import normalize_row_version, utc_now
 from pwd301.services.authorization_service import (
     _resolve_course,
@@ -51,6 +52,7 @@ from pwd301.services.exceptions import (
     InvalidRoleAssignmentError,
     ResourceNotFoundError,
     UserNotFoundError,
+    ValidationError,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +156,155 @@ def _record_audit_event(
     )
     sess.add(audit_entry)
     return audit_entry
+
+
+def _course_notification_event_key(audit_entry: AuditEvent, recipient_user_id: int) -> uuid.UUID:
+    """Return a deterministic notification key for one audited course transition and recipient."""
+    if audit_entry.id is None:
+        raise RuntimeError("Course notification event key requires a persisted audit event.")
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-audit:{audit_entry.id}:{audit_entry.action}:{recipient_user_id}",
+    )
+
+
+def flag_lesson_content(
+    actor: User,
+    course: Course,
+    lesson: Lesson,
+    reason: str,
+    content_type: str = "bài học",
+    idempotency_key: uuid.UUID | str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    """Persist a lesson flag, mandatory audit and owner notice atomically."""
+    from pwd301.services.audit_service import record_audit_event
+    from pwd301.services.notification_service import dispatch_notification, emit_event
+
+    sess = session if session is not None else db.session
+    normalized_reason = str(reason).strip()
+    if len(normalized_reason) < 5:
+        raise ValidationError("Lý do gắn cờ bắt buộc tối thiểu 5 ký tự.")
+
+    normalized_content_type = str(content_type).strip() or "bài học"
+    normalized_key: uuid.UUID | None = None
+    if idempotency_key is not None:
+        try:
+            normalized_key = (
+                idempotency_key
+                if isinstance(idempotency_key, uuid.UUID)
+                else uuid.UUID(str(idempotency_key).strip())
+            )
+        except (AttributeError, ValueError):
+            raise ValidationError("X-Idempotency-Key must be a valid UUID.") from None
+
+    notification_payload = {
+        "course_id": str(course.public_id),
+        "lesson_id": str(lesson.public_id),
+        "reason": normalized_reason,
+        "content_type": normalized_content_type,
+        "action_url": f"#/instructor/courses/manage?id={course.public_id}",
+    }
+
+    if normalized_key is not None:
+        existing_event = sess.query(NotificationEvent).filter_by(event_key=normalized_key).first()
+        if existing_event is not None:
+            if (
+                existing_event.event_type != "COURSE_CONTENT_FLAGGED"
+                or existing_event.actor_user_id != actor.id
+                or existing_event.target_type != "LESSON"
+                or existing_event.target_id != lesson.id
+            ):
+                raise ConflictError("X-Idempotency-Key is already used by another operation.")
+            try:
+                existing_payload = json.loads(existing_event.payload_json or "{}")
+            except (TypeError, ValueError):
+                existing_payload = None
+            if existing_payload != notification_payload:
+                raise ConflictError("X-Idempotency-Key was already used with different data.")
+
+            existing_audit = (
+                sess.query(AuditEvent)
+                .filter_by(
+                    actor_user_id=actor.id,
+                    action="CONTENT_FLAGGED",
+                    target_type="LESSON",
+                    target_id=lesson.id,
+                    reason=normalized_reason,
+                )
+                .order_by(AuditEvent.id.desc())
+                .first()
+            )
+            existing_notification = (
+                sess.query(Notification)
+                .filter_by(
+                    notification_event_id=existing_event.id,
+                    recipient_user_id=course.owner_instructor_id,
+                )
+                .first()
+                if course.owner_instructor_id
+                else None
+            )
+            return {
+                "audit": existing_audit,
+                "notification": existing_notification,
+                "idempotent_replay": True,
+            }
+
+    event = None
+    if normalized_key is not None:
+        event = emit_event(
+            event_type="COURSE_CONTENT_FLAGGED",
+            payload=notification_payload,
+            actor_user_id=actor.id,
+            target_type="LESSON",
+            target_id=lesson.id,
+            event_key=normalized_key,
+            session=sess,
+        )
+
+    lesson.material_change_summary = f"[FLAGGED]: {normalized_reason}"[:500]
+    audit = record_audit_event(
+        actor=actor,
+        action="CONTENT_FLAGGED",
+        target_type="LESSON",
+        target_id=lesson.id,
+        reason=normalized_reason,
+        performed_as_admin=True,
+        after_state={
+            "course_id": str(course.public_id),
+            "lesson_id": str(lesson.public_id),
+            "content_type": normalized_content_type,
+            "reason": normalized_reason,
+        },
+        commit=False,
+        session=sess,
+    )
+
+    notification = None
+    if course.owner_instructor_id:
+        notification, _ = dispatch_notification(
+            recipient_user=course.owner_instructor_id,
+            event_type="COURSE_CONTENT_FLAGGED",
+            title=f"Nội dung bị gắn cờ: {lesson.title}",
+            body=(
+                f"Quản trị viên đã gắn cờ {normalized_content_type} '{lesson.title}' "
+                f"trong khóa học '{course.title}'. Lý do: {normalized_reason}"
+            ),
+            action_url=f"#/instructor/courses/manage?id={course.public_id}",
+            category="COURSE",
+            payload=notification_payload,
+            event=event,
+            session=sess,
+        )
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return {"audit": audit, "notification": notification, "idempotent_replay": False}
 
 
 def _check_active_prerequisite_dependencies(
@@ -560,7 +711,7 @@ def update_course(
 
     # Audit metadata changes
     audit_action = "COURSE_ADMIN_EDIT" if admin_override else "COURSE_UPDATED"
-    _record_audit_event(
+    audit_entry = _record_audit_event(
         sess=sess,
         actor=actor,
         action=audit_action,
@@ -573,6 +724,7 @@ def update_course(
     if admin_override:
         from pwd301.services.notification_service import dispatch_notification
 
+        sess.flush()
         dispatch_notification(
             recipient_user=course.owner_instructor_id,
             event_type="SYSTEM_ADMIN_INTERVENTION",
@@ -588,6 +740,7 @@ def update_course(
                 "action": "COURSE_ADMIN_EDIT",
                 "reason": clean_admin_reason,
             },
+            event_key=_course_notification_event_key(audit_entry, course.owner_instructor_id),
             session=sess,
         )
 
@@ -610,7 +763,7 @@ def queue_course_metadata_review(
     course_id: Course | int | uuid.UUID | str,
     data: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
-) -> CourseChangeRequest:
+) -> CourseChangeRequest | Course:
     """Queue or upsert a course metadata change request for Admin review.
 
     Preserves published course metadata integrity while supporting autosave/idempotency.
@@ -885,6 +1038,13 @@ def change_course_status(
             f"Cannot transition course from '{current_status}' to '{target_status}'."
         )
 
+    if target_status == "SUBMITTED_FOR_REVIEW" and (
+        not course.thumbnail_url or not str(course.thumbnail_url).strip()
+    ):
+        raise CourseValidationError(
+            "Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản."
+        )
+
     # 2. Check role and ownership authorization for this specific transition
     if target_status == "APPROVED":
         # Critical Invariant: Only Primary Admin or Admin with COURSE_REVIEW can approve courses
@@ -952,13 +1112,16 @@ def change_course_status(
                 for cres in getattr(cles, "resources", []):
                     fa = cres.file_asset
                     if fa is not None and fa.virus_scan_status != "CLEAN":
-                        res_name = cres.label or fa.display_name or fa.original_filename or "tệp đính kèm"
+                        res_name = (
+                            cres.label or fa.display_name or fa.original_filename or "tệp đính kèm"
+                        )
                         raise CourseValidationError(
                             f"Không thể gửi duyệt khóa học. Bài học '{cles.title}' chứa tệp đính kèm "
                             f"chưa an toàn hoặc đã bị cách ly ('{res_name}'). "
                             "Vui lòng gỡ bỏ hoặc thay thế tệp này trước khi gửi duyệt."
                         )
-        if getattr(course, "thumbnail_file_asset", None) and course.thumbnail_file_asset.virus_scan_status != "CLEAN":
+        thumb_asset = getattr(course, "thumbnail_file_asset", None)
+        if thumb_asset and getattr(thumb_asset, "virus_scan_status", None) != "CLEAN":
             raise CourseValidationError(
                 "Không thể gửi duyệt khóa học do ảnh đại diện khóa học chưa được xác thực an toàn."
             )
@@ -1029,7 +1192,7 @@ def change_course_status(
     }
     audit_action = action_map.get(target_status, f"COURSE_STATUS_TO_{target_status}")
 
-    _record_audit_event(
+    audit_entry = _record_audit_event(
         sess=sess,
         actor=actor,
         action=audit_action,
@@ -1038,6 +1201,7 @@ def change_course_status(
         before_json=json.dumps(before_state),
         after_json=json.dumps(after_state),
     )
+    sess.flush()
 
     # 6. Dispatch in-app notifications to course owner instructor for Admin review outcomes
     if target_status == "APPROVED" and course.owner_instructor_id:
@@ -1061,6 +1225,7 @@ def change_course_status(
                     "reason": reason or "",
                     "action_url": f"#/instructor/courses/manage?id={course.public_id}",
                 },
+                event_key=_course_notification_event_key(audit_entry, course.owner_instructor_id),
                 session=sess,
             )
         except Exception as exc:
@@ -1092,6 +1257,7 @@ def change_course_status(
                     "reason": reason or "",
                     "action_url": f"#/instructor/courses/manage?id={course.public_id}",
                 },
+                event_key=_course_notification_event_key(audit_entry, course.owner_instructor_id),
                 session=sess,
             )
         except Exception as exc:
@@ -1127,6 +1293,7 @@ def change_course_status(
                                 "course_code": course.course_code,
                                 "action_url": f"#/admin/courses/review?id={course.public_id}",
                             },
+                            event_key=_course_notification_event_key(audit_entry, adm.id),
                             session=sess,
                         )
         except Exception as exc:
@@ -1205,7 +1372,7 @@ def reassign_course_owner(
     course.owner_instructor_id = target_user_id
     course.updated_at = now
 
-    _record_audit_event(
+    audit_entry = _record_audit_event(
         sess=sess,
         actor=admin_actor,
         action="COURSE_OWNER_REASSIGNED",
@@ -1224,6 +1391,7 @@ def reassign_course_owner(
             }
         ),
     )
+    sess.flush()
 
     # Dual In-App Notifications for Former and New Course Owners
     if old_owner_id:
@@ -1242,6 +1410,7 @@ def reassign_course_owner(
                     "course_code": course.course_code,
                     "reason": reason or "",
                 },
+                event_key=_course_notification_event_key(audit_entry, old_owner_id),
                 session=sess,
             )
         except Exception as exc:
@@ -1268,6 +1437,7 @@ def reassign_course_owner(
                     "course_code": course.course_code,
                     "reason": reason or "",
                 },
+                event_key=_course_notification_event_key(audit_entry, target_user_id),
                 session=sess,
             )
         except Exception as exc:

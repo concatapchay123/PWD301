@@ -376,3 +376,47 @@ def test_regular_instructor_cannot_view_all_platform_courses_via_scope(
     assert data["data"]["is_admin"] is False
     codes = [c["course_code"] for c in data["data"]["courses"]]
     assert "OTHER-101" not in codes
+
+
+def test_submit_course_requires_thumbnail(
+    app: Flask,
+    client: FlaskClient,
+    instructor_user: User,
+) -> None:
+    """Fail-closed invariant: Submitting course for review requires a thumbnail/cover photo."""
+    sess: Session = db.session
+
+    course = create_course(
+        instructor_user,
+        {
+            "course_code": "NO-THUMB-01",
+            "title": "Course Without Thumbnail",
+            "description": "Test thumbnail gating",
+        },
+        session=sess,
+    )
+    # Add learning unit and lesson
+    from pwd301.models.course import LearningUnit, Lesson
+    unit = LearningUnit(course_id=course.id, title="Chương 1", position=1)
+    sess.add(unit)
+    sess.flush()
+    lesson = Lesson(
+        course_id=course.id,
+        learning_unit_id=unit.id,
+        title="Bài 1",
+        position=1,
+        markdown_content="# Nội dung bài học",
+    )
+    sess.add(lesson)
+    sess.commit()
+
+    login_web_user(client, instructor_user)
+    with client.session_transaction() as s:
+        s["active_role"] = "INSTRUCTOR"
+
+    # Attempt to submit without thumbnail
+    resp = client.post(f"/instructor/courses/{course.id}/submit", json={"reason": "Xin duyệt"})
+    assert resp.status_code == 400
+    err_data = resp.get_json()
+    assert "ảnh bìa" in (err_data.get("error", {}).get("message") or "").lower() or "ảnh bìa" in str(err_data).lower()
+
