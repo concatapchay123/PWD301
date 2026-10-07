@@ -1,30 +1,32 @@
 """API tests for Video DRM HLS delivery, tokenized key exchange and raw download lockout (TASK-085)."""
 
 import hashlib
-import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import uuid
-from pathlib import Path
-from typing import Any
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult, LessonResource
+from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
+from pwd301.models.file_import import (
+    FileAsset,
+    FileBlob,
+    FileRevision,
+    FileScanResult,
+)
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
 from pwd301.services.video_drm_service import (
-    generate_key_token,
-    transcode_to_encrypted_hls,
     get_lesson_hls_directory,
+    transcode_to_encrypted_hls,
 )
 
 
@@ -104,6 +106,7 @@ def test_student_cannot_download_raw_lesson_video(
 
     # Create dummy video file on disk in app FILE_STORAGE_ROOT
     from pwd301.services.file_service import get_file_storage_root
+
     with app.app_context():
         storage_dir = get_file_storage_root()
     storage_dir.mkdir(parents=True, exist_ok=True)
@@ -178,8 +181,12 @@ def test_student_cannot_download_raw_lesson_video(
     login_client(client, student_user.email)
 
     # Try downloading raw video
-    resp = client.get(f"/student/courses/{course_sample.public_id}/files/{asset.public_id}/download")
-    assert resp.status_code == 403, f"Expected 403 Forbidden for raw video download, got {resp.status_code}: {resp.data.decode('utf-8', errors='ignore')}"
+    resp = client.get(
+        f"/student/courses/{course_sample.public_id}/files/{asset.public_id}/download"
+    )
+    assert resp.status_code == 403, (
+        f"Expected 403 Forbidden for raw video download, got {resp.status_code}: {resp.data.decode('utf-8', errors='ignore')}"
+    )
     data = resp.get_json() or {}
     error_obj = data.get("error")
     msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
@@ -206,10 +213,20 @@ def test_student_can_fetch_drm_playlist_and_key(
     temp_dir = tempfile.mkdtemp(prefix="pwd301_drm_api_")
     test_mp4 = os.path.join(temp_dir, "test.mp4")
     gen_cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=1",
-        "-f", "lavfi", "-i", "sine=duration=1",
-        "-c:v", "libx264", "-c:a", "aac",
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=duration=1:size=320x240:rate=1",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=duration=1",
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "aac",
         test_mp4,
     ]
     subprocess.run(gen_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -254,7 +271,9 @@ def test_student_can_fetch_drm_playlist_and_key(
     login_client(client, student_user.email)
 
     # 1. Fetch playlist
-    playlist_url = f"/student/courses/{course_sample.public_id}/lessons/{lesson.public_id}/video/playlist.m3u8"
+    playlist_url = (
+        f"/student/courses/{course_sample.public_id}/lessons/{lesson.public_id}/video/playlist.m3u8"
+    )
     resp = client.get(playlist_url)
     assert resp.status_code == 200, f"Expected 200 OK for playlist, got {resp.status_code}"
     playlist_text = resp.get_data(as_text=True)
@@ -275,7 +294,9 @@ def test_student_can_fetch_drm_playlist_and_key(
     assert key_resp.headers.get("Cache-Control") == "private, no-store"
 
     # 3. Fetch key with tampered token -> 403 Forbidden
-    bad_key_resp = client.get(f"/student/courses/{course_sample.public_id}/lessons/{lesson.public_id}/video/key?token=badtoken")
+    bad_key_resp = client.get(
+        f"/student/courses/{course_sample.public_id}/lessons/{lesson.public_id}/video/key?token=badtoken"
+    )
     assert bad_key_resp.status_code == 403
 
     shutil.rmtree(temp_dir, ignore_errors=True)

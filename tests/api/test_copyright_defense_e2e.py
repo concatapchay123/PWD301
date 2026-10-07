@@ -9,20 +9,17 @@ Covers:
 """
 
 import hashlib
-import json
 import os
 import re
 import shutil
-import tempfile
-import time
 import uuid
-from pathlib import Path
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson
+from pwd301.models.course import Enrollment, EnrollmentPeriod
 from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
@@ -30,7 +27,7 @@ from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.file_service import get_file_storage_root
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
-from pwd301.services.video_drm_service import transcode_to_encrypted_hls, get_lesson_hls_directory
+from pwd301.services.video_drm_service import get_lesson_hls_directory
 
 
 @pytest.fixture
@@ -195,10 +192,18 @@ def test_copyright_protection_end_to_end_defense(
     csrf_token = login_client(client, student_user.email)
 
     # DEFENSE 1: Student cannot download raw video file
-    raw_download_resp = client.get(f"/student/courses/{course.public_id}/files/{asset.public_id}/download")
-    assert raw_download_resp.status_code == 403, "Student must be forbidden from downloading raw video files"
+    raw_download_resp = client.get(
+        f"/student/courses/{course.public_id}/files/{asset.public_id}/download"
+    )
+    assert raw_download_resp.status_code == 403, (
+        "Student must be forbidden from downloading raw video files"
+    )
     err_body = raw_download_resp.get_json() or {}
-    err_msg = err_body.get("error", {}).get("message", "") if isinstance(err_body.get("error"), dict) else str(err_body.get("error"))
+    err_msg = (
+        err_body.get("error", {}).get("message", "")
+        if isinstance(err_body.get("error"), dict)
+        else str(err_body.get("error"))
+    )
     assert "restricted" in err_msg.lower() or "secure" in err_msg.lower()
 
     # Create mock HLS directory with encrypted playlist
@@ -219,7 +224,9 @@ def test_copyright_protection_end_to_end_defense(
     (hls_dir / "segment_000.ts").write_bytes(b"dummy encrypted ts segment")
 
     # DEFENSE 2: Fetch encrypted HLS playlist
-    playlist_url = f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/playlist.m3u8"
+    playlist_url = (
+        f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/playlist.m3u8"
+    )
     p_resp = client.get(playlist_url)
     assert p_resp.status_code == 200
     p_text = p_resp.get_data(as_text=True)
@@ -239,11 +246,14 @@ def test_copyright_protection_end_to_end_defense(
     assert k_resp.headers.get("Cache-Control") == "private, no-store"
 
     # DEFENSE 4: Fetch DRM key with forged token -> 403 Forbidden
-    bad_k_resp = client.get(f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/key?token=forged.token.here")
+    bad_k_resp = client.get(
+        f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/key?token=forged.token.here"
+    )
     assert bad_k_resp.status_code == 403
 
     # DEFENSE 5: Zero-Trust Wall Clock Heartbeat vs Progress Jump Attack
     from pwd301.services.jwt_auth_service import create_token_pair
+
     tokens = create_token_pair(student_user)
     jwt_token = tokens["access_token"]
     jwt_headers = {"Authorization": f"Bearer {jwt_token}", "Content-Type": "application/json"}
@@ -271,7 +281,9 @@ def test_copyright_protection_end_to_end_defense(
     data_obj = cheat_data.get("data") or cheat_data
     seconds_recorded = data_obj.get("seconds_spent", 0)
     assert seconds_recorded <= 10, f"Expected wall-clock clamped seconds, got {seconds_recorded}"
-    assert data_obj.get("is_completed") is False, "Fraudulent progress jump must NOT mark lesson complete"
+    assert data_obj.get("is_completed") is False, (
+        "Fraudulent progress jump must NOT mark lesson complete"
+    )
 
     # Check that audit log recorded anomaly
     audit_evt = sess.query(AuditEvent).filter_by(action="LESSON_PROGRESS_PACE_ANOMALY").first()

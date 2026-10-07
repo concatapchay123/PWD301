@@ -1,17 +1,13 @@
 """Unit tests for Server-Authoritative Wall-Clock Heartbeat & Anti-Bypass Security (TASK-085)."""
 
-import json
-import time
-from typing import Any
 import pytest
 from flask import Flask
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson, LessonProgress
+from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.services.course_service import change_course_status, create_course
-from pwd301.services.exceptions import LessonValidationError, LessonStateViolationError
 from pwd301.services.lesson_service import (
     create_lesson,
     record_lesson_progress,
@@ -61,7 +57,6 @@ def course_sample(app: Flask, instructor_user: User) -> Course:
             "level": "BEGINNER",
         },
     )
-
 
 
 def test_cannot_bypass_minimum_duration_with_high_view_fraction(
@@ -120,7 +115,9 @@ def test_cannot_bypass_minimum_duration_with_high_view_fraction(
     # Must NOT have jumped to 300s!
     assert p1.seconds_spent == 5, f"Expected 5 seconds spent, got {p1.seconds_spent}"
     assert float(p1.max_view_fraction) == 0.95
-    assert p1.completed_at is None, "Lesson must NOT be marked completed without fulfilling 300 seconds wall-clock time!"
+    assert p1.completed_at is None, (
+        "Lesson must NOT be marked completed without fulfilling 300 seconds wall-clock time!"
+    )
 
 
 def test_rapid_ping_spam_is_capped_by_server_wall_clock(
@@ -199,4 +196,6 @@ def test_rapid_ping_spam_is_capped_by_server_wall_clock(
         )
         .first()
     )
-    assert anomaly_event is not None, "Expected LESSON_PROGRESS_PACE_ANOMALY audit event to be logged!"
+    assert anomaly_event is not None, (
+        "Expected LESSON_PROGRESS_PACE_ANOMALY audit event to be logged!"
+    )

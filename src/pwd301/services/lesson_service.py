@@ -73,7 +73,8 @@ def _to_naive_utc(dt: Any) -> Any:
         return None
     if hasattr(dt, "tzinfo") and dt.tzinfo is not None:
         import datetime as dt_mod
-        return dt.astimezone(dt_mod.timezone.utc).replace(tzinfo=None)
+
+        return dt.astimezone(dt_mod.UTC).replace(tzinfo=None)
     return dt
 
 
@@ -1663,7 +1664,9 @@ def record_lesson_progress(
         if sec > max_credible:
             credited_sec = max(0, min(sec, max_credible))
             if sec - elapsed > 5.0:
-                actor_roles = ",".join(sorted(r.code for r in getattr(actor, "roles", []))) or "STUDENT"
+                actor_roles = (
+                    ",".join(sorted(r.code for r in getattr(actor, "roles", []))) or "STUDENT"
+                )
                 audit_ev = AuditEvent(
                     action="LESSON_PROGRESS_PACE_ANOMALY",
                     actor_user_id=actor.id,
@@ -3596,28 +3599,34 @@ def get_course_changeset_diff(
             old_title = orig.title if orig else ""
             old_summary = orig.summary if orig else ""
             if orig and orig.title != d.title:
-                field_changes.append({
-                    "field": "title",
-                    "label": "Tiêu đề bài học",
-                    "old_value": orig.title,
-                    "new_value": d.title,
-                })
+                field_changes.append(
+                    {
+                        "field": "title",
+                        "label": "Tiêu đề bài học",
+                        "old_value": orig.title,
+                        "new_value": d.title,
+                    }
+                )
             if orig and (orig.summary or "") != (d.summary or ""):
-                field_changes.append({
-                    "field": "summary",
-                    "label": "Tóm tắt bài học",
-                    "old_value": orig.summary or "(Trống)",
-                    "new_value": d.summary or "(Trống)",
-                })
+                field_changes.append(
+                    {
+                        "field": "summary",
+                        "label": "Tóm tắt bài học",
+                        "old_value": orig.summary or "(Trống)",
+                        "new_value": d.summary or "(Trống)",
+                    }
+                )
             orig_content = (orig.markdown_content or "") if orig else ""
             new_content = d.markdown_content or ""
             if orig and orig_content != new_content:
-                field_changes.append({
-                    "field": "content",
-                    "label": "Nội dung bài học",
-                    "old_value": f"{len(orig_content)} ký tự",
-                    "new_value": f"{len(new_content)} ký tự",
-                })
+                field_changes.append(
+                    {
+                        "field": "content",
+                        "label": "Nội dung bài học",
+                        "old_value": f"{len(orig_content)} ký tự",
+                        "new_value": f"{len(new_content)} ký tự",
+                    }
+                )
 
             def _quiz_count(c):
                 m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", c or "", re.DOTALL)
@@ -3631,19 +3640,23 @@ def get_course_changeset_diff(
             old_qc = _quiz_count(orig_content)
             new_qc = _quiz_count(new_content)
             if old_qc != new_qc:
-                field_changes.append({
-                    "field": "quiz",
-                    "label": "Câu hỏi ôn tập",
-                    "old_value": f"{old_qc} câu",
-                    "new_value": f"{new_qc} câu",
-                })
+                field_changes.append(
+                    {
+                        "field": "quiz",
+                        "label": "Câu hỏi ôn tập",
+                        "old_value": f"{old_qc} câu",
+                        "new_value": f"{new_qc} câu",
+                    }
+                )
             if not field_changes:
-                field_changes.append({
-                    "field": "general",
-                    "label": "Cập nhật bài học",
-                    "old_value": "Bản gốc",
-                    "new_value": "Bản nháp đã lưu",
-                })
+                field_changes.append(
+                    {
+                        "field": "general",
+                        "label": "Cập nhật bài học",
+                        "old_value": "Bản gốc",
+                        "new_value": "Bản nháp đã lưu",
+                    }
+                )
 
             modified_lessons_list.append(
                 {
@@ -3727,30 +3740,36 @@ def get_course_changeset_diff(
             new_title = (m_item.get("title") or "").strip()
             orig_title = (orig.title or "").strip() if orig else ""
             if orig and orig_title != new_title:
-                fc_list.append({
-                    "field": "title",
-                    "label": "Tiêu đề bài học",
-                    "old_value": orig_title,
-                    "new_value": new_title,
-                })
+                fc_list.append(
+                    {
+                        "field": "title",
+                        "label": "Tiêu đề bài học",
+                        "old_value": orig_title,
+                        "new_value": new_title,
+                    }
+                )
             new_summary = (m_item.get("summary") or "").strip()
             orig_summary = (orig.summary or "").strip() if orig else ""
             if orig and orig_summary != new_summary:
-                fc_list.append({
-                    "field": "summary",
-                    "label": "Tóm tắt bài học",
-                    "old_value": orig_summary or "(Trống)",
-                    "new_value": new_summary or "(Trống)",
-                })
+                fc_list.append(
+                    {
+                        "field": "summary",
+                        "label": "Tóm tắt bài học",
+                        "old_value": orig_summary or "(Trống)",
+                        "new_value": new_summary or "(Trống)",
+                    }
+                )
             orig_content = (orig.markdown_content or "").strip() if orig else ""
             new_content = (m_item.get("markdown_content") or "").strip()
             if orig and orig_content != new_content:
-                fc_list.append({
-                    "field": "content",
-                    "label": "Nội dung bài học",
-                    "old_value": f"{len(orig_content)} ký tự",
-                    "new_value": f"{len(new_content)} ký tự",
-                })
+                fc_list.append(
+                    {
+                        "field": "content",
+                        "label": "Nội dung bài học",
+                        "old_value": f"{len(orig_content)} ký tự",
+                        "new_value": f"{len(new_content)} ký tự",
+                    }
+                )
 
             def _quiz_count(c):
                 m = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", c or "", re.DOTALL)
@@ -3764,19 +3783,23 @@ def get_course_changeset_diff(
             old_qc = _quiz_count(orig_content)
             new_qc = _quiz_count(new_content)
             if old_qc != new_qc:
-                fc_list.append({
-                    "field": "quiz",
-                    "label": "Câu hỏi ôn tập",
-                    "old_value": f"{old_qc} câu",
-                    "new_value": f"{new_qc} câu",
-                })
+                fc_list.append(
+                    {
+                        "field": "quiz",
+                        "label": "Câu hỏi ôn tập",
+                        "old_value": f"{old_qc} câu",
+                        "new_value": f"{new_qc} câu",
+                    }
+                )
             if not fc_list:
-                fc_list.append({
-                    "field": "general",
-                    "label": "Cập nhật bài học",
-                    "old_value": "Bản gốc",
-                    "new_value": "Bản nháp đã lưu",
-                })
+                fc_list.append(
+                    {
+                        "field": "general",
+                        "label": "Cập nhật bài học",
+                        "old_value": "Bản gốc",
+                        "new_value": "Bản nháp đã lưu",
+                    }
+                )
             m_item["field_changes"] = fc_list
             if orig:
                 m_item["old_title"] = orig.title
@@ -3861,23 +3884,27 @@ def get_course_changeset_diff(
 
     # 1. Structure: Added lessons
     for item in added_lessons:
-        curriculum_structure.append({
-            "change_type": "ADDED",
-            "title": item.get("title") or "Bài giảng mới",
-            "lesson_id": item.get("temp_id") or "",
-            "learning_unit_id": item.get("learning_unit_id"),
-            "position": item.get("position"),
-            "description": f"Thêm bài giảng mới: {item.get('title', 'Bài giảng mới')}",
-        })
+        curriculum_structure.append(
+            {
+                "change_type": "ADDED",
+                "title": item.get("title") or "Bài giảng mới",
+                "lesson_id": item.get("temp_id") or "",
+                "learning_unit_id": item.get("learning_unit_id"),
+                "position": item.get("position"),
+                "description": f"Thêm bài giảng mới: {item.get('title', 'Bài giảng mới')}",
+            }
+        )
 
     # 2. Structure: Deleted lessons
     for item in deleted_lessons:
-        curriculum_structure.append({
-            "change_type": "REMOVED",
-            "title": item.get("title") or "Bài giảng",
-            "lesson_id": str(item.get("lesson_id") or ""),
-            "description": f"Xóa bài giảng: {item.get('title', 'Bài giảng')}",
-        })
+        curriculum_structure.append(
+            {
+                "change_type": "REMOVED",
+                "title": item.get("title") or "Bài giảng",
+                "lesson_id": str(item.get("lesson_id") or ""),
+                "description": f"Xóa bài giảng: {item.get('title', 'Bài giảng')}",
+            }
+        )
 
     # 3. Structure, Content & Quizzes from Modified lessons
     for m_item in modified_lessons:
@@ -3903,135 +3930,174 @@ def get_course_changeset_diff(
             orig_unit_title = orig.learning_unit.title if orig.learning_unit else "Chưa gán"
             new_unit_id = m_item.get("learning_unit_id")
             new_unit_title = m_item.get("unit_title")
-            if new_unit_id and str(new_unit_id) != str(orig.learning_unit_id) and str(new_unit_id) != (str(orig.learning_unit.public_id) if orig.learning_unit else ""):
-                curriculum_structure.append({
-                    "change_type": "MOVED",
-                    "title": title,
-                    "lesson_id": lid,
-                    "old_unit_title": orig_unit_title,
-                    "new_unit_title": new_unit_title or "Chương mới",
-                    "description": f"Chuyển từ '{orig_unit_title}' sang '{new_unit_title or 'Chương mới'}'",
-                })
+            if (
+                new_unit_id
+                and str(new_unit_id) != str(orig.learning_unit_id)
+                and str(new_unit_id)
+                != (str(orig.learning_unit.public_id) if orig.learning_unit else "")
+            ):
+                curriculum_structure.append(
+                    {
+                        "change_type": "MOVED",
+                        "title": title,
+                        "lesson_id": lid,
+                        "old_unit_title": orig_unit_title,
+                        "new_unit_title": new_unit_title or "Chương mới",
+                        "description": f"Chuyển từ '{orig_unit_title}' sang '{new_unit_title or 'Chương mới'}'",
+                    }
+                )
             old_pos = orig.position
             new_pos = m_item.get("position")
             if new_pos and new_pos != old_pos:
-                curriculum_structure.append({
-                    "change_type": "REORDERED",
-                    "title": title,
-                    "lesson_id": lid,
-                    "old_position": old_pos,
-                    "new_position": new_pos,
-                    "description": f"Đổi thứ tự từ #{old_pos} sang #{new_pos}",
-                })
+                curriculum_structure.append(
+                    {
+                        "change_type": "REORDERED",
+                        "title": title,
+                        "lesson_id": lid,
+                        "old_position": old_pos,
+                        "new_position": new_pos,
+                        "description": f"Đổi thứ tự từ #{old_pos} sang #{new_pos}",
+                    }
+                )
             if (m_item.get("title") or "").strip() != (orig.title or "").strip():
-                curriculum_structure.append({
-                    "change_type": "MODIFIED",
-                    "title": title,
-                    "old_title": orig.title,
-                    "lesson_id": lid,
-                    "description": f"Đổi tiêu đề từ '{orig.title}' thành '{title}'",
-                })
+                curriculum_structure.append(
+                    {
+                        "change_type": "MODIFIED",
+                        "title": title,
+                        "old_title": orig.title,
+                        "lesson_id": lid,
+                        "description": f"Đổi tiêu đề từ '{orig.title}' thành '{title}'",
+                    }
+                )
 
             orig_content = (orig.markdown_content or "").strip()
             new_content = (m_item.get("markdown_content") or "").strip()
             if orig_content != new_content:
-                content_blocks.append({
-                    "change_type": "MODIFIED",
-                    "lesson_title": title,
-                    "lesson_id": lid,
-                    "field": "content",
-                    "old_length": len(orig_content),
-                    "new_length": len(new_content),
-                    "description": f"Cập nhật nội dung văn bản ({len(orig_content)} -> {len(new_content)} ký tự)",
-                })
+                content_blocks.append(
+                    {
+                        "change_type": "MODIFIED",
+                        "lesson_title": title,
+                        "lesson_id": lid,
+                        "field": "content",
+                        "old_length": len(orig_content),
+                        "new_length": len(new_content),
+                        "description": f"Cập nhật nội dung văn bản ({len(orig_content)} -> {len(new_content)} ký tự)",
+                    }
+                )
             orig_sum = (orig.summary or "").strip()
             new_sum = (m_item.get("summary") or "").strip()
             if orig_sum != new_sum:
-                content_blocks.append({
-                    "change_type": "MODIFIED",
-                    "lesson_title": title,
-                    "lesson_id": lid,
-                    "field": "summary",
-                    "old_summary": orig_sum or "(Trống)",
-                    "new_summary": new_sum or "(Trống)",
-                    "description": "Cập nhật tóm tắt bài giảng",
-                })
+                content_blocks.append(
+                    {
+                        "change_type": "MODIFIED",
+                        "lesson_title": title,
+                        "lesson_id": lid,
+                        "field": "summary",
+                        "old_summary": orig_sum or "(Trống)",
+                        "new_summary": new_sum or "(Trống)",
+                        "description": "Cập nhật tóm tắt bài giảng",
+                    }
+                )
 
             old_qs = _parse_quiz_list(orig.markdown_content)
             new_qs = _parse_quiz_list(m_item.get("markdown_content") or "")
 
             for nq in new_qs:
                 q_text = nq.get("question") or nq.get("prompt") or ""
-                matched = next((oq for oq in old_qs if (oq.get("question") or oq.get("prompt")) == q_text), None)
+                matched = next(
+                    (oq for oq in old_qs if (oq.get("question") or oq.get("prompt")) == q_text),
+                    None,
+                )
                 if matched is None:
-                    interactive_quizzes.append({
-                        "change_type": "ADDED",
-                        "lesson_title": title,
-                        "lesson_id": lid,
-                        "question": q_text,
-                        "type": nq.get("type") or nq.get("q_type") or "MULTIPLE_CHOICE",
-                        "description": f"Thêm câu hỏi ({nq.get('type') or 'Trắc nghiệm'}): {q_text[:70]}",
-                    })
+                    interactive_quizzes.append(
+                        {
+                            "change_type": "ADDED",
+                            "lesson_title": title,
+                            "lesson_id": lid,
+                            "question": q_text,
+                            "type": nq.get("type") or nq.get("q_type") or "MULTIPLE_CHOICE",
+                            "description": f"Thêm câu hỏi ({nq.get('type') or 'Trắc nghiệm'}): {q_text[:70]}",
+                        }
+                    )
                 elif matched != nq:
-                    interactive_quizzes.append({
-                        "change_type": "MODIFIED",
-                        "lesson_title": title,
-                        "lesson_id": lid,
-                        "question": q_text,
-                        "type": nq.get("type") or nq.get("q_type") or "MULTIPLE_CHOICE",
-                        "description": f"Chỉnh sửa câu hỏi ({nq.get('type') or 'Trắc nghiệm'}): {q_text[:70]}",
-                    })
+                    interactive_quizzes.append(
+                        {
+                            "change_type": "MODIFIED",
+                            "lesson_title": title,
+                            "lesson_id": lid,
+                            "question": q_text,
+                            "type": nq.get("type") or nq.get("q_type") or "MULTIPLE_CHOICE",
+                            "description": f"Chỉnh sửa câu hỏi ({nq.get('type') or 'Trắc nghiệm'}): {q_text[:70]}",
+                        }
+                    )
 
             for oq in old_qs:
                 q_text = oq.get("question") or oq.get("prompt") or ""
                 if not any((nq.get("question") or nq.get("prompt")) == q_text for nq in new_qs):
-                    interactive_quizzes.append({
-                        "change_type": "REMOVED",
-                        "lesson_title": title,
-                        "lesson_id": lid,
-                        "question": q_text,
-                        "type": oq.get("type") or oq.get("q_type") or "MULTIPLE_CHOICE",
-                        "description": f"Xóa câu hỏi: {q_text[:70]}",
-                    })
+                    interactive_quizzes.append(
+                        {
+                            "change_type": "REMOVED",
+                            "lesson_title": title,
+                            "lesson_id": lid,
+                            "question": q_text,
+                            "type": oq.get("type") or oq.get("q_type") or "MULTIPLE_CHOICE",
+                            "description": f"Xóa câu hỏi: {q_text[:70]}",
+                        }
+                    )
         else:
-            curriculum_structure.append({
-                "change_type": "MODIFIED",
-                "title": title,
-                "lesson_id": lid,
-                "description": f"Cập nhật bài giảng '{title}'",
-            })
+            curriculum_structure.append(
+                {
+                    "change_type": "MODIFIED",
+                    "title": title,
+                    "lesson_id": lid,
+                    "description": f"Cập nhật bài giảng '{title}'",
+                }
+            )
 
     # If no specific structural changes were appended for modified lessons, record modification
     if not curriculum_structure and modified_lessons:
         for m_item in modified_lessons:
-            curriculum_structure.append({
-                "change_type": "MODIFIED",
-                "title": m_item.get("title") or "Bài giảng",
-                "lesson_id": str(m_item.get("lesson_id") or ""),
-                "description": f"Cập nhật bài giảng '{m_item.get('title', 'Bài giảng')}'",
-            })
+            curriculum_structure.append(
+                {
+                    "change_type": "MODIFIED",
+                    "title": m_item.get("title") or "Bài giảng",
+                    "lesson_id": str(m_item.get("lesson_id") or ""),
+                    "description": f"Cập nhật bài giảng '{m_item.get('title', 'Bài giảng')}'",
+                }
+            )
 
     # 4. Assessments list
     from pwd301.models.assessment import Assessment
+
     assessments_list = []
-    course_asms = sess.query(Assessment).filter(Assessment.course_id == course.id, Assessment.deleted_at.is_(None)).all()
+    course_asms = (
+        sess.query(Assessment)
+        .filter(Assessment.course_id == course.id, Assessment.deleted_at.is_(None))
+        .all()
+    )
     for asm in course_asms:
-        assessments_list.append({
-            "assessment_id": str(asm.public_id),
-            "title": asm.title,
-            "assessment_type": asm.assessment_type,
-            "status": asm.status,
-            "time_limit_minutes": asm.time_limit_minutes,
-            "total_points": float(getattr(asm, "total_points", None) or 10.0),
-            "change_type": "MODIFIED" if asm.status == "DRAFT" else "UNCHANGED",
-            "description": f"Bài đánh giá '{asm.title}' ({asm.assessment_type})",
-        })
+        assessments_list.append(
+            {
+                "assessment_id": str(asm.public_id),
+                "title": asm.title,
+                "assessment_type": asm.assessment_type,
+                "status": asm.status,
+                "time_limit_minutes": asm.time_limit_minutes,
+                "total_points": float(getattr(asm, "total_points", None) or 10.0),
+                "change_type": "MODIFIED" if asm.status == "DRAFT" else "UNCHANGED",
+                "description": f"Bài đánh giá '{asm.title}' ({asm.assessment_type})",
+            }
+        )
 
     # 5. Governance rules
     current_reqs = {}
     if course.completion_requirements:
         try:
-            current_reqs = json.loads(course.completion_requirements) if isinstance(course.completion_requirements, str) else course.completion_requirements
+            current_reqs = (
+                json.loads(course.completion_requirements)
+                if isinstance(course.completion_requirements, str)
+                else course.completion_requirements
+            )
         except Exception:
             current_reqs = {}
     governance_rules = {

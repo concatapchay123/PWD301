@@ -31,12 +31,6 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
     student_required,
 )
-from pwd301.services.video_drm_service import (
-    generate_key_token,
-    get_lesson_hls_directory,
-    transcode_to_encrypted_hls,
-    verify_key_token,
-)
 from pwd301.services.completion_service import get_course_completion_summary
 from pwd301.services.enrollment_service import (
     enroll_student,
@@ -58,6 +52,12 @@ from pwd301.services.lesson_service import (
     record_lesson_progress,
 )
 from pwd301.services.recommendation_service import generate_course_recommendations
+from pwd301.services.video_drm_service import (
+    generate_key_token,
+    get_lesson_hls_directory,
+    transcode_to_encrypted_hls,
+    verify_key_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +304,9 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
             if is_video:
                 course_pub_id = les.course.public_id if les.course else ""
-                hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/playlist.m3u8"
+                hls_url = (
+                    f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/playlist.m3u8"
+                )
                 video_urls.append(hls_url)
                 if not video_url:
                     video_url = hls_url
@@ -1819,7 +1821,11 @@ def student_course_detail(course_id: str) -> Any:
                 if les_m:
                     linked_lesson_id = str(les_m.public_id)
                     if les_m.learning_unit_id:
-                        lu_m = db.session.query(LearningUnit).filter(LearningUnit.id == les_m.learning_unit_id).first()
+                        lu_m = (
+                            db.session.query(LearningUnit)
+                            .filter(LearningUnit.id == les_m.learning_unit_id)
+                            .first()
+                        )
                         if lu_m:
                             linked_unit_id = str(lu_m.public_id)
                 break
@@ -2544,8 +2550,12 @@ def download_student_course_file_route(asset_id: str, course_id: str | None = No
             raise ResourceNotFoundError("File asset not found for the specified course.")
 
     # Invariant 25: Students cannot download raw lesson video files (.mp4/.webm)
-    if asset.is_video or (blob.detected_mime_type and blob.detected_mime_type.lower().startswith("video/")):
-        raise ForbiddenError("Direct download of lesson videos is restricted. Please view this lesson via the secure course player.")
+    if asset.is_video or (
+        blob.detected_mime_type and blob.detected_mime_type.lower().startswith("video/")
+    ):
+        raise ForbiddenError(
+            "Direct download of lesson videos is restricted. Please view this lesson via the secure course player."
+        )
 
     disposition = request.args.get("disposition", "attachment").lower()
     if disposition not in ("inline", "attachment"):
@@ -2587,7 +2597,9 @@ def get_lesson_hls_playlist_route(course_id: str, lesson_id: str) -> Any:
         .first()
     )
     if enrollment is None:
-        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+        raise ForbiddenError(
+            "You must have an active enrollment in this course to view this video."
+        )
 
     hls_dir = get_lesson_hls_directory(course.id, lesson.id)
     playlist_path = hls_dir / "playlist.m3u8"
@@ -2597,12 +2609,16 @@ def get_lesson_hls_playlist_route(course_id: str, lesson_id: str) -> Any:
         source_path = None
         for res in getattr(lesson, "resources", []):
             fa = getattr(res, "file_asset", None)
-            if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
-                if fa.primary_blob and fa.primary_blob.storage_path:
-                    source_path = fa.primary_blob.storage_path
-                    break
+            if (
+                fa
+                and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/")))
+                and fa.primary_blob
+                and fa.primary_blob.storage_path
+            ):
+                source_path = fa.primary_blob.storage_path
+                break
 
-        if not source_path or not os.path.exists(source_path):
+        if not source_path or not Path(source_path).exists():
             raise ResourceNotFoundError("No protected video stream available for this lesson.")
 
         transcode_to_encrypted_hls(
@@ -2653,7 +2669,9 @@ def get_lesson_hls_key_route(course_id: str, lesson_id: str) -> Any:
         .first()
     )
     if enrollment is None:
-        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+        raise ForbiddenError(
+            "You must have an active enrollment in this course to view this video."
+        )
 
     token = request.args.get("token", "")
     valid, reason = verify_key_token(token, actor.id, course.id, lesson.id)
@@ -2698,7 +2716,9 @@ def get_lesson_hls_segment_route(course_id: str, lesson_id: str, segment_name: s
         .first()
     )
     if enrollment is None:
-        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+        raise ForbiddenError(
+            "You must have an active enrollment in this course to view this video."
+        )
 
     # Guard against path traversal
     if not re.match(r"^segment_\d+\.ts$", segment_name):

@@ -17,12 +17,9 @@ import secrets
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
 
 from flask import current_app
 
-from pwd301.models.course import Course, Lesson
-from pwd301.models.identity import User
 from pwd301.services.exceptions import ServiceError
 
 logger = logging.getLogger(__name__)
@@ -179,19 +176,27 @@ def transcode_to_encrypted_hls(
 
     # Fast stream copy attempt first
     cmd_copy = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-c:v", "copy",
-        "-c:a", "copy",
-        "-hls_time", str(segment_duration_seconds),
-        "-hls_playlist_type", "vod",
-        "-hls_key_info_file", str(keyinfo_file.resolve()),
-        "-hls_segment_filename", segment_pattern,
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        "-hls_time",
+        str(segment_duration_seconds),
+        "-hls_playlist_type",
+        "vod",
+        "-hls_key_info_file",
+        str(keyinfo_file.resolve()),
+        "-hls_segment_filename",
+        segment_pattern,
         str(playlist_file.resolve()),
     ]
 
     try:
-        proc = subprocess.run(cmd_copy, capture_output=True, text=True, check=True)
+        subprocess.run(cmd_copy, capture_output=True, text=True, check=True)
         logger.info(f"Successfully transcoded HLS (copy): {playlist_file}")
         return str(playlist_file)
     except subprocess.CalledProcessError:
@@ -199,25 +204,36 @@ def transcode_to_encrypted_hls(
 
     # Re-encode fallback if stream copy failed
     cmd_encode = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-c:a", "aac",
-        "-hls_time", str(segment_duration_seconds),
-        "-hls_playlist_type", "vod",
-        "-hls_key_info_file", str(keyinfo_file.resolve()),
-        "-hls_segment_filename", segment_pattern,
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-c:a",
+        "aac",
+        "-hls_time",
+        str(segment_duration_seconds),
+        "-hls_playlist_type",
+        "vod",
+        "-hls_key_info_file",
+        str(keyinfo_file.resolve()),
+        "-hls_segment_filename",
+        segment_pattern,
         str(playlist_file.resolve()),
     ]
 
     try:
-        proc = subprocess.run(cmd_encode, capture_output=True, text=True, check=True)
+        subprocess.run(cmd_encode, capture_output=True, text=True, check=True)
         logger.info(f"Successfully transcoded HLS (re-encode): {playlist_file}")
         return str(playlist_file)
     except subprocess.CalledProcessError as err:
         logger.error(f"FFmpeg transcode error: {err.stderr}")
-        raise VideoDRMTranscodeError(f"Failed to transcode video to encrypted HLS: {err.stderr}") from err
+        raise VideoDRMTranscodeError(
+            f"Failed to transcode video to encrypted HLS: {err.stderr}"
+        ) from err
 
 
 def get_lesson_hls_directory(course_id: int, lesson_id: int) -> Path:

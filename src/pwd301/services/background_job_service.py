@@ -298,6 +298,7 @@ def execute_background_job(
 
         elif job.job_type == "VIDEO_TRANSCODE":
             from pathlib import Path
+
             from pwd301.services.video_drm_service import transcode_to_encrypted_hls
 
             source_file = payload.get("source_file")

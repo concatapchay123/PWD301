@@ -4,16 +4,12 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
-import pytest
-from flask import Flask
 
 from pwd301.services.video_drm_service import (
     generate_key_token,
-    verify_key_token,
     transcode_to_encrypted_hls,
-    VideoDRMError,
+    verify_key_token,
 )
 
 
@@ -50,7 +46,9 @@ def test_generate_and_verify_key_token() -> None:
 
     # 5. Expired token must fail
     expired_token = generate_key_token(student_id, course_id, lesson_id, secret, expires_in=-5)
-    valid_exp, reason_exp = verify_key_token(expired_token, student_id, course_id, lesson_id, secret)
+    valid_exp, reason_exp = verify_key_token(
+        expired_token, student_id, course_id, lesson_id, secret
+    )
     assert valid_exp is False
     assert "expired" in reason_exp.lower()
 
@@ -63,11 +61,21 @@ def test_transcode_to_encrypted_hls() -> None:
 
         # Generate 1s test mp4 via ffmpeg
         gen_cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=1",
-            "-f", "lavfi", "-i", "sine=duration=1",
-            "-c:v", "libx264", "-c:a", "aac",
-            input_mp4
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=320x240:rate=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=1",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            input_mp4,
         ]
         subprocess.run(gen_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         assert os.path.exists(input_mp4)

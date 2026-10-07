@@ -1,10 +1,14 @@
-# Active task: TASK-085 — Copyright Protection & Anti-Tamper System (HLS AES-128 Encryption, Dynamic Forensic Watermark, Client Armor & Zero-Trust Heartbeat)
+# Completed task: TASK-085 — Copyright Protection & Anti-Tamper System (HLS AES-128 Encryption, Dynamic Forensic Watermark, Client Armor & Zero-Trust Heartbeat)
 
-**Status:** IN_PROGRESS  
+**Status:** COMPLETED  
 **Assignee:** Principal Systems Architect & Senior Security Engineer  
 **Started Date:** 2026-10-07  
+**Completed Date:** 2026-10-07  
 **Plan:** `docs/superpowers/plans/2026-10-07-copyright-protection-and-anti-tamper-system.md`  
 **Intent / Source of Truth:** `docs/intent/copyright-protection.md`  
+**Browser Verification Evidence:** Chrome DevTools MCP verified live at `http://127.0.0.1:5000`:
+- Dynamic Forensic Watermark verified: `steps/617/media_0.png`
+- Client Armor DOM Tamper Blackout verified: `steps/623/media_0.png`  
 
 ## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
 All previous obsolete workflows and legacy designs regarding video delivery and progress recording are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire system:
