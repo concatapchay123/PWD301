@@ -384,101 +384,93 @@
     .animate-progress-pulse {
       animation: pulseProgress 1s infinite ease-in-out;
     }
-    /* Shared dark surfaces: canvas, cards, controls, then dialogs. */
+    /* Shared dark surfaces: Warm Editorial & Notion-like tokens */
     html.dark body,
     html.dark #app-viewport,
     html.dark [class~="dark:bg-slate-950"],
     html.dark [class~="dark:bg-[#191919]"],
     html.dark [class~="dark:bg-[#151515]"],
+    html.dark [class~="dark:bg-[#18181b]"],
     html.dark [class~="dark:bg-[#1A1918]"],
     html.dark [class~="dark:bg-[#1E1E1E]"],
     html.dark [class~="dark:bg-[#1E1D1B]"] {
-      background-color: #101925 !important;
-      color: #F0F5FA;
+      background-color: #18181b !important;
+      color: #EDEDEB;
     }
     html.dark #app-topbar,
     html.dark [class~="dark:bg-slate-900"],
     html.dark [class~="dark:bg-[#202020]"],
+    html.dark [class~="dark:bg-[#222120]"],
     html.dark [class~="dark:bg-[#252525]"],
     html.dark [class~="dark:bg-[#2A2928]"],
     html.dark .c-card,
     html.dark .c-table-wrapper {
-      background-color: #223248 !important;
-      border-color: #526881 !important;
+      background-color: #202020 !important;
+      border-color: #2E2D2B !important;
     }
     html.dark [class~="dark:bg-slate-800"],
     html.dark [class~="dark:bg-[#262524]"],
     html.dark [class~="dark:bg-[#242423]"],
     html.dark [class~="dark:bg-[#2E2D2B]"],
     html.dark .c-table-th {
-      background-color: #2D4058 !important;
+      background-color: #262524 !important;
     }
     html.dark [class~="dark:border-slate-800"],
     html.dark [class~="dark:border-slate-700"],
     html.dark [class~="dark:border-[#2E2D2B]"],
     html.dark [class~="dark:border-[#353432]"],
+    html.dark [class~="dark:border-[#37352F]"],
     html.dark [class~="dark:border-[#3D3C3A]"],
     html.dark [class~="dark:border-[#3E3D3A]"] {
-      border-color: #526881 !important;
+      border-color: #2E2D2B !important;
     }
     html.dark [class~="dark:text-white"],
     html.dark [class~="dark:text-slate-100"],
-    html.dark [class~="dark:text-[#EDEDEB]"] { color: #F0F5FA !important; }
+    html.dark [class~="dark:text-[#EDEDEB]"] { color: #EDEDEB !important; }
     html.dark [class~="dark:text-slate-300"],
     html.dark [class~="dark:text-slate-400"],
     html.dark [class~="dark:text-[#9E9D99]"],
     html.dark [class~="dark:text-[#6D6C68]"],
-    html.dark [class~="dark:text-[#A8A6A0]"],
-    html.dark [class~="dark:text-[#3E3D3A]"] { color: #C6D2E1 !important; }
-    html.dark [class~="dark:text-[#191919]"] { color: #132238 !important; }
-    html.dark [class~="dark:bg-[#EDEDEB]"] { background-color: #93C5FD !important; }
-    html.dark [class~="dark:border-[#EDEDEB]"],
-    html.dark [class~="dark:border-[#FAF9F5]"] { border-color: #93C5FD !important; }
+    html.dark [class~="dark:text-[#A8A6A0]"] { color: #9E9D99 !important; }
     html.dark [class~="dark:bg-[#32312F]"],
-    html.dark [class~="dark:bg-[#3E3D3A]"] { background-color: #344A63 !important; }
+    html.dark [class~="dark:bg-[#3E3D3A]"] { background-color: #2A2928 !important; }
     html.dark [class~="text-slate-400"],
     html.dark [class~="text-slate-500"],
     html.dark [class~="text-slate-600"],
     html.dark [class~="text-[#8F8E8A]"],
-    html.dark [class~="text-[#5C5B57]"] { color: #C6D2E1 !important; }
+    html.dark [class~="text-[#5C5B57]"] { color: #9E9D99 !important; }
     html.dark .c-input,
     html.dark input:not([type="checkbox"]):not([type="radio"]),
     html.dark textarea,
     html.dark select {
-      background-color: #18283A !important;
-      border-color: #60748B !important;
-      color: #F0F5FA !important;
+      background-color: #18181b !important;
+      border-color: #2E2D2B !important;
+      color: #EDEDEB !important;
     }
     html.dark input::placeholder,
-    html.dark textarea::placeholder { color: #AEBED0; }
+    html.dark textarea::placeholder { color: #8F8E8A; }
     html.dark .c-btn-secondary {
-      background-color: #2D4058;
-      border-color: #60748B;
-      color: #F0F5FA;
+      background-color: #262524;
+      border-color: #2E2D2B;
+      color: #EDEDEB;
     }
-    html.dark .c-btn-secondary:hover { background-color: #3A506C; }
-    html.dark .c-btn-primary {
-      background-color: #93C5FD;
-      border-color: #93C5FD;
-      color: #132238;
-    }
-    html.dark .c-btn-primary:hover { background-color: #BFDBFE; }
-    html.dark .c-table-td { border-bottom-color: #526881; color: #E3ECF5; }
-    html.dark .modal-layer { background-color: rgba(7, 14, 23, 0.78) !important; }
+    html.dark .c-btn-secondary:hover { background-color: #2A2928; }
+    html.dark .c-table-td { border-bottom-color: #2E2D2B; color: #EDEDEB; }
+    html.dark .modal-layer { background-color: rgba(0, 0, 0, 0.65) !important; }
     html.dark .modal-layer .modal-dialog,
     html.dark #confirm-dialog-card {
-      background-color: #344A63 !important;
-      border: 1px solid #91A9C2 !important;
-      box-shadow: 0 28px 72px rgba(2, 7, 14, 0.7) !important;
-      color: #F0F5FA;
+      background-color: #202020 !important;
+      border: 1px solid #2E2D2B !important;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
+      color: #EDEDEB;
     }
     html.dark .modal-dialog > div:first-child,
     html.dark .modal-dialog > div:last-child:not(:first-child) {
-      background-color: #405873 !important;
-      border-color: #91A9C2 !important;
+      background-color: #262524 !important;
+      border-color: #2E2D2B !important;
     }
     html.dark .modal-dialog > div:nth-child(2),
-    html.dark #confirm-dialog-card > div:nth-child(2) { color: #E3ECF5 !important; }
+    html.dark #confirm-dialog-card > div:nth-child(2) { color: #EDEDEB !important; }
   </style>
 </head>
 <body class="bg-[#FAF9F5] dark:bg-[#191919] text-[#222120] dark:text-[#EDEDEB] antialiased h-full w-full flex flex-col selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
@@ -712,29 +704,29 @@
       </div>
     </div>
 
-    <!-- Circular Floating Button -->
+    <!-- Circular Floating Button (Draggable & Darkmode Polished) -->
     <button
       type="button"
       id="floating-ai-launcher"
-      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#EDEDEB] text-[#FAF9F5] dark:text-[#191919] shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#FAF9F5] p-1"
-      title="Hỏi Bạch tuộc"
+      class="pointer-events-auto w-12 h-12 rounded-xl bg-[#222120] dark:bg-[#202020] text-white shadow-subtle hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-150 group relative select-none border border-[#37352F] dark:border-[#3E3D3A] p-1 cursor-grab active:cursor-grabbing"
+      title="Bạch tuộc trợ lí AI (Kéo thả để di chuyển vị trí)"
     >
-      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105" />
-      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#191919]"></span>
+      <img src="/frontend/assets/img/octopus_ai_icon.png?v=2" alt="Bạch tuộc" class="w-full h-full object-cover rounded-lg shadow-xs transition-transform group-hover:scale-105 pointer-events-none" />
+      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-[#FAF9F5] dark:border-[#202020]"></span>
     </button>
   </div>
 
   <!-- DOMPurify for Safe WYSIWYG HTML Rendering -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
-  <script src="/frontend/assets/js/ui.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/api.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/exam-store.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/views/auth.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/views/student.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/views/instructor.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/views/admin.js?v=3.0.9"></script>
-  <script src="/frontend/assets/js/router.js?v=3.0.9"></script>
+  <script src="/frontend/assets/js/ui.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/api.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/exam-store.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/views/auth.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/views/student.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/views/instructor.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/views/instructor-exams.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/views/admin.js?v=3.1.1"></script>
+  <script src="/frontend/assets/js/router.js?v=3.1.1"></script>
 
   <!-- Application Bootstrap -->
   <script>

@@ -1,8 +1,9 @@
 # Active task: TASK-084 — Legacy Workflow & Memory Purge, MS Word 2-Row Ribbon Editor, Question Stepper Image Paste, Peer Prerequisite Approval & Deep 5-Category Changeset Diff
 
-**Status:** IN_PROGRESS  
+**Status:** DONE  
 **Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
 **Started Date:** 2026-10-07  
+**Completed Date:** 2026-10-07  
 
 ## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
 All previous obsolete workflows and legacy designs regarding these modules are permanently purged, forbidden, and superseded across the entire system:

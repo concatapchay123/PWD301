@@ -1712,7 +1712,7 @@ class AdminView {
     const isDelete = prop.action === 'DELETE';
     const isLearningUnit = prop.action === 'UPDATE_LEARNING_UNIT';
     const isResourceChange = prop.action === 'RESOURCE_CHANGES';
-    const isChangeset = prop.action === 'COURSE_VERSION_CHANGESET' || (r.change_type === 'LESSON_STRUCTURE' && (prop.version_title || prop.added_lessons || prop.reorder_plan));
+    const isChangeset = !isLearningUnit && !isDelete && !isResourceChange && (prop.action === 'COURSE_VERSION_CHANGESET' || (r.change_type === 'LESSON_STRUCTURE' && Boolean(prop.version_title || prop.added_lessons || prop.reorder_plan || prop.ordered_lesson_ids || prop.action === 'REORDER_LESSONS')));
     const isPending = r.status === 'PENDING';
 
     const isCourse = r.target_type === 'COURSE' || (!r.target_type && (orig.course_code || prop.course_code));
@@ -2659,7 +2659,8 @@ class AdminView {
     }
 
     if (isChangeset) {
-      setTimeout(async () => {
+      const scheduleDiffFetch = typeof setTimeout === 'function' ? setTimeout : (fn => fn());
+      scheduleDiffFetch(async () => {
         try {
           const diffRes = await ApiClient.getCourseChangesetDiff(r.id);
           const liveBox = document.getElementById('changeset-live-curriculum-box');
@@ -2736,7 +2737,7 @@ class AdminView {
     if (isPending) {
       document.getElementById('diff-approve-btn').onclick = async () => {
         try {
-          if (isChangeset) {
+          if (r.change_type === 'COURSE_VERSION_CHANGESET') {
             await ApiClient.approveCourseChangeset(r.id, 'Phê duyệt đợt cập nhật giáo trình.');
           } else {
             await ApiClient.reviewAdminChangeRequest(r.id, { action: 'approve' });
@@ -2763,7 +2764,7 @@ class AdminView {
         );
         if (!reason) return;
         try {
-          if (isChangeset) {
+          if (r.change_type === 'COURSE_VERSION_CHANGESET') {
             await ApiClient.rejectCourseChangeset(r.id, reason);
           } else {
             await ApiClient.reviewAdminChangeRequest(r.id, { action: 'reject', reason });

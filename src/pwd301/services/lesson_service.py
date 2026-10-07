@@ -3989,7 +3989,7 @@ def get_course_changeset_diff(
             "assessment_type": asm.assessment_type,
             "status": asm.status,
             "time_limit_minutes": asm.time_limit_minutes,
-            "total_points": float(asm.total_points) if asm.total_points is not None else 10.0,
+            "total_points": float(getattr(asm, "total_points", None) or 10.0),
             "change_type": "MODIFIED" if asm.status == "DRAFT" else "UNCHANGED",
             "description": f"Bài đánh giá '{asm.title}' ({asm.assessment_type})",
         })

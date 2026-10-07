@@ -1633,6 +1633,227 @@ class UI {
       size: 'lg'
     });
   }
+
+  // =========================================================================
+  // 12. 5-Category Changeset Diff Renderer (Deep Before vs After Inspection)
+  // =========================================================================
+  static renderCategorizedDiffHtml(diff) {
+    if (!diff) return '<div class="p-6 text-center text-slate-400 italic">Không có dữ liệu đối chiếu.</div>';
+
+    const struct = diff.curriculum_structure || [];
+    const content = diff.content_blocks || [];
+    const quizzes = diff.interactive_quizzes || [];
+    const assessments = (diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED');
+    const gov = diff.governance_rules || {};
+
+    const totalCount = diff.total_changes_count || (struct.length + content.length + quizzes.length + assessments.length + (gov.is_changed ? 1 : 0));
+
+    if (totalCount === 0) {
+      return `
+        <div class="py-12 text-center text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+          <span class="material-symbols-outlined text-[36px] text-slate-300 dark:text-slate-600 block mb-2">check_circle</span>
+          Chưa phát hiện thay đổi nào so với giáo trình hiện tại.
+        </div>
+      `;
+    }
+
+    const badgeClasses = {
+      ADDED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      REMOVED: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+      MOVED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+      REORDERED: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      MODIFIED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    };
+
+    const badgeLabels = {
+      ADDED: 'Thêm mới',
+      REMOVED: 'Xóa bỏ',
+      MOVED: 'Chuyển chương',
+      REORDERED: 'Đổi thứ tự',
+      MODIFIED: 'Chỉnh sửa',
+    };
+
+    return `
+      <div class="space-y-6 text-xs font-sans">
+        <!-- 1. Curriculum Structure Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-indigo-600">account_tree</span>
+              <span>1. Cấu trúc Đề cương & Vị trí Bài học (${struct.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Chuyển chương, đổi thứ tự, thêm/xóa bài</span>
+          </div>
+          ${struct.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về cấu trúc chương/bài.</div>
+          ` : `
+            <div class="space-y-2">
+              ${struct.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-start justify-between gap-3 shadow-2xs">
+                  <div class="space-y-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
+                    ${item.old_unit_title && item.new_unit_title ? `
+                      <div class="flex items-center gap-1.5 text-[10px] font-mono mt-1 text-slate-500">
+                        <span class="line-through text-rose-500">${UI.escapeHtml(item.old_unit_title)}</span>
+                        <span>→</span>
+                        <span class="font-bold text-emerald-600 dark:text-emerald-400">${UI.escapeHtml(item.new_unit_title)}</span>
+                      </div>
+                    ` : ''}
+                    ${item.old_position && item.new_position ? `
+                      <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+                        Vị trí: <span class="line-through text-rose-500">#${item.old_position}</span> → <span class="font-bold text-emerald-600 dark:text-emerald-400">#${item.new_position}</span>
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 2. Content & Media Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-blue-600">article</span>
+              <span>2. Nội dung Bài học & Đa phương tiện (${content.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Văn bản, tóm tắt, tài liệu đính kèm</span>
+          </div>
+          ${content.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về nội dung bài giảng.</div>
+          ` : `
+            <div class="space-y-2">
+              ${content.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 3. Interactive Quizzes Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-emerald-600">quiz</span>
+              <span>3. Câu hỏi Ôn tập Tương tác (${quizzes.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Trắc nghiệm, Điền khuyết, Nối từ</span>
+          </div>
+          ${quizzes.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về câu hỏi tương tác.</div>
+          ` : `
+            <div class="space-y-2">
+              ${quizzes.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-mono font-bold">
+                        ${item.type === 'FILL_BLANK' ? 'Điền khuyết' : (item.type === 'MATCHING' ? 'Nối từ' : 'Trắc nghiệm')}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
+                    </div>
+                  </div>
+                  <div class="text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg font-medium">
+                    "${UI.escapeHtml(item.question)}"
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 4. Assessments Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-amber-600">assignment</span>
+              <span>4. Bài kiểm tra & Đánh giá (${assessments.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test</span>
+          </div>
+          ${assessments.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi bài kiểm tra/đánh giá.</div>
+          ` : `
+            <div class="space-y-2">
+              ${assessments.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center justify-between gap-2 shadow-2xs">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                      ${badgeLabels[item.change_type] || item.change_type}
+                    </span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono">
+                      ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}
+                    </span>
+                  </div>
+                  <div class="text-[11px] font-mono text-slate-500 shrink-0">
+                    ${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn'} · ${item.total_points || 10}đ
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 5. Governance Rules & Cover Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-purple-600">verified_user</span>
+              <span>5. Quy chế Hoàn thành & Ảnh bìa</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, chứng chỉ, ảnh đại diện</span>
+          </div>
+          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-3 shadow-2xs">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+              <div>
+                <span class="text-slate-400">Điểm GPA tối thiểu:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.min_gpa ?? gov.current?.min_gpa ?? '5.0'}/10</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Tiến độ bài học tối thiểu:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.completion_percent ?? gov.current?.completion_percent ?? '80'}%</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Bắt buộc học tất cả bài:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_all_lessons ? 'Có' : 'Không'}</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Bắt buộc làm bài thi:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_assessments ? 'Có' : 'Không'}</span>
+              </div>
+            </div>
+            ${gov.cover_image_url ? `
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center gap-3">
+                <span class="text-slate-400 text-[11px]">Ảnh bìa khóa học:</span>
+                <img src="${UI.escapeHtml(gov.cover_image_url)}" class="h-10 w-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs" alt="Cover" />
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
 }
 
 
@@ -2394,326 +2615,6 @@ class FloatingAITutor {
   static removeLoadingBubble(id) {
     document.getElementById(id)?.remove();
   }
-
-  // =========================================================================
-  // 12. Plain-Language Academic Glossary & Low-Tech Friendly Helpers
-  // =========================================================================
-  static helpTooltip(tooltipText, termName = '') {
-    const escapedText = UI.escapeHtml(tooltipText);
-    const escapedTerm = UI.escapeHtml(termName);
-    return `
-      <span class="inline-flex items-center gap-1 group relative cursor-help select-none" title="${escapedText}">
-        ${escapedTerm ? `<span class="underline decoration-dotted decoration-slate-400 dark:decoration-slate-500 underline-offset-2">${escapedTerm}</span>` : ''}
-        <span class="material-symbols-outlined text-[15px] text-slate-400 hover:text-primary transition-colors">help</span>
-      </span>
-    `;
-  }
-
-  static openAcademicGlossaryModal(initialTerm = null) {
-    const glossary = [
-      {
-        term: 'SLO (Student Learning Outcomes)',
-        vnTitle: 'Chuẩn kỹ năng đầu ra của người học',
-        badge: 'Học vụ & Kỹ năng',
-        description: 'Bản cam kết rõ ràng về những kiến thức, kỹ năng và sản phẩm thực tế mà bạn chắc chắn sẽ tự tay làm được sau khi học xong môn học này. Giảng viên căn cứ vào chuẩn này để ra đề thi công bằng, sát thực tế.',
-        example: 'Ví dụ: "Tự tay thiết kế và lập trình được website bán hàng an toàn, bảo vệ tài khoản người dùng."'
-      },
-      {
-        term: 'ABET Criterion 3',
-        vnTitle: 'Khung kiểm định chất lượng quốc tế',
-        badge: 'Tiêu chuẩn quốc tế',
-        description: 'Tổ chức kiểm định hàng đầu thế giới của Hoa Kỳ dành cho các chương trình đào tạo kỹ thuật - công nghệ (Computing Accreditation Commission). Khi môn học đạt chuẩn ABET, bằng cấp và kiến thức của bạn được công nhận tương đương tiêu chuẩn quốc tế.',
-        example: 'Gồm các chuẩn năng lực: Phân tích vấn đề, Thiết kế giải pháp, Đạo đức nghề nghiệp, Giao tiếp kỹ thuật.'
-      },
-      {
-        term: 'Prerequisites',
-        vnTitle: 'Môn học điều kiện cần học trước',
-        badge: 'Lộ trình học tập',
-        description: 'Những môn học cung cấp kiến thức nền tảng mà bạn bắt buộc phải học và thi đạt trước khi đăng ký môn học này, giúp bạn tiếp thu kiến thức mới một cách thuận lợi và không bị bỡ ngỡ.',
-        example: 'Ví dụ: Cần hoàn thành môn "Nhập môn Lập trình" trước khi học môn "Lập trình Web nâng cao".'
-      },
-      {
-        term: 'Assessment',
-        vnTitle: 'Đợt khảo thí & Đánh giá năng lực',
-        badge: 'Kiểm tra & Thi',
-        description: 'Các bài tập, bài kiểm tra trắc nghiệm, tự luận hoặc đồ án thực hành giúp bạn tự đo lường mức độ hiểu bài và tích lũy điểm số cho học phần.',
-        example: 'Gồm: Bài kiểm tra thường xuyên (Quizzes), Thi giữa kỳ (Midterm), Đồ án cuối kỳ (Final Project).'
-      },
-      {
-        term: 'Rubric',
-        vnTitle: 'Tiêu chí và thang điểm chi tiết',
-        badge: 'Minh bạch điểm số',
-        description: 'Bảng hướng dẫn chấm điểm công khai chỉ rõ từng mức độ hoàn thành bài tập tương ứng với bao nhiêu điểm, giúp bạn biết chính xác mình cần làm gì để đạt điểm tối đa.',
-        example: 'Ví dụ: Giao diện đẹp đạt 2 điểm, Code chạy đúng đạt 5 điểm, Bảo mật tốt đạt 3 điểm.'
-      }
-    ];
-
-    const bodyHtml = `
-      <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-        <div class="p-4 rounded-xl bg-primary-subtle text-primary border border-primary/20 space-y-1">
-          <div class="flex items-center gap-2 font-bold text-sm">
-            <span class="material-symbols-outlined text-[20px]">help</span>
-            <span>Sổ tay giải thích thuật ngữ học vụ (Dành cho người học & Người mới)</span>
-          </div>
-          <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Hệ thống PWD301 áp dụng các tiêu chuẩn giáo dục quốc tế nhưng luôn cam kết ngôn ngữ tường minh, gần gũi nhất để bất kỳ ai (kể cả người mới bắt đầu hoặc người không chuyên công nghệ) cũng hiểu rõ quyền lợi và lộ trình học tập của mình.
-          </p>
-        </div>
-
-        <div class="space-y-3">
-          ${glossary.map(item => `
-            <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs space-y-2">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span class="text-xs font-bold text-primary font-mono">${UI.escapeHtml(item.term)}</span>
-                  <h4 class="text-sm font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(item.vnTitle)}</h4>
-                </div>
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${UI.escapeHtml(item.badge)}</span>
-              </div>
-              <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description)}</p>
-              ${item.example ? `
-                <div class="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 italic border-l-2 border-primary">
-                  ${UI.escapeHtml(item.example)}
-                </div>
-              ` : ''}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-
-    UI.openModal({
-      title: 'Sổ tay thuật ngữ học vụ & Chuẩn đầu ra',
-      bodyHtml,
-      footerHtml: `
-        <button type="button" class="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-bold transition-all" onclick="UI.closeModal()">
-          Đã hiểu rõ
-        </button>
-      `,
-      size: 'lg'
-    });
-  }
-
-  // =========================================================================
-  // 12. 5-Category Changeset Diff Renderer (Deep Before vs After Inspection)
-  // =========================================================================
-  static renderCategorizedDiffHtml(diff) {
-    if (!diff) return '<div class="p-6 text-center text-slate-400 italic">Không có dữ liệu đối chiếu.</div>';
-
-    const struct = diff.curriculum_structure || [];
-    const content = diff.content_blocks || [];
-    const quizzes = diff.interactive_quizzes || [];
-    const assessments = (diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED');
-    const gov = diff.governance_rules || {};
-
-    const totalCount = diff.total_changes_count || (struct.length + content.length + quizzes.length + assessments.length + (gov.is_changed ? 1 : 0));
-
-    if (totalCount === 0) {
-      return `
-        <div class="py-12 text-center text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-          <span class="material-symbols-outlined text-[36px] text-slate-300 dark:text-slate-600 block mb-2">check_circle</span>
-          Chưa phát hiện thay đổi nào so với giáo trình hiện tại.
-        </div>
-      `;
-    }
-
-    const badgeClasses = {
-      ADDED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      REMOVED: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
-      MOVED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
-      REORDERED: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-      MODIFIED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-    };
-
-    const badgeLabels = {
-      ADDED: 'Thêm mới',
-      REMOVED: 'Xóa bỏ',
-      MOVED: 'Chuyển chương',
-      REORDERED: 'Đổi thứ tự',
-      MODIFIED: 'Chỉnh sửa',
-    };
-
-    return `
-      <div class="space-y-6 text-xs font-sans">
-        <!-- 1. Curriculum Structure Category -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-indigo-600">account_tree</span>
-              <span>1. Cấu trúc Đề cương & Vị trí Bài học (${struct.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Chuyển chương, đổi thứ tự, thêm/xóa bài</span>
-          </div>
-          ${struct.length === 0 ? `
-            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về cấu trúc chương/bài.</div>
-          ` : `
-            <div class="space-y-2">
-              ${struct.map(item => `
-                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-start justify-between gap-3 shadow-2xs">
-                  <div class="space-y-1 min-w-0">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                        ${badgeLabels[item.change_type] || item.change_type}
-                      </span>
-                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
-                    </div>
-                    <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
-                    ${item.old_unit_title && item.new_unit_title ? `
-                      <div class="flex items-center gap-1.5 text-[10px] font-mono mt-1 text-slate-500">
-                        <span class="line-through text-rose-500">${UI.escapeHtml(item.old_unit_title)}</span>
-                        <span>→</span>
-                        <span class="font-bold text-emerald-600 dark:text-emerald-400">${UI.escapeHtml(item.new_unit_title)}</span>
-                      </div>
-                    ` : ''}
-                    ${item.old_position && item.new_position ? `
-                      <div class="text-[10px] font-mono text-slate-500 mt-0.5">
-                        Vị trí: <span class="line-through text-rose-500">#${item.old_position}</span> → <span class="font-bold text-emerald-600 dark:text-emerald-400">#${item.new_position}</span>
-                      </div>
-                    ` : ''}
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
-
-        <!-- 2. Content & Media Category -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-blue-600">article</span>
-              <span>2. Nội dung Bài học & Đa phương tiện (${content.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Văn bản, tóm tắt, tài liệu đính kèm</span>
-          </div>
-          ${content.length === 0 ? `
-            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về nội dung bài giảng.</div>
-          ` : `
-            <div class="space-y-2">
-              ${content.map(item => `
-                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                        ${badgeLabels[item.change_type] || item.change_type}
-                      </span>
-                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
-                    </div>
-                  </div>
-                  <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
-                </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
-
-        <!-- 3. Interactive Quizzes Category -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-emerald-600">quiz</span>
-              <span>3. Câu hỏi Ôn tập Tương tác (${quizzes.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Trắc nghiệm, Điền khuyết, Nối từ</span>
-          </div>
-          ${quizzes.length === 0 ? `
-            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về câu hỏi tương tác.</div>
-          ` : `
-            <div class="space-y-2">
-              ${quizzes.map(item => `
-                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                        ${badgeLabels[item.change_type] || item.change_type}
-                      </span>
-                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-mono font-bold">
-                        ${item.type === 'FILL_BLANK' ? 'Điền khuyết' : (item.type === 'MATCHING' ? 'Nối từ' : 'Trắc nghiệm')}
-                      </span>
-                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
-                    </div>
-                  </div>
-                  <div class="text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg font-medium">
-                    "${UI.escapeHtml(item.question)}"
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
-
-        <!-- 4. Assessments Category -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-amber-600">assignment</span>
-              <span>4. Bài kiểm tra & Đánh giá (${assessments.length})</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test</span>
-          </div>
-          ${assessments.length === 0 ? `
-            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi bài kiểm tra/đánh giá.</div>
-          ` : `
-            <div class="space-y-2">
-              ${assessments.map(item => `
-                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center justify-between gap-2 shadow-2xs">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
-                      ${badgeLabels[item.change_type] || item.change_type}
-                    </span>
-                    <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono">
-                      ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}
-                    </span>
-                  </div>
-                  <div class="text-[11px] font-mono text-slate-500 shrink-0">
-                    ${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn'} · ${item.total_points || 10}đ
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          `}
-        </div>
-
-        <!-- 5. Governance Rules & Cover Category -->
-        <div class="space-y-2.5">
-          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
-            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-purple-600">verified_user</span>
-              <span>5. Quy chế Hoàn thành & Ảnh bìa</span>
-            </div>
-            <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, chứng chỉ, ảnh đại diện</span>
-          </div>
-          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-3 shadow-2xs">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-              <div>
-                <span class="text-slate-400">Điểm GPA tối thiểu:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.min_gpa ?? gov.current?.min_gpa ?? '5.0'}/10</span>
-              </div>
-              <div>
-                <span class="text-slate-400">Tiến độ bài học tối thiểu:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.completion_percent ?? gov.current?.completion_percent ?? '80'}%</span>
-              </div>
-              <div>
-                <span class="text-slate-400">Bắt buộc học tất cả bài:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_all_lessons ? 'Có' : 'Không'}</span>
-              </div>
-              <div>
-                <span class="text-slate-400">Bắt buộc làm bài thi:</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_assessments ? 'Có' : 'Không'}</span>
-              </div>
-            </div>
-            ${gov.cover_image_url ? `
-              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center gap-3">
-                <span class="text-slate-400 text-[11px]">Ảnh bìa khóa học:</span>
-                <img src="${UI.escapeHtml(gov.cover_image_url)}" class="h-10 w-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs" alt="Cover" />
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }
 }
 
 // Global exports
@@ -2722,3 +2623,4 @@ window.ExamParser = ExamParser;
 window.AzotaParser = ExamParser;
 window.ExamAntiCheatManager = ExamAntiCheatManager;
 window.FloatingAITutor = FloatingAITutor;
+
