@@ -1,23 +1,81 @@
-# Active task: TASK-082 — Curriculum & Exam Studio Full Streamlining & Modernization
+# Active task: TASK-084 — Legacy Workflow & Memory Purge, MS Word 2-Row Ribbon Editor, Question Stepper Image Paste, Peer Prerequisite Approval & Deep 5-Category Changeset Diff
 
 **Status:** IN_PROGRESS  
 **Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
 **Started Date:** 2026-10-07  
 
-## Canonical Workflow Invariants (Zero-Ambiguity Contract)
-All previous obsolete workflows and legacy designs are purged and superseded:
-1. **Course Cover Photo Gating**: Standalone yellow missing cover warning banner is permanently abolished. Cover warning and upload action are integrated directly into the course header cover frame. Courses lacking a cover photo (`thumbnail_url`) are strictly forbidden from submitting for admin review (`submit_course_for_review`), enforced fail-closed at both UI and Backend API.
-2. **Curriculum Content Toolbar & Multi-Type Questions**: The content toolbar header is strictly `"THÊM NỘI DUNG:"` with zero `+` signs. Buttons are named `"Bài học"`, `"Video"`, `"Tài liệu"`, `"Câu hỏi"`. Question blocks inside lessons support 3 compact formats via segmented tabs: **Trắc nghiệm** (Multiple/Single choice), **Điền khuyết** (Fill in the blank with `[___]`), and **Nối từ** (Matching pairs).
-3. **Decommissioning of Estimated Duration**: The `"Thời lượng ước tính (Phút)"` (`estimated_duration_minutes`) field is abolished from all lesson creation, editing, UI cards, API contracts, and validation services.
-4. **Curriculum Outline Sidebar Modernization**: The redundant `"Thêm bài"` button in the top curriculum outline toolbar is eliminated; instructors create lessons via `"Thêm bài giảng vào chương này"` inside each unit. Full HTML5 Drag & Drop enables reordering chapters and moving lessons within/across chapters. A resizable drag splitter allows instructors to adjust the curriculum sidebar width (280px-600px) with persistent memory in `localStorage`.
-5. **Exam Timing & Attempt Limits Unconstrained**: `"Thời lượng làm bài (Phút)"` is replaced by `"Thời gian làm bài"` with all preset buttons abolished; instructors enter a custom duration or leave blank for unlimited time. `"Số lần làm bài tối đa"` is an open number input (blank = unlimited). `"Xáo trộn ngẫu nhiên..."` is renamed to `"Trộn câu hỏi và đáp án"`. `"2. Thời gian giao & Hạn bài thi"` is renamed to `"Thời gian"`. Hourly exam schedule activation is a modern Toggle Switch.
-6. **Academic Matrix, Dynamic Score Scaling, Question Classification & Lesson-Linked Exams**:
-   - `"1. Xác định Bối cảnh & Phạm vi Học vụ"` is renamed to `"Hình thức kiểm tra"`; `"Hình thức tổ chức đề thi"` is removed.
-   - `"Phân bổ Mức độ Bloom"` is renamed to `"Phân loại"`; instructors can freely choose question classification (Nhận biết / Thông hiểu / Vận dụng) via dropdown on each question card and in the matrix table.
-   - `"Thang điểm tính toán"` supports a custom target score (e.g. 10.0 or 100) with a `"Chia đều điểm"` auto-distribution action while maintaining per-question point editability.
-   - `"Liên kết theo Bài học (Lesson-Linked)"` provides cascading selection (Course -> Unit -> Lesson) and attaches the exam directly to the lesson; students see a prominent assessment card at the end of the lesson view.
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows and legacy designs regarding these modules are permanently purged, forbidden, and superseded across the entire system:
+1. **Permanent Abolition of "Khối 1, 2, 3..." Labels & Markdown Helper**:
+   - The string prefix "Khối 1, 2, 3..." across all block cards is PERMANENTLY ABOLISHED.
+   - "Khối 1: Nội dung văn bản (Markdown)" is PERMANENTLY RENAMED to "Nội dung bài học".
+   - The UI hint "Định dạng Markdown • Thầy/Cô có thể dùng **in đậm**..." is PERMANENTLY REMOVED.
+   - The editor is upgraded to a Microsoft Word 2-Row Ribbon with 5 dedicated groups: Clipboard, Font (Aptos/Inter, sizes, Aa, clear formatting, B/I/U/Strike/Sub/Super/Highlight/Color), Paragraph (Bullets, numbering, indent, alignment, spacing, shading, borders), Styles (Normal, headings, title), and Editing (Find, replace, select).
+2. **Permanent Purge of Broken Mini-Quiz Authoring & Flawed Type Mapping**:
+   - The flawed type mapping where FILL_BLANK and MATCHING reset to MULTIPLE_CHOICE upon DOM scraping is PERMANENTLY FIXED AND BANNED.
+   - Unpaginated scrolling question cards are PERMANENTLY SUPERSEDED by Question Stepper `[1][2][3][+]` pagination.
+   - Each question block carries an in-place independent "Lưu câu hỏi" action.
+   - Direct image pasting (`Ctrl+V` from clipboard) or file picker upload is supported on question prompts and all answer choices/pairs.
+   - Student quiz rendering for FILL_BLANK (inline inputs) and MATCHING (color-pair cards) is rebuilt cleanly.
+3. **Permanent Prerequisite Integrity & Peer Approval Flow**:
+   - Selecting DRAFT or UNPUBLISHED courses as prerequisites is STRICTLY FORBIDDEN (returns HTTP 400).
+   - An instructor's own courses used as prerequisites are auto-approved (`ACTIVE`).
+   - Using another instructor's course creates a `PENDING_OWNER_APPROVAL` request.
+   - Instructors review incoming requests via a dedicated top-level menu item "Duyệt môn tiên quyết" (`#/instructor/prerequisites/requests`), eliminating the anti-pattern of burying approvals in course settings.
+   - Selection modal prioritizes "Khóa học của bạn" on top with explicit `[Môn của bạn]` badge.
+4. **Permanent Purge of Trivial String-Length Diff**:
+   - The legacy `get_course_changeset_diff` that merely counted character lengths and quiz counts is PERMANENTLY DELETED.
+   - Replaced by a Deep Manifest Snapshot engine categorized into 5 explicit groups: Curriculum Structure, Content & Media, Interactive Quizzes, Assessments, and Governance Rules (with `ADDED`, `REMOVED`, `MOVED`, `MODIFIED` badges).
+   - Admin review view renders dynamic live diff tree, banning hardcoded "Không đặt" placeholders.
+5. **Student Outline Play & Lock Clarity**:
+   - Currently active lesson renders a prominent Play pill badge.
+   - Locked lessons render clear Lock icons and disabled styling with informative toasts.
+   - Lesson code numbering matches chapter sequence strictly.
 
 ---
+
+# Completed task: TASK-083 — Curriculum Tree Integrated Assessments, Coursera-Style Paginated Quizzes, Unified Update Review & Polished Darkmode UX
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Started Date:** 2026-10-07  
+**Completed Date:** 2026-10-07  
+
+## Canonical Workflow Invariants (Zero-Ambiguity Permanent Purge)
+All previous obsolete workflows and legacy designs regarding these modules are permanently purged and superseded:
+1. **Curriculum Tree Integrated Assessments & Permanent Decommissioning of Standalone Exam Section**:
+   - The standalone bottom "Bài thi & Đánh giá" container (`#course-assessments-stack` and old Section 2 in `instructor.js`) is PERMANENTLY ABOLISHED AND REMOVED.
+   - All assessments are embedded strictly inside the curriculum tree:
+     * Each Chapter (Learning Unit) contains a dedicated "Bài kiểm tra" item at the end of that chapter, with a "Tạo bài kiểm tra" button for instructors.
+     * The very bottom of the course curriculum tree contains a dedicated "Final Test" section with a "Thiết lập Final Test" button for instructors.
+   - Prerequisite Unlocking:
+     * A chapter's "Bài kiểm tra" unlocks for students if and only if 100% of the lessons within that chapter are completed.
+     * The "Final Test" unlocks for students if and only if 100% of all lessons across all chapters of the course are completed AND the current UTC time is within the exam schedule window (`open_at` to `close_at`).
+2. **Consolidated Changeset Review & Abolition of Bottom Draft Bar**:
+   - The sticky bottom draft bar (`#curriculum-draft-bar`) in the course editor is PERMANENTLY ABOLISHED AND REMOVED.
+   - The top header features two cohesive actions: "Gửi duyệt cập nhật" (Submit Update for Review) and "Xem thay đổi" (View Changes).
+   - "Xem thay đổi" modal renders granular Before vs. After diff details (title changes, summary updates, lesson content block additions/edits, quiz count changes, added/deleted lessons) instead of generic strings like "Đã sửa Chương 1".
+3. **Coursera-Style Paginated In-Lesson Mini-Quizzes with Passing Score Threshold**:
+   - For lessons containing 2 or more questions, the unpaginated top-to-bottom stack is PERMANENTLY ABOLISHED.
+   - Mini-quizzes are rendered strictly as step-by-step paginated slides (1 question per slide) with "Quay lại" (Previous) / "Tiếp theo" (Next) navigation and interactive step indicators.
+   - Instructors configure a Passing Score Threshold % (default 80%, range 50% - 100%).
+   - When submitted:
+     * If score >= threshold: show congratulations, explanations, and mark the lesson completed.
+     * If score < threshold: show achieved score vs required threshold without revealing correct answers, and provide a "Làm lại từ đầu" button that clears choices and resets student to Question 1.
+4. **Dark Mode Color Token Alignment & Draggable Floating Octopus AI**:
+   - The purple tint (`#1A1827`) is PERMANENTLY BANNED from dark mode. All chapter cards, content toolbars, and buttons use neutral dark tokens: `#18181b` / `#202020` / `#2E2D2B`.
+   - The floating Octopus AI assistant launcher button's inverted white box (`dark:bg-[#EDEDEB]`) is PERMANENTLY REMOVED; it adopts a neutral dark card style and features interactive mouse drag-and-drop repositioning (`draggable` launcher) with boundary constraints so learners and instructors can move it freely.
+5. **Student Un-enrolled Preview Null-Safety**:
+   - Fixed un-enrolled lesson syllabus preview bug (`les is not defined` at line 2551 of `student.js`) by referencing `activeItem.data?.summary || activeItem.data?.description`.
+
+---
+
+# Completed task: TASK-082 — Curriculum & Exam Studio Full Streamlining & Modernization
+
+**Status:** DONE  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Completed Date:** 2026-10-07  
+
 
 # Completed task: TASK-081 — Academic Exam Result PDF Engine (ReportLab), Attempt Flow Auto-Redirect, Wide Layout Expansion & Studio Video Upload System
 
