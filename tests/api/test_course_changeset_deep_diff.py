@@ -18,14 +18,12 @@ from flask import Flask
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, LearningUnit, Lesson
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.course_service import create_course
 from pwd301.services.lesson_service import (
     create_learning_unit,
     create_lesson,
     get_course_changeset_diff,
-    update_lesson,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 

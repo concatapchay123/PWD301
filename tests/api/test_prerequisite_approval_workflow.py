@@ -11,7 +11,6 @@ Verifies:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -20,13 +19,10 @@ from flask.testing import FlaskClient
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, CoursePrerequisite
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.services.course_service import create_course
 from pwd301.services.enrollment_service import (
     add_course_prerequisite,
-    check_prerequisites_met,
-    get_course_prerequisites,
 )
 from pwd301.services.exceptions import CourseValidationError
 from pwd301.services.user_service import assign_role_to_user, register_user

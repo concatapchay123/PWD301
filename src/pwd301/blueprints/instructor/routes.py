@@ -76,7 +76,6 @@ from pwd301.services.course_service import (
 from pwd301.services.enrollment_service import (
     add_course_prerequisite,
     get_course_enrollments,
-    get_course_prerequisites,
     remove_course_prerequisite,
 )
 from pwd301.services.exceptions import (
@@ -2564,9 +2563,7 @@ def add_course_prerequisite_route(course_id: str) -> Any:
     )
 
     if is_own_course:
-        from pwd301.services.enrollment_service import add_course_prerequisite
-
-        link = add_course_prerequisite(
+        add_course_prerequisite(
             actor=actor,
             course_id=target_course.id,
             prerequisite_course_id=prereq_course.id,

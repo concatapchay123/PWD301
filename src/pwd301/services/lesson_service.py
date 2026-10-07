@@ -790,14 +790,7 @@ def update_lesson(
 
     # Disallow modifying position via update_lesson unless moving unit or in draft
     if "position" in data and data["position"] != lesson.position:
-        if "learning_unit_id" in data and data["learning_unit_id"] != lesson.learning_unit_id:
-            try:
-                new_pos = int(data["position"])
-                if new_pos > 0:
-                    lesson.position = new_pos
-            except (ValueError, TypeError):
-                pass
-        elif lesson.status == "DRAFT":
+        if ("learning_unit_id" in data and data["learning_unit_id"] != lesson.learning_unit_id) or lesson.status == "DRAFT":
             try:
                 new_pos = int(data["position"])
                 if new_pos > 0:

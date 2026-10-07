@@ -13,6 +13,8 @@ Implements:
 - Resource-level authorization and IDOR prevention.
 """
 
+import contextlib
+import json
 import logging
 import uuid
 from datetime import timedelta
