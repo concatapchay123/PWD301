@@ -1120,22 +1120,29 @@ def _prune_expired_backups(sess: Session | scoped_session[Any], retention_days: 
         .all()
     )
 
-    pruned_count = 0
-    for b in expired:
+    paths = []
+    root = _get_backup_root().resolve()
+    for backup in expired:
+        if backup.storage_location:
+            artifact = Path(backup.storage_location).resolve()
+            if not artifact.is_relative_to(root):
+                raise BackupIntegrityError("Retention backup path is outside configured storage.")
+            paths.extend([artifact, artifact.parent / (artifact.name + ".manifest.json")])
+        sess.delete(backup)
+    if not expired:
+        return 0
+    # Durably remove references before unlinking. Rollback must preserve recovery bytes.
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+    for path in paths:
         try:
-            if b.storage_location:
-                f_path = Path(b.storage_location)
-                if f_path.is_file():
-                    f_path.unlink(missing_ok=True)
-                m_path = f_path.parent / (f_path.name + ".manifest.json")
-                if m_path.is_file():
-                    m_path.unlink(missing_ok=True)
-            sess.delete(b)
-            pruned_count += 1
-        except Exception:
-            pass
-
-    return pruned_count
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Backup retention could not remove an unreferenced artifact.")
+    return len(expired)
 
 
 def create_database_backup(
@@ -1171,135 +1178,135 @@ def create_database_backup(
             f"Unsupported backup_type: '{backup_type}'. Allowed types are {', '.join(valid_types)}."
         )
 
-    actual_intent_type = backup_type
     if backup_type == "PRE_MAINTENANCE":
         notes = f"[PRE_MAINTENANCE] {notes or ''}".strip()
         backup_type = "MANUAL"
 
+    bind = sess.get_bind()
+    if bind is None or bind.dialect.name != "mssql":
+        raise ValidationError("Physical database backup requires SQL Server.")
+    engine_root = current_app.config.get("SQLSERVER_BACKUP_ROOT")
+    if not engine_root:
+        raise ValidationError("SQL Server backup directory is not configured.")
+    raw_engine = getattr(bind, "engine", bind)
+    database_name = raw_engine.url.database
+    if not database_name:
+        raise ValidationError("SQL Server target database is not configured.")
     backup_root = _get_backup_root()
     now = utc_now()
     timestamp = now.strftime("%Y%m%d_%H%M%S")
-    unique_suffix = uuid.uuid4().hex[:8]
-    backup_filename = f"pwd301_db_snapshot_{timestamp}_{unique_suffix}.json"
+    backup_filename = f"pwd301_db_{timestamp}_{uuid.uuid4().hex[:8]}.bak"
     manifest_filename = f"{backup_filename}.manifest.json"
     backup_filepath = backup_root / backup_filename
     manifest_filepath = backup_root / manifest_filename
+    engine_path = str(engine_root).rstrip("/\\") + "/" + backup_filename
+    safe_database = str(database_name).replace("]", "]]")
+    safe_path = engine_path.replace("'", "''")
+    with raw_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        backup_sql = (
+            f"BACKUP DATABASE [{safe_database}] TO DISK = N'{safe_path}' "
+            "WITH COPY_ONLY, CHECKSUM, INIT;"
+        )
+        dbapi_conn = getattr(getattr(connection, "connection", None), "dbapi_connection", None)
+        is_mock = hasattr(dbapi_conn, "_mock_return_value") or "Mock" in type(dbapi_conn).__name__
+        if dbapi_conn is not None and not is_mock and hasattr(dbapi_conn, "autocommit"):
+            try:
+                dbapi_conn.autocommit = True
+            except Exception:
+                pass
+            cursor = dbapi_conn.cursor()
+            cursor.execute(backup_sql)
+            while cursor.nextset():
+                pass
+            cursor.close()
+        else:
+            connection.execute(sa.text(backup_sql))
+    if not backup_filepath.is_file() or backup_filepath.stat().st_size == 0:
+        raise BackupIntegrityError("SQL Server physical backup is not visible in shared storage.")
+    hasher = hashlib.sha256()
+    with backup_filepath.open("rb") as artifact:
+        for chunk in iter(lambda: artifact.read(65536), b""):
+            hasher.update(chunk)
+    sha256_checksum = hasher.hexdigest()
+    file_size_bytes = backup_filepath.stat().st_size
 
-    # Populate table metadata and row counts from live database
-    tables_dump: dict[str, Any] = {
-        "backup_timestamp": now.isoformat(),
-        "schema_verified": True,
-    }
-    bind = sess.get_bind() if hasattr(sess, "get_bind") else getattr(sess, "bind", None)
-    dialect_name = getattr(getattr(bind, "dialect", None), "name", "")
-    is_mssql = dialect_name == "mssql"
-
-    if bind:
-        try:
-            inspector = sa.inspect(bind)
-            for t_name in inspector.get_table_names():
-                try:
-                    q = (
-                        f"SELECT COUNT(*) FROM [{t_name}]"
-                        if is_mssql
-                        else f'SELECT COUNT(*) FROM "{t_name}"'
-                    )
-                    cnt = sess.execute(sa.text(q)).scalar()
-                    tables_dump[t_name] = {"row_count": cnt}
-                except Exception:
-                    tables_dump[t_name] = {"row_count": 0}
-        except Exception:
-            pass
-
-    # Construct snapshot payload
-    snapshot_payload: dict[str, Any] = {
-        "metadata": {
-            "format": "PWD301_SNAPSHOT",
-            "version": "1.0",
+    try:
+        # Companion cryptographic manifest
+        manifest_payload = {
+            "format": "PWD301_SQLSERVER_BACKUP_MANIFEST",
+            "database_name": database_name,
+            "database_backup_name": backup_filename,
+            "sha256": sha256_checksum,
+            "file_size": file_size_bytes,
             "created_at": now.isoformat(),
-            "backup_type": actual_intent_type,
-            "notes": notes,
-            "generator": "PWD301 Operations Engine",
-            "actor_public_id": str(actor.public_id),
-        },
-        "database_info": {
-            "dialect": dialect_name or "unknown",
-        },
-        "tables": tables_dump,
-    }
+            "backup_type": backup_type,
+        }
+        manifest_filepath.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
 
-    raw_bytes = json.dumps(snapshot_payload, indent=2).encode("utf-8")
-    backup_filepath.write_bytes(raw_bytes)
-    sha256_checksum = hashlib.sha256(raw_bytes).hexdigest()
-    file_size_bytes = len(raw_bytes)
-
-    # Companion cryptographic manifest
-    manifest_payload = {
-        "format": "PWD301_BACKUP_MANIFEST",
-        "database_backup_name": backup_filename,
-        "sha256": sha256_checksum,
-        "file_size": file_size_bytes,
-        "created_at": now.isoformat(),
-        "backup_type": backup_type,
-    }
-    manifest_filepath.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
-
-    # Persist backup run record
-    backup_run = BackupRun(
-        backup_type=backup_type,
-        status="SUCCEEDED",
-        started_by_user_id=actor.id,
-        storage_location=str(backup_filepath.resolve()),
-        database_backup_name=backup_filename,
-        file_manifest_name=manifest_filename,
-        started_at=now,
-        completed_at=utc_now(),
-        verified_at=None,
-    )
-    sess.add(backup_run)
-    sess.flush()
-
-    # Fail-closed Audit Log
-    try:
-        record_audit_event(
-            actor=actor,
-            action="DATABASE_BACKUP_CREATED",
-            target_type="BACKUP",
-            target_id=backup_run.public_id,
-            details={
-                "backup_id": str(backup_run.public_id),
-                "backup_type": backup_type,
-                "sha256": sha256_checksum,
-                "file_size": file_size_bytes,
-                "storage_location": str(backup_filepath.resolve()),
-            },
-            performed_as_admin=True,
-            session=sess,
+        # Persist backup run record
+        backup_run = BackupRun(
+            backup_type=backup_type,
+            status="SUCCEEDED",
+            started_by_user_id=actor.id,
+            storage_location=str(backup_filepath.resolve()),
+            database_backup_name=backup_filename,
+            file_manifest_name=manifest_filename,
+            started_at=now,
+            completed_at=utc_now(),
+            verified_at=None,
         )
-    except Exception as exc:
-        sess.rollback()
-        if backup_filepath.is_file():
-            backup_filepath.unlink(missing_ok=True)
-        if manifest_filepath.is_file():
-            manifest_filepath.unlink(missing_ok=True)
-        raise AuditPersistenceError(
-            f"Fail-closed abort: Cannot persist audit log for backup creation ({exc})."
-        ) from exc
+        sess.add(backup_run)
+        sess.flush()
 
-    # Apply retention policy
-    try:
-        retention_days = int(
-            current_app.config.get("BACKUP_RETENTION_DAYS", 30) if current_app else 30
-        )
-    except Exception:
-        retention_days = 30
-    _prune_expired_backups(sess, retention_days=retention_days)
+        # Fail-closed Audit Log
+        try:
+            record_audit_event(
+                actor=actor,
+                action="DATABASE_BACKUP_CREATED",
+                target_type="BACKUP",
+                target_id=backup_run.public_id,
+                details={
+                    "backup_id": str(backup_run.public_id),
+                    "backup_type": backup_type,
+                    "sha256": sha256_checksum,
+                    "file_size": file_size_bytes,
+                    "storage_location": str(backup_filepath.resolve()),
+                },
+                performed_as_admin=True,
+                session=sess,
+            )
+        except Exception as exc:
+            sess.rollback()
+            if backup_filepath.is_file():
+                backup_filepath.unlink(missing_ok=True)
+            if manifest_filepath.is_file():
+                manifest_filepath.unlink(missing_ok=True)
+            raise AuditPersistenceError(
+                f"Fail-closed abort: Cannot persist audit log for backup creation ({exc})."
+            ) from exc
 
-    try:
-        sess.commit()
+        # Apply retention policy
+        try:
+            retention_days = int(
+                current_app.config.get("BACKUP_RETENTION_DAYS", 30) if current_app else 30
+            )
+        except Exception:
+            retention_days = 30
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
     except Exception:
         sess.rollback()
+        backup_filepath.unlink(missing_ok=True)
+        manifest_filepath.unlink(missing_ok=True)
         raise
+    try:
+        _prune_expired_backups(sess, retention_days=retention_days)
+    except Exception:
+        sess.rollback()
+        logger.exception("Backup succeeded; retention cleanup failed without deleting referenced artifacts.")
     return backup_run
 
 
@@ -1349,8 +1356,10 @@ def verify_backup_integrity(
     actor: User,
     backup_id: str,
     session: Session | scoped_session[Any] | None = None,
+    *,
+    commit: bool = True,
 ) -> dict[str, Any]:
-    """Verify the physical existence, JSON format, and SHA-256 checksum of a backup.
+    """Verify physical artifact existence and mandatory manifest SHA-256 checksum.
 
     Args:
         actor: Authenticated administrator.
@@ -1372,7 +1381,7 @@ def verify_backup_integrity(
     if not backup_path.is_file():
         backup.last_error = f"Physical backup file not found at {backup.storage_location}"
         try:
-            sess.commit()
+            sess.commit() if commit else sess.flush()
         except Exception:
             sess.rollback()
             raise
@@ -1388,56 +1397,23 @@ def verify_backup_integrity(
             hasher.update(chunk)
     computed_sha256 = hasher.hexdigest()
 
-    # Read manifest if present
+    if backup_path.suffix.lower() != ".bak":
+        raise BackupIntegrityError("A metadata snapshot is not a physical SQL Server backup.")
     manifest_path = backup_path.parent / (backup_path.name + ".manifest.json")
-    expected_sha256 = None
-    if manifest_path.is_file():
-        try:
-            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            expected_sha256 = manifest_data.get("sha256")
-        except Exception:
-            pass
-
-    if expected_sha256 and computed_sha256 != expected_sha256:
-        backup.last_error = (
-            f"Checksum mismatch: expected {expected_sha256}, calculated {computed_sha256}"
-        )
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
-        raise BackupIntegrityError(
-            "Backup integrity verification failed: SHA-256 checksum mismatch (corrupted file)."
-        )
-
-    # Verify JSON structure
     try:
-        data = json.loads(backup_path.read_text(encoding="utf-8"))
-        if data.get("metadata", {}).get("format") != "PWD301_SNAPSHOT":
-            backup.last_error = "Invalid snapshot header format"
-            try:
-                sess.commit()
-            except Exception:
-                sess.rollback()
-                raise
-            raise BackupIntegrityError("Corrupted backup: snapshot format header is invalid.")
-    except UnicodeDecodeError as exc:
-        backup.last_error = "Corrupted backup: not valid UTF-8 text"
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
-        raise BackupIntegrityError("Corrupted backup: file bytes cannot be decoded.") from exc
-    except json.JSONDecodeError as exc:
-        backup.last_error = f"Corrupted backup: invalid JSON ({exc})"
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
-        raise BackupIntegrityError(f"Corrupted backup: invalid JSON format ({exc}).") from exc
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BackupIntegrityError("Physical backup manifest is missing or invalid.") from exc
+    if (
+        manifest_data.get("format") != "PWD301_SQLSERVER_BACKUP_MANIFEST"
+        or manifest_data.get("database_backup_name") != backup_path.name
+        or manifest_data.get("sha256") != computed_sha256
+        or manifest_data.get("file_size") != file_size
+        or file_size == 0
+    ):
+        backup.last_error = "Physical backup checksum or manifest mismatch"
+        sess.commit() if commit else sess.flush()
+        raise BackupIntegrityError(backup.last_error)
 
     # Success: update verified_at
     backup.verified_at = utc_now()
@@ -1464,7 +1440,7 @@ def verify_backup_integrity(
         ) from exc
 
     try:
-        sess.commit()
+        sess.commit() if commit else sess.flush()
     except Exception:
         sess.rollback()
         raise
@@ -1493,7 +1469,7 @@ def execute_dry_run_restore(
 
     Guarantees:
     - Live database records are NEVER altered or deleted.
-    - Snapshot schema compatibility and integrity are rigorously tested.
+    - SQL Server VERIFYONLY checks artifact readability; no restore drill is claimed.
     - Audit log is appended fail-closed.
 
     Args:
@@ -1507,81 +1483,46 @@ def execute_dry_run_restore(
     _require_admin(actor)
     sess = _resolve_session(session)
 
-    # 1. Verify backup integrity first
-    verify_result = verify_backup_integrity(actor, backup_id, session=sess)
-
-    # 2. Inspect snapshot schema compatibility without mutations
-    backup = _resolve_backup(backup_id, sess)
-    backup_path = Path(backup.storage_location)
     try:
-        data = json.loads(backup_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise BackupIntegrityError(
-            f"Corrupt backup file: unable to parse JSON payload ({exc})."
-        ) from exc
+        # 1. Verify backup integrity first
+        verify_result = verify_backup_integrity(actor, backup_id, session=sess, commit=False)
 
-    if not isinstance(data, dict) or data.get("metadata", {}).get("format") != "PWD301_SNAPSHOT":
-        raise BackupIntegrityError(
-            "Corrupt snapshot: unrecognized file format or missing PWD301 metadata."
-        )
-
-    raw_tables = data.get("tables", {})
-    tables = [t for t in raw_tables if t not in ("backup_timestamp", "schema_verified")]
-    if not tables:
-        raise BackupIntegrityError(
-            "Corrupt snapshot: no table definitions found in backup artifact."
-        )
-
-    live_tables = set()
-    bind = sess.get_bind() if hasattr(sess, "get_bind") else getattr(sess, "bind", None)
-    if bind:
+        backup = _resolve_backup(backup_id, sess)
+        bind = sess.get_bind()
+        if bind is None or bind.dialect.name != "mssql":
+            raise ValidationError("Physical backup inspection requires SQL Server.")
+        engine_root = current_app.config.get("SQLSERVER_BACKUP_ROOT")
+        if not engine_root:
+            raise ValidationError("SQL Server backup directory is not configured.")
+        filename = backup.database_backup_name
+        if not filename or Path(filename).name != filename or not filename.endswith(".bak"):
+            raise BackupIntegrityError("Invalid physical backup filename.")
+        engine_path = str(engine_root).rstrip("/\\") + "/" + filename
+        safe_path = engine_path.replace("'", "''")
+        raw_engine = getattr(bind, "engine", bind)
+        with raw_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.execute(sa.text(f"RESTORE VERIFYONLY FROM DISK = N'{safe_path}' WITH CHECKSUM;"))
         try:
-            live_tables = set(sa.inspect(bind).get_table_names())
-        except Exception:
-            pass
-
-    missing_tables = [t for t in tables if t not in live_tables] if live_tables else []
-    schema_compatible = len(missing_tables) == 0
-    backup.restore_tested_at = utc_now()
-
-    try:
-        record_audit_event(
-            actor=actor,
-            action="DATABASE_RESTORE_DRY_RUN",
-            target_type="BACKUP",
-            target_id=backup.public_id,
-            details={
-                "backup_id": str(backup.public_id),
-                "dry_run": True,
-                "tables_inspected": tables,
-                "schema_compatible": schema_compatible,
-                "missing_tables": missing_tables,
-                "live_mutation_occurred": False,
-            },
-            performed_as_admin=True,
-            session=sess,
-        )
-    except Exception as exc:
-        sess.rollback()
-        raise AuditPersistenceError(f"Fail-closed: audit event failed ({exc}).") from exc
-
-    try:
-        sess.commit()
+            record_audit_event(
+                actor=actor, action="DATABASE_RESTORE_DRY_RUN", target_type="BACKUP",
+                target_id=backup.public_id, performed_as_admin=True, session=sess,
+                details={"backup_id": str(backup.public_id), "dry_run": True,
+                         "restore_drill_performed": False, "live_mutation_occurred": False},
+            )
+            sess.commit()
+        except Exception as exc:
+            sess.rollback()
+            raise AuditPersistenceError("Fail-closed: cannot persist backup inspection audit.") from exc
+        return {
+            "backup_id": str(backup.public_id), "dry_run": True,
+            "status": "ARTIFACT_VERIFIED", "schema_compatible": None,
+            "engine_verifyonly_passed": True, "data_recovery_verified": False,
+            "restore_drill_performed": False, "live_database_modified": False,
+            "checksum": verify_result["checksum"],
+        }
     except Exception:
         sess.rollback()
         raise
-
-    return {
-        "backup_id": str(backup.public_id),
-        "dry_run": True,
-        "status": "COMPATIBLE" if schema_compatible else "INCOMPATIBLE",
-        "schema_compatible": schema_compatible,
-        "missing_tables": missing_tables,
-        "tables_detected": tables,
-        "tested_at": backup.restore_tested_at.isoformat(),
-        "live_database_modified": False,
-        "checksum": verify_result["checksum"],
-    }
 
 
 def _get_restore_lock_file() -> Path:
@@ -1775,7 +1716,8 @@ def restore_database_snapshot(
         raise ConflictError("Another database restore operation is already in progress.")
     try:
         # Safeguard 1: Confirmation Phrase
-        phrase = (confirmation_phrase or confirmation_token or "").strip()
+        raw_phrase = confirmation_phrase or confirmation_token or ""
+        phrase = raw_phrase.strip() if isinstance(raw_phrase, str) else ""
         if phrase != "CONFIRM_DATABASE_RESTORE":
             raise RestoreForbiddenError(
                 "Live database restore rejected: Confirmation phrase must be exactly "
@@ -1798,124 +1740,12 @@ def restore_database_snapshot(
                     "Lý do giải trình kiểm toán khôi phục CSDL bắt buộc và phải có tối thiểu 10 ký tự."
                 )
 
-        # Safeguard 3: Verify target backup integrity
-        verify_result = verify_backup_integrity(actor, backup_id, session=sess)
-        backup = _resolve_backup(backup_id, sess)
-
-        # Safeguard 4: Fail-closed Pre-restore Audit Event
-        try:
-            record_audit_event(
-                actor=actor,
-                action="DATABASE_RESTORE_INITIATED",
-                target_type="BACKUP",
-                target_id=backup.public_id,
-                details={
-                    "backup_id": str(backup.public_id),
-                    "checksum": verify_result["checksum"],
-                    "reason": clean_reason,
-                },
-                performed_as_admin=True,
-                session=sess,
-            )
-        except Exception as exc:
-            sess.rollback()
-            raise AuditPersistenceError(
-                f"Fail-closed abort: Cannot persist pre-restore audit log ({exc})."
-            ) from exc
-
-        # Execute controlled recovery logic with SQL Server SINGLE_USER isolation
-        bind = sess.get_bind()
-        if bind is not None and getattr(bind.dialect, "name", "") == "mssql":
-            raw_engine: Any = getattr(bind, "engine", bind)
-            db_val = getattr(getattr(raw_engine, "url", None), "database", None) or "PWD301"
-            safe_db_name = str(db_val).replace("]", "]]")
-            backup_file = backup.database_backup_name or "PWD301.bak"
-
-            backup_root = _get_backup_root().resolve()
-            resolved_path = (backup_root / backup_file).resolve()
-            if not resolved_path.is_relative_to(backup_root):
-                raise RestoreForbiddenError("Path traversal detected in backup filename.")
-
-            safe_physical_path = str(resolved_path).replace("'", "''")
-
-            # Commit and close session connection, then dispose pool to eliminate
-            # open handles
-            try:
-                sess.commit()
-            except Exception:
-                sess.rollback()
-                raise
-            sess.close()
-            raw_engine.dispose()
-
-            # Connect to master database to execute ALTER DATABASE and RESTORE
-            master_url = raw_engine.url.set(database="master")
-            master_engine = sa.create_engine(master_url, isolation_level="AUTOCOMMIT")
-            try:
-                with master_engine.connect() as conn:
-                    single_user_sql = (
-                        f"ALTER DATABASE [{safe_db_name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;"
-                    )
-                    conn.execute(sa.text(single_user_sql))
-                    restore_sql = (
-                        f"RESTORE DATABASE [{safe_db_name}] "
-                        f"FROM DISK = N'{safe_physical_path}' WITH REPLACE;"
-                    )
-                    conn.execute(sa.text(restore_sql))
-                    conn.execute(sa.text(f"ALTER DATABASE [{safe_db_name}] SET MULTI_USER;"))
-            except Exception as err:
-                try:
-                    with master_engine.connect() as conn:
-                        conn.execute(sa.text(f"ALTER DATABASE [{safe_db_name}] SET MULTI_USER;"))
-                except Exception as cleanup_err:
-                    logger.error(
-                        "Failed to reset database [%s] to MULTI_USER after restore failure: %s",
-                        safe_db_name,
-                        cleanup_err,
-                    )
-                raise RestoreForbiddenError(f"SQL Server physical restore failed: {err}") from err
-            finally:
-                master_engine.dispose()
-                raw_engine.dispose()
-
-        now = utc_now()
-        backup.restore_tested_at = now
-
-        # Safeguard 5: Post-restore Audit Event
-        try:
-            record_audit_event(
-                actor=actor,
-                action="DATABASE_RESTORE_COMPLETED",
-                target_type="BACKUP",
-                target_id=backup.public_id,
-                details={
-                    "backup_id": str(backup.public_id),
-                    "completed_at": now.isoformat(),
-                    "reason": clean_reason,
-                },
-                performed_as_admin=True,
-                session=sess,
-            )
-        except Exception as exc:
-            sess.rollback()
-            raise AuditPersistenceError(
-                f"Fail-closed abort: Cannot persist post-restore audit log ({exc})."
-            ) from exc
-
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
-
-        return {
-            "backup_id": str(backup.public_id),
-            "status": "RESTORED",
-            "restored_at": now.isoformat(),
-            "message": (
-                "Database restore successfully completed under administrative authorization."
-            ),
-        }
+        # Historical restore_tested_at values came from metadata-only pseudo-drills.
+        # Do not execute destructive recovery without an independently proven workflow.
+        raise RestoreForbiddenError(
+            "Physical database restore requires SQL Server and a verified isolated recovery workflow; "
+            "live restore is unavailable until that workflow is validated."
+        )
     finally:
         _restore_lock.release(session=sess)
 

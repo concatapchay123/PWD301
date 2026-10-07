@@ -13,6 +13,7 @@ services:
       - "${DB_PORT:-1433}:1433"
     volumes:
       - sqldata:/var/opt/mssql
+      - backup_data:/var/opt/mssql/backups
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\" -C -No || exit 1"]
       interval: 10s
@@ -77,6 +78,7 @@ services:
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
+      - SQLSERVER_BACKUP_ROOT=/var/opt/mssql/backups
       - EXPORT_ROOT=/app/exports
       - SEED_DEMO_DATA=${SEED_DEMO_DATA:-true}
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
@@ -130,6 +132,7 @@ services:
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
+      - SQLSERVER_BACKUP_ROOT=/var/opt/mssql/backups
       - EXPORT_ROOT=/app/exports
       - WORKER_POLL_INTERVAL_SECONDS=${WORKER_POLL_INTERVAL_SECONDS:-2}
     depends_on:

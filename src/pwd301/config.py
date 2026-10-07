@@ -64,6 +64,7 @@ class BaseConfig:
     # Storage paths
     FILE_STORAGE_ROOT: Path = Path(os.environ.get("FILE_STORAGE_ROOT", "./storage"))
     FILE_QUARANTINE_ROOT: Path = Path(os.environ.get("FILE_QUARANTINE_ROOT", "./quarantine"))
+    SQLSERVER_BACKUP_ROOT: str = os.environ.get("SQLSERVER_BACKUP_ROOT", "/var/opt/mssql/backups")
     FILE_BACKUP_ROOT: Path = Path(os.environ.get("FILE_BACKUP_ROOT", "./backups"))
     EXPORT_ROOT: Path = Path(os.environ.get("EXPORT_ROOT", "./exports"))
 
@@ -112,6 +113,8 @@ class BaseConfig:
             self.FILE_STORAGE_ROOT = Path(os.environ["FILE_STORAGE_ROOT"])
         if "FILE_QUARANTINE_ROOT" in os.environ:
             self.FILE_QUARANTINE_ROOT = Path(os.environ["FILE_QUARANTINE_ROOT"])
+        if "SQLSERVER_BACKUP_ROOT" in os.environ:
+            self.SQLSERVER_BACKUP_ROOT = os.environ["SQLSERVER_BACKUP_ROOT"]
         if "FILE_BACKUP_ROOT" in os.environ:
             self.FILE_BACKUP_ROOT = Path(os.environ["FILE_BACKUP_ROOT"])
         if "EXPORT_ROOT" in os.environ:

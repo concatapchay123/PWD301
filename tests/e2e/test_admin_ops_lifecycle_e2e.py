@@ -375,10 +375,9 @@ def test_disaster_recovery_drill_and_maintenance_mode(
     client: FlaskClient,
     admin_user: User,
     student_user: User,
+    physical_backup_engine,
 ) -> None:
-    """E2E Workflow 5: Disaster Recovery Drill: Backup -> Dry-Run -> Maintenance
-    Mode -> Controlled Restore.
-    """
+    """Mocked artifact inspection plus real maintenance/auth guards; no restore drill proof."""
     sess: Session = db.session
 
     backup = None
@@ -420,9 +419,11 @@ def test_disaster_recovery_drill_and_maintenance_mode(
             session=sess,
         )
         assert dry_run["dry_run"] is True
-        assert dry_run["status"] == "COMPATIBLE"
+        assert dry_run["status"] == "ARTIFACT_VERIFIED"
+        assert dry_run["restore_drill_performed"] is False
+        assert dry_run["schema_compatible"] is None
         assert dry_run["live_database_modified"] is False
-        assert "tables_detected" in dry_run
+        assert backup.restore_tested_at is None
         assert sess.query(User).count() == user_count_pre
 
         # ---------------------------------------------------------------------
@@ -474,28 +475,16 @@ def test_disaster_recovery_drill_and_maintenance_mode(
                 session=sess,
             )
 
-        # Correct phrase and password succeeds
-        restore_result = restore_database_snapshot(
-            actor=admin_user,
-            backup_id=backup_id,
-            confirmation_phrase="CONFIRM_DATABASE_RESTORE",
-            password="Password@123",
-            session=sess,
-        )
-        assert restore_result["status"] == "RESTORED"
-        assert restore_result["backup_id"] == backup_id
-
-        # Verify restore audit events
-        restore_audits = (
-            sess.query(AuditEvent.action)
-            .filter(
-                AuditEvent.action.in_(["DATABASE_RESTORE_INITIATED", "DATABASE_RESTORE_COMPLETED"])
+        # SQL command boundary is mocked here; live recovery remains unavailable.
+        with pytest.raises(RestoreForbiddenError, match="verified isolated"):
+            restore_database_snapshot(
+                actor=admin_user, backup_id=backup_id,
+                confirmation_phrase="CONFIRM_DATABASE_RESTORE",
+                password="Password@123", session=sess,
             )
-            .all()
-        )
-        audit_actions = [a[0] for a in restore_audits]
-        assert "DATABASE_RESTORE_INITIATED" in audit_actions
-        assert "DATABASE_RESTORE_COMPLETED" in audit_actions
+        assert sess.query(AuditEvent).filter(
+            AuditEvent.action == "DATABASE_RESTORE_COMPLETED"
+        ).count() == 0
 
         # ---------------------------------------------------------------------
         # Step 6: Conclude Maintenance Window

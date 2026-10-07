@@ -5842,6 +5842,9 @@ class StudentView {
       });
 
       const flushAllUnsavedInputs = async () => {
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+          try { document.activeElement.blur(); } catch (_e) {}
+        }
         const promises = [];
         container.querySelectorAll('.assessment-short-answer').forEach(input => {
           if (textDebounceTimers.has(input)) {
@@ -5861,6 +5864,28 @@ class StudentView {
           await Promise.allSettled(promises);
         }
       };
+
+      const handleExamBeforeUnload = (e) => {
+        if (textDebounceTimers.size > 0 || pendingAnswerSaves.size > 0) {
+          container.querySelectorAll('.assessment-short-answer').forEach(input => {
+            if (textDebounceTimers.has(input)) {
+              clearTimeout(textDebounceTimers.get(input));
+              textDebounceTimers.delete(input);
+              saveShortAnswer(input);
+            }
+          });
+          container.querySelectorAll('.question-card').forEach(card => {
+            if (textDebounceTimers.has(card)) {
+              clearTimeout(textDebounceTimers.get(card));
+              textDebounceTimers.delete(card);
+              saveFillBlank(card);
+            }
+          });
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      };
+      window.addEventListener('beforeunload', handleExamBeforeUnload);
 
       // Submit exam action with mandatory verification checkbox modal
       const submitBtn = document.getElementById('exam-submit-btn');
@@ -5991,6 +6016,7 @@ class StudentView {
         try {
           await ApiClient.submitAttempt(attemptId, leaseToken, StudentView.getSubmissionKey(attemptId));
           antiCheat.stop();
+          window.removeEventListener('beforeunload', handleExamBeforeUnload);
           if (document.fullscreenElement && document.exitFullscreen) {
             try { await document.exitFullscreen(); } catch (_e) {}
           }
@@ -6001,6 +6027,7 @@ class StudentView {
             const result = await ApiClient.getAttemptResult(attemptId);
             if (['SUBMITTED', 'PENDING_GRADING', 'GRADED'].includes(result?.status)) {
               antiCheat.stop();
+              window.removeEventListener('beforeunload', handleExamBeforeUnload);
               if (document.fullscreenElement && document.exitFullscreen) {
                 try { await document.exitFullscreen(); } catch (_e) {}
               }
@@ -6026,6 +6053,7 @@ class StudentView {
         if (!document.getElementById('exam-remaining-timer')) {
           clearInterval(examInterval);
           antiCheat.stop();
+          window.removeEventListener('beforeunload', handleExamBeforeUnload);
           return;
         }
         if (remainingSeconds > 0) {
@@ -6034,6 +6062,7 @@ class StudentView {
         } else {
           clearInterval(examInterval);
           antiCheat.stop();
+          window.removeEventListener('beforeunload', handleExamBeforeUnload);
           UI.showToast('Đã hết giờ làm bài! Hệ thống tự động nộp bài thi.', 'warning');
           handleSubmit(true);
         }

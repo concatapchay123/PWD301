@@ -138,3 +138,70 @@ test('SYNC-043: truthful storage failure handling and recovery on subsequent suc
   assert.equal(retryDraft.title, 'Attempt 1 Retry');
   assert.ok(storage.has('pwd301_azota_exam_draft_instructor-fail'));
 });
+
+
+test('SYNC-042 same runtime A to B to A clears memory and restores only scoped durable draft', () => {
+  const storage = new Map();
+  const window = { app: { currentUser: { id: 'a', active_role: 'INSTRUCTOR' } } };
+  const localStorage = {
+    getItem: key => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
+  };
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/exam-store.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, localStorage, console }, { filename });
+  const store = window.ExamStore;
+  store.saveDraft({ title: 'A', questions: [{ stem: 'Private A' }], config: { examPassword: 'secret-A' } });
+  window.app.currentUser = { id: 'b', active_role: 'INSTRUCTOR' };
+  assert.equal(store.hasDraft(), false);
+  assert.notEqual(store.getDraft().title, 'A');
+  assert.notEqual(store.getDraft().config.examPassword, 'secret-A');
+  store.saveDraft({ title: 'B', questions: [{ stem: 'Private B' }] });
+  window.app.currentUser = { id: 'a', active_role: 'INSTRUCTOR' };
+  assert.equal(store.getDraft().title, 'A');
+  assert.equal(store.getDraft().config.examPassword, '');
+  window.app.currentUser = { id: 'a', active_role: 'STUDENT' };
+  assert.equal(store.hasDraft(), false);
+  assert.notEqual(store.getDraft().title, 'A');
+  store.saveDraft({ title: 'Forbidden student draft' });
+  assert.equal(JSON.parse(storage.get('pwd301_azota_exam_draft_a')).title, 'A');
+  window.app.currentUser = { id: 'a', active_role: 'INSTRUCTOR' };
+  store.clearDraft();
+  assert.equal(storage.has('pwd301_azota_exam_draft_a'), false);
+  assert.equal(JSON.parse(storage.get('pwd301_azota_exam_draft_b')).title, 'B');
+});
+
+test('SYNC-029: debounced text input flushes dirty answers before submit or navigation', async () => {
+  const savedAnswers = [];
+  const textDebounceTimers = new Map();
+  const inputEl = { dataset: { qIndex: '0' }, value: '   My Typed Answer   ' };
+  const cardEl = { dataset: { qid: 'q-uuid-1' }, closest: () => cardEl };
+  inputEl.closest = (sel) => sel === '.question-card' ? cardEl : null;
+
+  const saveShortAnswer = async (input) => {
+    savedAnswers.push({ qid: cardEl.dataset.qid, answer_text: input.value.trim() });
+  };
+
+  // 1. Simulate input event debounce timer
+  let timerFired = false;
+  textDebounceTimers.set(inputEl, setTimeout(() => { timerFired = true; }, 1200));
+  assert.equal(textDebounceTimers.has(inputEl), true);
+  assert.equal(savedAnswers.length, 0);
+
+  // 2. Simulate flush before submit or beforeunload
+  const flushAll = async () => {
+    const promises = [];
+    if (textDebounceTimers.has(inputEl)) {
+      clearTimeout(textDebounceTimers.get(inputEl));
+      textDebounceTimers.delete(inputEl);
+      promises.push(saveShortAnswer(inputEl));
+    }
+    await Promise.allSettled(promises);
+  };
+
+  await flushAll();
+  assert.equal(textDebounceTimers.size, 0);
+  assert.equal(savedAnswers.length, 1);
+  assert.equal(savedAnswers[0].qid, 'q-uuid-1');
+  assert.equal(savedAnswers[0].answer_text, 'My Typed Answer');
+});

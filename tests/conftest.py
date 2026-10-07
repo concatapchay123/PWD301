@@ -115,3 +115,34 @@ def _reset_rate_limits_between_tests() -> Generator[None, None, None]:
     reset_all_rate_limits()
     yield
     reset_all_rate_limits()
+
+
+@pytest.fixture
+def physical_backup_engine(app, monkeypatch, tmp_path):
+    """Mock only the SQL Server command boundary, never claim a real restore drill."""
+    import re
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    app.config["FILE_BACKUP_ROOT"] = tmp_path
+    app.config["SQLSERVER_BACKUP_ROOT"] = "/engine/backups"
+    original_get_bind = db.session.get_bind
+    engine = MagicMock()
+    engine.engine = engine
+    engine.dialect.name = "mssql"
+    engine.url = SimpleNamespace(database="isolated_unit_test")
+    connection = engine.connect.return_value.execution_options.return_value.__enter__.return_value
+    statements = []
+
+    def execute(statement):
+        sql = str(statement)
+        statements.append(sql)
+        if sql.startswith("BACKUP DATABASE"):
+            filename = re.search(r"TO DISK = N'([^']+)'", sql).group(1).split("/")[-1]
+            (tmp_path / filename).write_bytes(b"unit fixture physical artifact bytes")
+        elif not sql.startswith("RESTORE VERIFYONLY"):
+            raise AssertionError("Unit inspection must never restore a database")
+
+    connection.execute.side_effect = execute
+    monkeypatch.setattr(db.session, "get_bind", lambda: engine)
+    return original_get_bind, statements

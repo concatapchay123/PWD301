@@ -9,7 +9,7 @@
  * 2. Server Operations & Security Cockpit (65/35 Split Layout):
  *    - Service Health Matrix & Fail-Closed Quarantine Sandbox
  *    - Background Daemons Execution & Regrading Worker Progress
- *    - Isolated Danger Zone ("Never Overwrite Live Database", Staging Dry-Run & Guarded Live Restore)
+ *    - Isolated Danger Zone ("Never Overwrite Live Database", Kiểm tra Backup & Guarded Live Restore)
  *    - System Maintenance Window Engine (Start/End Window)
  *    - Service health, backup, maintenance and audit operations
  *    - Active Sessions Revocation Panel & Live Threat Stream
@@ -4687,7 +4687,7 @@ class AdminView {
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase shrink-0">${b.backup_type || 'MANUAL'}</span>
                   ${b.verified_at ? `<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold text-[10px] uppercase shrink-0">Đã xác minh SHA</span>` : ''}
-                  ${b.restore_tested_at ? `<span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 font-bold text-[10px] uppercase shrink-0">Staging Tested</span>` : ''}
+
                   ${b.last_error ? `<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 font-bold text-[10px] uppercase shrink-0" title="${UI.escapeHtml(b.last_error)}">Lỗi xác minh</span>` : ''}
                   <span class="font-mono text-xs font-bold text-slate-900 dark:text-white truncate block max-w-full" title="${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}">${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}</span>
                 </div>
@@ -4704,10 +4704,10 @@ class AdminView {
                   Xác minh SHA
                 </button>
                 <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors dryrun-backup-btn" data-backup-id="${b.backup_id}">
-                  Staging Dry-Run
+                  Kiểm tra Backup
                 </button>
-                <button type="button" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors shadow-xs restore-live-btn" data-backup-id="${b.backup_id}" data-backup-name="${UI.escapeHtml(b.database_backup_name || b.backup_id)}">
-                  Live Restore
+                <button type="button" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors shadow-xs restore-live-btn" disabled title="Chưa xác minh quy trình khôi phục trên CSDL riêng" data-backup-id="${b.backup_id}" data-backup-name="${UI.escapeHtml(b.database_backup_name || b.backup_id)}">
+                  Khôi phục Chưa Khả Dụng
                 </button>
               </div>
             </div>
@@ -4736,29 +4736,26 @@ class AdminView {
         containerEl.querySelectorAll('.dryrun-backup-btn').forEach(btn => {
           btn.onclick = async () => {
             const bId = btn.dataset.backupId;
-            UI.showToast(`Đang thực hiện diễn tập khôi phục Staging Dry-Run cho ${bId}...`, 'info');
+            UI.showToast(`Đang kiểm tra tệp sao lưu...`, 'info');
             try {
               const dRes = await ApiClient.restoreAdminBackupDryRun(bId);
               await loadBackups();
               UI.openModal({
-                title: `Kết quả Diễn tập Phục hồi Staging (Dry-Run) • ${bId}`,
+                title: `Kết quả Kiểm tra Tệp Sao Lưu`,
                 bodyHtml: `
                   <div class="space-y-3 text-xs">
-                    ${Boolean(dRes && dRes.schema_compatible && dRes.status === 'COMPATIBLE')
-                      ? `<div class="p-3 rounded-xl bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          <strong>Tương thích Cấu trúc:</strong> Quá trình diễn tập xác nhận schema CSDL hoàn toàn tương thích. Không có đột biến nào trên Live DB.
-                        </div>`
-                      : `<div class="p-3 rounded-xl bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                          <strong>CẢNH BÁO: Không tương thích Cấu trúc:</strong> Bản sao lưu không tương thích với schema CSDL hiện tại. ${dRes && dRes.missing_tables && dRes.missing_tables.length ? `Thiếu các bảng: ${UI.escapeHtml(dRes.missing_tables.join(', '))}` : 'Bản sao lưu không hợp lệ hoặc thiếu cấu trúc bảng.'}
-                        </div>`
-                    }
+                    <div class="p-3 rounded-xl bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                      <strong>Kiểm tra tệp sao lưu:</strong>
+                      ${dRes?.status === 'ARTIFACT_VERIFIED' ? 'SQL Server đã kiểm tra artifact và checksum.' : 'Chưa xác minh được artifact.'}
+                      Chưa thực hiện khôi phục thử trên CSDL riêng; chưa xác nhận tương thích schema hoặc dữ liệu sau khôi phục.
+                    </div>
                     <pre class="p-3 rounded-xl bg-slate-950 text-slate-200 font-mono text-[11px] overflow-x-auto">${UI.escapeHtml(JSON.stringify(dRes, null, 2))}</pre>
                   </div>
                 `,
                 footerHtml: `<button type="button" class="px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold" onclick="UI.closeModal()">Đóng</button>`
               });
             } catch (e) {
-              UI.showToast(e.message || 'Lỗi diễn tập Dry-run.', 'error');
+              UI.showToast(e.message || 'Lỗi kiểm tra tệp sao lưu.', 'error');
             }
           };
         });
