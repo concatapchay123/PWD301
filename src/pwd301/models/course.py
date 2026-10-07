@@ -291,10 +291,44 @@ class CoursePrerequisite(Base):
         default=utc_now,
         server_default=sa.text("SYSUTCDATETIME()"),
     )
+    approval_status = db.Column(
+        sa.String(32),
+        nullable=False,
+        default="APPROVED",
+        server_default=sa.text("'APPROVED'"),
+    )
+    requested_by_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_course_prerequisites_requested_by_user_id"),
+        nullable=True,
+    )
+    requested_at = db.Column(
+        UTCDateTime,
+        nullable=True,
+        default=utc_now,
+    )
+    reviewed_at = db.Column(
+        UTCDateTime,
+        nullable=True,
+    )
+    reviewed_by_user_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("users.id", name="fk_course_prerequisites_reviewed_by_user_id"),
+        nullable=True,
+    )
+    review_note = db.Column(
+        sa.Unicode(500),
+        nullable=True,
+    )
 
     __table_args__ = (
         sa.CheckConstraint("course_id <> prerequisite_course_id", name="ck_course_prerequisites_1"),
+        sa.CheckConstraint(
+            "approval_status IN ('APPROVED', 'PENDING_APPROVAL', 'REJECTED')",
+            name="ck_course_prerequisites_approval_status",
+        ),
         sa.Index("ix_course_prereq_reverse", "prerequisite_course_id", "course_id"),
+        sa.Index("ix_course_prereq_approval", "prerequisite_course_id", "approval_status"),
     )
 
     course = relationship(
@@ -308,6 +342,8 @@ class CoursePrerequisite(Base):
         backref=sa.orm.backref("dependent_links", cascade="all, delete-orphan"),
     )
     created_by = relationship("User", foreign_keys=[created_by_user_id])
+    requested_by = relationship("User", foreign_keys=[requested_by_user_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
 
 
 class CourseCompletionRule(Base):

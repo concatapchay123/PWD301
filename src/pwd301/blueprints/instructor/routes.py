@@ -298,6 +298,21 @@ def _extract_mini_quiz_from_markdown(content: str | None) -> list[dict[str, Any]
     return []
 
 
+def _extract_mini_quiz_passing_from_markdown(content: str | None) -> int:
+    if not content:
+        return 80
+    import re
+
+    m = re.search(r"<!--\s*mini_quiz_passing:\s*(\d+)\s*-->", content)
+    if m:
+        try:
+            val = int(m.group(1))
+            return max(50, min(100, val))
+        except Exception:
+            pass
+    return 80
+
+
 def _serialize_lesson(les: Lesson) -> dict[str, Any]:
     video_urls = _extract_video_urls_from_markdown(les.markdown_content)
     video_url = video_urls[0] if video_urls else None
@@ -320,6 +335,7 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
                     break
 
     quiz = _extract_mini_quiz_from_markdown(les.markdown_content)
+    quiz_passing_percent = _extract_mini_quiz_passing_from_markdown(les.markdown_content)
 
     return {
         "lesson_id": str(les.public_id),
@@ -332,6 +348,7 @@ def _serialize_lesson(les: Lesson) -> dict[str, Any]:
         "video_url": video_url,
         "video_urls": video_urls,
         "quiz": quiz,
+        "quiz_passing_percent": quiz_passing_percent,
         "position": les.position,
         "estimated_duration_minutes": les.estimated_duration_minutes,
         "minimum_completion_seconds": les.minimum_completion_seconds,
@@ -822,6 +839,7 @@ def submit_course_route(course_id: str) -> Any:
             course_id,
             "SUBMITTED_FOR_REVIEW",
             reason=reason,
+            require_thumbnail=True,
         )
         return jsonify(_serialize_course(course)), 200
     except Exception:
@@ -2484,21 +2502,40 @@ def list_course_students_route(course_id: str) -> tuple[Response, int] | Respons
 @instructor_bp.route("/courses/<course_id>/prerequisites", methods=["GET"])
 @instructor_required
 def list_course_prerequisites_route(course_id: str) -> tuple[Response, int] | Response:
-    """List direct prerequisite courses for a managed course."""
+    """List direct prerequisite courses for a managed course with approval statuses."""
     actor = require_authenticated_actor()
 
-    require_course_manager(actor, course_id, session=db.session)
-    prereqs = get_course_prerequisites(course_id, session=db.session)
-    return jsonify({"prerequisites": [_serialize_prerequisite_course(c) for c in prereqs]}), 200
+    course = require_course_manager(actor, course_id, session=db.session)
+    links = (
+        db.session.query(CoursePrerequisite)
+        .filter(CoursePrerequisite.course_id == course.id)
+        .all()
+    )
+    result = []
+    for link in links:
+        c = link.prerequisite_course
+        if c:
+            result.append({
+                "id": str(c.public_id),
+                "course_id": str(c.public_id),
+                "prerequisite_course_id": str(c.public_id),
+                "course_code": c.course_code,
+                "title": c.title,
+                "category": c.category,
+                "difficulty": c.difficulty,
+                "status": c.status,
+                "approval_status": link.approval_status,
+                "requested_at": link.requested_at.isoformat() if link.requested_at else None,
+                "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
+                "review_note": link.review_note or "",
+            })
+    return jsonify({"prerequisites": result}), 200
 
 
 @instructor_bp.route("/courses/<course_id>/prerequisites", methods=["POST"])
 @instructor_required
 def add_course_prerequisite_route(course_id: str) -> Any:
-    """Add a prerequisite course dependency.
-
-    Supports DAG cycle detection and cross-instructor approval.
-    """
+    """Add a prerequisite course dependency with publication gate and ownership check."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
@@ -2514,79 +2551,76 @@ def add_course_prerequisite_route(course_id: str) -> Any:
     if target_course.id == prereq_course.id:
         raise CourseValidationError("A course cannot be a prerequisite of itself.")
 
-    # Cross-instructor permission check (Item 12):
-    # If target course and prerequisite course have different owners, and actor is not admin:
-    if (
-        target_course.owner_instructor_id != prereq_course.owner_instructor_id
-        and prereq_course.owner_instructor_id != actor.id
-        and not actor.is_admin
-    ):
-        # 1. Check existing link
-        existing_link = (
-            db.session.query(CoursePrerequisite)
-            .filter_by(course_id=target_course.id, prerequisite_course_id=prereq_course.id)
-            .first()
+    if prereq_course.status != "PUBLISHED":
+        raise CourseValidationError(
+            f"Chỉ có thể chọn khóa học đã được xuất bản (PUBLISHED) làm môn tiên quyết. "
+            f"Khóa học '{prereq_course.title}' hiện có trạng thái '{prereq_course.status}'."
         )
-        if existing_link is not None:
-            return jsonify(
-                {
-                    "status": "success",
-                    "direct": True,
-                    "message": "Môn học này đã nằm trong danh sách điều kiện tiên quyết.",
-                    "course_id": str(target_course.public_id),
-                    "prerequisite_course_id": str(prereq_course.public_id),
-                }
-            ), 200
 
-        # 2. Check DAG cycle detection before sending request
-        visited: set[int] = set()
-        queue: list[int] = [prereq_course.id]
-        while queue:
-            curr_id = queue.pop(0)
-            if curr_id == target_course.id:
-                from pwd301.services.exceptions import PrerequisiteCycleError
+    is_own_course = (
+        target_course.owner_instructor_id == prereq_course.owner_instructor_id
+        or prereq_course.owner_instructor_id == actor.id
+        or getattr(actor, "is_admin", False)
+    )
 
-                raise PrerequisiteCycleError(
-                    f"Thêm môn tiên quyết '{prereq_course.title}' vào '{target_course.title}' "
-                    f"sẽ tạo chu trình phụ thuộc vòng tròn (Cyclic Dependency)."
-                )
-            if curr_id in visited:
-                continue
-            visited.add(curr_id)
-            child_links = (
-                db.session.query(CoursePrerequisite.prerequisite_course_id)
-                .filter(CoursePrerequisite.course_id == curr_id)
-                .all()
-            )
-            for (next_prereq_id,) in child_links:
-                if next_prereq_id not in visited:
-                    queue.append(next_prereq_id)
+    if is_own_course:
+        from pwd301.services.enrollment_service import add_course_prerequisite
 
-        # 3. Check existing pending request
-        pending_req = (
-            db.session.query(CourseChangeRequest)
-            .filter(
-                CourseChangeRequest.course_id == target_course.id,
-                CourseChangeRequest.change_type == "PREREQUISITE",
-                CourseChangeRequest.target_id == prereq_course.id,
-                CourseChangeRequest.status == "PENDING",
-            )
-            .first()
+        link = add_course_prerequisite(
+            actor=actor,
+            course_id=target_course.id,
+            prerequisite_course_id=prereq_course.id,
+            session=db.session,
         )
-        if pending_req is not None:
-            return jsonify(
-                {
-                    "status": "pending_approval",
-                    "direct": False,
-                    "message": (
-                        f"Yêu cầu xin thêm môn tiên quyết '{prereq_course.title}' "
-                        f"đã được gửi và đang chờ giảng viên phụ trách phê duyệt."
-                    ),
-                    "change_request_id": pending_req.id,
-                }
-            ), 200
+        return jsonify(
+            {
+                "success": True,
+                "status": "success",
+                "direct": True,
+                "approval_status": "APPROVED",
+                "message": "Đã thêm môn học tiên quyết thành công.",
+                "course_id": str(target_course.public_id),
+                "prerequisite_course_id": str(prereq_course.public_id),
+            }
+        ), 201
 
-        # 4. Create staged change request
+    # Cross-instructor permission check & DAG cycle detection
+    visited: set[int] = set()
+    queue: list[int] = [prereq_course.id]
+    while queue:
+        curr_id = queue.pop(0)
+        if curr_id == target_course.id:
+            from pwd301.services.exceptions import PrerequisiteCycleError
+
+            raise PrerequisiteCycleError(
+                f"Thêm môn tiên quyết '{prereq_course.title}' vào '{target_course.title}' "
+                f"sẽ tạo chu trình phụ thuộc vòng tròn (Cyclic Dependency)."
+            )
+        if curr_id in visited:
+            continue
+        visited.add(curr_id)
+        child_links = (
+            db.session.query(CoursePrerequisite.prerequisite_course_id)
+            .filter(CoursePrerequisite.course_id == curr_id)
+            .all()
+        )
+        for (next_prereq_id,) in child_links:
+            if next_prereq_id not in visited:
+                queue.append(next_prereq_id)
+
+    from pwd301.models.course import CourseChangeRequest
+
+    pending_cr = (
+        db.session.query(CourseChangeRequest)
+        .filter(
+            CourseChangeRequest.course_id == target_course.id,
+            CourseChangeRequest.change_type == "PREREQUISITE",
+            CourseChangeRequest.target_id == prereq_course.id,
+            CourseChangeRequest.status == "PENDING",
+        )
+        .first()
+    )
+    if pending_cr is None:
         req_payload = {
             "target_course_id": target_course.id,
             "target_course_title": target_course.title,
@@ -2594,10 +2628,9 @@ def add_course_prerequisite_route(course_id: str) -> Any:
             "prerequisite_course_id": prereq_course.id,
             "prerequisite_course_title": prereq_course.title,
             "prerequisite_course_code": prereq_course.course_code,
-            "min_grade_point": payload.get("min_grade_point", 5.0),
             "reason": payload.get("reason", "Yêu cầu tiên quyết từ giảng viên phụ trách"),
         }
-        change_req = CourseChangeRequest(
+        pending_cr = CourseChangeRequest(
             course_id=target_course.id,
             requested_by_user_id=actor.id,
             change_type="PREREQUISITE",
@@ -2607,107 +2640,96 @@ def add_course_prerequisite_route(course_id: str) -> Any:
             status="PENDING",
             created_at=utc_now(),
         )
-        db.session.add(change_req)
-        db.session.flush()
+        db.session.add(pending_cr)
+        db.session.commit()
 
-        # 5. Dispatch notification to prerequisite course owner
-        prereq_owner = prereq_course.owner_instructor
-        if prereq_owner:
+        if prereq_course.owner_instructor:
             with contextlib.suppress(Exception):
                 from pwd301.services.notification_service import dispatch_notification
 
                 dispatch_notification(
-                    recipient_user=prereq_owner,
+                    recipient_user=prereq_course.owner_instructor,
                     event_type="COURSE_PREREQUISITE_REQUEST",
                     title=f"Yêu cầu môn tiên quyết: {target_course.title}",
                     body=(
                         f"Giảng viên {actor.display_name} gửi yêu cầu thiết lập môn học "
                         f"'{prereq_course.title}' của bạn làm môn học tiên quyết cho khóa học "
-                        f"'{target_course.title}' ({target_course.course_code}). "
-                        f"Lý do: {payload.get('reason', 'Không có')}."
+                        f"'{target_course.title}' ({target_course.course_code})."
                     ),
-                    action_url=f"#/instructor/courses/manage?id={prereq_course.public_id}",
+                    action_url="#/instructor/prerequisites/requests",
                     category="COURSE",
-                    event_key=uuid.uuid5(
-                        uuid.NAMESPACE_URL,
-                        f"pwd301:course-change:{change_req.id}:COURSE_PREREQUISITE_REQUEST:{prereq_owner.id}",
-                    ),
-                    session=db.session,
                 )
 
-        db.session.commit()
-
-        owner_name = prereq_owner.display_name if prereq_owner else "khác"
-        return jsonify(
-            {
-                "status": "pending_approval",
-                "direct": False,
-                "message": (
-                    f"Môn học '{prereq_course.title}' thuộc sở hữu của giảng viên {owner_name}. "
-                    f"Đã gửi thông báo và yêu cầu xin duyệt môn tiên quyết tới "
-                    f"giảng viên phụ trách."
-                ),
-                "change_request_id": change_req.id,
-                "course_id": str(target_course.public_id),
-                "prerequisite_course_id": str(prereq_course.public_id),
-            }
-        ), 202
-
-    # Published course check: require Admin approval even if same instructor
-    if target_course.status in ("PUBLISHED", "ARCHIVED"):
-        req_payload = {
-            "action": "ADD_PREREQUISITE",
-            "prerequisite_course_id": prereq_course.id,
-            "prerequisite_course_title": prereq_course.title,
-            "prerequisite_course_code": prereq_course.course_code,
-            "reason": payload.get("reason"),
+    return jsonify(
+        {
+            "success": True,
+            "status": "pending_approval",
+            "direct": False,
+            "approval_status": "PENDING_APPROVAL",
+            "change_request_id": pending_cr.id,
+            "message": (
+                f"Môn học '{prereq_course.title}' thuộc sở hữu của giảng viên khác. "
+                f"Đã gửi yêu cầu xin duyệt môn tiên quyết tới giảng viên phụ trách."
+            ),
+            "course_id": str(target_course.public_id),
+            "prerequisite_course_id": str(prereq_course.public_id),
         }
-        change_req = CourseChangeRequest(
-            course_id=target_course.id,
-            requested_by_user_id=actor.id,
-            change_type="PREREQUISITE",
-            target_type="PREREQUISITE",
-            target_id=prereq_course.id,
-            proposed_payload_json=json.dumps(req_payload, default=str),
-            status="PENDING",
-            created_at=utc_now(),
-        )
-        db.session.add(change_req)
-        db.session.commit()
-        return jsonify(
-            {
-                "status": "pending_approval",
-                "pending_approval": True,
-                "direct": False,
-                "message": (
-                    f"Khóa học đã ban hành. "
-                    f"Yêu cầu thêm môn tiên quyết '{prereq_course.title}' đã được gửi tới Quản trị viên để xét duyệt."
-                ),
-                "change_request_id": change_req.id,
-            }
-        ), 202
+    ), 202
 
-    # Direct addition (Same instructor on draft course or Admin)
-    link = add_course_prerequisite(
+
+@instructor_bp.route("/prerequisites/incoming-requests", methods=["GET"])
+@instructor_required
+def list_prerequisite_incoming_requests_route() -> tuple[Response, int] | Response:
+    """List incoming requests to use actor's courses as prerequisites."""
+    actor = require_authenticated_actor()
+    from pwd301.services.enrollment_service import get_incoming_prerequisite_requests
+
+    incoming = get_incoming_prerequisite_requests(actor, session=db.session)
+    return jsonify({"success": True, "incoming": incoming}), 200
+
+
+@instructor_bp.route("/prerequisites/incoming-requests/count", methods=["GET"])
+@instructor_required
+def count_prerequisite_incoming_requests_route() -> tuple[Response, int] | Response:
+    """Return count of PENDING_APPROVAL prerequisite requests for actor."""
+    actor = require_authenticated_actor()
+    from pwd301.services.enrollment_service import count_incoming_prerequisite_requests
+
+    count = count_incoming_prerequisite_requests(actor, session=db.session)
+    return jsonify({"success": True, "count": count}), 200
+
+
+@instructor_bp.route(
+    "/prerequisites/incoming-requests/<course_id>/<prereq_id>/review",
+    methods=["POST"],
+)
+@instructor_required
+def review_incoming_prerequisite_request_route(
+    course_id: str, prereq_id: str
+) -> tuple[Response, int] | Response:
+    """Approve or reject a prerequisite request by prerequisite course owner."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    action = payload.get("action", "APPROVE")
+    note = payload.get("note") or payload.get("reason")
+
+    from pwd301.services.enrollment_service import review_prerequisite_request
+
+    link = review_prerequisite_request(
         actor=actor,
-        course_id=course_id,
-        prerequisite_course_id=prerequisite_course_id,
+        requesting_course_id=course_id,
+        prerequisite_course_id=prereq_id,
+        action=action,
+        note=note,
         session=db.session,
     )
-
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "direct": True,
-                "course_id": str(target_course.public_id),
-                "prerequisite_course_id": str(prereq_course.public_id),
-                "created_at": link.created_at.isoformat(),
-                "message": "Đã thêm môn tiên quyết thành công!",
-            }
-        ),
-        201,
-    )
+    return jsonify(
+        {
+            "success": True,
+            "approval_status": link.approval_status,
+            "message": f"Đã {link.approval_status.lower()} yêu cầu môn tiên quyết.",
+        }
+    ), 200
 
 
 @instructor_bp.route("/courses/<course_id>/prerequisites/<prereq_id>", methods=["DELETE"])

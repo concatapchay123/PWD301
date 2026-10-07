@@ -166,7 +166,12 @@ def check_prerequisites_met(
     sess = session if session is not None else db.session
 
     prereq_links = (
-        sess.query(CoursePrerequisite).filter(CoursePrerequisite.course_id == course_id).all()
+        sess.query(CoursePrerequisite)
+        .filter(
+            CoursePrerequisite.course_id == course_id,
+            CoursePrerequisite.approval_status == "APPROVED",
+        )
+        .all()
     )
     if not prereq_links:
         return True, []
@@ -317,8 +322,21 @@ def enroll_student(
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
-    # Sĩ số tối đa là không giới hạn (Unlimited capacity policy)
-    # Không áp đặt trần sĩ số và không chặn sinh viên ghi danh mới.
+    # Capacity check: Prevent over-enrollment if course capacity is set
+    if locked_course.capacity is not None:
+        active_enrollment_count = (
+            sess.query(sa.func.count(Enrollment.id))
+            .filter(
+                Enrollment.course_id == locked_course.id,
+                Enrollment.status == "ACTIVE",
+            )
+            .scalar()
+            or 0
+        )
+        if active_enrollment_count >= locked_course.capacity:
+            raise EnrollmentCapacityExceededError(
+                f"Course capacity of {locked_course.capacity} has been reached."
+            )
 
     # 8. Create new Enrollment and EnrollmentPeriod (period_no = 1)
     now = utc_now()
@@ -361,12 +379,6 @@ def enroll_student(
     sess.flush()
 
     try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
-
-    try:
         from pwd301.services.notification_service import dispatch_notification
 
         if locked_course.owner_instructor_id:
@@ -375,9 +387,13 @@ def enroll_student(
                 event_type="STUDENT_ENROLLED",
                 title="Học viên mới tham gia khóa học",
                 body=f"Học viên {target_student.display_name} vừa đăng ký tham gia khóa học '{locked_course.title}'.",
-                action_url=f"/instructor/courses/{locked_course.public_id}",
+                action_url=f"#/instructor/courses/manage?id={locked_course.public_id}",
                 category="COURSE",
                 target_role="INSTRUCTOR",
+                event_key=uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"pwd301:enrollment:{enrollment.id}:STUDENT_ENROLLED:INSTRUCTOR",
+                ),
                 session=sess,
             )
 
@@ -386,13 +402,23 @@ def enroll_student(
             event_type="STUDENT_ENROLLED",
             title="Đăng ký khóa học thành công",
             body=f"Bạn đã đăng ký thành công khóa học '{locked_course.title}'. Bắt đầu học ngay hôm nay!",
-            action_url=f"/student/courses/{locked_course.public_id}",
+            action_url=f"#/student/courses/detail?id={locked_course.public_id}",
             category="COURSE",
             target_role="STUDENT",
+            event_key=uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"pwd301:enrollment:{enrollment.id}:STUDENT_ENROLLED:STUDENT",
+            ),
             session=sess,
         )
     except Exception as exc:
         logger.warning("Failed to dispatch STUDENT_ENROLLED notification: %s", exc)
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     enrollment._is_new = True
     return enrollment
@@ -597,8 +623,21 @@ def re_enroll_student(
     if locked_course is None:
         raise CourseNotFoundError("Course not found.")
 
-    # Sĩ số tối đa là không giới hạn (Unlimited capacity policy)
-    # Không áp đặt trần sĩ số và không chặn sinh viên tái ghi danh.
+    # Capacity check: Prevent over-enrollment if course capacity is set
+    if locked_course.capacity is not None:
+        active_enrollment_count = (
+            sess.query(sa.func.count(Enrollment.id))
+            .filter(
+                Enrollment.course_id == locked_course.id,
+                Enrollment.status == "ACTIVE",
+            )
+            .scalar()
+            or 0
+        )
+        if active_enrollment_count >= locked_course.capacity:
+            raise EnrollmentCapacityExceededError(
+                f"Course capacity of {locked_course.capacity} has been reached."
+            )
 
     # 7. Determine next period_no
     last_period_no = (
@@ -676,6 +715,13 @@ def add_course_prerequisite(
     if prereq_course is None:
         raise CourseNotFoundError("Prerequisite course not found.")
 
+    # 2b. Invariant: Only PUBLISHED courses can be added as prerequisites
+    if prereq_course.status != "PUBLISHED":
+        raise CourseValidationError(
+            f"Chỉ có thể chọn khóa học đã được xuất bản (PUBLISHED) làm môn tiên quyết. "
+            f"Khóa học '{prereq_course.title}' hiện có trạng thái '{prereq_course.status}'."
+        )
+
     # 3. Prevent self-reference
     if course.id == prereq_course.id:
         raise CourseValidationError("A course cannot be a prerequisite of itself.")
@@ -720,12 +766,22 @@ def add_course_prerequisite(
             if next_prereq_id not in visited:
                 queue.append(next_prereq_id)
 
-    # 6. Create CoursePrerequisite record
+    # 6. Determine approval status based on ownership
+    is_own_course = (prereq_course.owner_instructor_id == actor.id) or getattr(actor, "is_admin", False)
+    now = utc_now()
+    initial_status = "APPROVED" if is_own_course else "PENDING_APPROVAL"
+
     link = CoursePrerequisite(
         course_id=course.id,
         prerequisite_course_id=prereq_course.id,
         created_by_user_id=actor.id,
-        created_at=utc_now(),
+        created_at=now,
+        approval_status=initial_status,
+        requested_by_user_id=actor.id if not is_own_course else None,
+        requested_at=now if not is_own_course else None,
+        reviewed_at=now if is_own_course else None,
+        reviewed_by_user_id=actor.id if is_own_course else None,
+        review_note="Tự động phê duyệt vì là môn học của cùng giảng viên phụ trách." if is_own_course else None,
     )
     sess.add(link)
 
@@ -808,6 +864,7 @@ def remove_course_prerequisite(
 
 def get_course_prerequisites(
     course_id: Course | int | uuid.UUID | str,
+    only_approved: bool = True,
     session: Session | scoped_session[Any] | None = None,
 ) -> list[Course]:
     """Retrieve all direct prerequisite courses for a given course."""
@@ -817,17 +874,236 @@ def get_course_prerequisites(
     if course is None:
         raise CourseNotFoundError("Course not found.")
 
-    prerequisites = (
+    query = (
         sess.query(Course)
         .join(
             CoursePrerequisite,
             CoursePrerequisite.prerequisite_course_id == Course.id,
         )
         .filter(CoursePrerequisite.course_id == course.id)
-        .order_by(Course.course_code)
-        .all()
     )
-    return prerequisites
+    if only_approved:
+        query = query.filter(CoursePrerequisite.approval_status == "APPROVED")
+    return query.order_by(Course.course_code).all()
+
+
+def get_incoming_prerequisite_requests(
+    actor: User,
+    status: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve incoming prerequisite requests for courses owned by actor."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    query = (
+        sess.query(CoursePrerequisite)
+        .join(Course, CoursePrerequisite.prerequisite_course_id == Course.id)
+    )
+    if not getattr(actor, "is_admin", False):
+        query = query.filter(Course.owner_instructor_id == actor.id)
+
+    if status:
+        query = query.filter(CoursePrerequisite.approval_status == status)
+
+    links = query.order_by(CoursePrerequisite.created_at.desc()).all()
+    results = []
+    seen_pairs = set()
+    for link in links:
+        req_course = link.course
+        target_course = link.prerequisite_course
+        req_inst = req_course.owner_instructor if req_course else None
+        seen_pairs.add((req_course.id, target_course.id))
+        results.append({
+            "id": f"{req_course.id}_{target_course.id}",
+            "requesting_course_id": str(req_course.public_id),
+            "requesting_course_code": req_course.course_code,
+            "requesting_course_title": req_course.title,
+            "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
+            "requesting_instructor_name": req_inst.display_name if req_inst else "Giảng viên",
+            "requesting_instructor_email": req_inst.email if req_inst else "",
+            "prerequisite_course_id": str(target_course.public_id),
+            "prerequisite_course_code": target_course.course_code,
+            "prerequisite_course_title": target_course.title,
+            "approval_status": link.approval_status,
+            "requested_at": link.requested_at.isoformat() if link.requested_at else (link.created_at.isoformat() if link.created_at else None),
+            "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
+            "review_note": link.review_note or "",
+        })
+
+    # Also check CourseChangeRequest records
+    from pwd301.models.course import CourseChangeRequest
+
+    cr_query = (
+        sess.query(CourseChangeRequest)
+        .join(Course, CourseChangeRequest.target_id == Course.id)
+        .filter(CourseChangeRequest.change_type == "PREREQUISITE")
+    )
+    if not getattr(actor, "is_admin", False):
+        cr_query = cr_query.filter(Course.owner_instructor_id == actor.id)
+    if status:
+        cr_query = cr_query.filter(CourseChangeRequest.status == status)
+
+    for cr in cr_query.order_by(CourseChangeRequest.created_at.desc()).all():
+        pair = (cr.course_id, cr.target_id)
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            req_c = sess.get(Course, cr.course_id)
+            target_c = sess.get(Course, cr.target_id)
+            if req_c and target_c:
+                req_inst = req_c.owner_instructor
+                p_data = {}
+                if cr.proposed_payload_json:
+                    with contextlib.suppress(Exception):
+                        p_data = json.loads(cr.proposed_payload_json)
+                results.append({
+                    "id": f"{req_c.id}_{target_c.id}",
+                    "requesting_course_id": str(req_c.public_id),
+                    "requesting_course_code": req_c.course_code,
+                    "requesting_course_title": req_c.title,
+                    "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
+                    "requesting_instructor_name": req_inst.display_name if req_inst else "Giảng viên",
+                    "requesting_instructor_email": req_inst.email if req_inst else "",
+                    "prerequisite_course_id": str(target_c.public_id),
+                    "prerequisite_course_code": target_c.course_code,
+                    "prerequisite_course_title": target_c.title,
+                    "approval_status": "PENDING_APPROVAL" if cr.status == "PENDING" else cr.status,
+                    "requested_at": cr.created_at.isoformat() if cr.created_at else None,
+                    "reviewed_at": cr.reviewed_at.isoformat() if cr.reviewed_at else None,
+                    "review_note": cr.review_reason or p_data.get("reason", ""),
+                })
+
+    return results
+
+
+def count_incoming_prerequisite_requests(
+    actor: User,
+    session: Session | scoped_session[Any] | None = None,
+) -> int:
+    """Return count of PENDING_APPROVAL prerequisite requests targeting courses owned by actor."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        return 0
+
+    incoming = get_incoming_prerequisite_requests(actor, status="PENDING_APPROVAL", session=sess)
+    # Also include status='PENDING'
+    incoming_pending = get_incoming_prerequisite_requests(actor, status="PENDING", session=sess)
+    all_reqs = {r["id"] for r in incoming + incoming_pending}
+    return len(all_reqs)
+
+
+def review_prerequisite_request(
+    actor: User,
+    requesting_course_id: int | uuid.UUID | str,
+    prerequisite_course_id: int | uuid.UUID | str,
+    action: str,
+    note: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> CoursePrerequisite:
+    """Approve or reject a prerequisite request targeting an actor-owned course."""
+    sess = session if session is not None else db.session
+    if actor is None or not actor.is_active:
+        raise ForbiddenError("Authentication required.")
+
+    act_upper = action.strip().upper()
+    if act_upper not in ("APPROVE", "REJECT", "APPROVED", "REJECTED"):
+        raise CourseValidationError("Hành động xét duyệt phải là APPROVE hoặc REJECT.")
+    new_status = "APPROVED" if "APPROVE" in act_upper else "REJECTED"
+
+    req_course = _resolve_course(requesting_course_id, session=sess)
+    target_course = _resolve_course(prerequisite_course_id, session=sess)
+    if not req_course or not target_course:
+        raise CourseNotFoundError("Khóa học không tồn tại.")
+
+    if not getattr(actor, "is_admin", False) and target_course.owner_instructor_id != actor.id:
+        raise ForbiddenError("Bạn không có quyền duyệt yêu cầu tiên quyết cho khóa học này.")
+
+    from pwd301.models.course import CourseChangeRequest
+
+    now = utc_now()
+    review_msg = note.strip() if note else ("Đã phê duyệt" if new_status == "APPROVED" else "Từ chối liên kết")
+
+    # Update any corresponding CourseChangeRequest
+    cr = (
+        sess.query(CourseChangeRequest)
+        .filter_by(
+            course_id=req_course.id,
+            change_type="PREREQUISITE",
+            target_id=target_course.id,
+            status="PENDING",
+        )
+        .first()
+    )
+    if cr is not None:
+        cr.status = new_status
+        cr.reviewed_at = now
+        cr.reviewed_by_user_id = actor.id
+        cr.review_reason = review_msg
+        if new_status == "APPROVED":
+            cr.applied_at = now
+
+    link = (
+        sess.query(CoursePrerequisite)
+        .filter_by(
+            course_id=req_course.id,
+            prerequisite_course_id=target_course.id,
+        )
+        .first()
+    )
+
+    if link is None:
+        if new_status == "APPROVED":
+            link = CoursePrerequisite(
+                course_id=req_course.id,
+                prerequisite_course_id=target_course.id,
+                created_by_user_id=actor.id,
+                created_at=now,
+                approval_status="APPROVED",
+                requested_by_user_id=cr.requested_by_user_id if cr else None,
+                requested_at=cr.created_at if cr else now,
+                reviewed_at=now,
+                reviewed_by_user_id=actor.id,
+                review_note=review_msg,
+            )
+            sess.add(link)
+        else:
+            # For REJECTED when no link existed, create link with REJECTED status so it's tracked
+            link = CoursePrerequisite(
+                course_id=req_course.id,
+                prerequisite_course_id=target_course.id,
+                created_by_user_id=actor.id,
+                created_at=now,
+                approval_status="REJECTED",
+                requested_by_user_id=cr.requested_by_user_id if cr else None,
+                requested_at=cr.created_at if cr else now,
+                reviewed_at=now,
+                reviewed_by_user_id=actor.id,
+                review_note=review_msg,
+            )
+            sess.add(link)
+    else:
+        link.approval_status = new_status
+        link.reviewed_at = now
+        link.reviewed_by_user_id = actor.id
+        link.review_note = review_msg
+
+    _record_prerequisite_audit_event(
+        sess=sess,
+        actor=actor,
+        action=f"PREREQUISITE_{new_status}",
+        course_id=req_course.id,
+        prerequisite_course_id=target_course.id,
+        reason=f"Giảng viên {actor.display_name} đã {new_status} yêu cầu môn tiên quyết. Ghi chú: {review_msg}",
+    )
+    sess.flush()
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return link
 
 
 def get_student_enrollments(
