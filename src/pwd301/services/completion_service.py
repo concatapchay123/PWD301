@@ -279,11 +279,12 @@ def set_course_completion_rule(
     sess.add(audit_entry)
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return rule
 

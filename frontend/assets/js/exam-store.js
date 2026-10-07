@@ -14,18 +14,45 @@
 class ExamStore {
   static STORAGE_KEY = 'pwd301_azota_exam_draft';
   static _memoryDraft = null;
+  static _memoryScopeUserId = null;
+  static _memoryScopeRole = null;
 
-  static getStorageKey() {
+  static getCurrentScope() {
     try {
       const router = window.app || window.appRouter;
-      const userId = router?.currentUser?.id;
-      if (userId) return `pwd301_azota_exam_draft_${userId}`;
-    } catch {}
-    return 'pwd301_azota_exam_draft';
+      const user = router?.currentUser;
+      if (!user) return { userId: null, role: null, canAuthor: false };
+      const userId = user.id || user.public_id || null;
+      const role = String(user.active_role || user.role || user.primary_role || '').toUpperCase();
+      const canAuthor = role === 'INSTRUCTOR' || role === 'ADMIN';
+      return { userId, role, canAuthor };
+    } catch {
+      return { userId: null, role: null, canAuthor: false };
+    }
+  }
+
+  static checkScope() {
+    const scope = this.getCurrentScope();
+    if (this._memoryScopeUserId !== scope.userId || this._memoryScopeRole !== scope.role) {
+      this._memoryDraft = null;
+      this._memoryScopeUserId = scope.userId;
+      this._memoryScopeRole = scope.role;
+    }
+    return scope;
+  }
+
+  static getStorageKey() {
+    const scope = this.getCurrentScope();
+    if (scope.userId && scope.canAuthor) {
+      return `pwd301_azota_exam_draft_${scope.userId}`;
+    }
+    return null;
   }
 
   static clearMemoryDraft() {
     this._memoryDraft = null;
+    this._memoryScopeUserId = null;
+    this._memoryScopeRole = null;
   }
 
   static getDefaultDraft() {
@@ -57,40 +84,49 @@ class ExamStore {
   }
 
   static getDraft() {
+    const scope = this.checkScope();
+    if (!scope.canAuthor && scope.userId) {
+      return this.getDefaultDraft();
+    }
     if (this._memoryDraft) {
       return this._memoryDraft;
     }
-    try {
-      const key = this.getStorageKey();
-      const stored = localStorage.getItem(key) || (key !== 'pwd301_azota_exam_draft' ? localStorage.getItem('pwd301_azota_exam_draft') : null);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        this._memoryDraft = {
-          ...this.getDefaultDraft(),
-          ...parsed,
-          config: {
-            ...this.getDefaultDraft().config,
-            ...(parsed.config || {})
-          },
-          methodSelected: parsed.methodSelected ?? Boolean(
-            (parsed.rawText && parsed.rawText.trim()) ||
-            (Array.isArray(parsed.questions) && parsed.questions.length)
-          )
-        };
-        return this._memoryDraft;
+    const key = this.getStorageKey();
+    if (key) {
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          this._memoryDraft = {
+            ...this.getDefaultDraft(),
+            ...parsed,
+            config: {
+              ...this.getDefaultDraft().config,
+              ...(parsed.config || {}),
+              examPassword: '' // Password is strictly memory-only
+            },
+            methodSelected: parsed.methodSelected ?? Boolean(
+              (parsed.rawText && parsed.rawText.trim()) ||
+              (Array.isArray(parsed.questions) && parsed.questions.length)
+            )
+          };
+          return this._memoryDraft;
+        }
+      } catch (e) {
+        console.warn('[ExamStore] Error reading saved draft:', e);
       }
-    } catch (e) {
-      console.warn('[ExamStore] Error reading saved draft:', e);
     }
     this._memoryDraft = this.getDefaultDraft();
     return this._memoryDraft;
   }
 
   static saveDraft(updates = {}) {
+    const scope = this.checkScope();
     const current = this.getDraft();
     const invalidateMatrix = updates.questions !== undefined
       || (updates.courseId !== undefined && updates.courseId !== current.courseId)
       || (updates.sourceMethod !== undefined && updates.sourceMethod !== current.sourceMethod);
+
     this._memoryDraft = {
       ...current,
       ...updates,
@@ -98,25 +134,64 @@ class ExamStore {
         ...current.config,
         ...(updates.config || {})
       },
-      lastSaved: new Date().toISOString(),
       matrixConfirmed: updates.matrixConfirmed ?? (invalidateMatrix ? false : current.matrixConfirmed)
     };
 
-    try {
-      localStorage.setItem(this.getStorageKey(), JSON.stringify(this._memoryDraft));
-    } catch (e) {
-      console.warn('[ExamStore] Error persisting draft to localStorage:', e);
+    const key = this.getStorageKey();
+    if (key && scope.canAuthor) {
+      try {
+        // Sanitize password before persisting to durable storage
+        const durablePayload = {
+          ...this._memoryDraft,
+          config: {
+            ...this._memoryDraft.config,
+            examPassword: ''
+          }
+        };
+        delete durablePayload.storageFailed;
+        delete durablePayload.storageError;
+
+        localStorage.setItem(key, JSON.stringify(durablePayload));
+        this._memoryDraft.lastSaved = new Date().toISOString();
+        this._memoryDraft.storageFailed = false;
+        delete this._memoryDraft.storageError;
+      } catch (e) {
+        console.warn('[ExamStore] Error persisting draft to localStorage:', e);
+        this._memoryDraft.lastSaved = null;
+        this._memoryDraft.storageFailed = true;
+        this._memoryDraft.storageError = e.message || String(e);
+      }
+    } else {
+      // Memory-only (anonymous or non-persisted)
       this._memoryDraft.lastSaved = null;
-      this._memoryDraft.storageFailed = true;
+      this._memoryDraft.storageFailed = false;
     }
     return this._memoryDraft;
   }
 
   static hasDraft() {
+    const scope = this.checkScope();
+    if (!scope.canAuthor && scope.userId) return false;
+    const key = this.getStorageKey();
+    if (!key) {
+      const d = this._memoryDraft;
+      if (!d) return false;
+      return Boolean(
+        (d.rawText && d.rawText.trim().length > 0) ||
+        (Array.isArray(d.questions) && d.questions.length > 0)
+      );
+    }
     try {
-      const key = this.getStorageKey();
-      const stored = localStorage.getItem(key) || (key !== 'pwd301_azota_exam_draft' ? localStorage.getItem('pwd301_azota_exam_draft') : null);
-      if (!stored) return false;
+      const stored = localStorage.getItem(key);
+      if (!stored) {
+        const d = this._memoryDraft;
+        return Boolean(
+          d && (
+            (d.rawText && d.rawText.trim().length > 0) ||
+            (Array.isArray(d.questions) && d.questions.length > 0)
+          )
+        );
+      }
       const parsed = JSON.parse(stored);
       return (
         (parsed.rawText && parsed.rawText.trim().length > 0) ||
@@ -142,12 +217,15 @@ class ExamStore {
   }
 
   static clearDraft() {
+    this.checkScope();
     this._memoryDraft = this.getDefaultDraft();
-    try {
-      localStorage.removeItem(this.getStorageKey());
-      localStorage.removeItem('pwd301_azota_exam_draft');
-    } catch (e) {
-      console.warn('[ExamStore] Error clearing draft:', e);
+    const key = this.getStorageKey();
+    if (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        console.warn('[ExamStore] Error clearing draft:', e);
+      }
     }
     return this._memoryDraft;
   }

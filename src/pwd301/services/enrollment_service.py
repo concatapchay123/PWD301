@@ -805,11 +805,12 @@ def add_course_prerequisite(
     )
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return link
 
@@ -859,11 +860,12 @@ def remove_course_prerequisite(
     )
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return True
 

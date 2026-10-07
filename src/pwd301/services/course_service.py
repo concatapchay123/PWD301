@@ -744,16 +744,17 @@ def update_course(
             session=sess,
         )
 
-    try:
-        sess.commit()
-    except sa.exc.IntegrityError as exc:
-        sess.rollback()
-        raise CourseAlreadyExistsError(
-            "Course title conflicts with an existing active course."
-        ) from exc
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None and not is_approved_review:
+        try:
+            sess.commit()
+        except sa.exc.IntegrityError as exc:
+            sess.rollback()
+            raise CourseAlreadyExistsError(
+                "Course title conflicts with an existing active course."
+            ) from exc
+        except Exception:
+            sess.rollback()
+            raise
 
     return course
 

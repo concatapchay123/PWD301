@@ -1058,12 +1058,21 @@ class AppRouter {
           if (window.UI && typeof window.UI.closeAllModals === 'function') {
             window.UI.closeAllModals();
           }
-          await ApiClient.logout();
+          let logoutResult = { revoked: true };
+          try {
+            logoutResult = await ApiClient.logout();
+          } catch (err) {
+            logoutResult = { revoked: false, error: err };
+          }
           if (window.history && window.history.replaceState) {
             window.history.replaceState(null, '', '#/auth');
           }
           this.renderAuth();
-          UI.showToast('Đã đăng xuất tài khoản an toàn.', 'info');
+          if (logoutResult && logoutResult.revoked === false) {
+            UI.showToast('Đã xóa phiên làm việc cục bộ. Cảnh báo: Máy chủ chưa xác nhận thu hồi phiên do sự cố mạng.', 'warning');
+          } else {
+            UI.showToast('Đã đăng xuất tài khoản an toàn.', 'info');
+          }
         };
       }
     }

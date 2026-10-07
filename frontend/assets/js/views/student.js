@@ -3832,8 +3832,14 @@ class StudentView {
                 activeProgressTimer = null;
                 return;
               }
-              ApiClient.recordLessonProgress(activeItem.id, 15, videoWatched ? 1.0 : 0.5, false)
-                .then(res => { if (res?.is_completed) setLessonCompleted(); })
+              const trackLessonId = activeItem.id;
+              ApiClient.recordLessonProgress(trackLessonId, 15, videoWatched ? 1.0 : 0.5, false)
+                .then(res => {
+                  const currentBody = document.getElementById('cisco-lesson-content-body');
+                  if (currentBody && currentBody.dataset.lessonId === String(trackLessonId)) {
+                    if (res?.is_completed) setLessonCompleted();
+                  }
+                })
                 .catch(() => {});
             }, 15000);
           }
@@ -4033,7 +4039,8 @@ class StudentView {
 
                   } else if (qType === 'TRUE_FALSE') {
                     const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
-                    const expectedVal = Boolean(qData.correct_value);
+                    const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
+                    const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
                     isCorrect = selectedRadio && (selectedRadio.value === 'true') === expectedVal;
                     feedbackDetail = isCorrect
                       ? (qData.explanation ? UI.escapeHtml(qData.explanation) : 'Chính xác! Mệnh đề này là ' + (expectedVal ? 'Đúng.' : 'Sai.'))
@@ -4102,7 +4109,8 @@ class StudentView {
                       });
                     } else if (qType === 'TRUE_FALSE') {
                       const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
-                      const expectedVal = Boolean(qData.correct_value);
+                      const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
+                      const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
                       const labels = card.querySelectorAll('.cisco-quiz-tf-label');
                       labels.forEach(lbl => {
                         const lblVal = lbl.dataset.val === 'true';
@@ -4125,38 +4133,53 @@ class StudentView {
                     }
                   });
 
-                  if (banner) {
-                    banner.innerHTML = `
-                      <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
-                          Đạt yêu cầu: ${correctCount}/${totalQuizSlides} (${percent}% &ge; ${quizPassingPercent}%)
-                        </span>
-                        <span class="text-slate-600 dark:text-slate-300">
-                          Xuất sắc! Bạn đã vượt qua bài kiểm tra củng cố kiến thức.
-                        </span>
-                      </div>
-                    `;
-                  }
-
+                  const targetLessonId = activeItem.id;
                   try {
                     if (hasVideo) {
-                      await ApiClient.recordLessonProgress(activeItem.id, 30, 1.0, false);
+                      await ApiClient.recordLessonProgress(targetLessonId, 30, 1.0, false);
                     }
-                    const result = await ApiClient.completeLessonMiniQuiz(activeItem.id, answers);
-                    hasPassedQuiz = true;
-                    checkQuizBtn.classList.add('hidden');
-                    if (resetQuizBtn) resetQuizBtn.classList.add('hidden');
-                    if (totalQuizSlides >= 2 && nextQuizBtn) nextQuizBtn.classList.add('hidden');
-                    if (result?.is_completed) {
-                      setLessonCompleted();
-                      UI.showToast('Chúc mừng bạn đã hoàn thành bài giảng!', 'success');
-                    } else {
-                      UI.showToast('Đã ghi nhận điểm số bài kiểm tra.', 'info');
+                    const result = await ApiClient.completeLessonMiniQuiz(targetLessonId, answers);
+                    const currentBody = document.getElementById('cisco-lesson-content-body');
+                    if (currentBody && currentBody.dataset.lessonId === String(targetLessonId)) {
+                      hasPassedQuiz = true;
+                      checkQuizBtn.classList.add('hidden');
+                      if (resetQuizBtn) resetQuizBtn.classList.add('hidden');
+                      if (totalQuizSlides >= 2 && nextQuizBtn) nextQuizBtn.classList.add('hidden');
+                      if (banner) {
+                        banner.innerHTML = `
+                          <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
+                              Đạt yêu cầu: ${correctCount}/${totalQuizSlides} (${percent}% &ge; ${quizPassingPercent}%)
+                            </span>
+                            <span class="text-slate-600 dark:text-slate-300">
+                              Xuất sắc! Bạn đã vượt qua bài kiểm tra củng cố kiến thức.
+                            </span>
+                          </div>
+                        `;
+                      }
+                      if (result?.is_completed) {
+                        setLessonCompleted();
+                        UI.showToast('Chúc mừng bạn đã hoàn thành bài giảng!', 'success');
+                      } else {
+                        UI.showToast('Đã ghi nhận điểm số bài kiểm tra.', 'info');
+                      }
                     }
                   } catch (error) {
                     hasPassedQuiz = false;
                     checkQuizBtn.classList.remove('hidden');
                     if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+                    if (banner) {
+                      banner.innerHTML = `
+                        <div class="flex items-center gap-2">
+                          <span class="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 font-bold">
+                            Chưa lưu kết quả: Lỗi máy chủ
+                          </span>
+                          <span class="text-slate-600 dark:text-slate-300">
+                            ${UI.escapeHtml(error.message || 'Lỗi lưu kết quả bài kiểm tra. Vui lòng thử lại.')}
+                          </span>
+                        </div>
+                      `;
+                    }
                     UI.showToast(error.message || 'Lỗi lưu kết quả bài kiểm tra.', 'error');
                   }
 
@@ -5671,24 +5694,13 @@ class StudentView {
             matrixBtn.classList.toggle('border-primary', selectedChoiceIds.length > 0);
           }
 
-          // Autosave indicator
-          const indicator = document.getElementById('exam-autosave-indicator');
-          if (indicator) {
-            indicator.innerHTML = '<span class="inline-block animate-spin text-xs mr-1">⏳</span> Đang lưu...';
-          }
-
           try {
             await saveAnswerInOrder(qid, {
               selected_choice_keys: selectedChoiceIds,
               selected_choice_ids: selectedChoiceIds
             }, leaseToken);
-            if (indicator) {
-              indicator.innerHTML = '<span class="material-symbols-outlined text-[16px] text-emerald-500">check_circle</span> <span class="hidden sm:inline">Đã lưu tự động</span>';
-            }
           } catch (e) {
-            if (indicator) {
-              indicator.innerHTML = '<span class="material-symbols-outlined text-[16px] text-rose-500">sync_problem</span> <span class="hidden sm:inline">Lỗi lưu đáp án</span>';
-            }
+            UI.showToast(e.message || 'Lỗi lưu đáp án.', 'error');
           }
         };
       });

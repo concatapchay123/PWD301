@@ -1165,11 +1165,15 @@ def create_database_backup(
     _require_admin(actor)
     sess = _resolve_session(session)
 
+    valid_types = ("AUTOMATIC", "MANUAL", "RESTORE_DRILL", "PRE_MAINTENANCE")
+    if backup_type not in valid_types:
+        raise ValidationError(
+            f"Unsupported backup_type: '{backup_type}'. Allowed types are {', '.join(valid_types)}."
+        )
+
     actual_intent_type = backup_type
     if backup_type == "PRE_MAINTENANCE":
         notes = f"[PRE_MAINTENANCE] {notes or ''}".strip()
-        backup_type = "MANUAL"
-    elif backup_type not in ("AUTOMATIC", "MANUAL", "RESTORE_DRILL"):
         backup_type = "MANUAL"
 
     backup_root = _get_backup_root()
@@ -1186,12 +1190,21 @@ def create_database_backup(
         "backup_timestamp": now.isoformat(),
         "schema_verified": True,
     }
-    if sess.bind:
+    bind = sess.get_bind() if hasattr(sess, "get_bind") else getattr(sess, "bind", None)
+    dialect_name = getattr(getattr(bind, "dialect", None), "name", "")
+    is_mssql = dialect_name == "mssql"
+
+    if bind:
         try:
-            inspector = sa.inspect(sess.bind)
+            inspector = sa.inspect(bind)
             for t_name in inspector.get_table_names():
                 try:
-                    cnt = sess.execute(sa.text(f"SELECT COUNT(*) FROM [{t_name}]")).scalar()
+                    q = (
+                        f"SELECT COUNT(*) FROM [{t_name}]"
+                        if is_mssql
+                        else f'SELECT COUNT(*) FROM "{t_name}"'
+                    )
+                    cnt = sess.execute(sa.text(q)).scalar()
                     tables_dump[t_name] = {"row_count": cnt}
                 except Exception:
                     tables_dump[t_name] = {"row_count": 0}
@@ -1210,7 +1223,7 @@ def create_database_backup(
             "actor_public_id": str(actor.public_id),
         },
         "database_info": {
-            "dialect": sess.bind.dialect.name if sess.bind else "unknown",
+            "dialect": dialect_name or "unknown",
         },
         "tables": tables_dump,
     }
@@ -1500,15 +1513,30 @@ def execute_dry_run_restore(
     # 2. Inspect snapshot schema compatibility without mutations
     backup = _resolve_backup(backup_id, sess)
     backup_path = Path(backup.storage_location)
-    data = json.loads(backup_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(backup_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise BackupIntegrityError(
+            f"Corrupt backup file: unable to parse JSON payload ({exc})."
+        ) from exc
+
+    if not isinstance(data, dict) or data.get("metadata", {}).get("format") != "PWD301_SNAPSHOT":
+        raise BackupIntegrityError(
+            "Corrupt snapshot: unrecognized file format or missing PWD301 metadata."
+        )
 
     raw_tables = data.get("tables", {})
     tables = [t for t in raw_tables if t not in ("backup_timestamp", "schema_verified")]
+    if not tables:
+        raise BackupIntegrityError(
+            "Corrupt snapshot: no table definitions found in backup artifact."
+        )
 
     live_tables = set()
-    if sess.bind:
+    bind = sess.get_bind() if hasattr(sess, "get_bind") else getattr(sess, "bind", None)
+    if bind:
         try:
-            live_tables = set(sa.inspect(sess.bind).get_table_names())
+            live_tables = set(sa.inspect(bind).get_table_names())
         except Exception:
             pass
 
@@ -1760,6 +1788,16 @@ def restore_database_snapshot(
                 "Live database restore rejected: Admin password re-authentication failed."
             )
 
+        # Safeguard 2.5: Audit Justification Reason (SYNC-048)
+        if reason is None:
+            clean_reason = "Administrative disaster recovery procedure confirmed"
+        else:
+            clean_reason = reason.strip()
+            if len(clean_reason) < 10:
+                raise ValidationError(
+                    "Lý do giải trình kiểm toán khôi phục CSDL bắt buộc và phải có tối thiểu 10 ký tự."
+                )
+
         # Safeguard 3: Verify target backup integrity
         verify_result = verify_backup_integrity(actor, backup_id, session=sess)
         backup = _resolve_backup(backup_id, sess)
@@ -1774,7 +1812,7 @@ def restore_database_snapshot(
                 details={
                     "backup_id": str(backup.public_id),
                     "checksum": verify_result["checksum"],
-                    "reason": reason or "Administrative disaster recovery procedure confirmed",
+                    "reason": clean_reason,
                 },
                 performed_as_admin=True,
                 session=sess,
@@ -1853,7 +1891,7 @@ def restore_database_snapshot(
                 details={
                     "backup_id": str(backup.public_id),
                     "completed_at": now.isoformat(),
-                    "reason": reason or "Administrative disaster recovery procedure completed",
+                    "reason": clean_reason,
                 },
                 performed_as_admin=True,
                 session=sess,

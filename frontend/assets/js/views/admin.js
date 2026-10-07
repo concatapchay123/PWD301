@@ -1037,14 +1037,14 @@ class AdminView {
         }
 
         try {
-          for (const roleCode of selected) {
-            await ApiClient.removeRole(userId, roleCode, reason);
-          }
+          await ApiClient.removeRoles(userId, selected, reason);
           UI.showToast(`Đã thu hồi thành công vai trò ${selected.join(', ')} của ${userName}!`, 'success');
           UI.closeModal();
-          UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
         } catch (err) {
           UI.showToast(err.message || 'Lỗi khi thu hồi quyền.', 'error');
+        } finally {
+          // SYNC-049: Always refetch after error or success to guarantee visible UI matches server authoritative state
+          UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
         }
       }
     };
@@ -4686,6 +4686,9 @@ class AdminView {
               <div class="space-y-1 min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase shrink-0">${b.backup_type || 'MANUAL'}</span>
+                  ${b.verified_at ? `<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold text-[10px] uppercase shrink-0">Đã xác minh SHA</span>` : ''}
+                  ${b.restore_tested_at ? `<span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 font-bold text-[10px] uppercase shrink-0">Staging Tested</span>` : ''}
+                  ${b.last_error ? `<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 font-bold text-[10px] uppercase shrink-0" title="${UI.escapeHtml(b.last_error)}">Lỗi xác minh</span>` : ''}
                   <span class="font-mono text-xs font-bold text-slate-900 dark:text-white truncate block max-w-full" title="${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}">${UI.escapeHtml(b.database_backup_name || `BACKUP-${b.backup_id}`)}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-mono">
@@ -4719,13 +4722,13 @@ class AdminView {
               const vRes = await ApiClient.verifyAdminBackup(bId);
               if (vRes.status === 'VERIFIED' || vRes.verified) {
                 UI.showToast(`Xác minh thành công! Checksum: ${vRes.checksum || 'Hợp lệ 100%'}`, 'success');
-                await loadBackups();
               } else {
                 UI.showToast(`Bản sao lưu: ${vRes.status || 'Chưa hoàn tất'}`, 'warning');
-                await loadBackups();
               }
             } catch (e) {
               UI.showToast(e.message || 'Lỗi xác minh bản sao lưu.', 'error');
+            } finally {
+              await loadBackups();
             }
           };
         });
@@ -4736,13 +4739,19 @@ class AdminView {
             UI.showToast(`Đang thực hiện diễn tập khôi phục Staging Dry-Run cho ${bId}...`, 'info');
             try {
               const dRes = await ApiClient.restoreAdminBackupDryRun(bId);
+              await loadBackups();
               UI.openModal({
                 title: `Kết quả Diễn tập Phục hồi Staging (Dry-Run) • ${bId}`,
                 bodyHtml: `
                   <div class="space-y-3 text-xs">
-                    <div class="p-3 rounded-xl bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200">
-                      <strong>Tương thích Cấu trúc 100%:</strong> Quá trình diễn tập xác nhận schema CSDL hoàn toàn tương thích. Không có đột biến nào trên Live DB.
-                    </div>
+                    ${Boolean(dRes && dRes.schema_compatible && dRes.status === 'COMPATIBLE')
+                      ? `<div class="p-3 rounded-xl bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <strong>Tương thích Cấu trúc:</strong> Quá trình diễn tập xác nhận schema CSDL hoàn toàn tương thích. Không có đột biến nào trên Live DB.
+                        </div>`
+                      : `<div class="p-3 rounded-xl bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                          <strong>CẢNH BÁO: Không tương thích Cấu trúc:</strong> Bản sao lưu không tương thích với schema CSDL hiện tại. ${dRes && dRes.missing_tables && dRes.missing_tables.length ? `Thiếu các bảng: ${UI.escapeHtml(dRes.missing_tables.join(', '))}` : 'Bản sao lưu không hợp lệ hoặc thiếu cấu trúc bảng.'}
+                        </div>`
+                    }
                     <pre class="p-3 rounded-xl bg-slate-950 text-slate-200 font-mono text-[11px] overflow-x-auto">${UI.escapeHtml(JSON.stringify(dRes, null, 2))}</pre>
                   </div>
                 `,

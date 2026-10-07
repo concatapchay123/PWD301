@@ -2996,18 +2996,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       const stats = {
         REMEMBER: 0,
         UNDERSTAND: 0,
-        APPLY: 0,
-        ANALYZE: 0,
-        EVALUATE: 0,
-        CREATE: 0
+        APPLY: 0
       };
       questions.forEach(q => {
         const b = String(q.bloom_level || '').toUpperCase();
         if (b === 'REMEMBER' || b === 'NHẬN BIẾT') stats.REMEMBER++;
         else if (b === 'APPLY' || b === 'VẬN DỤNG') stats.APPLY++;
-        else if (b === 'ANALYZE' || b === 'PHÂN TÍCH') stats.ANALYZE++;
-        else if (b === 'EVALUATE' || b === 'ĐÁNH GIÁ') stats.EVALUATE++;
-        else if (b === 'CREATE' || b === 'SÁNG TẠO') stats.CREATE++;
         else stats.UNDERSTAND++;
       });
       return stats;
@@ -3022,9 +3016,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         <span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">Nhận biết: ${stats.REMEMBER}</span>
         <span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">Thông hiểu: ${stats.UNDERSTAND}</span>
         <span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">Vận dụng: ${stats.APPLY}</span>
-        <span class="px-2 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">Phân tích: ${stats.ANALYZE}</span>
-        <span class="px-2 py-0.5 rounded bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">Đánh giá: ${stats.EVALUATE}</span>
-        <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">Sáng tạo: ${stats.CREATE}</span>
       `;
     };
 
@@ -3175,9 +3166,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                         <option value="REMEMBER" ${qBloom === 'REMEMBER' || qBloom === 'NHẬN BIẾT' ? 'selected' : ''}>Nhận biết</option>
                         <option value="UNDERSTAND" ${qBloom === 'UNDERSTAND' || qBloom === 'THÔNG HIỂU' ? 'selected' : ''}>Thông hiểu</option>
                         <option value="APPLY" ${qBloom === 'APPLY' || qBloom === 'VẬN DỤNG' ? 'selected' : ''}>Vận dụng</option>
-                        <option value="ANALYZE" ${qBloom === 'ANALYZE' || qBloom === 'PHÂN TÍCH' ? 'selected' : ''}>Phân tích</option>
-                        <option value="EVALUATE" ${qBloom === 'EVALUATE' || qBloom === 'ĐÁNH GIÁ' ? 'selected' : ''}>Đánh giá</option>
-                        <option value="CREATE" ${qBloom === 'CREATE' || qBloom === 'SÁNG TẠO' ? 'selected' : ''}>Sáng tạo</option>
                       </select>
 
                       <!-- Configurable Points Input -->
@@ -3981,9 +3969,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             const bl = String(q.bloom_level || '').toUpperCase();
             if (bl === 'REMEMBER' || bl === 'NHẬN BIẾT') diff = 'REMEMBER';
             else if (bl === 'APPLY' || bl === 'VẬN DỤNG') diff = 'APPLY';
-            else if (bl === 'ANALYZE' || bl === 'PHÂN TÍCH') diff = 'ANALYZE';
-            else if (bl === 'EVALUATE' || bl === 'ĐÁNH GIÁ') diff = 'EVALUATE';
-            else if (bl === 'CREATE' || bl === 'SÁNG TẠO') diff = 'CREATE';
+            else diff = 'UNDERSTAND';
 
             const payload = {
               question_type: qType,
@@ -3994,13 +3980,22 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               image_asset_id: q.image_asset_id || null,
               resources: (Array.isArray(q.resources) && q.resources.length > 0) ? q.resources : (q.image_asset_id ? [{ asset_id: q.image_asset_id, position: 1, resource_role: 'IMAGE' }] : [])
             };
+            if (q.question_id || q.id) {
+              payload.question_id = q.question_id || q.id;
+            }
             if (currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) {
               payload.lesson_id = currentDraft.lessonId;
             }
 
             if (qType === 'SHORT_ANSWER') {
-              const ans = q.accepted_answers || (q.choices || []).map(c => c.content);
-              payload.accepted_answers = ans.length > 0 ? ans : ['Đáp án'];
+              const rawAns = q.accepted_answers || (q.choices || []).map(c => c.content);
+              const ans = (Array.isArray(rawAns) ? rawAns : [rawAns])
+                .map(a => typeof a === 'string' ? a.trim() : (a.answer_text || a.text || '').trim())
+                .filter(Boolean);
+              if (ans.length === 0) {
+                throw new Error(`Câu hỏi #${questionsToSave.indexOf(q) + 1} (Điền từ / Trả lời ngắn) chưa có đáp án được chấp nhận.`);
+              }
+              payload.accepted_answers = ans;
             } else {
               const choices = (q.choices || []).map((c, i) => ({
                 content: c.content || c.text || '',
@@ -4015,18 +4010,53 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             return payload;
           });
 
-          try {
-            const batchRes = await ApiClient.createAssessmentQuestionsBatch(asmId, batchQuestions);
-            createdQuestionsCount = batchRes?.created_count || batchQuestions.length;
-          } catch (batchErr) {
-            console.warn('Lỗi atomic batch, chuyển sang tuần tự:', batchErr);
-            for (const p of batchQuestions) {
-              try {
-                await ApiClient.createAssessmentQuestion(asmId, p);
-                createdQuestionsCount++;
-              } catch (singleErr) {
-                console.warn('Lỗi gán câu hỏi:', singleErr);
+          if (currentDraft.isEditingExisting) {
+            // SYNC-006: Diff-based update/creation
+            try {
+              const detail = await ApiClient.getAssessmentDetail(asmId);
+              const existingAssignments = detail.question_assignments || detail.questions || [];
+              const currentQuestionIdsInDraft = new Set(
+                questionsToSave
+                  .map(q => q.question_id || q.id)
+                  .filter(Boolean)
+              );
+
+              // Delete questions that were removed in the draft
+              for (const item of existingAssignments) {
+                const exQ = item.question || item;
+                const exId = exQ.public_id || exQ.id || item.question_id;
+                if (exId && !currentQuestionIdsInDraft.has(exId)) {
+                  await ApiClient.removeAssessmentQuestion(asmId, exId);
+                }
               }
+
+              // Update existing questions and collect new questions to batch create
+              const newQuestionsToBatch = [];
+              for (const p of batchQuestions) {
+                if (p.question_id) {
+                  await ApiClient.editAssessmentQuestion(asmId, p.question_id, p);
+                  createdQuestionsCount++;
+                } else {
+                  newQuestionsToBatch.push(p);
+                }
+              }
+
+              if (newQuestionsToBatch.length > 0) {
+                const batchRes = await ApiClient.createAssessmentQuestionsBatch(asmId, newQuestionsToBatch);
+                createdQuestionsCount += batchRes?.created_count || newQuestionsToBatch.length;
+              }
+            } catch (editErr) {
+              console.error('Lỗi cập nhật câu hỏi cho đề thi hiện có:', editErr);
+              throw editErr;
+            }
+          } else {
+            // Atomic batch creation for new assessment (SYNC-005: do NOT swallow error with sequential fallback!)
+            try {
+              const batchRes = await ApiClient.createAssessmentQuestionsBatch(asmId, batchQuestions);
+              createdQuestionsCount = batchRes?.created_count || batchQuestions.length;
+            } catch (batchErr) {
+              console.error('Lỗi lưu danh sách câu hỏi batch:', batchErr);
+              throw new Error(`Lưu câu hỏi vào đề thi thất bại: ${batchErr.message || batchErr}. Bản nháp vẫn được giữ nguyên.`);
             }
           }
         }
@@ -4034,15 +4064,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         // 3. Publish Assessment
         if (asmId && createdQuestionsCount > 0) {
           try {
-            if (createdQuestionsCount === questionsToSave.length) {
-              window.ExamStore.clearDraft();
-            } else {
-              window.ExamStore.saveDraft({
-                isEditingExisting: true,
-                assessmentId: asmId,
-                questions: questionsToSave.slice(createdQuestionsCount)
-              });
-            }
+            await ApiClient.publishAssessment(asmId);
+            window.ExamStore.clearDraft();
             UI.showToast(`Đề thi "${title}" đã xuất bản thành công kèm ${createdQuestionsCount} câu hỏi lưu vào CSDL!`, 'success');
             window.location.hash = '#/instructor/dashboard';
           } catch (pubErr) {
@@ -4240,10 +4263,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                           type="number"
                           id="edit-exam-attempts"
                           min="1"
-                          max="10"
+                          max="100"
                           class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
-                          value="${assessment.attempt_limit ?? assessment.max_attempts ?? 1}"
-                          placeholder="Số lần làm"
+                          value="${assessment.attempt_limit !== null && assessment.attempt_limit !== undefined ? assessment.attempt_limit : (assessment.max_attempts !== null && assessment.max_attempts !== undefined ? assessment.max_attempts : '')}"
+                          placeholder="Để trống = không giới hạn"
                         />
                       </div>
                     </div>
@@ -4391,6 +4414,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     const qStem = qObj.stem || qObj.content || qObj.question_text || q.stem || q.content || 'Câu hỏi chưa có nội dung';
                     const qType = qObj.question_type || qObj.type || q.question_type || q.type || 'SINGLE_CHOICE';
                     const qPts = parseFloat(q.points ?? qObj.points) || 1.0;
+                    const qChoices = qObj.choices || q.choices || [];
+                    const qAccepted = qObj.accepted_answers || q.accepted_answers || [];
                     return `
                       <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-start justify-between gap-3 text-xs" data-q-id="${qId}" data-q-index="${idx}">
                         
@@ -4431,7 +4456,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                               ${qType}
                             </span>
                             <span class="text-[11px] text-slate-400">
-                              ${(q.choices || []).length > 0 ? `${q.choices.length} phương án` : (q.accepted_answers ? 'Điền từ' : '')}
+                              ${qChoices.length > 0 ? `${qChoices.length} phương án` : (qAccepted.length > 0 ? `${qAccepted.length} đáp án chấp nhận` : (qType === 'SHORT_ANSWER' ? 'Điền từ' : ''))}
                             </span>
                           </div>
                           <p class="text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">
@@ -4605,7 +4630,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       document.getElementById('btn-save-edit-settings')?.addEventListener('click', async () => {
         const title = document.getElementById('edit-exam-title')?.value?.trim();
         const duration = parseInt(document.getElementById('edit-exam-duration')?.value || 45, 10);
-        const maxAttempts = parseInt(document.getElementById('edit-exam-attempts')?.value || 1, 10);
+        const attemptsInput = document.getElementById('edit-exam-attempts')?.value?.trim();
+        const maxAttempts = attemptsInput ? parseInt(attemptsInput, 10) : null;
         const scoringPolicy = document.getElementById('edit-exam-scoring-policy')?.value || 'HIGHEST';
         const examLayout = document.getElementById('edit-exam-layout')?.value || 'STANDARD';
         const shuffle = Boolean(document.getElementById('edit-exam-shuffle')?.checked);
@@ -4643,6 +4669,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             title: title,
             duration_minutes: duration,
             max_attempts: maxAttempts,
+            attempt_limit: maxAttempts,
             scoring_policy: scoringPolicy,
             exam_layout: examLayout,
             shuffle_questions: shuffle,
@@ -4657,6 +4684,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           assessment.title = title;
           assessment.duration_minutes = duration;
           assessment.max_attempts = maxAttempts;
+          assessment.attempt_limit = maxAttempts;
           assessment.scoring_policy = scoringPolicy;
           assessment.exam_layout = examLayout;
           assessment.shuffle_questions = shuffle;
@@ -4727,7 +4755,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           rawText: ExamParser.generateRawFromQuestions(mapped),
           config: {
             duration: assessment.duration_minutes || 45,
-            maxAttempts: assessment.attempt_limit ?? assessment.max_attempts ?? 1,
+            maxAttempts: assessment.attempt_limit ?? assessment.max_attempts ?? null,
             shuffleQuestions: assessment.shuffle_questions !== false,
             scoringPolicy: assessment.scoring_policy || 'HIGHEST',
             examLayout: assessment.exam_layout || 'STANDARD',

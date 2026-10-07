@@ -394,3 +394,99 @@ def test_notifications_and_evidence_preview(app, client):
         )
         db.session.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
         db.session.commit()
+
+
+def test_atomic_multi_role_management_api(app, client):
+    """Test SYNC-049 atomic multi-role assignment, removal, and rollback on error."""
+    with app.app_context():
+        admin_role = db.session.query(Role).filter_by(code="ADMIN").first()
+        inst_role = db.session.query(Role).filter_by(code="INSTRUCTOR").first()
+        if not admin_role:
+            admin_role = Role(code="ADMIN", name="Quản trị viên")
+            db.session.add(admin_role)
+        if not inst_role:
+            inst_role = Role(code="INSTRUCTOR", name="Giảng viên")
+            db.session.add(inst_role)
+        db.session.commit()
+
+        admin = register_user(
+            email="primary_multi_role@pwd301.local",
+            password="AdminPass1234!",
+            display_name="Primary Multi Admin",
+        )
+        db.session.add(
+            UserRole(
+                user_id=admin.id,
+                role_id=admin_role.id,
+                assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Test admin",
+            )
+        )
+        target = register_user(
+            email="target_multi_role@pwd301.local",
+            password="TargetPass1234!",
+            display_name="Target Student",
+        )
+        db.session.commit()
+        admin_id = admin.id
+        target_id = target.id
+        target_pub_id = str(target.public_id)
+
+    # Login as primary admin
+    login_res = client.post(
+        "/auth/login",
+        json={"email": "primary_multi_role@pwd301.local", "password": "AdminPass1234!"},
+    )
+    assert login_res.status_code == 200
+
+    # 1. Assign multiple roles atomically
+    assign_res = client.post(
+        f"/admin/users/{target_pub_id}/roles",
+        json={
+            "action": "assign",
+            "roles": ["INSTRUCTOR", "ADMIN"],
+            "admin_sub_role": "ADMIN_SYSTEM_MONITORING",
+            "reason": "Test promote to instructor and admin",
+        },
+    )
+    assert assign_res.status_code == 200
+    data = assign_res.get_json()
+    assert "INSTRUCTOR" in data["roles"]
+    assert "ADMIN" in data["roles"]
+
+    # 2. Failure mid-operation rolls back completely
+    fail_res = client.post(
+        f"/admin/users/{target_pub_id}/roles",
+        json={
+            "action": "remove",
+            "roles": ["ADMIN", "STUDENT"],  # STUDENT cannot be removed, triggers failure
+            "reason": "Attempting invalid removal",
+        },
+    )
+    assert fail_res.status_code == 400
+    with app.app_context():
+        refreshed = db.session.get(User, target_id)
+        # ADMIN must NOT have been removed because transaction rolled back!
+        assert "ADMIN" in refreshed.role_codes
+        assert "INSTRUCTOR" in refreshed.role_codes
+
+    # 3. Successful atomic composite removal
+    remove_res = client.post(
+        f"/admin/users/{target_pub_id}/roles",
+        json={
+            "action": "remove",
+            "roles": ["ADMIN", "INSTRUCTOR"],
+            "reason": "Demoting back to baseline student",
+        },
+    )
+    assert remove_res.status_code == 200
+    remove_data = remove_res.get_json()
+    assert remove_data["roles"] == ["STUDENT"]
+
+    # Cleanup
+    with app.app_context():
+        uids = [admin_id, target_id]
+        db.session.query(UserRole).filter(UserRole.user_id.in_(uids)).delete(
+            synchronize_session=False
+        )
+        db.session.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
+        db.session.commit()

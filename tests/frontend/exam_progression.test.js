@@ -40,3 +40,101 @@ test('exam steps open only after the preceding step is complete', () => {
   assert.equal(store.canVisitStep(4), false);
   assert.equal(store.canVisitStep(2), true);
 });
+
+test('SYNC-042: account-scoped draft isolation, no global legacy hydration, and password memory-only', () => {
+  const sharedStorage = new Map();
+  // Simulate legacy global draft in localStorage
+  sharedStorage.set('pwd301_azota_exam_draft', JSON.stringify({
+    title: 'Legacy Global Draft',
+    questions: [{ stem: 'Global Question' }]
+  }));
+
+  const makeContext = (currentUser) => {
+    const window = {
+      app: { currentUser }
+    };
+    const localStorage = {
+      getItem: key => sharedStorage.get(key) || null,
+      setItem: (key, val) => sharedStorage.set(key, val),
+      removeItem: key => sharedStorage.delete(key),
+    };
+    const filename = path.resolve(__dirname, '../../frontend/assets/js/exam-store.js');
+    vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, localStorage, console }, { filename });
+    return window.ExamStore;
+  };
+
+  // Instructor A creates a draft with password
+  const storeA = makeContext({ id: 'instructor-a', active_role: 'INSTRUCTOR' });
+  storeA.saveDraft({
+    title: 'Draft A',
+    questions: [{ stem: 'Question A' }],
+    config: { examPassword: 'SecretPasswordA!', duration: 60 }
+  });
+
+  // Verify Instructor A memory has password, but durable storage does NOT persist plain password
+  const memoryA = storeA.getDraft();
+  assert.equal(memoryA.title, 'Draft A');
+  assert.equal(memoryA.config.examPassword, 'SecretPasswordA!');
+
+  const durableA = JSON.parse(sharedStorage.get('pwd301_azota_exam_draft_instructor-a'));
+  assert.equal(durableA.title, 'Draft A');
+  assert.equal(durableA.config.examPassword, '', 'Durable storage must sanitize password to empty string');
+
+  // Instructor B must NOT read Instructor A draft, AND must NOT hydrate legacy global draft
+  const storeB = makeContext({ id: 'instructor-b', active_role: 'INSTRUCTOR' });
+  const draftB = storeB.getDraft();
+  assert.notEqual(draftB.title, 'Draft A', 'Instructor B must not read Instructor A draft');
+  assert.notEqual(draftB.title, 'Legacy Global Draft', 'Instructor B must not hydrate legacy global draft');
+  assert.equal(storeB.hasDraft(), false, 'Instructor B has no draft yet');
+
+  // Instructor B saves their own draft
+  storeB.saveDraft({ title: 'Draft B', questions: [{ stem: 'Question B' }] });
+  assert.equal(storeB.getDraft().title, 'Draft B');
+
+  // Clearing Draft A must not touch Draft B or legacy
+  storeA.clearDraft();
+  assert.equal(storeA.hasDraft(), false);
+  assert.equal(sharedStorage.has('pwd301_azota_exam_draft_instructor-a'), false);
+  assert.equal(sharedStorage.has('pwd301_azota_exam_draft_instructor-b'), true, 'Draft B must still exist');
+  assert.equal(sharedStorage.has('pwd301_azota_exam_draft'), true, 'Legacy draft must not be deleted by clearDraft A');
+
+  // Student role must not hydrate authoring draft
+  const storeStudent = makeContext({ id: 'student-c', active_role: 'STUDENT' });
+  assert.equal(storeStudent.hasDraft(), false, 'Student must not have or hydrate authoring draft');
+  assert.equal(storeStudent.getDraft().title, 'De_thi_moi.docx');
+});
+
+test('SYNC-043: truthful storage failure handling and recovery on subsequent success', () => {
+  let failStorage = true;
+  const storage = new Map();
+  const window = {
+    app: { currentUser: { id: 'instructor-fail', active_role: 'INSTRUCTOR' } }
+  };
+  const localStorage = {
+    getItem: key => storage.get(key) || null,
+    setItem: (key, val) => {
+      if (failStorage) {
+        throw new Error('QuotaExceededError: storage full');
+      }
+      storage.set(key, val);
+    },
+    removeItem: key => storage.delete(key),
+  };
+  const filename = path.resolve(__dirname, '../../frontend/assets/js/exam-store.js');
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { window, localStorage, console }, { filename });
+  const store = window.ExamStore;
+
+  // When storage fails
+  const draft = store.saveDraft({ title: 'Attempt 1', questions: [{ stem: 'Q1' }] });
+  assert.equal(draft.storageFailed, true, 'storageFailed flag must be set on failure');
+  assert.equal(draft.lastSaved, null, 'lastSaved must be null when persistence fails');
+  assert.equal(draft.title, 'Attempt 1', 'Memory state must remain intact');
+
+  // When retry succeeds
+  failStorage = false;
+  const retryDraft = store.saveDraft({ title: 'Attempt 1 Retry' });
+  assert.equal(Boolean(retryDraft.storageFailed), false, 'storageFailed flag must be cleared on success');
+  assert.ok(retryDraft.lastSaved, 'lastSaved must be a valid timestamp on successful persistence');
+  assert.equal(retryDraft.title, 'Attempt 1 Retry');
+  assert.ok(storage.has('pwd301_azota_exam_draft_instructor-fail'));
+});

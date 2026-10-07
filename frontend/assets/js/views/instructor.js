@@ -771,6 +771,9 @@ class InstructorView {
       } else if (b.type === 'video') {
         const u = (b.url || '').trim();
         if (u) videoUrls.push(u);
+        if (Array.isArray(b.files)) {
+          b.files.forEach(f => resources.push(f));
+        }
       } else if (b.type === 'document') {
         if (Array.isArray(b.files)) {
           b.files.forEach(f => resources.push(f));
@@ -1096,6 +1099,7 @@ class InstructorView {
         } else if (block.type === 'video') {
           const urlInput = card.querySelector('.block-video-url');
           if (urlInput) block.url = urlInput.value.trim();
+          block.videoType = block.videoType || 'YOUTUBE';
         } else if (block.type === 'quiz') {
           const qInput = card.querySelector('.block-quiz-question');
           if (qInput) block.question = qInput.value.trim();
@@ -1427,10 +1431,16 @@ class InstructorView {
           const title = await UI.prompt('Đổi tên Chương', `Tên mới cho "${unit.title}":`, unit.title, 'Tên Chương bài học', 1, 'Lưu tên Chương', { maxLength: 200 });
           if (!title || !title.trim() || title.trim() === unit.title) return;
           try {
-            await ApiClient.updateLearningUnit(uId, { title: title.trim() });
-            unit.title = title.trim();
-            renderTree();
-            UI.showToast('Đã đổi tên Chương thành công!', 'success');
+            const res = await ApiClient.updateLearningUnit(uId, { title: title.trim() });
+            if (res && (res.pending_approval || res.status === 202)) {
+              unit.pending_title = title.trim();
+              renderTree();
+              UI.showToast(res.message || 'Yêu cầu đổi tên Chương đã được gửi tới Quản trị viên để xét duyệt.', 'info');
+            } else {
+              unit.title = title.trim();
+              renderTree();
+              UI.showToast('Đã đổi tên Chương thành công!', 'success');
+            }
           } catch (err) {
             UI.showToast(err.message || 'Lỗi đổi tên Chương.', 'error');
           }
@@ -1450,15 +1460,21 @@ class InstructorView {
           );
           if (!conf) return;
           try {
-            await ApiClient.deleteLearningUnit(uId);
-            currentUnits = currentUnits.filter(u => String(u.learning_unit_id || u.id) !== String(uId));
-            if (String(activeUnitId) === String(uId)) {
-              activeUnitId = currentUnits[0]?.learning_unit_id || currentUnits[0]?.id || null;
-              activeLessonId = null;
+            const res = await ApiClient.deleteLearningUnit(uId);
+            if (res && (res.pending_approval || res.status === 202)) {
+              unit.pending_delete = true;
+              renderTree();
+              UI.showToast(res.message || 'Yêu cầu xóa Chương đã được gửi tới Quản trị viên để xét duyệt.', 'info');
+            } else {
+              currentUnits = currentUnits.filter(u => String(u.learning_unit_id || u.id) !== String(uId));
+              if (String(activeUnitId) === String(uId)) {
+                activeUnitId = currentUnits[0]?.learning_unit_id || currentUnits[0]?.id || null;
+                activeLessonId = null;
+              }
+              renderTree();
+              if (!activeLessonId) renderEmptyEditor();
+              UI.showToast('Đã xóa Chương bài học.', 'success');
             }
-            renderTree();
-            if (!activeLessonId) renderEmptyEditor();
-            UI.showToast('Đã xóa Chương bài học.', 'success');
           } catch (err) {
             UI.showToast(err.message || 'Lỗi xóa Chương.', 'error');
           }
@@ -1476,9 +1492,13 @@ class InstructorView {
           currentUnits[idx - 1] = temp;
           const orderedIds = currentUnits.map(u => u.learning_unit_id || u.id);
           try {
-            await ApiClient.reorderLearningUnits(cId, orderedIds);
+            const res = await ApiClient.reorderLearningUnits(cId, orderedIds);
             renderTree();
-            UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
+            if (res && (res.pending_approval || res.status === 202)) {
+              UI.showToast(res.message || 'Yêu cầu thay đổi thứ tự Chương đã được gửi tới Quản trị viên để xét duyệt.', 'info');
+            } else {
+              UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
+            }
           } catch (err) {
             currentUnits = snapshot;
             renderTree();
@@ -1498,9 +1518,13 @@ class InstructorView {
           currentUnits[idx + 1] = temp;
           const orderedIds = currentUnits.map(u => u.learning_unit_id || u.id);
           try {
-            await ApiClient.reorderLearningUnits(cId, orderedIds);
+            const res = await ApiClient.reorderLearningUnits(cId, orderedIds);
             renderTree();
-            UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
+            if (res && (res.pending_approval || res.status === 202)) {
+              UI.showToast(res.message || 'Yêu cầu thay đổi thứ tự Chương đã được gửi tới Quản trị viên để xét duyệt.', 'info');
+            } else {
+              UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
+            }
           } catch (err) {
             currentUnits = snapshot;
             renderTree();
@@ -1516,7 +1540,16 @@ class InstructorView {
           const conf = await UI.confirm('Xóa bài giảng', 'Xác nhận xóa bài giảng này? Nội dung sẽ bị xóa khỏi giáo trình.', 'Xóa bài giảng');
           if (!conf) return;
           try {
-            await ApiClient.deleteLesson(cId, lId);
+            const res = await ApiClient.deleteLesson(cId, lId);
+            if (res && res.is_staged_delete) {
+              currentUnits.forEach(u => {
+                const targetL = u.lessons?.find(l => String(l.lesson_id || l.id) === String(lId));
+                if (targetL) targetL.is_staged_delete = true;
+              });
+              renderTree();
+              UI.showToast(res.message || 'Đã đánh dấu xóa bài giảng trong bản nháp cập nhật.', 'info');
+              return;
+            }
             currentUnits.forEach(u => {
               if (u.lessons) u.lessons = u.lessons.filter(l => String(l.lesson_id || l.id) !== String(lId));
             });
@@ -1799,6 +1832,10 @@ class InstructorView {
       if (!title || !title.trim()) return;
       try {
         const created = await ApiClient.createLearningUnit(cId, { title: title.trim() });
+        if (created && (created.pending_approval || created.status === 202)) {
+          UI.showToast(created.message || 'Yêu cầu tạo Chương mới đã gửi Quản trị viên để xét duyệt.', 'info');
+          return;
+        }
         const newUnit = {
           learning_unit_id: created.learning_unit_id || created.id,
           id: created.learning_unit_id || created.id,
@@ -2787,14 +2824,16 @@ class InstructorView {
         try {
           const targetLessonId = activeLessonId;
           const targetUnitId = activeUnitId;
+          const targetGen = selectLessonGen;
           const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
           const res = await ApiClient.updateLesson(targetLessonId, payload);
-          isEditorDirty = false;
 
           const newLessonId = res?.lesson?.lesson_id || res?.lesson_id || res?.id;
+          const resolvedId = newLessonId || targetLessonId;
           if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
-            if (String(activeLessonId) === String(targetLessonId)) {
+            if (String(activeLessonId) === String(targetLessonId) && selectLessonGen === targetGen) {
               activeLessonId = newLessonId;
+              activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
             }
             const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${targetLessonId}"]`);
             if (treeItem) {
@@ -2807,29 +2846,36 @@ class InstructorView {
               if (l) {
                 l.lesson_id = newLessonId;
                 l.id = newLessonId;
-                l.status = 'DRAFT';
+                l.status = res?.lesson?.status || res?.status || 'DRAFT';
               }
             }
           }
 
-          // Update memory state
+          // Update memory state and tree DOM title for resolvedId
           const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
           if (unit && unit.lessons) {
-            const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(activeLessonId));
+            const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(resolvedId));
             if (l) {
               l.title = activeLessonMeta.title;
               if (l.status === 'PUBLISHED') l.status = 'MODIFIED';
             }
           }
 
-          // Update tree DOM title directly for seamless feel
-          const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${activeLessonId}"]`);
+          const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${resolvedId}"]`);
           if (treeItem) {
             const titleEl = treeItem.querySelector('.lesson-item-title');
             if (titleEl) titleEl.textContent = activeLessonMeta.title;
           }
 
-          UI.showToast('Đã lưu bài giảng thành công!', 'success');
+          if (selectLessonGen === targetGen && String(activeLessonId) === String(resolvedId)) {
+            isEditorDirty = false;
+          }
+
+          if (res && (res.pending_approval || res.status === 202)) {
+            UI.showToast(res.message || 'Thay đổi đã được gửi duyệt tới Quản trị viên.', 'info');
+          } else {
+            UI.showToast(res?.message || 'Đã lưu bài giảng thành công!', 'success');
+          }
         } catch (err) {
           UI.showToast(err.message || 'Lỗi khi lưu bài giảng.', 'error');
         } finally {
@@ -2979,22 +3025,28 @@ class InstructorView {
           const conf = await UI.confirm('Xóa nội dung', 'Xác nhận xóa phần nội dung này?', 'Xóa');
           if (!conf) return;
           scrapeBlocksFromDom();
+          const targetLessonId = activeLessonId;
           const targetBlock = activeBlocks[idx];
           if (targetBlock && Array.isArray(targetBlock.files) && targetBlock.files.length > 0) {
             for (const f of targetBlock.files) {
-              const rId = f.resource_id || f.id;
+              const rId = f.resource_id || f.id || f.asset_id;
               if (rId) {
                 try {
-                  await ApiClient.detachLessonResource(cId, activeLessonId, rId);
+                  const res = await ApiClient.detachLessonResource(cId, targetLessonId, rId);
+                  if (res && (res.pending_approval || res.status === 202)) {
+                    UI.showToast(res.message || 'Yêu cầu gỡ tệp đính kèm đã gửi Quản trị viên để xét duyệt.', 'info');
+                  }
                 } catch (e) {
                   console.warn('Could not detach resource on block delete:', e);
                 }
               }
             }
           }
-          activeBlocks.splice(idx, 1);
-          isEditorDirty = true;
-          renderEditor();
+          if (String(activeLessonId) === String(targetLessonId)) {
+            activeBlocks.splice(idx, 1);
+            isEditorDirty = true;
+            renderEditor();
+          }
         };
       });
 
@@ -3003,6 +3055,7 @@ class InstructorView {
         const fileInput = card.querySelector('.block-file-input');
         const cardBlockId = activeBlocks[bIdx]?.id;
         const targetLessonId = activeLessonId;
+        const uploadGen = selectLessonGen;
         if (fileInput) {
           fileInput.onchange = async (e) => {
             const file = e.target.files?.[0];
@@ -3016,7 +3069,11 @@ class InstructorView {
             try {
               UI.showToast('Đang tải lên tài liệu...', 'info');
               const res = await ApiClient.attachLessonResource(cId, targetLessonId, formData);
-              if (String(activeLessonId) === String(targetLessonId)) {
+              if (res && (res.pending_approval || res.status === 202)) {
+                UI.showToast(res.message || 'Tài liệu đã được gửi yêu cầu phê duyệt đính kèm (chờ Quản trị viên duyệt).', 'info');
+                return;
+              }
+              if (selectLessonGen === uploadGen && String(activeLessonId) === String(targetLessonId)) {
                 const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
                 if (targetBlock) {
                   if (!targetBlock.files) targetBlock.files = [];
@@ -3042,12 +3099,24 @@ class InstructorView {
           delBtn.onclick = async () => {
             const fIdx = parseInt(delBtn.dataset.fileIdx, 10);
             const rId = delBtn.dataset.resourceId;
+            const targetGen = selectLessonGen;
             scrapeBlocksFromDom();
             try {
               if (rId) {
-                await ApiClient.detachLessonResource(cId, targetLessonId, rId);
+                const res = await ApiClient.detachLessonResource(cId, targetLessonId, rId);
+                if (res && (res.pending_approval || res.status === 202)) {
+                  UI.showToast(res.message || 'Yêu cầu gỡ tệp đính kèm đã được gửi tới Quản trị viên để xét duyệt.', 'info');
+                  if (selectLessonGen === targetGen && String(activeLessonId) === String(targetLessonId)) {
+                    const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+                    if (targetBlock?.files && targetBlock.files[fIdx]) {
+                      targetBlock.files[fIdx].pending_delete = true;
+                    }
+                    renderEditor();
+                  }
+                  return;
+                }
               }
-              if (String(activeLessonId) === String(targetLessonId)) {
+              if (selectLessonGen === targetGen && String(activeLessonId) === String(targetLessonId)) {
                 const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
                 if (targetBlock?.files) {
                   targetBlock.files.splice(fIdx, 1);
@@ -6728,7 +6797,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   }
 
   static lessonSaveOutcome(response, publish) {
-    if (response?.pending_approval) return 'pending';
+    if (response?.pending_approval || response?.status === 'PENDING_APPROVAL' || response?.status === 202) return 'pending';
+    if (response?.status === 'PUBLISHED') return 'published';
     return publish ? 'published' : 'saved';
   }
 

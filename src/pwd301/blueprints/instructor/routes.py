@@ -939,6 +939,43 @@ def learning_units_route(course_id: str) -> Any:
             }
         ), 200
     payload = request.get_json(silent=True) or {}
+    if course_obj.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
+        from pwd301.models.course import CourseChangeRequest
+
+        title = payload.get("title")
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 200:
+            raise LessonValidationError("Learning unit title must have 1 to 200 characters.")
+        proposed = {
+            "action": "CREATE_LEARNING_UNIT",
+            "title": title.strip(),
+        }
+        review = CourseChangeRequest(
+            course_id=course_obj.id,
+            requested_by_user_id=actor.id,
+            change_type="LESSON_STRUCTURE",
+            target_type="COURSE",
+            target_id=course_obj.id,
+            proposed_payload_json=json.dumps(proposed, ensure_ascii=False),
+            status="PENDING",
+            created_at=utc_now(),
+        )
+        db.session.add(review)
+        db.session.commit()
+        return (
+            jsonify(
+                {
+                    "status": "pending_approval",
+                    "pending_approval": True,
+                    "message": (
+                        "Chương mới thuộc khóa học đã ban hành. "
+                        "Yêu cầu tạo chương đã được gửi tới Quản trị viên để xét duyệt."
+                    ),
+                    "change_request_id": review.id,
+                }
+            ),
+            202,
+        )
+
     unit = create_learning_unit(actor, course_id, payload)
     return jsonify(_serialize_learning_unit(unit)), 201
 
@@ -2032,6 +2069,24 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
         orig_content = (lesson.markdown_content or "").strip()
         orig_dur_int = int(lesson.estimated_duration_minutes or 0)
 
+        orig_unit_public = str(lesson.learning_unit.public_id) if lesson.learning_unit else None
+        orig_unit_int = str(lesson.learning_unit_id) if lesson.learning_unit_id else None
+        raw_target_unit = (
+            str(payload["learning_unit_id"]).strip()
+            if "learning_unit_id" in payload and payload["learning_unit_id"] is not None
+            else None
+        )
+        unit_changed = (
+            raw_target_unit is not None
+            and raw_target_unit != ""
+            and raw_target_unit not in (orig_unit_public, orig_unit_int)
+        )
+        position_changed = (
+            "position" in payload
+            and payload["position"] is not None
+            and payload["position"] != lesson.position
+        )
+
         rules_changed = (
             (
                 "minimum_completion_seconds" in payload
@@ -2046,10 +2101,8 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
                 and payload["required_for_periods_starting_at"]
                 != lesson.required_for_periods_starting_at
             )
-            or (
-                "learning_unit_id" in payload
-                and str(payload["learning_unit_id"]) != str(lesson.learning_unit_id)
-            )
+            or unit_changed
+            or position_changed
         )
 
         is_identical = (
@@ -3314,10 +3367,10 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
             .strip()
             .upper()
         )
-        if difficulty in ("ANALYZE", "EVALUATE", "CREATE"):
-            difficulty = "APPLY"
-        elif difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
-            difficulty = "UNDERSTAND"
+        if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+            raise ValidationError(
+                f"Mức độ Bloom '{difficulty}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+            )
 
         raw_points = payload.get("points") or payload.get("default_points") or 1.0
         try:
@@ -3436,6 +3489,11 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
                 for idx, text in enumerate(parsed_lines, start=1):
                     accepted_answers.append({"answer_text": text, "position": idx})
 
+            if not accepted_answers:
+                raise ValidationError(
+                    "Câu hỏi SHORT_ANSWER phải có ít nhất 1 đáp án được chấp nhận."
+                )
+
             q_payload["accepted_answers"] = accepted_answers
 
         created_q = create_question(
@@ -3516,10 +3574,10 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 .strip()
                 .upper()
             )
-            if difficulty in ("ANALYZE", "EVALUATE", "CREATE"):
-                difficulty = "APPLY"
-            elif difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
-                difficulty = "UNDERSTAND"
+            if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+                raise ValidationError(
+                    f"Câu hỏi #{idx}: Mức độ Bloom '{difficulty}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+                )
 
             raw_points = item.get("points") or item.get("default_points") or 1.0
             try:
@@ -3581,6 +3639,10 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                             a_text = str(a.get("answer_text") or a.get("text") or "").strip()
                             if a_text:
                                 accepted_answers.append({"answer_text": a_text, "position": a_idx})
+                if not accepted_answers:
+                    raise ValidationError(
+                        f"Câu hỏi #{idx}: Câu hỏi SHORT_ANSWER phải có ít nhất 1 đáp án được chấp nhận."
+                    )
                 q_payload["accepted_answers"] = accepted_answers
 
             if "resources" in item:
@@ -3737,10 +3799,11 @@ def edit_instructor_assessment_question_route(assessment_id: str, question_id: s
 
             if "difficulty" in payload:
                 diff_val = str(payload["difficulty"]).strip().upper()
-                if diff_val in ("ANALYZE", "EVALUATE", "CREATE"):
-                    diff_val = "APPLY"
-                if diff_val in ("REMEMBER", "UNDERSTAND", "APPLY"):
-                    q_payload["difficulty"] = diff_val
+                if diff_val not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+                    raise ValidationError(
+                        f"Mức độ Bloom '{diff_val}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
+                    )
+                q_payload["difficulty"] = diff_val
 
             if "explanation" in payload:
                 q_payload["explanation"] = payload["explanation"]

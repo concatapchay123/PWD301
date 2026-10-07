@@ -351,7 +351,14 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
 
     payload = request.get_json(silent=True) or {}
     action = str(payload.get("action", "")).strip().lower()
-    role_code = str(payload.get("role", "")).strip().upper()
+    raw_roles = payload.get("roles")
+    if raw_roles and isinstance(raw_roles, list):
+        role_codes = [str(r).strip().upper() for r in raw_roles if str(r).strip()]
+    elif payload.get("role"):
+        role_codes = [str(payload.get("role")).strip().upper()]
+    else:
+        role_codes = []
+
     reason = payload.get("reason")
 
     if action not in ("assign", "remove"):
@@ -361,6 +368,19 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
                     "error": {
                         "code": "VALIDATION_ERROR",
                         "message": "Action must be 'assign' or 'remove'.",
+                    }
+                }
+            ),
+            400,
+        )
+
+    if not role_codes:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "At least one role code must be specified.",
                     }
                 }
             ),
@@ -386,23 +406,30 @@ def manage_user_roles(user_id: str) -> tuple[Response, int] | Response:
     admin_sub_role = payload.get("admin_sub_role")
 
     try:
-        if action == "assign":
-            updated_user = assign_role_to_user(
-                user_id=target_user.id,
-                role_code=role_code,
-                assigned_by_user_id=actor.id,
-                reason=reason,
-                admin_sub_role=admin_sub_role,
-                session=sess,
-            )
-        else:
-            updated_user = remove_role_from_user(
-                user_id=target_user.id,
-                role_code=role_code,
-                removed_by_user_id=actor.id,
-                reason=reason,
-                session=sess,
-            )
+        updated_user = target_user
+        for role_code in role_codes:
+            if action == "assign":
+                updated_user = assign_role_to_user(
+                    user_id=target_user.id,
+                    role_code=role_code,
+                    assigned_by_user_id=actor.id,
+                    reason=reason,
+                    admin_sub_role=admin_sub_role,
+                    session=sess,
+                    commit=False,
+                )
+            else:
+                updated_user = remove_role_from_user(
+                    user_id=target_user.id,
+                    role_code=role_code,
+                    removed_by_user_id=actor.id,
+                    reason=reason,
+                    session=sess,
+                    commit=False,
+                )
+        sess.commit()
+        sess.expire_all()
+        sess.refresh(updated_user)
     except (InvalidRoleAssignmentError, ValidationError) as exc:
         sess.rollback()
         return (

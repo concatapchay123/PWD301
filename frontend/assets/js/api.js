@@ -154,7 +154,7 @@ class ApiClient {
       const isJson = contentType.includes('application/json');
       const data = isJson ? await res.json() : await res.text();
 
-      if (!isJson && typeof data === 'string' && data.trim().startsWith('<!DOCTYPE html')) {
+      if (!isJson && typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data)) {
         throw new Error('Máy chủ trả về trang HTML ngoài dự kiến thay vì phản hồi JSON API.');
       }
 
@@ -232,10 +232,14 @@ class ApiClient {
   }
 
   static async logout() {
+    let serverRevoked = false;
+    let serverError = null;
     try {
       await ApiClient.request('/auth/logout', { method: 'POST' });
+      serverRevoked = true;
     } catch (e) {
-      console.warn('Logout warning:', e);
+      serverError = e;
+      console.warn('Logout server revocation failed:', e);
     }
     ApiClient._cachedCsrf = null;
     document.cookie = 'csrf_token=; Max-Age=0; path=/;';
@@ -261,6 +265,10 @@ class ApiClient {
     } else {
       window.location.hash = '#/auth';
     }
+    if (!serverRevoked && serverError) {
+      return { revoked: false, error: serverError };
+    }
+    return { revoked: true };
   }
 
   static async switchRole(targetRole) {
@@ -898,6 +906,19 @@ class ApiClient {
     });
   }
 
+  static async editAssessmentQuestion(assessmentId, questionId, data) {
+    return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/${questionId}/edit`, {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  static async removeAssessmentQuestion(assessmentId, questionId) {
+    return await ApiClient.request(`/instructor/assessments/${assessmentId}/questions/${questionId}`, {
+      method: 'DELETE'
+    });
+  }
+
   static async uploadCourseFile(courseId, file, title = file.name, assetType = 'RESOURCE') {
     const formData = new FormData();
     formData.append('file', file);
@@ -970,8 +991,24 @@ class ApiClient {
     return await ApiClient.manageUserRole(userId, 'assign', role, reason, adminSubRole);
   }
 
+  static async assignRoles(userId, roles, reason = '', adminSubRole = null) {
+    const body = { action: 'assign', roles, reason };
+    if (adminSubRole) body.admin_sub_role = adminSubRole;
+    return await ApiClient.request(`/admin/users/${userId}/roles`, {
+      method: 'POST',
+      body,
+    });
+  }
+
   static async removeRole(userId, role, reason = '') {
     return await ApiClient.manageUserRole(userId, 'remove', role, reason);
+  }
+
+  static async removeRoles(userId, roles, reason = '') {
+    return await ApiClient.request(`/admin/users/${userId}/roles`, {
+      method: 'POST',
+      body: { action: 'remove', roles, reason },
+    });
   }
 
   static async suspendUser(userId, reason = '', password = '') {

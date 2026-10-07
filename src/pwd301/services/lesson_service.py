@@ -510,8 +510,15 @@ def _score_lesson_quiz_answers(
             if all_correct and len(pairs) > 0:
                 correct_count += 1
         elif q_type == "TRUE_FALSE":
-            expected_val = bool(question.get("correct_value", True))
-            tf_user_val = answer is True or str(answer).lower() == "true"
+            raw_ca = question.get("correct_value")
+            if raw_ca is None:
+                raw_ca = question.get("correct_answer")
+            expected_val = (
+                raw_ca is True or str(raw_ca).strip().lower() in ("true", "1")
+                if raw_ca is not None
+                else True
+            )
+            tf_user_val = answer is True or str(answer).strip().lower() in ("true", "1")
             if tf_user_val == expected_val:
                 correct_count += 1
         elif q_type in ("SHORT_ANSWER", "ESSAY"):
@@ -4327,6 +4334,34 @@ def apply_course_version_changeset(
                     mod_les.summary = item["summary"]
                 if "estimated_duration_minutes" in item:
                     mod_les.estimated_duration_minutes = item["estimated_duration_minutes"]
+                if "position" in item and item["position"] is not None:
+                    mod_les.position = item["position"]
+                if "learning_unit_id" in item and item["learning_unit_id"]:
+                    raw_uid = item["learning_unit_id"]
+                    try:
+                        u_uuid = uuid.UUID(str(raw_uid))
+                        u_obj = (
+                            sess.query(LearningUnit)
+                            .filter(
+                                LearningUnit.public_id == u_uuid,
+                                LearningUnit.course_id == course.id,
+                            )
+                            .first()
+                        )
+                        if u_obj:
+                            mod_les.learning_unit_id = u_obj.id
+                    except (ValueError, TypeError):
+                        if str(raw_uid).isdigit():
+                            u_obj = (
+                                sess.query(LearningUnit)
+                                .filter(
+                                    LearningUnit.id == int(raw_uid),
+                                    LearningUnit.course_id == course.id,
+                                )
+                                .first()
+                            )
+                            if u_obj:
+                                mod_les.learning_unit_id = u_obj.id
                 mod_les.updated_at = now
 
     # Phase 4: Deleted lessons
