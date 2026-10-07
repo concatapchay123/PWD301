@@ -303,10 +303,10 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             is_video = mime.startswith("video/") or name.endswith(vid_exts)
 
             if is_video:
-                uploaded_url = f"/student/files/{fa.public_id}/download?disposition=inline"
-                video_urls.append(uploaded_url)
+                hls_url = f"/student/courses/{course.public_id}/lessons/{les.public_id}/video/playlist.m3u8"
+                video_urls.append(hls_url)
                 if not video_url:
-                    video_url = uploaded_url
+                    video_url = hls_url
                     primary_video_asset_id = str(fa.public_id)
                 continue
 
@@ -331,10 +331,10 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                         (".mp4", ".webm", ".mkv", ".mov")
                     )
                     if is_vid:
-                        uploaded_url = f"/student/files/{fa.public_id}/download?disposition=inline"
-                        video_urls.append(uploaded_url)
+                        hls_url = f"/student/courses/{course.public_id}/lessons/{les.public_id}/video/playlist.m3u8"
+                        video_urls.append(hls_url)
                         if not video_url:
-                            video_url = uploaded_url
+                            video_url = hls_url
                             primary_video_asset_id = str(fa.public_id)
                     elif not res_list:
                         ser_r = _serialize_lesson_resource(r)
