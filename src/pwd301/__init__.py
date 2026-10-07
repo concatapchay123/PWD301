@@ -209,12 +209,14 @@ def _format_error_response(
 
     resp = jsonify(
         {
+            "success": False,
+            "data": None,
             "error": {
                 "code": code,
                 "message": message,
                 "field_errors": field_errors or {},
                 "correlation_id": correlation_id,
-            }
+            },
         }
     )
     if status_code == 429 and retry_after is not None:
@@ -763,17 +765,20 @@ def create_app(
             request.args.get("disposition", "").lower() == "inline"
             or request.args.get("preview", "0").lower() in ("1", "true", "yes")
         ) and (
-            request.path.startswith((
-                "/student/files/",
-                "/student/courses/",
-                "/instructor/courses/",
-                "/api/files/",
-                "/api/v1/files/",
-                "/api/courses/",
-                "/admin/files/",
-                "/admin/courses/",
-            ))
-            or request.endpoint in (
+            request.path.startswith(
+                (
+                    "/student/files/",
+                    "/student/courses/",
+                    "/instructor/courses/",
+                    "/api/files/",
+                    "/api/v1/files/",
+                    "/api/courses/",
+                    "/admin/files/",
+                    "/admin/courses/",
+                )
+            )
+            or request.endpoint
+            in (
                 "student.download_student_course_file_route",
                 "student.download_lesson_file",
                 "instructor.download_instructor_course_file_route",
@@ -795,7 +800,8 @@ def create_app(
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' "
-                "https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
+                "https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "worker-src 'self' blob:; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "img-src 'self' data: https:; "
                 "font-src 'self' data: https://fonts.gstatic.com; "
