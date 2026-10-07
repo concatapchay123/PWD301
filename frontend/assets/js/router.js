@@ -70,6 +70,8 @@ class AppRouter {
     // 4.2 Initial Admin Navigation Badges (Pending approvals)
     if (this.currentRole === 'ADMIN') {
       this.fetchAdminPendingCounts();
+    } else if (this.currentRole === 'INSTRUCTOR') {
+      this.fetchInstructorPendingCounts();
     }
 
     // 4.5 Setup Mobile Navigation Drawer
@@ -246,6 +248,12 @@ class AppRouter {
         this._lastAdminCountsFetch = now;
         this.fetchAdminPendingCounts();
       }
+    } else if (this.currentRole === 'INSTRUCTOR') {
+      const now = Date.now();
+      if (!this._lastInstCountsFetch || now - this._lastInstCountsFetch > 15000) {
+        this._lastInstCountsFetch = now;
+        this.fetchInstructorPendingCounts();
+      }
     }
 
     if (typeof UI !== 'undefined') {
@@ -282,6 +290,12 @@ class AppRouter {
         this.renderAuth();
         return;
       }
+    }
+
+    if (!this.currentUser) {
+      this.toggleShell(false);
+      this.renderAuth();
+      return;
     }
 
     // If logged in and on #/auth or #/login, redirect to role home
@@ -427,6 +441,11 @@ class AppRouter {
   }
 
   renderAuth() {
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#/auth');
+    } else {
+      window.location.hash = '#/auth';
+    }
     if (!this.viewport) return;
     this.viewport.innerHTML = AuthView.render();
     AuthView.attachEvents();
@@ -485,7 +504,7 @@ class AppRouter {
         window.location.hash = '#/instructor/courses';
         return;
       }
-      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum');
+      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum', query.lesson || query.lesson_id, query.learning_unit_id);
     } else if (path.startsWith('#/instructor/courses/') && path.endsWith('/manage')) {
       const parts = path.split('/');
       const targetCourseId = parts[3];
@@ -494,22 +513,24 @@ class AppRouter {
         window.location.hash = '#/instructor/courses';
         return;
       }
-      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum');
+      await InstructorView.renderCourseManage(viewport, targetCourseId, query.tab || 'curriculum', query.lesson || query.lesson_id, query.learning_unit_id);
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/new')) {
       const parts = path.split('/');
       const courseId = parts[3];
-      await InstructorView.renderLessonAuthoringStudio(viewport, courseId, null, query.learning_unit_id);
+      await InstructorView.renderCourseManage(viewport, courseId, 'curriculum', 'new', query.learning_unit_id);
     } else if (path.startsWith('#/instructor/courses/') && path.includes('/lessons/') && !path.includes('/lessons/new')) {
       const match = path.match(/#\/instructor\/courses\/([^/]+)\/lessons\/([^/]+)/);
       if (match) {
         const courseId = match[1];
         let lessonId = match[2];
-        if (lessonId === 'new') lessonId = null;
+        if (lessonId === 'new') lessonId = 'new';
         else if (lessonId === 'edit') lessonId = query.id || query.lesson_id || null;
         else if (lessonId === 'undefined' || lessonId === 'null') lessonId = null;
-        await InstructorView.renderLessonAuthoringStudio(viewport, courseId, lessonId, query.learning_unit_id);
+        await InstructorView.renderCourseManage(viewport, courseId, 'curriculum', lessonId, query.learning_unit_id);
       }
 
+    } else if (path === '#/instructor/prerequisites/requests' || path === '#/instructor/prerequisite-requests') {
+      await InstructorView.renderPrerequisiteApprovalRequests(viewport);
     } else if (path === '#/instructor/exams' || path === '#/instructor/exams/hub') {
       await InstructorView.renderExamsHub(viewport, query);
     } else if (path === '#/instructor/exams/editor') {
@@ -644,6 +665,17 @@ class AppRouter {
     }
   }
 
+  async fetchInstructorPendingCounts() {
+    if (this.currentRole !== 'INSTRUCTOR' || typeof ApiClient.getInstructorPrerequisitePendingCount !== 'function') return;
+    try {
+      const res = await ApiClient.getInstructorPrerequisitePendingCount();
+      this.instructorPrereqPendingCount = (res && typeof res.count === 'number') ? res.count : 0;
+      this.renderDynamicSidebar();
+    } catch (err) {
+      console.warn('Silent instructor prereq badge fetch warning:', err);
+    }
+  }
+
   // =========================================================================
   // Top Navigation Bar & Mobile Drawer Menus (Warm Editorial Pill Tabs)
   // =========================================================================
@@ -655,6 +687,7 @@ class AppRouter {
     if (!isPathMatch) {
       if (mPath === '#/instructor/exams' && curPath.startsWith('#/instructor/exams/')) isPathMatch = true;
       else if (mPath === '#/instructor/courses' && curPath.startsWith('#/instructor/courses/')) isPathMatch = true;
+      else if (mPath === '#/instructor/prerequisites/requests' && (curPath.startsWith('#/instructor/prerequisites') || curPath === '#/instructor/prerequisite-requests')) isPathMatch = true;
       else if (mPath === '#/student/courses' && (curPath.startsWith('#/student/courses/') || curPath.startsWith('#/student/lessons/'))) isPathMatch = true;
       else if (mPath === '#/student/assessments' && curPath.startsWith('#/student/assessments/')) isPathMatch = true;
       else if (mPath === '#/admin/operations' && curPath.startsWith('#/admin/operations/')) isPathMatch = true;
@@ -731,6 +764,7 @@ class AppRouter {
         { label: 'Trang chủ', path: '#/instructor/dashboard', icon: 'home' },
         { label: 'Khóa học', path: '#/instructor/courses', icon: 'auto_stories' },
         { label: 'Soạn đề thi', path: '#/instructor/exams', icon: 'assignment_add' },
+        { label: 'Duyệt môn tiên quyết', path: '#/instructor/prerequisites/requests', icon: 'account_tree', badge: this.instructorPrereqPendingCount || 0 },
         { label: 'Cài đặt', path: '#/instructor/settings', icon: 'settings' },
       ];
     } else {
@@ -1009,7 +1043,13 @@ class AppRouter {
           this.currentUser = null;
           this.currentRole = null;
           this.toggleShell(false);
+          if (window.UI && typeof window.UI.closeAllModals === 'function') {
+            window.UI.closeAllModals();
+          }
           await ApiClient.logout();
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', '#/auth');
+          }
           this.renderAuth();
           UI.showToast('Đã đăng xuất tài khoản an toàn.', 'info');
         };
@@ -1112,6 +1152,26 @@ class AppRouter {
       sessionStorage.setItem(key, JSON.stringify(this.notificationsCache));
     } catch {
       // Ignore quota errors
+    }
+  }
+
+  hasUsableNotificationCache() {
+    return Boolean(
+      this.notificationsCache
+      && Array.isArray(this.notificationsCache.items)
+      && this.notificationsCache.items.length > 0,
+    );
+  }
+
+  beginNotificationFetch() {
+    this.notificationFetchState = {
+      status: 'loading',
+      last_attempt: Date.now(),
+    };
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    const isVisible = dropdown && !dropdown.classList.contains('hidden');
+    if (isVisible && !this.hasUsableNotificationCache()) {
+      this.renderNotificationsSkeleton();
     }
   }
 
@@ -1248,11 +1308,10 @@ class AppRouter {
       dropdown.classList.remove('hidden');
       if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
 
-      // Instant first paint from cache (0ms delay)
-      if (this.notificationsCache && Array.isArray(this.notificationsCache.items)) {
+      // Do not expose a cached empty state before revalidation confirms it.
+      this.beginNotificationFetch();
+      if (this.hasUsableNotificationCache()) {
         this.renderNotificationsDropdownContent();
-      } else {
-        this.renderNotificationsSkeleton();
       }
 
       // SWR: Silent background revalidation
@@ -1352,6 +1411,40 @@ class AppRouter {
         `).join('')}
       </div>
     `;
+  }
+
+  renderNotificationsUnavailable() {
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    if (!dropdown) return;
+    dropdown.innerHTML = `
+      <div class="p-4 border-b border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#242423]">
+        <div class="font-bold text-sm text-[#222120] dark:text-[#EDEDEB]">Thông báo</div>
+      </div>
+      <div class="p-8 text-center text-[#5C5B57] dark:text-[#9E9D99]" role="status" aria-live="polite">
+        <span class="material-symbols-outlined text-3xl text-amber-600 mb-2 inline-block">cloud_off</span>
+        <p class="font-semibold text-xs">Không thể tải thông báo.</p>
+        <p class="text-[11px] mt-1">Dữ liệu hiện chưa xác định. Vui lòng thử lại.</p>
+        <button type="button" id="notif-retry-btn" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold">
+          Thử lại
+        </button>
+      </div>
+    `;
+    const retryButton = dropdown.querySelector?.('#notif-retry-btn');
+    if (retryButton) retryButton.onclick = () => this.fetchNotifications(true);
+  }
+
+  markNotificationFetchDegraded(error, forceRender = false) {
+    this.notificationFetchState = {
+      status: 'degraded',
+      code: error?.code || 'NOTIFICATIONS_UNAVAILABLE',
+      message: error?.message || 'Không thể tải dữ liệu thông báo.',
+      last_attempt: Date.now(),
+    };
+    const dropdown = document.getElementById('topbar-notifications-dropdown');
+    const isVisible = dropdown && !dropdown.classList.contains('hidden');
+    if (!this.hasUsableNotificationCache() && (forceRender || isVisible)) {
+      this.renderNotificationsUnavailable();
+    }
   }
 
   renderNotificationsDropdownContent() {
@@ -1673,6 +1766,13 @@ class AppRouter {
 
   async fetchNotifications(forceRender = false) {
     if (!this.currentUser) return;
+    this.beginNotificationFetch();
+    if (typeof ApiClient === 'undefined' || typeof ApiClient.getNotifications !== 'function') {
+      const error = new Error('Notification client is unavailable.');
+      error.code = 'NOTIFICATIONS_CLIENT_UNAVAILABLE';
+      this.markNotificationFetchDegraded(error, forceRender);
+      return;
+    }
     try {
       const currentRole = this.currentRole || 'STUDENT';
       const data = await ApiClient.getNotifications({ role: currentRole });
@@ -1693,6 +1793,10 @@ class AppRouter {
           last_fetched: Date.now(),
           user_id: this.currentUser.id,
           role: currentRole,
+        };
+        this.notificationFetchState = {
+          status: 'ready',
+          last_attempt: Date.now(),
         };
         this.saveCachedNotifications();
         this.updateBadgeFromCache();
@@ -1717,7 +1821,7 @@ class AppRouter {
         }
       }
     } catch (e) {
-      console.warn('fetchNotifications background error:', e);
+      this.markNotificationFetchDegraded(e, forceRender);
     }
   }
 

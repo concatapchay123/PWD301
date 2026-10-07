@@ -48,6 +48,74 @@ class ApiClient {
     return token || ApiClient._cachedCsrf || '';
   }
 
+  static formatApiErrorMessage(data, status) {
+    const rawMsg = (data && data.error && data.error.message) || data?.message || '';
+    const code = (data && data.error && data.error.code) || '';
+
+    // If message already contains Vietnamese characters, respect it directly
+    const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(rawMsg);
+    if (hasVietnamese && rawMsg.trim()) {
+      return rawMsg;
+    }
+
+    // Standard Vietnamese dictionary for API error codes
+    const CODE_TRANSLATIONS = {
+      'UNAUTHORIZED': 'Phiên làm việc đã hết hạn hoặc chưa đăng nhập.',
+      'INVALID_CREDENTIALS': 'Email hoặc mật khẩu không chính xác.',
+      'FORBIDDEN': 'Bạn không có quyền thực hiện thao tác này.',
+      'CSRF_ERROR': 'Phiên bảo mật đã hết hạn. Vui lòng thử lại.',
+      'NOT_FOUND': 'Không tìm thấy dữ liệu yêu cầu.',
+      'RESOURCE_NOT_FOUND': 'Không tìm thấy tài nguyên yêu cầu.',
+      'COURSE_NOT_FOUND': 'Không tìm thấy khóa học.',
+      'ASSESSMENT_NOT_FOUND': 'Không tìm thấy bài thi khảo thí.',
+      'USER_NOT_FOUND': 'Không tìm thấy thông tin người dùng.',
+      'VALIDATION_ERROR': 'Dữ liệu đầu vào không hợp lệ. Vui lòng kiểm tra lại.',
+      'BAD_REQUEST': 'Yêu cầu không hợp lệ.',
+      'CONFLICT': 'Dữ liệu bị trùng lặp hoặc xung đột trạng thái.',
+      'ALREADY_EXISTS': 'Dữ liệu đã tồn tại trong hệ thống.',
+      'RATE_LIMIT_EXCEEDED': 'Bạn đã thao tác quá nhanh. Vui lòng thử lại sau giây lát.',
+      'INTERNAL_ERROR': 'Lỗi máy chủ nội bộ. Vui lòng thử lại sau.',
+      'INTERNAL_SERVER_ERROR': 'Lỗi máy chủ nội bộ. Vui lòng thử lại sau.',
+      'FILE_TOO_LARGE': 'Kích thước tệp vượt quá giới hạn cho phép.',
+      'INVALID_FILE_TYPE': 'Định dạng tệp không được hỗ trợ.',
+      'SCAN_FAILED': 'Quét tệp an toàn thất bại.',
+      'ATTEMPT_LOCKED': 'Bài thi đã bị khóa hoặc hết thời gian làm bài.',
+      'ACTIVE_LEASE_EXISTS': 'Bài thi đang được mở ở một phiên làm việc khác.'
+    };
+
+    if (code && CODE_TRANSLATIONS[code]) {
+      return CODE_TRANSLATIONS[code];
+    }
+
+    // Common backend English phrases to Vietnamese translations
+    if (rawMsg) {
+      const lower = rawMsg.toLowerCase();
+      if (lower.includes('course not found') || (lower.includes('course \'') && lower.includes('not found'))) {
+        return 'Không tìm thấy khóa học.';
+      }
+      if (lower.includes('assessment not found')) {
+        return 'Không tìm thấy bài thi khảo thí.';
+      }
+      if (lower.includes('user not found')) {
+        return 'Không tìm thấy người dùng.';
+      }
+      if (lower.includes('admin direct edits to an instructor-owned course require a reason')) {
+        return 'Quản trị viên chỉnh sửa khóa học của giảng viên cần cung cấp lý do thay đổi.';
+      }
+      if (lower.includes('invalid credentials') || lower.includes('invalid email or password')) {
+        return 'Email hoặc mật khẩu không chính xác.';
+      }
+      if (lower.includes('unauthorized') || lower.includes('authentication required')) {
+        return 'Vui lòng đăng nhập để tiếp tục.';
+      }
+      if (lower.includes('permission denied') || lower.includes('forbidden')) {
+        return 'Bạn không có quyền thực hiện thao tác này.';
+      }
+    }
+
+    return rawMsg || `Lỗi yêu cầu (HTTP ${status})`;
+  }
+
   static async request(url, options = {}) {
     const defaultHeaders = {
       'Accept': 'application/json',
@@ -95,8 +163,10 @@ class ApiClient {
           return await ApiClient.request(url, { ...options, _isCsrfRetry: true });
         }
 
-        const errorMsg = (data && data.error && data.error.message) || data.message || `Lỗi HTTP ${res.status}`;
+        const errorMsg = ApiClient.formatApiErrorMessage(data, res.status);
         const err = new Error(errorMsg);
+        err.rawMessage = (data && data.error && data.error.message) || data?.message || '';
+        err.code = (data && data.error && data.error.code) || null;
         err.status = res.status;
         err.data = data;
         throw err;
@@ -164,7 +234,19 @@ class ApiClient {
       router.currentRole = null;
       router.toggleShell(false);
     }
-    window.location.hash = '#/auth';
+    if (window.UI && typeof window.UI.closeAllModals === 'function') {
+      window.UI.closeAllModals();
+    }
+    const modalContainer = document.getElementById('modal-container');
+    if (modalContainer) {
+      modalContainer.innerHTML = '';
+      modalContainer.classList.add('hidden');
+    }
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#/auth');
+    } else {
+      window.location.hash = '#/auth';
+    }
   }
 
   static async switchRole(targetRole) {
@@ -705,7 +787,22 @@ class ApiClient {
   }
 
   static async getInstructorPrerequisiteRequests() {
-    return await ApiClient.request('/instructor/prerequisite-requests');
+    return await ApiClient.request('/instructor/prerequisites/incoming-requests');
+  }
+
+  static async getInstructorPrerequisitePendingCount() {
+    return await ApiClient.request('/instructor/prerequisites/incoming-requests/count');
+  }
+
+  static async getInstructorIncomingPrerequisiteRequests() {
+    return await ApiClient.request('/instructor/prerequisites/incoming-requests');
+  }
+
+  static async reviewInstructorIncomingPrerequisiteRequest(courseId, prereqId, data) {
+    return await ApiClient.request(`/instructor/prerequisites/incoming-requests/${courseId}/${prereqId}/review`, {
+      method: 'POST',
+      body: data
+    });
   }
 
   static async reviewInstructorPrerequisiteRequest(requestId, data) {
@@ -808,6 +905,23 @@ class ApiClient {
   static async getInstructorAttemptResult(attemptId, reason = '') {
     const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
     return await ApiClient.request(`/instructor/attempts/${attemptId}/results${query}`);
+  }
+
+  static async gradeInstructorAttemptQuestion(
+    attemptId,
+    attemptQuestionId,
+    awardedPoints,
+    reason = '',
+    rowVersion = null,
+  ) {
+    return await ApiClient.request(`/instructor/attempts/${attemptId}/grades/${attemptQuestionId}`, {
+      method: 'POST',
+      body: {
+        awarded_points: awardedPoints,
+        reason,
+        ...(rowVersion ? { row_version: rowVersion } : {}),
+      },
+    });
   }
 
   static async getInstructorAttemptFocusEvents(attemptId) {
@@ -975,10 +1089,12 @@ class ApiClient {
     });
   }
 
-  static async broadcastNotification(title, body, targetRole = null, category = 'SYSTEM') {
+  static async broadcastNotification(title, body, targetRole = null, category = 'SYSTEM', idempotencyKey = null) {
+    const headers = idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {};
     return await ApiClient.request('/admin/notifications/broadcast', {
       method: 'POST',
-      body: { title, body, target_role: targetRole, category }
+      body: { title, body, target_role: targetRole, category },
+      headers
     });
   }
 
@@ -1124,19 +1240,19 @@ class ApiClient {
     if (options.per_page) params.append('per_page', options.per_page);
     const qs = params.toString() ? `?${params.toString()}` : '';
 
-    try {
-      return await ApiClient.request(`/auth/notifications${qs}`);
-    } catch {
+    let lastError = null;
+    for (const endpoint of ['/auth/notifications', '/student/notifications', '/api/notifications']) {
       try {
-        return await ApiClient.request(`/student/notifications${qs}`);
-      } catch {
-        try {
-          return await ApiClient.request(`/api/notifications${qs}`);
-        } catch {
-          return { items: [], total: 0, unread_count: 0 };
-        }
+        return await ApiClient.request(`${endpoint}${qs}`);
+      } catch (error) {
+        lastError = error;
       }
     }
+
+    const unavailable = new Error('Không thể tải thông báo. Dữ liệu hiện chưa xác định.');
+    unavailable.code = 'NOTIFICATIONS_UNAVAILABLE';
+    unavailable.cause = lastError;
+    throw unavailable;
   }
 
   static async getUnreadNotificationCount(options = {}) {

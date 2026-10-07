@@ -450,7 +450,7 @@ class InstructorView {
         const box = document.getElementById('ins-courses-cards-box');
         if (box) {
           box.innerHTML = `
-            <div class="col-span-full p-8 rounded-2xl bg-white dark:bg-[#1A1827] border border-rose-200 dark:border-rose-900/50 text-center space-y-3 shadow-sm">
+            <div class="col-span-full p-8 rounded-2xl bg-white dark:bg-[#18181b] border border-rose-200 dark:border-rose-900/50 text-center space-y-3 shadow-sm">
               <span class="material-symbols-outlined text-3xl text-rose-500">sync_problem</span>
               <p class="text-sm font-bold text-slate-900 dark:text-white">Không thể tải danh sách khóa học</p>
               <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">${UI.escapeHtml(e.message || 'Lỗi kết nối máy chủ.')}</p>
@@ -634,6 +634,7 @@ class InstructorView {
 
     // 2. Extract quizzes from rawMd or lesson.quiz
     let quizzes = Array.isArray(lesson.quiz) ? [...lesson.quiz] : [];
+    let quizPassingPercent = lesson.quiz_passing_percent || 80;
     const quizMatch = rawMd.match(/<!--\s*mini_quiz:\s*(.+?)\s*-->/s);
     if (quizMatch) {
       try {
@@ -641,12 +642,18 @@ class InstructorView {
         if (Array.isArray(parsedQ) && quizzes.length === 0) quizzes = parsedQ;
       } catch (_) {}
     }
+    const passingMatch = rawMd.match(/<!--\s*mini_quiz_passing:\s*(\d+)\s*-->/);
+    if (passingMatch) {
+      quizPassingPercent = parseInt(passingMatch[1], 10) || 80;
+    }
+    lesson.quiz_passing_percent = quizPassingPercent;
 
     // 3. Clean markdown text
     const cleanMd = rawMd
       .replace(/<!--\s*video_urls?:.*?-->\s*/gs, '')
       .replace(/<!--\s*video_url:\s*\S+?\s*-->\s*/gs, '')
       .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '')
+      .replace(/<!--\s*mini_quiz_passing:\s*\d+\s*-->\s*/gs, '')
       .trim();
 
     if (cleanMd) {
@@ -717,13 +724,21 @@ class InstructorView {
 
     // Add Quiz blocks
     quizzes.forEach(q => {
+      const qType = q.type || q.q_type || 'MULTIPLE_CHOICE';
       blocks.push({
         id: 'blk_' + Math.random().toString(36).slice(2, 9),
         type: 'quiz',
+        q_type: qType,
         question: q.question || q.prompt || '',
-        options: Array.isArray(q.options) && q.options.length ? q.options : ['', '', '', ''],
+        options: Array.isArray(q.options) && q.options.length ? q.options : (Array.isArray(q.choices) ? q.choices : ['', '', '', '']),
         correct_index: q.correct_index ?? q.answer_index ?? 0,
-        explanation: q.explanation || ''
+        blank_answer: q.blank_answer || (q.blanks?.[0]?.accepted_answers?.[0] || ''),
+        pairs: Array.isArray(q.pairs) && q.pairs.length ? q.pairs : [
+          { left: '', right: '' },
+          { left: '', right: '' }
+        ],
+        explanation: q.explanation || '',
+        passing_percent: quizPassingPercent
       });
     });
 
@@ -757,12 +772,23 @@ class InstructorView {
         }
       } else if (b.type === 'quiz') {
         if (b.question && b.question.trim()) {
-          quizzes.push({
+          const qType = b.q_type || 'MULTIPLE_CHOICE';
+          const qObj = {
             question: b.question.trim(),
-            options: (b.options || ['', '', '', '']).map(opt => String(opt || '').trim()),
-            correct_index: Number(b.correct_index || 0),
+            type: qType,
             explanation: (b.explanation || '').trim()
-          });
+          };
+          if (qType === 'MULTIPLE_CHOICE') {
+            qObj.options = (b.options || ['', '', '', '']).map(opt => String(opt || '').trim());
+            qObj.correct_index = Number(b.correct_index || 0);
+          } else if (qType === 'FILL_BLANK') {
+            const ans = (b.blank_answer || '').trim();
+            qObj.blanks = [{ accepted_answers: ans ? [ans] : [] }];
+            qObj.blank_answer = ans;
+          } else if (qType === 'MATCHING') {
+            qObj.pairs = Array.isArray(b.pairs) ? b.pairs.filter(p => p.left && p.right) : [];
+          }
+          quizzes.push(qObj);
         }
       }
     });
@@ -771,14 +797,19 @@ class InstructorView {
     if (!finalMd.trim()) {
       finalMd = `# ${meta.title || 'Bài giảng'}\n\n${meta.summary || 'Nội dung bài học.'}`;
     }
+    if (quizzes.length > 0) {
+      finalMd += '\n\n<!-- mini_quiz: ' + JSON.stringify(quizzes) + ' -->';
+      const passingPercent = meta.quiz_passing_percent || 80;
+      finalMd += '\n<!-- mini_quiz_passing: ' + passingPercent + ' -->';
+    }
 
     return {
       title: (meta.title || 'Bài giảng').trim(),
-      estimated_duration_minutes: parseInt(meta.duration, 10) || 15,
       summary: (meta.summary || '').trim(),
       markdown_content: finalMd,
       video_urls: videoUrls,
       quiz: quizzes,
+      quiz_passing_percent: meta.quiz_passing_percent || 80,
       resources: resources,
       status: 'DRAFT'
     };
@@ -788,7 +819,7 @@ class InstructorView {
   // =========================================================================
   // 3.0. Single-Page Curriculum Studio Implementation (Low-Tech Optimized)
   // =========================================================================
-  static async initSinglePageCurriculumStudio(container, course, changesetStatus, initialLessonId = null, initialUnitId = null) {
+  static async initSinglePageCurriculumStudio(container, course, changesetStatus, initialLessonId = null, initialUnitId = null, assessments = null) {
     const cId = course.course_id || course.id;
     const treeContainer = container.querySelector('#tree-units-container');
     const editorContainer = container.querySelector('#curriculum-editor-pane');
@@ -797,6 +828,15 @@ class InstructorView {
     const btnTreeAddLesson = container.querySelector('#btn-tree-add-lesson');
 
     if (!treeContainer || !editorContainer) return;
+
+    if (!assessments || !Array.isArray(assessments)) {
+      try {
+        const asmRes = await ApiClient.getCourseAssessments(cId).catch(() => ({ assessments: [] }));
+        assessments = asmRes.assessments || asmRes.items || (Array.isArray(asmRes) ? asmRes : []);
+      } catch (e) {
+        assessments = [];
+      }
+    }
 
     const isLocked = (changesetStatus && changesetStatus.status === 'PENDING') || course.status === 'SUBMITTED_FOR_REVIEW';
 
@@ -863,11 +903,9 @@ class InstructorView {
     // Scrape values from current block inputs into activeBlocks array
     const scrapeBlocksFromDom = () => {
       const titleInput = editorContainer.querySelector('#input-lesson-title');
-      const durationInput = editorContainer.querySelector('#input-lesson-duration');
       const summaryInput = editorContainer.querySelector('#input-lesson-summary');
 
       if (titleInput) activeLessonMeta.title = titleInput.value.trim();
-      if (durationInput) activeLessonMeta.duration = parseInt(durationInput.value, 10) || 15;
       if (summaryInput) activeLessonMeta.summary = summaryInput.value.trim();
 
       const blockCards = editorContainer.querySelectorAll('.curriculum-block-card');
@@ -883,12 +921,40 @@ class InstructorView {
         } else if (block.type === 'quiz') {
           const qInput = card.querySelector('.block-quiz-question');
           if (qInput) block.question = qInput.value.trim();
-          const optInputs = card.querySelectorAll('.block-quiz-opt-text');
-          block.options = Array.from(optInputs).map(i => i.value.trim());
-          const checkedRadio = card.querySelector('input[type="radio"]:checked');
-          if (checkedRadio) block.correct_index = parseInt(checkedRadio.value, 10) || 0;
+          const activeType = card.dataset.activeQtype || block.q_type || 'MULTIPLE_CHOICE';
+          block.q_type = activeType;
+
+          if (activeType === 'MULTIPLE_CHOICE') {
+            const optInputs = card.querySelectorAll('.block-quiz-opt-text');
+            block.options = Array.from(optInputs).map(i => i.value.trim());
+            const checkedRadio = card.querySelector('input[type="radio"]:checked');
+            if (checkedRadio) block.correct_index = parseInt(checkedRadio.value, 10) || 0;
+          } else if (activeType === 'FILL_BLANK') {
+            const blankInput = card.querySelector('.block-quiz-blank-answer');
+            if (blankInput) block.blank_answer = blankInput.value.trim();
+          } else if (activeType === 'MATCHING') {
+            const pairRows = card.querySelectorAll('.block-quiz-pair-row');
+            block.pairs = Array.from(pairRows).map(row => {
+              const leftInput = row.querySelector('.block-quiz-pair-left');
+              const rightInput = row.querySelector('.block-quiz-pair-right');
+              return {
+                left: leftInput ? leftInput.value.trim() : '',
+                right: rightInput ? rightInput.value.trim() : ''
+              };
+            });
+          }
+
           const expInput = card.querySelector('.block-quiz-explanation');
           if (expInput) block.explanation = expInput.value.trim();
+
+          const passingInput = card.querySelector('.block-quiz-passing-percent');
+          if (passingInput) {
+            const pVal = parseInt(passingInput.value, 10);
+            if (!isNaN(pVal) && pVal >= 50 && pVal <= 100) {
+              block.passing_percent = pVal;
+              activeLessonMeta.quiz_passing_percent = pVal;
+            }
+          }
         }
       });
     };
@@ -898,7 +964,7 @@ class InstructorView {
       updateTreeStats();
       if (currentUnits.length === 0) {
         treeContainer.innerHTML = `
-          <div class="text-center py-8 px-4 bg-[#FAF9F5] dark:bg-[#1A1827] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+          <div class="text-center py-8 px-4 bg-[#FAF9F5] dark:bg-[#18181b] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
             <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-1">folder_open</span>
             <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Chưa có Chương bài học nào</p>
             <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-3">Tạo Chương đầu tiên để bắt đầu xây dựng giáo trình.</p>
@@ -922,11 +988,22 @@ class InstructorView {
         const uLessons = unit.lessons || [];
         const isUnitActive = String(activeUnitId) === String(uId);
 
+        // Find assessment linked to this chapter
+        const uExam = assessments.find(a => (a.learning_unit_id && String(a.learning_unit_id) === String(uId)) || (a.description && a.description.includes('unit_id: ' + uId)) || (a.title && a.title.toLowerCase().includes('chương ' + (uIdx + 1))));
+
         return `
-          <div class="unit-tree-node rounded-xl border ${isUnitActive ? 'border-primary/40 bg-primary/[0.02]' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1A1827]'} overflow-hidden transition-all shadow-2xs" data-unit-id="${uId}">
+          <div
+            class="unit-tree-node rounded-xl border ${isUnitActive ? 'border-primary/40 bg-primary/[0.02]' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#18181b]'} overflow-hidden transition-all shadow-2xs"
+            data-unit-id="${uId}"
+            data-unit-idx="${uIdx}"
+            draggable="${!isLocked ? 'true' : 'false'}"
+          >
             <!-- Unit Header -->
             <div class="p-3 bg-[#FAF9F5] dark:bg-[#202020] border-b border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
+              <div class="flex items-center gap-1.5 min-w-0">
+                ${!isLocked ? `
+                  <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] dark:text-[#6D6C68] hover:text-primary cursor-grab active:cursor-grabbing shrink-0 drag-handle-unit select-none" title="Kéo thả để sắp xếp thứ tự Chương">drag_indicator</span>
+                ` : ''}
                 <span class="w-6 h-6 rounded-lg bg-primary/10 text-primary font-bold text-[11px] flex items-center justify-center shrink-0">
                   ${uIdx + 1}
                 </span>
@@ -937,7 +1014,7 @@ class InstructorView {
               </div>
 
               <!-- Unit Controls -->
-              <div class="flex items-center gap-0.5 shrink-0">
+              <div class="flex items-center gap-0.5 shrink-0" onclick="event.stopPropagation()">
                 ${!isLocked ? `
                   <button type="button" class="btn-unit-move-up p-1 rounded hover:bg-[#E8E6DF] dark:hover:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] transition-colors cursor-pointer" data-idx="${uIdx}" title="Di chuyển lên" ${uIdx === 0 ? 'disabled style="opacity: 0.3;"' : ''}>
                     <span class="material-symbols-outlined text-[15px]">arrow_upward</span>
@@ -956,10 +1033,10 @@ class InstructorView {
             </div>
 
             <!-- Lessons List -->
-            <div class="p-1.5 space-y-1">
+            <div class="p-1.5 space-y-1 unit-lessons-dropzone" data-unit-id="${uId}">
               ${uLessons.length === 0 ? `
-                <div class="py-2.5 px-3 text-center text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] italic">
-                  Chưa có bài giảng trong chương này.
+                <div class="py-2.5 px-3 text-center text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] italic border border-dashed border-transparent rounded-lg empty-lesson-placeholder">
+                  Chưa có bài giảng trong chương này. Kéo thả bài vào đây hoặc tạo mới.
                 </div>
               ` : uLessons.map((l, lIdx) => {
                 const lId = l.lesson_id || l.id;
@@ -979,16 +1056,19 @@ class InstructorView {
                     class="lesson-tree-item p-2 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition-all ${isSelected ? 'bg-primary/10 border border-primary text-primary font-bold shadow-2xs' : 'hover:bg-[#FAF9F5] dark:hover:bg-[#202020] text-[#222120] dark:text-[#EDEDEB] border border-transparent'}"
                     data-lesson-id="${lId}"
                     data-unit-id="${uId}"
+                    data-lesson-idx="${lIdx}"
+                    draggable="${!isLocked ? 'true' : 'false'}"
                   >
-                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                      ${!isLocked ? `
+                        <span class="material-symbols-outlined text-[15px] text-[#8F8E8A] dark:text-[#6D6C68] hover:text-primary cursor-grab active:cursor-grabbing shrink-0 drag-handle-lesson select-none" title="Kéo thả bài giảng">drag_indicator</span>
+                      ` : ''}
                       <span class="material-symbols-outlined text-[16px] shrink-0 ${isSelected ? 'text-primary' : 'text-[#8F8E8A] dark:text-[#6D6C68]'}">
                         description
                       </span>
                       <div class="min-w-0 flex-1">
                         <div class="text-xs truncate lesson-item-title ${isSelected ? 'font-bold' : 'font-medium'}">${UI.escapeHtml(l.title)}</div>
                         <div class="flex items-center gap-1.5 text-[10px] text-[#8F8E8A] dark:text-[#6D6C68] font-normal">
-                          <span>${l.estimated_duration_minutes || 15} phút</span>
-                          <span>•</span>
                           <span class="px-1.5 py-0.2 rounded text-[9px] font-bold ${badgeClass}">${badgeText}</span>
                         </div>
                       </div>
@@ -1021,10 +1101,135 @@ class InstructorView {
                   <span>Thêm bài giảng vào chương này</span>
                 </button>
               ` : ''}
+
+              <!-- Chapter Assessment Slot -->
+              ${uExam ? (() => {
+                const qCount = Number(uExam.questions_count ?? uExam.question_count ?? (uExam.questions ? uExam.questions.length : 0));
+                const asmId = uExam.assessment_id || uExam.id;
+                return `
+                  <div class="mt-2 pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
+                    <div class="p-2.5 rounded-xl border border-purple-200 dark:border-purple-900/60 bg-purple-50/50 dark:bg-purple-950/20 flex flex-col gap-2">
+                      <div class="flex items-center justify-between gap-1.5">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <span class="w-6 h-6 rounded-lg bg-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                            <span class="material-symbols-outlined text-[15px]">quiz</span>
+                          </span>
+                          <div class="min-w-0">
+                            <div class="text-[11px] font-bold text-purple-950 dark:text-purple-200 truncate" title="${UI.escapeHtml(uExam.title)}">
+                              ${UI.escapeHtml(uExam.title)}
+                            </div>
+                            <div class="text-[10px] text-purple-700/80 dark:text-purple-300/80">
+                              Bài kiểm tra Chương • ${qCount} câu • ${uExam.time_limit_minutes || 45}p
+                            </div>
+                          </div>
+                        </div>
+                        ${UI.statusBadge(uExam.status)}
+                      </div>
+                      <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-purple-100 dark:border-purple-900/40">
+                        <button
+                          type="button"
+                          class="btn-asm-results px-2 py-1 rounded-md bg-white dark:bg-[#202020] hover:bg-purple-100 dark:hover:bg-purple-900/40 text-purple-800 dark:text-purple-200 text-[10px] font-bold transition-colors border border-purple-200 dark:border-purple-800 flex items-center gap-1 cursor-pointer"
+                          data-asm-id="${asmId}"
+                          data-asm-title="${UI.escapeHtml(uExam.title)}"
+                        >
+                          <span class="material-symbols-outlined text-[13px] text-primary">bar_chart</span>
+                          <span>Bảng điểm</span>
+                        </button>
+                        <a
+                          href="#/instructor/exams?course_id=${cId}&assessment_id=${asmId}"
+                          class="px-2 py-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition-colors flex items-center gap-1"
+                        >
+                          <span class="material-symbols-outlined text-[13px]">edit_note</span>
+                          <span>Sửa đề</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              })() : (!isLocked ? `
+                <div class="mt-2 pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
+                  <a
+                    href="#/instructor/exams?course_id=${cId}&unit_id=${uId}&unit_title=${encodeURIComponent(unit.title)}"
+                    class="w-full py-1.5 px-2.5 rounded-lg border border-dashed border-purple-300 dark:border-purple-800 hover:border-purple-500 bg-purple-50/30 dark:bg-purple-950/20 text-[11px] font-bold text-purple-700 dark:text-purple-300 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">quiz</span>
+                    <span>+ Tạo bài kiểm tra chương</span>
+                  </a>
+                </div>
+              ` : '')}
             </div>
           </div>
         `;
       }).join('');
+
+      // Dedicated Final Test Block at bottom of tree
+      const finalExam = assessments.find(a => a.assessment_type === 'FINAL_EXAM' || /final|kết thúc môn|thi hết môn/i.test(a.title) || (!a.learning_unit_id && !(a.description && a.description.includes('unit_id:'))));
+      if (finalExam) {
+        const fCount = Number(finalExam.questions_count ?? finalExam.question_count ?? (finalExam.questions ? finalExam.questions.length : 0));
+        const fId = finalExam.assessment_id || finalExam.id;
+        treeContainer.innerHTML += `
+          <div class="mt-3 p-3 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50/40 dark:bg-amber-950/20 shadow-2xs space-y-2">
+            <div class="flex items-center justify-between gap-1.5">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-6 h-6 rounded-lg bg-amber-500 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  <span class="material-symbols-outlined text-[16px]">military_tech</span>
+                </span>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Final Test</span>
+                    ${UI.statusBadge(finalExam.status)}
+                  </div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white truncate" title="${UI.escapeHtml(finalExam.title)}">
+                    ${UI.escapeHtml(finalExam.title)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="text-[10px] text-slate-600 dark:text-slate-300 flex items-center gap-2">
+              <span>${fCount} câu hỏi</span>
+              <span>•</span>
+              <span>${finalExam.time_limit_minutes || 60} phút</span>
+              <span>•</span>
+              <span>${finalExam.total_points || 10}đ</span>
+            </div>
+            <div class="flex items-center justify-end gap-1.5 pt-1.5 border-t border-amber-200 dark:border-amber-900/60">
+              <button
+                type="button"
+                class="btn-asm-results px-2 py-1 rounded-md bg-white dark:bg-[#202020] hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-[10px] font-bold transition-colors border border-amber-200 dark:border-amber-800 flex items-center gap-1 cursor-pointer"
+                data-asm-id="${fId}"
+                data-asm-title="${UI.escapeHtml(finalExam.title)}"
+              >
+                <span class="material-symbols-outlined text-[13px] text-primary">bar_chart</span>
+                <span>Bảng điểm</span>
+              </button>
+              <a
+                href="#/instructor/exams?course_id=${cId}&assessment_id=${fId}"
+                class="px-2 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold transition-colors flex items-center gap-1"
+              >
+                <span class="material-symbols-outlined text-[13px]">edit_note</span>
+                <span>Sửa đề thi</span>
+              </a>
+            </div>
+          </div>
+        `;
+      } else if (!isLocked) {
+        treeContainer.innerHTML += `
+          <div class="mt-3 p-3 rounded-xl border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-950/10 text-center space-y-1.5">
+            <div class="flex items-center justify-center gap-1 text-amber-800 dark:text-amber-300 text-xs font-bold">
+              <span class="material-symbols-outlined text-[16px]">military_tech</span>
+              <span>Final Test (Bài thi kết thúc môn)</span>
+            </div>
+            <p class="text-[10px] text-slate-500 dark:text-slate-400">Đánh giá toàn khóa học khi sinh viên hoàn thành đủ bài học.</p>
+            <a
+              href="#/instructor/exams?course_id=${cId}&is_final=1"
+              class="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition-all shadow-xs cursor-pointer mt-1"
+            >
+              <span class="material-symbols-outlined text-[13px]">add</span>
+              <span>Thiết lập Final Test</span>
+            </a>
+          </div>
+        `;
+      }
 
       // Wire tree click listeners
       treeContainer.querySelectorAll('.lesson-tree-item').forEach(item => {
@@ -1042,7 +1247,7 @@ class InstructorView {
           const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(uId));
           if (!unit) return;
           const title = await UI.prompt('Đổi tên Chương', `Tên mới cho "${unit.title}":`, unit.title, 'Tên Chương bài học', 1, 'Lưu tên Chương', { maxLength: 200 });
-          if (!title || title.trim() === unit.title) return;
+          if (!title || !title.trim() || title.trim() === unit.title) return;
           try {
             await ApiClient.updateLearningUnit(uId, { title: title.trim() });
             unit.title = title.trim();
@@ -1191,7 +1396,196 @@ class InstructorView {
           handleCreateLessonInUnit(uId);
         });
       });
+
+      // Native HTML5 Drag and Drop for Chapters & Lessons
+      if (!isLocked) {
+        setupTreeDragAndDrop();
+      }
     };
+
+    // Setup Drag and Drop listeners for units and lessons
+    function setupTreeDragAndDrop() {
+      // 1. Chapter Drag & Drop
+      treeContainer.querySelectorAll('.unit-tree-node').forEach(unitNode => {
+        unitNode.addEventListener('dragstart', (e) => {
+          // If dragging initiated from within a lesson, let the lesson handler deal with it
+          if (e.target.closest('.lesson-tree-item')) return;
+          const unitIdx = parseInt(unitNode.dataset.unitIdx, 10);
+          const unitId = unitNode.dataset.unitId;
+          e.dataTransfer.setData('application/json', JSON.stringify({ type: 'unit', unitIdx, unitId }));
+          e.dataTransfer.effectAllowed = 'move';
+          unitNode.classList.add('opacity-50', 'ring-2', 'ring-primary');
+        });
+
+        unitNode.addEventListener('dragend', () => {
+          unitNode.classList.remove('opacity-50', 'ring-2', 'ring-primary');
+          treeContainer.querySelectorAll('.unit-tree-node').forEach(n => {
+            n.classList.remove('border-primary', 'bg-primary/5', 'ring-2');
+          });
+        });
+
+        unitNode.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        });
+
+        unitNode.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          unitNode.classList.remove('border-primary', 'bg-primary/5', 'ring-2');
+
+          let payload = null;
+          try {
+            payload = JSON.parse(e.dataTransfer.getData('application/json'));
+          } catch {
+            return;
+          }
+          if (!payload) return;
+
+          // Dropping a chapter onto another chapter
+          if (payload.type === 'unit') {
+            const fromIdx = payload.unitIdx;
+            const toIdx = parseInt(unitNode.dataset.unitIdx, 10);
+            if (isNaN(fromIdx) || isNaN(toIdx) || fromIdx === toIdx) return;
+            const [movedUnit] = currentUnits.splice(fromIdx, 1);
+            currentUnits.splice(toIdx, 0, movedUnit);
+            const orderedIds = currentUnits.map(u => u.learning_unit_id || u.id);
+            try {
+              await ApiClient.reorderLearningUnits(cId, orderedIds);
+              renderTree();
+              UI.showToast('Đã di chuyển vị trí Chương.', 'success');
+            } catch (err) {
+              UI.showToast(err.message || 'Lỗi sắp xếp Chương.', 'error');
+            }
+            return;
+          }
+
+          // Dropping a lesson directly onto a chapter container
+          if (payload.type === 'lesson') {
+            const targetUnitId = unitNode.dataset.unitId;
+            const srcUnitId = payload.sourceUnitId;
+            const lessonId = payload.lessonId;
+            if (String(targetUnitId) === String(srcUnitId)) return;
+
+            const srcUnit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(srcUnitId));
+            const dstUnit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
+            if (!srcUnit || !dstUnit) return;
+
+            const movedIdx = (srcUnit.lessons || []).findIndex(l => String(l.lesson_id || l.id) === String(lessonId));
+            if (movedIdx === -1) return;
+
+            const [movedLesson] = srcUnit.lessons.splice(movedIdx, 1);
+            movedLesson.learning_unit_id = targetUnitId;
+            if (!dstUnit.lessons) dstUnit.lessons = [];
+            dstUnit.lessons.push(movedLesson);
+
+            try {
+              await ApiClient.updateLesson(lessonId, { learning_unit_id: targetUnitId });
+              renderTree();
+              UI.showToast('Đã chuyển bài giảng vào Chương mới.', 'success');
+            } catch (err) {
+              UI.showToast(err.message || 'Lỗi chuyển bài giảng sang Chương mới.', 'error');
+            }
+          }
+        });
+      });
+
+      // 2. Lesson Drag & Drop
+      treeContainer.querySelectorAll('.lesson-tree-item').forEach(lessonItem => {
+        lessonItem.addEventListener('dragstart', (e) => {
+          e.stopPropagation();
+          const lessonId = lessonItem.dataset.lessonId;
+          const unitId = lessonItem.dataset.unitId;
+          const lessonIdx = parseInt(lessonItem.dataset.lessonIdx, 10);
+          e.dataTransfer.setData('application/json', JSON.stringify({
+            type: 'lesson',
+            lessonId,
+            sourceUnitId: unitId,
+            lessonIdx
+          }));
+          e.dataTransfer.effectAllowed = 'move';
+          lessonItem.classList.add('opacity-40', 'border-primary');
+        });
+
+        lessonItem.addEventListener('dragend', () => {
+          lessonItem.classList.remove('opacity-40', 'border-primary');
+          treeContainer.querySelectorAll('.lesson-tree-item').forEach(l => {
+            l.classList.remove('border-t-2', 'border-b-2', 'border-primary');
+          });
+        });
+
+        lessonItem.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          lessonItem.classList.add('border-b-2', 'border-primary');
+        });
+
+        lessonItem.addEventListener('dragleave', () => {
+          lessonItem.classList.remove('border-b-2', 'border-primary');
+        });
+
+        lessonItem.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          lessonItem.classList.remove('border-b-2', 'border-primary');
+
+          let payload = null;
+          try {
+            payload = JSON.parse(e.dataTransfer.getData('application/json'));
+          } catch {
+            return;
+          }
+          if (!payload || payload.type !== 'lesson') return;
+
+          const targetUnitId = lessonItem.dataset.unitId;
+          const targetLessonIdx = parseInt(lessonItem.dataset.lessonIdx, 10);
+          const srcUnitId = payload.sourceUnitId;
+          const srcLessonIdx = payload.lessonIdx;
+          const srcLessonId = payload.lessonId;
+
+          // Reordering within the SAME unit
+          if (String(srcUnitId) === String(targetUnitId)) {
+            const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(srcUnitId));
+            if (!unit || !unit.lessons || srcLessonIdx === targetLessonIdx) return;
+            const [movedLesson] = unit.lessons.splice(srcLessonIdx, 1);
+            unit.lessons.splice(targetLessonIdx, 0, movedLesson);
+            const orderedIds = unit.lessons.map(l => l.lesson_id || l.id);
+            try {
+              await ApiClient.reorderLessons(cId, orderedIds);
+              renderTree();
+              UI.showToast('Đã di chuyển thứ tự bài giảng.', 'success');
+            } catch (err) {
+              UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
+            }
+            return;
+          }
+
+          // Moving to a DIFFERENT unit at a specific index
+          const srcUnit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(srcUnitId));
+          const dstUnit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
+          if (!srcUnit || !dstUnit) return;
+
+          const movedIdx = (srcUnit.lessons || []).findIndex(l => String(l.lesson_id || l.id) === String(srcLessonId));
+          if (movedIdx === -1) return;
+
+          const [movedLesson] = srcUnit.lessons.splice(movedIdx, 1);
+          movedLesson.learning_unit_id = targetUnitId;
+          if (!dstUnit.lessons) dstUnit.lessons = [];
+          dstUnit.lessons.splice(targetLessonIdx, 0, movedLesson);
+
+          try {
+            await ApiClient.updateLesson(srcLessonId, { learning_unit_id: targetUnitId });
+            const orderedIds = dstUnit.lessons.map(l => l.lesson_id || l.id);
+            await ApiClient.reorderLessons(cId, orderedIds);
+            renderTree();
+            UI.showToast('Đã chuyển bài giảng sang Chương mới.', 'success');
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi chuyển bài giảng sang Chương mới.', 'error');
+          }
+        });
+      });
+    }
 
     // Handler to create a new Learning Unit
     const handleAddUnit = async () => {
@@ -1235,7 +1629,6 @@ class InstructorView {
         const created = await ApiClient.createLesson(cId, {
           title: title.trim(),
           learning_unit_id: targetUnitId,
-          estimated_duration_minutes: 15,
           markdown_content: `# ${title.trim()}\n\nNội dung bài học.`,
           status: 'DRAFT'
         });
@@ -1244,7 +1637,6 @@ class InstructorView {
           lesson_id: lId,
           id: lId,
           title: title.trim(),
-          estimated_duration_minutes: 15,
           status: 'DRAFT',
           learning_unit_id: targetUnitId
         };
@@ -1319,7 +1711,6 @@ class InstructorView {
 
         activeLessonMeta = {
           title: lessonData.title || 'Bài giảng',
-          duration: lessonData.estimated_duration_minutes || 15,
           summary: lessonData.summary || '',
           status: lessonData.status || 'DRAFT'
         };
@@ -1351,7 +1742,7 @@ class InstructorView {
         typeIcon = 'description';
         iconColor = 'text-blue-600 bg-blue-50 dark:bg-blue-950/40';
       } else if (block.type === 'quiz') {
-        typeLabel = 'Câu hỏi trắc nghiệm nhanh';
+        typeLabel = 'Câu hỏi tương tác';
         typeIcon = 'quiz';
         iconColor = 'text-purple-600 bg-purple-50 dark:bg-purple-950/40';
       }
@@ -1527,49 +1918,155 @@ class InstructorView {
           </div>
         `;
       } else if (block.type === 'quiz') {
+        const qType = block.q_type || 'MULTIPLE_CHOICE';
         const options = Array.isArray(block.options) && block.options.length ? block.options : ['', '', '', ''];
         const correctIdx = Number(block.correct_index || 0);
+        const blankAnswer = block.blank_answer || '';
+        const pairs = Array.isArray(block.pairs) && block.pairs.length ? block.pairs : [
+          { left: '', right: '' },
+          { left: '', right: '' }
+        ];
 
         bodyHtml = `
-          <div class="space-y-3">
+          <div class="space-y-3.5" data-active-qtype="${qType}">
+            <!-- Segmented Control for Question Type -->
+            <div class="flex items-center justify-between gap-2 p-1.5 bg-[#FAF9F5] dark:bg-[#181818] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <span class="text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99] px-2 uppercase tracking-wider">Thể loại:</span>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="btn-quiz-type-select px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${qType === 'MULTIPLE_CHOICE' ? 'bg-primary text-white shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2A2928]'}"
+                  data-qtype-select="MULTIPLE_CHOICE"
+                  ${isLocked ? 'disabled' : ''}
+                >
+                  Trắc nghiệm
+                </button>
+                <button
+                  type="button"
+                  class="btn-quiz-type-select px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${qType === 'FILL_BLANK' ? 'bg-primary text-white shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2A2928]'}"
+                  data-qtype-select="FILL_BLANK"
+                  ${isLocked ? 'disabled' : ''}
+                >
+                  Điền khuyết
+                </button>
+                <button
+                  type="button"
+                  class="btn-quiz-type-select px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${qType === 'MATCHING' ? 'bg-primary text-white shadow-xs' : 'text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#E8E6DF]/50 dark:hover:bg-[#2A2928]'}"
+                  data-qtype-select="MATCHING"
+                  ${isLocked ? 'disabled' : ''}
+                >
+                  Nối từ
+                </button>
+              </div>
+            </div>
+
+            <!-- Question Prompt Input -->
             <div class="space-y-1">
               <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                Câu hỏi trắc nghiệm: <span class="text-rose-500">*</span>
+                ${qType === 'FILL_BLANK' ? 'Câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : 'Nội dung câu hỏi trắc nghiệm:')} <span class="text-rose-500">*</span>
               </label>
               <input
                 type="text"
-                class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
-                placeholder="Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản?"
+                class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all font-medium"
+                placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___].' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản?')}"
                 value="${UI.escapeHtml(block.question || '')}"
                 ${isLocked ? 'disabled' : ''}
               />
             </div>
-            <div class="space-y-2">
-              <label class="block text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                Các phương án lựa chọn (Chọn nút tròn để chỉ định đáp án đúng):
-              </label>
-              <div class="space-y-1.5 quiz-options-container">
-                ${options.map((opt, oIdx) => `
-                  <div class="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="quiz_correct_${bId}"
-                      value="${oIdx}"
-                      ${correctIdx === oIdx ? 'checked' : ''}
-                      class="w-4 h-4 text-primary cursor-pointer"
-                      ${isLocked ? 'disabled' : ''}
-                    />
-                    <input
-                      type="text"
-                      class="block-quiz-opt-text flex-1 px-3 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
-                      placeholder="Phương án ${String.fromCharCode(65 + oIdx)}"
-                      value="${UI.escapeHtml(opt || '')}"
-                      ${isLocked ? 'disabled' : ''}
-                    />
-                  </div>
-                `).join('')}
+
+            <!-- Specific Type Body -->
+            ${qType === 'MULTIPLE_CHOICE' ? `
+              <div class="space-y-2">
+                <label class="block text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                  Các phương án lựa chọn (Chọn nút tròn để chỉ định đáp án đúng):
+                </label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 quiz-options-container">
+                  ${options.map((opt, oIdx) => `
+                    <div class="flex items-center gap-2 p-1.5 rounded-xl border ${correctIdx === oIdx ? 'border-primary bg-primary/5' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E]'} transition-all">
+                      <input
+                        type="radio"
+                        name="quiz_correct_${bId}"
+                        value="${oIdx}"
+                        ${correctIdx === oIdx ? 'checked' : ''}
+                        class="w-4 h-4 ml-1.5 text-primary cursor-pointer shrink-0"
+                        ${isLocked ? 'disabled' : ''}
+                      />
+                      <span class="text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] w-4 text-center shrink-0">${String.fromCharCode(65 + oIdx)}</span>
+                      <input
+                        type="text"
+                        class="block-quiz-opt-text flex-1 px-2.5 py-1.5 rounded-lg border-0 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:ring-0"
+                        placeholder="Phương án ${String.fromCharCode(65 + oIdx)}"
+                        value="${UI.escapeHtml(opt || '')}"
+                        ${isLocked ? 'disabled' : ''}
+                      />
+                    </div>
+                  `).join('')}
+                </div>
               </div>
-            </div>
+            ` : ''}
+
+            ${qType === 'FILL_BLANK' ? `
+              <div class="space-y-2 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20">
+                <label class="block text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                  Đáp án chính xác cho vị trí [___]: <span class="text-rose-500">*</span>
+                </label>
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
+                  <input
+                    type="text"
+                    class="block-quiz-blank-answer flex-1 px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-emerald-600"
+                    placeholder="Nhập từ hoặc cụm từ cần điền (Ví dụ: Hà Nội)"
+                    value="${UI.escapeHtml(blankAnswer)}"
+                    ${isLocked ? 'disabled' : ''}
+                  />
+                </div>
+              </div>
+            ` : ''}
+
+            ${qType === 'MATCHING' ? `
+              <div class="space-y-2 p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-bold text-amber-800 dark:text-amber-300">
+                    Các cặp nối từ tương ứng (Vế A ghép đúng với Vế B):
+                  </label>
+                  ${!isLocked ? `
+                    <button type="button" class="btn-add-quiz-pair text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer">
+                      <span class="material-symbols-outlined text-[14px]">add</span>
+                      <span>Thêm cặp ghép</span>
+                    </button>
+                  ` : ''}
+                </div>
+                <div class="space-y-2 quiz-pairs-container">
+                  ${pairs.map((p, pIdx) => `
+                    <div class="flex items-center gap-2 block-quiz-pair-row" data-pair-idx="${pIdx}">
+                      <span class="text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99] w-4 text-center shrink-0">${pIdx + 1}.</span>
+                      <input
+                        type="text"
+                        class="block-quiz-pair-left flex-1 px-3 py-1.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+                        placeholder="Vế A (Khái niệm ${pIdx + 1})"
+                        value="${UI.escapeHtml(p.left || '')}"
+                        ${isLocked ? 'disabled' : ''}
+                      />
+                      <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] shrink-0">arrow_forward</span>
+                      <input
+                        type="text"
+                        class="block-quiz-pair-right flex-1 px-3 py-1.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+                        placeholder="Vế B (Ý nghĩa ${pIdx + 1})"
+                        value="${UI.escapeHtml(p.right || '')}"
+                        ${isLocked ? 'disabled' : ''}
+                      />
+                      ${!isLocked && pairs.length > 2 ? `
+                        <button type="button" class="btn-remove-quiz-pair p-1 text-rose-500 hover:bg-rose-100 rounded cursor-pointer" data-pair-idx="${pIdx}" title="Xóa cặp này">
+                          <span class="material-symbols-outlined text-[15px]">close</span>
+                        </button>
+                      ` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Explanation -->
             <div class="space-y-1">
               <label class="block text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]">
                 Giải thích ngắn khi học viên trả lời (tùy chọn):
@@ -1577,10 +2074,30 @@ class InstructorView {
               <input
                 type="text"
                 class="block-quiz-explanation w-full px-3 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
-                placeholder="VD: HTML là viết tắt của HyperText Markup Language."
+                placeholder="VD: Kiến thức này được đề cập trong bài giảng."
                 value="${UI.escapeHtml(block.explanation || '')}"
                 ${isLocked ? 'disabled' : ''}
               />
+            </div>
+
+            <!-- Quiz Passing Threshold -->
+            <div class="flex items-center gap-2.5 p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/60 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-purple-600 dark:text-purple-400">verified</span>
+              <label class="font-bold text-purple-950 dark:text-purple-200 shrink-0">
+                Tỷ lệ đạt yêu cầu (%):
+              </label>
+              <input
+                type="number"
+                min="50"
+                max="100"
+                step="5"
+                class="block-quiz-passing-percent w-20 px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-center text-purple-900 dark:text-purple-100 outline-none focus:border-purple-500"
+                value="${block.passing_percent || activeLessonMeta.quiz_passing_percent || 80}"
+                ${isLocked ? 'disabled' : ''}
+              />
+              <span class="text-[11px] text-purple-700 dark:text-purple-300">
+                (Mặc định 80%. Nếu học viên thi dưới mức này sẽ không được xem đáp án và phải làm lại từ đầu)
+              </span>
             </div>
           </div>
         `;
@@ -1705,34 +2222,17 @@ class InstructorView {
               />
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
-              <div class="space-y-1">
-                <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
-                  Thời lượng ước tính (Phút)
-                </label>
-                <input
-                  type="number"
-                  id="input-lesson-duration"
-                  min="1"
-                  max="600"
-                  value="${activeLessonMeta.duration || 15}"
-                  class="w-full px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#1E1E1E] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all"
-                  ${isLocked ? 'disabled' : ''}
-                />
-              </div>
-
-              <div class="sm:col-span-2 space-y-1">
-                <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
-                  Tóm tắt nội dung bài học
-                </label>
-                <textarea
-                  id="input-lesson-summary"
-                  rows="2"
-                  class="w-full px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all resize-none"
-                  placeholder="Mô tả tóm tắt mục tiêu hoặc kiến thức cốt lõi..."
-                  ${isLocked ? 'disabled' : ''}
-                >${UI.escapeHtml(activeLessonMeta.summary || '')}</textarea>
-              </div>
+            <div class="space-y-1">
+              <label class="block text-xs font-bold uppercase tracking-wider text-[#5C5B57] dark:text-[#9E9D99]">
+                Tóm tắt nội dung bài học
+              </label>
+              <textarea
+                id="input-lesson-summary"
+                rows="2"
+                class="w-full px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all resize-none"
+                placeholder="Mô tả tóm tắt mục tiêu hoặc kiến thức cốt lõi..."
+                ${isLocked ? 'disabled' : ''}
+              >${UI.escapeHtml(activeLessonMeta.summary || '')}</textarea>
             </div>
           </div>
 
@@ -1743,10 +2243,9 @@ class InstructorView {
 
           <!-- Add Block Toolbar -->
           ${!isLocked ? `
-            <div class="p-4 sm:p-5 rounded-2xl bg-[#FAF9F5] dark:bg-[#1A1827] border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs space-y-3">
+            <div class="p-4 sm:p-5 rounded-2xl bg-[#FAF9F5] dark:bg-[#18181b] border border-[#E8E6DF] dark:border-[#2E2D2B] shadow-2xs space-y-3">
               <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-[18px] text-primary">add_circle</span>
-                <span class="text-xs font-bold uppercase tracking-wider text-[#222120] dark:text-[#EDEDEB]">Thêm khối nội dung vào bài giảng:</span>
+                <span class="text-xs font-bold uppercase tracking-wider text-[#222120] dark:text-[#EDEDEB]">Thêm nội dung:</span>
               </div>
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <button
@@ -1755,7 +2254,7 @@ class InstructorView {
                   class="py-2.5 px-3 rounded-xl bg-white dark:bg-[#202020] hover:bg-primary/5 hover:border-primary border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[17px] text-primary">subject</span>
-                  <span>+ Văn bản</span>
+                  <span>Bài học</span>
                 </button>
                 <button
                   type="button"
@@ -1763,7 +2262,7 @@ class InstructorView {
                   class="py-2.5 px-3 rounded-xl bg-white dark:bg-[#202020] hover:bg-rose-50 hover:border-rose-300 dark:hover:bg-rose-950/40 border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[17px] text-rose-600">play_circle</span>
-                  <span>+ Video</span>
+                  <span>Video</span>
                 </button>
                 <button
                   type="button"
@@ -1771,7 +2270,7 @@ class InstructorView {
                   class="py-2.5 px-3 rounded-xl bg-white dark:bg-[#202020] hover:bg-blue-50 hover:border-blue-300 dark:hover:bg-blue-950/40 border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[17px] text-blue-600">description</span>
-                  <span>+ Tài liệu</span>
+                  <span>Tài liệu</span>
                 </button>
                 <button
                   type="button"
@@ -1779,7 +2278,7 @@ class InstructorView {
                   class="py-2.5 px-3 rounded-xl bg-white dark:bg-[#202020] hover:bg-purple-50 hover:border-purple-300 dark:hover:bg-purple-950/40 border border-[#E8E6DF] dark:border-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <span class="material-symbols-outlined text-[17px] text-purple-600">quiz</span>
-                  <span>+ Trắc nghiệm</span>
+                  <span>Câu hỏi</span>
                 </button>
               </div>
             </div>
@@ -1836,7 +2335,6 @@ class InstructorView {
             const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(activeLessonId));
             if (l) {
               l.title = activeLessonMeta.title;
-              l.estimated_duration_minutes = activeLessonMeta.duration;
               if (l.status === 'PUBLISHED') l.status = 'MODIFIED';
             }
           }
@@ -1909,14 +2407,63 @@ class InstructorView {
           activeBlocks.push({
             id: 'blk_' + Math.random().toString(36).slice(2, 9),
             type: 'quiz',
+            q_type: 'MULTIPLE_CHOICE',
             question: '',
             options: ['', '', '', ''],
             correct_index: 0,
+            blank_answer: '',
+            pairs: [
+              { left: '', right: '' },
+              { left: '', right: '' }
+            ],
             explanation: ''
           });
           renderEditor();
         };
       }
+
+      // Quiz type selection and pair management
+      editorContainer.querySelectorAll('.btn-quiz-type-select').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const card = btn.closest('.curriculum-block-card');
+          const bIdx = parseInt(card.dataset.blockIdx, 10);
+          const newType = btn.dataset.qtypeSelect;
+          scrapeBlocksFromDom();
+          if (activeBlocks[bIdx]) {
+            activeBlocks[bIdx].q_type = newType;
+            renderEditor();
+          }
+        };
+      });
+
+      editorContainer.querySelectorAll('.btn-add-quiz-pair').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const card = btn.closest('.curriculum-block-card');
+          const bIdx = parseInt(card.dataset.blockIdx, 10);
+          scrapeBlocksFromDom();
+          if (activeBlocks[bIdx]) {
+            if (!activeBlocks[bIdx].pairs) activeBlocks[bIdx].pairs = [];
+            activeBlocks[bIdx].pairs.push({ left: '', right: '' });
+            renderEditor();
+          }
+        };
+      });
+
+      editorContainer.querySelectorAll('.btn-remove-quiz-pair').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const card = btn.closest('.curriculum-block-card');
+          const bIdx = parseInt(card.dataset.blockIdx, 10);
+          const pIdx = parseInt(btn.dataset.pairIdx, 10);
+          scrapeBlocksFromDom();
+          if (activeBlocks[bIdx] && activeBlocks[bIdx].pairs) {
+            activeBlocks[bIdx].pairs.splice(pIdx, 1);
+            renderEditor();
+          }
+        };
+      });
 
       // Reorder and delete blocks
       editorContainer.querySelectorAll('.btn-block-move-up').forEach(btn => {
@@ -2150,7 +2697,6 @@ class InstructorView {
             <div class="space-y-6 text-sm font-sans">
               <div class="border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-4">
                 <h3 class="text-xl font-bold text-[#222120] dark:text-[#EDEDEB]">${UI.escapeHtml(payload.title)}</h3>
-                <p class="text-xs text-[#8F8E8A] mt-1">Thời lượng: ${payload.estimated_duration_minutes} phút</p>
                 ${payload.summary ? `<p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] mt-2 italic">${UI.escapeHtml(payload.summary)}</p>` : ''}
               </div>
 
@@ -2209,6 +2755,59 @@ class InstructorView {
     if (btnTreeAddUnit) btnTreeAddUnit.onclick = handleAddUnit;
     if (btnTreeAddLesson) btnTreeAddLesson.onclick = handleAddLessonGlobal;
 
+    // Resizable sidebar for Curriculum Tree
+    const setupSidebarResizer = () => {
+      const treePane = document.getElementById('curriculum-tree-pane');
+      const resizer = document.getElementById('curriculum-sidebar-resizer');
+      if (!treePane || !resizer) return;
+
+      const savedWidth = typeof localStorage !== 'undefined' ? localStorage.getItem('pwd301_curriculum_sidebar_width') : null;
+      if (savedWidth) {
+        const num = parseInt(savedWidth, 10);
+        if (num >= 260 && num <= 650) {
+          treePane.style.width = `${num}px`;
+          treePane.classList.remove('lg:w-80');
+        }
+      }
+
+      let isResizing = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      resizer.onmousedown = (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = treePane.getBoundingClientRect().width;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMouseMove = (moveEvent) => {
+          if (!isResizing) return;
+          const delta = moveEvent.clientX - startX;
+          const newWidth = Math.min(650, Math.max(260, startWidth + delta));
+          treePane.style.width = `${newWidth}px`;
+          treePane.classList.remove('lg:w-80');
+        };
+
+        const onMouseUp = () => {
+          if (!isResizing) return;
+          isResizing = false;
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          const finalWidth = Math.round(treePane.getBoundingClientRect().width);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('pwd301_curriculum_sidebar_width', String(finalWidth));
+          }
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      };
+    };
+    setupSidebarResizer();
+
     // Initial rendering
     renderTree();
     if (activeLessonId) {
@@ -2231,7 +2830,7 @@ class InstructorView {
               <span>Danh sách khóa học</span>
             </a>
           </div>
-          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#1A1827] border border-slate-200/80 dark:border-slate-800 text-center space-y-4 shadow-sm">
+          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#18181b] border border-slate-200/80 dark:border-slate-800 text-center space-y-4 shadow-sm">
             <div class="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
               <span class="material-symbols-outlined text-[28px]">search_off</span>
             </div>
@@ -2456,12 +3055,86 @@ class InstructorView {
                       <span class="material-symbols-outlined text-[16px]">lock_clock</span>
                       <span>Đợt cập nhật đang chờ duyệt</span>
                     </button>
-                  ` : `
+                    <button
+                      type="button"
+                      id="btn-view-changeset-diff"
+                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">difference</span>
+                      <span>Xem thay đổi</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-retract-changeset"
+                      class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                      title="Rút lại đợt cập nhật để tiếp tục chỉnh sửa"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">undo</span>
+                      <span>Rút lại yêu cầu</span>
+                    </button>
+                  ` : changesetStatus && changesetStatus.status === 'REJECTED' ? `
+                    <button
+                      type="button"
+                      id="btn-view-changeset-diff"
+                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Xem đối chiếu các thay đổi"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">difference</span>
+                      <span>Xem thay đổi</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-submit-changeset-again"
+                      class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                      title="Gửi đợt cập nhật sau khi hoàn thiện"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">send</span>
+                      <span>Gửi duyệt đợt cập nhật</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-discard-changeset-rejected"
+                      class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      title="Hủy bỏ bản nháp đã bị từ chối"
+                    >
+                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                    </button>
+                  ` : changesetStatus && (changesetStatus.has_changes || changesetStatus.changes_count > 0) ? `
+                    <button
+                      type="button"
+                      id="btn-view-changeset-diff"
+                      class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] hover:bg-slate-200 dark:hover:bg-[#282828] text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] transition-colors flex items-center gap-1.5 cursor-pointer"
+                      title="Xem đối chiếu các thay đổi giữa bản gốc và bản nháp"
+                    >
+                      <span class="material-symbols-outlined text-[16px] text-primary">difference</span>
+                      <span>Xem thay đổi</span>
+                      <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-primary/10 text-primary font-black">${changesetStatus.changes_count || 1}</span>
+                    </button>
                     <button
                       type="button"
                       id="btn-submit-course-changeset"
                       class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                       title="Gộp và gửi xét duyệt toàn bộ cập nhật giáo trình môn học"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
+                      <span>Gửi duyệt đợt cập nhật</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-discard-changeset"
+                      class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      title="Hủy bỏ toàn bộ bản nháp"
+                    >
+                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                    </button>
+                  ` : `
+                    <button
+                      type="button"
+                      id="btn-submit-course-changeset"
+                      class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#202020] text-slate-400 dark:text-slate-500 text-xs font-bold border border-slate-200 dark:border-[#2E2D2B] flex items-center gap-1.5 cursor-not-allowed"
+                      disabled
+                      title="Chưa có thay đổi nào trong bản nháp"
                     >
                       <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
                       <span>Gửi duyệt đợt cập nhật</span>
@@ -2475,106 +3148,6 @@ class InstructorView {
               ${UI.escapeHtml(course.description || 'Chưa có mô tả chi tiết cho môn học này.')}
             </p>
           </div>
-
-          <!-- STICKY DRAFT ACTION BAR (Consolidated Course Changeset Model) -->
-          ${(() => {
-            if (!changesetStatus || changesetStatus.status === 'NONE') return '';
-            if (course.status === 'DRAFT' || course.status === 'SUBMITTED_FOR_REVIEW') return '';
-            if (changesetStatus.status === 'PENDING') {
-              return `
-                <div id="curriculum-draft-bar" class="p-4 sm:p-5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0">
-                      <span class="material-symbols-outlined text-[22px]">hourglass_top</span>
-                    </div>
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-bold text-sm text-blue-950 dark:text-blue-200">Đợt cập nhật đang chờ Quản trị viên xét duyệt</span>
-                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-100">
-                          Chờ duyệt
-                        </span>
-                      </div>
-                      <p class="text-xs text-blue-800 dark:text-blue-300 mt-0.5">Khóa học tạm thời khóa chỉnh sửa cho đến khi Quản trị viên phê duyệt hoặc bạn rút lại yêu cầu.</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <button type="button" id="btn-view-changeset-diff" class="px-3.5 py-2 rounded-xl bg-white dark:bg-blue-900/60 hover:bg-blue-100 text-blue-900 dark:text-blue-100 text-xs font-bold border border-blue-300 dark:border-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">difference</span>
-                      <span>Xem thay đổi</span>
-                    </button>
-                    <button type="button" id="btn-retract-changeset" class="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">undo</span>
-                      <span>Rút lại yêu cầu</span>
-                    </button>
-                  </div>
-                </div>
-              `;
-            }
-            if (changesetStatus.status === 'REJECTED') {
-              return `
-                <div id="curriculum-draft-bar" class="p-4 sm:p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
-                      <span class="material-symbols-outlined text-[22px]">gpp_bad</span>
-                    </div>
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-bold text-sm text-rose-950 dark:text-rose-200">Quản trị viên đã từ chối đợt cập nhật</span>
-                      </div>
-                      <p class="text-xs text-rose-800 dark:text-rose-300 mt-0.5">Lý do: <em>${UI.escapeHtml(changesetStatus.review_reason || 'Vui lòng hoàn thiện thêm nội dung')}</em>. Bản nháp đã được giữ lại để bạn chỉnh sửa tiếp.</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <button type="button" id="btn-view-changeset-diff" class="px-3.5 py-2 rounded-xl bg-white dark:bg-rose-900/60 hover:bg-rose-100 text-rose-900 dark:text-rose-100 text-xs font-bold border border-rose-300 dark:border-rose-700 transition-colors flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">difference</span>
-                      <span>Xem thay đổi</span>
-                    </button>
-                    <button type="button" id="btn-submit-changeset-again" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">send</span>
-                      <span>Gửi duyệt lại</span>
-                    </button>
-                    <button type="button" id="btn-discard-changeset-rejected" class="p-2 rounded-xl text-rose-700 dark:text-rose-400 hover:text-rose-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer" title="Hủy bỏ bản nháp">
-                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
-                    </button>
-                  </div>
-                </div>
-              `;
-            }
-            if (changesetStatus.status === 'DRAFT' && (changesetStatus.has_changes || changesetStatus.changes_count > 0)) {
-              return `
-                <div id="curriculum-draft-bar" class="p-4 sm:p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
-                      <span class="material-symbols-outlined text-[22px]">edit_note</span>
-                    </div>
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-bold text-sm text-amber-950 dark:text-amber-200">Nội dung cập nhật</span>
-                        <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100">
-                          ${changesetStatus.added_count || changesetStatus.draft_count || 0} mới • ${changesetStatus.modified_count || 0} sửa • ${changesetStatus.deleted_count || 0} xóa
-                        </span>
-                      </div>
-                      <p class="text-xs text-amber-800 dark:text-amber-300 mt-0.5">Các thay đổi chưa áp dụng vào khóa học đang chạy. Khi soạn xong, bấm "Gửi duyệt toàn bộ" để Admin thẩm định 1 lần duy nhất.</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <button type="button" id="btn-view-changeset-diff" class="px-3.5 py-2 rounded-xl bg-white dark:bg-amber-900/60 hover:bg-amber-100 text-amber-900 dark:text-amber-100 text-xs font-bold border border-amber-300 dark:border-amber-700 transition-colors flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">difference</span>
-                      <span>Xem thay đổi</span>
-                    </button>
-                    <button type="button" id="btn-submit-course-changeset-bar" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
-                      <span class="material-symbols-outlined text-[16px]">send</span>
-                      <span>Gửi duyệt toàn bộ</span>
-                    </button>
-                    <button type="button" id="btn-discard-changeset" class="p-2 rounded-xl text-amber-700 dark:text-amber-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer" title="Hủy bỏ toàn bộ bản nháp">
-                      <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
-                    </button>
-                  </div>
-                </div>
-              `;
-            }
-            return '';
-          })()}
 
           <!-- SECTION 1: SOẠN GIÁO TRÌNH TRỰC QUAN (SINGLE-PAGE CURRICULUM STUDIO) -->
           <div class="space-y-4" id="curriculum-studio-section">
@@ -2590,10 +3163,10 @@ class InstructorView {
               </div>
             </div>
 
-            <!-- Two-Column Studio Layout -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" id="single-page-curriculum-studio">
+            <!-- Flexible Studio Layout with Resizable Sidebar -->
+            <div class="flex flex-col lg:flex-row gap-0 items-start relative w-full" id="single-page-curriculum-studio">
               <!-- Left Column: Cây Giáo trình (Outline Tree) -->
-              <aside class="lg:col-span-5 xl:col-span-4 space-y-4" id="curriculum-tree-pane">
+              <aside class="w-full lg:shrink-0 space-y-4" id="curriculum-tree-pane" style="width: 360px;">
                 <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs space-y-4">
                   <div class="flex items-center justify-between pb-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
                     <div class="flex items-center gap-2">
@@ -2605,27 +3178,17 @@ class InstructorView {
                     </span>
                   </div>
 
-                  <!-- Quick Add Buttons for low-tech instructors -->
-                  <div class="flex items-center gap-2">
+                  <!-- Add Chapter Button (Only Thêm Chương per user request) -->
+                  <div class="flex items-center">
                     <button
                       type="button"
                       id="btn-tree-add-unit"
-                      class="flex-1 py-2 px-3 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-center gap-1.5 transition-colors ${isPending || isFrozen ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}"
+                      class="w-full py-2.5 px-3 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center justify-center gap-1.5 transition-colors ${isPending || isFrozen ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}"
                       ${isPending || isFrozen ? 'disabled' : ''}
                       title="Thêm một Chương bài học mới"
                     >
                       <span class="material-symbols-outlined text-[16px] text-primary">create_new_folder</span>
                       <span>Thêm Chương</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-tree-add-lesson"
-                      class="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs ${isPending || isFrozen ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}"
-                      ${isPending || isFrozen ? 'disabled' : ''}
-                      title="Thêm một Bài giảng mới vào giáo trình"
-                    >
-                      <span class="material-symbols-outlined text-[16px]">add_circle</span>
-                      <span>Thêm Bài</span>
                     </button>
                   </div>
 
@@ -2636,113 +3199,19 @@ class InstructorView {
                 </div>
               </aside>
 
-              <!-- Right Column: Trình Soạn Thảo Khối Dọc (Modular Vertical Block Editor) -->
-              <main class="lg:col-span-7 xl:col-span-8 min-w-0" id="curriculum-editor-pane">
-                <!-- Populated dynamically based on selected lesson -->
-              </main>
-            </div>
-          </div>
-
-          <!-- SECTION 2: BÀI THI & KIỂM TRA -->
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2.5">
-                <span class="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center material-symbols-outlined text-[18px]">quiz</span>
-                <div>
-                  <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB]">
-                    Bài thi & Đánh giá (${assessments.length})
-                  </h2>
-                  <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68]">Khảo thí trắc nghiệm tự động chấm</p>
-                </div>
+              <!-- Resizer Handle (desktop only) -->
+              <div
+                id="curriculum-sidebar-resizer"
+                class="hidden lg:flex w-4 hover:w-4 items-center justify-center cursor-col-resize select-none shrink-0 group py-4 transition-all z-10 self-stretch"
+                title="Kéo để tùy chỉnh độ rộng menu Cấu trúc bài giảng"
+              >
+                <div class="w-1.5 h-16 rounded-full bg-[#E8E6DF] dark:bg-[#2E2D2B] group-hover:bg-primary transition-all"></div>
               </div>
 
-              <a
-                href="#/instructor/exams?course_id=${cId}"
-                class="px-4 py-2 rounded-xl bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-all border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1.5 shadow-2xs"
-              >
-                <span class="material-symbols-outlined text-[16px]">assignment_add</span>
-                <span>Soạn đề thi</span>
-              </a>
-            </div>
-
-            <!-- Assessments Stack -->
-            <div class="space-y-3" id="course-assessments-stack">
-              ${assessments.length === 0 ? `
-                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-10 text-center shadow-xs">
-                  <span class="material-symbols-outlined text-3xl text-[#8F8E8A] dark:text-[#6D6C68] mb-1">assignment</span>
-                  <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Chưa có bài thi nào cho khóa học này</p>
-                  <p class="text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-1 mb-3">Tạo bài thi trắc nghiệm để đánh giá kết quả học tập của sinh viên.</p>
-                  <a
-                    href="#/instructor/exams?course_id=${cId}"
-                    class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
-                  >
-                    <span class="material-symbols-outlined text-[15px]">add</span>
-                    <span>Tạo bài thi ngay</span>
-                  </a>
-                </div>
-              ` : `
-                <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl shadow-xs divide-y divide-[#E8E6DF] dark:divide-[#2E2D2B] overflow-hidden">
-                  ${assessments.map(asm => {
-                    const asmId = asm.assessment_id || asm.id;
-                    const qCount = Number(asm.questions_count ?? asm.question_count ?? (asm.questions ? asm.questions.length : 0));
-                    return `
-                      <div class="assessment-row p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-[#FAF9F5] dark:hover:bg-[#262524]/60 transition-colors" data-assessment-id="${asmId}">
-                        <div class="flex items-center gap-3.5 min-w-0">
-                          <span class="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 font-bold text-xs flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/30 material-symbols-outlined text-[18px]">
-                            task_alt
-                          </span>
-                          <div class="min-w-0">
-                            <div class="flex items-center gap-2">
-                              <h4 class="text-sm font-bold text-[#222120] dark:text-[#EDEDEB] truncate">
-                                ${UI.escapeHtml(asm.title)}
-                              </h4>
-                              ${UI.statusBadge(asm.status)}
-                            </div>
-                            <div class="flex items-center gap-2 text-[11px] text-[#8F8E8A] dark:text-[#6D6C68] mt-0.5">
-                              <span>Thời lượng: ${asm.time_limit_minutes || 45} phút</span>
-                              <span>•</span>
-                              <span>${qCount} câu hỏi</span>
-                              <span>•</span>
-                              <span>Thang điểm: ${asm.total_points || 10}đ</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            class="btn-trash-asm px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors flex items-center gap-1"
-                            data-asm-id="${asmId}"
-                            data-asm-title="${UI.escapeHtml(asm.title)}"
-                          >
-                            <span class="material-symbols-outlined text-[14px]">delete</span>
-                            <span>Chuyển vào thùng rác</span>
-                          </button>
-                          <button
-                            type="button"
-                            class="btn-asm-results px-3 py-1.5 rounded-lg bg-[#F4F1EA] hover:bg-[#ECE8DF] dark:bg-[#262524] dark:hover:bg-[#2E2D2B] text-[#222120] dark:text-[#EDEDEB] text-xs font-bold transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B] flex items-center gap-1"
-                            data-asm-id="${asmId}"
-                            data-asm-title="${UI.escapeHtml(asm.title)}"
-                          >
-                            <span class="material-symbols-outlined text-[14px] text-primary">bar_chart</span>
-                            <span>Bảng điểm & Bài nộp</span>
-                          </button>
-                          ${asm.status === 'DRAFT' ? `
-                            <button
-                              type="button"
-                              class="btn-publish-asm px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1 shadow-2xs"
-                              data-asm-id="${asmId}"
-                            >
-                              <span class="material-symbols-outlined text-[14px]">rocket_launch</span>
-                              <span>Xuất bản</span>
-                            </button>
-                          ` : ''}
-                        </div>
-                      </div>
-                    `;
-                  }).join('')}
-                </div>
-              `}
+              <!-- Right Column: Trình Soạn Thảo Khối Dọc (Modular Vertical Block Editor) -->
+              <main class="flex-1 min-w-0 w-full" id="curriculum-editor-pane">
+                <!-- Populated dynamically based on selected lesson -->
+              </main>
             </div>
           </div>
 
@@ -2788,7 +3257,8 @@ class InstructorView {
         course,
         changesetStatus,
         initialLessonId,
-        initialUnitId
+        initialUnitId,
+        assessments
       );
 
 container.querySelector('#course-thumbnail-input')?.addEventListener('change', async event => {
@@ -2931,7 +3401,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           </button>
         `;
         UI.openModal({
-          title: 'Gửi duyệt đợt cập nhật giáo trình',
+          title: 'Gửi duyệt cập nhật giáo trình',
           bodyHtml,
           footerHtml,
           size: 'md'
@@ -2982,43 +3452,108 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             const modified = diff.diff?.modified_lessons || [];
             const deleted = diff.diff?.deleted_lessons || [];
 
+            const totalChanges = added.length + modified.length + deleted.length;
+
             const bodyHtml = `
               <div class="space-y-4 text-xs font-sans">
-                <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <div class="font-bold text-sm text-slate-800 dark:text-slate-100">${UI.escapeHtml(diff.version_title || 'Đợt Cập Nhật Giáo Trình')}</div>
-                  <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${UI.escapeHtml(diff.summary || 'Không có ghi chú')}</div>
-                </div>
-                <div class="space-y-2">
-                  <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 text-xs">
-                    <span class="material-symbols-outlined text-[16px] text-primary">format_list_bulleted</span>
-                    <span>Chi tiết các bài giảng thay đổi:</span>
+                <!-- Summary Header -->
+                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-bold text-sm text-slate-900 dark:text-slate-100">${UI.escapeHtml(diff.version_title || 'Đợt Cập Nhật Giáo Trình')}</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                      ${totalChanges} thay đổi
+                    </span>
                   </div>
-                  ${added.length === 0 && modified.length === 0 && deleted.length === 0 ? `
-                    <p class="text-slate-400 italic py-2">Chưa có thay đổi nào trong bản nháp.</p>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">${UI.escapeHtml(diff.summary || 'Chi tiết các thay đổi trong bản nháp so với giáo trình hiện tại.')}</p>
+                </div>
+
+                <!-- Changes Detail Section -->
+                <div class="space-y-3">
+                  <div class="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                    <span class="material-symbols-outlined text-[17px] text-primary">format_list_bulleted</span>
+                    <span>Chi tiết đối chiếu từng bài giảng:</span>
+                  </div>
+
+                  ${totalChanges === 0 ? `
+                    <div class="py-8 text-center text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                      Chưa có thay đổi nào trong bản nháp.
+                    </div>
                   ` : `
-                    <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                    <div class="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                      <!-- Added Lessons -->
                       ${added.map(l => `
-                        <div class="p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between gap-2">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 shrink-0">Mới tạo</span>
-                            <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(l.title)}</span>
+                        <div class="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 shrink-0">
+                                Mới tạo
+                              </span>
+                              <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(l.title)}</span>
+                            </div>
+                            ${l.unit_title ? `<span class="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium shrink-0">Chương: ${UI.escapeHtml(l.unit_title)}</span>` : ''}
                           </div>
+                          ${l.summary ? `
+                            <p class="text-[11px] text-slate-600 dark:text-slate-300 pl-2 border-l-2 border-emerald-400 dark:border-emerald-700">
+                              ${UI.escapeHtml(l.summary)}
+                            </p>
+                          ` : ''}
                         </div>
                       `).join('')}
-                      ${modified.map(l => `
-                        <div class="p-2.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 flex items-center justify-between gap-2">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 shrink-0">Đã sửa</span>
-                            <span class="font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(l.title)}</span>
+
+                      <!-- Modified Lessons with Granular Diff Cards -->
+                      ${modified.map(l => {
+                        const changes = l.field_changes || [];
+                        return `
+                          <div class="p-3.5 rounded-xl border border-amber-200 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5">
+                            <div class="flex items-center justify-between gap-2 pb-2 border-b border-amber-200/60 dark:border-amber-800/40">
+                              <div class="flex items-center gap-2 min-w-0">
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 shrink-0">
+                                  Đã sửa
+                                </span>
+                                <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(l.title)}</span>
+                              </div>
+                              ${l.unit_title ? `<span class="text-[10px] text-amber-700 dark:text-amber-300 font-medium shrink-0">Chương: ${UI.escapeHtml(l.unit_title)}</span>` : ''}
+                            </div>
+
+                            <!-- Granular Field Changes -->
+                            <div class="space-y-2">
+                              ${changes.length > 0 ? changes.map(c => `
+                                <div class="bg-white/80 dark:bg-[#1E1E1E] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/40 space-y-1">
+                                  <div class="font-bold text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    <span>${UI.escapeHtml(c.field)}:</span>
+                                  </div>
+                                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                                    <div class="p-2 rounded bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 space-y-0.5">
+                                      <div class="text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Trước (Bản gốc)</div>
+                                      <div class="line-through break-words">${UI.escapeHtml(c.old_value || '(Trống)')}</div>
+                                    </div>
+                                    <div class="p-2 rounded bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-900 dark:text-emerald-200 space-y-0.5">
+                                      <div class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Sau (Bản nháp mới)</div>
+                                      <div class="break-words font-medium">${UI.escapeHtml(c.new_value || '(Trống)')}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              `).join('') : `
+                                <div class="text-[11px] text-slate-500 italic pl-1">
+                                  Nội dung bài học hoặc cấu trúc thẻ khối đã được chỉnh sửa trong bản nháp.
+                                </div>
+                              `}
+                            </div>
                           </div>
-                        </div>
-                      `).join('')}
+                        `;
+                      }).join('')}
+
+                      <!-- Deleted Lessons -->
                       ${deleted.map(l => `
-                        <div class="p-2.5 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/20 flex items-center justify-between gap-2">
+                        <div class="p-3 rounded-xl border border-rose-200 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/20 flex items-center justify-between gap-2">
                           <div class="flex items-center gap-2 min-w-0">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200 shrink-0">Đánh dấu xóa</span>
-                            <span class="font-semibold text-slate-800 dark:text-slate-200 line-through truncate">${UI.escapeHtml(l.title)}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200 shrink-0">
+                              Đánh dấu xóa
+                            </span>
+                            <span class="font-medium text-xs text-rose-900 dark:text-rose-200 line-through truncate">${UI.escapeHtml(l.title)}</span>
                           </div>
+                          <span class="text-[10px] text-rose-500 italic shrink-0">Sẽ gỡ khỏi môn khi duyệt</span>
                         </div>
                       `).join('')}
                     </div>
@@ -3029,7 +3564,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             UI.openModal({
               title: 'Đối chiếu thay đổi giáo trình',
               bodyHtml,
-              size: 'md'
+              size: 'lg'
             });
           } catch (err) {
             UI.showToast(err.message || 'Không tải được bản đối chiếu thay đổi.', 'error');
@@ -3284,7 +3819,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <span>Danh sách khóa học</span>
             </a>
           </div>
-          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#1A1827] border border-rose-200 dark:border-rose-900/50 text-center space-y-4 shadow-sm">
+          <div class="p-8 sm:p-12 rounded-2xl bg-white dark:bg-[#18181b] border border-rose-200 dark:border-rose-900/50 text-center space-y-4 shadow-sm">
             <div class="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
               <span class="material-symbols-outlined text-[28px]">error_outline</span>
             </div>
@@ -3515,11 +4050,6 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                         ` : UI.statusBadge(l.status)}
                       </div>
                       <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                        <span class="flex items-center gap-1">
-                          <span class="material-symbols-outlined text-[14px]">schedule</span>
-                          ~${l.estimated_duration_minutes || 45} phút
-                        </span>
-                        <span>•</span>
                         <span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
                           <span class="material-symbols-outlined text-[14px]">verified</span>
                           Đã quét sạch ClamAV - An toàn
@@ -4014,48 +4544,12 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     // 2. Prerequisites List with Staging State
     const prereqBox = document.getElementById('prereqs-table-box');
     let stagedPrerequisites = [];
-    let incomingReqs = [];
 
     const renderPrerequisitesTable = () => {
       if (!prereqBox) return;
 
-      let incomingHtml = '';
-      if (incomingReqs.length > 0) {
-        incomingHtml = `
-          <div class="mb-4 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/70 dark:bg-amber-950/30 p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-amber-600 text-[18px]">notification_important</span>
-                <span class="text-xs font-bold text-amber-900 dark:text-amber-200">
-                  Có ${incomingReqs.length} yêu cầu xin sử dụng môn học của bạn làm môn tiên quyết:
-                </span>
-              </div>
-            </div>
-            <div class="divide-y divide-amber-200 dark:divide-amber-800/60">
-              ${incomingReqs.map(r => `
-                <div class="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                  <div>
-                    <span class="font-bold text-slate-800 dark:text-slate-200">GV ${UI.escapeHtml(r.requested_by_name || 'Đồng nghiệp')}</span>
-                    <span class="text-slate-600 dark:text-slate-400">xin liên kết môn <strong>${UI.escapeHtml(r.prerequisite_course_title || 'Môn của bạn')}</strong> vào khóa học: <strong>${UI.escapeHtml(r.course_code || '')} - ${UI.escapeHtml(r.course_title || '')}</strong></span>
-                    <p class="text-[11px] text-slate-500 mt-0.5 italic">Lý do: "${UI.escapeHtml(r.reason || 'Yêu cầu chuẩn hóa đào tạo')}"</p>
-                  </div>
-                  <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" class="btn-approve-prereq px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs" data-req-id="${r.id}">
-                      Phê duyệt
-                    </button>
-                    <button type="button" class="btn-reject-prereq px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 font-bold text-xs" data-req-id="${r.id}">
-                      Từ chối
-                    </button>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
-
       if (stagedPrerequisites.length === 0) {
-        prereqBox.innerHTML = incomingHtml + `
+        prereqBox.innerHTML = `
           <div class="p-6 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-1">
             <span class="material-symbols-outlined text-slate-300 dark:text-slate-600 text-3xl">task_alt</span>
             <p class="font-semibold text-slate-600 dark:text-slate-300">Không có điều kiện tiên quyết</p>
@@ -4063,14 +4557,14 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           </div>
         `;
       } else {
-        prereqBox.innerHTML = incomingHtml + `
+        prereqBox.innerHTML = `
           <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
             <table class="w-full text-left border-collapse text-xs">
               <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-700">
                 <tr>
                   <th class="p-3">Mã & Tên môn tiên quyết</th>
                   <th class="p-3">Điểm GPA tối thiểu</th>
-                  <th class="p-3">Trạng thái</th>
+                  <th class="p-3">Trạng thái phê duyệt</th>
                   <th class="p-3 text-right">Tác vụ</th>
                 </tr>
               </thead>
@@ -4080,12 +4574,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                   const isNew = !!p.is_new;
                   const targetId = p.course_id || p.prerequisite_course_id || p.id;
                   let rowCls = 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40';
-                  let statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">Đã lưu</span>`;
+                  let statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">Đã phê duyệt</span>`;
                   if (isDeleted) {
                     rowCls = 'bg-rose-50/40 dark:bg-rose-950/20 opacity-60 line-through';
                     statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">Chờ gỡ bỏ</span>`;
                   } else if (isNew) {
-                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">Mới thêm (Chưa lưu)</span>`;
+                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-300">Mới thêm (Chờ lưu)</span>`;
+                  } else if (p.approval_status === 'PENDING_APPROVAL') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300">Chờ GV khác phê duyệt</span>`;
+                  } else if (p.approval_status === 'REJECTED') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">Bị từ chối</span>`;
                   }
 
                   return `
@@ -4146,49 +4644,14 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           }
         };
       });
-
-      // Attach incoming approval/rejection handlers
-      prereqBox.querySelectorAll('.btn-approve-prereq').forEach(btn => {
-        btn.onclick = async () => {
-          const reqId = btn.dataset.reqId;
-          try {
-            btn.disabled = true;
-            await ApiClient.reviewInstructorPrerequisiteRequest(reqId, { action: 'approve' });
-            UI.showToast('Đã phê duyệt yêu cầu môn tiên quyết!', 'success');
-            await loadPrerequisites();
-          } catch (err) {
-            UI.showToast('Lỗi phê duyệt: ' + (err.message || err), 'error');
-            btn.disabled = false;
-          }
-        };
-      });
-
-      prereqBox.querySelectorAll('.btn-reject-prereq').forEach(btn => {
-        btn.onclick = async () => {
-          const reqId = btn.dataset.reqId;
-          const reason = prompt('Nhập lý do từ chối yêu cầu môn tiên quyết:');
-          if (reason === null) return;
-          try {
-            btn.disabled = true;
-            await ApiClient.reviewInstructorPrerequisiteRequest(reqId, { action: 'reject', reason: reason || 'Không phù hợp' });
-            UI.showToast('Đã từ chối yêu cầu môn tiên quyết.', 'info');
-            await loadPrerequisites();
-          } catch (err) {
-            UI.showToast('Lỗi từ chối: ' + (err.message || err), 'error');
-            btn.disabled = false;
-          }
-        };
-      });
+      // End of renderPrerequisitesTable
     };
+
 
     const loadPrerequisites = async () => {
       try {
-        const [res, reqRes] = await Promise.allSettled([
-          ApiClient.getCoursePrerequisites(cId),
-          ApiClient.getInstructorPrerequisiteRequests()
-        ]);
-        const list = (res.status === 'fulfilled' && res.value && res.value.prerequisites) ? res.value.prerequisites : (Array.isArray(res.value) ? res.value : []);
-        incomingReqs = (reqRes.status === 'fulfilled' && reqRes.value && reqRes.value.incoming) ? reqRes.value.incoming : [];
+        const res = await ApiClient.getCoursePrerequisites(cId);
+        const list = (res && res.prerequisites) ? res.prerequisites : (Array.isArray(res) ? res : []);
         stagedPrerequisites = list.map(item => ({
           ...item,
           course_id: item.course_id || item.prerequisite_course_id || item.id,
@@ -4224,11 +4687,18 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         const map = new Map();
         for (const c of [...myCourses, ...catalogCourses]) {
           const key = c.course_id || c.id;
-          if (key && key !== cId && !map.has(key)) {
+          const status = c.status || 'PUBLISHED';
+          if (key && key !== cId && status === 'PUBLISHED' && !map.has(key)) {
             map.set(key, c);
           }
         }
-        const candidateCourses = Array.from(map.values());
+        const candidateCourses = Array.from(map.values()).sort((a, b) => {
+          const aMine = myCourses.some(mc => (mc.course_id || mc.id) === (a.course_id || a.id));
+          const bMine = myCourses.some(mc => (mc.course_id || mc.id) === (b.course_id || b.id));
+          if (aMine && !bMine) return -1;
+          if (!aMine && bMine) return 1;
+          return (a.title || '').localeCompare(b.title || '');
+        });
 
         const modalHtml = `
           <div class="space-y-4">
@@ -4237,7 +4707,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               <select id="modal-prereq-select" class="w-full h-10 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-white outline-none focus:border-primary">
                 ${candidateCourses.map(c => {
                   const isMine = myCourses.some(mc => (mc.course_id || mc.id) === (c.course_id || c.id));
-                  const badge = isMine ? '[Môn của bạn]' : '[Giảng viên khác - Cần gửi duyệt]';
+                  const badge = isMine ? '★ [Môn của bạn - Dùng được ngay]' : '[Giảng viên khác - Cần gửi xét duyệt]';
                   return `<option value="${c.course_id || c.id}" data-code="${UI.escapeHtml(c.course_code || '')}" data-title="${UI.escapeHtml(c.title || '')}">${c.course_code || 'MÔN'} - ${UI.escapeHtml(c.title)} ${badge}</option>`;
                 }).join('')}
               </select>
@@ -5825,6 +6295,243 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     if (typeof InstructorView.renderExamsHub === 'function') {
       return InstructorView.renderExamsHub(container);
     }
+  }
+
+  // =========================================================================
+  // 6. Dedicated Prerequisite Approval Center for Instructors (TASK-084)
+  // =========================================================================
+  static async renderPrerequisiteApprovalRequests(container) {
+    if (!container) return;
+    container.innerHTML = `
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <div class="p-12 text-center text-slate-400">
+          <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
+          <p class="text-xs">Đang tải danh sách yêu cầu môn tiên quyết...</p>
+        </div>
+      </div>
+    `;
+
+    let activeFilter = 'ALL'; // ALL, PENDING, APPROVED, REJECTED
+    let allRequests = [];
+
+    const fetchAndRender = async () => {
+      try {
+        const res = await ApiClient.getInstructorIncomingPrerequisiteRequests();
+        allRequests = (res && res.incoming) ? res.incoming : (Array.isArray(res) ? res : []);
+        renderUI();
+      } catch (err) {
+        container.innerHTML = `
+          <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+            <div class="p-6 rounded-2xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs">
+              <p class="font-bold">Lỗi tải danh sách yêu cầu:</p>
+              <p class="mt-1">${UI.escapeHtml(err.message || String(err))}</p>
+            </div>
+          </div>
+        `;
+      }
+    };
+
+    const renderUI = () => {
+      const filtered = allRequests.filter(r => {
+        if (activeFilter === 'ALL') return true;
+        if (activeFilter === 'PENDING') return r.approval_status === 'PENDING_APPROVAL' || r.approval_status === 'PENDING';
+        if (activeFilter === 'APPROVED') return r.approval_status === 'APPROVED';
+        if (activeFilter === 'REJECTED') return r.approval_status === 'REJECTED';
+        return true;
+      });
+
+      const pendingCount = allRequests.filter(r => r.approval_status === 'PENDING_APPROVAL' || r.approval_status === 'PENDING').length;
+      const approvedCount = allRequests.filter(r => r.approval_status === 'APPROVED').length;
+      const rejectedCount = allRequests.filter(r => r.approval_status === 'REJECTED').length;
+
+      container.innerHTML = `
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6 animate-fadeIn">
+          <!-- Header Banner -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shadow-2xs">
+                  <span class="material-symbols-outlined text-[20px]">account_tree</span>
+                </div>
+                <h1 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">Xét duyệt Yêu cầu Môn Tiên quyết</h1>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                Quản lý các yêu cầu từ đồng nghiệp xin liên kết học phần do Thầy/Cô phụ trách làm điều kiện tiên quyết cho chương trình đào tạo của họ.
+              </p>
+            </div>
+            <button type="button" id="btn-refresh-prereq-requests" class="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shadow-2xs">
+              <span class="material-symbols-outlined text-[16px]">refresh</span>
+              <span>Làm mới</span>
+            </button>
+          </div>
+
+          <!-- Filter Pills -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="btn-filter-prereq px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${activeFilter === 'ALL' ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}" data-filter="ALL">
+              Tất cả (${allRequests.length})
+            </button>
+            <button type="button" class="btn-filter-prereq px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${activeFilter === 'PENDING' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}" data-filter="PENDING">
+              Chờ phê duyệt ${pendingCount > 0 ? `(${pendingCount})` : ''}
+            </button>
+            <button type="button" class="btn-filter-prereq px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${activeFilter === 'APPROVED' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}" data-filter="APPROVED">
+              Đã chấp thuận (${approvedCount})
+            </button>
+            <button type="button" class="btn-filter-prereq px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${activeFilter === 'REJECTED' ? 'bg-rose-600 text-white shadow-2xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'}" data-filter="REJECTED">
+              Đã từ chối (${rejectedCount})
+            </button>
+          </div>
+
+          <!-- Main Table or Empty State -->
+          <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
+            ${filtered.length === 0 ? `
+              <div class="p-12 text-center text-slate-400 space-y-2">
+                <span class="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600">inbox</span>
+                <p class="font-bold text-slate-600 dark:text-slate-300 text-sm">Không có yêu cầu nào trong mục này</p>
+                <p class="text-xs text-slate-400">Các yêu cầu xin liên kết môn học từ giảng viên khác sẽ hiển thị tại đây để bạn phê duyệt.</p>
+              </div>
+            ` : `
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th class="p-3.5">Học phần của bạn</th>
+                      <th class="p-3.5">Khóa học & Giảng viên đề xuất</th>
+                      <th class="p-3.5">Lý do / Căn cứ</th>
+                      <th class="p-3.5">Thời gian & Trạng thái</th>
+                      <th class="p-3.5 text-right">Tác vụ</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                    ${filtered.map(r => {
+                      const isPending = r.approval_status === 'PENDING_APPROVAL' || r.approval_status === 'PENDING';
+                      const isApproved = r.approval_status === 'APPROVED';
+                      const isRejected = r.approval_status === 'REJECTED';
+
+                      let badgeHtml = '';
+                      if (isPending) {
+                        badgeHtml = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300">Chờ duyệt</span>`;
+                      } else if (isApproved) {
+                        badgeHtml = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300">Đã chấp thuận</span>`;
+                      } else {
+                        badgeHtml = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300">Đã từ chối</span>`;
+                      }
+
+                      return `
+                        <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                          <td class="p-3.5">
+                            <div class="space-y-0.5">
+                              <span class="font-mono font-bold text-indigo-600 dark:text-indigo-400">${UI.escapeHtml(r.prerequisite_course_code || 'MÔN')}</span>
+                              <div class="font-bold text-slate-900 dark:text-white">${UI.escapeHtml(r.prerequisite_course_title || 'Khóa học của bạn')}</div>
+                            </div>
+                          </td>
+                          <td class="p-3.5">
+                            <div class="space-y-0.5">
+                              <span class="font-mono font-bold text-slate-700 dark:text-slate-300">${UI.escapeHtml(r.requesting_course_code || '')}</span>
+                              <div class="text-slate-800 dark:text-slate-200">${UI.escapeHtml(r.requesting_course_title || 'Khóa học')}</div>
+                              <div class="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <span class="material-symbols-outlined text-[13px]">person</span>
+                                <span>${UI.escapeHtml(r.requesting_instructor_name || 'Giảng viên')}</span>
+                                ${r.requesting_instructor_email ? `(${UI.escapeHtml(r.requesting_instructor_email)})` : ''}
+                              </div>
+                            </div>
+                          </td>
+                          <td class="p-3.5 max-w-xs">
+                            <p class="text-slate-600 dark:text-slate-400 line-clamp-2 italic">
+                              "${UI.escapeHtml(r.review_note || 'Yêu cầu chuẩn hóa theo chương trình đào tạo')}"
+                            </p>
+                          </td>
+                          <td class="p-3.5 whitespace-nowrap">
+                            <div class="space-y-1">
+                              <div>${badgeHtml}</div>
+                              <div class="text-[11px] text-slate-400">
+                                ${r.requested_at ? new Date(r.requested_at).toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong'}
+                              </div>
+                            </div>
+                          </td>
+                          <td class="p-3.5 text-right whitespace-nowrap">
+                            ${isPending ? `
+                              <div class="flex items-center justify-end gap-1.5">
+                                <button type="button" class="btn-act-approve px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer shadow-2xs" data-req-cid="${r.requesting_course_id}" data-prereq-cid="${r.prerequisite_course_id}">
+                                  Chấp thuận
+                                </button>
+                                <button type="button" class="btn-act-reject px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-slate-700 dark:text-slate-300 hover:text-rose-600 font-bold text-xs transition cursor-pointer" data-req-cid="${r.requesting_course_id}" data-prereq-cid="${r.prerequisite_course_id}">
+                                  Từ chối
+                                </button>
+                              </div>
+                            ` : `
+                              <span class="text-[11px] text-slate-400 font-semibold italic">Đã hoàn tất xử lý</span>
+                            `}
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+
+      // Wire filters
+      container.querySelectorAll('.btn-filter-prereq').forEach(btn => {
+        btn.onclick = () => {
+          activeFilter = btn.dataset.filter;
+          renderUI();
+        };
+      });
+
+      // Wire refresh
+      document.getElementById('btn-refresh-prereq-requests')?.addEventListener('click', fetchAndRender);
+
+      // Wire approve
+      container.querySelectorAll('.btn-act-approve').forEach(btn => {
+        btn.onclick = async () => {
+          const reqCid = btn.dataset.reqCid;
+          const prereqCid = btn.dataset.prereqCid;
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Đang duyệt...';
+            await ApiClient.reviewInstructorIncomingPrerequisiteRequest(reqCid, prereqCid, { action: 'APPROVE', note: 'Đồng ý liên kết môn tiên quyết.' });
+            UI.showToast('Đã phê duyệt yêu cầu môn tiên quyết thành công!', 'success');
+            if (window.AppRouter && AppRouter.fetchInstructorPendingCounts) {
+              AppRouter.fetchInstructorPendingCounts();
+            }
+            await fetchAndRender();
+          } catch (err) {
+            UI.showToast('Lỗi phê duyệt: ' + (err.message || err), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Chấp thuận';
+          }
+        };
+      });
+
+      // Wire reject
+      container.querySelectorAll('.btn-act-reject').forEach(btn => {
+        btn.onclick = async () => {
+          const reqCid = btn.dataset.reqCid;
+          const prereqCid = btn.dataset.prereqCid;
+          const reason = prompt('Vui lòng nhập lý do từ chối yêu cầu môn tiên quyết này:');
+          if (reason === null) return;
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Đang xử lý...';
+            await ApiClient.reviewInstructorIncomingPrerequisiteRequest(reqCid, prereqCid, { action: 'REJECT', note: reason || 'Chưa phù hợp với mục tiêu đào tạo.' });
+            UI.showToast('Đã từ chối yêu cầu liên kết môn tiên quyết.', 'info');
+            if (window.AppRouter && AppRouter.fetchInstructorPendingCounts) {
+              AppRouter.fetchInstructorPendingCounts();
+            }
+            await fetchAndRender();
+          } catch (err) {
+            UI.showToast('Lỗi từ chối: ' + (err.message || err), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Từ chối';
+          }
+        };
+      });
+    };
+
+    await fetchAndRender();
   }
 
 }
