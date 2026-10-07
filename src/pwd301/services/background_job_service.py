@@ -28,6 +28,7 @@ from flask import current_app
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
+from pwd301.models.notification_audit import EmailDelivery
 from pwd301.models.operations import BackgroundJob
 from pwd301.models.types import utc_now
 from pwd301.services.exceptions import ServiceError
@@ -40,6 +41,7 @@ _WORKER_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     thread_name_prefix="pwd301-worker",
 )
 _WORKER_SHUTDOWN_LOCK = threading.Lock()
+_EMAIL_OUTBOX_DEDUPE_KEY = "email-outbox-drain"
 
 
 class BackgroundJobError(ServiceError):
@@ -78,6 +80,7 @@ def enqueue_background_job(
         "ANALYTICS",
         "BACKUP",
         "EXPORT",
+        "VIDEO_TRANSCODE",
     }
     if job_type not in valid_types:
         raise BackgroundJobError(f"Invalid job_type '{job_type}'. Must be one of {valid_types}.")
@@ -122,7 +125,15 @@ def enqueue_background_job(
     job_id = job.id
     job_key_str = str(job.job_key)
 
-    if run_async:
+    dispatch_async = run_async
+    try:
+        # Tests own teardown of their temporary database; leave the queued job for
+        # the worker contract instead of racing fixture cleanup with a thread.
+        dispatch_async = run_async and not bool(current_app.config.get("TESTING", False))
+    except RuntimeError:
+        pass
+
+    if dispatch_async:
         # Capture current Flask app instance for the worker thread context
         try:
             app_obj = current_app._get_current_object()  # type: ignore[attr-defined]
@@ -285,6 +296,16 @@ def execute_background_job(
                 if actor:
                     rescan_file_asset(actor=actor, asset_id=asset_id, session=sess)
 
+        elif job.job_type == "VIDEO_TRANSCODE":
+            from pathlib import Path
+            from pwd301.services.video_drm_service import transcode_to_encrypted_hls
+
+            source_file = payload.get("source_file")
+            course_id = payload.get("course_id")
+            lesson_id = payload.get("lesson_id")
+            if source_file and course_id and lesson_id:
+                transcode_to_encrypted_hls(Path(source_file), course_id, lesson_id)
+
         # Mark succeeded
         job.status = "SUCCEEDED"
         job.completed_at = now
@@ -331,9 +352,41 @@ def _run_job_safely(job_id: int) -> None:
         logger.error("Error running background job %s: %s", job_id, exc)
 
 
+def _ensure_email_outbox_job(
+    session: Session | scoped_session[Any] | None = None,
+) -> bool:
+    """Ensure a queued EMAIL job exists whenever a due outbox row exists."""
+    sess = _resolve_session(session)
+    now = utc_now()
+    due_delivery = (
+        sess.query(EmailDelivery.id)
+        .filter(
+            EmailDelivery.status == "PENDING",
+            sa.or_(
+                EmailDelivery.next_attempt_at.is_(None),
+                EmailDelivery.next_attempt_at <= now,
+            ),
+        )
+        .first()
+    )
+    if due_delivery is None:
+        return False
+
+    enqueue_background_job(
+        job_type="EMAIL",
+        payload={"batch_size": 50},
+        priority=50,
+        dedupe_key=_EMAIL_OUTBOX_DEDUPE_KEY,
+        run_async=False,
+        session=sess,
+    )
+    return True
+
+
 def run_worker_once(session: Session | scoped_session[Any] | None = None) -> bool:
     """Claim and execute a single background job. Returns True if a job was processed."""
     sess = _resolve_session(session)
+    _ensure_email_outbox_job(session=sess)
     job = claim_next_background_job(session=sess)
     if job is None:
         return False

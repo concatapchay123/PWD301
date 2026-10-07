@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import logging
 import re
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +27,15 @@ from pwd301.models.course import Enrollment, Lesson, LessonProgress
 from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
+    _resolve_lesson,
     require_authenticated_actor,
     student_required,
+)
+from pwd301.services.video_drm_service import (
+    generate_key_token,
+    get_lesson_hls_directory,
+    transcode_to_encrypted_hls,
+    verify_key_token,
 )
 from pwd301.services.completion_service import get_course_completion_summary
 from pwd301.services.enrollment_service import (
@@ -35,7 +44,7 @@ from pwd301.services.enrollment_service import (
     leave_course,
     re_enroll_student,
 )
-from pwd301.services.exceptions import LessonValidationError, ResourceNotFoundError
+from pwd301.services.exceptions import ForbiddenError, LessonValidationError, ResourceNotFoundError
 from pwd301.services.file_service import (
     _serialize_lesson_resource,
     get_file_for_download,
@@ -91,10 +100,29 @@ def attempt_view(attempt_id: str) -> Any:
     """Render the student exam taking view with server timer, lease token, and question palette."""
     actor = require_authenticated_actor()
     from pwd301.services.attempt_service import (
+        _resolve_attempt,
         get_attempt_delivery,
         renew_attempt_lease,
         takeover_attempt_lease,
     )
+
+    attempt = _resolve_attempt(attempt_id, session=db.session)
+    if attempt is not None and attempt.status in ("GRADED", "SUBMITTED", "PENDING_GRADING"):
+        return (
+            jsonify(
+                {
+                    "attempt_id": str(attempt.public_id),
+                    "status": attempt.status,
+                    "is_completed": True,
+                    "redirect_url": f"#/student/assessments/results?id={attempt.public_id}",
+                    "message": f"Assessment attempt is completed (status: {attempt.status}).",
+                    "questions": [],
+                    "remaining_seconds": 0,
+                    "lease_token": None,
+                }
+            ),
+            200,
+        )
 
     raw_token = session.get(f"attempt_lease_{attempt_id}")
     if raw_token:
@@ -324,6 +352,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             pass
 
     quiz = []
+    quiz_passing_percent = 80
     if les.markdown_content:
         m_quiz = re.search(r"<!--\s*mini_quiz:\s*(.+?)\s*-->", les.markdown_content, re.DOTALL)
         if m_quiz:
@@ -331,6 +360,12 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                 parsed_quiz = json.loads(m_quiz.group(1))
                 if isinstance(parsed_quiz, list):
                     quiz = parsed_quiz
+            except Exception:
+                pass
+        m_passing = re.search(r"<!--\s*mini_quiz_passing:\s*(\d+)\s*-->", les.markdown_content)
+        if m_passing:
+            try:
+                quiz_passing_percent = max(50, min(100, int(m_passing.group(1))))
             except Exception:
                 pass
 
@@ -389,6 +424,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         "video_url": video_url,
         "video_urls": video_urls,
         "quiz": quiz,
+        "quiz_passing_percent": quiz_passing_percent,
         "personal_notes": personal_notes,
         "notes_saved_at": notes_saved_at,
         "progress": {
@@ -745,18 +781,13 @@ def notifications_center() -> tuple[Response, int] | Response:
     prefs = get_user_preferences(actor=actor, session=db.session)
     unread = get_unread_count(actor=actor, target_role=target_role, session=db.session)
 
-    return (
-        jsonify(
-            {
-                "success": True,
-                "items": items,
-                "total": total,
-                "unread_count": unread,
-                "preferences": prefs,
-            }
-        ),
-        200,
-    )
+    response_data = {
+        "items": items,
+        "total": total,
+        "unread_count": unread,
+        "preferences": prefs,
+    }
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @student_bp.route("/notifications/<notification_id>/read", methods=["POST"])
@@ -771,7 +802,7 @@ def student_mark_notification_read(notification_id: str) -> Any:
         notification_id=notification_id,
         session=db.session,
     )
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, **result}), 200
 
 
 @student_bp.route("/notifications/mark-all-read", methods=["POST"])
@@ -796,7 +827,8 @@ def student_mark_all_read() -> Any:
         target_role=target_role,
         session=db.session,
     )
-    return jsonify({"success": True, "marked_count": count}), 200
+    response_data = {"marked_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @student_bp.route("/attempt/<attempt_id>/answers/<attempt_question_id>", methods=["POST", "PUT"])
@@ -956,6 +988,8 @@ def assessments_view() -> Any:
     """Student view for upcoming and past assessments with full items listing."""
     from pwd301.models.assessment import Assessment
     from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.models.types import utc_now
+    from pwd301.services.assessment_service import _normalize_dt
 
     actor = require_authenticated_actor()
     sess = db.session
@@ -1024,6 +1058,29 @@ def assessments_view() -> Any:
                 if existing_attempt.result.passed is not None:
                     res_passed = bool(existing_attempt.result.passed)
 
+            now_utc = utc_now()
+            open_dt = _normalize_dt(a.open_at)
+            close_dt = _normalize_dt(a.close_at)
+            waiting_room_opens_at_dt = (open_dt - timedelta(minutes=30)) if open_dt else None
+
+            a_is_open = True
+            a_seconds_until_open = 0
+            if open_dt and now_utc < open_dt:
+                a_is_open = False
+                a_seconds_until_open = max(0, int((open_dt - now_utc).total_seconds()))
+
+            a_is_waiting_room_open = True
+            a_seconds_until_waiting_room_open = 0
+            if waiting_room_opens_at_dt and now_utc < waiting_room_opens_at_dt:
+                a_is_waiting_room_open = False
+                a_seconds_until_waiting_room_open = max(
+                    0, int((waiting_room_opens_at_dt - now_utc).total_seconds())
+                )
+
+            a_is_closed = False
+            if close_dt and now_utc >= close_dt:
+                a_is_closed = True
+
             items.append(
                 {
                     "assessment_id": str(a.public_id),
@@ -1033,10 +1090,19 @@ def assessments_view() -> Any:
                     "course_title": a.course.title if a.course else None,
                     "assessment_type": a.assessment_type,
                     "time_limit_minutes": a.time_limit_minutes or 45,
+                    "duration_minutes": a.time_limit_minutes or 45,
                     "max_points": max_pts,
                     "status": a.status,
                     "open_at": a.open_at.isoformat() if a.open_at else None,
                     "close_at": a.close_at.isoformat() if a.close_at else None,
+                    "is_open": a_is_open,
+                    "is_closed": a_is_closed,
+                    "is_waiting_room_open": a_is_waiting_room_open,
+                    "waiting_room_opens_at": (
+                        waiting_room_opens_at_dt.isoformat() if waiting_room_opens_at_dt else None
+                    ),
+                    "seconds_until_waiting_room_open": a_seconds_until_waiting_room_open,
+                    "seconds_until_open": a_seconds_until_open,
                     "attempt_id": str(existing_attempt.public_id) if existing_attempt else None,
                     "attempt_status": existing_attempt.status if existing_attempt else None,
                     "raw_score": res_raw,
@@ -1097,12 +1163,21 @@ def assessment_detail_view(assessment_id: str) -> Any:
     now_utc = utc_now()
     open_at_dt = _normalize_dt(assess_obj.open_at)
     close_at_dt = _normalize_dt(assess_obj.close_at)
+    waiting_room_opens_at_dt = (open_at_dt - timedelta(minutes=30)) if open_at_dt else None
 
     is_open = True
     seconds_until_open = 0
     if open_at_dt and now_utc < open_at_dt:
         is_open = False
         seconds_until_open = max(0, int((open_at_dt - now_utc).total_seconds()))
+
+    is_waiting_room_open = True
+    seconds_until_waiting_room_open = 0
+    if waiting_room_opens_at_dt and now_utc < waiting_room_opens_at_dt:
+        is_waiting_room_open = False
+        seconds_until_waiting_room_open = max(
+            0, int((waiting_room_opens_at_dt - now_utc).total_seconds())
+        )
 
     is_closed = False
     if close_at_dt and now_utc >= close_at_dt:
@@ -1206,7 +1281,14 @@ def assessment_detail_view(assessment_id: str) -> Any:
                 "assessment": assessment_data,
                 "is_open": is_open,
                 "is_closed": is_closed,
+                "is_waiting_room_open": is_waiting_room_open,
+                "waiting_room_opens_at": (
+                    waiting_room_opens_at_dt.isoformat() if waiting_room_opens_at_dt else None
+                ),
+                "seconds_until_waiting_room_open": seconds_until_waiting_room_open,
                 "seconds_until_open": seconds_until_open,
+                "open_at": open_at_dt.isoformat() if open_at_dt else None,
+                "close_at": close_at_dt.isoformat() if close_at_dt else None,
                 "server_now_iso": now_utc.isoformat(),
                 "active_attempt_id": str(active_attempt.public_id) if active_attempt else None,
                 "attempt_limit": attempt_limit,
@@ -1235,13 +1317,10 @@ def assessment_detail_view(assessment_id: str) -> Any:
     )
 
 
-@student_bp.route("/attempt/<attempt_id>/result", methods=["GET"])
-@student_required
-def attempt_result_view(attempt_id: str) -> Any:
-    """Student view to view graded attempt results and score breakdown."""
+def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, Any]:
+    """Return the authorized result payload shared by JSON and PDF views."""
     from pwd301.services.attempt_service import _resolve_attempt, get_attempt_result_for_student
 
-    actor = require_authenticated_actor()
     result_data = get_attempt_result_for_student(
         actor=actor,
         attempt_id=attempt_id,
@@ -1269,7 +1348,7 @@ def attempt_result_view(attempt_id: str) -> Any:
         result_data["submitted_at"] = (
             attempt.submitted_at.isoformat() if attempt.submitted_at else None
         )
-        candidate = getattr(attempt, "user", None)
+        candidate = getattr(attempt, "student", None) or getattr(attempt, "user", None) or actor
         if candidate:
             cand_name = (
                 getattr(candidate, "full_name", None)
@@ -1279,8 +1358,50 @@ def attempt_result_view(attempt_id: str) -> Any:
             result_data["candidate_name"] = cand_name
             result_data["candidate_email"] = getattr(candidate, "email", "")
     result_data["is_released"] = result_data.get("score_status") == "RELEASED"
+    return result_data
+
+
+@student_bp.route("/attempt/<attempt_id>/result", methods=["GET"])
+@student_required
+def attempt_result_view(attempt_id: str) -> Any:
+    """Student view to view graded attempt results and score breakdown."""
+    actor = require_authenticated_actor()
+    result_data = _get_student_attempt_result_data(actor, attempt_id)
 
     return jsonify(result_data), 200
+
+
+@student_bp.route("/attempt/<attempt_id>/result.pdf", methods=["GET"])
+@student_required
+def attempt_result_pdf(attempt_id: str) -> Response:
+    """Download a released student result as a server-generated PDF attachment."""
+    from pwd301.services.result_pdf_service import build_attempt_result_pdf
+
+    actor = require_authenticated_actor()
+    result_data = _get_student_attempt_result_data(actor, attempt_id)
+    if result_data.get("score_status") != "RELEASED":
+        raise ForbiddenError("The result PDF is available only after the score is released.")
+
+    pdf_bytes = build_attempt_result_pdf(result_data)
+    assessment_code = result_data.get("assessment_code")
+    assessment_title = result_data.get("assessment_title")
+    filename = sanitize_filename(
+        f"{assessment_code or assessment_title or 'bang-diem'}-bang-diem.pdf"
+    )
+    if not filename.lower().endswith(".pdf"):
+        filename = f"{filename}.pdf"
+
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+        conditional=False,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
 
 
 @student_bp.route("/ai-assistant", methods=["GET"])
@@ -1624,11 +1745,11 @@ def student_course_detail(course_id: str) -> Any:
         .scalar()
         or 0
     )
-    # Si so toi da la khong gioi han theo quy dinh he thong moi
-    is_full = False
+    is_full = bool(course.capacity is not None and active_count >= course.capacity)
 
     from pwd301.models.assessment import Assessment
     from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.models.course import LearningUnit
     from pwd301.models.file_import import FileAsset
 
     lessons = (
@@ -1688,11 +1809,37 @@ def student_course_detail(course_id: str) -> Any:
         )
         existing_attempt = attempts_for_a[-1] if attempts_for_a else None
 
+        linked_lesson_id = None
+        linked_unit_id = None
+        for qa in getattr(a, "question_assignments", []):
+            if qa.question and qa.question.lesson_id:
+                les_m = db.session.query(Lesson).filter(Lesson.id == qa.question.lesson_id).first()
+                if les_m:
+                    linked_lesson_id = str(les_m.public_id)
+                    if les_m.learning_unit_id:
+                        lu_m = db.session.query(LearningUnit).filter(LearningUnit.id == les_m.learning_unit_id).first()
+                        if lu_m:
+                            linked_unit_id = str(lu_m.public_id)
+                break
+
+        if not linked_lesson_id:
+            for bp in getattr(a, "blueprints", []):
+                for r in getattr(bp, "rules", []):
+                    if r.lesson:
+                        linked_lesson_id = str(r.lesson.public_id)
+                        if r.lesson.learning_unit:
+                            linked_unit_id = str(r.lesson.learning_unit.public_id)
+                        break
+                if linked_lesson_id:
+                    break
+
         serialized_assessments.append(
             {
                 "assessment_id": str(a.public_id),
                 "id": str(a.public_id),
                 "title": a.title,
+                "lesson_id": linked_lesson_id,
+                "learning_unit_id": linked_unit_id,
                 "assessment_type": a.assessment_type,
                 "time_limit_minutes": a.time_limit_minutes,
                 "attempt_limit": a_limit,
@@ -2394,6 +2541,10 @@ def download_student_course_file_route(asset_id: str, course_id: str | None = No
         if course is None or course.id != asset.course_id:
             raise ResourceNotFoundError("File asset not found for the specified course.")
 
+    # Invariant 25: Students cannot download raw lesson video files (.mp4/.webm)
+    if asset.is_video or (blob.detected_mime_type and blob.detected_mime_type.lower().startswith("video/")):
+        raise ForbiddenError("Direct download of lesson videos is restricted. Please view this lesson via the secure course player.")
+
     disposition = request.args.get("disposition", "attachment").lower()
     if disposition not in ("inline", "attachment"):
         disposition = "attachment"
@@ -2406,3 +2557,162 @@ def download_student_course_file_route(asset_id: str, course_id: str | None = No
         download_name=clean_filename,
         conditional=True,
     )
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/playlist.m3u8",
+    methods=["GET"],
+)
+@student_required
+def get_lesson_hls_playlist_route(course_id: str, lesson_id: str) -> Any:
+    """Serve encrypted HLS playlist with authenticated short-lived tokenized key URI."""
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+
+    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
+    playlist_path = hls_dir / "playlist.m3u8"
+
+    if not playlist_path.exists():
+        # Look for video file asset in lesson resources
+        source_path = None
+        for res in getattr(lesson, "resources", []):
+            fa = getattr(res, "file_asset", None)
+            if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
+                if fa.primary_blob and fa.primary_blob.storage_path:
+                    source_path = fa.primary_blob.storage_path
+                    break
+
+        if not source_path or not os.path.exists(source_path):
+            raise ResourceNotFoundError("No protected video stream available for this lesson.")
+
+        transcode_to_encrypted_hls(
+            input_path=source_path,
+            output_dir=str(hls_dir),
+            key_uri_relative="key",
+            segment_duration_seconds=4,
+        )
+
+    playlist_content = playlist_path.read_text(encoding="utf-8")
+    token = generate_key_token(actor.id, course.id, lesson.id, expires_in=60)
+    # Inject short-lived token into URI="key" -> URI="key?token={token}"
+    modified_playlist = re.sub(
+        r'URI="([^"]*key[^"]*)"',
+        f'URI="key?token={token}"',
+        playlist_content,
+    )
+
+    resp = Response(modified_playlist, mimetype="application/vnd.apple.mpegurl")
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/key",
+    methods=["GET"],
+)
+@student_required
+def get_lesson_hls_key_route(course_id: str, lesson_id: str) -> Any:
+    """Serve 16-byte AES-128 decryption key to authorized enrolled student with valid token."""
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+
+    token = request.args.get("token", "")
+    valid, reason = verify_key_token(token, actor.id, course.id, lesson.id)
+    if not valid:
+        raise ForbiddenError(f"DRM key access denied: {reason}")
+
+    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
+    key_path = hls_dir / "enc.key"
+    if not key_path.exists():
+        raise ResourceNotFoundError("Encryption key not found.")
+
+    key_bytes = key_path.read_bytes()
+    resp = Response(key_bytes, mimetype="application/octet-stream")
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/segments/<segment_name>",
+    methods=["GET"],
+)
+@student_required
+def get_lesson_hls_segment_route(course_id: str, lesson_id: str, segment_name: str) -> Any:
+    """Serve encrypted .ts segment file."""
+    actor = require_authenticated_actor()
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found.")
+
+    enrollment = (
+        db.session.query(Enrollment)
+        .filter(
+            Enrollment.student_user_id == actor.id,
+            Enrollment.course_id == course.id,
+            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+        )
+        .first()
+    )
+    if enrollment is None:
+        raise ForbiddenError("You must have an active enrollment in this course to view this video.")
+
+    # Guard against path traversal
+    if not re.match(r"^segment_\d+\.ts$", segment_name):
+        raise ResourceNotFoundError("Invalid segment name.")
+
+    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
+    segment_path = hls_dir / segment_name
+    if not segment_path.exists():
+        raise ResourceNotFoundError("Segment not found.")
+
+    resp = send_file(
+        str(segment_path.resolve()),
+        mimetype="video/MP2T",
+        as_attachment=False,
+        conditional=True,
+    )
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
