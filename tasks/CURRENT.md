@@ -1,9 +1,31 @@
-# Active task: TASK-084 — Legacy Workflow & Memory Purge, MS Word 2-Row Ribbon Editor, Question Stepper Image Paste, Peer Prerequisite Approval & Deep 5-Category Changeset Diff
+# Active task: TASK-085 — Copyright Protection & Anti-Tamper System (HLS AES-128 Encryption, Dynamic Forensic Watermark, Client Armor & Zero-Trust Heartbeat)
 
-**Status:** DONE  
-**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer  
+**Status:** IN_PROGRESS  
+**Assignee:** Principal Systems Architect & Senior Security Engineer  
 **Started Date:** 2026-10-07  
-**Completed Date:** 2026-10-07  
+**Plan:** `docs/superpowers/plans/2026-10-07-copyright-protection-and-anti-tamper-system.md`  
+**Intent / Source of Truth:** `docs/intent/copyright-protection.md`  
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows and legacy designs regarding video delivery and progress recording are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire system:
+1. **Permanent Abolition of Raw MP4 Video Downloads & Direct Video URLs**:
+   - Serving unencrypted raw video files (`.mp4`, `.webm`) directly to enrolled students via `/student/files/<id>/download?disposition=inline` or `<video src="...">` is PERMANENTLY FORBIDDEN.
+   - All internal lesson videos must be transcoded into encrypted HLS (`.m3u8` and AES-128 encrypted `.ts` segments) and served via short-lived tokenized key exchange (`/student/courses/<cid>/lessons/<lid>/video/key`).
+   - Direct raw download of lesson video files is locked fail-closed (HTTP 403 Forbidden with prompt to watch in the secured player).
+2. **Permanent Purge of Progress Jump Loophole (Wall-Clock Zero-Trust Authority)**:
+   - The legacy loophole in `lesson_service.py` where client-submitted `view_fraction >= 0.90` automatically jumped `seconds_spent = minimum_completion_seconds` is PERMANENTLY REMOVED AND BANNED.
+   - Lesson completion requires genuine wall-clock time accumulation on the server ($\ge$ `minimum_completion_seconds`) verified through cryptographic client heartbeats.
+   - Paces anomalies, fake completion payloads, and replay pings are rejected fail-closed and logged to `AuditEvent`.
+3. **Mandatory Dynamic Forensic Watermarking**:
+   - All video playback (internal HLS and external embeds) must enforce Dynamic Forensic Watermarking containing student identity (`[MSSV/Họ tên] • [Email] • [Client IP] • [Timestamp]`).
+   - The watermark must float/drift across coordinates at random intervals (opacity ~0.18-0.25).
+4. **Client Armor & Anti-Tamper Protection**:
+   - DOM tampering (removing or hiding the watermark node via CSS/DevTools) must be intercepted by `MutationObserver`, triggering immediate video blackout, automatic DOM restoration, and a security audit event.
+   - DevTools bouncers (debugger timing traps) and window blur/visibility triggers automatically pause video and protect intellectual property.
+
+---
+
+# Completed task: TASK-084 — Legacy Workflow & Memory Purge, MS Word 2-Row Ribbon Editor, Question Stepper Image Paste, Peer Prerequisite Approval & Deep 5-Category Changeset Diff
 
 ## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
 All previous obsolete workflows and legacy designs regarding these modules are permanently purged, forbidden, and superseded across the entire system:

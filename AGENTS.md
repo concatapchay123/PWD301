@@ -70,6 +70,7 @@ Never silently violate these rules:
 - Raw AI chat content is deleted after 5 minutes of inactivity, subject to the documented minimal-metadata rule.
 - Important Audit records are append-only; sensitive actions that require audit fail if the audit record cannot be reliably persisted.
 - Database restore must never automatically overwrite the live database; explicit Admin confirmation is required.
+- Video DRM, Forensic Watermark & Zero-Trust Heartbeat: Enrolled students cannot download raw lesson video files (.mp4/.webm); all internal playback is served via encrypted HLS (AES-128) with short-lived tokens; all video frames must display dynamic forensic watermarks; DOM tampering triggers client blackout; and lesson completion strictly requires accumulated wall-clock heartbeat time on the server.
 
 When in doubt, follow the canonical specification rather than this abbreviated list.
 
@@ -178,4 +179,11 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - **Đẳng công khi tải Route (Idempotent Navigation)**: Mọi phương thức điều hướng hiển thị giao diện (render view, route resolution) cho các trang tạo mới (`/new`) bắt buộc phải thuần túy (side-effect free) và đẳng công (idempotent). Tuyệt đối cấm tự động gửi request ghi dữ liệu (`POST`/`create*`) vào cơ sở dữ liệu chỉ vì người dùng ghé thăm một đường dẫn.
 - **Cơ chế Bản nháp Lười (Lazy Draft Creation)**: Dữ liệu chỉ được phép tạo mới và ghi vào CSDL khi người dùng thực hiện một hành động chủ động rõ ràng (bấm nút "Lưu", "Xuất bản", hoặc kéo thả tệp tải lên bắt buộc phải có ID).
 - **Bảo toàn Ngăn xếp Lịch sử Trình duyệt (Clean History Stack)**: Khi một thực thể được tạo thành công từ giao diện `/new` và cần đồng bộ URL sang `/edit`, BẮT BUỘC sử dụng `window.history.replaceState` để thay thế mục lịch sử hiện tại. Nghiêm cấm gán `window.location.hash = ...` gây chèn thêm entry mới làm bẫy nút Quay lại (Browser Back) của người dùng.
+ 
+### 10.8. Bất biến Bản quyền Video & Tiến độ Zero-Trust (DRM & Anti-Tamper Invariants)
+- **Cấm Tải Trực tiếp Video Thô**: Tuyệt đối cấm cung cấp URL tải trực tiếp file video bài học gốc (.mp4/.webm) cho học viên. Mọi video nội bộ phải được mã hóa phân đoạn HLS (AES-128) và cấp khóa thông qua token ngắn hạn gắn với phiên đăng nhập.
+- **Thủy ấn Động Pháp chứng (Dynamic Forensic Watermarking)**: Mọi trình phát video (kể cả iframe YouTube nhúng ngoài) bắt buộc hiển thị thủy ấn động chứa định danh học viên (`MSSV - Email - IP - Timestamp`) trôi ngẫu nhiên trên khung hình để triệt tiêu việc quay lén màn hình.
+- **Lớp giáp Client Armor**: Sử dụng `MutationObserver` để tự động kích hoạt Blackout (màn hình đen) khi thẻ Watermark bị xóa hoặc ẩn bằng DevTools/CSS.
+- **Tiến độ Thời gian Thực Không Thể Nhảy Cóc (Wall-Clock Zero-Trust)**: Máy chủ chỉ công nhận hoàn thành bài học khi tích lũy đủ thời gian thực tế qua chuỗi nhịp tim (Heartbeat). Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`.
+
 

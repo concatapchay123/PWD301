@@ -872,11 +872,11 @@ Instructor owner/Admin.
 
 **Purpose**
 
-Staging tối thiểu cho thay đổi material của Course đã published để Admin duyệt trước khi áp dụng.
+Staging hợp nhất cho toàn bộ đợt cập nhật (COURSE_VERSION_CHANGESET) của Course đã published để Admin thẩm định tập trung 1 lần trước khi áp dụng nguyên tử. Nghiêm cấm phân mảnh hoặc duyệt lắt nhắt từng bài giảng lẻ tẻ.
 
 **Lifecycle**
 
-PENDING → APPROVED/REJECTED/CANCELLED; APPROVED → APPLIED trong transaction.
+PENDING → APPROVED (áp dụng nguyên tử toàn bộ thay đổi)/REJECTED (mở khóa cho giảng viên chỉnh sửa tiếp kèm lý do)/CANCELLED (rút lại/hủy bỏ); APPROVED → APPLIED trong transaction.
 
 ### Columns
 

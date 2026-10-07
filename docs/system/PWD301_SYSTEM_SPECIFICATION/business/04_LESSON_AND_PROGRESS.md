@@ -2,9 +2,11 @@
 
 ## Confirmed rules
 - Instructor-facing Bài học is a parent group above Lesson. Existing Lesson IDs and progress remain unchanged when the parent groups are introduced.
-- A Bài học contains at most 10 active Lessons and 7 videos in total. A Lesson contains at most 2 videos and 5 documents. Uploaded videos and external video links share the same cap.
+- Lessons are authored in a low-tech friendly, modular Vertical Block format (Text blocks, Video blocks, Document blocks, Interactive Quiz blocks) arranged freely by the instructor with simple Up/Down controls. Intrusive technical quota warnings are eliminated from the authoring surface.
 - Lesson order is mutable globally; prior completion remains.
-- Completion requires meaningful minimum time and viewed-most evidence.
+- Completion requires meaningful minimum wall-clock time and viewed-most evidence. Client assertions cannot skip or artificially satisfy duration without genuine accumulated heartbeat time.
+- Direct download of raw lesson video files (.mp4, .webm) is forbidden for students; all internal video must be served via encrypted HLS (AES-128) with short-lived session token exchange.
+- Video playback must render Dynamic Forensic Watermarking containing student identity ([Student ID] • [Email] • [IP] • [Timestamp]) with active DOM tamper protection (MutationObserver blackout defense).
 - Progress cache is derived; lesson_progress/results are authoritative.
 - Material rewrite does not reset completed students.
 - New lesson is optional Xem thêm for existing periods/completed learners.

@@ -24,3 +24,4 @@
 22. Important audit is append-only; required-audit sensitive action fails if audit cannot persist.
 23. Admin override is explicit, reasoned and notified where required; no impersonation.
 24. No broad cascade deletion of historical learning/assessment data.
+25. Video DRM, Forensic Watermark & Zero-Trust Heartbeat: Enrolled students cannot download raw lesson video files (.mp4/.webm); all internal playback is served via encrypted HLS (AES-128) with short-lived tokens; all video frames must display dynamic forensic watermarks; DOM tampering triggers client blackout; and lesson completion strictly requires accumulated wall-clock heartbeat time on the server.
