@@ -237,6 +237,45 @@ class UI {
     }
   }
 
+  static closeAllModals() {
+    const container = document.getElementById('modal-container');
+    if (container) {
+      container.querySelectorAll('.modal-layer').forEach(layer => {
+        if (layer._onEsc) document.removeEventListener('keydown', layer._onEsc);
+        layer.remove();
+      });
+      container.innerHTML = '';
+      container.classList.add('hidden');
+    }
+    if (UI._modalStack) UI._modalStack = [];
+    window._modalOnClose = null;
+    document.querySelectorAll('.modal-backdrop, .modal-overlay, [id^="modal-"]').forEach(el => {
+      if (el.id !== 'modal-container') el.remove();
+    });
+  }
+
+  static alert(title, message, type = 'info') {
+    return new Promise((resolve) => {
+      const safeMessage = UI.escapeHtml(message).replace(/\n/g, '<br>');
+      UI.openModal({
+        title,
+        bodyHtml: `<div class="text-sm text-[#222120] dark:text-[#EDEDEB] leading-relaxed">${safeMessage}</div>`,
+        footerHtml: `
+          <button type="button" class="btn-alert-ok px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-bold transition-all">
+            Đã hiểu
+          </button>
+        `,
+        size: 'sm',
+        onClose: () => resolve(true),
+      });
+      const container = document.getElementById('modal-container');
+      container?.querySelector('.btn-alert-ok')?.addEventListener('click', () => {
+        UI.closeModal();
+        resolve(true);
+      });
+    });
+  }
+
   // =========================================================================
   // 2.1. Dedicated Modern Confirmation Dialog (macOS Clean Alert - No Shadow)
   // =========================================================================
@@ -1409,6 +1448,23 @@ class UI {
     }
   }
 
+  static toDatetimeLocal(isoString) {
+    if (!isoString) return '';
+    try {
+      const d = UI.parseUtcDate(isoString);
+      if (!d || isNaN(d.getTime())) return '';
+      const pad = n => String(n).padStart(2, '0');
+      const year = d.getFullYear();
+      const month = pad(d.getMonth() + 1);
+      const day = pad(d.getDate());
+      const hours = pad(d.getHours());
+      const mins = pad(d.getMinutes());
+      return `${year}-${month}-${day}T${hours}:${mins}`;
+    } catch {
+      return '';
+    }
+  }
+
   static formatDuration(minutes) {
     const m = parseInt(minutes, 10);
     if (isNaN(m) || m <= 0) return '0 phút';
@@ -1442,6 +1498,15 @@ class UI {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  static cleanChoiceText(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/\[\[PWD301:G:(?:DRAG|MATCH):[^\]]+\]\]/gi, '')
+      .replace(/\[\[PWD301:FI:[^\]]+\]\]/gi, '')
+      .replace(/\|\|\|/g, ' ➔ ')
+      .trim();
   }
 
   // =========================================================================
@@ -2102,6 +2167,7 @@ class FloatingAITutor {
 
   static init() {
     const launcher = document.getElementById('floating-ai-launcher');
+    const container = document.getElementById('floating-ai-container');
     const drawer = document.getElementById('floating-ai-drawer');
     const closeBtn = document.getElementById('floating-ai-close-btn');
     const form = document.getElementById('floating-ai-form');
@@ -2111,12 +2177,87 @@ class FloatingAITutor {
     if (FloatingAITutor.isInitialized) return;
     FloatingAITutor.isInitialized = true;
 
-    launcher.onclick = () => {
-      drawer.classList.toggle('hidden');
-      if (!drawer.classList.contains('hidden') && input) {
-        input.focus();
+    // Restore saved position if available
+    try {
+      const savedPos = localStorage.getItem('pwd301_floating_ai_pos');
+      if (savedPos && container) {
+        const { left, top } = JSON.parse(savedPos);
+        const maxLeft = Math.max(0, window.innerWidth - 64);
+        const maxTop = Math.max(0, window.innerHeight - 64);
+        const clampedLeft = Math.max(10, Math.min(left, maxLeft));
+        const clampedTop = Math.max(10, Math.min(top, maxTop));
+        container.style.position = 'fixed';
+        container.style.left = `${clampedLeft}px`;
+        container.style.top = `${clampedTop}px`;
+        container.style.bottom = 'auto';
+        container.style.right = 'auto';
+      }
+    } catch (_) {}
+
+    // Mouse drag-and-drop handler for launcher
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initialContainerLeft = 0;
+    let initialContainerTop = 0;
+    let hasMoved = false;
+
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return; // Only primary button
+      isDragging = true;
+      hasMoved = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+
+      const rect = (container || launcher).getBoundingClientRect();
+      initialContainerLeft = rect.left;
+      initialContainerTop = rect.top;
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      e.preventDefault();
+    };
+
+    const onMouseMove = (e) => {
+      if (!isDragging || !container) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+        const maxLeft = Math.max(0, window.innerWidth - launcher.offsetWidth - 10);
+        const maxTop = Math.max(0, window.innerHeight - launcher.offsetHeight - 10);
+        const newLeft = Math.max(10, Math.min(initialContainerLeft + dx, maxLeft));
+        const newTop = Math.max(10, Math.min(initialContainerTop + dy, maxTop));
+
+        container.style.position = 'fixed';
+        container.style.left = `${newLeft}px`;
+        container.style.top = `${newTop}px`;
+        container.style.bottom = 'auto';
+        container.style.right = 'auto';
       }
     };
+
+    const onMouseUp = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+
+      if (hasMoved && container) {
+        const rect = container.getBoundingClientRect();
+        try {
+          localStorage.setItem('pwd301_floating_ai_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+        } catch (_) {}
+      } else {
+        drawer.classList.toggle('hidden');
+        if (!drawer.classList.contains('hidden') && input) {
+          input.focus();
+        }
+      }
+    };
+
+    launcher.addEventListener('mousedown', onMouseDown);
 
     const resetBtn = document.getElementById('floating-ai-reset-btn');
     if (resetBtn) {
@@ -2351,6 +2492,227 @@ class FloatingAITutor {
       `,
       size: 'lg'
     });
+  }
+
+  // =========================================================================
+  // 12. 5-Category Changeset Diff Renderer (Deep Before vs After Inspection)
+  // =========================================================================
+  static renderCategorizedDiffHtml(diff) {
+    if (!diff) return '<div class="p-6 text-center text-slate-400 italic">Không có dữ liệu đối chiếu.</div>';
+
+    const struct = diff.curriculum_structure || [];
+    const content = diff.content_blocks || [];
+    const quizzes = diff.interactive_quizzes || [];
+    const assessments = (diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED');
+    const gov = diff.governance_rules || {};
+
+    const totalCount = diff.total_changes_count || (struct.length + content.length + quizzes.length + assessments.length + (gov.is_changed ? 1 : 0));
+
+    if (totalCount === 0) {
+      return `
+        <div class="py-12 text-center text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+          <span class="material-symbols-outlined text-[36px] text-slate-300 dark:text-slate-600 block mb-2">check_circle</span>
+          Chưa phát hiện thay đổi nào so với giáo trình hiện tại.
+        </div>
+      `;
+    }
+
+    const badgeClasses = {
+      ADDED: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      REMOVED: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+      MOVED: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+      REORDERED: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      MODIFIED: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    };
+
+    const badgeLabels = {
+      ADDED: 'Thêm mới',
+      REMOVED: 'Xóa bỏ',
+      MOVED: 'Chuyển chương',
+      REORDERED: 'Đổi thứ tự',
+      MODIFIED: 'Chỉnh sửa',
+    };
+
+    return `
+      <div class="space-y-6 text-xs font-sans">
+        <!-- 1. Curriculum Structure Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-indigo-600">account_tree</span>
+              <span>1. Cấu trúc Đề cương & Vị trí Bài học (${struct.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Chuyển chương, đổi thứ tự, thêm/xóa bài</span>
+          </div>
+          ${struct.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về cấu trúc chương/bài.</div>
+          ` : `
+            <div class="space-y-2">
+              ${struct.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-start justify-between gap-3 shadow-2xs">
+                  <div class="space-y-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
+                    ${item.old_unit_title && item.new_unit_title ? `
+                      <div class="flex items-center gap-1.5 text-[10px] font-mono mt-1 text-slate-500">
+                        <span class="line-through text-rose-500">${UI.escapeHtml(item.old_unit_title)}</span>
+                        <span>→</span>
+                        <span class="font-bold text-emerald-600 dark:text-emerald-400">${UI.escapeHtml(item.new_unit_title)}</span>
+                      </div>
+                    ` : ''}
+                    ${item.old_position && item.new_position ? `
+                      <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+                        Vị trí: <span class="line-through text-rose-500">#${item.old_position}</span> → <span class="font-bold text-emerald-600 dark:text-emerald-400">#${item.new_position}</span>
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 2. Content & Media Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-blue-600">article</span>
+              <span>2. Nội dung Bài học & Đa phương tiện (${content.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Văn bản, tóm tắt, tài liệu đính kèm</span>
+          </div>
+          ${content.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về nội dung bài giảng.</div>
+          ` : `
+            <div class="space-y-2">
+              ${content.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">${UI.escapeHtml(item.description || '')}</p>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 3. Interactive Quizzes Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-emerald-600">quiz</span>
+              <span>3. Câu hỏi Ôn tập Tương tác (${quizzes.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Trắc nghiệm, Điền khuyết, Nối từ</span>
+          </div>
+          ${quizzes.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi về câu hỏi tương tác.</div>
+          ` : `
+            <div class="space-y-2">
+              ${quizzes.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-1 shadow-2xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                        ${badgeLabels[item.change_type] || item.change_type}
+                      </span>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-mono font-bold">
+                        ${item.type === 'FILL_BLANK' ? 'Điền khuyết' : (item.type === 'MATCHING' ? 'Nối từ' : 'Trắc nghiệm')}
+                      </span>
+                      <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.lesson_title)}</span>
+                    </div>
+                  </div>
+                  <div class="text-[11px] text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg font-medium">
+                    "${UI.escapeHtml(item.question)}"
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 4. Assessments Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-amber-600">assignment</span>
+              <span>4. Bài kiểm tra & Đánh giá (${assessments.length})</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Kiểm tra chương, Final Test</span>
+          </div>
+          ${assessments.length === 0 ? `
+            <div class="p-3 text-slate-400 italic text-[11px] bg-slate-50 dark:bg-slate-800/40 rounded-xl">Không có thay đổi bài kiểm tra/đánh giá.</div>
+          ` : `
+            <div class="space-y-2">
+              ${assessments.map(item => `
+                <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center justify-between gap-2 shadow-2xs">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeClasses[item.change_type] || 'bg-slate-100 text-slate-700'}">
+                      ${badgeLabels[item.change_type] || item.change_type}
+                    </span>
+                    <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(item.title)}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-mono">
+                      ${item.assessment_type === 'FINAL_EXAM' ? 'Final Test' : 'Kiểm tra chương'}
+                    </span>
+                  </div>
+                  <div class="text-[11px] font-mono text-slate-500 shrink-0">
+                    ${item.time_limit_minutes ? `${item.time_limit_minutes} phút` : 'Không giới hạn'} · ${item.total_points || 10}đ
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- 5. Governance Rules & Cover Category -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+            <div class="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <span class="material-symbols-outlined text-[18px] text-purple-600">verified_user</span>
+              <span>5. Quy chế Hoàn thành & Ảnh bìa</span>
+            </div>
+            <span class="text-[10px] text-slate-400">Điều kiện tốt nghiệp, chứng chỉ, ảnh đại diện</span>
+          </div>
+          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 space-y-3 shadow-2xs">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+              <div>
+                <span class="text-slate-400">Điểm GPA tối thiểu:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.min_gpa ?? gov.current?.min_gpa ?? '5.0'}/10</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Tiến độ bài học tối thiểu:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.completion_percent ?? gov.current?.completion_percent ?? '80'}%</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Bắt buộc học tất cả bài:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_all_lessons ? 'Có' : 'Không'}</span>
+              </div>
+              <div>
+                <span class="text-slate-400">Bắt buộc làm bài thi:</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 ml-1.5">${gov.proposed?.require_assessments ? 'Có' : 'Không'}</span>
+              </div>
+            </div>
+            ${gov.cover_image_url ? `
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center gap-3">
+                <span class="text-slate-400 text-[11px]">Ảnh bìa khóa học:</span>
+                <img src="${UI.escapeHtml(gov.cover_image_url)}" class="h-10 w-16 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs" alt="Cover" />
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
   }
 }
 

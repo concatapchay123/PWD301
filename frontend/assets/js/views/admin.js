@@ -1191,7 +1191,10 @@ class AdminView {
       size: 'md'
     });
 
+    let broadcastIdempotencyKey = null;
+    let broadcastSubmitting = false;
     document.getElementById('submit-broadcast-btn').onclick = async () => {
+      if (broadcastSubmitting) return;
       const title = document.getElementById('broadcast-title').value.trim();
       const roleVal = document.getElementById('broadcast-role').value;
       const targetRole = roleVal === 'ALL' ? null : roleVal;
@@ -1207,13 +1210,36 @@ class AdminView {
         return;
       }
 
+      broadcastSubmitting = true;
+      broadcastIdempotencyKey = broadcastIdempotencyKey || (
+        globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : null
+      );
+      const submitButton = document.getElementById('submit-broadcast-btn');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.setAttribute('aria-busy', 'true');
+      }
       try {
-        const res = await ApiClient.broadcastNotification(title, bodyText, targetRole, category);
+        const res = await ApiClient.broadcastNotification(
+          title,
+          bodyText,
+          targetRole,
+          category,
+          broadcastIdempotencyKey
+        );
         UI.closeModal();
         const count = res.broadcasted_count || 0;
         UI.showToast(`Đã phát thông báo thành công tới ${count} người dùng!`, 'success');
       } catch (err) {
         UI.showToast(err.message || 'Lỗi phát thông báo.', 'error');
+      } finally {
+        broadcastSubmitting = false;
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.removeAttribute('aria-busy');
+        }
       }
     };
   }
@@ -1595,7 +1621,7 @@ class AdminView {
       );
       AdminView.renderChangeRequestReviewDetail(container, request, siblingRequests);
     } catch (error) {
-      container.innerHTML = `<div class="max-w-6xl mx-auto p-6"><a href="#/admin/governance?tab=courses" class="text-primary font-semibold">← Quay lại hàng đợi</a><p class="mt-6 text-rose-700 dark:text-rose-300">${UI.escapeHtml(error.message || 'Không tải được yêu cầu.')}</p></div>`;
+      container.innerHTML = `<div class="max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10 p-6"><a href="#/admin/governance?tab=courses" class="text-primary font-semibold">← Quay lại hàng đợi</a><p class="mt-6 text-rose-700 dark:text-rose-300">${UI.escapeHtml(error.message || 'Không tải được yêu cầu.')}</p></div>`;
     }
   }
 
@@ -2026,6 +2052,20 @@ class AdminView {
                   <div class="p-4 space-y-2 text-xs" id="changeset-proposed-curriculum-box">
                     <div class="text-slate-400 italic py-4 text-center">Đang tải cấu trúc đề xuất...</div>
                   </div>
+                </div>
+              </div>
+
+              <!-- 5-Category Deep Changeset Diff Tree -->
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-2xs">
+                <div class="bg-slate-50 dark:bg-slate-800/80 px-4 py-3 border-b border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px] text-primary">analytics</span>
+                    <span>Chi tiết Đối chiếu Thay đổi Giáo trình (5 Phân Nhóm Học Vụ)</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400 font-normal">Dữ liệu tính toán thời gian thực từ máy chủ</span>
+                </div>
+                <div class="p-4 sm:p-6" id="changeset-categorized-diff-box">
+                  <div class="text-slate-400 italic py-6 text-center text-xs">Đang phân tích và đối chiếu 5 phân nhóm học vụ...</div>
                 </div>
               </div>
             </div>
@@ -2624,6 +2664,12 @@ class AdminView {
           const diffRes = await ApiClient.getCourseChangesetDiff(r.id);
           const liveBox = document.getElementById('changeset-live-curriculum-box');
           const propBox = document.getElementById('changeset-proposed-curriculum-box');
+          const catDiffBox = document.getElementById('changeset-categorized-diff-box');
+
+          if (catDiffBox && diffRes) {
+            catDiffBox.innerHTML = UI.renderCategorizedDiffHtml(diffRes);
+          }
+
           if (liveBox && propBox && diffRes) {
             const liveList = diffRes.live_curriculum || [];
             const propList = diffRes.proposed_curriculum || [];
@@ -2650,13 +2696,17 @@ class AdminView {
                 ${propList.map(item => {
                   let badge = '';
                   let borderClass = 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50';
-                  if (item.change_status === 'ADDED') {
+                  const st = item.status || item.change_status;
+                  if (st === 'ADDED') {
                     badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">Mới</span>';
                     borderClass = 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20';
-                  } else if (item.change_status === 'MODIFIED') {
+                  } else if (st === 'MODIFIED') {
                     badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">Đã sửa</span>';
                     borderClass = 'border-blue-200 dark:border-blue-800/60 bg-blue-50/50 dark:bg-blue-950/20';
-                  } else if (item.change_status === 'DELETED') {
+                  } else if (st === 'REORDERED') {
+                    badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">Đổi thứ tự</span>';
+                    borderClass = 'border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20';
+                  } else if (st === 'DELETED') {
                     badge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">Xóa</span>';
                     borderClass = 'border-rose-200 dark:border-rose-800/60 bg-rose-50/50 dark:bg-rose-950/20 opacity-60 line-through';
                   }
@@ -3182,7 +3232,7 @@ class AdminView {
 
       const isPending = course.status === 'SUBMITTED_FOR_REVIEW';
       container.innerHTML = `
-          <main class="mx-auto max-w-6xl px-4 sm:px-6 py-8 space-y-6 text-slate-800 dark:text-slate-100">
+          <main class="mx-auto max-w-[1720px] w-full px-4 sm:px-6 lg:px-10 py-8 space-y-6 text-slate-800 dark:text-slate-100">
             <a href="#/admin/governance?tab=courses" class="inline-flex items-center gap-1 text-sm font-semibold text-slate-600 dark:text-slate-300"><span class="material-symbols-outlined text-lg">arrow_back</span> Khóa Học Chờ Duyệt</a>
             <header><h1 class="text-2xl font-bold">Xem Và Duyệt Khóa Học</h1><p class="text-sm text-slate-600 dark:text-slate-300">Kiểm tra thông tin và bài học trước khi quyết định.</p></header>
             <div class="space-y-6">${bodyHtml}</div>
@@ -4263,7 +4313,7 @@ class AdminView {
   // =========================================================================
   static async renderOperations(container) {
     container.innerHTML = `
-      <div class="p-6 space-y-6 max-w-7xl mx-auto animate-fade-in" id="ops-root">
+      <div class="py-6 space-y-6 max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10 animate-fade-in" id="ops-root">
         
         <!-- Header Panel with Live Cockpit Banner -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">

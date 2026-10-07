@@ -730,6 +730,8 @@ class InstructorView {
         type: 'quiz',
         q_type: qType,
         question: q.question || q.prompt || '',
+        image_url: q.image_url || q.question_image_url || '',
+        option_images: Array.isArray(q.option_images) ? q.option_images : [],
         options: Array.isArray(q.options) && q.options.length ? q.options : (Array.isArray(q.choices) ? q.choices : ['', '', '', '']),
         correct_index: q.correct_index ?? q.answer_index ?? 0,
         blank_answer: q.blank_answer || (q.blanks?.[0]?.accepted_answers?.[0] || ''),
@@ -776,11 +778,14 @@ class InstructorView {
           const qObj = {
             question: b.question.trim(),
             type: qType,
-            explanation: (b.explanation || '').trim()
+            explanation: (b.explanation || '').trim(),
+            image_url: b.image_url || b.question_image_url || '',
+            question_image_url: b.image_url || b.question_image_url || ''
           };
           if (qType === 'MULTIPLE_CHOICE') {
             qObj.options = (b.options || ['', '', '', '']).map(opt => String(opt || '').trim());
             qObj.correct_index = Number(b.correct_index || 0);
+            if (Array.isArray(b.option_images)) qObj.option_images = b.option_images;
           } else if (qType === 'FILL_BLANK') {
             const ans = (b.blank_answer || '').trim();
             qObj.blanks = [{ accepted_answers: ans ? [ans] : [] }];
@@ -813,6 +818,168 @@ class InstructorView {
       resources: resources,
       status: 'DRAFT'
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Microsoft Word Ribbon Toolbar Event Wireup
+  // -------------------------------------------------------------------------
+  static wireWordRibbon(container) {
+    if (!container) return;
+
+    container.querySelectorAll('.word-ribbon-toolbar').forEach(toolbar => {
+      const card = toolbar.closest('.curriculum-block-card');
+      const canvas = card ? card.querySelector('.word-editor-canvas') : null;
+      const textarea = card ? card.querySelector('.block-text-textarea') : null;
+      if (!canvas) return;
+
+      const syncContent = () => {
+        if (textarea) textarea.value = canvas.innerHTML;
+      };
+
+      canvas.addEventListener('input', syncContent);
+      canvas.addEventListener('blur', syncContent);
+
+      const exec = (cmd, val = null) => {
+        canvas.focus();
+        try {
+          document.execCommand(cmd, false, val);
+          syncContent();
+        } catch (e) {
+          console.warn('execCommand error:', cmd, e);
+        }
+      };
+
+      // 1. Clipboard
+      toolbar.querySelector('.btn-word-paste')?.addEventListener('click', async () => {
+        canvas.focus();
+        try {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            const text = await navigator.clipboard.readText();
+            document.execCommand('insertText', false, text);
+          } else {
+            exec('paste');
+          }
+        } catch {
+          exec('paste');
+        }
+        syncContent();
+      });
+
+      toolbar.querySelector('.btn-word-cut')?.addEventListener('click', () => exec('cut'));
+      toolbar.querySelector('.btn-word-copy')?.addEventListener('click', () => exec('copy'));
+
+      toolbar.querySelector('.btn-word-format-painter')?.addEventListener('click', () => {
+        UI.showToast('Format Painter: Bôi đen đoạn cần áp dụng định dạng.', 'info');
+      });
+
+      // 2. Font
+      toolbar.querySelector('.word-font-family')?.addEventListener('change', (e) => {
+        exec('fontName', e.target.value);
+      });
+
+      toolbar.querySelector('.word-font-size')?.addEventListener('change', (e) => {
+        exec('fontSize', e.target.value);
+      });
+
+      toolbar.querySelector('.btn-word-grow-font')?.addEventListener('click', () => {
+        const sizeSelect = toolbar.querySelector('.word-font-size');
+        if (sizeSelect && sizeSelect.selectedIndex < sizeSelect.options.length - 1) {
+          sizeSelect.selectedIndex++;
+          exec('fontSize', sizeSelect.value);
+        }
+      });
+
+      toolbar.querySelector('.btn-word-shrink-font')?.addEventListener('click', () => {
+        const sizeSelect = toolbar.querySelector('.word-font-size');
+        if (sizeSelect && sizeSelect.selectedIndex > 0) {
+          sizeSelect.selectedIndex--;
+          exec('fontSize', sizeSelect.value);
+        }
+      });
+
+      toolbar.querySelector('.btn-word-change-case')?.addEventListener('click', () => {
+        const sel = window.getSelection();
+        if (sel && sel.toString()) {
+          const text = sel.toString();
+          const isUpper = text === text.toUpperCase();
+          const newText = isUpper ? text.toLowerCase() : text.toUpperCase();
+          exec('insertText', newText);
+        }
+      });
+
+      toolbar.querySelector('.btn-word-clear-formatting')?.addEventListener('click', () => {
+        exec('removeFormat');
+      });
+
+      // 3. Styles
+      toolbar.querySelector('.word-styles-select')?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val === 'p-nospace') {
+          exec('formatBlock', 'p');
+          const sel = window.getSelection();
+          if (sel?.anchorNode?.parentElement) {
+            sel.anchorNode.parentElement.style.marginBottom = '0px';
+          }
+        } else {
+          exec('formatBlock', val);
+        }
+      });
+
+      // 4. Font Styles
+      toolbar.querySelector('.btn-word-bold')?.addEventListener('click', () => exec('bold'));
+      toolbar.querySelector('.btn-word-italic')?.addEventListener('click', () => exec('italic'));
+      toolbar.querySelector('.btn-word-underline')?.addEventListener('click', () => exec('underline'));
+      toolbar.querySelector('.btn-word-strike')?.addEventListener('click', () => exec('strikeThrough'));
+      toolbar.querySelector('.btn-word-subscript')?.addEventListener('click', () => exec('subscript'));
+      toolbar.querySelector('.btn-word-superscript')?.addEventListener('click', () => exec('superscript'));
+
+      toolbar.querySelector('.word-highlight-color')?.addEventListener('input', (e) => {
+        exec('hiliteColor', e.target.value);
+      });
+
+      toolbar.querySelector('.word-font-color')?.addEventListener('input', (e) => {
+        exec('foreColor', e.target.value);
+      });
+
+      // 5. Paragraph
+      toolbar.querySelector('.btn-word-bullets')?.addEventListener('click', () => exec('insertUnorderedList'));
+      toolbar.querySelector('.btn-word-numbering')?.addEventListener('click', () => exec('insertOrderedList'));
+      toolbar.querySelector('.btn-word-decrease-indent')?.addEventListener('click', () => exec('outdent'));
+      toolbar.querySelector('.btn-word-increase-indent')?.addEventListener('click', () => exec('indent'));
+      toolbar.querySelector('.btn-word-align-left')?.addEventListener('click', () => exec('justifyLeft'));
+      toolbar.querySelector('.btn-word-align-center')?.addEventListener('click', () => exec('justifyCenter'));
+      toolbar.querySelector('.btn-word-align-right')?.addEventListener('click', () => exec('justifyRight'));
+      toolbar.querySelector('.btn-word-align-justify')?.addEventListener('click', () => exec('justifyFull'));
+
+      toolbar.querySelector('.btn-word-line-spacing')?.addEventListener('click', () => {
+        const currentLH = canvas.style.lineHeight || '1.6';
+        const nextLH = currentLH === '1.6' ? '2.0' : (currentLH === '2.0' ? '1.2' : '1.6');
+        canvas.style.lineHeight = nextLH;
+        UI.showToast(`Giãn dòng: ${nextLH}`, 'info');
+      });
+
+      // 6. Editing
+      toolbar.querySelector('.btn-word-find')?.addEventListener('click', async () => {
+        const query = await UI.prompt('Tìm kiếm văn bản', 'Nhập từ hoặc cụm từ cần tìm:', '', 'Từ khóa...');
+        if (query && window.find) {
+          window.find(query);
+        }
+      });
+
+      toolbar.querySelector('.btn-word-replace')?.addEventListener('click', async () => {
+        const query = await UI.prompt('Thay thế văn bản', 'Nhập từ khóa cần thay thế:', '', 'Tìm từ...');
+        if (!query) return;
+        const replaceWith = await UI.prompt('Thay thế bằng', `Thay "${query}" bằng:`, '', 'Nội dung mới...');
+        if (replaceWith !== null) {
+          const html = canvas.innerHTML;
+          canvas.innerHTML = html.replaceAll(query, replaceWith);
+          syncContent();
+          UI.showToast('Đã thay thế tất cả.', 'success');
+        }
+      });
+
+      toolbar.querySelector('.btn-word-select-all')?.addEventListener('click', () => exec('selectAll'));
+    });
   }
 
 
@@ -865,6 +1032,7 @@ class InstructorView {
     let activeBlocks = [];
     let activeLessonMeta = { title: '', duration: 15, summary: '', status: 'DRAFT' };
     let isSaving = false;
+    let activeQuizQuestionIndex = 0;
 
     // Helper to find unit containing a lesson
     const findUnitForLesson = (lessonId) => {
@@ -913,15 +1081,22 @@ class InstructorView {
         if (idx >= activeBlocks.length) return;
         const block = activeBlocks[idx];
         if (block.type === 'text') {
-          const textarea = card.querySelector('.block-text-textarea');
-          if (textarea) block.content = textarea.value;
+          const canvas = card.querySelector('.word-editor-canvas');
+          if (canvas) {
+            block.content = canvas.innerHTML;
+            const textarea = card.querySelector('.block-text-textarea');
+            if (textarea) textarea.value = canvas.innerHTML;
+          } else {
+            const textarea = card.querySelector('.block-text-textarea');
+            if (textarea) block.content = textarea.value;
+          }
         } else if (block.type === 'video') {
           const urlInput = card.querySelector('.block-video-url');
           if (urlInput) block.url = urlInput.value.trim();
         } else if (block.type === 'quiz') {
           const qInput = card.querySelector('.block-quiz-question');
           if (qInput) block.question = qInput.value.trim();
-          const activeType = card.dataset.activeQtype || block.q_type || 'MULTIPLE_CHOICE';
+          const activeType = card.dataset.activeQtype || card.querySelector('[data-active-qtype]')?.dataset.activeQtype || block.q_type || 'MULTIPLE_CHOICE';
           block.q_type = activeType;
 
           if (activeType === 'MULTIPLE_CHOICE') {
@@ -1098,7 +1273,7 @@ class InstructorView {
                   data-unit-id="${uId}"
                 >
                   <span class="material-symbols-outlined text-[14px]">add</span>
-                  <span>Thêm bài giảng vào chương này</span>
+                  <span>Thêm bài giảng</span>
                 </button>
               ` : ''}
 
@@ -1153,7 +1328,7 @@ class InstructorView {
                     class="w-full py-1.5 px-2.5 rounded-lg border border-dashed border-purple-300 dark:border-purple-800 hover:border-purple-500 bg-purple-50/30 dark:bg-purple-950/20 text-[11px] font-bold text-purple-700 dark:text-purple-300 flex items-center justify-center gap-1 transition-colors cursor-pointer"
                   >
                     <span class="material-symbols-outlined text-[14px]">quiz</span>
-                    <span>+ Tạo bài kiểm tra chương</span>
+                    <span>+ Tạo bài kiểm tra</span>
                   </a>
                 </div>
               ` : '')}
@@ -1729,7 +1904,7 @@ class InstructorView {
     // Render single block card HTML
     const renderBlockHtml = (block, idx) => {
       const bId = block.id;
-      let typeLabel = 'Nội dung văn bản (Markdown)';
+      let typeLabel = 'Nội dung bài học';
       let typeIcon = 'subject';
       let iconColor = 'text-primary bg-primary/10';
 
@@ -1750,18 +1925,159 @@ class InstructorView {
       let bodyHtml = '';
       if (block.type === 'text') {
         bodyHtml = `
-          <div class="space-y-2">
-            <div class="flex items-center gap-1.5 text-xs text-[#5C5B57] dark:text-[#9E9D99] pb-1 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
-              <span class="material-symbols-outlined text-[15px]">markdown</span>
-              <span class="font-bold">Định dạng Markdown</span>
-              <span class="text-[10px] text-[#8F8E8A]">• Thầy/Cô có thể dùng **in đậm**, *in nghiêng*, ## Tiêu đề</span>
+          <div class="space-y-0 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] overflow-hidden bg-white dark:bg-[#1E1E1E]">
+            <!-- Microsoft Word Standard Ribbon Toolbar (2 Rows) -->
+            <div class="word-ribbon-toolbar bg-[#F8F9FA] dark:bg-[#252526] border-b border-[#E8E6DF] dark:border-[#2E2D2B] p-2 space-y-1.5 select-none" data-block-id="${bId}">
+              <!-- Row 1: Clipboard, Font family, Font size, Scale, Case, Clear format, Styles -->
+              <div class="flex flex-wrap items-center gap-1.5 text-xs text-[#222120] dark:text-[#EDEDEB]">
+                <!-- Group 1: Clipboard -->
+                <div class="flex items-center gap-0.5 pr-1.5 border-r border-[#E8E6DF] dark:border-[#3E3D3A]" title="Clipboard (Bộ nhớ tạm)">
+                  <button type="button" class="btn-word-paste p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-medium" title="Dán (Paste)">
+                    <span class="material-symbols-outlined text-[16px] text-primary">content_paste</span>
+                    <span class="hidden sm:inline">Dán</span>
+                  </button>
+                  <button type="button" class="btn-word-cut p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] transition-colors cursor-pointer" title="Cắt (Cut)">
+                    <span class="material-symbols-outlined text-[16px]">content_cut</span>
+                  </button>
+                  <button type="button" class="btn-word-copy p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] transition-colors cursor-pointer" title="Sao chép (Copy)">
+                    <span class="material-symbols-outlined text-[16px]">content_copy</span>
+                  </button>
+                  <button type="button" class="btn-word-format-painter p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] transition-colors cursor-pointer" title="Sao chép định dạng (Format Painter)">
+                    <span class="material-symbols-outlined text-[16px] text-amber-600">format_paint</span>
+                  </button>
+                </div>
+
+                <!-- Group 2: Font Family & Size -->
+                <div class="flex items-center gap-1 pr-1.5 border-r border-[#E8E6DF] dark:border-[#3E3D3A]">
+                  <select class="word-font-family px-2 py-1 rounded border border-[#CED4DA] dark:border-[#4E4D4A] bg-white dark:bg-[#1E1E1E] text-xs outline-none focus:border-primary cursor-pointer" title="Phông chữ (Font)">
+                    <option value="Aptos, sans-serif" selected>Aptos (Body)</option>
+                    <option value="Inter, sans-serif">Inter</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="'Times New Roman', serif">Times New Roman</option>
+                    <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                    <option value="Roboto, sans-serif">Roboto</option>
+                    <option value="Tahoma, sans-serif">Tahoma</option>
+                    <option value="'Courier New', monospace">Courier New</option>
+                  </select>
+
+                  <select class="word-font-size px-2 py-1 rounded border border-[#CED4DA] dark:border-[#4E4D4A] bg-white dark:bg-[#1E1E1E] text-xs outline-none focus:border-primary cursor-pointer w-14" title="Cỡ chữ (Font Size)">
+                    <option value="1">10</option>
+                    <option value="2">11</option>
+                    <option value="3" selected>12</option>
+                    <option value="4">14</option>
+                    <option value="5">18</option>
+                    <option value="6">24</option>
+                    <option value="7">36</option>
+                  </select>
+
+                  <button type="button" class="btn-word-grow-font p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Tăng cỡ chữ (Grow Font)">
+                    <span class="material-symbols-outlined text-[16px]">format_size</span>
+                  </button>
+                  <button type="button" class="btn-word-shrink-font p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Giảm cỡ chữ (Shrink Font)">
+                    <span class="material-symbols-outlined text-[14px]">text_decrease</span>
+                  </button>
+                  <button type="button" class="btn-word-change-case p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer font-bold text-[12px]" title="Đổi kiểu chữ hoa/thường (Change Case)">
+                    Aa
+                  </button>
+                  <button type="button" class="btn-word-clear-formatting p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Xóa toàn bộ định dạng chữ (Clear All Formatting)">
+                    <span class="material-symbols-outlined text-[16px] text-rose-500">format_clear</span>
+                  </button>
+                </div>
+
+                <!-- Group 3: Styles (Kiểu văn bản) -->
+                <div class="flex items-center gap-1">
+                  <span class="text-[10px] uppercase font-bold text-[#8F8E8A] hidden md:inline">Styles:</span>
+                  <select class="word-styles-select px-2 py-1 rounded border border-[#CED4DA] dark:border-[#4E4D4A] bg-white dark:bg-[#1E1E1E] text-xs outline-none focus:border-primary cursor-pointer" title="Kiểu định dạng nhanh">
+                    <option value="p">Normal (Văn bản thông thường)</option>
+                    <option value="h1">Heading 1 (Tiêu đề 1)</option>
+                    <option value="h2">Heading 2 (Tiêu đề 2)</option>
+                    <option value="h3">Heading 3 (Tiêu đề 3)</option>
+                    <option value="h4">Title (Tiêu đề chính)</option>
+                    <option value="blockquote">Subtitle (Trích dẫn / Phụ)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Row 2: Font style (B, I, U, S, sub, sup, color, highlight), Paragraph, Editing -->
+              <div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#E8E6DF]/60 dark:border-[#3E3D3A]/60 text-xs text-[#222120] dark:text-[#EDEDEB]">
+                <!-- Font decorations -->
+                <div class="flex items-center gap-0.5 pr-1.5 border-r border-[#E8E6DF] dark:border-[#3E3D3A]">
+                  <button type="button" class="btn-word-bold p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer font-bold text-[13px] w-7 text-center" title="In đậm (Bold - Ctrl+B)"><b>B</b></button>
+                  <button type="button" class="btn-word-italic p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer italic text-[13px] w-7 text-center font-serif" title="In nghiêng (Italic - Ctrl+I)"><i>I</i></button>
+                  <button type="button" class="btn-word-underline p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer underline text-[13px] w-7 text-center" title="Gạch chân (Underline - Ctrl+U)"><u>U</u></button>
+                  <button type="button" class="btn-word-strike p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer line-through text-[13px] w-7 text-center" title="Gạch ngang (Strikethrough)">S</button>
+                  <button type="button" class="btn-word-subscript p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer text-[11px]" title="Chỉ số dưới (Subscript - H₂O)">x₂</button>
+                  <button type="button" class="btn-word-superscript p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer text-[11px]" title="Chỉ số trên (Superscript - x²)">x²</button>
+
+                  <!-- Highlight & Font Color -->
+                  <div class="flex items-center gap-1 pl-1">
+                    <label class="p-1 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer flex items-center" title="Tô màu nền chữ (Highlight Color)">
+                      <span class="material-symbols-outlined text-[16px] text-yellow-500">border_color</span>
+                      <input type="color" class="word-highlight-color sr-only" value="#ffff00" />
+                    </label>
+                    <label class="p-1 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer flex items-center" title="Màu chữ (Font Color)">
+                      <span class="material-symbols-outlined text-[16px] text-rose-500">format_color_text</span>
+                      <input type="color" class="word-font-color sr-only" value="#111827" />
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Paragraph formatting -->
+                <div class="flex items-center gap-0.5 pr-1.5 border-r border-[#E8E6DF] dark:border-[#3E3D3A]">
+                  <button type="button" class="btn-word-bullets p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Danh sách dấu đầu dòng (Bullets)">
+                    <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span>
+                  </button>
+                  <button type="button" class="btn-word-numbering p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Danh sách đánh số (Numbering)">
+                    <span class="material-symbols-outlined text-[16px]">format_list_numbered</span>
+                  </button>
+                  <button type="button" class="btn-word-decrease-indent p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Giảm thụt lề (Decrease Indent)">
+                    <span class="material-symbols-outlined text-[16px]">format_indent_decrease</span>
+                  </button>
+                  <button type="button" class="btn-word-increase-indent p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Tăng thụt lề (Increase Indent)">
+                    <span class="material-symbols-outlined text-[16px]">format_indent_increase</span>
+                  </button>
+                  <button type="button" class="btn-word-align-left p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Căn trái (Align Left)">
+                    <span class="material-symbols-outlined text-[16px]">format_align_left</span>
+                  </button>
+                  <button type="button" class="btn-word-align-center p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Căn giữa (Center)">
+                    <span class="material-symbols-outlined text-[16px]">format_align_center</span>
+                  </button>
+                  <button type="button" class="btn-word-align-right p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Căn phải (Align Right)">
+                    <span class="material-symbols-outlined text-[16px]">format_align_right</span>
+                  </button>
+                  <button type="button" class="btn-word-align-justify p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Căn đều hai bên (Justify)">
+                    <span class="material-symbols-outlined text-[16px]">format_align_justify</span>
+                  </button>
+                  <button type="button" class="btn-word-line-spacing p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer" title="Giãn dòng đoạn văn (Line Spacing)">
+                    <span class="material-symbols-outlined text-[16px]">format_line_spacing</span>
+                  </button>
+                </div>
+
+                <!-- Editing (Find, Replace, Select All) -->
+                <div class="flex items-center gap-0.5">
+                  <button type="button" class="btn-word-find p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer flex items-center gap-0.5 text-[11px]" title="Tìm kiếm (Find)">
+                    <span class="material-symbols-outlined text-[15px]">search</span>
+                    <span class="hidden lg:inline">Find</span>
+                  </button>
+                  <button type="button" class="btn-word-replace p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer flex items-center gap-0.5 text-[11px]" title="Thay thế (Replace)">
+                    <span class="material-symbols-outlined text-[15px]">find_replace</span>
+                    <span class="hidden lg:inline">Replace</span>
+                  </button>
+                  <button type="button" class="btn-word-select-all p-1.5 rounded hover:bg-[#E9ECEF] dark:hover:bg-[#333333] cursor-pointer flex items-center gap-0.5 text-[11px]" title="Chọn tất cả (Select All)">
+                    <span class="material-symbols-outlined text-[15px]">select_all</span>
+                    <span class="hidden lg:inline">Select</span>
+                  </button>
+                </div>
+              </div>
             </div>
-            <textarea
-              rows="6"
-              class="block-text-textarea w-full p-3.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs font-mono text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all resize-y"
-              placeholder="Nhập nội dung bài giảng tại đây..."
-              ${isLocked ? 'disabled' : ''}
-            >${UI.escapeHtml(block.content || '')}</textarea>
+
+            <!-- ContentEditable Canvas (Microsoft Word Document Area) -->
+            <div
+              class="word-editor-canvas min-h-[260px] p-4 sm:p-5 bg-white dark:bg-[#1E1E1E] text-xs sm:text-sm text-[#222120] dark:text-[#EDEDEB] focus:outline-none font-sans leading-relaxed overflow-y-auto max-h-[550px] space-y-2"
+              contenteditable="${!isLocked}"
+              data-placeholder="Nhập nội dung bài học..."
+            >${block.content || '<p>Nhập nội dung bài học tại đây...</p>'}</div>
+            <textarea class="block-text-textarea hidden sr-only">${UI.escapeHtml(block.content || '')}</textarea>
           </div>
         `;
       } else if (block.type === 'video') {
@@ -1884,7 +2200,7 @@ class InstructorView {
             <div class="space-y-2">
               ${files.length === 0 ? `
                 <div class="p-3 text-center text-xs text-[#8F8E8A] italic bg-[#FAF9F5] dark:bg-[#1E1E1E] rounded-xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
-                  Chưa có tệp đính kèm nào trong khối này.
+                  Chưa có tệp đính kèm nào.
                 </div>
               ` : files.map((f, fIdx) => `
                 <div class="p-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#1E1E1E] flex items-center justify-between gap-3 text-xs">
@@ -1920,15 +2236,44 @@ class InstructorView {
       } else if (block.type === 'quiz') {
         const qType = block.q_type || 'MULTIPLE_CHOICE';
         const options = Array.isArray(block.options) && block.options.length ? block.options : ['', '', '', ''];
+        const optionImages = Array.isArray(block.option_images) ? block.option_images : [];
         const correctIdx = Number(block.correct_index || 0);
         const blankAnswer = block.blank_answer || '';
         const pairs = Array.isArray(block.pairs) && block.pairs.length ? block.pairs : [
           { left: '', right: '' },
           { left: '', right: '' }
         ];
+        const qImg = block.image_url || block.question_image_url || '';
+
+        // Calculate quiz index among all quiz blocks
+        const allQuizBlocks = activeBlocks.filter(b => b.type === 'quiz');
+        const qIdxInQuizzes = allQuizBlocks.indexOf(block);
+        const totalQuizzes = allQuizBlocks.length;
 
         bodyHtml = `
-          <div class="space-y-3.5" data-active-qtype="${qType}">
+          <div class="space-y-4" data-active-qtype="${qType}">
+            <!-- Question Stepper Bar (Pagination like Student View) -->
+            ${totalQuizzes > 1 ? `
+              <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 text-xs select-none">
+                <div class="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                  <span class="text-[11px] font-bold text-purple-900 dark:text-purple-300 pr-1 shrink-0">Chuyển câu:</span>
+                  ${allQuizBlocks.map((qb, i) => `
+                    <button
+                      type="button"
+                      class="btn-quiz-jump-step px-2.5 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer ${qb === block ? 'bg-purple-600 text-white shadow-xs' : 'bg-white dark:bg-[#1E1E1E] text-slate-700 dark:text-slate-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100/50'}"
+                      data-target-block-id="${qb.id}"
+                      title="Chuyển đến Câu ${i + 1}"
+                    >
+                      Câu ${i + 1}
+                    </button>
+                  `).join('')}
+                </div>
+                <span class="text-[11px] font-bold text-purple-700 dark:text-purple-300 shrink-0 font-mono">
+                  ${qIdxInQuizzes + 1} / ${totalQuizzes} câu
+                </span>
+              </div>
+            ` : ''}
+
             <!-- Segmented Control for Question Type -->
             <div class="flex items-center justify-between gap-2 p-1.5 bg-[#FAF9F5] dark:bg-[#181818] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]">
               <span class="text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99] px-2 uppercase tracking-wider">Thể loại:</span>
@@ -1960,77 +2305,131 @@ class InstructorView {
               </div>
             </div>
 
-            <!-- Question Prompt Input -->
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                ${qType === 'FILL_BLANK' ? 'Câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : 'Nội dung câu hỏi trắc nghiệm:')} <span class="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all font-medium"
-                placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___].' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản?')}"
-                value="${UI.escapeHtml(block.question || '')}"
-                ${isLocked ? 'disabled' : ''}
-              />
+            <!-- Question Prompt & Image Attachment -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                  ${qType === 'FILL_BLANK' ? 'Nội dung câu hỏi điền khuyết (dùng [___] làm chỗ trống):' : (qType === 'MATCHING' ? 'Lời dẫn bài tập nối từ:' : 'Nội dung câu hỏi trắc nghiệm:')} <span class="text-rose-500">*</span>
+                </label>
+                ${!isLocked ? `
+                  <label class="cursor-pointer text-[11px] font-bold text-primary hover:underline flex items-center gap-1" title="Dán ảnh (Ctrl+V) hoặc chọn ảnh từ máy">
+                    <span class="material-symbols-outlined text-[15px]">add_photo_alternate</span>
+                    <span>${qImg ? 'Đổi ảnh câu hỏi' : 'Thêm ảnh câu hỏi'}</span>
+                    <input type="file" class="block-quiz-question-file sr-only" accept="image/*" />
+                  </label>
+                ` : ''}
+              </div>
+
+              <div class="relative">
+                <textarea
+                  rows="2"
+                  class="block-quiz-question w-full px-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary transition-all font-medium resize-y"
+                  placeholder="${qType === 'FILL_BLANK' ? 'Ví dụ: Thủ đô của Việt Nam là [___]. (Có thể ấn Ctrl+V để dán ảnh vào đây)' : (qType === 'MATCHING' ? 'Nối các khái niệm ở cột trái với ý nghĩa phù hợp ở cột phải:' : 'Ví dụ: Đâu là ngôn ngữ đánh dấu siêu văn bản? (Có thể ấn Ctrl+V để dán ảnh vào đây)')}"
+                  ${isLocked ? 'disabled' : ''}
+                >${UI.escapeHtml(block.question || '')}</textarea>
+              </div>
+
+              <!-- Question Image Preview -->
+              ${qImg ? `
+                <div class="relative inline-block border border-purple-200 dark:border-purple-800 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 group">
+                  <img src="${UI.escapeHtml(qImg)}" alt="Ảnh câu hỏi" class="max-h-48 max-w-full rounded-xl object-contain block" />
+                  ${!isLocked ? `
+                    <button type="button" class="btn-remove-quiz-img absolute top-1.5 right-1.5 p-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer" title="Xóa ảnh này">
+                      <span class="material-symbols-outlined text-[14px]">delete</span>
+                    </button>
+                  ` : ''}
+                </div>
+              ` : `
+                <div class="text-[11px] text-[#8F8E8A] flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]">content_paste</span>
+                  <span>Mẹo: Thầy/Cô có thể copy ảnh rồi nhấn <strong>Ctrl + V</strong> trực tiếp vào ô câu hỏi để chèn ảnh minh họa.</span>
+                </div>
+              `}
             </div>
 
             <!-- Specific Type Body -->
             ${qType === 'MULTIPLE_CHOICE' ? `
-              <div class="space-y-2">
+              <div class="space-y-2.5">
                 <label class="block text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                  Các phương án lựa chọn (Chọn nút tròn để chỉ định đáp án đúng):
+                  Các phương án lựa chọn (Chọn nút tròn để chỉ định đáp án đúng, có thể đính kèm ảnh cho từng đáp án):
                 </label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 quiz-options-container">
-                  ${options.map((opt, oIdx) => `
-                    <div class="flex items-center gap-2 p-1.5 rounded-xl border ${correctIdx === oIdx ? 'border-primary bg-primary/5' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E]'} transition-all">
-                      <input
-                        type="radio"
-                        name="quiz_correct_${bId}"
-                        value="${oIdx}"
-                        ${correctIdx === oIdx ? 'checked' : ''}
-                        class="w-4 h-4 ml-1.5 text-primary cursor-pointer shrink-0"
-                        ${isLocked ? 'disabled' : ''}
-                      />
-                      <span class="text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] w-4 text-center shrink-0">${String.fromCharCode(65 + oIdx)}</span>
-                      <input
-                        type="text"
-                        class="block-quiz-opt-text flex-1 px-2.5 py-1.5 rounded-lg border-0 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:ring-0"
-                        placeholder="Phương án ${String.fromCharCode(65 + oIdx)}"
-                        value="${UI.escapeHtml(opt || '')}"
-                        ${isLocked ? 'disabled' : ''}
-                      />
-                    </div>
-                  `).join('')}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 quiz-options-container">
+                  ${options.map((opt, oIdx) => {
+                    const optImg = optionImages[oIdx] || '';
+                    return `
+                      <div class="flex flex-col gap-1.5 p-2 rounded-xl border ${correctIdx === oIdx ? 'border-primary bg-primary/5' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E]'} transition-all" data-opt-idx="${oIdx}">
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="quiz_correct_${bId}"
+                            value="${oIdx}"
+                            ${correctIdx === oIdx ? 'checked' : ''}
+                            class="w-4 h-4 ml-1 text-primary cursor-pointer shrink-0"
+                            ${isLocked ? 'disabled' : ''}
+                            title="Chọn làm đáp án đúng"
+                          />
+                          <span class="text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] w-4 text-center shrink-0">${String.fromCharCode(65 + oIdx)}</span>
+                          <input
+                            type="text"
+                            class="block-quiz-opt-text flex-1 px-2.5 py-1.5 rounded-lg border-0 bg-transparent text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:ring-0"
+                            placeholder="Phương án ${String.fromCharCode(65 + oIdx)} (Ctrl+V để dán ảnh)"
+                            value="${UI.escapeHtml(opt || '')}"
+                            ${isLocked ? 'disabled' : ''}
+                          />
+                          ${!isLocked ? `
+                            <label class="cursor-pointer p-1 text-[#8F8E8A] hover:text-primary transition-colors" title="Thêm ảnh cho phương án này">
+                              <span class="material-symbols-outlined text-[16px]">image</span>
+                              <input type="file" class="block-quiz-opt-file sr-only" accept="image/*" data-opt-idx="${oIdx}" />
+                            </label>
+                          ` : ''}
+                        </div>
+                        ${optImg ? `
+                          <div class="relative inline-block self-start ml-8 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            <img src="${UI.escapeHtml(optImg)}" alt="Ảnh đáp án ${String.fromCharCode(65 + oIdx)}" class="h-16 object-contain block bg-slate-50 dark:bg-slate-900" />
+                            ${!isLocked ? `
+                              <button type="button" class="btn-remove-opt-img absolute top-0.5 right-0.5 p-0.5 rounded bg-rose-600 text-white cursor-pointer" data-opt-idx="${oIdx}" title="Xóa ảnh">
+                                <span class="material-symbols-outlined text-[12px]">close</span>
+                              </button>
+                            ` : ''}
+                          </div>
+                        ` : ''}
+                      </div>
+                    `;
+                  }).join('')}
                 </div>
               </div>
             ` : ''}
 
             ${qType === 'FILL_BLANK' ? `
-              <div class="space-y-2 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20">
-                <label class="block text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                  Đáp án chính xác cho vị trí [___]: <span class="text-rose-500">*</span>
-                </label>
+              <div class="space-y-2.5 p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20">
+                <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                  <span class="material-symbols-outlined text-[18px] text-emerald-600">edit_note</span>
+                  <span>Đáp án chính xác cho vị trí [___]: <span class="text-rose-500">*</span></span>
+                </div>
                 <div class="flex items-center gap-2">
-                  <span class="material-symbols-outlined text-[18px] text-emerald-600">check_circle</span>
                   <input
                     type="text"
-                    class="block-quiz-blank-answer flex-1 px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-emerald-600"
+                    class="block-quiz-blank-answer flex-1 px-3.5 py-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-emerald-600 shadow-2xs"
                     placeholder="Nhập từ hoặc cụm từ cần điền (Ví dụ: Hà Nội)"
                     value="${UI.escapeHtml(blankAnswer)}"
                     ${isLocked ? 'disabled' : ''}
                   />
                 </div>
+                <p class="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                  Lưu ý: Học sinh sẽ thấy câu hỏi và tự gõ câu trả lời vào ô trống tương ứng. Hệ thống sẽ đối chiếu không phân biệt chữ hoa/thường.
+                </p>
               </div>
             ` : ''}
 
             ${qType === 'MATCHING' ? `
-              <div class="space-y-2 p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20">
+              <div class="space-y-3 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20">
                 <div class="flex items-center justify-between">
-                  <label class="block text-xs font-bold text-amber-800 dark:text-amber-300">
-                    Các cặp nối từ tương ứng (Vế A ghép đúng với Vế B):
-                  </label>
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                    <span class="material-symbols-outlined text-[18px] text-amber-600">join_inner</span>
+                    <span>Các cặp nối từ tương ứng (Vế A ghép đúng với Vế B):</span>
+                  </div>
                   ${!isLocked ? `
-                    <button type="button" class="btn-add-quiz-pair text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer">
+                    <button type="button" class="btn-add-quiz-pair px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-900 text-[11px] font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1 cursor-pointer transition-colors">
                       <span class="material-symbols-outlined text-[14px]">add</span>
                       <span>Thêm cặp ghép</span>
                     </button>
@@ -2038,19 +2437,19 @@ class InstructorView {
                 </div>
                 <div class="space-y-2 quiz-pairs-container">
                   ${pairs.map((p, pIdx) => `
-                    <div class="flex items-center gap-2 block-quiz-pair-row" data-pair-idx="${pIdx}">
-                      <span class="text-[11px] font-bold text-[#5C5B57] dark:text-[#9E9D99] w-4 text-center shrink-0">${pIdx + 1}.</span>
+                    <div class="flex items-center gap-2 block-quiz-pair-row bg-white dark:bg-[#1E1E1E] p-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B]" data-pair-idx="${pIdx}">
+                      <span class="w-5 h-5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[11px] flex items-center justify-center shrink-0">${pIdx + 1}</span>
                       <input
                         type="text"
-                        class="block-quiz-pair-left flex-1 px-3 py-1.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+                        class="block-quiz-pair-left flex-1 px-2.5 py-1.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#252525] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
                         placeholder="Vế A (Khái niệm ${pIdx + 1})"
                         value="${UI.escapeHtml(p.left || '')}"
                         ${isLocked ? 'disabled' : ''}
                       />
-                      <span class="material-symbols-outlined text-[16px] text-[#8F8E8A] shrink-0">arrow_forward</span>
+                      <span class="material-symbols-outlined text-[16px] text-amber-500 shrink-0">arrow_forward</span>
                       <input
                         type="text"
-                        class="block-quiz-pair-right flex-1 px-3 py-1.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
+                        class="block-quiz-pair-right flex-1 px-2.5 py-1.5 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#252525] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
                         placeholder="Vế B (Ý nghĩa ${pIdx + 1})"
                         value="${UI.escapeHtml(p.right || '')}"
                         ${isLocked ? 'disabled' : ''}
@@ -2080,31 +2479,44 @@ class InstructorView {
               />
             </div>
 
-            <!-- Quiz Passing Threshold -->
-            <div class="flex items-center gap-2.5 p-2.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/60 text-xs">
-              <span class="material-symbols-outlined text-[18px] text-purple-600 dark:text-purple-400">verified</span>
-              <label class="font-bold text-purple-950 dark:text-purple-200 shrink-0">
-                Tỷ lệ đạt yêu cầu (%):
-              </label>
-              <input
-                type="number"
-                min="50"
-                max="100"
-                step="5"
-                class="block-quiz-passing-percent w-20 px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-center text-purple-900 dark:text-purple-100 outline-none focus:border-purple-500"
-                value="${block.passing_percent || activeLessonMeta.quiz_passing_percent || 80}"
-                ${isLocked ? 'disabled' : ''}
-              />
-              <span class="text-[11px] text-purple-700 dark:text-purple-300">
-                (Mặc định 80%. Nếu học viên thi dưới mức này sẽ không được xem đáp án và phải làm lại từ đầu)
-              </span>
+            <!-- Quiz Passing Threshold & Action Buttons (Save Question) -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
+              <div class="flex items-center gap-2 text-xs">
+                <span class="material-symbols-outlined text-[17px] text-purple-600">verified</span>
+                <label class="font-bold text-purple-950 dark:text-purple-200 shrink-0">
+                  Tỷ lệ đạt (%):
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="100"
+                  step="5"
+                  class="block-quiz-passing-percent w-16 px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-800 bg-white dark:bg-[#1E1E1E] text-xs font-bold text-center text-purple-900 dark:text-purple-100 outline-none focus:border-purple-500"
+                  value="${block.passing_percent || activeLessonMeta.quiz_passing_percent || 80}"
+                  ${isLocked ? 'disabled' : ''}
+                />
+              </div>
+
+              ${!isLocked ? `
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn-save-single-quiz px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    data-block-idx="${idx}"
+                    title="Lưu lại câu hỏi vừa tạo vào bài giảng"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">save</span>
+                    <span>Lưu câu hỏi</span>
+                  </button>
+                </div>
+              ` : ''}
             </div>
           </div>
         `;
       }
 
       return `
-        <div class="curriculum-block-card rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] p-4 sm:p-5 shadow-xs space-y-3 transition-all" data-block-id="${bId}" data-block-idx="${idx}">
+        <div class="curriculum-block-card rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#202020] p-4 sm:p-5 shadow-xs space-y-3 transition-all" data-block-id="${bId}" data-block-idx="${idx}" data-active-qtype="${block.type === 'quiz' ? (block.q_type || 'MULTIPLE_CHOICE') : ''}">
           <!-- Block Header -->
           <div class="flex items-center justify-between pb-2 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
             <div class="flex items-center gap-2">
@@ -2112,7 +2524,7 @@ class InstructorView {
                 <span class="material-symbols-outlined text-[17px]">${typeIcon}</span>
               </span>
               <span class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">
-                Khối ${idx + 1}: ${typeLabel}
+                ${typeLabel}
               </span>
             </div>
 
@@ -2125,7 +2537,7 @@ class InstructorView {
                 <button type="button" class="btn-block-move-down p-1.5 rounded-lg hover:bg-[#F4F1EA] dark:hover:bg-[#262524] text-[#5C5B57] dark:text-[#9E9D99] transition-colors cursor-pointer" data-idx="${idx}" title="Di chuyển xuống" ${idx === activeBlocks.length - 1 ? 'disabled style="opacity: 0.3;"' : ''}>
                   <span class="material-symbols-outlined text-[16px]">arrow_downward</span>
                 </button>
-                <button type="button" class="btn-block-delete p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer" data-idx="${idx}" title="Xóa khối">
+                <button type="button" class="btn-block-delete p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer" data-idx="${idx}" title="Xóa nội dung">
                   <span class="material-symbols-outlined text-[16px]">delete</span>
                 </button>
               ` : ''}
@@ -2493,7 +2905,7 @@ class InstructorView {
       editorContainer.querySelectorAll('.btn-block-delete').forEach(btn => {
         btn.onclick = async () => {
           const idx = parseInt(btn.dataset.idx, 10);
-          const conf = await UI.confirm('Xóa khối nội dung', 'Xác nhận xóa khối nội dung này?', 'Xóa');
+          const conf = await UI.confirm('Xóa nội dung', 'Xác nhận xóa phần nội dung này?', 'Xóa');
           if (!conf) return;
           scrapeBlocksFromDom();
           activeBlocks.splice(idx, 1);
@@ -2734,6 +3146,151 @@ class InstructorView {
           });
         };
       }
+
+      // Single Quiz Save button
+      editorContainer.querySelectorAll('.btn-save-single-quiz').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          await handleSave();
+        };
+      });
+
+      // Jump Step for Quiz Questions
+      editorContainer.querySelectorAll('.btn-quiz-jump-step').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const targetId = btn.dataset.targetBlockId;
+          const targetCard = editorContainer.querySelector(`.curriculum-block-card[data-block-id="${targetId}"]`);
+          if (targetCard) {
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetCard.classList.add('ring-2', 'ring-purple-500');
+            setTimeout(() => targetCard.classList.remove('ring-2', 'ring-purple-500'), 1500);
+          }
+        };
+      });
+
+      // Quiz Image Upload & Paste (Ctrl+V) Handlers
+      editorContainer.querySelectorAll('.curriculum-block-card').forEach((card, bIdx) => {
+        const qTextarea = card.querySelector('.block-quiz-question');
+        const qFileInput = card.querySelector('.block-quiz-question-file');
+        const btnRemoveQImg = card.querySelector('.btn-remove-quiz-img');
+
+        if (qFileInput) {
+          qFileInput.onchange = (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (re) => {
+              scrapeBlocksFromDom();
+              if (activeBlocks[bIdx]) {
+                activeBlocks[bIdx].image_url = re.target.result;
+                renderEditor();
+              }
+            };
+            reader.readAsDataURL(file);
+          };
+        }
+
+        if (qTextarea) {
+          qTextarea.addEventListener('paste', (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                  e.preventDefault();
+                  const reader = new FileReader();
+                  reader.onload = (re) => {
+                    scrapeBlocksFromDom();
+                    if (activeBlocks[bIdx]) {
+                      activeBlocks[bIdx].image_url = re.target.result;
+                      renderEditor();
+                      UI.showToast('Đã dán ảnh minh họa vào câu hỏi!', 'success');
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  break;
+                }
+              }
+            }
+          });
+        }
+
+        if (btnRemoveQImg) {
+          btnRemoveQImg.onclick = (e) => {
+            e.stopPropagation();
+            scrapeBlocksFromDom();
+            if (activeBlocks[bIdx]) {
+              activeBlocks[bIdx].image_url = '';
+              activeBlocks[bIdx].question_image_url = '';
+              renderEditor();
+            }
+          };
+        }
+
+        card.querySelectorAll('.block-quiz-opt-file').forEach(fileIn => {
+          fileIn.onchange = (e) => {
+            const oIdx = parseInt(fileIn.dataset.optIdx, 10);
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (re) => {
+              scrapeBlocksFromDom();
+              if (activeBlocks[bIdx]) {
+                if (!activeBlocks[bIdx].option_images) activeBlocks[bIdx].option_images = [];
+                activeBlocks[bIdx].option_images[oIdx] = re.target.result;
+                renderEditor();
+              }
+            };
+            reader.readAsDataURL(file);
+          };
+        });
+
+        card.querySelectorAll('.block-quiz-opt-text').forEach((optInput, oIdx) => {
+          optInput.addEventListener('paste', (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                  e.preventDefault();
+                  const reader = new FileReader();
+                  reader.onload = (re) => {
+                    scrapeBlocksFromDom();
+                    if (activeBlocks[bIdx]) {
+                      if (!activeBlocks[bIdx].option_images) activeBlocks[bIdx].option_images = [];
+                      activeBlocks[bIdx].option_images[oIdx] = re.target.result;
+                      renderEditor();
+                      UI.showToast(`Đã dán ảnh cho phương án ${String.fromCharCode(65 + oIdx)}!`, 'success');
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  break;
+                }
+              }
+            }
+          });
+        });
+
+        card.querySelectorAll('.btn-remove-opt-img').forEach(btn => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            const oIdx = parseInt(btn.dataset.optIdx, 10);
+            scrapeBlocksFromDom();
+            if (activeBlocks[bIdx] && activeBlocks[bIdx].option_images) {
+              activeBlocks[bIdx].option_images[oIdx] = '';
+              renderEditor();
+            }
+          };
+        });
+      });
+
+      // Activate Microsoft Word Standard Ribbon Toolbar
+      InstructorView.wireWordRibbon(editorContainer);
     };
 
     // Keyboard shortcut: Ctrl + S to save lesson
@@ -3158,7 +3715,7 @@ class InstructorView {
                   <h2 class="text-base sm:text-lg font-bold text-[#222120] dark:text-[#EDEDEB]">
                     Soạn thảo Giáo trình (Single-Page Studio)
                   </h2>
-                  <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68]">Cột trái chọn bài học • Cột phải soạn nội dung bằng thẻ khối trực quan</p>
+                  <p class="text-xs text-[#8F8E8A] dark:text-[#6D6C68]">Cột trái chọn bài học • Cột phải soạn nội dung bài giảng</p>
                 </div>
               </div>
             </div>
@@ -3448,11 +4005,13 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         viewDiffBtn.onclick = async () => {
           try {
             const diff = await ApiClient.getCourseChangesetDiff(cId);
-            const added = diff.diff?.added_lessons || [];
-            const modified = diff.diff?.modified_lessons || [];
-            const deleted = diff.diff?.deleted_lessons || [];
-
-            const totalChanges = added.length + modified.length + deleted.length;
+            const totalChanges = diff.total_changes_count || (
+              (diff.curriculum_structure?.length || 0) +
+              (diff.content_blocks?.length || 0) +
+              (diff.interactive_quizzes?.length || 0) +
+              ((diff.assessments || []).filter(a => a.change_type !== 'UNCHANGED').length) +
+              (diff.governance_rules?.is_changed ? 1 : 0)
+            );
 
             const bodyHtml = `
               <div class="space-y-4 text-xs font-sans">
@@ -3461,108 +4020,20 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-bold text-sm text-slate-900 dark:text-slate-100">${UI.escapeHtml(diff.version_title || 'Đợt Cập Nhật Giáo Trình')}</span>
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                      ${totalChanges} thay đổi
+                      ${totalChanges} thay đổi được ghi nhận
                     </span>
                   </div>
-                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">${UI.escapeHtml(diff.summary || 'Chi tiết các thay đổi trong bản nháp so với giáo trình hiện tại.')}</p>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">${UI.escapeHtml(diff.summary || 'Chi tiết các thay đổi theo 5 phân nhóm học vụ so với giáo trình hiện tại.')}</p>
                 </div>
 
-                <!-- Changes Detail Section -->
-                <div class="space-y-3">
-                  <div class="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
-                    <span class="material-symbols-outlined text-[17px] text-primary">format_list_bulleted</span>
-                    <span>Chi tiết đối chiếu từng bài giảng:</span>
-                  </div>
-
-                  ${totalChanges === 0 ? `
-                    <div class="py-8 text-center text-slate-400 italic bg-slate-50/50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                      Chưa có thay đổi nào trong bản nháp.
-                    </div>
-                  ` : `
-                    <div class="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                      <!-- Added Lessons -->
-                      ${added.map(l => `
-                        <div class="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
-                          <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2 min-w-0">
-                              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 shrink-0">
-                                Mới tạo
-                              </span>
-                              <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(l.title)}</span>
-                            </div>
-                            ${l.unit_title ? `<span class="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium shrink-0">Chương: ${UI.escapeHtml(l.unit_title)}</span>` : ''}
-                          </div>
-                          ${l.summary ? `
-                            <p class="text-[11px] text-slate-600 dark:text-slate-300 pl-2 border-l-2 border-emerald-400 dark:border-emerald-700">
-                              ${UI.escapeHtml(l.summary)}
-                            </p>
-                          ` : ''}
-                        </div>
-                      `).join('')}
-
-                      <!-- Modified Lessons with Granular Diff Cards -->
-                      ${modified.map(l => {
-                        const changes = l.field_changes || [];
-                        return `
-                          <div class="p-3.5 rounded-xl border border-amber-200 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 space-y-2.5">
-                            <div class="flex items-center justify-between gap-2 pb-2 border-b border-amber-200/60 dark:border-amber-800/40">
-                              <div class="flex items-center gap-2 min-w-0">
-                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 shrink-0">
-                                  Đã sửa
-                                </span>
-                                <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${UI.escapeHtml(l.title)}</span>
-                              </div>
-                              ${l.unit_title ? `<span class="text-[10px] text-amber-700 dark:text-amber-300 font-medium shrink-0">Chương: ${UI.escapeHtml(l.unit_title)}</span>` : ''}
-                            </div>
-
-                            <!-- Granular Field Changes -->
-                            <div class="space-y-2">
-                              ${changes.length > 0 ? changes.map(c => `
-                                <div class="bg-white/80 dark:bg-[#1E1E1E] p-2.5 rounded-lg border border-amber-200/60 dark:border-amber-900/40 space-y-1">
-                                  <div class="font-bold text-[11px] text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                    <span>${UI.escapeHtml(c.field)}:</span>
-                                  </div>
-                                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
-                                    <div class="p-2 rounded bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-900 dark:text-rose-200 space-y-0.5">
-                                      <div class="text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Trước (Bản gốc)</div>
-                                      <div class="line-through break-words">${UI.escapeHtml(c.old_value || '(Trống)')}</div>
-                                    </div>
-                                    <div class="p-2 rounded bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-emerald-900 dark:text-emerald-200 space-y-0.5">
-                                      <div class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Sau (Bản nháp mới)</div>
-                                      <div class="break-words font-medium">${UI.escapeHtml(c.new_value || '(Trống)')}</div>
-                                    </div>
-                                  </div>
-                                </div>
-                              `).join('') : `
-                                <div class="text-[11px] text-slate-500 italic pl-1">
-                                  Nội dung bài học hoặc cấu trúc thẻ khối đã được chỉnh sửa trong bản nháp.
-                                </div>
-                              `}
-                            </div>
-                          </div>
-                        `;
-                      }).join('')}
-
-                      <!-- Deleted Lessons -->
-                      ${deleted.map(l => `
-                        <div class="p-3 rounded-xl border border-rose-200 dark:border-rose-800/80 bg-rose-50/40 dark:bg-rose-950/20 flex items-center justify-between gap-2">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200 shrink-0">
-                              Đánh dấu xóa
-                            </span>
-                            <span class="font-medium text-xs text-rose-900 dark:text-rose-200 line-through truncate">${UI.escapeHtml(l.title)}</span>
-                          </div>
-                          <span class="text-[10px] text-rose-500 italic shrink-0">Sẽ gỡ khỏi môn khi duyệt</span>
-                        </div>
-                      `).join('')}
-                    </div>
-                  `}
+                <!-- 5-Category Deep Changeset Diff Tree -->
+                <div class="max-h-[520px] overflow-y-auto pr-1">
+                  ${UI.renderCategorizedDiffHtml(diff)}
                 </div>
               </div>
             `;
             UI.openModal({
-              title: 'Đối chiếu thay đổi giáo trình',
+              title: 'Đối chiếu thay đổi giáo trình (5 Phân Nhóm Học Vụ)',
               bodyHtml,
               size: 'lg'
             });
