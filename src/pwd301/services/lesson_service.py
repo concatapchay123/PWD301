@@ -67,6 +67,16 @@ VALID_LESSON_STATUSES = {
 }
 
 
+def _to_naive_utc(dt: Any) -> Any:
+    """Normalize datetime to timezone-naive UTC for arithmetic across sqlite and SQL server."""
+    if dt is None:
+        return None
+    if hasattr(dt, "tzinfo") and dt.tzinfo is not None:
+        import datetime as dt_mod
+        return dt.astimezone(dt_mod.timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 def _change_request_notification_event_key(
     request: CourseChangeRequest,
     event_type: str,
@@ -788,9 +798,9 @@ def update_lesson(
             "Khóa học đang chờ Quản trị viên xét duyệt. Không thể chỉnh sửa bài giảng."
         )
 
-    # Disallow modifying position via update_lesson unless moving unit or in draft
+    # Disallow modifying position via update_lesson unless moving unit
     if "position" in data and data["position"] != lesson.position:
-        if ("learning_unit_id" in data and data["learning_unit_id"] != lesson.learning_unit_id) or lesson.status == "DRAFT":
+        if "learning_unit_id" in data and data["learning_unit_id"] != lesson.learning_unit_id:
             try:
                 new_pos = int(data["position"])
                 if new_pos > 0:
@@ -1488,6 +1498,8 @@ def record_lesson_progress(
     view_fraction: float,
     client_event_id: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    enforce_wall_clock: bool = False,
+    now: Any = None,
 ) -> LessonProgress:
     """Record learning engagement heartbeat and evaluate monotonic completion (Algorithm 02).
 
@@ -1610,7 +1622,7 @@ def record_lesson_progress(
     if progress is None and lesson.status == "HISTORICAL":
         raise LessonStateViolationError("Cannot start progress on a historical lesson revision.")
 
-    now = utc_now()
+    now_ts = now if now is not None else utc_now()
     if progress is None:
         progress = LessonProgress(
             enrollment_period_id=active_period.id,
@@ -1618,7 +1630,7 @@ def record_lesson_progress(
             seconds_spent=0,
             max_view_fraction=0.0,
             acknowledged_revision_no=lesson.revision_no,
-            updated_at=now,
+            updated_at=now_ts,
         )
         sess.add(progress)
         sess.flush()
@@ -1635,32 +1647,53 @@ def record_lesson_progress(
         dedup_key = f"{active_period.id}:{lesson.id}:{cid_str}"
         if dedup_key in _RECENT_CLIENT_EVENT_IDS:
             # Replay/duplicate event: do not increment seconds, update last_activity_at only
-            progress.last_activity_at = now
+            progress.last_activity_at = now_ts
             sess.flush()
             return progress
         _RECENT_CLIENT_EVENT_IDS[dedup_key] = curr_ts
 
+    # Server-Authoritative Wall-Clock Pacing Enforcement (Anti-Bypass Iron Law)
+    credited_sec = sec
+    if enforce_wall_clock and progress.last_activity_at is not None:
+        now_clean = _to_naive_utc(now_ts)
+        last_clean = _to_naive_utc(progress.last_activity_at)
+        elapsed = (now_clean - last_clean).total_seconds() if (now_clean and last_clean) else 0.0
+        # Cap credited increment to actual elapsed wall-clock seconds (+2.0s network jitter tolerance)
+        max_credible = max(0, int(elapsed + 2.0))
+        if sec > max_credible:
+            credited_sec = max(0, min(sec, max_credible))
+            if sec - elapsed > 5.0:
+                actor_roles = ",".join(sorted(r.code for r in getattr(actor, "roles", []))) or "STUDENT"
+                audit_ev = AuditEvent(
+                    action="LESSON_PROGRESS_PACE_ANOMALY",
+                    actor_user_id=actor.id,
+                    actor_roles_snapshot=actor_roles,
+                    target_type="Lesson",
+                    target_id=lesson.id,
+                    after_json=json.dumps(
+                        {
+                            "claimed_increment": sec,
+                            "credited_seconds": credited_sec,
+                            "elapsed_seconds": round(elapsed, 2),
+                            "lesson_title": lesson.title,
+                        }
+                    ),
+                    created_at=now_ts,
+                )
+                sess.add(audit_ev)
+
     # Bounded accumulated active seconds & high-water-mark view fraction
-    progress.seconds_spent = (progress.seconds_spent or 0) + sec
+    progress.seconds_spent = (progress.seconds_spent or 0) + credited_sec
     current_fraction = float(progress.max_view_fraction or 0.0)
     progress.max_view_fraction = max(current_fraction, vf)
     progress.acknowledged_revision_no = lesson.revision_no
-    progress.last_activity_at = now
-    progress.updated_at = now
+    progress.last_activity_at = now_ts
+    progress.updated_at = now_ts
 
     # Evaluate completion: monotonic, idempotent
     min_completion_seconds = lesson.minimum_completion_seconds
     requires_video = _lesson_requires_video_watch(lesson)
     viewed_fraction_required = 0.90 if requires_video else float(lesson.viewed_fraction_required)
-
-    # When video is watched (>= 90%), automatically satisfy minimum duration requirement
-    if (
-        requires_video
-        and float(progress.max_view_fraction) >= 0.90
-        and min_completion_seconds > 0
-        and (progress.seconds_spent or 0) < min_completion_seconds
-    ):
-        progress.seconds_spent = min_completion_seconds
 
     progress_snapshot: dict[str, Any] = {}
     if progress.completion_rule_snapshot_json:
@@ -1683,12 +1716,12 @@ def record_lesson_progress(
 
     newly_completed = False
     if criteria_met and progress.completed_at is None:
-        progress.completed_at = now
+        progress.completed_at = now_ts
         progress_snapshot.update(
             {
                 "minimum_completion_seconds": min_completion_seconds,
                 "viewed_fraction_required": viewed_fraction_required,
-                "completed_at": now.isoformat(),
+                "completed_at": now_ts.isoformat(),
             }
         )
         progress.completion_rule_snapshot_json = json.dumps(progress_snapshot)

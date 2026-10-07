@@ -63,6 +63,8 @@ def _serialize_lesson(les: Lesson, include_content: bool = True) -> dict[str, An
                 data["quiz"] = []
         else:
             data["quiz"] = []
+        m_pass = re.search(r"<!--\s*mini_quiz_passing:\s*(\d+)\s*-->", les.markdown_content or "")
+        data["quiz_passing_percent"] = int(m_pass.group(1)) if m_pass else 80
     return data
 
 
@@ -156,6 +158,7 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
         seconds_increment=sec_int,
         view_fraction=vf_float,
         client_event_id=client_event_id,
+        enforce_wall_clock=True,
     )
     return jsonify(_serialize_progress(progress)), 200
 
@@ -315,7 +318,10 @@ def update_lesson_api(lesson_id: str) -> tuple[Response, int] | Response:
             (proposed_title is None or proposed_title == original.title)
             and (proposed_summary is None or proposed_summary == original.summary)
             and (proposed_content is None or proposed_content == original.markdown_content)
-            and (proposed_duration is None or proposed_duration == original.estimated_duration_minutes)
+            and (
+                proposed_duration is None
+                or proposed_duration == original.estimated_duration_minutes
+            )
         )
         if is_identical:
             return jsonify(
