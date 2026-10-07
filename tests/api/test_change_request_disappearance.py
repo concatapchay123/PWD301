@@ -216,7 +216,9 @@ def test_change_request_disappears_immediately_upon_approval(
     res_after_pending = client.get("/admin/change-requests?status=PENDING")
     assert res_after_pending.status_code == 200
     ids_after_pending = [it["id"] for it in res_after_pending.get_json()["change_requests"]]
-    assert cr_id not in ids_after_pending, f"Request {cr_id} must have disappeared from status=PENDING!"
+    assert cr_id not in ids_after_pending, (
+        f"Request {cr_id} must have disappeared from status=PENDING!"
+    )
 
     # 5. Verify database still keeps the record as APPROVED for audit/history
     sess.expire_all()
@@ -268,12 +270,16 @@ def test_change_request_disappears_immediately_upon_rejection(
     res_after_all = client.get("/admin/change-requests?status=ALL")
     assert res_after_all.status_code == 200
     ids_after_all = [it["id"] for it in res_after_all.get_json()["change_requests"]]
-    assert cr_id not in ids_after_all, f"Rejected request {cr_id} must have disappeared from status=ALL!"
+    assert cr_id not in ids_after_all, (
+        f"Rejected request {cr_id} must have disappeared from status=ALL!"
+    )
 
     res_after_pending = client.get("/admin/change-requests?status=PENDING")
     assert res_after_pending.status_code == 200
     ids_after_pending = [it["id"] for it in res_after_pending.get_json()["change_requests"]]
-    assert cr_id not in ids_after_pending, f"Rejected request {cr_id} must have disappeared from status=PENDING!"
+    assert cr_id not in ids_after_pending, (
+        f"Rejected request {cr_id} must have disappeared from status=PENDING!"
+    )
 
     # 5. Verify database still keeps the record as REJECTED for audit/history
     sess.expire_all()

@@ -39,6 +39,7 @@ from pwd301.models.attempt_regrade import (
 )
 from pwd301.models.course import Course
 from pwd301.models.identity import Role, User
+from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.services.assessment_service import (
     assign_question,
     create_assessment,
@@ -328,6 +329,34 @@ def test_regrade_single_choice_answer_only(
     assert res_hist2.reason_code == "REGRADE"
     assert res_hist2.old_score == Decimal("0.0000")
     assert res_hist2.new_score == Decimal("10.0000")
+
+    expected_targets = {
+        student_user_1.id: str(att1.public_id),
+        student_user_2.id: str(att2.public_id),
+    }
+    job_id, instructor_id = job.id, instructor_user.id
+    db.session.remove()
+    changed_notices = (
+        db.session.query(Notification)
+        .join(NotificationEvent)
+        .filter(NotificationEvent.event_type == "SCORE_CHANGED_AFTER_REGRADE")
+        .all()
+    )
+    assert len(changed_notices) == 2
+    for notice in changed_notices:
+        assert notice.target_role == "STUDENT"
+        assert notice.to_dict()["action_url"] == (
+            f"#/student/assessments/results?id={expected_targets[notice.recipient_user_id]}"
+        )
+    process_regrade_job(job_id, actor=db.session.get(User, instructor_id))
+    db.session.remove()
+    assert (
+        db.session.query(Notification)
+        .join(NotificationEvent)
+        .filter(NotificationEvent.event_type == "SCORE_CHANGED_AFTER_REGRADE")
+        .count()
+        == 2
+    )
 
 
 def test_regrade_content_or_choices_full_credit(

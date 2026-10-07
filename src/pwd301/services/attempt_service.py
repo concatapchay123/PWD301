@@ -821,6 +821,19 @@ def get_attempt_delivery(
         sess.flush()
 
     if attempt.status != "IN_PROGRESS":
+        if attempt.status in ("GRADED", "SUBMITTED", "PENDING_GRADING"):
+            return {
+                "attempt_id": str(attempt.public_id),
+                "assessment_id": str(attempt.assessment.public_id) if attempt.assessment else None,
+                "attempt_number": attempt.attempt_number,
+                "status": attempt.status,
+                "is_completed": True,
+                "redirect_url": f"#/student/assessments/results?id={attempt.public_id}",
+                "message": f"Assessment attempt is completed (status: {attempt.status}).",
+                "questions": [],
+                "remaining_seconds": 0,
+                "total_questions": len(attempt.attempt_questions),
+            }
         raise AttemptValidationError(
             f"Assessment attempt is not in progress (status: {attempt.status})."
         )
@@ -943,6 +956,7 @@ def get_attempt_delivery(
                 "interaction_type": interaction_type,
                 "content": delivered_content,
                 "answer_text": answer.answer_text if answer else None,
+                "last_client_sequence": (answer.last_client_sequence or 0) if answer else 0,
                 "selected_choice_keys": sorted(selected_choice_keys),
                 "resources": image_resources_by_revision.get(aq.source_question_revision_id, []),
                 "points": float(aq.points_assigned),
@@ -952,6 +966,13 @@ def get_attempt_delivery(
         )
 
     assessment = attempt.assessment
+    max_seq = max(
+        [
+            (getattr(aq.current_answer, "last_client_sequence", 0) or 0)
+            for aq in attempt.attempt_questions
+        ]
+        + [0]
+    )
     return {
         "attempt_id": str(attempt.public_id),
         "assessment_id": str(assessment.public_id) if assessment else None,
@@ -976,6 +997,7 @@ def get_attempt_delivery(
         "total_questions": len(questions_data),
         "total_points": float(total_points),
         "lease_epoch": attempt.lease_epoch or 1,
+        "max_sequence": max_seq,
         "questions": questions_data,
     }
 
@@ -1990,17 +2012,23 @@ def submit_assessment_attempt(
             f"Assessment attempt is not in progress (status: {attempt.status})."
         )
 
-    # Validate lease token if provided (only if not expired)
-    if not was_expired and raw_lease_token is not None and isinstance(raw_lease_token, str):
-        token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-        expected_hash = (
-            attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
-        )
-        digest_matches = hmac.compare_digest(expected_hash, token_hash)
-        if attempt.lease_token_hash is not None and not digest_matches:
-            raise AttemptLeaseConflictError(
-                "Editing lease was lost or taken over by another window."
-            )
+    # Validate lease token if active lease exists (only if not expired)
+    if not was_expired and attempt.lease_token_hash is not None:
+        lease_expires = _normalize_dt(attempt.lease_expires_at)
+        if lease_expires is None or (norm_now is not None and norm_now < lease_expires):
+            if (
+                raw_lease_token is None
+                or not isinstance(raw_lease_token, str)
+                or not raw_lease_token.strip()
+            ):
+                raise AttemptLeaseConflictError(
+                    "Editing lease token is required to submit an active in-progress attempt."
+                )
+            token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+            if not hmac.compare_digest(attempt.lease_token_hash, token_hash):
+                raise AttemptLeaseConflictError(
+                    "Editing lease was lost or taken over by another window."
+                )
 
     effective_sub_time = min(now, deadline) if deadline else now
 
@@ -2163,6 +2191,62 @@ def _serialize_assessment_result(
     }
 
 
+def notify_assessment_result_change(
+    attempt: AssessmentAttempt,
+    result: AssessmentResult,
+    old_status: str | None,
+    old_score: Decimal | None,
+    session: Session | scoped_session[Any],
+) -> None:
+    """Notify only a first release or a changed already-published score."""
+    if result.status != "RELEASED" or not attempt.student_user_id:
+        return
+    if old_status == "RELEASED" and (old_score is None or old_score == result.raw_score):
+        return
+
+    asm_title = attempt.assessment.title if attempt.assessment else "Khảo thí"
+    action_url = f"#/student/assessments/results?id={attempt.public_id}"
+    if old_status != "RELEASED":
+        event_type = "ASSESSMENT_GRADED"
+        title = f"Kết quả bài thi: {asm_title}"
+        body = (
+            f"Bài thi lần #{attempt.attempt_number} của bạn đã có điểm: "
+            f"{float(result.raw_score):.1f}/{float(result.max_score):.1f} điểm "
+            f"({float(result.percent_score or 0.0):.1f}%)."
+        )
+        category = "ASSESSMENT"
+    else:
+        assert old_score is not None
+        event_type = "SCORE_CHANGED_AFTER_REGRADE"
+        title = f"Điểm bài thi đã thay đổi: {asm_title}"
+        body = (
+            f"Điểm bài thi của bạn đã được cập nhật từ {float(old_score):.1f} "
+            f"thành {float(result.raw_score):.1f}/{float(result.max_score):.1f} điểm "
+            "sau khi chấm lại."
+        )
+        category = "GRADE"
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        with session.begin_nested():
+            dispatch_notification(
+                recipient_user=attempt.student_user_id,
+                event_type=event_type,
+                title=title,
+                body=body,
+                action_url=action_url,
+                category=category,
+                target_role="STUDENT",
+                event_key=uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"pwd301:assessment-result:{attempt.id}:{event_type}:{old_score if old_score is not None else 'none'}:{result.raw_score}:{attempt.student_user_id}",
+                ),
+                session=session,
+            )
+    except Exception as exc:
+        logger.warning("Failed to dispatch assessment grading notification: %s", exc)
+
+
 def calculate_attempt_result(
     attempt: AssessmentAttempt,
     actor: User | None = None,
@@ -2252,6 +2336,7 @@ def calculate_attempt_result(
     )
     old_score = result.raw_score if result else None
     old_percent = result.percent_score if result else None
+    old_status = result.status if result else None
 
     if result is None:
         result = AssessmentResult(
@@ -2299,55 +2384,7 @@ def calculate_attempt_result(
     sess.add(history_entry)
     sess.flush()
 
-    # Dispatch in-app notifications
-    if status == "RELEASED" and attempt.student_user_id:
-        asm_title = attempt.assessment.title if attempt.assessment else "Khảo thí"
-        asm_pub_id = str(attempt.assessment.public_id) if attempt.assessment else ""
-        action_url = (
-            f"#/student/assessments/{asm_pub_id}/results" if asm_pub_id else "#/student/assessments"
-        )
-
-        try:
-            from pwd301.services.notification_service import dispatch_notification
-
-            if valid_reason_code == "INITIAL":
-                with sess.begin_nested():
-                    dispatch_notification(
-                        recipient_user=attempt.student_user_id,
-                        event_type="ASSESSMENT_GRADED",
-                        title=f"Kết quả bài thi: {asm_title}",
-                        body=(
-                            f"Bài thi lần #{attempt.attempt_number} của bạn đã có điểm: "
-                            f"{float(raw_score):.1f}/{float(max_score):.1f} điểm "
-                            f"({float(percent_score or 0.0):.1f}%)."
-                        ),
-                        action_url=action_url,
-                        category="ASSESSMENT",
-                        target_role="STUDENT",
-                        session=sess,
-                    )
-            elif (
-                valid_reason_code in ("REGRADE", "CORRECTION")
-                and old_score is not None
-                and old_score != raw_score
-            ):
-                with sess.begin_nested():
-                    dispatch_notification(
-                        recipient_user=attempt.student_user_id,
-                        event_type="SCORE_CHANGED_AFTER_REGRADE",
-                        title=f"Điểm bài thi đã thay đổi: {asm_title}",
-                        body=(
-                            f"Điểm bài thi của bạn đã được cập nhật từ {float(old_score):.1f} "
-                            f"thành {float(raw_score):.1f}/{float(max_score):.1f} điểm "
-                            "sau khi chấm lại."
-                        ),
-                        action_url=action_url,
-                        category="GRADE",
-                        target_role="STUDENT",
-                        session=sess,
-                    )
-        except Exception as exc:
-            logger.warning("Failed to dispatch assessment grading notification: %s", exc)
+    notify_assessment_result_change(attempt, result, old_status, old_score, sess)
 
     return result
 
@@ -3550,6 +3587,7 @@ def get_instructor_attempt_evaluation(
             "awarded_points": awarded_pts,
             "is_correct": is_correct,
             "grading_status": grade.grading_status if grade else "PENDING",
+            "row_version": grade.row_version.hex() if grade and grade.row_version else None,
             "explanation": aq.explanation_snapshot,
             "student_answer_text": ans.answer_text if ans else None,
             "selected_choice_keys": list(selected_key_set),

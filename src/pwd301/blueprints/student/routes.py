@@ -107,7 +107,11 @@ def attempt_view(attempt_id: str) -> Any:
     )
 
     attempt = _resolve_attempt(attempt_id, session=db.session)
-    if attempt is not None and attempt.status in ("GRADED", "SUBMITTED", "PENDING_GRADING"):
+    if attempt is None:
+        raise ResourceNotFoundError(f"Assessment attempt '{attempt_id}' not found.")
+    if attempt.student_user_id != actor.id:
+        raise ForbiddenError("You are not authorized to access this assessment attempt.")
+    if attempt.status in ("GRADED", "SUBMITTED", "PENDING_GRADING"):
         return (
             jsonify(
                 {
@@ -505,12 +509,14 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
 
     bounded_sec = max(1, min(sec_int, 60))
     bounded_vf = max(0.0, min(vf_float, 1.0))
+    client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
 
     progress = record_lesson_progress(
         actor=actor,
         lesson_id=lesson_id,
         seconds_increment=bounded_sec,
         view_fraction=bounded_vf,
+        client_event_id=client_event_id,
     )
 
     data = {
@@ -2383,10 +2389,59 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
             403,
         )
 
+    if attempt.status not in ("SUBMITTED", "PENDING_GRADING", "GRADED"):
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "INVALID_STATE",
+                        "message": "Chỉ có thể khiếu nại các bài thi đã hoàn thành hoặc đã chấm điểm.",
+                    }
+                }
+            ),
+            400,
+        )
+
     payload = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     payload = payload or {}
-    reason = str(payload.get("reason", "Yêu cầu phúc khảo bài thi")).strip()
+    reason = str(payload.get("reason", "")).strip()
+    if not reason or len(reason) < 5:
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Lý do khiếu nại không được để trống và phải có tối thiểu 5 ký tự.",
+                    }
+                }
+            ),
+            400,
+        )
     note = str(payload.get("note", "")).strip()
+
+    # Enforce idempotency: check if an appeal is already pending review
+    last_event = (
+        db.session.query(AuditEvent)
+        .filter(
+            AuditEvent.target_type == "ASSESSMENT_ATTEMPT",
+            AuditEvent.target_id == attempt.id,
+            AuditEvent.action.in_(["STUDENT_ATTEMPT_APPEAL", "INSTRUCTOR_APPEAL_DECISION"]),
+        )
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    if last_event and last_event.action == "STUDENT_ATTEMPT_APPEAL":
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "APPEAL_ALREADY_PENDING",
+                        "message": "Bài thi này đã có đơn phúc khảo đang chờ xử lý.",
+                    }
+                }
+            ),
+            409,
+        )
 
     now = utc_now()
     appeal_details = {

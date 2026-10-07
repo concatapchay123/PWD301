@@ -318,16 +318,19 @@ class AppRouter {
       if (this.currentRole !== 'ADMIN') {
         try {
           await ApiClient.switchRole('ADMIN');
+          this.currentRole = 'ADMIN';
+          if (this.currentUser) this.currentUser.active_role = 'ADMIN';
+          this.notificationsCache = null;
+          this.loadCachedNotifications();
+          this.fetchNotifications(true);
+          this.fetchAdminPendingCounts();
+          this._needsUserUiRefresh = true;
         } catch (err) {
           console.warn('Auto switchRole to ADMIN error:', err);
+          UI.showToast('Không thể chuyển đổi vai trò sang Quản trị viên.', 'warning');
+          this.redirectToRoleHome();
+          return;
         }
-        this.currentRole = 'ADMIN';
-        if (this.currentUser) this.currentUser.active_role = 'ADMIN';
-        this.notificationsCache = null;
-        this.loadCachedNotifications();
-        this.fetchNotifications(true);
-        this.fetchAdminPendingCounts();
-        this._needsUserUiRefresh = true;
       }
     } else if (path.startsWith('#/instructor')) {
       if (!hasInstructorRole) {
@@ -338,29 +341,35 @@ class AppRouter {
       if (this.currentRole !== 'INSTRUCTOR') {
         try {
           await ApiClient.switchRole('INSTRUCTOR');
+          this.currentRole = 'INSTRUCTOR';
+          if (this.currentUser) this.currentUser.active_role = 'INSTRUCTOR';
+          this.notificationsCache = null;
+          this.loadCachedNotifications();
+          this.fetchNotifications(true);
+          this._needsUserUiRefresh = true;
         } catch (err) {
           console.warn('Auto switchRole to INSTRUCTOR error:', err);
+          UI.showToast('Không thể chuyển đổi vai trò sang Giảng viên.', 'warning');
+          this.redirectToRoleHome();
+          return;
         }
-        this.currentRole = 'INSTRUCTOR';
-        if (this.currentUser) this.currentUser.active_role = 'INSTRUCTOR';
-        this.notificationsCache = null;
-        this.loadCachedNotifications();
-        this.fetchNotifications(true);
-        this._needsUserUiRefresh = true;
       }
     } else if (path.startsWith('#/student')) {
       if (this.currentRole !== 'STUDENT') {
         try {
           await ApiClient.switchRole('STUDENT');
+          this.currentRole = 'STUDENT';
+          if (this.currentUser) this.currentUser.active_role = 'STUDENT';
+          this.notificationsCache = null;
+          this.loadCachedNotifications();
+          this.fetchNotifications(true);
+          this._needsUserUiRefresh = true;
         } catch (err) {
           console.warn('Auto switchRole to STUDENT error:', err);
+          UI.showToast('Không thể chuyển đổi vai trò sang Học viên.', 'warning');
+          this.redirectToRoleHome();
+          return;
         }
-        this.currentRole = 'STUDENT';
-        if (this.currentUser) this.currentUser.active_role = 'STUDENT';
-        this.notificationsCache = null;
-        this.loadCachedNotifications();
-        this.fetchNotifications(true);
-        this._needsUserUiRefresh = true;
       }
     }
 
@@ -1039,6 +1048,9 @@ class AppRouter {
               sessionStorage.removeItem(`pwd301_notifs_${this.currentUser.id}`);
             } catch {}
           }
+          if (typeof ExamStore !== 'undefined' && typeof ExamStore.clearMemoryDraft === 'function') {
+            ExamStore.clearMemoryDraft();
+          }
           this.notificationsCache = null;
           this.currentUser = null;
           this.currentRole = null;
@@ -1615,6 +1627,8 @@ class AppRouter {
     const itemIndex = (this.notificationsCache.items || []).findIndex(i => String(i.id) === String(notifId));
     if (itemIndex === -1) return;
 
+    const previousItems = [...this.notificationsCache.items];
+    const previousUnread = this.notificationsCache.unread_count;
     const item = this.notificationsCache.items[itemIndex];
     const wasUnread = !item.is_read && !item.read;
 
@@ -1631,7 +1645,14 @@ class AppRouter {
       await ApiClient.deleteNotification(notifId);
       if (window.UI) UI.showToast('Đã xóa thông báo.', 'info');
     } catch (err) {
-      console.warn('Silent deleteNotification error:', err);
+      if (this.notificationsCache) {
+        this.notificationsCache.items = previousItems;
+        this.notificationsCache.unread_count = previousUnread;
+        this.saveCachedNotifications();
+        this.updateBadgeFromCache();
+        this.renderNotificationsDropdownContent();
+      }
+      if (window.UI) UI.showToast('Không thể xóa thông báo: ' + (err.message || ''), 'error');
     }
   }
 
@@ -1650,11 +1671,20 @@ class AppRouter {
       this.updateBadgeFromCache();
       this.renderNotificationsDropdownContent();
 
-      // Silent background API sync
+      // Background API sync with rollback
       try {
         await ApiClient.markNotificationRead(notifId);
       } catch (err) {
-        console.warn('Silent markNotificationRead failed:', err);
+        if (this.notificationsCache) {
+          item.is_read = false;
+          item.read = false;
+          if (typeof this.notificationsCache.unread_count === 'number') {
+            this.notificationsCache.unread_count++;
+          }
+          this.saveCachedNotifications();
+          this.updateBadgeFromCache();
+          this.renderNotificationsDropdownContent();
+        }
       }
     }
 
@@ -1742,6 +1772,9 @@ class AppRouter {
   async handleMarkAllRead() {
     if (!this.notificationsCache) return;
 
+    const previousItems = JSON.parse(JSON.stringify(this.notificationsCache.items || []));
+    const previousUnread = this.notificationsCache.unread_count;
+
     // Optimistic local update
     (this.notificationsCache.items || []).forEach(i => {
       i.is_read = true;
@@ -1752,20 +1785,31 @@ class AppRouter {
     this.updateBadgeFromCache();
     this.renderNotificationsDropdownContent();
 
-    if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
-      UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
-    }
-
-    // Silent background API sync
     try {
       await ApiClient.markAllNotificationsRead(null, this.currentRole);
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
+      }
     } catch (err) {
-      console.warn('markAllNotificationsRead background sync error:', err);
+      if (this.notificationsCache) {
+        this.notificationsCache.items = previousItems;
+        this.notificationsCache.unread_count = previousUnread;
+        this.saveCachedNotifications();
+        this.updateBadgeFromCache();
+        this.renderNotificationsDropdownContent();
+      }
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('Không thể đánh dấu tất cả đã đọc: ' + (err.message || ''), 'error');
+      }
     }
   }
 
   async fetchNotifications(forceRender = false) {
     if (!this.currentUser) return;
+    const fetchUserId = this.currentUser.id;
+    const fetchRole = this.currentRole || 'STUDENT';
+    this._notifFetchGen = (this._notifFetchGen || 0) + 1;
+    const fetchGen = this._notifFetchGen;
     this.beginNotificationFetch();
     if (typeof ApiClient === 'undefined' || typeof ApiClient.getNotifications !== 'function') {
       const error = new Error('Notification client is unavailable.');
@@ -1774,8 +1818,11 @@ class AppRouter {
       return;
     }
     try {
-      const currentRole = this.currentRole || 'STUDENT';
+      const currentRole = fetchRole;
       const data = await ApiClient.getNotifications({ role: currentRole });
+      if (!this.currentUser || this.currentUser.id !== fetchUserId || (this.currentRole || 'STUDENT') !== fetchRole || this._notifFetchGen !== fetchGen) {
+        return; // Discard stale cross-user / cross-role response
+      }
       if (data && Array.isArray(data.items)) {
         const items = data.items.map(i => ({
           ...i,

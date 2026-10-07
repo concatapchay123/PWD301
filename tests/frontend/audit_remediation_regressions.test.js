@@ -99,6 +99,27 @@ test('student result score state does not invent values while score is hidden', 
   );
 });
 
+test('student result action downloads a PDF attachment instead of invoking print', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../../frontend/assets/js/views/student.js'),
+    'utf8',
+  );
+  assert.match(source, /download-student-result-pdf-btn/);
+  assert.match(source, /\/result\.pdf/);
+  assert.doesNotMatch(source, /window\.print\(\)/);
+});
+
+test('student result does not fabricate signature, instructor, or duration values', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../../frontend/assets/js/views/student.js'),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /7f8a92b1\.\.\.10243/);
+  assert.doesNotMatch(source, /Trần Hoàng Nam/);
+  assert.doesNotMatch(source, /data\.duration_minutes \|\| 45/);
+  assert.match(source, /signature_hash/);
+});
+
 test('instructor attempt detail modal exposes dialog semantics and keyboard close support', () => {
   const source = fs.readFileSync(
     path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js'),

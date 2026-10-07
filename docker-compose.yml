@@ -99,6 +99,55 @@ services:
       - pwd301_net
     restart: unless-stopped
 
+  # ============================================================================
+  # 4. Durable Background Worker (email outbox, scans, imports, regrades)
+  # ============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pwd301_worker
+    command: ["python", "scripts/run_worker.py"]
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - SECRET_KEY=${SECRET_KEY:-c84f88b4886f48f681aefd59d9c24097e3a985cfb8417c88}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae1723}
+      - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+      - DB_HOST=db
+      - DB_PORT=1433
+      - DB_USER=${DB_USER:-sa}
+      - DB_PASSWORD=${DB_PASSWORD:-AdminStrongPassw0rd!}
+      - DB_NAME=${DB_NAME:-PWD301}
+      - CLAMAV_HOST=clamav
+      - CLAMAV_PORT=3310
+      - MAIL_HOST=${MAIL_HOST:-}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_USE_TLS=${MAIL_USE_TLS:-1}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - FILE_STORAGE_ROOT=/app/storage
+      - FILE_QUARANTINE_ROOT=/app/quarantine
+      - FILE_BACKUP_ROOT=/app/backups
+      - EXPORT_ROOT=/app/exports
+      - WORKER_POLL_INTERVAL_SECONDS=${WORKER_POLL_INTERVAL_SECONDS:-2}
+    depends_on:
+      db:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - storage_data:/app/storage
+      - quarantine_data:/app/quarantine
+      - backup_data:/app/backups
+      - export_data:/app/exports
+    networks:
+      - pwd301_net
+    restart: unless-stopped
+
 volumes:
   sqldata:
     name: pwd301_sqldata

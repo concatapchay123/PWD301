@@ -27,7 +27,7 @@ from flask import current_app
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
-from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
+from pwd301.models.course import Course, CourseChangeRequest, Enrollment, LearningUnit, Lesson
 from pwd301.models.file_import import (
     FileAsset,
     FileBlob,
@@ -43,6 +43,7 @@ from pwd301.services.authorization_service import (
     require_course_manager,
 )
 from pwd301.services.exceptions import (
+    ConflictError,
     FileAccessDeniedError,
     FileAssetNotFoundError,
     FileInfectedError,
@@ -92,6 +93,17 @@ DANGEROUS_EXTENSIONS: frozenset[str] = frozenset(
         ".potm",
     }
 )
+
+
+def _file_rejection_event_key(revision: FileRevision, recipient_user_id: int) -> uuid.UUID:
+    """Return one retry key for a rejected file revision notification."""
+    if revision.id is None:
+        raise RuntimeError("File rejection notification key requires a persisted revision.")
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:file-rejected:{revision.id}:{recipient_user_id}",
+    )
+
 
 IMAGE_EXTENSIONS: frozenset[str] = frozenset(
     {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff"}
@@ -570,6 +582,7 @@ def store_file_stream(
                     ),
                     category="SECURITY",
                     target_role="INSTRUCTOR",
+                    event_key=_file_rejection_event_key(revision, actor.id),
                     session=sess,
                 )
             except Exception:
@@ -860,6 +873,7 @@ def add_file_revision(
                     category="SECURITY",
                     force_email=True,
                     target_role="INSTRUCTOR",
+                    event_key=_file_rejection_event_key(new_rev, actor.id),
                     session=sess,
                 )
             except Exception:
@@ -1146,6 +1160,27 @@ def attach_resource_to_lesson(
         raise ResourceNotFoundError("Lesson not found.")
 
     require_course_manager(actor, lesson.course_id, session=sess)
+    if not actor.is_admin:
+        pending_cr = (
+            sess.query(CourseChangeRequest)
+            .filter(
+                CourseChangeRequest.course_id == lesson.course_id,
+                CourseChangeRequest.status == "PENDING",
+                CourseChangeRequest.target_type == "COURSE",
+                sa.or_(
+                    CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                    CourseChangeRequest.proposed_payload_json.like(
+                        '%"action": "COURSE_VERSION_CHANGESET"%'
+                    ),
+                ),
+            )
+            .first()
+        )
+        if pending_cr is not None:
+            raise ConflictError(
+                "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
+                "Toàn bộ thao tác chỉnh sửa tạm thời bị khóa cho đến khi được duyệt hoặc bạn rút lại yêu cầu."
+            )
 
     asset = _resolve_file_asset(asset_id, session=sess)
     if asset is None:
@@ -1242,6 +1277,27 @@ def detach_resource_from_lesson(
         raise ResourceNotFoundError("Lesson not found.")
 
     require_course_manager(actor, lesson.course_id, session=sess)
+    if not actor.is_admin:
+        pending_cr = (
+            sess.query(CourseChangeRequest)
+            .filter(
+                CourseChangeRequest.course_id == lesson.course_id,
+                CourseChangeRequest.status == "PENDING",
+                CourseChangeRequest.target_type == "COURSE",
+                sa.or_(
+                    CourseChangeRequest.change_type == "COURSE_VERSION_CHANGESET",
+                    CourseChangeRequest.proposed_payload_json.like(
+                        '%"action": "COURSE_VERSION_CHANGESET"%'
+                    ),
+                ),
+            )
+            .first()
+        )
+        if pending_cr is not None:
+            raise ConflictError(
+                "Khóa học hiện đang có 1 đợt cập nhật đang chờ Quản trị viên xét duyệt. "
+                "Toàn bộ thao tác chỉnh sửa tạm thời bị khóa cho đến khi được duyệt hoặc bạn rút lại yêu cầu."
+            )
 
     # Resolve resource by synthetic public_id, internal id, or asset public_id
     res: LessonResource | None = None
@@ -1455,8 +1511,8 @@ def rescan_file_asset(
         asset.status = "ACTIVE"
 
     elif main_verdict.status == "FAIL":
-        if "infected" not in str(target_path):
-            infected_dir = get_file_infected_root()
+        infected_dir = get_file_infected_root()
+        if target_path.parent.resolve() != infected_dir.resolve():
             hasher = hashlib.sha256()
             with open(target_path, "rb") as f:
                 while True:

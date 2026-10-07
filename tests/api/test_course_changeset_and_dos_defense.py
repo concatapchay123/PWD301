@@ -11,6 +11,7 @@ Tests:
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -21,6 +22,7 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.course import Course, CourseChangeRequest, Lesson
 from pwd301.models.identity import Role, User
+from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.services.course_service import create_course
 from pwd301.services.lesson_service import create_learning_unit, create_lesson
 from pwd301.services.rate_limit_service import reset_all_rate_limits
@@ -294,6 +296,17 @@ def test_admin_approve_changeset_atomic_commit(
     res_sub = client.post(f"/instructor/courses/{cid}/changeset/submit", json=payload)
     assert res_sub.status_code in (201, 202)
     cr_id = res_sub.get_json()["change_request_id"]
+    submitted_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-change:{cr_id}:COURSE_CHANGE_REQUESTED:{admin_user.id}",
+    )
+    assert (
+        db.session.query(NotificationEvent)
+        .filter(NotificationEvent.event_key == submitted_key)
+        .one()
+        .event_type
+        == "COURSE_CHANGE_REQUESTED"
+    )
 
     # Login as Admin and Approve
     login_web_user(client, admin_user)
@@ -302,6 +315,17 @@ def test_admin_approve_changeset_atomic_commit(
         json={"action": "approve", "reason": "Phê duyệt đợt cập nhật hoàn chỉnh"},
     )
     assert resp_approve.status_code == 200
+    approved_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-change:{cr_id}:COURSE_CHANGE_APPROVED:{instructor_user.id}",
+    )
+    assert (
+        db.session.query(NotificationEvent)
+        .filter(NotificationEvent.event_key == approved_key)
+        .one()
+        .event_type
+        == "COURSE_CHANGE_APPROVED"
+    )
 
     # Verify changes applied to database
     db.session.expire_all()
@@ -356,6 +380,51 @@ def test_admin_reject_changeset_requires_reason(
     cr = db.session.get(CourseChangeRequest, cr_id)
     assert cr.status == "REJECTED"
     assert cr.review_reason == "Cần bổ sung thêm ví dụ thực tế cho bài học."
+
+
+def test_dedicated_reject_changeset_uses_public_course_identity(
+    client: FlaskClient,
+    instructor_user: User,
+    admin_user: User,
+    published_course: Course,
+) -> None:
+    """Dedicated rejection notifications must not expose the internal course PK."""
+    login_web_user(client, instructor_user)
+    cid = str(published_course.public_id)
+    res_sub = client.post(
+        f"/instructor/courses/{cid}/changeset/submit",
+        json={"version_title": "Bản Nháp Không Lộ ID"},
+    )
+    assert res_sub.status_code in (201, 202)
+    cr_id = res_sub.get_json()["change_request_id"]
+
+    login_web_user(client, admin_user)
+    response = client.post(
+        f"/admin/course-changes/{cr_id}/reject",
+        json={"reason": "Cần bổ sung ví dụ minh họa trước khi áp dụng."},
+    )
+    assert response.status_code == 200
+
+    notification = (
+        db.session.query(Notification)
+        .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
+        .filter(
+            Notification.recipient_user_id == instructor_user.id,
+            NotificationEvent.event_type == "COURSE_CHANGE_REJECTED",
+        )
+        .order_by(Notification.id.desc())
+        .first()
+    )
+    assert notification is not None
+    assert notification.title == (
+        f"Đợt cập nhật khóa học {published_course.course_code} cần chỉnh sửa lại"
+    )
+    assert f"#{published_course.id}" not in notification.title
+
+    payload = json.loads(notification.event.payload_json)
+    assert payload["course_id"] == str(published_course.public_id)
+    assert payload["action_url"] == (f"#/instructor/courses/manage?id={published_course.public_id}")
+    assert payload["action_url"] != f"#/instructor/courses/manage?id={published_course.id}"
 
 
 def test_discard_changeset_cancels_pending_request(
@@ -495,7 +564,9 @@ def test_learner_progress_preserved_after_changeset_approval(
     assign_role_to_user(student_user.id, "STUDENT")
 
     enrollment = enroll_student(student_user, published_course.id, session=sess)
-    period = sess.query(EnrollmentPeriod).filter(EnrollmentPeriod.enrollment_id == enrollment.id).first()
+    period = (
+        sess.query(EnrollmentPeriod).filter(EnrollmentPeriod.enrollment_id == enrollment.id).first()
+    )
     assert period is not None
     first_lesson = published_course.lessons[0]
 
@@ -640,4 +711,3 @@ def test_draft_curriculum_creates_no_admin_change_requests_or_notifications(
 
     assert cr_count_after == cr_count_before
     assert admin_notif_count_after == admin_notif_count_before
-

@@ -434,6 +434,7 @@ def test_mixed_quiz_essay_pending_manual_grading_flow(
     assert essay_item["student_answer_text"] == essay_content
     assert essay_item["grading_status"] == "PENDING"
     assert essay_item["points_assigned"] == 20.0
+    assert "row_version" in essay_item
 
     # 7. Instructor submits manual essay grade: 18.0 / 20.0
     grade_resp = client.post(

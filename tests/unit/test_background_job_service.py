@@ -6,6 +6,8 @@ import pytest
 from flask import Flask
 
 from pwd301.extensions import db
+from pwd301.models.notification_audit import EmailDelivery
+from pwd301.models.operations import BackgroundJob
 from pwd301.services.background_job_service import (
     BackgroundJobError,
     claim_next_background_job,
@@ -13,6 +15,7 @@ from pwd301.services.background_job_service import (
     execute_background_job,
     run_worker_once,
 )
+from pwd301.services.email_service import enqueue_email
 
 
 def test_enqueue_valid_job(app: Flask) -> None:
@@ -95,3 +98,25 @@ def test_run_worker_once(app: Flask) -> None:
 
         # When no more jobs, run_worker_once returns False
         assert run_worker_once(session=db.session) is False
+
+
+def test_run_worker_once_processes_pending_email_without_preexisting_job(app: Flask) -> None:
+    """The worker must bridge durable email outbox rows into the EMAIL job queue."""
+    with app.app_context():
+        enqueue_email(
+            recipient_email="worker-outbox@example.com",
+            subject="Worker outbox test",
+            body_text="The worker should process this durable outbox row.",
+            template_code="WORKER_OUTBOX_TEST",
+            session=db.session,
+        )
+        db.session.commit()
+
+        assert db.session.query(EmailDelivery).filter_by(status="PENDING").count() == 1
+        assert db.session.query(BackgroundJob).count() == 0
+
+        processed = run_worker_once(session=db.session)
+
+        assert processed is True
+        delivery = db.session.query(EmailDelivery).one()
+        assert delivery.status == "SENT"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from flask import Flask
 from sqlalchemy.orm import Session
@@ -11,7 +13,7 @@ from pwd301.models.assessment import Assessment
 from pwd301.models.attempt_regrade import AssessmentAttempt
 from pwd301.models.course import Course, Enrollment, LearningUnit, Lesson
 from pwd301.models.identity import AnonymousUser, Role, User
-from pwd301.models.notification_audit import AuditEvent
+from pwd301.models.notification_audit import AuditEvent, NotificationEvent
 from pwd301.models.question_bank import Question
 from pwd301.models.types import utc_now
 from pwd301.services.authorization_service import (
@@ -801,6 +803,42 @@ def test_parent_child_consistency_helpers(
 # ==============================================================================
 # 9. Admin Permission Rules Enforcement (04_ADMIN_PERMISSION_RULES.md)
 # ==============================================================================
+
+
+def test_record_admin_intervention_notification_uses_audit_key(
+    admin_user: User,
+    instructor_user: User,
+    course_sample: Course,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Administrative intervention notice uses the durable audit identity."""
+    captured: list[dict[str, object]] = []
+
+    def capture_notification(**kwargs: object) -> tuple[None, None]:
+        captured.append(kwargs)
+        return None, None
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification",
+        capture_notification,
+    )
+    audit = record_admin_intervention(
+        admin=admin_user,
+        owner_instructor_id=instructor_user.id,
+        resource_type="COURSE",
+        resource_id=course_sample.id,
+        action="UPDATE",
+        reason="Emergency content policy fix",
+    )
+
+    expected_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:admin-intervention:{audit.id}:ADMIN_OVERRIDE_UPDATE:{instructor_user.id}",
+    )
+    assert captured[0]["event_key"] == expected_key
+    assert (
+        db.session.query(NotificationEvent).filter_by(event_key=expected_key).one_or_none() is None
+    )
 
 
 def test_admin_permission_rules_enforcement(

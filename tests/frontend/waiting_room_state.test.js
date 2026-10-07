@@ -21,5 +21,7 @@ test('waiting room prevents starting when closed or attempt limit reached', () =
   assert.equal(window.StudentView.getWaitingRoomState({ is_open: true, is_closed: true }), 'CLOSED');
   assert.equal(window.StudentView.getWaitingRoomState({ is_open: true, is_attempt_limit_reached: true }), 'EXHAUSTED');
   assert.equal(window.StudentView.getWaitingRoomState({ is_open: false }), 'UPCOMING');
+  assert.equal(window.StudentView.getWaitingRoomState({ is_open: false, is_waiting_room_open: false }), 'WAITING_ROOM_LOCKED');
+  assert.equal(window.StudentView.getWaitingRoomState({ is_open: false, is_waiting_room_open: true }), 'UPCOMING');
   assert.equal(window.StudentView.getWaitingRoomState({ is_open: true, can_start: true }), 'READY');
 });

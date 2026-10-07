@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from email.message import EmailMessage
 
 import pytest
 from flask import Flask
@@ -25,11 +26,12 @@ from pwd301.models.types import utc_now
 from pwd301.services.email_service import (
     MockMailClient,
     enqueue_email,
+    get_default_mail_client,
     process_email_queue,
     retry_failed_emails,
     send_single_email,
 )
-from pwd301.services.exceptions import ForbiddenError, InvalidEmailError
+from pwd301.services.exceptions import EmailDeliveryError, ForbiddenError, InvalidEmailError
 from pwd301.services.notification_service import emit_event
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -90,6 +92,75 @@ def test_enqueue_email_basic(app: Flask, test_user: User) -> None:
     assert delivery.recipient_email_snapshot == test_user.email
     assert delivery.template_code == "TEST_TEMPLATE"
     assert delivery.next_attempt_at is not None
+
+
+def test_production_default_mail_transport_fails_closed_without_configuration(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Production must never report a mock transport as a successful email path."""
+    monkeypatch.delenv("MAIL_HOST", raising=False)
+    monkeypatch.delenv("MAIL_FROM", raising=False)
+    app.config["TESTING"] = False
+
+    with app.app_context():
+        client = get_default_mail_client()
+        with pytest.raises(EmailDeliveryError, match="not configured"):
+            client.send(
+                recipient_email="recipient@example.com",
+                subject="Fail closed",
+                body_text="No provider is configured.",
+            )
+
+
+def test_configured_smtp_transport_sends_message_with_tls(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Configured production transport uses SMTP TLS and the configured sender."""
+    calls: dict[str, object] = {}
+
+    class FakeSmtp:
+        def __init__(self, host: str, port: int, timeout: float) -> None:
+            calls["connection"] = (host, port, timeout)
+
+        def __enter__(self) -> FakeSmtp:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def starttls(self, *, context: object) -> None:
+            calls["tls"] = context
+
+        def login(self, username: str, password: str) -> None:
+            calls["login"] = (username, password)
+
+        def send_message(self, message: object) -> None:
+            calls["message"] = message
+
+    monkeypatch.setattr("pwd301.services.email_service.smtplib.SMTP", FakeSmtp)
+    monkeypatch.setenv("MAIL_HOST", "smtp.example.com")
+    monkeypatch.setenv("MAIL_PORT", "587")
+    monkeypatch.setenv("MAIL_USERNAME", "mailer@example.com")
+    monkeypatch.setenv("MAIL_PASSWORD", "secret")
+    monkeypatch.setenv("MAIL_USE_TLS", "1")
+    monkeypatch.setenv("MAIL_FROM", "no-reply@example.com")
+    app.config["TESTING"] = False
+
+    with app.app_context():
+        client = get_default_mail_client()
+        client.send(
+            recipient_email="recipient@example.com",
+            subject="Configured SMTP",
+            body_text="SMTP body",
+        )
+
+    assert calls["connection"] == ("smtp.example.com", 587, 10.0)
+    assert "tls" in calls
+    assert calls["login"] == ("mailer@example.com", "secret")
+    message = calls["message"]
+    assert isinstance(message, EmailMessage)
+    assert message.get_content().strip() == "SMTP body"
+    assert message["From"] == "no-reply@example.com"
 
 
 def test_enqueue_email_invalid_syntax(app: Flask) -> None:

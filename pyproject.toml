@@ -54,14 +54,16 @@ exclude = "migrations/"
 module = [
   "flask_login.*",
   "flask_migrate",
-  "flask_migrate.*",
   "flask_wtf.*",
   "jwt",
   "defusedxml",
   "defusedxml.*",
   "pypdf",
+  "openpyxl",
+  "openpyxl.*",
   "psutil",
-  "psutil.*",
+  "reportlab",
+  "reportlab.*",
 ]
 ignore_missing_imports = true
 

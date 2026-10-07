@@ -32,7 +32,11 @@ from pwd301.services.exceptions import (
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from pwd301.services.user_service import normalize_email, validate_password
+from pwd301.services.user_service import (
+    _password_change_event_key,
+    normalize_email,
+    validate_password,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +350,7 @@ def reset_password_with_token(
             category="SECURITY",
             force_email=True,
             target_role=None,
+            event_key=_password_change_event_key(user),
             session=sess,
         )
     except Exception as exc:

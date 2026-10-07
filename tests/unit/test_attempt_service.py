@@ -27,6 +27,7 @@ from pwd301.services.assessment_service import (
 from pwd301.services.attempt_service import (
     _calculate_deadline,
     get_attempt_delivery,
+    grade_attempt_objective_questions,
     list_student_assessment_attempts,
     start_assessment_attempt,
 )
@@ -292,6 +293,45 @@ def test_start_attempt_success(
         for c_data in q_data["choices"]:
             assert "is_correct" not in c_data
             assert "source_choice_id" not in c_data
+
+
+def test_released_result_notification_opens_student_attempt_results(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Released-score notifications must target the canonical student result route."""
+    assessment, _questions = _create_published_assessment(instructor_user, published_course)
+    assessment.score_release_policy = "IMMEDIATE"
+    db.session.flush()
+
+    attempt, _raw_token = start_assessment_attempt(
+        student_actor=enrolled_student,
+        assessment_id=assessment.public_id,
+        session=db.session,
+    )
+
+    captured: dict[str, Any] = {}
+
+    def capture_notification(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification",
+        capture_notification,
+    )
+
+    grade_attempt_objective_questions(attempt, session=db.session)
+
+    assert captured["event_type"] == "ASSESSMENT_GRADED"
+    assert captured["action_url"] == f"#/student/assessments/results?id={attempt.public_id}"
+    expected_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:assessment-result:{attempt.id}:ASSESSMENT_GRADED:none:{attempt.result.raw_score}:{enrolled_student.id}",
+    )
+    assert captured["event_key"] == expected_key
 
 
 def test_start_attempt_enforces_active_enrollment(

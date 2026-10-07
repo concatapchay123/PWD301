@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
@@ -317,6 +318,85 @@ def test_student_attempt_result_exposes_only_persisted_metrics_and_release_polic
     history_res = client.get(f"/student/attempts/{attempt_id}/grade-history")
     assert history_res.status_code == 200
     assert history_res.get_json()["attempt_id"] == attempt_id
+
+
+def test_student_can_download_released_attempt_result_as_pdf(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """A released result must download as a real PDF attachment, not invoke printing."""
+    csrf = login_client(client, "student_stu@pwd301.local")
+    assessment_id = str(student_fixture["assessment"].public_id)
+
+    start_res = client.post(
+        f"/student/assessments/{assessment_id}/start",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+    )
+    assert start_res.status_code == 201
+    start_data = start_res.get_json()
+    attempt_id = start_data["attempt_id"]
+    lease_token = start_data.get("lease_token", "")
+
+    delivery = client.get(f"/student/attempt/{attempt_id}").get_json()
+    question = delivery["questions"][0]
+    correct_choice = next(choice for choice in question["choices"] if choice["position"] == 1)
+    choice_key = correct_choice.get("choice_key") or correct_choice.get("choice_id")
+    answer_res = client.post(
+        f"/student/attempt/{attempt_id}/answers/{question['attempt_question_id']}",
+        headers={"X-CSRFToken": csrf, "X-Attempt-Lease-Token": lease_token},
+        json={"selected_choice_key": choice_key, "client_sequence": 1},
+    )
+    assert answer_res.status_code == 200
+
+    submit_res = client.post(
+        f"/student/attempt/{attempt_id}/submit",
+        headers={"X-CSRFToken": csrf, "X-Attempt-Lease-Token": lease_token},
+        json={},
+    )
+    assert submit_res.status_code == 200
+
+    pdf_res = client.get(f"/student/attempt/{attempt_id}/result.pdf")
+
+    assert pdf_res.status_code == 200
+    assert pdf_res.mimetype == "application/pdf"
+    assert "attachment" in pdf_res.headers["Content-Disposition"]
+    assert ".pdf" in pdf_res.headers["Content-Disposition"]
+    assert attempt_id not in pdf_res.headers["Content-Disposition"]
+    assert pdf_res.data.startswith(b"%PDF-")
+    assert pdf_res.data.rstrip().endswith(b"%%EOF")
+
+    reader = PdfReader(io.BytesIO(pdf_res.data))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Khao thi Thuong ky Web" in text
+    assert "10.00 / 10.00" in text
+
+
+def test_student_cannot_download_result_pdf_before_score_release(
+    client: FlaskClient, student_fixture: dict[str, Any]
+) -> None:
+    """A result PDF must remain unavailable while the configured score is hidden."""
+    student_fixture["assessment"].score_release_policy = "INSTRUCTOR_RELEASE"
+    db.session.commit()
+    csrf = login_client(client, "student_stu@pwd301.local")
+    assessment_id = str(student_fixture["assessment"].public_id)
+
+    start_res = client.post(
+        f"/student/assessments/{assessment_id}/start",
+        headers={"X-CSRFToken": csrf, "Accept": "application/json"},
+    )
+    assert start_res.status_code == 201
+    start_data = start_res.get_json()
+    attempt_id = start_data["attempt_id"]
+    submit_res = client.post(
+        f"/student/attempt/{attempt_id}/submit",
+        headers={"X-CSRFToken": csrf, "X-Attempt-Lease-Token": start_data.get("lease_token", "")},
+        json={},
+    )
+    assert submit_res.status_code == 200
+
+    pdf_res = client.get(f"/student/attempt/{attempt_id}/result.pdf")
+
+    assert pdf_res.status_code == 403
+    assert pdf_res.is_json
 
 
 def test_student_course_detail_adr002_and_clamav_fail_closed(

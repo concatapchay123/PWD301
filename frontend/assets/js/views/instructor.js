@@ -698,6 +698,7 @@ class InstructorView {
       blocks.push({
         id: 'blk_' + Math.random().toString(36).slice(2, 9),
         type: 'video',
+        videoType: 'YOUTUBE',
         url: videoUrls[0] || '',
         files: videoFiles,
         title: 'Video bài giảng'
@@ -706,6 +707,7 @@ class InstructorView {
         blocks.push({
           id: 'blk_' + Math.random().toString(36).slice(2, 9),
           type: 'video',
+          videoType: 'YOUTUBE',
           url: videoUrls[i],
           files: [],
           title: `Video bài giảng ${i + 1}`
@@ -767,7 +769,8 @@ class InstructorView {
       if (b.type === 'text') {
         if (b.content && b.content.trim()) textChunks.push(b.content.trim());
       } else if (b.type === 'video') {
-        if (b.url && b.url.trim() && b.videoType === 'YOUTUBE') videoUrls.push(b.url.trim());
+        const u = (b.url || '').trim();
+        if (u) videoUrls.push(u);
       } else if (b.type === 'document') {
         if (Array.isArray(b.files)) {
           b.files.forEach(f => resources.push(f));
@@ -1467,6 +1470,7 @@ class InstructorView {
           e.stopPropagation();
           const idx = parseInt(btn.dataset.idx, 10);
           if (idx <= 0) return;
+          const snapshot = JSON.parse(JSON.stringify(currentUnits));
           const temp = currentUnits[idx];
           currentUnits[idx] = currentUnits[idx - 1];
           currentUnits[idx - 1] = temp;
@@ -1476,6 +1480,8 @@ class InstructorView {
             renderTree();
             UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
           } catch (err) {
+            currentUnits = snapshot;
+            renderTree();
             UI.showToast(err.message || 'Lỗi sắp xếp Chương.', 'error');
           }
         });
@@ -1486,6 +1492,7 @@ class InstructorView {
           e.stopPropagation();
           const idx = parseInt(btn.dataset.idx, 10);
           if (idx >= currentUnits.length - 1) return;
+          const snapshot = JSON.parse(JSON.stringify(currentUnits));
           const temp = currentUnits[idx];
           currentUnits[idx] = currentUnits[idx + 1];
           currentUnits[idx + 1] = temp;
@@ -1495,6 +1502,8 @@ class InstructorView {
             renderTree();
             UI.showToast('Đã thay đổi thứ tự Chương.', 'success');
           } catch (err) {
+            currentUnits = snapshot;
+            renderTree();
             UI.showToast(err.message || 'Lỗi sắp xếp Chương.', 'error');
           }
         });
@@ -1530,6 +1539,7 @@ class InstructorView {
           const lIdx = parseInt(btn.dataset.lessonIdx, 10);
           const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(uId));
           if (!unit || !unit.lessons || lIdx <= 0) return;
+          const snapshot = JSON.parse(JSON.stringify(currentUnits));
           const temp = unit.lessons[lIdx];
           unit.lessons[lIdx] = unit.lessons[lIdx - 1];
           unit.lessons[lIdx - 1] = temp;
@@ -1539,6 +1549,8 @@ class InstructorView {
             renderTree();
             UI.showToast('Đã di chuyển bài giảng lên.', 'success');
           } catch (err) {
+            currentUnits = snapshot;
+            renderTree();
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
           }
         });
@@ -1551,6 +1563,7 @@ class InstructorView {
           const lIdx = parseInt(btn.dataset.lessonIdx, 10);
           const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(uId));
           if (!unit || !unit.lessons || lIdx >= unit.lessons.length - 1) return;
+          const snapshot = JSON.parse(JSON.stringify(currentUnits));
           const temp = unit.lessons[lIdx];
           unit.lessons[lIdx] = unit.lessons[lIdx + 1];
           unit.lessons[lIdx + 1] = temp;
@@ -1560,6 +1573,8 @@ class InstructorView {
             renderTree();
             UI.showToast('Đã di chuyển bài giảng xuống.', 'success');
           } catch (err) {
+            currentUnits = snapshot;
+            renderTree();
             UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
           }
         });
@@ -1622,6 +1637,7 @@ class InstructorView {
             const fromIdx = payload.unitIdx;
             const toIdx = parseInt(unitNode.dataset.unitIdx, 10);
             if (isNaN(fromIdx) || isNaN(toIdx) || fromIdx === toIdx) return;
+            const snapshot = JSON.parse(JSON.stringify(currentUnits));
             const [movedUnit] = currentUnits.splice(fromIdx, 1);
             currentUnits.splice(toIdx, 0, movedUnit);
             const orderedIds = currentUnits.map(u => u.learning_unit_id || u.id);
@@ -1630,6 +1646,8 @@ class InstructorView {
               renderTree();
               UI.showToast('Đã di chuyển vị trí Chương.', 'success');
             } catch (err) {
+              currentUnits = snapshot;
+              renderTree();
               UI.showToast(err.message || 'Lỗi sắp xếp Chương.', 'error');
             }
             return;
@@ -1649,6 +1667,7 @@ class InstructorView {
             const movedIdx = (srcUnit.lessons || []).findIndex(l => String(l.lesson_id || l.id) === String(lessonId));
             if (movedIdx === -1) return;
 
+            const snapshot = JSON.parse(JSON.stringify(currentUnits));
             const [movedLesson] = srcUnit.lessons.splice(movedIdx, 1);
             movedLesson.learning_unit_id = targetUnitId;
             if (!dstUnit.lessons) dstUnit.lessons = [];
@@ -1659,6 +1678,8 @@ class InstructorView {
               renderTree();
               UI.showToast('Đã chuyển bài giảng vào Chương mới.', 'success');
             } catch (err) {
+              currentUnits = snapshot;
+              renderTree();
               UI.showToast(err.message || 'Lỗi chuyển bài giảng sang Chương mới.', 'error');
             }
           }
@@ -1723,6 +1744,7 @@ class InstructorView {
           if (String(srcUnitId) === String(targetUnitId)) {
             const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(srcUnitId));
             if (!unit || !unit.lessons || srcLessonIdx === targetLessonIdx) return;
+            const snapshot = JSON.parse(JSON.stringify(currentUnits));
             const [movedLesson] = unit.lessons.splice(srcLessonIdx, 1);
             unit.lessons.splice(targetLessonIdx, 0, movedLesson);
             const orderedIds = unit.lessons.map(l => l.lesson_id || l.id);
@@ -1731,6 +1753,8 @@ class InstructorView {
               renderTree();
               UI.showToast('Đã di chuyển thứ tự bài giảng.', 'success');
             } catch (err) {
+              currentUnits = snapshot;
+              renderTree();
               UI.showToast(err.message || 'Lỗi sắp xếp bài giảng.', 'error');
             }
             return;
@@ -1744,6 +1768,7 @@ class InstructorView {
           const movedIdx = (srcUnit.lessons || []).findIndex(l => String(l.lesson_id || l.id) === String(srcLessonId));
           if (movedIdx === -1) return;
 
+          const snapshot = JSON.parse(JSON.stringify(currentUnits));
           const [movedLesson] = srcUnit.lessons.splice(movedIdx, 1);
           movedLesson.learning_unit_id = targetUnitId;
           if (!dstUnit.lessons) dstUnit.lessons = [];
@@ -1756,6 +1781,8 @@ class InstructorView {
             renderTree();
             UI.showToast('Đã chuyển bài giảng sang Chương mới.', 'success');
           } catch (err) {
+            currentUnits = snapshot;
+            renderTree();
             UI.showToast(err.message || 'Lỗi chuyển bài giảng sang Chương mới.', 'error');
           }
         });
@@ -1864,8 +1891,21 @@ class InstructorView {
       editorContainer.querySelector('#btn-editor-create-lesson')?.addEventListener('click', handleAddLessonGlobal);
     };
 
+    let selectLessonGen = 0;
+    let isEditorDirty = false;
+
     // Select and load lesson into editor
     const selectLesson = async (lessonId, unitId) => {
+      if (activeLessonId && String(activeLessonId) !== String(lessonId) && isEditorDirty) {
+        const leave = await UI.confirm(
+          'Thay đổi chưa lưu',
+          'Bài giảng hiện tại có thay đổi chưa lưu. Bạn có muốn bỏ qua và chuyển sang bài học khác?',
+          'Bỏ thay đổi'
+        );
+        if (!leave) return;
+      }
+      isEditorDirty = false;
+      const currentGen = ++selectLessonGen;
       activeLessonId = lessonId;
       activeUnitId = unitId;
       renderTree();
@@ -1879,6 +1919,9 @@ class InstructorView {
 
       try {
         const lessonData = await ApiClient.getLesson(lessonId);
+        if (currentGen !== selectLessonGen || String(activeLessonId) !== String(lessonId)) {
+          return;
+        }
         if (!lessonData) {
           renderEmptyEditor();
           return;
@@ -1891,7 +1934,11 @@ class InstructorView {
         };
         activeBlocks = InstructorView.parseLessonToBlocks(lessonData);
         renderEditor();
+        isEditorDirty = false;
       } catch (err) {
+        if (currentGen !== selectLessonGen || String(activeLessonId) !== String(lessonId)) {
+          return;
+        }
         editorContainer.innerHTML = `
           <div class="bg-white dark:bg-[#202020] border border-rose-300 dark:border-rose-900 rounded-2xl p-8 text-center space-y-3">
             <span class="material-symbols-outlined text-3xl text-rose-500">error</span>
@@ -2738,11 +2785,35 @@ class InstructorView {
         if (saveBtnBottom) saveBtnBottom.disabled = true;
 
         try {
+          const targetLessonId = activeLessonId;
+          const targetUnitId = activeUnitId;
           const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
-          await ApiClient.updateLesson(activeLessonId, payload);
+          const res = await ApiClient.updateLesson(targetLessonId, payload);
+          isEditorDirty = false;
+
+          const newLessonId = res?.lesson?.lesson_id || res?.lesson_id || res?.id;
+          if (newLessonId && String(newLessonId) !== String(targetLessonId)) {
+            if (String(activeLessonId) === String(targetLessonId)) {
+              activeLessonId = newLessonId;
+            }
+            const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${targetLessonId}"]`);
+            if (treeItem) {
+              treeItem.setAttribute('data-lesson-id', newLessonId);
+              treeItem.dataset.lessonId = newLessonId;
+            }
+            const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
+            if (unit && unit.lessons) {
+              const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(targetLessonId));
+              if (l) {
+                l.lesson_id = newLessonId;
+                l.id = newLessonId;
+                l.status = 'DRAFT';
+              }
+            }
+          }
 
           // Update memory state
-          const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(activeUnitId));
+          const unit = currentUnits.find(u => String(u.learning_unit_id || u.id) === String(targetUnitId));
           if (unit && unit.lessons) {
             const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(activeLessonId));
             if (l) {
@@ -2908,14 +2979,30 @@ class InstructorView {
           const conf = await UI.confirm('Xóa nội dung', 'Xác nhận xóa phần nội dung này?', 'Xóa');
           if (!conf) return;
           scrapeBlocksFromDom();
+          const targetBlock = activeBlocks[idx];
+          if (targetBlock && Array.isArray(targetBlock.files) && targetBlock.files.length > 0) {
+            for (const f of targetBlock.files) {
+              const rId = f.resource_id || f.id;
+              if (rId) {
+                try {
+                  await ApiClient.detachLessonResource(cId, activeLessonId, rId);
+                } catch (e) {
+                  console.warn('Could not detach resource on block delete:', e);
+                }
+              }
+            }
+          }
           activeBlocks.splice(idx, 1);
+          isEditorDirty = true;
           renderEditor();
         };
       });
 
-        // Document file upload inputs
+      // Document file upload inputs
       editorContainer.querySelectorAll('.curriculum-block-card').forEach((card, bIdx) => {
         const fileInput = card.querySelector('.block-file-input');
+        const cardBlockId = activeBlocks[bIdx]?.id;
+        const targetLessonId = activeLessonId;
         if (fileInput) {
           fileInput.onchange = async (e) => {
             const file = e.target.files?.[0];
@@ -2928,16 +3015,21 @@ class InstructorView {
 
             try {
               UI.showToast('Đang tải lên tài liệu...', 'info');
-              const res = await ApiClient.attachLessonResource(cId, activeLessonId, formData);
-              if (!activeBlocks[bIdx].files) activeBlocks[bIdx].files = [];
-              activeBlocks[bIdx].files.push({
-                resource_id: res.resource_id || res.asset_id,
-                title: file.name,
-                filename: file.name,
-                file_url: res.file_url || '',
-                file_size_bytes: file.size
-              });
-              renderEditor();
+              const res = await ApiClient.attachLessonResource(cId, targetLessonId, formData);
+              if (String(activeLessonId) === String(targetLessonId)) {
+                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+                if (targetBlock) {
+                  if (!targetBlock.files) targetBlock.files = [];
+                  targetBlock.files.push({
+                    resource_id: res.resource_id || res.asset_id,
+                    title: file.name,
+                    filename: file.name,
+                    file_url: res.file_url || '',
+                    file_size_bytes: file.size
+                  });
+                  renderEditor();
+                }
+              }
               UI.showToast('Đã tải tài liệu thành công!', 'success');
             } catch (err) {
               UI.showToast(err.message || 'Lỗi tải lên tài liệu.', 'error');
@@ -2953,12 +3045,15 @@ class InstructorView {
             scrapeBlocksFromDom();
             try {
               if (rId) {
-                await ApiClient.detachLessonResource(cId, activeLessonId, rId);
+                await ApiClient.detachLessonResource(cId, targetLessonId, rId);
               }
-              if (activeBlocks[bIdx]?.files) {
-                activeBlocks[bIdx].files.splice(fIdx, 1);
+              if (String(activeLessonId) === String(targetLessonId)) {
+                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+                if (targetBlock?.files) {
+                  targetBlock.files.splice(fIdx, 1);
+                }
+                renderEditor();
               }
-              renderEditor();
               UI.showToast('Đã xóa tệp đính kèm.', 'success');
             } catch (err) {
               UI.showToast(err.message || 'Lỗi xóa tệp đính kèm.', 'error');
@@ -3012,15 +3107,20 @@ class InstructorView {
             formData.append('title', file.name);
 
             try {
-              const res = await ApiClient.attachLessonResource(cId, activeLessonId, formData);
-              if (!activeBlocks[bIdx].files) activeBlocks[bIdx].files = [];
-              activeBlocks[bIdx].files.push({
-                resource_id: res.resource_id || res.asset_id,
-                title: file.name,
-                filename: file.name,
-                file_url: res.file_url || '',
-                file_size_bytes: file.size
-              });
+              const res = await ApiClient.attachLessonResource(cId, targetLessonId, formData);
+              if (String(activeLessonId) === String(targetLessonId)) {
+                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+                if (targetBlock) {
+                  if (!targetBlock.files) targetBlock.files = [];
+                  targetBlock.files.push({
+                    resource_id: res.resource_id || res.asset_id,
+                    title: file.name,
+                    filename: file.name,
+                    file_url: res.file_url || '',
+                    file_size_bytes: file.size
+                  });
+                }
+              }
               successCount++;
               const donePct = Math.round(((i + 1) / files.length) * 100);
               if (progressFilePercent) progressFilePercent.textContent = `${donePct}%`;
@@ -3031,7 +3131,7 @@ class InstructorView {
           }
 
           if (uploadProgress) uploadProgress.classList.add('hidden');
-          if (successCount > 0) {
+          if (successCount > 0 && String(activeLessonId) === String(targetLessonId)) {
             renderEditor();
             UI.showToast(`Đã tải lên ${successCount} video thành công!`, 'success');
           }
@@ -3288,6 +3388,9 @@ class InstructorView {
           };
         });
       });
+      // Track unsaved modifications to prevent losing work
+      editorContainer.addEventListener('input', () => { isEditorDirty = true; }, { passive: true });
+      editorContainer.addEventListener('change', () => { isEditorDirty = true; }, { passive: true });
 
       // Activate Microsoft Word Standard Ribbon Toolbar
       InstructorView.wireWordRibbon(editorContainer);
@@ -3801,7 +3904,7 @@ class InstructorView {
           try {
             const response = await ApiClient.updateLearningUnit(unit.learning_unit_id, { title: title.trim() });
             UI.showToast(response.pending_approval ? 'Tên Bài học đã gửi Admin xét duyệt.' : 'Đã đổi tên Bài học.', response.pending_approval ? 'info' : 'success');
-            if (!response.pending_approval) UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('app-viewport') || container, cId, initialTab));
+            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('app-viewport') || container, cId, initialTab));
           } catch (error) {
             UI.showToast(error.message || 'Không đổi được tên Bài học.', 'error');
           }
@@ -5315,6 +5418,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           };
           await ApiClient.updateCourseCompletionRules(cId, rulesPayload);
 
+          const prereqErrors = [];
+
           // 4.3. Sync Staged Prerequisites
           const toDelete = stagedPrerequisites.filter(p => p.is_deleted && !p.is_new);
           for (const item of toDelete) {
@@ -5326,6 +5431,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               }
             } catch (delErr) {
               console.warn('Failed to delete prereq:', pId, delErr);
+              prereqErrors.push(`Xóa môn ${item.course_code || pId}: ${delErr.message || delErr}`);
             }
           }
 
@@ -5343,13 +5449,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
               }
             } catch (addErr) {
               console.warn('Failed to add prereq:', pId, addErr);
+              prereqErrors.push(`Thêm môn ${item.course_code || pId}: ${addErr.message || addErr}`);
             }
           }
 
           // 4.4. Refresh state
           await loadPrerequisites();
 
-          if (hasPendingApproval) {
+          if (prereqErrors.length > 0) {
+            UI.showToast(`Lưu học vụ hoàn tất một phần. Có lỗi môn tiên quyết: ${prereqErrors.join('; ')}`, 'warning');
+          } else if (hasPendingApproval) {
             if (pendingBadge) pendingBadge.classList.remove('hidden');
             UI.showToast('Khóa học đã ban hành: Một số thay đổi học vụ đã được gửi tới Quản trị viên để xét duyệt!', 'info');
           } else {

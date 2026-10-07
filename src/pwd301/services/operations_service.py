@@ -278,15 +278,26 @@ def _check_mail_queue_health(sess: Session | scoped_session[Any]) -> dict[str, A
             .scalar()
             or 0
         )
+        oldest_pending = (
+            sess.query(sa.func.min(EmailDelivery.created_at))
+            .filter(EmailDelivery.status.in_(["PENDING", "SENDING"]))
+            .scalar()
+        )
+        if oldest_pending is not None and oldest_pending.tzinfo is None:
+            oldest_pending = oldest_pending.replace(tzinfo=datetime.UTC)
+        stale_cutoff = utc_now() - datetime.timedelta(minutes=15)
+        stale_pending = oldest_pending is not None and oldest_pending <= stale_cutoff
 
         status = "HEALTHY"
-        if failed > 50 or pending > 500:
+        if failed > 50 or pending > 500 or stale_pending:
             status = "DEGRADED"
 
         return {
             "status": status,
             "pending_emails": pending,
             "failed_emails": failed,
+            "stale_pending_emails": stale_pending,
+            "oldest_pending_at": oldest_pending.isoformat() if oldest_pending else None,
         }
     except Exception as exc:
         return {
@@ -399,6 +410,8 @@ def check_system_health(
             "status": mail_health.get("status", "UNKNOWN"),
             "pending_emails": mail_health.get("pending_emails", 0),
             "failed_emails": mail_health.get("failed_emails", 0),
+            "stale_pending_emails": mail_health.get("stale_pending_emails", False),
+            "oldest_pending_at": mail_health.get("oldest_pending_at"),
         },
     }
 
@@ -1152,7 +1165,11 @@ def create_database_backup(
     _require_admin(actor)
     sess = _resolve_session(session)
 
-    if backup_type not in ("AUTOMATIC", "MANUAL", "RESTORE_DRILL"):
+    actual_intent_type = backup_type
+    if backup_type == "PRE_MAINTENANCE":
+        notes = f"[PRE_MAINTENANCE] {notes or ''}".strip()
+        backup_type = "MANUAL"
+    elif backup_type not in ("AUTOMATIC", "MANUAL", "RESTORE_DRILL"):
         backup_type = "MANUAL"
 
     backup_root = _get_backup_root()
@@ -1164,13 +1181,30 @@ def create_database_backup(
     backup_filepath = backup_root / backup_filename
     manifest_filepath = backup_root / manifest_filename
 
+    # Populate table metadata and row counts from live database
+    tables_dump: dict[str, Any] = {
+        "backup_timestamp": now.isoformat(),
+        "schema_verified": True,
+    }
+    if sess.bind:
+        try:
+            inspector = sa.inspect(sess.bind)
+            for t_name in inspector.get_table_names():
+                try:
+                    cnt = sess.execute(sa.text(f"SELECT COUNT(*) FROM [{t_name}]")).scalar()
+                    tables_dump[t_name] = {"row_count": cnt}
+                except Exception:
+                    tables_dump[t_name] = {"row_count": 0}
+        except Exception:
+            pass
+
     # Construct snapshot payload
     snapshot_payload: dict[str, Any] = {
         "metadata": {
             "format": "PWD301_SNAPSHOT",
             "version": "1.0",
             "created_at": now.isoformat(),
-            "backup_type": backup_type,
+            "backup_type": actual_intent_type,
             "notes": notes,
             "generator": "PWD301 Operations Engine",
             "actor_public_id": str(actor.public_id),
@@ -1178,10 +1212,7 @@ def create_database_backup(
         "database_info": {
             "dialect": sess.bind.dialect.name if sess.bind else "unknown",
         },
-        "tables": {
-            "backup_timestamp": now.isoformat(),
-            "schema_verified": True,
-        },
+        "tables": tables_dump,
     }
 
     raw_bytes = json.dumps(snapshot_payload, indent=2).encode("utf-8")
@@ -1471,7 +1502,18 @@ def execute_dry_run_restore(
     backup_path = Path(backup.storage_location)
     data = json.loads(backup_path.read_text(encoding="utf-8"))
 
-    tables = list(data.get("tables", {}).keys())
+    raw_tables = data.get("tables", {})
+    tables = [t for t in raw_tables if t not in ("backup_timestamp", "schema_verified")]
+
+    live_tables = set()
+    if sess.bind:
+        try:
+            live_tables = set(sa.inspect(sess.bind).get_table_names())
+        except Exception:
+            pass
+
+    missing_tables = [t for t in tables if t not in live_tables] if live_tables else []
+    schema_compatible = len(missing_tables) == 0
     backup.restore_tested_at = utc_now()
 
     try:
@@ -1484,6 +1526,8 @@ def execute_dry_run_restore(
                 "backup_id": str(backup.public_id),
                 "dry_run": True,
                 "tables_inspected": tables,
+                "schema_compatible": schema_compatible,
+                "missing_tables": missing_tables,
                 "live_mutation_occurred": False,
             },
             performed_as_admin=True,
@@ -1502,8 +1546,9 @@ def execute_dry_run_restore(
     return {
         "backup_id": str(backup.public_id),
         "dry_run": True,
-        "status": "COMPATIBLE",
-        "schema_compatible": True,
+        "status": "COMPATIBLE" if schema_compatible else "INCOMPATIBLE",
+        "schema_compatible": schema_compatible,
+        "missing_tables": missing_tables,
         "tables_detected": tables,
         "tested_at": backup.restore_tested_at.isoformat(),
         "live_database_modified": False,
@@ -1668,6 +1713,7 @@ def restore_database_snapshot(
     confirmation_phrase: str | None = None,
     password: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Execute controlled database restoration under strict non-negotiable safeguards.
 
@@ -1728,7 +1774,7 @@ def restore_database_snapshot(
                 details={
                     "backup_id": str(backup.public_id),
                     "checksum": verify_result["checksum"],
-                    "reason": "Administrative disaster recovery procedure confirmed",
+                    "reason": reason or "Administrative disaster recovery procedure confirmed",
                 },
                 performed_as_admin=True,
                 session=sess,
@@ -1807,6 +1853,7 @@ def restore_database_snapshot(
                 details={
                     "backup_id": str(backup.public_id),
                     "completed_at": now.isoformat(),
+                    "reason": reason or "Administrative disaster recovery procedure completed",
                 },
                 performed_as_admin=True,
                 session=sess,
@@ -2204,6 +2251,11 @@ def retry_background_job(
 
     if job is None:
         raise ResourceNotFoundError(f"Background job '{job_identifier}' not found.")
+
+    if job.status == "RUNNING" and job.lease_expires_at and job.lease_expires_at > utc_now():
+        raise ConflictError(
+            f"Cannot retry running background job '{job_identifier}' with active unexpired lease."
+        )
 
     old_status = job.status
     job.status = "QUEUED"

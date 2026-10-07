@@ -690,8 +690,10 @@ class AdminView {
       const searchInput = document.getElementById('user-search-input');
       const roleFilter = document.getElementById('user-role-filter');
       let searchDebounceTimer = null;
+      let searchGeneration = 0;
 
       const triggerQuery = async () => {
+        const queryGen = ++searchGeneration;
         const sVal = searchInput ? searchInput.value.trim() : '';
         const rVal = roleFilter ? roleFilter.value : 'ALL';
         try {
@@ -699,6 +701,7 @@ class AdminView {
             search: sVal,
             role: rVal === 'ALL' ? '' : rVal
           });
+          if (queryGen !== searchGeneration) return; // Stale query discarded (SYNC-051)
           const freshUsers = freshRes.users || [];
           renderTableRows(freshUsers);
           const counterEl = box.querySelector('h2');
@@ -706,6 +709,7 @@ class AdminView {
             counterEl.textContent = `Người dùng & Phân quyền (${freshRes.total !== undefined ? freshRes.total : freshUsers.length} tài khoản)`;
           }
         } catch (e) {
+          if (queryGen !== searchGeneration) return;
           const localFiltered = users.filter(u => {
             const matchText = !sVal || 
               (u.display_name && u.display_name.toLowerCase().includes(sVal.toLowerCase())) ||
@@ -729,12 +733,12 @@ class AdminView {
         };
       }
 
-      document.getElementById('btn-sync-users').onclick = () => {
-        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
+      document.getElementById('btn-sync-users').onclick = async () => {
+        await UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
       };
 
-      document.getElementById('btn-sync-optimistic').onclick = () => {
-        UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
+      document.getElementById('btn-sync-optimistic').onclick = async () => {
+        await UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
         UI.showToast('Đã đồng bộ trạng thái người dùng mới nhất từ máy chủ!', 'success');
       };
 
@@ -4715,8 +4719,10 @@ class AdminView {
               const vRes = await ApiClient.verifyAdminBackup(bId);
               if (vRes.status === 'VERIFIED' || vRes.verified) {
                 UI.showToast(`Xác minh thành công! Checksum: ${vRes.checksum || 'Hợp lệ 100%'}`, 'success');
+                await loadBackups();
               } else {
                 UI.showToast(`Bản sao lưu: ${vRes.status || 'Chưa hoàn tất'}`, 'warning');
+                await loadBackups();
               }
             } catch (e) {
               UI.showToast(e.message || 'Lỗi xác minh bản sao lưu.', 'error');
@@ -5147,7 +5153,7 @@ class AdminView {
 
       UI.showToast('Đang thực thi khôi phục cơ sở dữ liệu có kiểm soát...', 'info');
       try {
-        const res = await ApiClient.restoreAdminBackup(backupId, phrase, password);
+        const res = await ApiClient.restoreAdminBackup(backupId, phrase, password, reason);
         UI.closeModal();
         UI.showToast('Khôi phục cơ sở dữ liệu thành công! Bản ghi kiểm toán đã được lưu vĩnh viễn.', 'success');
       } catch (e) {

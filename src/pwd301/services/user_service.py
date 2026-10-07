@@ -47,6 +47,40 @@ MIN_PASSWORD_LENGTH = 8
 MAX_EMAIL_LENGTH = 320
 
 
+def _password_change_event_key(user: User) -> uuid.UUID:
+    """Return one retry key for this user's durable password mutation."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"pwd301:password-change:{user.id}:{user.auth_version}")
+
+
+def _account_suspension_event_key(user: User) -> uuid.UUID:
+    """Return one retry key for this user's durable account suspension."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:account-suspension:{user.id}:{user.auth_version}",
+    )
+
+
+def _role_change_event_key(user: User, mutation: str) -> uuid.UUID:
+    """Return one retry key for a durable role mutation notification."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:role-{mutation}:{user.id}:{user.auth_version}",
+    )
+
+
+def _instructor_application_event_key(
+    application_id: int,
+    applicant_user_id: int,
+    status: str,
+    recipient_user_id: int,
+) -> uuid.UUID:
+    """Return one recipient-scoped retry key for an application notification."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:instructor-application:{application_id}:{status}:{applicant_user_id}:{recipient_user_id}",
+    )
+
+
 def normalize_email(email: str) -> str:
     """Normalize and validate an email address.
 
@@ -316,6 +350,7 @@ def change_password(
             category="SECURITY",
             force_email=True,
             target_role=None,
+            event_key=_password_change_event_key(user),
             session=sess,
         )
     except Exception as exc:
@@ -379,6 +414,7 @@ def set_password(
             category="SECURITY",
             force_email=True,
             target_role=None,
+            event_key=_password_change_event_key(user),
             session=sess,
         )
     except Exception as exc:
@@ -457,6 +493,7 @@ def suspend_user(
             category="SECURITY",
             force_email=True,
             target_role=None,
+            event_key=_account_suspension_event_key(user),
             session=sess,
         )
     except Exception as exc:
@@ -763,6 +800,7 @@ def set_user_roles(
                 ),
                 action_url="/",
                 category="SYSTEM",
+                event_key=_role_change_event_key(user, "updated"),
                 session=sess,
             )
     except Exception:
@@ -787,6 +825,7 @@ def assign_role_to_user(
     admin_sub_role: str | None = None,
     session: Session | scoped_session[Any] | None = None,
     allow_instructor_application_approval: bool = False,
+    commit: bool = True,
 ) -> User:
     """Assign a role to a user, ensuring cumulative hierarchy per AUTH-002.
 
@@ -994,16 +1033,20 @@ def assign_role_to_user(
                     body=notif_body,
                     action_url="/",
                     category="SYSTEM",
+                    event_key=_role_change_event_key(user, "assigned"),
                     session=sess,
                 )
         except Exception:
             pass
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
+    else:
+        sess.flush()
 
     return user
 
@@ -1014,6 +1057,7 @@ def remove_role_from_user(
     removed_by_user_id: int | None = None,
     reason: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> User:
     """Remove a role from a user, maintaining cumulative closure per AUTH-002.
 
@@ -1150,18 +1194,22 @@ def remove_role_from_user(
                     ),
                     action_url="/",
                     category="SYSTEM",
+                    event_key=_role_change_event_key(user, "revoked"),
                     session=sess,
                 )
         except Exception:
             pass
 
-    try:
-        sess.commit()
-        sess.expire_all()
-        sess.refresh(user)
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+            sess.expire_all()
+            sess.refresh(user)
+        except Exception:
+            sess.rollback()
+            raise
+    else:
+        sess.flush()
 
     return user
 
@@ -1435,6 +1483,12 @@ def submit_instructor_application(
                             "applicant_name": user.display_name,
                             "action_url": "#/admin/governance?tab=applications",
                         },
+                        event_key=_instructor_application_event_key(
+                            app_record.id,
+                            user.id,
+                            "submitted",
+                            adm.id,
+                        ),
                         session=sess,
                     )
     except Exception as exc:
@@ -1594,6 +1648,7 @@ def review_instructor_application(
                 f"{clean_reason or 'Đạt yêu cầu chuyên môn'}"
             ),
             session=sess,
+            commit=False,
         )
         app_record.status = "APPROVED"
         app_record.reviewed_by_user_id = admin.id
@@ -1616,6 +1671,12 @@ def review_instructor_application(
                 action_url="#/instructor/dashboard",
                 category="SYSTEM",
                 payload={"action_url": "#/instructor/dashboard"},
+                event_key=_instructor_application_event_key(
+                    app_record.id,
+                    app_record.applicant_user_id,
+                    "approved",
+                    app_record.applicant_user_id,
+                ),
                 session=sess,
             )
         except Exception:
@@ -1661,6 +1722,12 @@ def review_instructor_application(
                 action_url="#/student/become-instructor",
                 category="SYSTEM",
                 payload={"action_url": "#/student/become-instructor"},
+                event_key=_instructor_application_event_key(
+                    app_record.id,
+                    app_record.applicant_user_id,
+                    "rejected",
+                    app_record.applicant_user_id,
+                ),
                 session=sess,
             )
         except Exception:

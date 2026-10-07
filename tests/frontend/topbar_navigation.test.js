@@ -224,3 +224,23 @@ test('ApiClient exposes markNotificationRead and markAllNotificationsRead', () =
   assert.equal(typeof ApiClient.markNotificationRead, 'function');
   assert.equal(typeof ApiClient.markAllNotificationsRead, 'function');
 });
+
+test('ApiClient does not convert notification transport failure into an empty list', async () => {
+  const apiPath = path.resolve(__dirname, '../../frontend/assets/js/api.js');
+  const sandbox = {
+    window: {},
+    URLSearchParams,
+    fetch: async () => {
+      throw new Error('notification transport unavailable');
+    },
+    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    console,
+  };
+  vm.runInNewContext(fs.readFileSync(apiPath, 'utf8'), sandbox, { filename: apiPath });
+
+  await assert.rejects(
+    sandbox.window.ApiClient.getNotifications(),
+    error => error && error.code === 'NOTIFICATIONS_UNAVAILABLE',
+  );
+});

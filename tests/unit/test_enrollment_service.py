@@ -15,7 +15,7 @@ from pwd301.models.course import (
     EnrollmentPeriod,
 )
 from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent
+from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
 from pwd301.models.types import utc_now
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.enrollment_service import (
@@ -154,6 +154,71 @@ def test_enroll_student_success_lifecycle(
     # Check first_student_enrolled_at on course
     sess.refresh(course)
     assert course.first_student_enrolled_at is not None
+
+
+def test_enrollment_notifications_use_canonical_spa_course_routes(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enrollment notifications must open the role-specific SPA course pages."""
+    course = _create_published_course(
+        instructor_user, admin_user, code="NURL101", title="URL Course"
+    )
+    captured: list[dict[str, object]] = []
+
+    def capture_notification(**kwargs: object) -> None:
+        captured.append(kwargs)
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification",
+        capture_notification,
+    )
+
+    enroll_student(actor=student_user, course_id=course.id, session=db.session)
+
+    assert len(captured) == 2
+    by_role = {str(item["target_role"]): item for item in captured}
+    assert by_role["INSTRUCTOR"]["action_url"] == (
+        f"#/instructor/courses/manage?id={course.public_id}"
+    )
+    assert by_role["STUDENT"]["action_url"] == (f"#/student/courses/detail?id={course.public_id}")
+    assert by_role["INSTRUCTOR"]["event_key"] != by_role["STUDENT"]["event_key"]
+    assert all(item["event_key"].version == 5 for item in by_role.values())
+
+
+def test_enrollment_notifications_persist_with_enrollment_commit(
+    app: Flask,
+    instructor_user: User,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Enrollment notifications must survive the service session closing."""
+    course = _create_published_course(
+        instructor_user,
+        admin_user,
+        code="NPERSIST101",
+        title="Notification Persistence Course",
+    )
+    instructor_id = instructor_user.id
+    student_id = student_user.id
+
+    enroll_student(actor=student_user, course_id=course.id, session=db.session)
+    db.session.remove()
+
+    rows = (
+        db.session.query(Notification)
+        .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
+        .filter(
+            NotificationEvent.event_type == "STUDENT_ENROLLED",
+            Notification.recipient_user_id.in_([instructor_id, student_id]),
+        )
+        .all()
+    )
+
+    assert len(rows) == 2
 
 
 def test_enroll_student_unavailability(

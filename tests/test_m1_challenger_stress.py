@@ -552,6 +552,8 @@ class TestUnstickingAndRescan:
         infected_root = get_file_infected_root()
         infected_file = infected_root / eicar_hash
         assert infected_file.exists(), f"Infected file was not moved to {infected_file}"
+        assert not q_path.exists()
+        assert rev.quarantine_key == f"infected/{eicar_hash}"
 
         # Student access must fail closed (403)
         login_web_user(client, stress_student_enrolled)

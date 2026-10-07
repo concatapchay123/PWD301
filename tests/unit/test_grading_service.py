@@ -28,6 +28,7 @@ from pwd301.models.attempt_regrade import (
 )
 from pwd301.models.course import Course, Enrollment
 from pwd301.models.identity import Role, User
+from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.services.assessment_service import (
     assign_question,
     create_assessment,
@@ -1292,3 +1293,58 @@ def test_audit_grade_revision_requires_matching_row_version(
             expected_row_version="stale",
             session=db.session,
         )
+
+
+def test_manual_grade_release_and_changed_score_emit_persisted_notifications(
+    app: Flask,
+    instructor_user: User,
+    enrolled_student: User,
+    published_course: Course,
+) -> None:
+    """First release notifies once; unchanged re-evaluation does not duplicate it."""
+    attempt, question = _create_submitted_attempt_for_regression(
+        instructor_user, enrolled_student, published_course, "ESSAY"
+    )
+    instructor_id, student_id = instructor_user.id, enrolled_student.id
+    attempt_id, question_id = attempt.id, question.id
+    attempt_public_id = str(attempt.public_id)
+
+    def notices() -> list[Notification]:
+        return (
+            db.session.query(Notification)
+            .join(NotificationEvent)
+            .filter(
+                Notification.recipient_user_id == student_id,
+                NotificationEvent.event_type.in_(
+                    ["ASSESSMENT_GRADED", "SCORE_CHANGED_AFTER_REGRADE"]
+                ),
+            )
+            .order_by(Notification.id)
+            .all()
+        )
+
+    assert notices() == []
+    for score in [7, 7, 8]:
+        grade_essay_question(
+            db.session.get(User, instructor_id),
+            attempt_id,
+            question_id,
+            score,
+            reason="Audit manual grade publication and revision",
+            expected_row_version=db.session.get(AttemptQuestionGrade, question_id).row_version,
+            session=db.session,
+        )
+        # Check durable state after the service commit, not just a dispatch mock.
+        db.session.remove()
+        rows = notices()
+        if score == 7:
+            assert len(rows) == 1
+            assert rows[0].event.event_type == "ASSESSMENT_GRADED"
+        else:
+            assert len(rows) == 2
+            assert rows[-1].event.event_type == "SCORE_CHANGED_AFTER_REGRADE"
+        for notification in rows:
+            assert notification.target_role == "STUDENT"
+            assert notification.to_dict()["action_url"] == (
+                f"#/student/assessments/results?id={attempt_public_id}"
+            )

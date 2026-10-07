@@ -442,6 +442,91 @@ def _lesson_quiz_answers_complete(questions: list[dict[str, Any]], answers: list
     return True
 
 
+def _score_lesson_quiz_answers(
+    questions: list[dict[str, Any]], answers: list[Any]
+) -> tuple[int, int, float]:
+    """Score submitted answers against lesson quiz questions.
+    Returns (correct_count, total_count, percentage).
+    """
+    total = len(questions)
+    if total == 0:
+        return 0, 0, 100.0
+
+    correct_count = 0
+    for question, answer in zip(questions, answers, strict=False):
+        q_type = str(question.get("type") or "MULTIPLE_CHOICE").upper()
+        if q_type == "MULTIPLE_CHOICE":
+            raw_ca = question.get("correct_answers")
+            if isinstance(raw_ca, list):
+                expected_set = set(raw_ca)
+            elif isinstance(question.get("correct_index"), int):
+                expected_set = {question["correct_index"]}
+            else:
+                expected_set = {0}
+            selected = answer if isinstance(answer, list) else [answer]
+            selected_set = {
+                int(x) for x in selected if isinstance(x, (int, str)) and str(x).isdigit()
+            }
+            if expected_set == selected_set:
+                correct_count += 1
+        elif q_type == "FILL_BLANK":
+            blanks = question.get("blanks") or []
+            values = answer if isinstance(answer, list) else [answer]
+            all_correct = True
+            for b_idx, b_def in enumerate(blanks):
+                raw_accepted = b_def.get("accepted_answers") if isinstance(b_def, dict) else []
+                if isinstance(raw_accepted, str):
+                    accepted_list: list[Any] = [raw_accepted]
+                elif isinstance(raw_accepted, list):
+                    accepted_list = list(raw_accepted)
+                else:
+                    accepted_list = []
+                accepted_norm = [str(a).strip().lower() for a in accepted_list if a]
+                user_val = str(values[b_idx]).strip().lower() if b_idx < len(values) else ""
+                if not user_val or user_val not in accepted_norm:
+                    all_correct = False
+                    break
+            if all_correct and len(blanks) > 0:
+                correct_count += 1
+        elif q_type == "MATCHING":
+            pairs = question.get("pairs") or []
+            all_correct = True
+            if isinstance(answer, dict):
+                for p_idx, pair in enumerate(pairs):
+                    expected_right = pair.get("right")
+                    pair_user_val = answer.get(str(p_idx)) or answer.get(p_idx)
+                    if pair_user_val != expected_right:
+                        all_correct = False
+                        break
+            elif isinstance(answer, list):
+                for p_idx, pair in enumerate(pairs):
+                    expected_right = pair.get("right")
+                    pair_user_val = answer[p_idx] if p_idx < len(answer) else None
+                    if pair_user_val != expected_right:
+                        all_correct = False
+                        break
+            else:
+                all_correct = False
+            if all_correct and len(pairs) > 0:
+                correct_count += 1
+        elif q_type == "TRUE_FALSE":
+            expected_val = bool(question.get("correct_value", True))
+            tf_user_val = answer is True or str(answer).lower() == "true"
+            if tf_user_val == expected_val:
+                correct_count += 1
+        elif q_type in ("SHORT_ANSWER", "ESSAY"):
+            accepted = question.get("accepted_answers") or []
+            if accepted:
+                if str(answer).strip().lower() in [str(a).strip().lower() for a in accepted]:
+                    correct_count += 1
+            else:
+                if str(answer).strip():
+                    correct_count += 1
+
+    percent = (correct_count / total) * 100.0
+    return correct_count, total, percent
+
+
 def _lesson_requires_video_watch(lesson: Lesson) -> bool:
     if re.search(r"<!--\s*video_urls:\s*\[\s*\"", lesson.markdown_content or ""):
         return True
@@ -1774,6 +1859,20 @@ def complete_lesson_mini_quiz(
         raise LessonValidationError("This lesson has no valid quiz to complete.")
     if not _lesson_quiz_answers_complete(questions, answers):
         raise LessonValidationError("Answer every lesson quiz question before completing it.")
+
+    passing_percent = 80.0
+    match_pass = re.search(r"<!--\s*quiz_passing_percent:\s*(\d+)", lesson.markdown_content or "")
+    if match_pass:
+        try:
+            passing_percent = float(match_pass.group(1))
+        except (ValueError, TypeError):
+            passing_percent = 80.0
+
+    correct_count, total_count, percent = _score_lesson_quiz_answers(questions, answers)
+    if percent < passing_percent:
+        raise LessonValidationError(
+            f"Điểm kiểm tra {percent:.0f}% ({correct_count}/{total_count}) chưa đạt ngưỡng yêu cầu {passing_percent:.0f}%."
+        )
 
     requires_video_watch = _lesson_requires_video_watch(lesson)
     video_view_fraction_required = (
@@ -3127,12 +3226,14 @@ def submit_course_changeset(
     }
 
     now = utc_now()
-    # Supersede/cancel any older pending requests for this course to ensure 1 consolidated active row
+    # Supersede only older pending course-level changeset requests for this course (SYNC-013)
     older_pending = (
         sess.query(CourseChangeRequest)
         .filter(
             CourseChangeRequest.course_id == course.id,
             CourseChangeRequest.status == "PENDING",
+            CourseChangeRequest.target_type == "COURSE",
+            CourseChangeRequest.change_type.in_(["COURSE_VERSION_CHANGESET", "LESSON_STRUCTURE"]),
         )
         .all()
     )
@@ -4100,15 +4201,16 @@ def get_course_changeset_diff(
             )
         except Exception:
             current_reqs = {}
+    cover_image_url = None
+    if getattr(course, "thumbnail_file_asset_id", None):
+        thumb_asset = sess.get(FileAsset, course.thumbnail_file_asset_id)
+        if thumb_asset:
+            cover_image_url = f"/instructor/courses/{course.public_id}/files/{thumb_asset.public_id}/download?disposition=inline"
     governance_rules = {
         "is_changed": False,
         "current": current_reqs,
         "proposed": current_reqs,
-        "cover_image_url": (
-            f"/instructor/courses/{course.public_id}/files/{course.thumbnail_file_asset.public_id}/download?disposition=inline"
-            if getattr(course, "thumbnail_file_asset", None)
-            else None
-        ),
+        "cover_image_url": cover_image_url,
     }
 
     total_changes_count = (
@@ -4202,7 +4304,7 @@ def apply_course_version_changeset(
                 orig.updated_at = now
                 staged.revision_no = (orig.revision_no or 1) + 1
                 staged.material_change_summary = "Nội dung cập nhật đã được phê duyệt."
-                _copy_lesson_resources(orig.id, staged.id, session=sess)
+                # Do not re-copy resources here: staged lesson already reflects authored attachments (SYNC-014)
         else:
             staged.revision_no = 1
         staged.status = "PUBLISHED"

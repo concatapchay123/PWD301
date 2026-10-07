@@ -20,6 +20,7 @@ import pytest
 
 from pwd301.extensions import db
 from pwd301.models.identity import Role
+from pwd301.models.notification_audit import NotificationEvent
 from pwd301.models.types import utc_now
 from pwd301.services.auth_token_service import (
     SecurityTokenPurpose,
@@ -42,6 +43,7 @@ from pwd301.services.exceptions import (
     UserNotFoundError,
 )
 from pwd301.services.user_service import (
+    assign_role_to_user,
     change_password,
     get_user_by_email,
     get_user_by_id,
@@ -49,7 +51,10 @@ from pwd301.services.user_service import (
     mark_email_verified,
     normalize_email,
     register_user,
+    remove_role_from_user,
     set_password,
+    set_user_roles,
+    suspend_user,
     update_profile,
     validate_password,
     verify_password,
@@ -246,6 +251,28 @@ def test_change_password_increments_auth_version(app):
         # Subsequent change increments again
         updated2 = change_password(user.id, "NewPassword@123", "ThirdPassword@123")
         assert updated2.auth_version == 3
+
+
+def test_change_password_notification_uses_auth_version_idempotency_key(app, monkeypatch):
+    """A password mutation retry uses the durable post-change auth version as its key."""
+    with app.app_context():
+        user = register_user("pwd-key@pwd301.local", "OldPassword@123", "Password Key")
+        captured: list[dict[str, object]] = []
+
+        def capture_notification(**kwargs: object) -> None:
+            captured.append(kwargs)
+
+        monkeypatch.setattr(
+            "pwd301.services.notification_service.dispatch_notification",
+            capture_notification,
+        )
+        updated = change_password(user.id, "OldPassword@123", "NewPassword@123")
+
+        assert updated.auth_version == 2
+        assert len(captured) == 1
+        assert captured[0]["event_key"] == uuid.uuid5(
+            uuid.NAMESPACE_URL, f"pwd301:password-change:{user.id}:2"
+        )
 
 
 def test_change_password_rejects_password_without_special_character(app):
@@ -520,6 +547,59 @@ def test_verify_email_with_token(app):
             verify_email_with_token(raw_token)
 
 
+def test_role_change_notifications_use_auth_version_keys(app):
+    """Each durable role mutation has a retry-stable notification identity."""
+    with app.app_context():
+        assigned_user = register_user(
+            "role-key-assigned@pwd301.local", "Password@123", "Role Assigned"
+        )
+        assign_role_to_user(assigned_user.id, "INSTRUCTOR")
+        assigned_key = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:role-assigned:{assigned_user.id}:{assigned_user.auth_version}",
+        )
+        assert (
+            db.session.query(NotificationEvent)
+            .filter(NotificationEvent.event_key == assigned_key)
+            .one()
+            .event_type
+            == "ROLE_CHANGED"
+        )
+
+        updated_user = register_user(
+            "role-key-updated@pwd301.local", "Password@123", "Role Updated"
+        )
+        set_user_roles(updated_user.id, {"STUDENT", "INSTRUCTOR"})
+        updated_key = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:role-updated:{updated_user.id}:{updated_user.auth_version}",
+        )
+        assert (
+            db.session.query(NotificationEvent)
+            .filter(NotificationEvent.event_key == updated_key)
+            .one()
+            .event_type
+            == "ROLE_CHANGED"
+        )
+
+        removed_user = register_user(
+            "role-key-removed@pwd301.local", "Password@123", "Role Removed"
+        )
+        assign_role_to_user(removed_user.id, "INSTRUCTOR")
+        remove_role_from_user(removed_user.id, "INSTRUCTOR")
+        removed_key = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:role-revoked:{removed_user.id}:{removed_user.auth_version}",
+        )
+        assert (
+            db.session.query(NotificationEvent)
+            .filter(NotificationEvent.event_key == removed_key)
+            .one()
+            .event_type
+            == "ROLE_CHANGED"
+        )
+
+
 def test_reset_password_with_token(app):
     """Verify password reset workflow via token."""
     with app.app_context():
@@ -531,12 +611,38 @@ def test_reset_password_with_token(app):
         updated_user = reset_password_with_token(raw_token, "NewResetPass@456")
         assert updated_user.id == user.id
         assert updated_user.auth_version == 2
+        expected_event_key = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:password-change:{user.id}:{updated_user.auth_version}",
+        )
+        assert (
+            db.session.query(NotificationEvent).filter_by(event_key=expected_event_key).one()
+            is not None
+        )
         assert verify_password(updated_user, "InitialPass@123") is False
         assert verify_password(updated_user, "NewResetPass@456") is True
 
         # Token is single-use
         with pytest.raises(TokenAlreadyConsumedError):
             reset_password_with_token(raw_token, "AnotherPass@789")
+
+
+def test_suspend_user_notification_uses_auth_version_key(app):
+    """Account suspension security notice is keyed to the committed auth mutation."""
+    with app.app_context():
+        user = register_user("suspend-key@pwd301.local", "InitialPass@123", "Suspend Key")
+
+        suspended = suspend_user(user.id, reason="Security review")
+
+        assert suspended.auth_version == 2
+        expected_event_key = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:account-suspension:{user.id}:{suspended.auth_version}",
+        )
+        assert (
+            db.session.query(NotificationEvent).filter_by(event_key=expected_event_key).one()
+            is not None
+        )
 
 
 def test_apply_email_change_with_token(app):

@@ -604,6 +604,7 @@ def _evaluate_attempt_item_regrade(
     old_raw_score = res.raw_score if res else None
     old_percent = res.percent_score if res else None
     old_passed = res.passed if res else None
+    old_status = res.status if res else None
 
     # Determine result status
     res_status = "FINAL"
@@ -667,6 +668,10 @@ def _evaluate_attempt_item_regrade(
                 course_id=attempt.assessment.course_id,
                 session=sess,
             )
+
+    from pwd301.services.attempt_service import notify_assessment_result_change
+
+    notify_assessment_result_change(attempt, res, old_status, old_raw_score, sess)
 
     # 5. Mark item completed
     item.status = "COMPLETED"
@@ -1068,6 +1073,7 @@ def regrade_attempt(
     )
     old_raw = res.raw_score if res else None
     old_percent = res.percent_score if res else None
+    old_status = res.status if res else None
 
     if res is None:
         res = AssessmentResult(
@@ -1100,6 +1106,10 @@ def regrade_attempt(
             created_at=now,
         )
         sess.add(res_hist)
+
+    from pwd301.services.attempt_service import notify_assessment_result_change
+
+    notify_assessment_result_change(attempt, res, old_status, old_raw, sess)
 
     attempt.updated_at = now
     sess.flush()

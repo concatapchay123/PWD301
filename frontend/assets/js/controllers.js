@@ -27,7 +27,7 @@ class Controllers {
         errorAlert.innerHTML = `<span class="material-symbols-outlined text-[18px]">error</span> <span>${msg}</span>`;
         errorAlert.classList.remove('hidden');
       } else {
-        alert(msg);
+        UI.showToast(msg, 'error');
       }
     };
 
@@ -181,7 +181,7 @@ class Controllers {
           // Attempt enrollment
           window.location.hash = '#/student/courses';
         } catch (e) {
-          alert('Không thể đăng ký: ' + e.message);
+          UI.showToast('Không thể đăng ký: ' + (e.message || 'Lỗi hệ thống'), 'error');
         } finally {
           enrollBtn.disabled = false;
         }
@@ -275,8 +275,14 @@ class Controllers {
     });
 
     if (submitBtn) {
-      submitBtn.onclick = () => {
-        const confirmed = confirm('Bạn có chắc chắn muốn nộp bài thi khảo thí này không? Sau khi nộp, hệ thống sẽ chốt kết quả và tính điểm tự động.');
+      submitBtn.onclick = async () => {
+        const confirmed = await UI.confirm(
+          'Nộp bài thi khảo thí',
+          'Bạn có chắc chắn muốn nộp bài thi khảo thí này không? Sau khi nộp, hệ thống sẽ chốt kết quả và tính điểm tự động.',
+          'Nộp bài thi',
+          'Tiếp tục làm bài',
+          true
+        );
         if (confirmed) {
           submitBtn.disabled = true;
           submitBtn.innerHTML = '<span class="animate-spin mr-2">⏳</span> Đang chấm điểm...';

@@ -79,6 +79,8 @@ _archives/
 prompts/
 skill-observations/
 reports/
+graphify-out/
+**/graphify-out/
 
 # Frontend mockups / ephemeral prototypes
 frontend/pwd301_*/

@@ -1,0 +1,2 @@
+PWD301 Browser upload audit fixture.
+This disposable text file contains no personal data and is used only to verify the file chooser boundary.

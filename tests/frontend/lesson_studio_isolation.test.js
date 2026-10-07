@@ -137,10 +137,9 @@ test('moveVideoItem reorders video list while preserving elements', () => {
   assert.equal(JSON.stringify(window.InstructorView.moveVideoItem(items, 0, 10).map(i => i.id)), JSON.stringify(['1', '2', '3']));
 });
 
-test('instructor video studio renders draggable cards and omits arrow buttons', () => {
+test('instructor modular block editor renders block controls', () => {
   const code = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/instructor.js'), 'utf8');
-  assert.ok(code.includes('video-draggable-card'));
-  assert.ok(code.includes('drag_indicator'));
-  assert.ok(!code.includes('btn-video-move-up'));
-  assert.ok(!code.includes('btn-video-move-down'));
+  assert.ok(code.includes('btn-block-move-up'));
+  assert.ok(code.includes('btn-block-move-down'));
+  assert.ok(code.includes('btn-block-delete'));
 });

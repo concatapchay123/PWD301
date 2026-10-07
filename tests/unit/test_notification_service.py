@@ -23,7 +23,9 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.identity import Role, User
+from pwd301.models.notification_audit import EmailDelivery, Notification, NotificationEvent
 from pwd301.services.exceptions import (
+    ConflictError,
     ForbiddenError,
     MandatoryNotificationOptOutError,
     NotificationPreferenceError,
@@ -42,7 +44,7 @@ from pwd301.services.notification_service import (
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
-def test_repeated_lesson_review_notices_appear_once_for_recipient(
+def test_repeated_lesson_review_notices_remain_visible_for_recipient(
     app: Flask, student_user: User
 ) -> None:
     for _ in range(3):
@@ -56,9 +58,9 @@ def test_repeated_lesson_review_notices_appear_once_for_recipient(
         )
     db.session.commit()
     notices, total = list_user_notifications(student_user, session=db.session)
-    assert total == 1
-    assert len(notices) == 1
-    assert get_unread_count(student_user, session=db.session) == 1
+    assert total == 3
+    assert len(notices) == 3
+    assert get_unread_count(student_user, session=db.session) == 3
 
 
 @pytest.fixture
@@ -144,6 +146,96 @@ def test_emit_event_idempotency(app: Flask, student_user: User) -> None:
     assert ev1.event_key == ev2.event_key
 
 
+def test_emit_event_rejects_idempotency_key_payload_conflict(
+    app: Flask, student_user: User
+) -> None:
+    """A stable event key cannot silently change business event semantics."""
+    fixed_key = uuid.uuid4()
+    emit_event(
+        event_type="SCORE_CHANGED",
+        payload={"score": 9.5},
+        actor_user_id=student_user.id,
+        target_type="ATTEMPT",
+        target_id=101,
+        event_key=fixed_key,
+        session=db.session,
+    )
+    db.session.commit()
+
+    with pytest.raises(ConflictError):
+        emit_event(
+            event_type="ASSESSMENT_GRADED",
+            payload={"score": 10.0},
+            actor_user_id=student_user.id,
+            target_type="ATTEMPT",
+            target_id=101,
+            event_key=fixed_key,
+            session=db.session,
+        )
+
+
+def test_dispatch_notification_reuses_event_key_without_fanout_duplicate(
+    app: Flask, student_user: User
+) -> None:
+    """A producer retry must reuse the event and in-app row when keyed."""
+    fixed_key = uuid.uuid4()
+    first, _ = dispatch_notification(
+        recipient_user=student_user,
+        event_type="COURSE_CHANGE_APPROVED",
+        title="Khóa học đã được phê duyệt",
+        body="Bản cập nhật đã được phê duyệt.",
+        action_url="#/instructor/courses/manage?id=course-1",
+        category="COURSE",
+        force_email=True,
+        event_key=fixed_key,
+        session=db.session,
+    )
+    second, _ = dispatch_notification(
+        recipient_user=student_user,
+        event_type="COURSE_CHANGE_APPROVED",
+        title="Khóa học đã được phê duyệt",
+        body="Bản cập nhật đã được phê duyệt.",
+        action_url="#/instructor/courses/manage?id=course-1",
+        category="COURSE",
+        force_email=True,
+        event_key=fixed_key,
+        session=db.session,
+    )
+    db.session.commit()
+
+    assert second.id == first.id
+    assert db.session.query(NotificationEvent).filter_by(event_key=fixed_key).count() == 1
+    assert db.session.query(Notification).filter_by(recipient_user_id=student_user.id).count() == 1
+    assert (
+        db.session.query(EmailDelivery)
+        .filter_by(
+            notification_event_id=first.notification_event_id, recipient_user_id=student_user.id
+        )
+        .count()
+        == 1
+    )
+    with pytest.raises(ConflictError):
+        dispatch_notification(
+            recipient_user=student_user,
+            event_type="COURSE_CHANGE_APPROVED",
+            title="Khóa học đã được phê duyệt",
+            body="Nội dung đã bị thay đổi sau retry.",
+            action_url="#/instructor/courses/manage?id=course-1",
+            category="COURSE",
+            force_email=True,
+            event_key=fixed_key,
+            session=db.session,
+        )
+    assert (
+        db.session.query(EmailDelivery)
+        .filter_by(
+            notification_event_id=first.notification_event_id, recipient_user_id=student_user.id
+        )
+        .count()
+        == 1
+    )
+
+
 def test_dispatch_notification_in_app_and_email(app: Flask, student_user: User) -> None:
     """Test dispatch creates in-app notification and queues email when preference enabled."""
     notif, email = dispatch_notification(
@@ -207,6 +299,25 @@ def test_dispatch_mandatory_security_notification_forces_email(
     assert notif.category == "SECURITY"
     assert email is not None
     assert email.status == "PENDING"
+
+
+def test_security_notification_redacts_raw_ipv4_telemetry(app: Flask, student_user: User) -> None:
+    """Security notifications must not expose raw IPv4 telemetry to recipients."""
+    notif, _ = dispatch_notification(
+        recipient_user=student_user,
+        event_type="SECURITY_LOGIN_ANOMALY",
+        title="Login from 192.168.1.105",
+        body="Review activity from 192.168.1.105:443.",
+        action_url="/admin/security?ip=192.168.1.105",
+        session=db.session,
+    )
+
+    assert "192.168.1.105" not in notif.title
+    assert "192.168.1.105" not in notif.body
+    assert "[REDACTED]" in notif.title
+    assert "[REDACTED]" in notif.body
+    assert "192.168.1.105" not in notif.to_dict()["action_url"]
+    assert "[REDACTED]" in notif.to_dict()["action_url"]
 
 
 def test_update_user_preferences_rejects_security_opt_out(app: Flask, student_user: User) -> None:
@@ -300,7 +411,7 @@ def test_broadcast_system_notification(
         )
 
     # Admin broadcast to STUDENTS only
-    count = broadcast_system_notification(
+    count, idempotent_replay = broadcast_system_notification(
         actor=admin_user,
         title="Maintenance Tomorrow",
         body="Platform will undergo maintenance from 2am to 3am UTC.",
@@ -310,6 +421,7 @@ def test_broadcast_system_notification(
     db.session.commit()
 
     assert count >= 2
+    assert idempotent_replay is False
     items_s1, _ = list_user_notifications(student_user, session=db.session)
     assert any(item["title"] == "Maintenance Tomorrow" for item in items_s1)
 

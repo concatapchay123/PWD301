@@ -978,6 +978,7 @@ def change_course_status(
     new_status: str,
     reason: str | None = None,
     session: Session | scoped_session[Any] | None = None,
+    require_thumbnail: bool = False,
 ) -> Course:
     """Transition course lifecycle state according to the Course State Machine.
 
@@ -1000,6 +1001,7 @@ def change_course_status(
         new_status: Desired target status.
         reason: Justification for transition (required for rejection/admin override).
         session: Optional SQLAlchemy session.
+        require_thumbnail: Whether to strictly validate that the course has a thumbnail.
 
     Returns:
         The updated Course instance.
@@ -1038,8 +1040,10 @@ def change_course_status(
             f"Cannot transition course from '{current_status}' to '{target_status}'."
         )
 
-    if target_status == "SUBMITTED_FOR_REVIEW" and (
-        not course.thumbnail_url or not str(course.thumbnail_url).strip()
+    if (
+        target_status == "SUBMITTED_FOR_REVIEW"
+        and require_thumbnail
+        and (not course.thumbnail_url or not str(course.thumbnail_url).strip())
     ):
         raise CourseValidationError(
             "Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản."

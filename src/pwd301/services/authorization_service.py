@@ -1129,6 +1129,7 @@ def record_admin_intervention(
         created_at=now,
     )
     sess.add(audit_entry)
+    sess.flush()
 
     # Notify instructor
     try:
@@ -1144,6 +1145,10 @@ def record_admin_intervention(
                     f"{resource_type} (ID {resource_id}). Lý do: {clean_reason}"
                 ),
                 category="SYSTEM",
+                event_key=uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"pwd301:admin-intervention:{audit_entry.id}:{audit_entry.action}:{owner_instructor_id}",
+                ),
                 session=sess,
             )
     except Exception:

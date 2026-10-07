@@ -14,11 +14,16 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import re
+import smtplib
+import ssl
 import uuid
+from email.message import EmailMessage
 from typing import Any
 
 import sqlalchemy as sa
+from flask import current_app, has_app_context
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -82,12 +87,112 @@ class MockMailClient(BaseMailClient):
         )
 
 
-_default_mail_client: BaseMailClient = MockMailClient()
+class UnconfiguredMailClient(BaseMailClient):
+    """Fail-closed transport used when production SMTP settings are absent."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def send(
+        self,
+        recipient_email: str,
+        subject: str,
+        body_text: str,
+        body_html: str | None = None,
+    ) -> None:
+        raise EmailDeliveryError(f"Email transport is not configured: {self.reason}")
+
+
+class SmtpMailClient(BaseMailClient):
+    """Small standard-library SMTP adapter for the durable email worker."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str | None,
+        password: str | None,
+        use_tls: bool,
+        from_email: str,
+        timeout_seconds: float = 10.0,
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.use_tls = use_tls
+        self.from_email = from_email
+        self.timeout_seconds = timeout_seconds
+
+    def send(
+        self,
+        recipient_email: str,
+        subject: str,
+        body_text: str,
+        body_html: str | None = None,
+    ) -> None:
+        message = EmailMessage()
+        message["From"] = self.from_email
+        message["To"] = recipient_email
+        message["Subject"] = subject
+        message.set_content(body_text)
+        if body_html:
+            message.add_alternative(body_html, subtype="html")
+
+        with smtplib.SMTP(self.host, self.port, timeout=self.timeout_seconds) as smtp:
+            if self.use_tls:
+                smtp.starttls(context=ssl.create_default_context())
+            if self.username:
+                smtp.login(self.username, self.password or "")
+            smtp.send_message(message)
+
+
+_default_mail_client: BaseMailClient | None = None
+
+
+def _mail_setting(name: str, default: Any = None) -> Any:
+    """Read an optional mail setting from Flask config, then the environment."""
+    if has_app_context():
+        configured = current_app.config.get(name)
+        if configured not in (None, ""):
+            return configured
+    return os.environ.get(name, default)
+
+
+def _mail_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_default_mail_client() -> BaseMailClient:
-    """Get the active mail transport client."""
-    return _default_mail_client
+    """Get the configured mail transport, using a mock only in testing."""
+    if _default_mail_client is not None:
+        return _default_mail_client
+
+    if has_app_context() and current_app.config.get("TESTING", False):
+        return MockMailClient()
+
+    host = str(_mail_setting("MAIL_HOST", "")).strip()
+    username = str(_mail_setting("MAIL_USERNAME", "")).strip() or None
+    password = _mail_setting("MAIL_PASSWORD")
+    from_email = str(_mail_setting("MAIL_FROM", "")).strip() or username
+    if not host or not from_email:
+        return UnconfiguredMailClient("MAIL_HOST and MAIL_FROM are required")
+
+    try:
+        port = int(_mail_setting("MAIL_PORT", 587))
+    except (TypeError, ValueError):
+        return UnconfiguredMailClient("MAIL_PORT must be an integer")
+
+    return SmtpMailClient(
+        host=host,
+        port=port,
+        username=username,
+        password=str(password) if password is not None else None,
+        use_tls=_mail_bool(_mail_setting("MAIL_USE_TLS", True), default=True),
+        from_email=from_email,
+    )
 
 
 def set_default_mail_client(client: BaseMailClient) -> None:

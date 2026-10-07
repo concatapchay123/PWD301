@@ -11,6 +11,7 @@ import logging
 import re
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -187,6 +188,10 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
                                     body=body,
                                     action_url=f"#/instructor/courses/{course.id}/lessons/{lesson.id}/edit",
                                     category="COURSE",
+                                    event_key=uuid.uuid5(
+                                        uuid.NAMESPACE_URL,
+                                        f"pwd301:youtube-broken:{course.id}:{lesson.id}:{yt_id}:{instructor.id}",
+                                    ),
                                     session=db.session,
                                 )
                             except Exception as notif_err:

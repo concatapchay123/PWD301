@@ -15,6 +15,7 @@ Implements business logic and invariants for:
 
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -343,17 +344,25 @@ def _serialize_assessment(
     """Serialize Assessment conforming to ADR-002 and prompt schema contract."""
     questions_count, total_points = _calculate_assessment_aggregates(assessment, session=session)
 
+    unit_id_match = re.search(r"unit_id:\s*([a-zA-Z0-9_-]+)", assessment.description or "")
+    learning_unit_id = unit_id_match.group(1) if unit_id_match else None
+
     data: dict[str, Any] = {
         "assessment_id": str(assessment.public_id),
         "course_id": str(assessment.course.public_id) if assessment.course else None,
         "title": assessment.title,
+        "learning_unit_id": learning_unit_id,
         "assessment_type": assessment.assessment_type,
         "status": assessment.status,
         "exam_layout": assessment.exam_layout,
         "monitoring_enabled": assessment.monitoring_enabled,
         "request_fullscreen": assessment.request_fullscreen,
         "time_limit_minutes": assessment.time_limit_minutes,
+        "duration_minutes": assessment.time_limit_minutes,
+        "open_at": assessment.open_at.isoformat() if assessment.open_at else None,
+        "close_at": (assessment.close_at.isoformat() if assessment.close_at else None),
         "attempt_limit": assessment.attempt_limit,
+        "max_attempts": assessment.attempt_limit,
         "scoring_policy": assessment.scoring_policy,
         "passing_percent": (
             float(assessment.passing_percent) if assessment.passing_percent is not None else None
@@ -369,8 +378,6 @@ def _serialize_assessment(
         data.update(
             {
                 "description": assessment.description,
-                "open_at": assessment.open_at.isoformat() if assessment.open_at else None,
-                "close_at": (assessment.close_at.isoformat() if assessment.close_at else None),
                 "is_required_for_completion": assessment.is_required_for_completion,
                 "shuffle_questions": assessment.shuffle_questions,
                 "shuffle_choices": assessment.shuffle_choices,
@@ -613,11 +620,16 @@ def create_assessment(
     is_rand = payload.get("is_randomized")
     is_rand_bool = is_rand is True or str(is_rand).lower() in ("true", "1", "yes")
 
+    desc = payload.get("description") or ""
+    learning_unit_id = payload.get("learning_unit_id")
+    if learning_unit_id and f"unit_id: {learning_unit_id}" not in desc:
+        desc = (desc + f"\nunit_id: {learning_unit_id}").strip()
+
     assessment = Assessment(
         course_id=course.id,
         creator_user_id=actor.id,
         title=title,
-        description=payload.get("description"),
+        description=desc or None,
         assessment_type=raw_type,
         status="DRAFT",
         open_at=open_at,
@@ -774,8 +786,20 @@ def update_assessment(
             raise AssessmentValidationError("Assessment title must not exceed 200 characters.")
         assessment.title = raw_title
 
-    if "description" in payload:
-        assessment.description = payload["description"]
+    if "learning_unit_id" in payload:
+        l_uid = payload.get("learning_unit_id")
+        current_desc = assessment.description or ""
+        cleaned_desc = re.sub(r"(\r?\n)?unit_id:\s*[a-zA-Z0-9_-]+", "", current_desc).strip()
+        if l_uid:
+            assessment.description = (cleaned_desc + f"\nunit_id: {l_uid}").strip()
+        else:
+            assessment.description = cleaned_desc or None
+    elif "description" in payload:
+        desc_val = payload["description"] or ""
+        unit_id_match = re.search(r"unit_id:\s*([a-zA-Z0-9_-]+)", assessment.description or "")
+        if unit_id_match and "unit_id:" not in desc_val:
+            desc_val = (desc_val + f"\nunit_id: {unit_id_match.group(1)}").strip()
+        assessment.description = desc_val or None
 
     if "assessment_type" in payload and assessment.first_attempt_started_at is None:
         raw_type = str(payload["assessment_type"]).strip().upper()
@@ -1375,6 +1399,7 @@ def assign_question(
     assessment_id: Assessment | int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> AssessmentQuestionAssignment:
     """Assign a fixed question to an assessment (AC-03, AC-06)."""
     sess = session if session is not None else db.session
@@ -1471,11 +1496,12 @@ def assign_question(
     )
     sess.add(assignment)
     sess.flush()
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
     return assignment
 
 

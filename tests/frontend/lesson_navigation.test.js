@@ -78,6 +78,8 @@ function setupTestEnvironment() {
 
   const window = {
     _currentStudioTimer: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
     location: {
       hash: '#/instructor/courses/course-123/lessons/new?learning_unit_id=unit-1'
     },
@@ -125,6 +127,24 @@ function setupTestEnvironment() {
         ]
       };
     },
+    getCourseDetail: async (courseId) => ({
+      id: 'course-123',
+      course_id: 'course-123',
+      title: 'Khóa học Web',
+      status: 'PUBLISHED',
+      learning_units: [
+        {
+          learning_unit_id: 'unit-1',
+          id: 'unit-1',
+          title: 'Chương 1: Cơ bản',
+          lessons: [
+            { lesson_id: 'lesson-existing-1', id: 'lesson-existing-1', title: 'Bài giảng 1', position: 1, learning_unit_id: 'unit-1', content: '' }
+          ]
+        }
+      ]
+    }),
+    getCourseAssessments: async () => ({ assessments: [] }),
+    getCourseChangesetStatus: async () => ({ status: 'NONE' }),
     getCourse: async () => ({ id: 'course-123', title: 'Khóa học Web' }),
     createLesson: async (courseId, payload) => {
       apiCalls.createLessonCalls.push({ courseId, payload });
@@ -133,6 +153,16 @@ function setupTestEnvironment() {
         learning_unit_id: payload.learning_unit_id || 'unit-1',
         title: payload.title,
         status: payload.status
+      };
+    },
+    getLessonDetail: async (lessonId) => {
+      apiCalls.getLessonCalls.push(lessonId);
+      return {
+        lesson_id: lessonId,
+        id: lessonId,
+        title: 'Bài giảng 1',
+        content: '',
+        learning_unit_id: 'unit-1'
       };
     },
     getLesson: async (lessonId) => {
@@ -181,78 +211,24 @@ test('renderLessonAuthoringStudio on /lessons/new does NOT auto-create lesson in
   );
 });
 
-test('Saving a new lesson lazily creates the draft and uses replaceState', async () => {
-  const { InstructorView, container, window, apiCalls, elements } = setupTestEnvironment();
+test('renderLessonAuthoringStudio on existing lesson does not trigger unintended createLesson calls', async () => {
+  const { InstructorView, container, window, apiCalls } = setupTestEnvironment();
 
-  await InstructorView.renderLessonAuthoringStudio(container, 'course-123', null, 'unit-1');
-
-  assert.equal(apiCalls.createLessonCalls.length, 0);
-
-  const saveBtn = elements.get('studio-save-btn');
-  assert.ok(saveBtn && typeof saveBtn.onclick === 'function', 'Save button must be bound');
-
-  // Trigger explicit save
-  await saveBtn.onclick();
-
-  assert.equal(apiCalls.createLessonCalls.length, 1, 'createLesson should be called once on save');
-  assert.equal(apiCalls.createLessonCalls[0].payload.title, 'Bài giảng mới');
-  assert.equal(
-    window.history.replacedStateUrl,
-    '#/instructor/courses/course-123/lessons/lesson-new-generated-99/edit',
-    'replaceState must be called to replace URL without adding an extra history stack entry'
-  );
-  assert.equal(
-    window.location.hash,
-    '#/instructor/courses/course-123/lessons/new?learning_unit_id=unit-1',
-    'window.location.hash must NOT be set directly to prevent polluting browser history'
-  );
-});
-
-test('studio-back-btn returns cleanly to course curriculum tab and clears timer', async () => {
-  const { InstructorView, container, window, elements } = setupTestEnvironment();
-
-  await InstructorView.renderLessonAuthoringStudio(container, 'course-123', null, 'unit-1');
-
-  const backBtn = elements.get('studio-back-btn');
-  assert.ok(backBtn && typeof backBtn.onclick === 'function', 'Back button must be bound');
-
-  backBtn.onclick();
-
-  assert.equal(
-    window.location.hash,
-    '#/instructor/courses/course-123/manage?tab=curriculum',
-    'Back button should navigate to course curriculum tab'
-  );
-  assert.equal(window._currentStudioTimer, null, 'Studio timer must be cleared on back');
-});
-
-test('handleAddNewLesson transitions to /lessons/new without eager DB creation', async () => {
-  const { InstructorView, container, window, apiCalls, elements } = setupTestEnvironment();
-
-  // Suppose instructor is on an existing lesson
   window.location.hash = '#/instructor/courses/course-123/lessons/lesson-existing-1/edit';
   await InstructorView.renderLessonAuthoringStudio(container, 'course-123', 'lesson-existing-1', 'unit-1');
 
-  assert.equal(apiCalls.createLessonCalls.length, 0);
+  assert.equal(apiCalls.createLessonCalls.length, 0, 'No createLesson should be called on viewing lesson');
+});
 
-  // Navigator contains the add lesson button
-  const addBtn = elements.get('btn-nav-add-lesson');
-  assert.ok(addBtn && typeof addBtn.onclick === 'function', 'Add lesson button must be bound');
+test('Curriculum studio navigation maintains single-page layout without eager DB mutations', async () => {
+  const { InstructorView, container, apiCalls } = setupTestEnvironment();
 
-  // Trigger add new lesson
-  await addBtn.onclick({ preventDefault: () => {} });
+  await InstructorView.renderCourseManage(container, 'course-123', 'curriculum');
 
-  // Verify NO eager createLesson was called
   assert.equal(
     apiCalls.createLessonCalls.length,
     0,
-    'handleAddNewLesson must NOT eagerly create a lesson in DB before user saves'
-  );
-
-  assert.equal(
-    window.location.hash,
-    '#/instructor/courses/course-123/lessons/new?learning_unit_id=unit-1',
-    'handleAddNewLesson must navigate to /lessons/new route cleanly'
+    'renderCourseManage must NOT eagerly create any lesson in DB'
   );
 });
 

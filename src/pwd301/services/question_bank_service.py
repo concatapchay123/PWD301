@@ -383,6 +383,7 @@ def create_question(
     course_id: int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> Question:
     """Create a new Question with Revision 1, choices/accepted answers, and provenance.
 
@@ -750,11 +751,12 @@ def create_question(
     )
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return question
 
@@ -1457,7 +1459,7 @@ def create_question_revision(
         approved_at=utc_now(),
         was_student_exposed=False,
         was_used_for_grading=False,
-        is_current=True,
+        is_current=False,
     )
     sess.add(new_revision)
     sess.flush()
@@ -1528,6 +1530,11 @@ def create_question_revision(
                     resource_role=old_r.resource_role,
                 )
                 sess.add(cloned_r)
+
+    # Build all children before activation; SQL Server locks activated revisions.
+    sess.flush()
+    new_revision.is_current = True
+    sess.flush()
 
     # 14. Update Question timestamp
     question.updated_at = utc_now()

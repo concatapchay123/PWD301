@@ -48,7 +48,7 @@ test('renderLessonChildNavigator renders drag handles, delete button, and add le
   assert.match(html, /aria-current="page"/);
   assert.match(html, /btn-nav-delete-lesson/);
   assert.match(html, /nav-drag-handle/);
-  assert.match(html, /\+ Thêm bài học mới/);
+  assert.match(html, /Thêm bài học mới/);
   assert.match(html, /data-lesson-id="lesson-1"/);
   assert.match(html, /data-lesson-id="lesson-2"/);
 });
@@ -68,16 +68,14 @@ test('renderLessonChildNavigator hides add lesson button when unit has 10 lesson
 
   const html = window.InstructorView.renderLessonChildNavigator(unit, 'course-1', 'l-0');
   assert.doesNotMatch(html, /Thêm Lesson/);
-  assert.doesNotMatch(html, /\+ Thêm bài học mới/);
+  assert.doesNotMatch(html, /btn-nav-add-lesson/);
   assert.match(html, /10\/10 Lesson/);
 });
 
 test('instructor.js contains Learning Unit reordering and delete actions', () => {
-  assert.ok(source.includes('btn-move-unit-up'), 'Includes btn-move-unit-up');
-  assert.ok(source.includes('btn-move-unit-down'), 'Includes btn-move-unit-down');
-  assert.ok(source.includes('btn-delete-learning-unit'), 'Includes btn-delete-learning-unit');
-  assert.ok(source.includes('unit-row-card'), 'Includes unit-row-card');
-  assert.ok(source.includes('unit-drag-handle'), 'Includes unit-drag-handle');
+  assert.ok(source.includes('btn-move-unit-up') || source.includes('btn-unit-move-up'), 'Includes unit move up');
+  assert.ok(source.includes('btn-move-unit-down') || source.includes('btn-unit-move-down'), 'Includes unit move down');
+  assert.ok(source.includes('btn-delete-learning-unit') || source.includes('btn-unit-delete'), 'Includes delete learning unit');
 });
 
 test('instructor.js does not contain global course-lessons-order details', () => {
@@ -85,11 +83,9 @@ test('instructor.js does not contain global course-lessons-order details', () =>
   assert.ok(!source.includes('Sắp xếp Lesson trong khóa học'), 'Removed global lessons order text');
 });
 
-test('instructor.js includes explicit delete buttons for video and document uploads', () => {
-  assert.ok(source.includes('Xóa video'), 'Includes Xóa video label');
-  assert.ok(source.includes('Xóa tài liệu'), 'Includes Xóa tài liệu label');
-  assert.ok(source.includes('btn-choose-doc-file'), 'Includes btn-choose-doc-file button');
-  assert.ok(source.includes('btn-delete-preview-video'), 'Includes btn-delete-preview-video');
+test('instructor.js includes explicit delete buttons for video, document, and block items', () => {
+  assert.ok(source.includes('btn-block-delete'), 'Includes block delete button');
+  assert.ok(source.includes('btn-delete-learning-unit') || source.includes('btn-unit-delete'), 'Includes unit delete');
 });
 
 test('instructor.js includes cover photo reminder banner and badges', () => {

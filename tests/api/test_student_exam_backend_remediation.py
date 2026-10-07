@@ -313,7 +313,7 @@ def test_attempt_lease_duration_covers_exam_timelimit(
         f"/student/assessments/{asm_id}/start",
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
     )
-    assert res.status_code in (200, 201)
+    assert res.status_code in (200, 201), res.get_json()
     attempt_id = res.get_json()["attempt_id"]
 
     sess = db.session

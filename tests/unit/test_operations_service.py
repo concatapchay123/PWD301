@@ -34,6 +34,7 @@ from pwd301.models.operations import (
     SystemBackup,
 )
 from pwd301.models.types import utc_now
+from pwd301.services.email_service import enqueue_email
 from pwd301.services.exceptions import (
     BackupIntegrityError,
     ForbiddenError,
@@ -157,6 +158,28 @@ def test_check_system_health_deep_details(app: Flask, admin_user: User) -> None:
 
         assert "mail_queue" in components
         assert "backup" in components
+
+
+def test_mail_queue_health_degrades_for_stale_pending_delivery(
+    app: Flask, admin_user: User
+) -> None:
+    """A durable email backlog older than the retry window is operationally degraded."""
+    with app.app_context():
+        delivery = enqueue_email(
+            recipient_email="stale-queue@example.com",
+            subject="Stale queue test",
+            body_text="This row must make queue health honest.",
+            template_code="STALE_QUEUE_TEST",
+            recipient_user_id=admin_user.id,
+            session=db.session,
+        )
+        delivery.created_at = utc_now() - datetime.timedelta(hours=1)
+        delivery.next_attempt_at = delivery.created_at
+        db.session.commit()
+
+        report = check_system_health(include_details=True, session=db.session)
+
+        assert report["components"]["mail_queue"]["status"] == "DEGRADED"
 
 
 # =====================================================================

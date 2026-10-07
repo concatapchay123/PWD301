@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 
 import pytest
 from flask import Flask
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.course import CourseCompletionRule, CoursePrerequisite
 from pwd301.models.identity import Role, User
-from pwd301.models.notification_audit import AuditEvent, Notification
+from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
 from pwd301.services.course_service import (
     change_course_status,
     create_course,
@@ -398,6 +399,89 @@ def test_course_state_machine_transitions(
     assert course.deleted_by_user_id is None
 
 
+def test_course_lifecycle_notifications_use_audit_scoped_event_keys(
+    app: Flask,
+    instructor_one: User,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each course lifecycle notification is keyed by its durable audit transition."""
+    captured: list[dict[str, object]] = []
+
+    def capture_notification(**kwargs: object) -> tuple[None, None]:
+        captured.append(kwargs)
+        return None, None
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification",
+        capture_notification,
+    )
+
+    course = create_course(
+        instructor_one,
+        {"course_code": "NOTIF-KEY-101", "title": "Notification Key Course"},
+    )
+
+    change_course_status(instructor_one, course.id, "SUBMITTED_FOR_REVIEW")
+    submission_call = next(
+        item for item in captured if item["event_type"] == "COURSE_SUBMITTED_FOR_REVIEW"
+    )
+    submission_audit = (
+        db.session.query(AuditEvent)
+        .filter_by(action="COURSE_SUBMITTED_FOR_REVIEW", target_id=course.id)
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    assert submission_audit is not None
+    assert submission_call["event_key"] == uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-audit:{submission_audit.id}:COURSE_SUBMITTED_FOR_REVIEW:{admin_user.id}",
+    )
+
+    captured.clear()
+    change_course_status(
+        admin_user,
+        course.id,
+        "APPROVED",
+        reason="Content meets the documented review standard.",
+    )
+    approval_call = next(item for item in captured if item["event_type"] == "COURSE_APPROVED")
+    approval_audit = (
+        db.session.query(AuditEvent)
+        .filter_by(action="COURSE_APPROVED", target_id=course.id)
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    assert approval_audit is not None
+    assert approval_call["event_key"] == uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-audit:{approval_audit.id}:COURSE_APPROVED:{instructor_one.id}",
+    )
+
+    change_course_status(instructor_one, course.id, "PUBLISHED")
+    change_course_status(instructor_one, course.id, "SUBMITTED_FOR_REVIEW")
+    captured.clear()
+    change_course_status(
+        admin_user,
+        course.id,
+        "DRAFT",
+        reason="Please add the missing assessment rubric details.",
+    )
+    rejection_call = next(item for item in captured if item["event_type"] == "COURSE_REJECTED")
+    rejection_audit = (
+        db.session.query(AuditEvent)
+        .filter_by(action="COURSE_REJECTED", target_id=course.id)
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    assert rejection_audit is not None
+    assert rejection_call["event_key"] == uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-audit:{rejection_audit.id}:COURSE_REJECTED:{instructor_one.id}",
+    )
+    assert all(isinstance(item["event_key"], uuid.UUID) for item in captured)
+
+
 def test_illegal_state_machine_transitions(
     app: Flask,
     instructor_one: User,
@@ -538,6 +622,60 @@ def test_reassign_course_owner(
     assert reassigned_none.owner_instructor_id is None
 
 
+def test_reassign_course_owner_notifications_use_recipient_scoped_audit_keys(
+    app: Flask,
+    instructor_one: User,
+    instructor_two: User,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Owner reassignment fan-out uses one stable key per recipient."""
+    captured: list[dict[str, object]] = []
+
+    def capture_notification(**kwargs: object) -> tuple[None, None]:
+        captured.append(kwargs)
+        return None, None
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification",
+        capture_notification,
+    )
+
+    course = create_course(
+        instructor_one,
+        {"course_code": "OWNER-KEY-101", "title": "Owner Key Course"},
+    )
+    reassign_course_owner(
+        admin_actor=admin_user,
+        course_id=course.id,
+        new_instructor_id=instructor_two.id,
+        reason="Instructor One is taking a sabbatical leave.",
+    )
+
+    assert len(captured) == 2
+    audit = (
+        db.session.query(AuditEvent)
+        .filter_by(action="COURSE_OWNER_REASSIGNED", target_id=course.id)
+        .order_by(AuditEvent.id.desc())
+        .first()
+    )
+    assert audit is not None
+    expected_keys = {
+        instructor_one.id: uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:course-audit:{audit.id}:COURSE_OWNER_REASSIGNED:{instructor_one.id}",
+        ),
+        instructor_two.id: uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"pwd301:course-audit:{audit.id}:COURSE_OWNER_REASSIGNED:{instructor_two.id}",
+        ),
+    }
+    captured_by_recipient = {item["recipient_user"]: item for item in captured}
+    assert captured_by_recipient[instructor_one.id]["event_key"] == expected_keys[instructor_one.id]
+    assert captured_by_recipient[instructor_two.id]["event_key"] == expected_keys[instructor_two.id]
+    assert expected_keys[instructor_one.id] != expected_keys[instructor_two.id]
+
+
 def test_list_courses_pagination_and_filtering(
     app: Flask,
     instructor_one: User,
@@ -654,6 +792,17 @@ def test_audit_admin_course_edit_requires_reason_and_notifies_owner(
         .filter(Notification.recipient_user_id == instructor_one.id)
         .count()
         >= 1
+    )
+    expected_key = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"pwd301:course-audit:{audit.id}:{audit.action}:{instructor_one.id}",
+    )
+    assert (
+        db.session.query(NotificationEvent)
+        .filter(NotificationEvent.event_key == expected_key)
+        .one()
+        .event_type
+        == "SYSTEM_ADMIN_INTERVENTION"
     )
 
 

@@ -806,34 +806,31 @@ def auth_notifications_center() -> Any:
     prefs = get_user_preferences(actor=current_user, session=db.session)
     unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
 
-    return (
-        jsonify(
-            {
-                "success": True,
-                "items": items,
-                "total": total,
-                "unread_count": unread,
-                "preferences": prefs,
-                "page": max(1, page),
-                "per_page": min(max(1, per_page), 100),
-            }
-        ),
-        200,
-    )
+    response_data = {
+        "items": items,
+        "total": total,
+        "unread_count": unread,
+        "preferences": prefs,
+        "page": max(1, page),
+        "per_page": min(max(1, per_page), 100),
+    }
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @auth_bp.route("/notifications/unread-count", methods=["GET"])
 def auth_notifications_unread_count() -> Any:
     """Fast unread notification count for authenticated web session topbar badge."""
     if not current_user.is_authenticated:
-        return jsonify({"success": True, "unread_count": 0}), 200
+        response_data = {"unread_count": 0}
+        return jsonify({"success": True, "data": response_data, **response_data}), 200
 
     from pwd301.extensions import db
     from pwd301.services.notification_service import get_unread_count
 
     target_role = request.args.get("role") or request.args.get("target_role")
     unread = get_unread_count(actor=current_user, target_role=target_role, session=db.session)
-    return jsonify({"success": True, "unread_count": unread}), 200
+    response_data = {"unread_count": unread}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @auth_bp.route("/notifications/<notification_id>/read", methods=["POST"])
@@ -860,7 +857,7 @@ def auth_mark_notification_read(notification_id: str) -> Any:
         notification_id=notification_id,
         session=db.session,
     )
-    return jsonify(result), 200
+    return jsonify({"success": True, "data": result, **result}), 200
 
 
 @auth_bp.route("/notifications/mark-all-read", methods=["POST"])
@@ -893,7 +890,8 @@ def auth_mark_all_notifications_read() -> Any:
     count = mark_all_as_read(
         actor=current_user, category=category, target_role=target_role, session=db.session
     )
-    return jsonify({"success": True, "marked_count": count}), 200
+    response_data = {"marked_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @auth_bp.route("/notifications/<notification_id>", methods=["DELETE", "POST"])
@@ -921,7 +919,7 @@ def auth_delete_notification(notification_id: str) -> Any:
         notification_id=notification_id,
         session=db.session,
     )
-    return jsonify({"success": True, **result}), 200
+    return jsonify({"success": True, "data": result, **result}), 200
 
 
 @auth_bp.route("/notifications", methods=["DELETE"])
@@ -951,8 +949,11 @@ def auth_clear_all_notifications() -> Any:
         or request.args.get("role")
         or request.args.get("target_role")
     )
-    count = delete_all_notifications(actor=current_user, target_role=target_role, session=db.session)
-    return jsonify({"success": True, "deleted_count": count}), 200
+    count = delete_all_notifications(
+        actor=current_user, target_role=target_role, session=db.session
+    )
+    response_data = {"deleted_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @auth_bp.route("/profile", methods=["GET", "PUT", "POST"])

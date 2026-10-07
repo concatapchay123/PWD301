@@ -6,8 +6,6 @@ Complies with ADR-002 (Zero Internal PK Leakage) and eliminates CSRF vectors.
 
 from __future__ import annotations
 
-import contextlib
-import json
 from typing import Any
 
 import sqlalchemy as sa
@@ -17,7 +15,6 @@ from pwd301.blueprints.api_admin import api_admin_bp
 from pwd301.extensions import db
 from pwd301.models.course import Course
 from pwd301.models.identity import User
-from pwd301.models.types import utc_now
 from pwd301.services.analytics_service import get_admin_system_overview
 from pwd301.services.authorization_service import (
     _resolve_user,
@@ -29,6 +26,7 @@ from pwd301.services.authorization_service import (
 )
 from pwd301.services.course_service import (
     change_course_status,
+    flag_lesson_content,
     reassign_course_owner,
     trash_course,
 )
@@ -568,7 +566,11 @@ def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
     from pwd301.services.notification_service import broadcast_system_notification
 
     actor = require_authenticated_actor()
-    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = request.form.to_dict()
+    if not isinstance(data, dict):
+        raise ValidationError("Notification payload must be a JSON object.")
     title = data.get("title")
     body = data.get("body")
     target_role = data.get("target_role")
@@ -579,15 +581,17 @@ def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
     if not body:
         raise ValidationError("Field 'body' is required.")
 
-    count = broadcast_system_notification(
+    count, idempotent_replay = broadcast_system_notification(
         actor=actor,
         title=title,
         body=body,
         target_role=target_role,
         category=category,
+        idempotency_key=request.headers.get("X-Idempotency-Key"),
         session=db.session,
     )
-    return jsonify({"broadcasted_count": count}), 200
+    response_data = {"broadcasted_count": count, "idempotent_replay": idempotent_replay}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @api_admin_bp.route("/emails/retry-failed", methods=["POST"])
@@ -599,7 +603,11 @@ def api_admin_retry_failed_emails() -> tuple[Response, int] | Response:
     from pwd301.services.email_service import retry_failed_emails
 
     actor = require_authenticated_actor()
-    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = request.form.to_dict()
+    if not isinstance(data, dict):
+        raise ValidationError("Retry payload must be a JSON object.")
     try:
         max_emails = int(data.get("max_emails", 50))
     except (ValueError, TypeError):
@@ -610,7 +618,8 @@ def api_admin_retry_failed_emails() -> tuple[Response, int] | Response:
         max_emails=max_emails,
         session=db.session,
     )
-    return jsonify({"retried_count": count}), 200
+    response_data = {"retried_count": count}
+    return jsonify({"success": True, "data": response_data, **response_data}), 200
 
 
 @api_admin_bp.route("/audit-logs", methods=["GET"])
@@ -1247,9 +1256,7 @@ def api_admin_download_application_evidence(app_id: str, filename: str) -> Any:
 @require_admin_permission("COURSE_REVIEW")
 def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, int] | Response:
     """Flag a lesson or its contents (video/file/content) with reasons and notify instructor."""
-    from pwd301.models.notification_audit import AuditEvent
     from pwd301.services.authorization_service import _resolve_course, _resolve_lesson
-    from pwd301.services.notification_service import dispatch_notification
 
     actor = require_authenticated_actor()
     course = _resolve_course(course_id, session=db.session)
@@ -1260,52 +1267,28 @@ def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, in
     if lesson is None or lesson.course_id != course.id:
         raise ResourceNotFoundError("Bài học không tồn tại trong khóa học này.")
 
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = request.form.to_dict()
+    if not payload:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise ValidationError("Dữ liệu yêu cầu không hợp lệ.")
     reason = str(payload.get("reason", "")).strip()
     content_type = str(payload.get("content_type", "bài học")).strip()
 
     if len(reason) < 5:
         raise ValidationError("Lý do gắn cờ bắt buộc tối thiểu 5 ký tự.")
 
-    flag_summary = f"[FLAGGED]: {reason}"[:500]
-    lesson.material_change_summary = flag_summary
-
-    audit = AuditEvent(
-        actor_user_id=actor.id,
-        action="CONTENT_FLAGGED",
-        target_type="LESSON",
-        target_id=lesson.id,
+    flag_result = flag_lesson_content(
+        actor=actor,
+        course=course,
+        lesson=lesson,
         reason=reason,
-        performed_as_admin=True,
-        payload_json=json.dumps(
-            {
-                "course_id": str(course.public_id),
-                "lesson_id": str(lesson.public_id),
-                "content_type": content_type,
-                "reason": reason,
-            }
-        ),
-        created_at=utc_now(),
+        content_type=content_type,
+        idempotency_key=request.headers.get("X-Idempotency-Key"),
+        session=db.session,
     )
-    db.session.add(audit)
-    db.session.commit()
-
-    if course.owner_instructor_id:
-        with contextlib.suppress(Exception):
-            dispatch_notification(
-                recipient_user=course.owner_instructor_id,
-                event_type="COURSE_CONTENT_FLAGGED",
-                title=f"Nội dung bị gắn cờ: {lesson.title}",
-                body=f"Quản trị viên đã gắn cờ {content_type} '{lesson.title}' trong khóa học '{course.title}'. Lý do: {reason}",
-                category="COURSE",
-                payload={
-                    "course_id": str(course.public_id),
-                    "lesson_id": str(lesson.public_id),
-                    "reason": reason,
-                    "content_type": content_type,
-                },
-                session=db.session,
-            )
 
     return jsonify(
         {
@@ -1314,5 +1297,6 @@ def api_flag_course_lesson(course_id: str, lesson_id: str) -> tuple[Response, in
             "lesson_id": str(lesson.public_id),
             "is_flagged": True,
             "flag_reason": reason,
+            "idempotent_replay": bool(flag_result.get("idempotent_replay", False)),
         }
     ), 200

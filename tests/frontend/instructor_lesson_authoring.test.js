@@ -80,11 +80,11 @@ test('renderLessonChildNavigator sets data-learning-unit-id cleanly without stri
   assert.doesNotMatch(html, /data-learning-unit-id="learning_unit_id=/, 'Must not have prefix');
 });
 
-test('instructor.js contains separate save draft button and publish button', () => {
-  assert.ok(source.includes('id="studio-save-draft-btn"'), 'Includes studio-save-draft-btn');
-  assert.ok(source.includes('Lưu nháp'), 'Includes Lưu nháp label');
-  assert.ok(source.includes('id="studio-save-btn"'), 'Includes studio-save-btn');
-  assert.ok(source.includes('Xuất bản'), 'Includes Xuất bản label');
+test('instructor.js contains save lesson button and changeset submit button', () => {
+  assert.ok(source.includes('id="btn-save-lesson"'), 'Includes btn-save-lesson');
+  assert.ok(source.includes('Lưu bài giảng'), 'Includes Lưu bài giảng label');
+  assert.ok(source.includes('btn-submit-changeset'), 'Includes btn-submit-changeset');
+  assert.ok(source.includes('Gửi duyệt đợt cập nhật'), 'Includes Gửi duyệt đợt cập nhật label');
 });
 
 test('instructor.js does not contain redundant chapter selector box in studio canvas', () => {

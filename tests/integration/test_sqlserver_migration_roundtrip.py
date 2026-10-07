@@ -8,6 +8,7 @@ cannot masquerade as SQL Server DDL coverage.
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 import sqlalchemy as sa
@@ -31,6 +32,24 @@ def test_sqlserver_migrations_upgrade_downgrade_upgrade_roundtrip(monkeypatch):
         inspector = sa.inspect(db.engine)
         assert "lessons" in inspector.get_table_names()
         assert "revision_no" in {column["name"] for column in inspector.get_columns("lessons")}
+        with db.engine.connect() as connection:
+            revision_constraint = connection.execute(
+                sa.text(
+                    "SELECT definition FROM sys.check_constraints "
+                    "WHERE parent_object_id = OBJECT_ID('dbo.question_revisions') "
+                    "AND name = 'ck_question_revisions_4'"
+                )
+            ).scalar_one()
+        assert set(re.findall(r"'([^']+)'", revision_constraint)) == {
+            "INITIAL",
+            "EDIT",
+            "ANSWER_ONLY",
+            "CONTENT_OR_CHOICES",
+            "TYPO_FIX",
+            "ANSWER_CHANGE",
+            "CONTENT_CHANGE",
+            "REVOCATION",
+        }
 
         downgrade(directory="migrations", revision="base")
         assert "users" not in sa.inspect(db.engine).get_table_names()
@@ -40,5 +59,5 @@ def test_sqlserver_migrations_upgrade_downgrade_upgrade_roundtrip(monkeypatch):
             revision = connection.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "b3c4d5e6f7a9"
+        assert revision == "c4d5e6f7a8b0"
         db.engine.dispose()

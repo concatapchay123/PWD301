@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -50,14 +51,18 @@ def _clean_mssql_database() -> None:
 
 
 @pytest.fixture
-def app() -> Generator[Flask, None, None]:
+def app(tmp_path: Path) -> Generator[Flask, None, None]:
     """Create and configure a clean Flask application instance for testing."""
-    config_override = {}
+    config_override: dict[str, Any] = {
+        "FILE_STORAGE_ROOT": tmp_path / "storage",
+        "FILE_QUARANTINE_ROOT": tmp_path / "quarantine",
+        "FILE_BACKUP_ROOT": tmp_path / "backups",
+    }
     db_url = os.environ.get("TEST_DATABASE_URL", "")
     if "mssql" in db_url:
         config_override["SQLALCHEMY_ENGINE_OPTIONS"] = {"poolclass": sa.pool.NullPool}
 
-    test_app = create_app("testing", config_override=config_override if config_override else None)
+    test_app = create_app("testing", config_override=config_override)
 
     with test_app.app_context():
         dialect_name = db.engine.dialect.name

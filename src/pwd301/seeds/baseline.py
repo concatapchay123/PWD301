@@ -108,6 +108,12 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
             )
             session.add(link)
             summary["admin_roles_assigned"].append(code)
+        elif code == "ADMIN" and "SUB_ROLE:ADMIN_PRIMARY" not in (
+            existing_link.assignment_reason or ""
+        ):
+            existing_link.assignment_reason = (
+                "SUB_ROLE:ADMIN_PRIMARY | Baseline root administrator initialization"
+            )
 
     try:
         session.commit()

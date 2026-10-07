@@ -15,6 +15,19 @@ class ExamStore {
   static STORAGE_KEY = 'pwd301_azota_exam_draft';
   static _memoryDraft = null;
 
+  static getStorageKey() {
+    try {
+      const router = window.app || window.appRouter;
+      const userId = router?.currentUser?.id;
+      if (userId) return `pwd301_azota_exam_draft_${userId}`;
+    } catch {}
+    return 'pwd301_azota_exam_draft';
+  }
+
+  static clearMemoryDraft() {
+    this._memoryDraft = null;
+  }
+
   static getDefaultDraft() {
     return {
       title: 'De_thi_moi.docx',
@@ -48,7 +61,8 @@ class ExamStore {
       return this._memoryDraft;
     }
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
+      const key = this.getStorageKey();
+      const stored = localStorage.getItem(key) || (key !== 'pwd301_azota_exam_draft' ? localStorage.getItem('pwd301_azota_exam_draft') : null);
       if (stored) {
         const parsed = JSON.parse(stored);
         this._memoryDraft = {
@@ -89,16 +103,19 @@ class ExamStore {
     };
 
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this._memoryDraft));
+      localStorage.setItem(this.getStorageKey(), JSON.stringify(this._memoryDraft));
     } catch (e) {
       console.warn('[ExamStore] Error persisting draft to localStorage:', e);
+      this._memoryDraft.lastSaved = null;
+      this._memoryDraft.storageFailed = true;
     }
     return this._memoryDraft;
   }
 
   static hasDraft() {
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
+      const key = this.getStorageKey();
+      const stored = localStorage.getItem(key) || (key !== 'pwd301_azota_exam_draft' ? localStorage.getItem('pwd301_azota_exam_draft') : null);
       if (!stored) return false;
       const parsed = JSON.parse(stored);
       return (
@@ -127,7 +144,8 @@ class ExamStore {
   static clearDraft() {
     this._memoryDraft = this.getDefaultDraft();
     try {
-      localStorage.removeItem(this.STORAGE_KEY);
+      localStorage.removeItem(this.getStorageKey());
+      localStorage.removeItem('pwd301_azota_exam_draft');
     } catch (e) {
       console.warn('[ExamStore] Error clearing draft:', e);
     }

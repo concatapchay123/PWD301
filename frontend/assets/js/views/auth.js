@@ -228,6 +228,7 @@ class AuthView {
                     class="seed-acc-btn text-left p-2 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#262524] hover:border-[#222120] dark:hover:border-[#EDEDEB] transition-all flex items-center justify-between group/btn cursor-pointer w-full"
                     data-email="student1@pwd301.local"
                     data-pass="Password123!"
+                    data-role="STUDENT"
                   >
                     <div>
                       <div class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Học viên (Student)</div>
@@ -242,6 +243,7 @@ class AuthView {
                     class="seed-acc-btn text-left p-2 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#262524] hover:border-[#222120] dark:hover:border-[#EDEDEB] transition-all flex items-center justify-between group/btn cursor-pointer w-full"
                     data-email="instructor1@pwd301.local"
                     data-pass="Password123!"
+                    data-role="INSTRUCTOR"
                   >
                     <div>
                       <div class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Giảng viên (Instructor)</div>
@@ -256,6 +258,7 @@ class AuthView {
                     class="seed-acc-btn text-left p-2 rounded-lg border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#262524] hover:border-[#222120] dark:hover:border-[#EDEDEB] transition-all flex items-center justify-between group/btn cursor-pointer w-full"
                     data-email="admin@pwd301.local"
                     data-pass="Password123!"
+                    data-role="ADMIN"
                   >
                     <div>
                       <div class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Quản trị viên (Admin)</div>
@@ -656,6 +659,7 @@ class AuthView {
       btn.onclick = () => {
         if (emailInput) emailInput.value = btn.dataset.email || '';
         if (passInput) passInput.value = btn.dataset.pass || '';
+        window._demoSelectedRole = btn.dataset.role || null;
         hideError();
         if (submitBtn) submitBtn.focus();
       };
@@ -745,7 +749,14 @@ class AuthView {
           if (window.app) {
             if (res && res.user) {
               window.app.currentUser = res.user;
-              window.app.currentRole = res.user.primary_role || (res.user.role_codes && res.user.role_codes[0]) || 'STUDENT';
+              const preferredRole = (window._demoSelectedRole && res.user.role_codes && res.user.role_codes.includes(window._demoSelectedRole))
+                ? window._demoSelectedRole
+                : (res.user.primary_role || (res.user.role_codes && res.user.role_codes[0]) || 'STUDENT');
+              window.app.currentRole = preferredRole;
+              if (window.app.currentUser) {
+                window.app.currentUser.active_role = preferredRole;
+              }
+              window._demoSelectedRole = null;
               window.app.updateUserUI();
               window.app.refreshNotificationBadge();
             } else {

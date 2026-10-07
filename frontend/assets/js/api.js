@@ -154,6 +154,10 @@ class ApiClient {
       const isJson = contentType.includes('application/json');
       const data = isJson ? await res.json() : await res.text();
 
+      if (!isJson && typeof data === 'string' && data.trim().startsWith('<!DOCTYPE html')) {
+        throw new Error('Máy chủ trả về trang HTML ngoài dự kiến thay vì phản hồi JSON API.');
+      }
+
       if (!res.ok) {
         // Automatic single-retry on CSRF error / expiration
         if (res.status === 400 && data && data.error && data.error.code === 'CSRF_ERROR' && !options._isCsrfRetry) {
@@ -165,8 +169,18 @@ class ApiClient {
 
         const errorMsg = ApiClient.formatApiErrorMessage(data, res.status);
         const err = new Error(errorMsg);
-        err.rawMessage = (data && data.error && data.error.message) || data?.message || '';
+        err.rawMessage = (data && data.error && (data.error.message || data.error)) || data?.message || '';
         err.code = (data && data.error && data.error.code) || null;
+        err.status = res.status;
+        err.data = data;
+        throw err;
+      }
+
+      if (data && typeof data === 'object' && data.success === false && !options._allowFailure) {
+        const errorMsg = ApiClient.formatApiErrorMessage(data, res.status);
+        const err = new Error(errorMsg);
+        err.rawMessage = (data && data.error && (data.error.message || data.error)) || data?.message || '';
+        err.code = (data && data.error && data.error.code) || 'BUSINESS_ERROR';
         err.status = res.status;
         err.data = data;
         throw err;
@@ -373,13 +387,15 @@ class ApiClient {
     return await ApiClient.request(`/student/courses/${courseId}/lessons/${lessonId}`);
   }
 
-  static async recordLessonProgress(lessonId, secondsIncrement = 15, viewFraction = 1.0, completed = false) {
+  static async recordLessonProgress(lessonId, secondsIncrement = 15, viewFraction = 1.0, completed = false, clientEventId = null) {
+    const eventId = clientEventId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9)));
     return await ApiClient.request(`/student/lessons/${lessonId}/progress`, {
       method: 'POST',
       body: {
         seconds_increment: secondsIncrement,
         view_fraction: viewFraction,
-        completed: completed
+        completed: completed,
+        client_event_id: eventId
       }
     });
   }
@@ -1142,12 +1158,13 @@ class ApiClient {
     });
   }
 
-  static async restoreAdminBackup(backupId, confirmationPhrase, password) {
+  static async restoreAdminBackup(backupId, confirmationPhrase, password, reason = '') {
     return await ApiClient.request(`/admin/backups/${backupId}/restore`, {
       method: 'POST',
       body: {
         confirmation_phrase: confirmationPhrase,
-        password: password
+        password: password,
+        reason: reason
       }
     });
   }
@@ -1272,53 +1289,33 @@ class ApiClient {
 
   static async markNotificationRead(notificationId) {
     if (!notificationId) return { success: false };
-    try {
-      return await ApiClient.request(`/auth/notifications/${notificationId}/read`, {
-        method: 'POST',
-      });
-    } catch (e) {
-      console.warn('markNotificationRead error:', e);
-      return { success: false };
-    }
+    return await ApiClient.request(`/auth/notifications/${notificationId}/read`, {
+      method: 'POST',
+    });
   }
 
   static async markAllNotificationsRead(category = null, role = null) {
-    try {
-      const body = {};
-      if (category && category !== 'ALL') body.category = category;
-      if (role) body.role = role;
-      return await ApiClient.request('/auth/notifications/mark-all-read', {
-        method: 'POST',
-        body: body,
-      });
-    } catch (e) {
-      console.warn('markAllNotificationsRead error:', e);
-      return { success: false };
-    }
+    const body = {};
+    if (category && category !== 'ALL') body.category = category;
+    if (role) body.role = role;
+    return await ApiClient.request('/auth/notifications/mark-all-read', {
+      method: 'POST',
+      body: body,
+    });
   }
 
   static async deleteNotification(notificationId) {
     if (!notificationId) return { success: false };
-    try {
-      return await ApiClient.request(`/auth/notifications/${notificationId}`, {
-        method: 'DELETE',
-      });
-    } catch (e) {
-      console.warn('deleteNotification error:', e);
-      return { success: false };
-    }
+    return await ApiClient.request(`/auth/notifications/${notificationId}`, {
+      method: 'DELETE',
+    });
   }
 
   static async clearNotifications(role = null) {
-    try {
-      return await ApiClient.request('/auth/notifications/clear', {
-        method: 'POST',
-        body: role ? { role } : {},
-      });
-    } catch (e) {
-      console.warn('clearNotifications error:', e);
-      return { success: false };
-    }
+    return await ApiClient.request('/auth/notifications/clear', {
+      method: 'POST',
+      body: role ? { role } : {},
+    });
   }
 
   static async parseExamFile(file, courseId = null) {

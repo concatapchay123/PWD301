@@ -68,7 +68,11 @@ def published_course_and_lesson(
     """Create and publish a course and lesson."""
     c = create_course(
         instructor_user,
-        {"course_code": "API-LES-101", "title": "API Lesson Course"},
+        {
+            "course_code": "API-LES-101",
+            "title": "API Lesson Course",
+            "thumbnail_url": "https://example.com/cover.png",
+        },
     )
     les = create_lesson(
         instructor_user,
@@ -335,4 +339,3 @@ def test_rest_lesson_edit_identical_payload_auto_skipped(
         .count()
         == 0
     )
-

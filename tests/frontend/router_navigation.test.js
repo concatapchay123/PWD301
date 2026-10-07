@@ -77,6 +77,14 @@ class FakeElement {
     this.parentElement.childNodes = this.parentElement.childNodes.filter(child => child !== this);
     this.parentElement = null;
   }
+
+  querySelector() {
+    return null;
+  }
+
+  querySelectorAll() {
+    return [];
+  }
 }
 
 function createRouter() {
@@ -88,6 +96,7 @@ function createRouter() {
     ['app-topbar', new FakeElement('app-topbar')],
     ['top-micro-loader', new FakeElement('top-micro-loader')],
     ['top-micro-loader-bar', new FakeElement('top-micro-loader-bar')],
+    ['topbar-notifications-dropdown', new FakeElement('topbar-notifications-dropdown')],
   ]);
   const document = {
     body: new FakeElement('body'),
@@ -113,7 +122,7 @@ function createRouter() {
   router.renderDynamicSidebar = () => {};
   router.toggleShell = () => {};
   router.updateTopbarBreadcrumb = () => {};
-  return { router, viewport, window, document };
+  return { router, viewport, window, document, sandbox };
 }
 
 function deferred() {
@@ -121,6 +130,45 @@ function deferred() {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
+
+for (const authHash of ['#/auth', '#/login']) {
+  test(`unauthenticated ${authHash} settles on the login screen without a role-home redirect`, async () => {
+    const { router, viewport, window, sandbox } = createRouter();
+    router.currentUser = null;
+    window.location.hash = authHash;
+    window.history = { replaceState: (_state, _title, hash) => { window.location.hash = hash; } };
+    const shellStates = [];
+    router.toggleShell = visible => shellStates.push(visible);
+    let attached = 0;
+    sandbox.AuthView = { render: () => 'login screen', attachEvents: () => { attached += 1; } };
+    router.redirectToRoleHome = () => assert.fail('an unauthenticated auth route must not enter the role-home fallback');
+
+    await router.handleRoute();
+
+    assert.equal(viewport.innerHTML, 'login screen');
+    assert.equal(window.location.hash, '#/auth');
+    assert.ok(attached > 0);
+    assert.ok(shellStates.length > 0 && shellStates.every(visible => visible === false));
+    assert.equal(router._isRouting, false);
+  });
+}
+
+test('expired session on a protected route reaches auth without repeated session requests', async () => {
+  const { router, viewport, window, sandbox } = createRouter();
+  router.currentUser = null;
+  window.history = { replaceState: (_state, _title, hash) => { window.location.hash = hash; } };
+  sandbox.AuthView = { render: () => 'login screen', attachEvents() {} };
+  let sessionRequests = 0;
+  router.refreshCurrentUser = async () => { sessionRequests += 1; };
+  router.redirectToRoleHome = () => assert.fail('auth must remain stable after an expired session');
+
+  await router.handleRoute();
+
+  assert.equal(viewport.innerHTML, 'login screen');
+  assert.equal(window.location.hash, '#/auth');
+  assert.equal(sessionRequests, 1);
+  assert.equal(router._isRouting, false);
+});
 
 test('notification action labels match the destination task', () => {
   const { window } = createRouter();
@@ -130,6 +178,51 @@ test('notification action labels match the destination task', () => {
   assert.equal(label({ event_type: 'COURSE_APPROVED' }), 'Xem Khóa Học');
   assert.equal(label({ event_type: 'COURSE_CHANGE_REJECTED' }), 'Xem Khóa Học');
   assert.equal(label({ event_type: 'LESSON_CHANGE_REQUEST' }), 'Xem Yêu Cầu');
+});
+
+test('notification transport failure renders an explicit degraded state', async () => {
+  const { router, document } = createRouter();
+  await router.fetchNotifications(true);
+
+  const dropdown = document.getElementById('topbar-notifications-dropdown');
+  assert.equal(router.notificationFetchState.status, 'degraded');
+  assert.match(dropdown.innerHTML, /Không thể tải thông báo/);
+  assert.doesNotMatch(dropdown.innerHTML, /Không có thông báo nào/);
+});
+
+test('does not render a cached empty state while notification revalidation is pending', async () => {
+  const { router, document, sandbox } = createRouter();
+  const request = deferred();
+  sandbox.ApiClient.getNotifications = async () => request.promise;
+  router.notificationsCache = {
+    items: [],
+    unread_count: 0,
+    last_fetched: Date.now() - 60_000,
+  };
+  router.notificationFetchState = { status: 'ready' };
+
+  router.openNotificationsDropdown();
+
+  const dropdown = document.getElementById('topbar-notifications-dropdown');
+  assert.match(dropdown.innerHTML, /animate-pulse/);
+  assert.doesNotMatch(dropdown.innerHTML, /Không có thông báo nào/);
+
+  request.resolve({
+    items: [{
+      id: 'notification-1',
+      title: 'Server notice',
+      body: 'A notification arrived.',
+      category: 'SYSTEM',
+      target_role: 'STUDENT',
+      created_at: new Date().toISOString(),
+      is_read: false,
+    }],
+    unread_count: 1,
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.equal(router.notificationFetchState.status, 'ready');
+  assert.match(dropdown.innerHTML, /Server notice/);
 });
 
 test('keeps the current screen visible until the next route has finished rendering', async () => {

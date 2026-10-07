@@ -769,7 +769,9 @@ def add_course_prerequisite(
                 queue.append(next_prereq_id)
 
     # 6. Determine approval status based on ownership
-    is_own_course = (prereq_course.owner_instructor_id == actor.id) or getattr(actor, "is_admin", False)
+    is_own_course = (prereq_course.owner_instructor_id == actor.id) or getattr(
+        actor, "is_admin", False
+    )
     now = utc_now()
     initial_status = "APPROVED" if is_own_course else "PENDING_APPROVAL"
 
@@ -783,7 +785,9 @@ def add_course_prerequisite(
         requested_at=now if not is_own_course else None,
         reviewed_at=now if is_own_course else None,
         reviewed_by_user_id=actor.id if is_own_course else None,
-        review_note="Tự động phê duyệt vì là môn học của cùng giảng viên phụ trách." if is_own_course else None,
+        review_note="Tự động phê duyệt vì là môn học của cùng giảng viên phụ trách."
+        if is_own_course
+        else None,
     )
     sess.add(link)
 
@@ -899,9 +903,8 @@ def get_incoming_prerequisite_requests(
     if actor is None or not actor.is_active:
         raise ForbiddenError("Authentication required.")
 
-    query = (
-        sess.query(CoursePrerequisite)
-        .join(Course, CoursePrerequisite.prerequisite_course_id == Course.id)
+    query = sess.query(CoursePrerequisite).join(
+        Course, CoursePrerequisite.prerequisite_course_id == Course.id
     )
     if not getattr(actor, "is_admin", False):
         query = query.filter(Course.owner_instructor_id == actor.id)
@@ -917,22 +920,26 @@ def get_incoming_prerequisite_requests(
         target_course = link.prerequisite_course
         req_inst = req_course.owner_instructor if req_course else None
         seen_pairs.add((req_course.id, target_course.id))
-        results.append({
-            "id": f"{req_course.id}_{target_course.id}",
-            "requesting_course_id": str(req_course.public_id),
-            "requesting_course_code": req_course.course_code,
-            "requesting_course_title": req_course.title,
-            "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
-            "requesting_instructor_name": req_inst.display_name if req_inst else "Giảng viên",
-            "requesting_instructor_email": req_inst.email if req_inst else "",
-            "prerequisite_course_id": str(target_course.public_id),
-            "prerequisite_course_code": target_course.course_code,
-            "prerequisite_course_title": target_course.title,
-            "approval_status": link.approval_status,
-            "requested_at": link.requested_at.isoformat() if link.requested_at else (link.created_at.isoformat() if link.created_at else None),
-            "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
-            "review_note": link.review_note or "",
-        })
+        results.append(
+            {
+                "id": f"{req_course.id}_{target_course.id}",
+                "requesting_course_id": str(req_course.public_id),
+                "requesting_course_code": req_course.course_code,
+                "requesting_course_title": req_course.title,
+                "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
+                "requesting_instructor_name": req_inst.display_name if req_inst else "Giảng viên",
+                "requesting_instructor_email": req_inst.email if req_inst else "",
+                "prerequisite_course_id": str(target_course.public_id),
+                "prerequisite_course_code": target_course.course_code,
+                "prerequisite_course_title": target_course.title,
+                "approval_status": link.approval_status,
+                "requested_at": link.requested_at.isoformat()
+                if link.requested_at
+                else (link.created_at.isoformat() if link.created_at else None),
+                "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
+                "review_note": link.review_note or "",
+            }
+        )
 
     # Also check CourseChangeRequest records
     from pwd301.models.course import CourseChangeRequest
@@ -959,22 +966,28 @@ def get_incoming_prerequisite_requests(
                 if cr.proposed_payload_json:
                     with contextlib.suppress(Exception):
                         p_data = json.loads(cr.proposed_payload_json)
-                results.append({
-                    "id": f"{req_c.id}_{target_c.id}",
-                    "requesting_course_id": str(req_c.public_id),
-                    "requesting_course_code": req_c.course_code,
-                    "requesting_course_title": req_c.title,
-                    "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
-                    "requesting_instructor_name": req_inst.display_name if req_inst else "Giảng viên",
-                    "requesting_instructor_email": req_inst.email if req_inst else "",
-                    "prerequisite_course_id": str(target_c.public_id),
-                    "prerequisite_course_code": target_c.course_code,
-                    "prerequisite_course_title": target_c.title,
-                    "approval_status": "PENDING_APPROVAL" if cr.status == "PENDING" else cr.status,
-                    "requested_at": cr.created_at.isoformat() if cr.created_at else None,
-                    "reviewed_at": cr.reviewed_at.isoformat() if cr.reviewed_at else None,
-                    "review_note": cr.review_reason or p_data.get("reason", ""),
-                })
+                results.append(
+                    {
+                        "id": f"{req_c.id}_{target_c.id}",
+                        "requesting_course_id": str(req_c.public_id),
+                        "requesting_course_code": req_c.course_code,
+                        "requesting_course_title": req_c.title,
+                        "requesting_instructor_id": str(req_inst.public_id) if req_inst else None,
+                        "requesting_instructor_name": req_inst.display_name
+                        if req_inst
+                        else "Giảng viên",
+                        "requesting_instructor_email": req_inst.email if req_inst else "",
+                        "prerequisite_course_id": str(target_c.public_id),
+                        "prerequisite_course_code": target_c.course_code,
+                        "prerequisite_course_title": target_c.title,
+                        "approval_status": "PENDING_APPROVAL"
+                        if cr.status == "PENDING"
+                        else cr.status,
+                        "requested_at": cr.created_at.isoformat() if cr.created_at else None,
+                        "reviewed_at": cr.reviewed_at.isoformat() if cr.reviewed_at else None,
+                        "review_note": cr.review_reason or p_data.get("reason", ""),
+                    }
+                )
 
     return results
 
@@ -1024,7 +1037,11 @@ def review_prerequisite_request(
     from pwd301.models.course import CourseChangeRequest
 
     now = utc_now()
-    review_msg = note.strip() if note else ("Đã phê duyệt" if new_status == "APPROVED" else "Từ chối liên kết")
+    review_msg = (
+        note.strip()
+        if note
+        else ("Đã phê duyệt" if new_status == "APPROVED" else "Từ chối liên kết")
+    )
 
     # Update any corresponding CourseChangeRequest
     cr = (

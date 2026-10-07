@@ -2985,8 +2985,12 @@ class StudentView {
           </div>
         `;
 
+        const expectedLessonId = String(activeItem.id);
         try {
-          const lesson = await ApiClient.getStudentLesson(courseId, activeItem.id);
+          const lesson = await ApiClient.getStudentLesson(courseId, expectedLessonId);
+          if (!activeItem || String(activeItem.id) !== expectedLessonId) {
+            return;
+          }
 
           // Multi-tier Video Detection: video_url -> video_urls array -> lesson resources
           let activeVideoUrl = lesson.video_url || null;
@@ -4046,7 +4050,6 @@ class StudentView {
 
                 if (isPassed) {
                   // PASS: Reveal answers & explanations on all cards
-                  hasPassedQuiz = true;
                   questionResults.forEach(({ card, qData, qType, isCorrect, feedbackDetail }) => {
                     const explDiv = card.querySelector('.cisco-quiz-explanation');
 
@@ -4135,15 +4138,15 @@ class StudentView {
                     `;
                   }
 
-                  checkQuizBtn.classList.add('hidden');
-                  if (resetQuizBtn) resetQuizBtn.classList.add('hidden');
-                  if (totalQuizSlides >= 2 && nextQuizBtn) nextQuizBtn.classList.add('hidden');
-
                   try {
                     if (hasVideo) {
                       await ApiClient.recordLessonProgress(activeItem.id, 30, 1.0, false);
                     }
                     const result = await ApiClient.completeLessonMiniQuiz(activeItem.id, answers);
+                    hasPassedQuiz = true;
+                    checkQuizBtn.classList.add('hidden');
+                    if (resetQuizBtn) resetQuizBtn.classList.add('hidden');
+                    if (totalQuizSlides >= 2 && nextQuizBtn) nextQuizBtn.classList.add('hidden');
                     if (result?.is_completed) {
                       setLessonCompleted();
                       UI.showToast('Chúc mừng bạn đã hoàn thành bài giảng!', 'success');
@@ -4151,6 +4154,9 @@ class StudentView {
                       UI.showToast('Đã ghi nhận điểm số bài kiểm tra.', 'info');
                     }
                   } catch (error) {
+                    hasPassedQuiz = false;
+                    checkQuizBtn.classList.remove('hidden');
+                    if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
                     UI.showToast(error.message || 'Lỗi lưu kết quả bài kiểm tra.', 'error');
                   }
 
@@ -5019,7 +5025,15 @@ class StudentView {
       const answerSaveTails = new Map();
       const failedAnswerSaves = new Set();
       const answerPayloads = new Map();
-      let clientSeqCounter = 0;
+      let maxInitialSeq = data.max_sequence || 0;
+      if (Array.isArray(questions)) {
+        questions.forEach(q => {
+          if (typeof q.last_client_sequence === 'number' && q.last_client_sequence > maxInitialSeq) {
+            maxInitialSeq = q.last_client_sequence;
+          }
+        });
+      }
+      let clientSeqCounter = maxInitialSeq;
       const saveAnswerInOrder = (questionId, answer) => {
         clientSeqCounter++;
         const enrichedPayload = {
@@ -5030,24 +5044,40 @@ class StudentView {
             : ('chg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9))
         };
         answerPayloads.set(questionId, enrichedPayload);
+        const updateAutosaveHeader = () => {
+          const indicator = document.getElementById('exam-autosave-indicator');
+          if (!indicator) return;
+          if (pendingAnswerSaves.size > 0) {
+            indicator.innerHTML = '<span class="material-symbols-outlined text-[16px] text-amber-500 animate-spin">sync</span> <span class="hidden sm:inline">Đang lưu tự động...</span>';
+          } else if (failedAnswerSaves.size > 0) {
+            indicator.innerHTML = `<span class="material-symbols-outlined text-[16px] text-rose-500">sync_problem</span> <span class="hidden sm:inline">${failedAnswerSaves.size} câu chưa lưu</span>`;
+          } else {
+            indicator.innerHTML = '<span class="material-symbols-outlined text-[16px] text-emerald-500">check_circle</span> <span class="hidden sm:inline">Đã lưu tự động</span>';
+          }
+        };
+
         const previous = answerSaveTails.get(questionId) || Promise.resolve();
         const save = previous
           .catch(() => {})
           .then(() => ApiClient.saveAttemptAnswer(attemptId, questionId, enrichedPayload, leaseToken));
         answerSaveTails.set(questionId, save);
         pendingAnswerSaves.add(save);
+        updateAutosaveHeader();
         return save
           .then(result => {
             failedAnswerSaves.delete(questionId);
+            updateAutosaveHeader();
             return result;
           })
           .catch(error => {
             failedAnswerSaves.add(questionId);
+            updateAutosaveHeader();
             throw error;
           })
           .finally(() => {
             pendingAnswerSaves.delete(save);
             if (answerSaveTails.get(questionId) === save) answerSaveTails.delete(questionId);
+            updateAutosaveHeader();
           });
       };
 
@@ -5711,70 +5741,114 @@ class StudentView {
         });
       });
 
+      const textDebounceTimers = new Map();
+
+      const saveShortAnswer = async (input) => {
+        const card = input.closest('.question-card');
+        if (!card) return;
+        const idx = Number(input.dataset.qIndex);
+        const qid = card.dataset.qid;
+        const answerText = input.value.trim();
+        if (answerText) answeredQuestions.add(idx);
+        else answeredQuestions.delete(idx);
+
+        const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
+        if (matrixBtn) {
+          matrixBtn.classList.toggle('bg-primary', Boolean(answerText));
+          matrixBtn.classList.toggle('text-white', Boolean(answerText));
+          matrixBtn.classList.toggle('border-primary', Boolean(answerText));
+        }
+        const indicatorCount = document.getElementById('answered-count-indicator');
+        if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
+
+        try {
+          await saveAnswerInOrder(qid, { answer_text: answerText });
+        } catch (err) {
+          UI.showToast(err.message || 'Không thể lưu câu trả lời.', 'error');
+        }
+      };
+
       container.querySelectorAll('.assessment-short-answer').forEach(input => {
-        input.addEventListener('change', async () => {
-          const card = input.closest('.question-card');
-          if (!card) return;
-          const idx = Number(input.dataset.qIndex);
-          const qid = card.dataset.qid;
-          const answerText = input.value.trim();
-          if (answerText) answeredQuestions.add(idx);
-          else answeredQuestions.delete(idx);
-
-          const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
-          if (matrixBtn) {
-            matrixBtn.classList.toggle('bg-primary', Boolean(answerText));
-            matrixBtn.classList.toggle('text-white', Boolean(answerText));
-            matrixBtn.classList.toggle('border-primary', Boolean(answerText));
-          }
-          const indicatorCount = document.getElementById('answered-count-indicator');
-          if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
-          const indicator = document.getElementById('exam-autosave-indicator');
-          if (indicator) indicator.textContent = 'Đang lưu...';
-
-          try {
-            await saveAnswerInOrder(qid, { answer_text: answerText });
-            if (indicator) indicator.textContent = 'Đã lưu tự động';
-          } catch (err) {
-            if (indicator) indicator.textContent = 'Lỗi lưu đáp án';
-            UI.showToast(err.message || 'Không thể lưu câu trả lời.', 'error');
-          }
+        input.addEventListener('input', () => {
+          clearTimeout(textDebounceTimers.get(input));
+          textDebounceTimers.set(input, setTimeout(() => saveShortAnswer(input), 1200));
+        });
+        input.addEventListener('change', () => {
+          clearTimeout(textDebounceTimers.get(input));
+          saveShortAnswer(input);
+        });
+        input.addEventListener('blur', () => {
+          clearTimeout(textDebounceTimers.get(input));
+          saveShortAnswer(input);
         });
       });
+
+      const saveFillBlank = async (card) => {
+        if (!card) return;
+        const idx = Number(card.dataset.qIndex);
+        const qid = card.dataset.qid;
+        const inputs = Array.from(card.querySelectorAll('.assessment-fill-blank'));
+        const values = inputs.map(blank => blank.value.trim());
+        const answerText = values.join('|||');
+        if (values.length && values.every(Boolean)) answeredQuestions.add(idx);
+        else answeredQuestions.delete(idx);
+
+        const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
+        if (matrixBtn) {
+          const complete = values.length > 0 && values.every(Boolean);
+          matrixBtn.classList.toggle('bg-primary', complete);
+          matrixBtn.classList.toggle('text-white', complete);
+          matrixBtn.classList.toggle('border-primary', complete);
+        }
+        const indicatorCount = document.getElementById('answered-count-indicator');
+        if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} câu`;
+
+        try {
+          await saveAnswerInOrder(qid, { answer_text: answerText });
+        } catch (error) {
+          UI.showToast(error.message || 'Không thể lưu câu trả lời điền khuyết.', 'error');
+        }
+      };
 
       container.querySelectorAll('.assessment-fill-blank').forEach(input => {
-        input.addEventListener('change', async () => {
-          const card = input.closest('.question-card');
+        const card = input.closest('.question-card');
+        input.addEventListener('input', () => {
           if (!card) return;
-          const idx = Number(card.dataset.qIndex);
-          const qid = card.dataset.qid;
-          const inputs = Array.from(card.querySelectorAll('.assessment-fill-blank'));
-          const values = inputs.map(blank => blank.value.trim());
-          const answerText = values.join('|||');
-          if (values.length && values.every(Boolean)) answeredQuestions.add(idx);
-          else answeredQuestions.delete(idx);
-
-          const matrixBtn = document.getElementById(`matrix_btn_${idx}`);
-          if (matrixBtn) {
-            const complete = values.length > 0 && values.every(Boolean);
-            matrixBtn.classList.toggle('bg-primary', complete);
-            matrixBtn.classList.toggle('text-white', complete);
-            matrixBtn.classList.toggle('border-primary', complete);
-          }
-          const indicatorCount = document.getElementById('answered-count-indicator');
-          if (indicatorCount) indicatorCount.textContent = `${answeredQuestions.size}/${questions.length} cÃ¢u`;
-          const indicator = document.getElementById('exam-autosave-indicator');
-          if (indicator) indicator.textContent = 'Äang lÆ°u...';
-
-          try {
-            await saveAnswerInOrder(qid, { answer_text: answerText });
-            if (indicator) indicator.textContent = 'ÄÃ£ lÆ°u tá»± Ä‘á»™ng';
-          } catch (error) {
-            if (indicator) indicator.textContent = 'Lá»—i lÆ°u Ä‘Ã¡p Ã¡n';
-            UI.showToast(error.message || 'Không thể lưu câu trả lời điền khuyết.', 'error');
-          }
+          clearTimeout(textDebounceTimers.get(card));
+          textDebounceTimers.set(card, setTimeout(() => saveFillBlank(card), 1200));
+        });
+        input.addEventListener('change', () => {
+          if (!card) return;
+          clearTimeout(textDebounceTimers.get(card));
+          saveFillBlank(card);
+        });
+        input.addEventListener('blur', () => {
+          if (!card) return;
+          clearTimeout(textDebounceTimers.get(card));
+          saveFillBlank(card);
         });
       });
+
+      const flushAllUnsavedInputs = async () => {
+        const promises = [];
+        container.querySelectorAll('.assessment-short-answer').forEach(input => {
+          if (textDebounceTimers.has(input)) {
+            clearTimeout(textDebounceTimers.get(input));
+            textDebounceTimers.delete(input);
+            promises.push(saveShortAnswer(input));
+          }
+        });
+        container.querySelectorAll('.question-card').forEach(card => {
+          if (textDebounceTimers.has(card)) {
+            clearTimeout(textDebounceTimers.get(card));
+            textDebounceTimers.delete(card);
+            promises.push(saveFillBlank(card));
+          }
+        });
+        if (promises.length > 0) {
+          await Promise.allSettled(promises);
+        }
+      };
 
       // Submit exam action with mandatory verification checkbox modal
       const submitBtn = document.getElementById('exam-submit-btn');
@@ -5874,6 +5948,9 @@ class StudentView {
           const confirmed = await showSubmitConfirmModal(unanswered, questions.length);
           if (!confirmed) return;
         }
+
+        // Flush all active/focused text inputs that were in debounce timers
+        await flushAllUnsavedInputs();
 
         if (pendingAnswerSaves.size > 0) {
           await Promise.allSettled(Array.from(pendingAnswerSaves));
@@ -7342,6 +7419,7 @@ class StudentView {
     const clearBtn = document.getElementById('clear-ai-chat-btn');
     const courseSelect = document.getElementById('ai-context-course-select');
     let conversationId = null;
+    let chatGeneration = 0;
 
     // Dynamically load enrolled courses into context dropdown
     ApiClient.getEnrolledCourses().then(res => {
@@ -7360,6 +7438,7 @@ class StudentView {
 
     if (courseSelect) {
       courseSelect.onchange = () => {
+        chatGeneration++;
         conversationId = null;
         const selText = courseSelect.options[courseSelect.selectedIndex]?.text || '';
         UI.showToast(`Đã chuyển ngữ cảnh RAG sang: ${selText}`, 'info');
@@ -7414,10 +7493,15 @@ class StudentView {
       chatContainer.appendChild(typing);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
+      const currentGen = ++chatGeneration;
       const courseId = courseSelect?.value || null;
       try {
         const res = await ApiClient.sendAIChat(text, conversationId, courseId);
         typing.remove();
+
+        if (currentGen !== chatGeneration) {
+          return; // Stale request discarded (SYNC-035)
+        }
 
         if (res && res.conversation_id) {
           conversationId = res.conversation_id;
@@ -7427,6 +7511,7 @@ class StudentView {
         appendAIBubble(reply);
       } catch (err) {
         typing.remove();
+        if (currentGen !== chatGeneration) return;
         appendAIBubble(`⚠️ **Lỗi phản hồi:** ${err.message || 'Không thể kết nối đến máy chủ AI vào lúc này. Vui lòng thử lại sau.'}`);
       } finally {
         if (sendBtn) sendBtn.disabled = false;
@@ -7447,6 +7532,7 @@ class StudentView {
 
     if (clearBtn) {
       clearBtn.onclick = () => {
+        chatGeneration++;
         conversationId = null;
         StudentView.renderAIAssistant(container);
       };
@@ -8017,9 +8103,27 @@ class StudentView {
         ? profileRes.value.profile 
         : (window.app?.currentUser || {});
 
-      const preferences = (prefsRes.status === 'fulfilled' && prefsRes.value?.preferences)
-        ? prefsRes.value.preferences
-        : { email_course: true, email_assessment: true, email_grade: true, email_marketing: false };
+      let preferencesMap = { email_course: true, email_assessment: true, email_grade: true, email_marketing: false };
+      if (prefsRes.status === 'fulfilled' && prefsRes.value) {
+        const val = prefsRes.value;
+        if (val.preferences_map && typeof val.preferences_map === 'object') {
+          preferencesMap = { ...preferencesMap, ...val.preferences_map };
+        } else if (Array.isArray(val.preferences)) {
+          val.preferences.forEach(p => {
+            const cat = (p.category || '').toLowerCase();
+            const chan = (p.channel || 'EMAIL').toUpperCase();
+            if (chan === 'EMAIL') {
+              if (cat.includes('course')) preferencesMap.email_course = Boolean(p.enabled);
+              else if (cat.includes('assessment') || cat.includes('exam')) preferencesMap.email_assessment = Boolean(p.enabled);
+              else if (cat.includes('grade')) preferencesMap.email_grade = Boolean(p.enabled);
+              else if (cat.includes('marketing')) preferencesMap.email_marketing = Boolean(p.enabled);
+            }
+          });
+        } else if (typeof val.preferences === 'object') {
+          preferencesMap = { ...preferencesMap, ...val.preferences };
+        }
+      }
+      const preferences = preferencesMap;
 
       const userInitials = (profile.display_name || profile.email || 'U')
         .split(' ')
@@ -8343,22 +8447,7 @@ class StudentView {
           if (activeBox) {
             activeBox.innerHTML = `<img src="${UI.escapeHtml(generatedAvatarUrl)}" alt="Avatar ngẫu nhiên" class="w-full h-full object-cover" onerror="this.remove();" />`;
           }
-
-          // Immediately persist and synchronize to topbar in real-time
-          StudentView.storeRandomAvatarUrl(profileIdentity, generatedAvatarUrl);
-          localStorage.setItem('pwd301_avatar', generatedAvatarUrl);
-          if (window.app && window.app.currentUser) {
-            window.app.currentUser.avatar_url = generatedAvatarUrl;
-          }
-          try {
-            const cached = JSON.parse(localStorage.getItem('pwd301_user') || '{}');
-            cached.avatar_url = generatedAvatarUrl;
-            localStorage.setItem('pwd301_user', JSON.stringify(cached));
-          } catch (_) {}
-          if (window.app && typeof window.app.updateUserUI === 'function') {
-            window.app.updateUserUI();
-          }
-          UI.showToast('Đã đổi avatar ngẫu nhiên và đồng bộ lên thanh tiêu đề!', 'success');
+          UI.showToast('Đã tạo ảnh đại diện xem trước. Nhấn "Lưu thay đổi" để áp dụng lên hệ thống!', 'info');
         };
       }
 

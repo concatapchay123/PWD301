@@ -50,6 +50,7 @@ def changeset_env(app: Flask) -> dict[str, Any]:
     assign_role_to_user(admin_user.id, "ADMIN", session=sess)
     # Grant COURSE_REVIEW permission to admin
     from pwd301.models.identity import UserRole
+
     ur = sess.query(UserRole).filter_by(user_id=admin_user.id).first()
     if ur:
         ur.assignment_reason = "SUB_ROLE:ADMIN_COURSE_REVIEW"
@@ -137,9 +138,7 @@ def test_seamless_auto_draft_editing_and_changeset_status(
 
     # 2. Check no PENDING CourseChangeRequest created
     pending_crs = (
-        db.session.query(CourseChangeRequest)
-        .filter_by(course_id=course.id, status="PENDING")
-        .all()
+        db.session.query(CourseChangeRequest).filter_by(course_id=course.id, status="PENDING").all()
     )
     assert len(pending_crs) == 0, "No PENDING request should be created during drafting!"
 
@@ -231,7 +230,9 @@ def test_submit_changeset_and_admin_approval_lifecycle(
     sess = db.session
     course_refreshed = sess.get(Course, course.id)
     live_lessons = [
-        les for les in course_refreshed.lessons if les.status == "PUBLISHED" and les.deleted_at is None
+        les
+        for les in course_refreshed.lessons
+        if les.status == "PUBLISHED" and les.deleted_at is None
     ]
     live_titles = [les.title for les in live_lessons]
     assert "Bai 01: Da Duoc Chinh Sua" in live_titles

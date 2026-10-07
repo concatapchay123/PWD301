@@ -16,6 +16,7 @@ import datetime
 import html
 import json
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -33,6 +34,7 @@ from pwd301.models.notification_audit import (
 from pwd301.models.types import utc_now
 from pwd301.services.email_service import enqueue_email
 from pwd301.services.exceptions import (
+    ConflictError,
     ForbiddenError,
     MandatoryNotificationOptOutError,
     NotificationNotFoundError,
@@ -86,6 +88,14 @@ def sanitize_text(text: str, max_length: int = 2000) -> str:
     return escaped[:max_length]
 
 
+_RAW_IPV4_PATTERN = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+
+
+def redact_network_telemetry(text: str) -> str:
+    """Hide raw IPv4 values from user-facing security notifications."""
+    return _RAW_IPV4_PATTERN.sub("[REDACTED]", text)
+
+
 def sanitize_payload(payload: dict[str, Any] | None) -> str | None:
     """Sanitize and serialize event payload, redacting passwords/secrets."""
     if payload is None:
@@ -134,14 +144,28 @@ def emit_event(
     if not event_type or not isinstance(event_type, str):
         raise ValidationError("Field 'event_type' is required.")
 
+    payload_str = sanitize_payload(payload)
     if event_key is None:
         event_key = uuid.uuid4()
     else:
         existing = s.query(NotificationEvent).filter_by(event_key=event_key).first()
         if existing is not None:
+            try:
+                existing_payload = json.loads(existing.payload_json or "null")
+                requested_payload = json.loads(payload_str or "null")
+            except (TypeError, ValueError):
+                existing_payload = existing.payload_json
+                requested_payload = payload_str
+            if (
+                existing.event_type != event_type
+                or existing.actor_user_id != actor_user_id
+                or existing.target_type != target_type
+                or existing.target_id != target_id
+                or existing_payload != requested_payload
+            ):
+                raise ConflictError("Event idempotency key was already used with different data.")
             return existing
 
-    payload_str = sanitize_payload(payload)
     event = NotificationEvent(
         event_key=event_key,
         event_type=event_type,
@@ -170,6 +194,7 @@ def dispatch_notification(
     event: NotificationEvent | None = None,
     expires_at: datetime.datetime | None = None,
     session: Session | scoped_session | None = None,
+    event_key: uuid.UUID | None = None,
 ) -> tuple[Notification, EmailDelivery | None]:
     """Dispatch in-app notification and outbox email for a recipient.
 
@@ -177,6 +202,7 @@ def dispatch_notification(
     - Honors user preferences for optional categories.
     - Enforces mandatory email dispatch for SECURITY events.
     - Sets target_role for precise role-scoped delivery.
+    - Reuses a supplied event_key across producer retries.
     - Preserves outbox pattern: email enqueue failure does not rollback in-app notification.
     """
     s = session or db.session
@@ -199,17 +225,34 @@ def dispatch_notification(
     in_app_cat = cat if cat in VALID_NOTIFICATION_CATEGORIES else "SYSTEM"
 
     is_mandatory = (in_app_cat == "SECURITY") or (event_type in MANDATORY_SECURITY_EVENTS)
+    if is_mandatory:
+        clean_title = redact_network_telemetry(clean_title)
+        clean_body = redact_network_telemetry(clean_body)
 
     # Ensure event exists
     if event is None:
         event_payload = dict(payload) if payload else {}
         if action_url and "action_url" not in event_payload:
             event_payload["action_url"] = action_url
+        if event_key is not None:
+            event_payload["_dispatch_contract"] = {
+                "title": clean_title,
+                "body": clean_body,
+                "category": in_app_cat,
+                "target_role": target_role.strip().upper() if target_role else None,
+                "force_email": bool(force_email),
+            }
+        if is_mandatory:
+            for key in ("action_url", "target_url"):
+                value = event_payload.get(key)
+                if isinstance(value, str):
+                    event_payload[key] = redact_network_telemetry(value)
         event = emit_event(
             event_type=event_type,
             payload=event_payload if event_payload else None,
             target_type="USER",
             target_id=user.id,
+            event_key=event_key,
             session=s,
         )
 
@@ -278,32 +321,18 @@ def _visible_notification_query(
     recipient_id: int,
     target_role: str | None = None,
 ) -> Any:
-    """Collapse duplicate notifications while retaining their audit events.
+    """Return every non-expired event for the recipient.
 
-    Optionally scoped by target_role.
+    Distinct business events may legitimately share title/body copy. Retry
+    deduplication belongs at the producer's idempotency boundary, not in a
+    presentation query that hides durable records from the recipient.
+    Optionally scope the result by target_role.
     """
-    newer = sa.orm.aliased(Notification)
-    duplicate = (
-        sa.select(newer.id)
-        .where(
-            newer.recipient_user_id == recipient_id,
-            newer.title == Notification.title,
-            newer.body == Notification.body,
-            sa.or_(
-                newer.target_role == Notification.target_role,
-                sa.and_(newer.target_role.is_(None), Notification.target_role.is_(None)),
-            ),
-            newer.id > Notification.id,
-        )
-        .exists()
-    )
     query = (
         session.query(Notification)
         .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
         .filter(
             Notification.recipient_user_id == recipient_id,
-            Notification.deleted_at.is_(None),
-            ~duplicate,
             sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
         )
     )
@@ -392,7 +421,10 @@ def mark_notification_as_read(
 
     notification = (
         s.query(Notification)
-        .filter(Notification.public_id == pub_id, Notification.deleted_at.is_(None))
+        .filter(
+            Notification.public_id == pub_id,
+            sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
+        )
         .first()
     )
     if notification is None:
@@ -426,7 +458,7 @@ def mark_all_as_read(
     query = s.query(Notification).filter(
         Notification.recipient_user_id == actor.id,
         Notification.read_at.is_(None),
-        Notification.deleted_at.is_(None),
+        sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
     )
     if target_role:
         upper_role = target_role.strip().upper()
@@ -468,7 +500,10 @@ def dismiss_notification(
 
     notification = (
         s.query(Notification)
-        .filter(Notification.public_id == pub_id, Notification.deleted_at.is_(None))
+        .filter(
+            Notification.public_id == pub_id,
+            sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
+        )
         .first()
     )
     if notification is None:
@@ -477,13 +512,13 @@ def dismiss_notification(
     if notification.recipient_user_id != actor.id:
         raise ForbiddenError("You are not authorized to modify this notification.")
 
-    notification.deleted_at = utc_now()
+    notification.expires_at = utc_now()
     try:
         s.commit()
     except Exception:
         s.rollback()
         raise
-    return {"id": str(pub_id), "status": "deleted"}
+    return {"id": str(pub_id), "status": "dismissed"}
 
 
 def delete_all_notifications(
@@ -498,7 +533,7 @@ def delete_all_notifications(
 
     query = s.query(Notification).filter(
         Notification.recipient_user_id == actor.id,
-        Notification.deleted_at.is_(None),
+        sa.or_(Notification.expires_at.is_(None), Notification.expires_at > utc_now()),
     )
     if target_role:
         upper_role = target_role.strip().upper()
@@ -509,7 +544,7 @@ def delete_all_notifications(
     now = utc_now()
     count = 0
     for notif in query.all():
-        notif.deleted_at = now
+        notif.expires_at = now
         count += 1
 
     try:
@@ -628,9 +663,15 @@ def broadcast_system_notification(
     body: str,
     target_role: str | None = None,
     category: str = "SYSTEM",
+    idempotency_key: uuid.UUID | str | None = None,
     session: Session | scoped_session | None = None,
-) -> int:
-    """Privileged action: Admin broadcasts system notifications to all or role-targeted users."""
+) -> tuple[int, bool]:
+    """Broadcast once per idempotency key and fan out to the selected audience.
+
+    The key is optional for backward compatibility with internal callers. When supplied,
+    an exact replay returns the original fan-out count without creating another event or
+    notification row; a changed payload with the same key is a conflict.
+    """
     s = session or db.session
     if not actor or not actor.is_admin:
         raise ForbiddenError("Only administrators can broadcast system notifications.")
@@ -638,18 +679,69 @@ def broadcast_system_notification(
     clean_title = sanitize_text(title, max_length=250)
     clean_body = sanitize_text(body, max_length=2000)
     cat = category.upper() if category.upper() in VALID_NOTIFICATION_CATEGORIES else "SYSTEM"
+    clean_target_role = target_role.strip().upper() if target_role else None
 
-    event = emit_event(
-        event_type="SYSTEM_BROADCAST",
-        payload={"title": clean_title, "target_role": target_role},
-        actor_user_id=actor.id,
-        target_type="SYSTEM",
-        session=s,
-    )
+    normalized_key: uuid.UUID | None = None
+    if idempotency_key is not None:
+        try:
+            normalized_key = (
+                idempotency_key
+                if isinstance(idempotency_key, uuid.UUID)
+                else uuid.UUID(str(idempotency_key).strip())
+            )
+        except (AttributeError, ValueError):
+            raise ValidationError("X-Idempotency-Key must be a valid UUID.") from None
+
+    broadcast_payload = {
+        "title": clean_title,
+        "body": clean_body,
+        "target_role": clean_target_role,
+        "category": cat,
+    }
+
+    def replay_existing_event(existing_event: NotificationEvent) -> tuple[int, bool]:
+        if (
+            existing_event.event_type != "SYSTEM_BROADCAST"
+            or existing_event.actor_user_id != actor.id
+        ):
+            raise ConflictError("X-Idempotency-Key is already used by another operation.")
+        try:
+            existing_payload = json.loads(existing_event.payload_json or "{}")
+        except (TypeError, ValueError):
+            existing_payload = None
+        if existing_payload != broadcast_payload:
+            raise ConflictError("X-Idempotency-Key was already used with different data.")
+        existing_count = (
+            s.query(Notification).filter_by(notification_event_id=existing_event.id).count()
+        )
+        return existing_count, True
+
+    if normalized_key is not None:
+        existing_event = s.query(NotificationEvent).filter_by(event_key=normalized_key).first()
+        if existing_event is not None:
+            return replay_existing_event(existing_event)
+
+    try:
+        event = emit_event(
+            event_type="SYSTEM_BROADCAST",
+            payload=broadcast_payload,
+            actor_user_id=actor.id,
+            target_type="SYSTEM",
+            event_key=normalized_key,
+            session=s,
+        )
+    except sa.exc.IntegrityError:
+        if normalized_key is None:
+            raise
+        s.rollback()
+        raced_event = s.query(NotificationEvent).filter_by(event_key=normalized_key).first()
+        if raced_event is None:
+            raise
+        return replay_existing_event(raced_event)
 
     query = s.query(User).filter(User.status == "ACTIVE", User.suspended_at.is_(None))
-    if target_role:
-        query = query.join(User.roles).filter(Role.code == target_role.upper())
+    if clean_target_role:
+        query = query.join(User.roles).filter(Role.code == clean_target_role)
 
     target_users = query.all()
     count = 0
@@ -671,4 +763,4 @@ def broadcast_system_notification(
     except Exception:
         s.rollback()
         raise
-    return count
+    return count, False

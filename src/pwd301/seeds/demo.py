@@ -198,6 +198,12 @@ def seed_demo(session: Session | scoped_session[Any]) -> dict[str, Any]:
                             ),
                         )
                     )
+                elif r_code == "ADMIN" and "SUB_ROLE:ADMIN_PRIMARY" not in (
+                    existing_link.assignment_reason or ""
+                ):
+                    existing_link.assignment_reason = (
+                        "SUB_ROLE:ADMIN_PRIMARY | Demo environment initialization"
+                    )
 
         users_by_email[norm_email] = user
 
@@ -1231,7 +1237,7 @@ Khi kết nối tới Microsoft SQL Server, SQLAlchemy tự động quản lý *
             "SECURITY",
             "Cảnh báo bảo mật: Phiên đăng nhập mới",
             (
-                "Phát hiện phiên đăng nhập quản trị từ IP lạ (192.168.1.105). "
+                "Phát hiện hoạt động đăng nhập quản trị bất thường. "
                 "Vui lòng kiểm tra nhật ký kiểm toán."
             ),
             {

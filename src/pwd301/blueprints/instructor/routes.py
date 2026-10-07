@@ -828,7 +828,9 @@ def submit_course_route(course_id: str) -> Any:
         raise CourseValidationError(msg)
 
     if not course_obj.thumbnail_url or not str(course_obj.thumbnail_url).strip():
-        raise CourseValidationError("Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản.")
+        raise CourseValidationError(
+            "Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản."
+        )
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
     reason = payload.get("reason", "Giảng viên đề xuất phê duyệt giáo trình và xuất bản khóa học.")
@@ -2121,9 +2123,13 @@ def update_lesson_route(lesson_id: str) -> tuple[Response, int] | Response:
             else lesson.required_for_periods_starting_at
         )
         draft_data["status"] = "DRAFT"
-        draft_data["position"] = lesson.position
+        draft_data["position"] = (
+            payload.get("position") if "position" in payload else lesson.position
+        )
         draft_data["learning_unit_id"] = (
-            str(lesson.learning_unit.public_id) if lesson.learning_unit else None
+            payload.get("learning_unit_id")
+            if "learning_unit_id" in payload
+            else (str(lesson.learning_unit.public_id) if lesson.learning_unit else None)
         )
         draft_data["previous_lesson_id"] = lesson.id
 
@@ -2506,28 +2512,28 @@ def list_course_prerequisites_route(course_id: str) -> tuple[Response, int] | Re
 
     course = require_course_manager(actor, course_id, session=db.session)
     links = (
-        db.session.query(CoursePrerequisite)
-        .filter(CoursePrerequisite.course_id == course.id)
-        .all()
+        db.session.query(CoursePrerequisite).filter(CoursePrerequisite.course_id == course.id).all()
     )
     result = []
     for link in links:
         c = link.prerequisite_course
         if c:
-            result.append({
-                "id": str(c.public_id),
-                "course_id": str(c.public_id),
-                "prerequisite_course_id": str(c.public_id),
-                "course_code": c.course_code,
-                "title": c.title,
-                "category": c.category,
-                "difficulty": c.difficulty,
-                "status": c.status,
-                "approval_status": link.approval_status,
-                "requested_at": link.requested_at.isoformat() if link.requested_at else None,
-                "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
-                "review_note": link.review_note or "",
-            })
+            result.append(
+                {
+                    "id": str(c.public_id),
+                    "course_id": str(c.public_id),
+                    "prerequisite_course_id": str(c.public_id),
+                    "course_code": c.course_code,
+                    "title": c.title,
+                    "category": c.category,
+                    "difficulty": c.difficulty,
+                    "status": c.status,
+                    "approval_status": link.approval_status,
+                    "requested_at": link.requested_at.isoformat() if link.requested_at else None,
+                    "reviewed_at": link.reviewed_at.isoformat() if link.reviewed_at else None,
+                    "review_note": link.review_note or "",
+                }
+            )
     return jsonify({"prerequisites": result}), 200
 
 
@@ -3308,7 +3314,9 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
             .strip()
             .upper()
         )
-        if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+        if difficulty in ("ANALYZE", "EVALUATE", "CREATE"):
+            difficulty = "APPLY"
+        elif difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
             difficulty = "UNDERSTAND"
 
         raw_points = payload.get("points") or payload.get("default_points") or 1.0
@@ -3508,7 +3516,9 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 .strip()
                 .upper()
             )
-            if difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
+            if difficulty in ("ANALYZE", "EVALUATE", "CREATE"):
+                difficulty = "APPLY"
+            elif difficulty not in ("REMEMBER", "UNDERSTAND", "APPLY"):
                 difficulty = "UNDERSTAND"
 
             raw_points = item.get("points") or item.get("default_points") or 1.0
@@ -3585,6 +3595,7 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 course_id=asm_obj.course_id,
                 payload=q_payload,
                 session=db.session,
+                commit=False,
             )
 
             raw_image_asset_id = item.get("image_asset_id")
@@ -3629,6 +3640,7 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 assessment_id=asm_obj.id,
                 payload={"question_id": created_q.id, "points": points, "source_type": "MANUAL"},
                 session=db.session,
+                commit=False,
             )
 
             created_items.append(
@@ -3725,6 +3737,8 @@ def edit_instructor_assessment_question_route(assessment_id: str, question_id: s
 
             if "difficulty" in payload:
                 diff_val = str(payload["difficulty"]).strip().upper()
+                if diff_val in ("ANALYZE", "EVALUATE", "CREATE"):
+                    diff_val = "APPLY"
                 if diff_val in ("REMEMBER", "UNDERSTAND", "APPLY"):
                     q_payload["difficulty"] = diff_val
 

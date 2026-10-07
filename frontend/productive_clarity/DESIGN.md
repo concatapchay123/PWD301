@@ -142,6 +142,17 @@ Clean, systematic, and accessible. Built for high-density academic & enterprise 
 
 ## Typography
 - **Font:** Plus Jakarta Sans, Inter, sans-serif.
-- **Hierarchy:** H1 28px bold, H2 20px semibold, H3 16px semibold, Body 14px regular (line-height 1.5), Caption/Badge 12px medium.
-- **Height & Spacing:** Uniform 44px-46px touch/click targets for inputs and action buttons. 8px modular spacing grid.
 - **Borders & Radii:** 10px rounded corners for controls, 14px for cards/modals.
+
+## Invariants & Design Standards (TASK-081 Consensus)
+- **Wide Semi-Fluid Layout (`max-w-[1720px]`):** All primary workspaces, dashboards, exam consoles, and studio editors must use `max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-10`. Side gutters are reduced to 1/3 of the previous narrow containers (`max-w-4xl`/`max-w-7xl`).
+- **Clean Button Labeling (Zero Redundant `+`):** Never include a literal `+` character in button text when an icon (`add`, `add_circle`, `create_new_folder`) is present. Example: `Thêm bài giảng vào chương này`, NOT `+ + Thêm bài giảng vào chương này`.
+- **Curriculum Studio Video Block Structure:**
+  - *Top bar:* Single-line YouTube/Vimeo input with live embed preview.
+  - *Bottom area:* Large dashed dropzone for dragging & dropping or selecting local video files (`.mp4`, `.webm`, `.mov`, `.mkv`), supporting multi-file selection, upload progress bar, HTML5 video preview, and deletion controls.
+  - *Constraints:* Video file size strictly `< 1 GB`, maximum 2 videos per lesson, fail-closed antivirus scanning.
+- **Academic Result PDF Engine:** Generated via backend `ReportLab` using TrueType Unicode font (`Arial`/`arialbd.ttf`), full student details (`attempt.student`), score summary, pass/fail status badge, and question breakdown table.
+- **Attempt Flow Auto-Redirect & Error Resilience:**
+  - Visiting an attempt in status `GRADED`, `SUBMITTED`, or `PENDING_GRADING` automatically transitions to `#/student/assessments/results?id=<attempt_id>` without 400 errors.
+  - Never render raw technical error text on empty screens. All edge cases must use polite Academic State Cards with icon and navigation buttons.
+  - All numerical formatting (e.g. `scorePct`) must be null-safe (`Number.isFinite(...) ? ... : '0.0'`).

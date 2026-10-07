@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 from flask import Flask
 from sqlalchemy.orm import Session
 
@@ -436,6 +437,62 @@ def test_create_question_revision_deep_clones_sa_answers(
     texts = {a.answer_text for a in rev2.accepted_answers}
     assert "Guido van Rossum" in texts
     assert "Guido" in texts
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "table_name", "expected_children"),
+    [
+        ("mcq_question", "question_revision_choices", 3),
+        ("sa_question", "question_revision_accepted_answers", 2),
+    ],
+)
+def test_revision_children_are_written_before_activation(
+    request: pytest.FixtureRequest,
+    instructor_user: User,
+    fixture_name: str,
+    table_name: str,
+    expected_children: int,
+) -> None:
+    """Mirror the SQL Server activated-revision insert guard in SQLite."""
+    question = request.getfixturevalue(fixture_name)
+    question.first_used_at = utc_now()
+    db.session.commit()
+    question_id = question.id
+    original_revision_id = question.current_revision.id
+    db.session.execute(
+        sa.text(f"""
+        CREATE TRIGGER audit_revision_activation_guard
+        BEFORE INSERT ON {table_name}
+        WHEN EXISTS (
+            SELECT 1 FROM question_revisions revision
+            JOIN questions question ON question.id = revision.question_id
+            WHERE revision.id = NEW.question_revision_id
+              AND (revision.was_student_exposed = 1 OR revision.was_used_for_grading = 1
+                   OR (question.first_used_at IS NOT NULL AND revision.is_current = 1))
+        )
+        BEGIN SELECT RAISE(ABORT, 'Activated revision children are immutable'); END
+    """)
+    )
+    revision, correction = create_question_revision(
+        instructor_user,
+        question_id,
+        {"change_type": "TYPO_FIX", "change_reason": "Polish wording; preserve answer history"},
+        session=db.session,
+    )
+    assert correction is not None
+    assert revision.is_current is True
+    assert revision.id != original_revision_id
+    assert (
+        db.session.execute(
+            sa.text(f"SELECT COUNT(*) FROM {table_name} WHERE question_revision_id = :revision"),
+            {"revision": revision.id},
+        ).scalar_one()
+        == expected_children
+    )
+    db.session.remove()
+    persisted = db.session.get(Question, question_id)
+    assert persisted.current_revision.id == revision.id
+    assert next(r for r in persisted.revisions if r.id == original_revision_id).is_current is False
 
 
 def test_create_question_revision_with_new_choices_infers_content_or_choices(

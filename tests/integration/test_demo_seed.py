@@ -28,7 +28,7 @@ from pwd301.models.course import (
 )
 from pwd301.models.file_import import LessonResource
 from pwd301.models.identity import User
-from pwd301.models.notification_audit import AuditEvent, Notification
+from pwd301.models.notification_audit import AuditEvent, Notification, NotificationEvent
 from pwd301.models.question_bank import Question
 from pwd301.seeds.baseline import seed_baseline
 from pwd301.seeds.demo import DEMO_PASSWORD, seed_demo
@@ -253,6 +253,25 @@ def test_seed_demo_idempotency(app):
         assert len(summary2["courses_created"]) == 0
         assert summary2["notifications_created"] == 0
         assert summary2["audit_events_created"] == 0
+
+
+def test_demo_security_notification_does_not_expose_raw_network_telemetry(app):
+    """Security notifications must describe the event without exposing raw IP data."""
+    with app.app_context():
+        seed_demo(db.session)
+        notices = (
+            db.session.query(Notification)
+            .join(NotificationEvent, Notification.notification_event_id == NotificationEvent.id)
+            .filter(NotificationEvent.event_type == "SYSTEM_SECURITY_ALERT")
+            .all()
+        )
+
+        assert notices
+        for notice in notices:
+            assert "192.168.1.105" not in (notice.title or "")
+            assert "192.168.1.105" not in (notice.body or "")
+            assert "IP lạ" not in (notice.body or "")
+            assert "kiểm tra nhật ký kiểm toán" in (notice.body or "")
 
 
 def test_seed_demo_cli_commands(app, runner):

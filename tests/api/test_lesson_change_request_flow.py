@@ -142,7 +142,9 @@ def test_update_and_delete_lesson_in_published_course_requires_admin_approval(
     sess.expire_all()
     active_lessons = (
         sess.query(Lesson)
-        .filter(Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None))
+        .filter(
+            Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None)
+        )
         .all()
     )
     assert any(les.title == "Updated Title That Needs Admin Approval" for les in active_lessons)
@@ -273,7 +275,9 @@ def test_admin_approval_applies_lesson_completion_rules(
     sess.expire_all()
     active_lesson = (
         sess.query(Lesson)
-        .filter(Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None))
+        .filter(
+            Lesson.course_id == course.id, Lesson.status == "PUBLISHED", Lesson.deleted_at.is_(None)
+        )
         .first()
     )
     assert active_lesson.minimum_completion_seconds == 90
@@ -429,7 +433,7 @@ def test_published_lesson_resources_change_only_after_admin_approval(
         data={"file": (io.BytesIO(b"new file"), "new.pdf")},
         content_type="multipart/form-data",
     )
-    assert upload.status_code == 202
+    assert upload.status_code == 202, upload.get_json()
     assert upload.get_json()["pending_approval"] is True
     attach_review_id = upload.get_json()["change_request_id"]
     assert sess.query(LessonResource).filter_by(lesson_id=lesson.id).count() == 1

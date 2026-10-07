@@ -117,7 +117,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 | `content` | `NVARCHAR(MAX)` | No |  | Nội dung câu hỏi |
 | `explanation` | `NVARCHAR(MAX)` | Yes |  | Lời giải/giải thích |
 | `short_answer_match_mode` | `VARCHAR(16)` | Yes |  | NORMALIZED/EXACT |
-| `change_type` | `VARCHAR(24)` | No | `'EDIT'` | INITIAL/EDIT/ANSWER_ONLY/CONTENT_OR_CHOICES |
+| `change_type` | `VARCHAR(24)` | No | `'EDIT'` | INITIAL/EDIT/ANSWER_ONLY/CONTENT_OR_CHOICES/TYPO_FIX/ANSWER_CHANGE/CONTENT_CHANGE/REVOCATION |
 | `change_reason` | `NVARCHAR(1000)` | Yes |  | Lý do chỉnh sửa/correction |
 | `created_by_user_id` | `BIGINT` | Yes |  | Người tạo revision |
 | `approved_by_user_id` | `BIGINT` | Yes |  | Người xác nhận nếu từ AI/import |
@@ -147,7 +147,7 @@ Unused Question có thể edit current revision in-place theo service; sau first
 - `revision_no > 0`
 - `question_type IN ('SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE','SHORT_ANSWER','ESSAY')`
 - `short_answer_match_mode IS NULL OR short_answer_match_mode IN ('NORMALIZED','EXACT')`
-- `change_type IN ('INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES')`
+- `change_type IN ('INITIAL','EDIT','ANSWER_ONLY','CONTENT_OR_CHOICES','TYPO_FIX','ANSWER_CHANGE','CONTENT_CHANGE','REVOCATION')`
 
 ### Indexes
 

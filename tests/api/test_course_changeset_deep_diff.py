@@ -84,7 +84,7 @@ def deep_diff_env(app: Flask) -> dict[str, Any]:
             "title": "Bài 1: Giới thiệu",
             "position": 1,
             "learning_unit_id": unit1.id,
-            "markdown_content": "# Bài 1\nNội dung ban đầu.\n\n<!-- mini_quiz: [{\"question\": \"Thủ đô?\", \"type\": \"MULTIPLE_CHOICE\", \"options\": [\"Hà Nội\", \"Huế\"], \"correct_index\": 0}] -->",
+            "markdown_content": '# Bài 1\nNội dung ban đầu.\n\n<!-- mini_quiz: [{"question": "Thủ đô?", "type": "MULTIPLE_CHOICE", "options": ["Hà Nội", "Huế"], "correct_index": 0}] -->',
         },
         session=sess,
     )
@@ -111,8 +111,17 @@ def test_deep_diff_categorization_and_lesson_move(deep_diff_env: dict[str, Any])
 
     # Stage a modification to lesson1: draft version with modified content and moved to unit2
     new_quiz = [
-        {"question": "Thủ đô?", "type": "MULTIPLE_CHOICE", "options": ["Hà Nội", "Huế"], "correct_index": 0},
-        {"question": "Việt Nam có thủ đô là [___].", "type": "FILL_BLANK", "blank_answer": "Hà Nội"},
+        {
+            "question": "Thủ đô?",
+            "type": "MULTIPLE_CHOICE",
+            "options": ["Hà Nội", "Huế"],
+            "correct_index": 0,
+        },
+        {
+            "question": "Việt Nam có thủ đô là [___].",
+            "type": "FILL_BLANK",
+            "blank_answer": "Hà Nội",
+        },
     ]
     new_md = f"# Bài 1: Đã Đổi Tên\nNội dung đã được biên tập lại.\n\n<!-- mini_quiz: {json.dumps(new_quiz)} -->"
 
@@ -132,7 +141,9 @@ def test_deep_diff_categorization_and_lesson_move(deep_diff_env: dict[str, Any])
     sess.commit()
 
     # Call get_course_changeset_diff
-    diff = get_course_changeset_diff(actor=inst, change_request_id_or_course_id=course.id, session=sess)
+    diff = get_course_changeset_diff(
+        actor=inst, change_request_id_or_course_id=course.id, session=sess
+    )
 
     # 1. Must contain all 5 category keys
     assert "curriculum_structure" in diff

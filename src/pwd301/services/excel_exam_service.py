@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import io
 import re
-from typing import Any
+from typing import Any, cast
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -23,8 +23,7 @@ def generate_excel_exam_template() -> bytes:
     wb = openpyxl.Workbook()
     from openpyxl.worksheet.worksheet import Worksheet
 
-    ws: Worksheet = wb.active  # type: ignore[assignment]
-    assert ws is not None
+    ws = cast(Worksheet, wb.active)
     ws.title = "Đề thi - Câu hỏi"
 
     # Header styling

@@ -397,6 +397,7 @@ def test_submit_course_requires_thumbnail(
     )
     # Add learning unit and lesson
     from pwd301.models.course import LearningUnit, Lesson
+
     unit = LearningUnit(course_id=course.id, title="Chương 1", position=1)
     sess.add(unit)
     sess.flush()
@@ -418,5 +419,7 @@ def test_submit_course_requires_thumbnail(
     resp = client.post(f"/instructor/courses/{course.id}/submit", json={"reason": "Xin duyệt"})
     assert resp.status_code == 400
     err_data = resp.get_json()
-    assert "ảnh bìa" in (err_data.get("error", {}).get("message") or "").lower() or "ảnh bìa" in str(err_data).lower()
-
+    assert (
+        "ảnh bìa" in (err_data.get("error", {}).get("message") or "").lower()
+        or "ảnh bìa" in str(err_data).lower()
+    )

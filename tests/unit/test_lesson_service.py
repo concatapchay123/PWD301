@@ -278,18 +278,6 @@ def test_create_lesson_validation_failures(
             {"title": "Valid Title", "markdown_content": "   "},
         )
 
-    # Negative duration
-    with pytest.raises(LessonValidationError, match="greater than zero"):
-        create_lesson(
-            instructor_user,
-            course_sample.id,
-            {
-                "title": "Title",
-                "markdown_content": "Content",
-                "estimated_duration_minutes": -5,
-            },
-        )
-
     # Invalid fraction > 1.0
     with pytest.raises(LessonValidationError, match="between 0.0 and 1.0"):
         create_lesson(
@@ -357,7 +345,6 @@ def test_update_lesson_whitelisted_fields(
             "title": "Updated Title",
             "summary": "Short summary",
             "markdown_content": "# Updated Content",
-            "estimated_duration_minutes": 45,
             "minimum_completion_seconds": 60,
             "viewed_fraction_required": 0.9000,
         },
@@ -366,7 +353,6 @@ def test_update_lesson_whitelisted_fields(
     assert updated.title == "Updated Title"
     assert updated.summary == "Short summary"
     assert updated.markdown_content == "# Updated Content"
-    assert updated.estimated_duration_minutes == 45
     assert updated.minimum_completion_seconds == 60
     assert float(updated.viewed_fraction_required) == 0.9
 

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.identity import Role, User
+from pwd301.models.notification_audit import Notification, NotificationEvent
 from pwd301.services.email_service import enqueue_email
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.notification_service import dispatch_notification
@@ -216,6 +217,172 @@ def test_admin_broadcast_api(
     assert any(i["title"] == "System Update Broadcast" for i in items)
 
 
+def test_admin_broadcast_idempotency_key_converges(
+    app: Flask, client: FlaskClient, admin_user: User, student_user: User
+) -> None:
+    """Repeated broadcast requests with the same key create one event and one fan-out."""
+    tokens = create_token_pair(admin_user)
+    headers = {
+        "Authorization": f"Bearer {tokens['access_token']}",
+        "X-Idempotency-Key": str(uuid.uuid4()),
+    }
+    payload = {
+        "title": "Idempotent System Broadcast",
+        "body": "This message must be delivered once.",
+        "target_role": "STUDENT",
+        "category": "SYSTEM",
+    }
+
+    first = client.post("/api/admin/notifications/broadcast", json=payload, headers=headers)
+    second = client.post("/api/admin/notifications/broadcast", json=payload, headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.get_json()["broadcasted_count"] == second.get_json()["broadcasted_count"]
+    assert second.get_json()["idempotent_replay"] is True
+
+    events = (
+        db.session.query(NotificationEvent)
+        .filter_by(event_type="SYSTEM_BROADCAST", actor_user_id=admin_user.id)
+        .all()
+    )
+    matching_events = [
+        event
+        for event in events
+        if event.payload_json and "Idempotent System Broadcast" in event.payload_json
+    ]
+    assert len(matching_events) == 1
+
+    notifications = (
+        db.session.query(Notification)
+        .filter_by(
+            notification_event_id=matching_events[0].id,
+            recipient_user_id=student_user.id,
+        )
+        .all()
+    )
+    assert len(notifications) == 1
+
+    conflict = client.post(
+        "/api/admin/notifications/broadcast",
+        json={**payload, "body": "A different payload must conflict."},
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+
+    invalid_key = client.post(
+        "/api/admin/notifications/broadcast",
+        json=payload,
+        headers={**headers, "X-Idempotency-Key": "not-a-uuid"},
+    )
+    assert invalid_key.status_code == 400
+
+
+def test_notification_mutations_reject_non_object_json_payloads(
+    app: Flask,
+    client: FlaskClient,
+    admin_user: User,
+    student_user: User,
+) -> None:
+    """Malformed JSON types must be client errors, never server errors."""
+    admin_headers = {"Authorization": f"Bearer {create_token_pair(admin_user)['access_token']}"}
+    student_headers = {"Authorization": f"Bearer {create_token_pair(student_user)['access_token']}"}
+
+    broadcast_response = client.post(
+        "/api/admin/notifications/broadcast",
+        json="oops",
+        headers=admin_headers,
+    )
+    shared_broadcast_response = client.post(
+        "/api/notifications/broadcast",
+        json=["oops"],
+        headers=admin_headers,
+    )
+    mark_all_response = client.post(
+        "/api/notifications/mark-all-read",
+        json=["bogus"],
+        headers=student_headers,
+    )
+    retry_response = client.post(
+        "/api/notifications/emails/retry-failed",
+        json=["bogus"],
+        headers=admin_headers,
+    )
+
+    assert broadcast_response.status_code == 400
+    assert shared_broadcast_response.status_code == 400
+    assert mark_all_response.status_code == 400
+    assert retry_response.status_code == 400
+    assert broadcast_response.get_json()["success"] is False
+    assert broadcast_response.get_json()["data"] is None
+    assert shared_broadcast_response.get_json()["success"] is False
+    assert shared_broadcast_response.get_json()["data"] is None
+
+
+@pytest.mark.parametrize("target_role", ["ADMIN", "BOGUS"])
+def test_notification_role_filters_reject_unsupported_values(
+    app: Flask,
+    client: FlaskClient,
+    student_user: User,
+    target_role: str,
+) -> None:
+    """Role filters must be valid for the authenticated actor, not silent no-ops."""
+    headers = {"Authorization": f"Bearer {create_token_pair(student_user)['access_token']}"}
+
+    list_response = client.get(f"/api/notifications?role={target_role}", headers=headers)
+    count_response = client.get(
+        f"/api/notifications/unread-count?role={target_role}", headers=headers
+    )
+    mark_all_response = client.post(
+        "/api/notifications/mark-all-read",
+        json={"target_role": target_role},
+        headers=headers,
+    )
+
+    for response in (list_response, count_response, mark_all_response):
+        assert response.status_code == 400
+        payload = response.get_json()
+        assert payload["success"] is False
+        assert payload["data"] is None
+        assert payload["error"]["code"] == "VALIDATION_ERROR"
+
+    valid_response = client.get("/api/notifications?role=student", headers=headers)
+    assert valid_response.status_code == 200
+
+
+def test_notification_api_uses_canonical_success_data_envelope(
+    app: Flask, client: FlaskClient, student_user: User
+) -> None:
+    """Notification success responses expose canonical data without removing legacy fields."""
+    tokens = create_token_pair(student_user)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    notification, _ = dispatch_notification(
+        student_user,
+        "COURSE_ANNOUNCEMENT",
+        "Envelope notice",
+        "Envelope body",
+        session=db.session,
+    )
+    db.session.commit()
+
+    list_response = client.get("/api/notifications", headers=headers)
+    count_response = client.get("/api/notifications/unread-count", headers=headers)
+    read_response = client.patch(
+        f"/api/notifications/{notification.public_id}/read", headers=headers
+    )
+    mark_all_response = client.post("/api/notifications/mark-all-read", headers=headers, json={})
+    dismiss_response = client.delete(
+        f"/api/notifications/{notification.public_id}", headers=headers
+    )
+
+    assert list_response.get_json()["success"] is True
+    assert "items" in list_response.get_json()["data"]
+    assert count_response.get_json()["data"]["unread_count"] >= 1
+    assert read_response.get_json()["data"]["id"] == str(notification.public_id)
+    assert "marked_count" in mark_all_response.get_json()["data"]
+    assert dismiss_response.get_json()["data"]["status"] == "dismissed"
+
+
 def test_admin_retry_failed_emails_api(
     app: Flask, client: FlaskClient, admin_user: User, student_user: User
 ) -> None:
@@ -314,10 +481,10 @@ def test_unified_auth_notifications_web_session(
     assert "marked_count" in resp_all_read.get_json()
 
 
-def test_notification_deduplication_collapsing(
+def test_notification_distinct_copy_remains_visible(
     app: Flask, client: FlaskClient, student_user: User
 ) -> None:
-    """Verify that multiple notifications with identical title & body collapse to the newest one."""
+    """Verify that multiple distinct events with identical copy remain visible."""
     from pwd301.models.notification_audit import Notification
     from pwd301.services.notification_service import list_user_notifications
 
@@ -343,7 +510,7 @@ def test_notification_deduplication_collapsing(
     # Query through service - must be collapsed to exactly 1 visible item
     items, total = list_user_notifications(student_user, session=db.session)
     matching_items = [i for i in items if i["title"] == "Bảo trì hệ thống định kỳ"]
-    assert len(matching_items) == 1
+    assert len(matching_items) == 3
     # Check that event_type is present in dict
     assert matching_items[0]["event_type"] == "SYSTEM_NOTICE"
 
@@ -353,4 +520,74 @@ def test_notification_deduplication_collapsing(
     resp = client.get("/api/notifications", headers=headers)
     assert resp.status_code == 200
     api_items = [i for i in resp.get_json()["items"] if i["title"] == "Bảo trì hệ thống định kỳ"]
-    assert len(api_items) == 1
+    assert len(api_items) == 3
+
+
+def test_distinct_notification_events_with_same_copy_remain_visible(
+    app: Flask, client: FlaskClient, student_user: User
+) -> None:
+    """Distinct business events must not be hidden by a title/body heuristic."""
+    from pwd301.services.notification_service import list_user_notifications
+
+    for event_type in ("SYSTEM_NOTICE", "COURSE_ANNOUNCEMENT"):
+        dispatch_notification(
+            student_user,
+            event_type,
+            "Same copy",
+            "Same body",
+            session=db.session,
+        )
+    db.session.commit()
+
+    items, total = list_user_notifications(student_user, session=db.session)
+    matching_items = [item for item in items if item["title"] == "Same copy"]
+    assert total == 2
+    assert len(matching_items) == 2
+    assert {item["event_type"] for item in matching_items} == {
+        "SYSTEM_NOTICE",
+        "COURSE_ANNOUNCEMENT",
+    }
+
+
+def test_session_notification_routes_use_canonical_success_data_envelope(
+    app: Flask, client: FlaskClient, student_user: User
+) -> None:
+    """Session and student notification routes expose the shared success envelope."""
+    login_web_user(client, student_user)
+    notification, _ = dispatch_notification(
+        student_user,
+        "SYSTEM_NOTICE",
+        "Envelope contract",
+        "Envelope contract body",
+        session=db.session,
+    )
+    db.session.commit()
+
+    auth_list = client.get("/auth/notifications")
+    assert auth_list.status_code == 200
+    assert auth_list.get_json()["success"] is True
+    assert auth_list.get_json()["data"]["items"]
+    assert auth_list.get_json()["items"] == auth_list.get_json()["data"]["items"]
+
+    auth_count = client.get("/auth/notifications/unread-count")
+    assert auth_count.get_json()["data"]["unread_count"] >= 1
+
+    auth_read = client.post(f"/auth/notifications/{notification.public_id}/read")
+    assert auth_read.get_json()["success"] is True
+    assert auth_read.get_json()["data"]["read"] is True
+
+    student_list = client.get("/student/notifications")
+    assert student_list.status_code == 200
+    assert student_list.get_json()["data"]["items"]
+
+    student_mark_all = client.post("/student/notifications/mark-all-read", json={})
+    assert student_mark_all.get_json()["success"] is True
+    assert "marked_count" in student_mark_all.get_json()["data"]
+
+    auth_delete = client.delete(f"/auth/notifications/{notification.public_id}")
+    assert auth_delete.get_json()["success"] is True
+    assert auth_delete.get_json()["data"]["status"] == "dismissed"
+
+    auth_clear = client.post("/auth/notifications/clear", json={})
+    assert auth_clear.get_json()["success"] is True
+    assert "deleted_count" in auth_clear.get_json()["data"]
