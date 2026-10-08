@@ -660,8 +660,16 @@ def create_lesson(
         if len(clean_summary) > 1000:
             raise LessonValidationError("Lesson summary cannot exceed 1000 characters.")
 
-    # estimated_duration_minutes has been decommissioned
+    # Parse and validate estimated_duration_minutes (optional)
+    raw_est = data.get("estimated_duration_minutes")
     est_duration = None
+    if raw_est is not None:
+        try:
+            est_duration = int(raw_est)
+            if est_duration < 0:
+                est_duration = None
+        except (ValueError, TypeError):
+            est_duration = None
 
     # Validate minimum_completion_seconds
     min_completion_seconds = data.get("minimum_completion_seconds", 30)
@@ -961,7 +969,15 @@ def update_lesson(
             lesson.summary = None
 
     if "estimated_duration_minutes" in data:
-        lesson.estimated_duration_minutes = None
+        raw_dur = data["estimated_duration_minutes"]
+        if raw_dur is not None:
+            try:
+                dur_int = int(raw_dur)
+                lesson.estimated_duration_minutes = dur_int if dur_int >= 0 else None
+            except (ValueError, TypeError):
+                lesson.estimated_duration_minutes = None
+        else:
+            lesson.estimated_duration_minutes = None
 
     if "minimum_completion_seconds" in data:
         try:

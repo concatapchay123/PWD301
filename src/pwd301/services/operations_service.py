@@ -1188,7 +1188,7 @@ def create_database_backup(
     engine_root = current_app.config.get("SQLSERVER_BACKUP_ROOT")
     if not engine_root:
         raise ValidationError("SQL Server backup directory is not configured.")
-    raw_engine = getattr(bind, "engine", bind)
+    raw_engine: Any = getattr(bind, "engine", bind)
     database_name = raw_engine.url.database
     if not database_name:
         raise ValidationError("SQL Server target database is not configured.")
@@ -1306,7 +1306,9 @@ def create_database_backup(
         _prune_expired_backups(sess, retention_days=retention_days)
     except Exception:
         sess.rollback()
-        logger.exception("Backup succeeded; retention cleanup failed without deleting referenced artifacts.")
+        logger.exception(
+            "Backup succeeded; retention cleanup failed without deleting referenced artifacts."
+        )
     return backup_run
 
 
@@ -1499,25 +1501,41 @@ def execute_dry_run_restore(
             raise BackupIntegrityError("Invalid physical backup filename.")
         engine_path = str(engine_root).rstrip("/\\") + "/" + filename
         safe_path = engine_path.replace("'", "''")
-        raw_engine = getattr(bind, "engine", bind)
+        raw_engine: Any = getattr(bind, "engine", bind)
         with raw_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-            connection.execute(sa.text(f"RESTORE VERIFYONLY FROM DISK = N'{safe_path}' WITH CHECKSUM;"))
+            connection.execute(
+                sa.text(f"RESTORE VERIFYONLY FROM DISK = N'{safe_path}' WITH CHECKSUM;")
+            )
         try:
             record_audit_event(
-                actor=actor, action="DATABASE_RESTORE_DRY_RUN", target_type="BACKUP",
-                target_id=backup.public_id, performed_as_admin=True, session=sess,
-                details={"backup_id": str(backup.public_id), "dry_run": True,
-                         "restore_drill_performed": False, "live_mutation_occurred": False},
+                actor=actor,
+                action="DATABASE_RESTORE_DRY_RUN",
+                target_type="BACKUP",
+                target_id=backup.public_id,
+                performed_as_admin=True,
+                session=sess,
+                details={
+                    "backup_id": str(backup.public_id),
+                    "dry_run": True,
+                    "restore_drill_performed": False,
+                    "live_mutation_occurred": False,
+                },
             )
             sess.commit()
         except Exception as exc:
             sess.rollback()
-            raise AuditPersistenceError("Fail-closed: cannot persist backup inspection audit.") from exc
+            raise AuditPersistenceError(
+                "Fail-closed: cannot persist backup inspection audit."
+            ) from exc
         return {
-            "backup_id": str(backup.public_id), "dry_run": True,
-            "status": "ARTIFACT_VERIFIED", "schema_compatible": None,
-            "engine_verifyonly_passed": True, "data_recovery_verified": False,
-            "restore_drill_performed": False, "live_database_modified": False,
+            "backup_id": str(backup.public_id),
+            "dry_run": True,
+            "status": "ARTIFACT_VERIFIED",
+            "schema_compatible": None,
+            "engine_verifyonly_passed": True,
+            "data_recovery_verified": False,
+            "restore_drill_performed": False,
+            "live_database_modified": False,
             "checksum": verify_result["checksum"],
         }
     except Exception:
@@ -1739,6 +1757,18 @@ def restore_database_snapshot(
                 raise ValidationError(
                     "Lý do giải trình kiểm toán khôi phục CSDL bắt buộc và phải có tối thiểu 10 ký tự."
                 )
+
+        # Safeguard 2.6: Resolve backup and defend against path traversal
+        try:
+            backup = _resolve_backup(str(backup_id), sess)
+        except Exception:
+            backup = None
+
+        if backup is not None:
+            db_name = getattr(backup, "database_backup_name", "") or ""
+            storage_loc = getattr(backup, "storage_location", "") or ""
+            if ".." in db_name or ".." in storage_loc:
+                raise RestoreForbiddenError("Path traversal detected in backup filename or path.")
 
         # Historical restore_tested_at values came from metadata-only pseudo-drills.
         # Do not execute destructive recovery without an independently proven workflow.

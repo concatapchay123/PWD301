@@ -241,7 +241,9 @@ def test_create_backup_non_admin_forbidden(app: Flask, student_user: User) -> No
         create_database_backup(actor=student_user, session=db.session)
 
 
-def test_list_backups_adr002_compliance(app: Flask, admin_user: User, physical_backup_engine) -> None:
+def test_list_backups_adr002_compliance(
+    app: Flask, admin_user: User, physical_backup_engine
+) -> None:
     """List backups returns historical records adhering strictly to ADR-002."""
     with app.app_context():
         b1 = create_database_backup(actor=admin_user, backup_type="MANUAL", session=db.session)
@@ -271,7 +273,9 @@ def test_list_backups_adr002_compliance(app: Flask, admin_user: User, physical_b
 # =====================================================================
 
 
-def test_verify_backup_integrity_clean(app: Flask, admin_user: User, physical_backup_engine) -> None:
+def test_verify_backup_integrity_clean(
+    app: Flask, admin_user: User, physical_backup_engine
+) -> None:
     """Clean backup passes cryptographic verification and updates verified_at timestamp."""
     with app.app_context():
         backup = create_database_backup(actor=admin_user, session=db.session)
@@ -303,7 +307,9 @@ def test_verify_backup_integrity_clean(app: Flask, admin_user: User, physical_ba
         (p.parent / (p.name + ".manifest.json")).unlink(missing_ok=True)
 
 
-def test_verify_backup_integrity_tampered_content(app: Flask, admin_user: User, physical_backup_engine) -> None:
+def test_verify_backup_integrity_tampered_content(
+    app: Flask, admin_user: User, physical_backup_engine
+) -> None:
     """Tampered backup file causes checksum mismatch and raises BackupIntegrityError."""
     with app.app_context():
         backup = create_database_backup(actor=admin_user, session=db.session)
@@ -380,7 +386,9 @@ def test_execute_dry_run_restore(app: Flask, admin_user: User, physical_backup_e
         (p.parent / (p.name + ".manifest.json")).unlink(missing_ok=True)
 
 
-def test_restore_database_snapshot_safeguards(app: Flask, admin_user: User, physical_backup_engine) -> None:
+def test_restore_database_snapshot_safeguards(
+    app: Flask, admin_user: User, physical_backup_engine
+) -> None:
     """Restore enforces exact confirmation phrase and admin password re-authentication."""
     with app.app_context():
         backup = create_database_backup(actor=admin_user, session=db.session)
@@ -424,13 +432,18 @@ def test_restore_database_snapshot_safeguards(app: Flask, admin_user: User, phys
         db.session.get_bind = physical_backup_engine[0]
         with pytest.raises(RestoreForbiddenError, match="SQL Server"):
             restore_database_snapshot(
-                actor=admin_user, backup_id=backup_id,
+                actor=admin_user,
+                backup_id=backup_id,
                 confirmation_phrase="CONFIRM_DATABASE_RESTORE",
-                password="Password123!", session=db.session,
+                password="Password123!",
+                session=db.session,
             )
-        assert db.session.query(AuditEvent).filter(
-            AuditEvent.action == "DATABASE_RESTORE_COMPLETED"
-        ).count() == 0
+        assert (
+            db.session.query(AuditEvent)
+            .filter(AuditEvent.action == "DATABASE_RESTORE_COMPLETED")
+            .count()
+            == 0
+        )
 
         # Cleanup
         Path(backup.storage_location).unlink(missing_ok=True)
@@ -750,11 +763,19 @@ def test_metadata_backup_is_not_supported_on_sqlite(app, admin_user, tmp_path):
 
 def test_legacy_metadata_cannot_be_verified_as_restoreable(app, admin_user, tmp_path):
     artifact = tmp_path / "legacy.json"
-    artifact.write_text(json.dumps({"metadata": {"format": "PWD301_SNAPSHOT"},
-                                    "tables": {"users": {"row_count": 1}}}))
-    run = BackupRun(backup_type="MANUAL", status="SUCCEEDED",
-                    started_by_user_id=admin_user.id, started_at=utc_now(),
-                    storage_location=str(artifact), database_backup_name=artifact.name)
+    artifact.write_text(
+        json.dumps(
+            {"metadata": {"format": "PWD301_SNAPSHOT"}, "tables": {"users": {"row_count": 1}}}
+        )
+    )
+    run = BackupRun(
+        backup_type="MANUAL",
+        status="SUCCEEDED",
+        started_by_user_id=admin_user.id,
+        started_at=utc_now(),
+        storage_location=str(artifact),
+        database_backup_name=artifact.name,
+    )
     db.session.add(run)
     db.session.commit()
     with pytest.raises(BackupIntegrityError, match="physical"):
@@ -762,14 +783,19 @@ def test_legacy_metadata_cannot_be_verified_as_restoreable(app, admin_user, tmp_
     assert run.restore_tested_at is None
 
 
-def test_sql_backup_failure_never_persists_success(app, admin_user, physical_backup_engine, monkeypatch):
+def test_sql_backup_failure_never_persists_success(
+    app, admin_user, physical_backup_engine, monkeypatch
+):
     engine = db.session.get_bind()
     connection = engine.connect.return_value.execution_options.return_value.__enter__.return_value
     connection.execute.side_effect = RuntimeError("engine backup failed")
     with pytest.raises(RuntimeError, match="engine backup failed"):
         create_database_backup(admin_user, session=db.session)
     assert db.session.query(BackupRun).count() == 0
-    assert db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_CREATED").count() == 0
+    assert (
+        db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_CREATED").count()
+        == 0
+    )
 
 
 def test_missing_physical_manifest_is_not_verified(app, admin_user, physical_backup_engine):
@@ -788,17 +814,24 @@ def test_verifyonly_failure_never_records_restore_drill(app, admin_user, physica
     with pytest.raises(RuntimeError, match="artifact unreadable"):
         execute_dry_run_restore(admin_user, str(backup.public_id), session=db.session)
     assert backup.restore_tested_at is None
-    assert db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_RESTORE_DRY_RUN").count() == 0
+    assert (
+        db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_RESTORE_DRY_RUN").count()
+        == 0
+    )
 
 
-def test_retention_commit_failure_preserves_backup_bytes(app, admin_user, physical_backup_engine, monkeypatch):
+def test_retention_commit_failure_preserves_backup_bytes(
+    app, admin_user, physical_backup_engine, monkeypatch
+):
     backup = create_database_backup(admin_user, session=db.session)
     backup.started_at = utc_now() - datetime.timedelta(days=45)
     db.session.commit()
     artifact = Path(backup.storage_location)
     manifest = Path(str(artifact) + ".manifest.json")
+
     def fail_commit():
         raise RuntimeError("retention commit failed")
+
     monkeypatch.setattr(db.session, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="retention commit failed"):
         _prune_expired_backups(db.session, retention_days=30)
@@ -808,9 +841,12 @@ def test_retention_commit_failure_preserves_backup_bytes(app, admin_user, physic
     assert db.session.query(BackupRun).count() == 1
 
 
-def test_backup_commit_failure_removes_new_artifact(app, admin_user, physical_backup_engine, monkeypatch, tmp_path):
+def test_backup_commit_failure_removes_new_artifact(
+    app, admin_user, physical_backup_engine, monkeypatch, tmp_path
+):
     def fail_commit():
         raise RuntimeError("backup metadata commit failed")
+
     monkeypatch.setattr(db.session, "commit", fail_commit)
     with pytest.raises(RuntimeError, match="backup metadata commit failed"):
         create_database_backup(admin_user, session=db.session)
@@ -818,12 +854,16 @@ def test_backup_commit_failure_removes_new_artifact(app, admin_user, physical_ba
     assert db.session.query(BackupRun).count() == 0
 
 
-def test_backup_manifest_failure_removes_new_artifact(app, admin_user, physical_backup_engine, monkeypatch, tmp_path):
+def test_backup_manifest_failure_removes_new_artifact(
+    app, admin_user, physical_backup_engine, monkeypatch, tmp_path
+):
     original_write = Path.write_text
+
     def fail_manifest(path, *args, **kwargs):
         if path.name.endswith(".manifest.json"):
             raise OSError("manifest write failed")
         return original_write(path, *args, **kwargs)
+
     monkeypatch.setattr(Path, "write_text", fail_manifest)
     with pytest.raises(OSError, match="manifest write failed"):
         create_database_backup(admin_user, session=db.session)
@@ -842,26 +882,37 @@ def test_verifyonly_failure_rolls_back_local_verification(app, admin_user, physi
     db.session.commit()
     db.session.refresh(backup)
     assert backup.verified_at is None
-    assert db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_VERIFIED").count() == 0
+    assert (
+        db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_VERIFIED").count()
+        == 0
+    )
 
 
 @pytest.mark.parametrize("visible_bytes", [None, b""])
-def test_engine_missing_or_empty_artifact_never_succeeds(app, admin_user, physical_backup_engine, visible_bytes, tmp_path):
+def test_engine_missing_or_empty_artifact_never_succeeds(
+    app, admin_user, physical_backup_engine, visible_bytes, tmp_path
+):
     import re
+
     engine = db.session.get_bind()
     connection = engine.connect.return_value.execution_options.return_value.__enter__.return_value
+
     def execute(statement):
         filename = re.search(r"TO DISK = N'([^']+)'", str(statement)).group(1).split("/")[-1]
         if visible_bytes is not None:
             (tmp_path / filename).write_bytes(visible_bytes)
+
     connection.execute.side_effect = execute
     with pytest.raises(BackupIntegrityError, match="shared storage"):
         create_database_backup(admin_user, session=db.session)
     assert db.session.query(BackupRun).count() == 0
 
 
-def test_verifyonly_uses_engine_path_and_one_commit(app, admin_user, physical_backup_engine, monkeypatch):
+def test_verifyonly_uses_engine_path_and_one_commit(
+    app, admin_user, physical_backup_engine, monkeypatch
+):
     from unittest.mock import Mock
+
     backup = create_database_backup(admin_user, session=db.session)
     original_commit = db.session.commit
     commit_spy = Mock(side_effect=original_commit)
@@ -869,24 +920,35 @@ def test_verifyonly_uses_engine_path_and_one_commit(app, admin_user, physical_ba
     result = execute_dry_run_restore(admin_user, str(backup.public_id), session=db.session)
     assert commit_spy.call_count == 1
     sql = physical_backup_engine[1][-1]
-    assert sql == f"RESTORE VERIFYONLY FROM DISK = N'/engine/backups/{backup.database_backup_name}' WITH CHECKSUM;"
+    assert (
+        sql
+        == f"RESTORE VERIFYONLY FROM DISK = N'/engine/backups/{backup.database_backup_name}' WITH CHECKSUM;"
+    )
     assert result["data_recovery_verified"] is False
     assert result["engine_verifyonly_passed"] is True
 
 
-def test_verifyonly_audit_failure_rolls_back_verification(app, admin_user, physical_backup_engine, monkeypatch):
+def test_verifyonly_audit_failure_rolls_back_verification(
+    app, admin_user, physical_backup_engine, monkeypatch
+):
     from pwd301.services import operations_service
     from pwd301.services.exceptions import AuditPersistenceError
+
     backup = create_database_backup(admin_user, session=db.session)
     original_audit = operations_service.record_audit_event
+
     def audit(*args, **kwargs):
         if kwargs.get("action") == "DATABASE_RESTORE_DRY_RUN":
             raise RuntimeError("audit unavailable")
         return original_audit(*args, **kwargs)
+
     monkeypatch.setattr(operations_service, "record_audit_event", audit)
     with pytest.raises(AuditPersistenceError):
         execute_dry_run_restore(admin_user, str(backup.public_id), session=db.session)
     db.session.commit()
     db.session.refresh(backup)
     assert backup.verified_at is None
-    assert db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_VERIFIED").count() == 0
+    assert (
+        db.session.query(AuditEvent).filter(AuditEvent.action == "DATABASE_BACKUP_VERIFIED").count()
+        == 0
+    )

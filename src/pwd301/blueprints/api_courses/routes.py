@@ -371,7 +371,10 @@ def get_course_prerequisites_api(course_id: str) -> tuple[Response, int] | Respo
     """Read prerequisite courses for a course adhering to visibility rules."""
     actor = get_authenticated_actor()
     course = get_course_detail(actor, course_id, session=db.session)
-    prereqs = get_course_prerequisites(course, session=db.session)
+    is_manager = bool(
+        actor and (getattr(actor, "is_admin", False) or course.owner_instructor_id == actor.id)
+    )
+    prereqs = get_course_prerequisites(course, only_approved=not is_manager, session=db.session)
     return jsonify({"prerequisites": [_serialize_prerequisite_api(c) for c in prereqs]}), 200
 
 

@@ -231,7 +231,10 @@ def test_admin_security_last_admin_protection(
     # Suspending the second admin is allowed since admin_user is also active
     res_suspend = client.post(
         f"/admin/users/{second_admin.public_id}/suspend",
-        json={"reason": "Valid suspension of secondary administrator"},
+        json={
+            "reason": "Valid suspension of secondary administrator",
+            "admin_password": "Password@123",
+        },
     )
     assert res_suspend.status_code == 200
 
@@ -239,7 +242,10 @@ def test_admin_security_last_admin_protection(
     # Attempting to suspend admin_user is blocked by self-suspension and last-admin check.
     res_suspend_last = client.post(
         f"/admin/users/{admin_user.public_id}/suspend",
-        json={"reason": "Attempting to suspend last active admin"},
+        json={
+            "reason": "Attempting to suspend last active admin",
+            "admin_password": "Password@123",
+        },
     )
     assert res_suspend_last.status_code in (400, 403)
 
@@ -255,7 +261,7 @@ def test_admin_security_reason_validation(
     # 1. Short reason on suspend
     res = client.post(
         f"/admin/users/{student_user.public_id}/suspend",
-        json={"reason": "bad"},
+        json={"reason": "bad", "admin_password": "Password@123"},
     )
     assert res.status_code == 400
     res_msg = res.get_json()["error"]["message"].lower()

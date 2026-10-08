@@ -188,7 +188,8 @@ def test_instructor_cannot_approve_courses(
     token_a = tokens_a["access_token"]
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
-    client.post(f"/instructor/courses/{course_a.public_id}/submit", headers=headers_a)
+    res_sub = client.post(f"/api/courses/{course_a.public_id}/submit", headers=headers_a)
+    assert res_sub.status_code == 200
 
     # Instructor attempts to approve via admin route
     resp = client.post(
@@ -274,7 +275,8 @@ def test_admin_can_manage_and_review_any_course(
     assert resp.get_json()["title"] == "Admin Verified Security 101"
 
     # 2. Submit and Admin Approve
-    client.post(f"/instructor/courses/{course_a.public_id}/submit", headers=headers_admin)
+    res_sub = client.post(f"/api/courses/{course_a.public_id}/submit", headers=headers_admin)
+    assert res_sub.status_code == 200
     resp = client.post(
         f"/admin/courses/{course_a.public_id}/review",
         headers=headers_admin,

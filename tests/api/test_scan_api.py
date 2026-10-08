@@ -312,7 +312,10 @@ class TestQuarantineOverrideApi:
         clean_file_asset.status = "PENDING"
         db.session.commit()
 
-        payload = {"reason": "Admin session authorized override."}
+        payload = {
+            "reason": "Admin session authorized override.",
+            "password": "Password@123",
+        }
         resp = client.post(
             f"/admin/files/{clean_file_asset.public_id}/quarantine-override",
             json=payload,

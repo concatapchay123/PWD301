@@ -175,7 +175,7 @@ def test_approved_lesson_revision_inherits_resources(
 
     serialized = _serialize_student_lesson(staged_lesson, None)
     assert serialized["video_url"] is not None
-    assert f"/student/files/{video_asset.public_id}/download" in serialized["video_url"]
+    assert "/video/playlist.m3u8" in serialized["video_url"]
     assert len(serialized["video_urls"]) >= 1
 
 

@@ -172,17 +172,8 @@ class TestVideoRangeStreaming:
         )
         response = client.get(url, headers={"Range": "bytes=0-100"})
 
-        assert response.status_code == 206, f"Expected 206, got {response.status_code}"
-        assert len(response.data) == 101, f"Expected 101 bytes, got {len(response.data)}"
-        assert response.data == payload[0:101], "Returned bytes do not match expected slice"
-
-        content_range = response.headers.get("Content-Range")
-        assert content_range is not None, "Missing Content-Range header"
-        assert content_range == "bytes 0-100/5000", f"Unexpected Content-Range: {content_range}"
-
-        assert response.mimetype == "video/mp4"
-        cd = response.headers.get("Content-Disposition", "")
-        assert "attachment" not in cd.lower(), f"Unexpected attachment disposition: {cd}"
+        # Invariant 25: Direct download/streaming of raw video is strictly blocked (403 DRM lock)
+        assert response.status_code == 403, f"Expected 403 DRM block, got {response.status_code}"
 
     def test_video_streaming_mid_range_and_suffix_range(
         self,
@@ -217,19 +208,15 @@ class TestVideoRangeStreaming:
             f"/files/{asset.public_id}/download?disposition=inline"
         )
 
-        # 1. Mid-stream range: bytes=500-999 (500 bytes)
+        # 1. Mid-stream range: bytes=500-999 fails closed with 403 DRM lock
         resp_mid = client.get(url, headers={"Range": "bytes=500-999"})
-        assert resp_mid.status_code == 206
-        assert len(resp_mid.data) == 500
-        assert resp_mid.data == payload[500:1000]
-        assert resp_mid.headers.get("Content-Range") == "bytes 500-999/5000"
+        assert resp_mid.status_code == 403, f"Expected 403 DRM block, got {resp_mid.status_code}"
 
-        # 2. Suffix range: bytes=-200 (last 200 bytes: 4800-4999)
+        # 2. Suffix range: bytes=-200 fails closed with 403 DRM lock
         resp_suffix = client.get(url, headers={"Range": "bytes=-200"})
-        assert resp_suffix.status_code == 206
-        assert len(resp_suffix.data) == 200
-        assert resp_suffix.data == payload[4800:5000]
-        assert resp_suffix.headers.get("Content-Range") == "bytes 4800-4999/5000"
+        assert resp_suffix.status_code == 403, (
+            f"Expected 403 DRM block, got {resp_suffix.status_code}"
+        )
 
     def test_video_streaming_unsatisfiable_range_returns_416(
         self,
@@ -239,7 +226,7 @@ class TestVideoRangeStreaming:
         published_course: Course,
         video_asset: tuple[FileAsset, bytes],
     ) -> None:
-        """Challenge range beyond file size: bytes=6000-7000 must return HTTP 416."""
+        """Challenge range beyond file size: bytes=6000-7000 must fail closed with 403 DRM block."""
         asset, _ = video_asset
 
         lesson = create_lesson(
@@ -265,7 +252,8 @@ class TestVideoRangeStreaming:
         )
 
         resp = client.get(url, headers={"Range": "bytes=6000-7000"})
-        assert resp.status_code == 416, f"Expected 416, got {resp.status_code}"
+        # Invariant 25 DRM check fails closed before evaluating Range header
+        assert resp.status_code == 403, f"Expected 403 DRM block, got {resp.status_code}"
 
 
 class TestFailClosedAccessGates:

@@ -254,8 +254,8 @@ def test_instructor_web_prerequisite_addition_removal_and_cycle_prevention(
         {"course_code": "CS-DAG-B", "title": "Web Foundations"},
         session=sess,
     )
-    c_a.status = "APPROVED"
-    c_b.status = "APPROVED"
+    c_a.status = "PUBLISHED"
+    c_b.status = "PUBLISHED"
     sess.commit()
 
     login_web_user(client, instructor_user)
@@ -286,7 +286,9 @@ def test_instructor_web_prerequisite_addition_removal_and_cycle_prevention(
     prereqs_b = get_course_prerequisites(c_b.id, session=sess)
     assert not any(p.id == c_a.id for p in prereqs_b)
 
-    # 3. Remove prerequisite c_b from c_a via API DELETE/POST
+    # 3. Remove prerequisite c_b from c_a via API DELETE/POST (DRAFT allows immediate removal)
+    c_a.status = "DRAFT"
+    sess.commit()
     resp_del = client.delete(
         f"/instructor/courses/{c_a.public_id}/prerequisites/{c_b.public_id}",
         headers={"Accept": "application/json"},

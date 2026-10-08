@@ -131,11 +131,18 @@ def test_verify_backup_integrity_streaming_hash(app: Flask, tmp_path: Any) -> No
         db.session.add(admin)
         db.session.flush()
 
-        test_file = tmp_path / "backup_snapshot.json"
-        snapshot_payload = json.dumps(
-            {"metadata": {"format": "PWD301_SNAPSHOT", "tables": {}}}
-        ).encode("utf-8")
+        test_file = tmp_path / "backup_snapshot.bak"
+        snapshot_payload = b"PWD301_SQLSERVER_PHYSICAL_BACKUP_BYTES_TEST"
         test_file.write_bytes(snapshot_payload)
+
+        manifest_file = tmp_path / "backup_snapshot.bak.manifest.json"
+        manifest_data = {
+            "format": "PWD301_SQLSERVER_BACKUP_MANIFEST",
+            "database_backup_name": test_file.name,
+            "sha256": hashlib.sha256(snapshot_payload).hexdigest(),
+            "file_size": len(snapshot_payload),
+        }
+        manifest_file.write_text(json.dumps(manifest_data), encoding="utf-8")
 
         backup = BackupRun(
             backup_type="MANUAL",

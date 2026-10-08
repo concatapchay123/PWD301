@@ -939,6 +939,10 @@ def learning_units_route(course_id: str) -> Any:
             }
         ), 200
     payload = request.get_json(silent=True) or {}
+    from pwd301.services.lesson_service import _ensure_course_not_pending_changeset
+
+    _ensure_course_not_pending_changeset(course_obj.id, actor, session=db.session)
+
     if course_obj.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
         from pwd301.models.course import CourseChangeRequest
 
@@ -1381,6 +1385,7 @@ def create_lesson_route(course_id: str) -> Any:
                 if not approved_cr:
                     unit_is_staged = True
 
+        change_req = None
         if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
             from pwd301.models.course import CourseChangeRequest
 
@@ -1405,9 +1410,43 @@ def create_lesson_route(course_id: str) -> Any:
                     "Vui lòng rút lại xét duyệt trước khi tiếp tục thêm bài giảng."
                 )
 
-            # All lesson additions to published courses are staged as DRAFT in the unified course changeset
-            payload["status"] = "DRAFT"
-            lesson = create_lesson(actor, course.id, payload)
+            has_active_draft = (
+                db.session.query(Lesson.id)
+                .filter(
+                    Lesson.course_id == course.id,
+                    Lesson.status == "DRAFT",
+                    Lesson.deleted_at.is_(None),
+                )
+                .first()
+                is not None
+            )
+            is_changeset_flow = (
+                has_active_draft
+                or request.args.get("as_draft") == "true"
+                or request.args.get("changeset") == "true"
+                or (
+                    isinstance(payload, dict)
+                    and (
+                        payload.get("as_draft") is True
+                        or payload.get("changeset") is True
+                        or payload.get("in_changeset") is True
+                    )
+                )
+            )
+            if is_changeset_flow:
+                payload["status"] = "DRAFT"
+                lesson = create_lesson(actor, course.id, payload)
+            else:
+                from pwd301.services.lesson_service import create_lesson_change_request
+
+                payload["change_type"] = "LESSON_STRUCTURE"
+                payload["action"] = "CREATE_LESSON"
+                change_req, lesson = create_lesson_change_request(
+                    actor=actor,
+                    course_id=course.id,
+                    payload=payload,
+                    session=db.session,
+                )
         else:
             if unit_is_staged:
                 payload["status"] = "DRAFT"
@@ -1482,6 +1521,23 @@ def create_lesson_route(course_id: str) -> Any:
 
         db.session.commit()
         serialized = _serialize_lesson(lesson)
+        if change_req is not None:
+            return (
+                jsonify(
+                    {
+                        **serialized,
+                        "status": "pending_approval",
+                        "pending_approval": True,
+                        "message": (
+                            "Khóa học đã ban hành. "
+                            "Yêu cầu tạo bài giảng mới đã được gửi tới Quản trị viên để xét duyệt."
+                        ),
+                        "change_request_id": change_req.id,
+                        "lesson": serialized,
+                    }
+                ),
+                202,
+            )
         return jsonify(
             {
                 **serialized,
@@ -2573,7 +2629,6 @@ def list_course_prerequisites_route(course_id: str) -> tuple[Response, int] | Re
         if c:
             result.append(
                 {
-                    "id": str(c.public_id),
                     "course_id": str(c.public_id),
                     "prerequisite_course_id": str(c.public_id),
                     "course_code": c.course_code,

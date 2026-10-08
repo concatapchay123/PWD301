@@ -31,12 +31,21 @@ from flask.testing import FlaskClient
 from pwd301.extensions import db
 from pwd301.models.course import Course
 from pwd301.models.identity import Role, User
-from pwd301.services.course_service import create_course
+from pwd301.services.course_service import create_course as _base_create_course
 from pwd301.services.enrollment_service import (
     add_course_prerequisite,
     get_course_prerequisites,
     remove_course_prerequisite,
 )
+
+
+def create_course(actor: User, data: dict[str, Any], session: Any = None) -> Course:
+    """Helper ensuring created test courses have PUBLISHED status for prerequisite tests."""
+    c = _base_create_course(actor, data, session=session)
+    c.status = "PUBLISHED"
+    return c
+
+
 from pwd301.services.exceptions import (
     CourseValidationError,
     PrerequisiteCycleError,

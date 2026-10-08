@@ -96,7 +96,7 @@ def test_fail_closed_lock_during_pending_changeset(
     # 1. Instructor creates a draft lesson in the published course
     res = client.post(
         f"/instructor/courses/{course.public_id}/lessons",
-        json={"title": "Bài mới nháp", "markdown_content": "Nội dung nháp"},
+        json={"title": "Bài mới nháp", "markdown_content": "Nội dung nháp", "as_draft": True},
         headers=headers,
     )
     assert res.status_code in (200, 201), res.get_data(as_text=True)

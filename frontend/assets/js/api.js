@@ -408,6 +408,22 @@ class ApiClient {
     });
   }
 
+  static async recordTelemetry(eventType, payload = {}) {
+    try {
+      return await ApiClient.request('/api/telemetry', {
+        method: 'POST',
+        body: {
+          event_type: eventType,
+          payload: payload,
+          client_timestamp: new Date().toISOString()
+        }
+      });
+    } catch (err) {
+      console.warn('Telemetry delivery failed or unsupported:', err);
+      return null;
+    }
+  }
+
   static async completeLessonMiniQuiz(lessonId, answers) {
     return await ApiClient.request(`/student/lessons/${lessonId}/quiz-completion`, {
       method: 'POST',

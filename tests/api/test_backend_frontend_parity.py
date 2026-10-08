@@ -82,7 +82,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course_a.status = "DRAFT"
+    course_a.status = "PUBLISHED"
 
     course_b = create_course(
         actor=instructor,
@@ -94,7 +94,7 @@ def parity_env(app: Flask) -> dict[str, Any]:
         },
         session=sess,
     )
-    course_b.status = "DRAFT"
+    course_b.status = "PUBLISHED"
 
     sess.flush()
 
@@ -169,6 +169,8 @@ def test_course_prerequisites_api_parity(client: FlaskClient, parity_env: dict[s
     assert_adr002(list_data)
 
     # 3. Verify DAG cycle detection (Cannot add course_a as prerequisite to course_b)
+    c_a.status = "PUBLISHED"
+    db.session.commit()
     cycle_resp = client.post(
         f"/instructor/courses/{c_b.public_id}/prerequisites",
         json={"prerequisite_course_id": str(c_a.public_id)},
@@ -180,7 +182,9 @@ def test_course_prerequisites_api_parity(client: FlaskClient, parity_env: dict[s
     has_cycle_code = cycle_data.get("error", {}).get("code") == "CYCLE_DETECTED"
     assert has_cycle_msg or has_cycle_code
 
-    # 4. Remove prerequisite
+    # 4. Remove prerequisite (direct removal when course is in DRAFT)
+    c_a.status = "DRAFT"
+    db.session.commit()
     del_resp = client.delete(
         f"/instructor/courses/{c_a.public_id}/prerequisites/{c_b.public_id}",
         headers={"X-CSRFToken": csrf_token},

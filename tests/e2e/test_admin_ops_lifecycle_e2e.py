@@ -478,13 +478,16 @@ def test_disaster_recovery_drill_and_maintenance_mode(
         # SQL command boundary is mocked here; live recovery remains unavailable.
         with pytest.raises(RestoreForbiddenError, match="verified isolated"):
             restore_database_snapshot(
-                actor=admin_user, backup_id=backup_id,
+                actor=admin_user,
+                backup_id=backup_id,
                 confirmation_phrase="CONFIRM_DATABASE_RESTORE",
-                password="Password@123", session=sess,
+                password="Password@123",
+                session=sess,
             )
-        assert sess.query(AuditEvent).filter(
-            AuditEvent.action == "DATABASE_RESTORE_COMPLETED"
-        ).count() == 0
+        assert (
+            sess.query(AuditEvent).filter(AuditEvent.action == "DATABASE_RESTORE_COMPLETED").count()
+            == 0
+        )
 
         # ---------------------------------------------------------------------
         # Step 6: Conclude Maintenance Window

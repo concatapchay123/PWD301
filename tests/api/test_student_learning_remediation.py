@@ -228,13 +228,14 @@ def test_video_completion_satisfies_minimum_seconds(
     _enrollment = enroll_student(actor=student, course_id=course.id, session=sess)
     csrf_token = login_client(client, student.email)
 
-    # Send progress with 95% view fraction
-    resp = client.post(
-        f"/student/lessons/{lesson1.public_id}/progress",
-        json={"seconds_increment": 15, "view_fraction": 0.95},
-        headers={"X-CSRFToken": csrf_token},
-    )
-    assert resp.status_code == 200
+    # Send heartbeats accumulating up to minimum_completion_seconds (60s) with 95% view fraction
+    for _ in range(4):
+        resp = client.post(
+            f"/student/lessons/{lesson1.public_id}/progress",
+            json={"seconds_increment": 15, "view_fraction": 0.95},
+            headers={"X-CSRFToken": csrf_token},
+        )
+        assert resp.status_code == 200
     data = resp.get_json()
     assert data["max_view_fraction"] >= 0.95
     assert data["is_completed"] is True

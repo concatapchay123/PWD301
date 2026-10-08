@@ -558,21 +558,18 @@ class TestStudentViewingAndStreaming:
         # Login student
         login_web_user(client, enrolled_student)
 
-        # 1. Full stream request (disposition=inline)
+        # Invariant 25: Direct download or inline streaming of raw video is strictly blocked (403 DRM Lock)
         resp_full = client.get(
             f"/student/courses/{course.public_id}/files/{asset.public_id}/download?disposition=inline"
         )
-        assert resp_full.status_code == 200
-        assert resp_full.headers.get("Accept-Ranges") == "bytes"
+        assert resp_full.status_code == 403
 
-        # 2. HTTP Range request for partial streaming
+        # Range request on raw video must also fail closed with 403 Forbidden
         resp_range = client.get(
             f"/student/courses/{course.public_id}/files/{asset.public_id}/download?disposition=inline",
             headers={"Range": "bytes=0-100"},
         )
-        assert resp_range.status_code == 206
-        assert len(resp_range.data) == 101
-        assert "bytes 0-100/" in resp_range.headers.get("Content-Range", "")
+        assert resp_range.status_code == 403
 
     def test_student_download_attached_pdf_resource(
         self,

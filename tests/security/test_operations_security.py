@@ -195,7 +195,9 @@ def test_unauthenticated_rejected_with_401(client: FlaskClient) -> None:
 # =====================================================================
 
 
-def test_restore_database_missing_phrase_rejected(client: FlaskClient, admin_user: User, physical_backup_engine) -> None:
+def test_restore_database_missing_phrase_rejected(
+    client: FlaskClient, admin_user: User, physical_backup_engine
+) -> None:
     """Restore call without confirmation phrase is rejected with HTTP 403 FORBIDDEN."""
     tokens = create_token_pair(admin_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -220,7 +222,9 @@ def test_restore_database_missing_phrase_rejected(client: FlaskClient, admin_use
     (p.parent / (p.name + ".manifest.json")).unlink(missing_ok=True)
 
 
-def test_restore_database_wrong_password_rejected(client: FlaskClient, admin_user: User, physical_backup_engine) -> None:
+def test_restore_database_wrong_password_rejected(
+    client: FlaskClient, admin_user: User, physical_backup_engine
+) -> None:
     """Restore call with incorrect admin password is rejected with HTTP 403 FORBIDDEN."""
     tokens = create_token_pair(admin_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -251,7 +255,9 @@ def test_restore_database_wrong_password_rejected(client: FlaskClient, admin_use
 # =====================================================================
 
 
-def test_fail_closed_on_audit_persistence_failure(app: Flask, admin_user: User, physical_backup_engine) -> None:
+def test_fail_closed_on_audit_persistence_failure(
+    app: Flask, admin_user: User, physical_backup_engine
+) -> None:
     """If audit log persistence fails, sensitive operations abort and roll back."""
     with app.app_context():
         with (
@@ -273,7 +279,9 @@ def test_fail_closed_on_audit_persistence_failure(app: Flask, admin_user: User, 
 # =====================================================================
 
 
-def test_adr002_zero_internal_pk_leakage(client: FlaskClient, admin_user: User, physical_backup_engine) -> None:
+def test_adr002_zero_internal_pk_leakage(
+    client: FlaskClient, admin_user: User, physical_backup_engine
+) -> None:
     """Verify that all JSON responses strictly use public UUIDs and never leak internal PKs."""
     tokens = create_token_pair(admin_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}

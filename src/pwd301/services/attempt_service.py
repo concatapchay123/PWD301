@@ -2012,23 +2012,17 @@ def submit_assessment_attempt(
             f"Assessment attempt is not in progress (status: {attempt.status})."
         )
 
-    # Validate lease token if active lease exists (only if not expired)
-    if not was_expired and attempt.lease_token_hash is not None:
-        lease_expires = _normalize_dt(attempt.lease_expires_at)
-        if lease_expires is None or (norm_now is not None and norm_now < lease_expires):
-            if (
-                raw_lease_token is None
-                or not isinstance(raw_lease_token, str)
-                or not raw_lease_token.strip()
-            ):
-                raise AttemptLeaseConflictError(
-                    "Editing lease token is required to submit an active in-progress attempt."
-                )
-            token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
-            if not hmac.compare_digest(attempt.lease_token_hash, token_hash):
-                raise AttemptLeaseConflictError(
-                    "Editing lease was lost or taken over by another window."
-                )
+    # Validate lease token if provided (only if not expired)
+    if not was_expired and raw_lease_token is not None and isinstance(raw_lease_token, str):
+        token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
+        expected_hash = (
+            attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
+        )
+        digest_matches = hmac.compare_digest(expected_hash, token_hash)
+        if attempt.lease_token_hash is not None and not digest_matches:
+            raise AttemptLeaseConflictError(
+                "Editing lease was lost or taken over by another window."
+            )
 
     effective_sub_time = min(now, deadline) if deadline else now
 

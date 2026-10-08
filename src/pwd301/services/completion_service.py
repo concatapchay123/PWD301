@@ -384,7 +384,7 @@ def calculate_course_progress(
             )
         )
 
-    required_lessons = sess.query(Lesson).filter(*required_lesson_filter).all()
+    required_lessons = sess.query(Lesson.id, Lesson.position).filter(*required_lesson_filter).all()
     total_required_lessons = len(required_lessons)
 
     if total_required_lessons == 0:
@@ -411,8 +411,8 @@ def calculate_course_progress(
 
     satisfied_count = sum(
         1
-        for req_les in required_lessons
-        if req_les.id in completed_ids or req_les.position in completed_positions
+        for (les_id, les_pos) in required_lessons
+        if les_id in completed_ids or les_pos in completed_positions
     )
 
     raw_pct = (satisfied_count / total_required_lessons) * 100.0
@@ -578,19 +578,23 @@ def evaluate_course_completion(
             )
             .all()
         )
-        for req_ass in required_assessments:
-            passed_attempt = (
-                sess.query(AssessmentAttempt)
-                .join(AssessmentResult, AssessmentResult.attempt_id == AssessmentAttempt.id)
-                .filter(
-                    AssessmentAttempt.assessment_id == req_ass.id,
-                    AssessmentAttempt.student_user_id == enrollment.student_user_id,
-                    AssessmentAttempt.status == "GRADED",
-                    AssessmentResult.passed == True,
+        if required_assessments:
+            req_ass_ids = [req_ass.id for req_ass in required_assessments]
+            passed_assessment_ids = {
+                r[0]
+                for r in (
+                    sess.query(AssessmentAttempt.assessment_id)
+                    .join(AssessmentResult, AssessmentResult.attempt_id == AssessmentAttempt.id)
+                    .filter(
+                        AssessmentAttempt.assessment_id.in_(req_ass_ids),
+                        AssessmentAttempt.student_user_id == enrollment.student_user_id,
+                        AssessmentAttempt.status == "GRADED",
+                        AssessmentResult.passed == True,
+                    )
+                    .all()
                 )
-                .first()
-            )
-            if passed_attempt is None:
+            }
+            if len(passed_assessment_ids) < len(req_ass_ids):
                 existing_summary = (
                     sess.query(CourseCompletionSummary)
                     .filter(

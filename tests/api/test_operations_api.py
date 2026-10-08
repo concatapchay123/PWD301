@@ -12,6 +12,7 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from flask import Flask
@@ -60,6 +61,9 @@ def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
         role_code="ADMIN",
         session=sess,
     )
+    for link in user.user_role_links:
+        if link.role.code == "ADMIN":
+            link.assignment_reason = "SUB_ROLE:ADMIN_PRIMARY | Primary test admin"
     user.is_email_verified = True
     sess.commit()
     return user
@@ -141,7 +145,9 @@ def test_admin_health_endpoints(client: FlaskClient, admin_user: User) -> None:
 # =====================================================================
 
 
-def test_admin_backup_full_lifecycle_api(client: FlaskClient, admin_user: User) -> None:
+def test_admin_backup_full_lifecycle_api(
+    client: FlaskClient, admin_user: User, physical_backup_engine: Any
+) -> None:
     """End-to-end API lifecycle: Create -> List -> Detail -> Verify -> Dry-Run -> Restore."""
     tokens = create_token_pair(admin_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -187,10 +193,11 @@ def test_admin_backup_full_lifecycle_api(client: FlaskClient, admin_user: User) 
     assert resp_dry.status_code == 200
     dry_data = resp_dry.get_json()
     assert dry_data["dry_run"] is True
-    assert dry_data["status"] == "COMPATIBLE"
+    assert dry_data["status"] == "ARTIFACT_VERIFIED"
     assert dry_data["live_database_modified"] is False
 
     # 6. Execute actual restore with exact confirmation phrase and password
+    # Invariant: live database restore is strictly fail-closed / forbidden until isolated recovery workflow validated
     resp_restore = client.post(
         f"/api/admin/backups/{backup_id}/restore",
         json={
@@ -199,9 +206,9 @@ def test_admin_backup_full_lifecycle_api(client: FlaskClient, admin_user: User) 
         },
         headers=headers,
     )
-    assert resp_restore.status_code == 200
-    restore_data = resp_restore.get_json()
-    assert restore_data["status"] == "RESTORED"
+    assert resp_restore.status_code == 403
+    restore_err = resp_restore.get_json()["error"]["message"]
+    assert "workflow is validated" in restore_err or "SQL Server" in restore_err
 
     # Cleanup physical files
     if storage_loc:

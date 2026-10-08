@@ -717,16 +717,16 @@ def add_course_prerequisite(
     if prereq_course is None:
         raise CourseNotFoundError("Prerequisite course not found.")
 
-    # 2b. Invariant: Only PUBLISHED courses can be added as prerequisites
+    # 2b. Prevent self-reference
+    if course.id == prereq_course.id:
+        raise CourseValidationError("A course cannot be a prerequisite of itself.")
+
+    # 2c. Invariant: Only PUBLISHED courses can be added as prerequisites
     if prereq_course.status != "PUBLISHED":
         raise CourseValidationError(
             f"Chỉ có thể chọn khóa học đã được xuất bản (PUBLISHED) làm môn tiên quyết. "
             f"Khóa học '{prereq_course.title}' hiện có trạng thái '{prereq_course.status}'."
         )
-
-    # 3. Prevent self-reference
-    if course.id == prereq_course.id:
-        raise CourseValidationError("A course cannot be a prerequisite of itself.")
 
     # 4. Check if relation already exists (idempotent)
     existing = (

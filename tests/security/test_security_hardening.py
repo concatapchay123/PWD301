@@ -439,6 +439,8 @@ def test_course_prerequisites_zero_internal_pk_leakage(
         instructor_user,
         {"course_code": f"PREREQ-{uuid.uuid4().hex[:4].upper()}", "title": "Prereq Course"},
     )
+    c2.status = "PUBLISHED"
+    db.session.commit()
     add_course_prerequisite(instructor_user, test_course.id, c2.id)
 
     client.post("/auth/login", data={"email": instructor_user.email, "password": "Password@123"})

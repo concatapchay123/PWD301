@@ -218,6 +218,9 @@ def test_t_course_06_prerequisite_cycle_detection_dfs(app: Flask, instructor_use
     course_a = create_course(instructor_user, {"course_code": "CYC-A", "title": "Course A"})
     course_b = create_course(instructor_user, {"course_code": "CYC-B", "title": "Course B"})
     course_c = create_course(instructor_user, {"course_code": "CYC-C", "title": "Course C"})
+    course_a.status = "PUBLISHED"
+    course_b.status = "PUBLISHED"
+    course_c.status = "PUBLISHED"
     db.session.commit()
 
     # A requires B

@@ -1620,32 +1620,47 @@ def get_faculty_workload_metrics(
     overload_count = 0
     total_assigned_courses = 0
 
-    for ins in instructors:
-        # Get active/managed courses (non-TRASH)
-        courses = (
+    # Batch load all managed (non-TRASH) courses for all faculty in 1 query
+    instructor_ids = [ins.id for ins in instructors]
+    courses_by_instructor: dict[int, list[Course]] = {ins_id: [] for ins_id in instructor_ids}
+    all_course_ids: list[int] = []
+
+    if instructor_ids:
+        all_courses = (
             sess.query(Course)
             .filter(
-                Course.owner_instructor_id == ins.id,
+                Course.owner_instructor_id.in_(instructor_ids),
                 Course.status != "TRASH",
             )
             .order_by(Course.created_at.desc())
             .all()
         )
+        for c in all_courses:
+            if c.owner_instructor_id in courses_by_instructor:
+                courses_by_instructor[c.owner_instructor_id].append(c)
+            all_course_ids.append(c.id)
 
-        course_ids = [c.id for c in courses]
+    # Batch load active student enrollment counts grouped by course in 1 query
+    enrollment_counts_by_course: dict[int, int] = {}
+    if all_course_ids:
+        counts = (
+            sess.query(Enrollment.course_id, sa.func.count(Enrollment.id))
+            .filter(
+                Enrollment.course_id.in_(all_course_ids),
+                Enrollment.status == "ACTIVE",
+            )
+            .group_by(Enrollment.course_id)
+            .all()
+        )
+        for cid, cnt in counts:
+            enrollment_counts_by_course[cid] = int(cnt)
+
+    for ins in instructors:
+        courses = courses_by_instructor.get(ins.id, [])
         course_count = len(courses)
         total_assigned_courses += course_count
 
-        active_students_count = 0
-        if course_ids:
-            active_students_count = (
-                sess.query(Enrollment)
-                .filter(
-                    Enrollment.course_id.in_(course_ids),
-                    Enrollment.status == "ACTIVE",
-                )
-                .count()
-            )
+        active_students_count = sum(enrollment_counts_by_course.get(c.id, 0) for c in courses)
 
         estimated_hours = course_count * 60
         max_hours = 300
