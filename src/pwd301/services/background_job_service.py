@@ -401,12 +401,31 @@ def run_worker_once(session: Session | scoped_session[Any] | None = None) -> boo
     return execute_background_job(job, session=sess)
 
 
-def run_worker_loop(poll_interval_seconds: float = 2.0, max_iterations: int | None = None) -> None:
-    """Run worker daemon polling loop until interrupted or max_iterations reached."""
+def run_worker_loop(
+    poll_interval_seconds: float = 2.0,
+    max_iterations: int | None = None,
+    max_idle_seconds: float = 10.0,
+) -> None:
+    """Run worker daemon polling loop with adaptive backoff until interrupted or max_iterations reached.
+
+    When work is active: polls quickly (0.5s - 1.0s) to drain queue without lag.
+    When queue is idle: gracefully backs off up to max_idle_seconds (10s) to eliminate
+    wasteful database polling and conserve CPU on resource-constrained VPS instances.
+    """
     iterations = 0
-    logger.info("Starting PWD301 Background Worker daemon loop...")
+    current_delay = poll_interval_seconds
+    logger.info(
+        "Starting PWD301 Background Worker daemon loop (adaptive polling 1.0s - %.1fs)...",
+        max_idle_seconds,
+    )
     while max_iterations is None or iterations < max_iterations:
         processed = run_worker_once()
         iterations += 1
-        if not processed:
-            time.sleep(poll_interval_seconds)
+        if processed:
+            # Active queue: reset to minimum delay for fast processing
+            current_delay = min(poll_interval_seconds, 1.0)
+        else:
+            # Idle queue: sleep and progressive backoff
+            time.sleep(current_delay)
+            current_delay = min(current_delay * 1.5, max_idle_seconds)
+

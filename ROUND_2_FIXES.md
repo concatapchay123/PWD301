@@ -72,6 +72,17 @@ All changes strictly preserve the system invariants:
 - **Resolution**: Added proper parsing, integer casting, and assignment for `estimated_duration_minutes` in both creation and update routines.
 - **Verification**: `tests/api/test_instructor_fixes_verification.py::test_lesson_duration_summary_video_persistence` (PASSED)
 
+#### Fix P1-4: Password Recovery ApiClient Parity & Full Static Parity Sweep
+- **Files**: `frontend/assets/js/api.js`, `tests/api/test_backend_frontend_parity.py`, `tests/api/test_auth_web.py`
+- **Root Cause**: In `frontend/assets/js/views/auth.js:878`, the recovery form triggered `ApiClient.forgotPassword(email)`, but `forgotPassword` was not declared in `api.js`. Additionally, `test_backend_frontend_parity.py` omitted `auth.js`, `instructor-exams.js`, and `video-armor.js` from static method resolution scans.
+- **Resolution**:
+  1. Added `forgotPassword(email)` (POST `/auth/forgot-password`) and `resetPassword(token, password, confirmPassword)` (POST `/auth/reset-password/<token>`) to `ApiClient`.
+  2. Expanded `test_backend_frontend_parity.py` to scan 100% of frontend JS modules and enforce parity for password lifecycle methods.
+  3. Added web integration tests for `forgot-password` and `reset-password` in `tests/api/test_auth_web.py`.
+- **Verification**:
+  - `tests/api/test_backend_frontend_parity.py` (3/3 PASSED)
+  - `tests/api/test_auth_web.py` (19/19 PASSED)
+
 ---
 
 ### 3. P2 & P3 Medium/Low Fixes (Test Contract Alignments & Fixture Hardening)

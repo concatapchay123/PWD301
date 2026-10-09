@@ -182,8 +182,14 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
  
 ### 10.8. Bất biến Bản quyền Video & Tiến độ Zero-Trust (DRM & Anti-Tamper Invariants)
 - **Cấm Tải Trực tiếp Video Thô**: Tuyệt đối cấm cung cấp URL tải trực tiếp file video bài học gốc (.mp4/.webm) cho học viên. Mọi video nội bộ phải được mã hóa phân đoạn HLS (AES-128) và cấp khóa thông qua token ngắn hạn gắn với phiên đăng nhập.
-- **Thủy ấn Động Pháp chứng (Dynamic Forensic Watermarking)**: Mọi trình phát video (kể cả iframe YouTube nhúng ngoài) bắt buộc hiển thị thủy ấn động chứa định danh học viên (`MSSV - Email - IP - Timestamp`) trôi ngẫu nhiên trên khung hình để triệt tiêu việc quay lén màn hình.
+- **Trình phát Video Độc quyền (Proprietary Custom Video Player Shell)**: Mọi luồng phát video bên ngoài (như YouTube) BẮT BUỘC phải được truyền tải qua PWD301 Custom Video Player Shell. Nghiêm cấm hoàn toàn việc hiển thị `<iframe>` YouTube mang thanh điều khiển mặc định của Google, logo YouTube hoặc nút chuyển trang "Xem trên YouTube". Toàn bộ tương tác phát/tua/tốc độ học/âm lượng phải do thanh điều khiển Flat Editorial của PWD301 làm chủ.
+- **Thủy ấn Động Pháp chứng (Dynamic Forensic Watermarking)**: Mọi trình phát video (kể cả video HLS nội bộ và luồng YouTube nhúng ngầm) bắt buộc hiển thị thủy ấn động chứa định danh học viên (`MSSV - Email - IP - Timestamp`) trôi ngẫu nhiên trên khung hình để triệt tiêu việc quay lén màn hình.
 - **Lớp giáp Client Armor**: Sử dụng `MutationObserver` để tự động kích hoạt Blackout (màn hình đen) khi thẻ Watermark bị xóa hoặc ẩn bằng DevTools/CSS.
 - **Tiến độ Thời gian Thực Không Thể Nhảy Cóc (Wall-Clock Zero-Trust)**: Máy chủ chỉ công nhận hoàn thành bài học khi tích lũy đủ thời gian thực tế qua chuỗi nhịp tim (Heartbeat). Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`.
+
+### 10.9. Bất biến Tách rời Lưu trữ Đám mây & Khóa trần Phần cứng (Decoupled Cloud Storage & Hardware Hardening)
+- **Kiến trúc Lưu trữ Tách rời (Decoupled Storage)**: Tuyệt đối cấm lưu trữ các tệp video thô đa gigabyte trực tiếp trên phân vùng ổ đĩa cục bộ của VPS. Video bài giảng phân phối qua mô hình Headless Stream (YouTube Unlisted) hoặc dịch vụ Object Storage chuyên dụng (Cloudflare R2 / S3); tài liệu và tệp đính kèm được offload sang Object Storage với 0 đồng chi phí băng thông (Zero Egress).
+- **Khóa trần Phần cứng & Xoay vòng Nhật ký (Hardware Hardening)**: Các dịch vụ container trên VPS bắt buộc thiết lập giới hạn RAM cứng (MSSQL $\le 1280$ MB qua `mssql.conf`, ClamAV $\le 800$ MB, Web $\le 600$ MB, Worker $\le 300$ MB). Toàn bộ container phải bật Docker Log Rotation (`10MB x 3 files`). Background Worker phải sử dụng Adaptive Polling khi nhàn rỗi để triệt tiêu phụ tải CPU và truy vấn CSDL dư thừa.
+
 
 

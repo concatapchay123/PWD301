@@ -47,6 +47,22 @@ All optimizations were achieved with zero functional regression, confirmed by 10
     - Stored passed assessment IDs in an in-memory `set` for $O(1)$ membership checks.
   - **Complexity**: Exactly 1 query ($O(1)$ database trips).
 
+### 3. Student Assessments and Dashboard Attempt Query Batching
+- **Location**: `src/pwd301/blueprints/student/routes.py` (`dashboard` lines 1030-1052 and `student_course_assessments_route` lines 1805-1825)
+- **Before**:
+  - Iterated through `for a in assessments:` and ran a dedicated query for each assessment:
+    `sess.query(AssessmentAttempt).filter(AssessmentAttempt.assessment_id == a.id, AssessmentAttempt.student_user_id == actor.id, ...).all()`
+  - **Complexity**: $M + 1$ queries for $M$ assessments ($O(M)$ roundtrips, e.g. 21 queries for 20 assessments).
+- **After**:
+  - Replaced the loop queries with a single batch query:
+    `sess.query(AssessmentAttempt).filter(AssessmentAttempt.assessment_id.in_(assessment_ids), AssessmentAttempt.student_user_id == actor.id, ...).all()`
+    and indexed results in-memory using `defaultdict(list)`:
+    `attempts_by_assessment = defaultdict(list)`
+    `for att in all_attempts: attempts_by_assessment[att.assessment_id].append(att)`
+  - Inside the presentation loop: $O(1)$ dictionary lookups via `attempts_by_assessment.get(a.id, [])`.
+  - **Complexity**: Exactly 1 query ($O(1)$ database trips).
+  - **Speedup**: Reduces database roundtrips by over 90% on student dashboards and course assessment listings.
+
 ---
 
 ## III. MEMORY FOOTPRINT & MODEL HYDRATION REDUCTION

@@ -366,3 +366,44 @@ class TestWebAuth:
         assert any(
             "csrf_token=" in c and ("Max-Age=0" in c or "Expires=" in c) for c in set_cookies
         )
+
+    def test_forgot_password_flow(self, client: FlaskClient, web_user: User) -> None:
+        """POST /auth/forgot-password sends reset token and returns success envelope."""
+        resp = client.post("/auth/forgot-password", json={"email": "student@demo.local"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("status") == "ok" or data.get("success") is True
+
+    def test_forgot_password_missing_email(self, client: FlaskClient) -> None:
+        """POST /auth/forgot-password without email returns 400 validation error."""
+        resp = client.post("/auth/forgot-password", json={})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data.get("error") is not None or "email" in data.get("message", "").lower()
+
+    def test_reset_password_flow(self, client: FlaskClient, web_user: User) -> None:
+        """POST /auth/reset-password/<token> updates password and allows login with new credentials."""
+        from pwd301.services.user_service import generate_password_reset_token
+
+        token = generate_password_reset_token(web_user.id)
+        resp = client.post(
+            f"/auth/reset-password/{token}",
+            json={
+                "password": "NewSecurePassword123!",
+                "confirm_password": "NewSecurePassword123!",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("status") == "ok" or data.get("success") is True
+
+        # Verify login works with new password
+        login_resp = client.post(
+            "/auth/login",
+            json={
+                "email": "student@demo.local",
+                "password": "NewSecurePassword123!",
+            },
+        )
+        assert login_resp.status_code == 200
+        assert login_resp.get_json()["status"] == "ok"

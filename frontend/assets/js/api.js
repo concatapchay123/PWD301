@@ -231,6 +231,23 @@ class ApiClient {
     });
   }
 
+  static async forgotPassword(email) {
+    return await ApiClient.request('/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    });
+  }
+
+  static async resetPassword(token, password, confirmPassword) {
+    return await ApiClient.request(`/auth/reset-password/${encodeURIComponent(token)}`, {
+      method: 'POST',
+      body: {
+        password,
+        confirm_password: confirmPassword,
+      },
+    });
+  }
+
   static async logout() {
     let serverRevoked = false;
     let serverError = null;

@@ -1532,7 +1532,7 @@ class UI {
 
   static getYouTubeEmbedUrl(id) {
     if (!id) return '';
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`;
   }
 
   // =========================================================================

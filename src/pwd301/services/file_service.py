@@ -57,6 +57,10 @@ from pwd301.services.scanner_service import (
     scan_blob_file,
     scan_file_all_engines,
 )
+from pwd301.services.storage_adapter import (
+    download_blob_from_cloud,
+    upload_blob_to_cloud,
+)
 
 # Dangerous executable extensions strictly forbidden per security architecture
 DANGEROUS_EXTENSIONS: frozenset[str] = frozenset(
@@ -450,6 +454,7 @@ def store_file_stream(
                 newly_created_dest = dest_path
 
                 storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
+                upload_blob_to_cloud(dest_path, storage_key)
                 blob = FileBlob(
                     sha256=digest_bytes,
                     size_bytes=total_size,
@@ -750,6 +755,7 @@ def add_file_revision(
                 newly_created_dest = dest_path
 
                 storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
+                upload_blob_to_cloud(dest_path, storage_key)
                 blob = FileBlob(
                     sha256=digest_bytes,
                     size_bytes=total_size,
@@ -1138,7 +1144,10 @@ def get_file_for_download(
     physical_path = (storage_root / blob.storage_key).resolve()
     if not physical_path.is_relative_to(storage_root):
         raise FileAccessDeniedError("Physical file path escapes designated storage root.")
-    if not physical_path.exists() or not physical_path.is_file():
+    if (not physical_path.exists() or not physical_path.is_file()) and (
+        not download_blob_from_cloud(blob.storage_key, physical_path)
+        or not physical_path.exists()
+    ):
         raise FileStorageError("Physical file blob not found on disk.")
 
     return asset, blob, physical_path

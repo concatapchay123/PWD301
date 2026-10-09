@@ -1,3 +1,52 @@
+# Completed task: TASK-087 — System-Wide Memory & Legacy Workflow Purge, Hardware Hardening, Decoupled Cloud Storage & PWD301 Proprietary Custom Video Player Shell
+
+**Status:** COMPLETED  
+**Assignee:** Principal Systems Architect & Senior Full-Stack Security Engineer  
+**Started Date:** 2026-10-09  
+**Completed Date:** 2026-10-09  
+**Plan:** `C:\Users\LENOVO\.gemini\antigravity\brain\d9b843fa-3242-4227-aae3-4b2c914800a2\vps_optimization_and_custom_player_plan.md`  
+**Live Browser Verification Evidence:** Verified via Chrome DevTools MCP live on `http://127.0.0.1:5000` with authentic user actions, network responses, and visual screenshots:
+1. **Initial Mount & Headless Concealment:** Custom Video Player Shell mounted without raw YouTube branding, red progress bars, or redirect links. Initial duration `95:47` parsed and synchronized (`steps/443/media_0.png`).
+2. **Proprietary Flat Warm Controls:** Speed toggled seamlessly `1.0x` -> `1.25x` -> `1.5x` -> `2.0x`. Mute toggle switched cleanly between `volume_up` and `volume_off`. Custom play/pause button fully responsive.
+3. **Anti-Seek Forward Interception & Toast:** Student clicked ahead on progress track at 70%; player clamped seeking back to `maxWatched` and immediately displayed amber toast: `"Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem."` (`steps/527/media_0.png`).
+4. **VideoArmor Anti-Tamper & Blackout Defense:** Malicious DOM deletion of watermark element triggered immediate fail-closed Blackout screen with glowing red border card: `"🛡️ CẢNH BÁO AN NINH BẢN QUYỀN: PHÁT HIỆN CAN THIỆP GIAO DIỆN / THỦY ẤN"` (`steps/543/media_0.png`). Clicking "Khôi phục và Tiếp tục học" restored the session seamlessly.
+5. **Decoupled Cloud Storage & Database Sync:** `storage_adapter.py` verified with unit tests (3/3 passed). Alembic migration `d5e6f7a8b0c1` applied to live SQL Server database resolving missing columns. CSP script-src updated to whitelist YouTube API scripts safely.
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows and legacy designs regarding external video embeds, VPS local media storage, and unconstrained hardware usage are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire system:
+
+1. **Permanent Abolition of Bare YouTube Iframes & Default YouTube Controls**:
+   - Serving unshielded `<iframe>` embeds with default YouTube controls, red progress bars, "Watch on YouTube" escape links, channel avatars, or video titles to enrolled students is PERMANENTLY FORBIDDEN across all views.
+   - All external/YouTube video streams must be encased in PWD301's native **Custom Video Player Shell** (`PWD301CustomPlayer`): YouTube default controls stripped (`controls=0`, `modestbranding=1`, `rel=0`), transparent anti-redirect shield active, proprietary Flat Warm Editorial controls (Play/Pause, custom Seekbar, 0.75x-2.0x playback rate, volume, unified fullscreen).
+   - Dynamic Forensic Watermark (`MSSV - Email - IP - Timestamp`) and Client Armor (Anti-Tamper Blackout upon DevTools/DOM mutation) must remain active over all video playback.
+
+2. **Permanent Abolition of Local Heavy Media & Video Storage on VPS**:
+   - Storing gigabytes of raw video files or bulky course media directly on the local instance disk of a production VPS is PERMANENTLY SUPERSEDED.
+   - PWD301 operates on a **Decoupled Cloud Storage Architecture**: Lecture video is streamed headlessly via YouTube Unlisted / external stream; file assets and documents are offloaded via Cloud Object Storage (Cloudflare R2 / S3-compatible) with zero egress bandwidth costs. The VPS local disk is reserved strictly for application code, Docker images, and database metadata.
+
+3. **Permanent Abolition of Unconstrained Hardware & Unrotated Logs**:
+   - Running database engines, antivirus daemons, or WSGI workers without strict memory limits is PERMANENTLY FORBIDDEN.
+   - Microsoft SQL Server memory pool is strictly capped ($\le 1280$ MB via `deploy/mssql.conf`); ClamAV is capped at $\le 800$ MB; Gunicorn Web is capped at $\le 600$ MB; Background Worker is capped at $\le 300$ MB.
+   - Docker JSON logging must enforce strict rotation (`max-size: 10m`, `max-file: 3`).
+   - Background worker loops must utilize Adaptive Polling backoff during idle states, eliminating wasteful CPU cycles and idle database query flood.
+
+---
+
+# Completed task: TASK-086 — Video DRM Playback Repair, Full System HLS Streaming & Smart VideoArmor Anti-Tamper Enforcement
+
+**Status:** COMPLETED  
+**Assignee:** Principal Systems Architect & Senior Security Engineer  
+**Started Date:** 2026-10-08  
+**Completed Date:** 2026-10-08  
+**Browser Verification Evidence:** Verified via Chrome DevTools MCP live on `http://127.0.0.1:5000` with real user interactions & screenshots:
+- Clean YouTube video playback without intrusive watermark (`01_youtube_video_clean.png`)
+- Clean encrypted HLS video playback at 1280x720 15s with custom controls (`02_hls_video_playing_clean.png`)
+- Instant Blackout & Watermark revelation upon printscreen / DevTools tampering (`03_blackout_tamper_watermark.png`)
+- Clean restoration via "Khôi phục và Tiếp tục học" button (`04_restored_clean_video.png`)
+- Course 2 (DSA201) & Course 3 (OPS401) video playback verified (`05_course2_dsa201_video.png`, `06_course3_ops401_video.png`)
+
+---
+
 # Completed task: TASK-085 — Copyright Protection & Anti-Tamper System (HLS AES-128 Encryption, Dynamic Forensic Watermark, Client Armor & Zero-Trust Heartbeat)
 
 **Status:** COMPLETED  

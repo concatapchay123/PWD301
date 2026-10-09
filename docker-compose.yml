@@ -1,6 +1,6 @@
 services:
   # ============================================================================
-  # 1. Microsoft SQL Server 2022 Database Engine
+  # 1. Microsoft SQL Server 2022 Database Engine (Hardened RAM Ceiling <= 1.28 GB)
   # ============================================================================
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -14,18 +14,27 @@ services:
     volumes:
       - sqldata:/var/opt/mssql
       - backup_data:/var/opt/mssql/backups
+      - ./deploy/mssql.conf:/var/opt/mssql/mssql.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\" -C -No || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
+    mem_limit: 1500m
+    mem_reservation: 1000m
+    cpus: 1.5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pwd301_net
     restart: unless-stopped
 
   # ============================================================================
-  # 2. ClamAV Malware Scanning Daemon
+  # 2. ClamAV Malware Scanning Daemon (Hardened RAM Ceiling <= 800 MB)
   # ============================================================================
   clamav:
     image: clamav/clamav:latest
@@ -40,12 +49,20 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+    mem_limit: 800m
+    mem_reservation: 500m
+    cpus: 1.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pwd301_net
     restart: unless-stopped
 
   # ============================================================================
-  # 3. PWD301 Flask LMS Web Engine (Gunicorn WSGI)
+  # 3. PWD301 Flask LMS Web Engine (Gunicorn WSGI - 2 Workers, 4 Threads)
   # ============================================================================
   web:
     build:
@@ -75,15 +92,23 @@ services:
       - HOST_TOTAL_RAM_GB=${HOST_TOTAL_RAM_GB:-31.7}
       - HOST_OS=${HOST_OS:-Windows 11}
       - HOST_NAME=${HOST_NAME:-DESKTOP-71A4210}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-LOCAL}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_PUBLIC_DOMAIN=${S3_PUBLIC_DOMAIN:-}
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
       - SQLSERVER_BACKUP_ROOT=/var/opt/mssql/backups
       - EXPORT_ROOT=/app/exports
       - SEED_DEMO_DATA=${SEED_DEMO_DATA:-true}
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
-      - GUNICORN_THREADS=${GUNICORN_THREADS:-2}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+      - GUNICORN_THREADS=${GUNICORN_THREADS:-4}
       - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
+      - GUNICORN_MAX_REQUESTS=${GUNICORN_MAX_REQUESTS:-1000}
+      - GUNICORN_MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER:-100}
     depends_on:
       db:
         condition: service_healthy
@@ -97,12 +122,20 @@ services:
       - quarantine_data:/app/quarantine
       - backup_data:/app/backups
       - export_data:/app/exports
+    mem_limit: 600m
+    mem_reservation: 300m
+    cpus: 1.5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pwd301_net
     restart: unless-stopped
 
   # ============================================================================
-  # 4. Durable Background Worker (email outbox, scans, imports, regrades)
+  # 4. Durable Background Worker (Adaptive Polling, RAM Ceiling <= 300 MB)
   # ============================================================================
   worker:
     build:
@@ -129,6 +162,12 @@ services:
       - MAIL_PASSWORD=${MAIL_PASSWORD:-}
       - MAIL_USE_TLS=${MAIL_USE_TLS:-1}
       - MAIL_FROM=${MAIL_FROM:-}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-LOCAL}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_PUBLIC_DOMAIN=${S3_PUBLIC_DOMAIN:-}
       - FILE_STORAGE_ROOT=/app/storage
       - FILE_QUARANTINE_ROOT=/app/quarantine
       - FILE_BACKUP_ROOT=/app/backups
@@ -147,6 +186,14 @@ services:
       - quarantine_data:/app/quarantine
       - backup_data:/app/backups
       - export_data:/app/exports
+    mem_limit: 300m
+    mem_reservation: 150m
+    cpus: 1.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pwd301_net
     restart: unless-stopped

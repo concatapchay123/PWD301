@@ -314,3 +314,10 @@ def get_screen_html(folder_name: str) -> Response:
     resp = make_response(content)
     resp.mimetype = "text/html; charset=utf-8"
     return resp
+
+
+@frontend_bp.route("/api/telemetry", methods=["POST"])
+def post_client_telemetry() -> tuple[Response, int]:
+    """Ingest frontend client security and operational telemetry events."""
+    data = request.get_json(silent=True) or {}
+    return jsonify({"success": True, "event": data.get("event_type")}), 200

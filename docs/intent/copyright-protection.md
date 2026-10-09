@@ -15,13 +15,15 @@ Tài liệu này là nguồn sự thật (Source of Truth) xác lập mục tiê
   3. Khi có hành vi can thiệp DOM (xóa Watermark), mở DevTools (F12) hoặc rời cửa sổ, trình phát tự động kích hoạt **Blackout (màn hình đen)**, tạm dừng video và ghi nhận sự kiện kiểm toán (`AuditEvent`).
   4. Mọi nỗ lực gửi payload gian lận tiến độ đều bị máy chủ từ chối 100% nếu thiếu chuỗi nhịp tim (Heartbeat) xác thực thời gian xem thực tế.
 * **Constraint (Ràng buộc cứng)**: Chạy hoàn toàn trên Web Browser tiêu chuẩn (Chrome, Edge, Firefox), giữ vững kiến trúc Pure Headless REST API của PWD301, không làm chậm trải nghiệm học tập của người dùng trung thực.
-* **Out of scope (Nằm ngoài phạm vi)**: Không can thiệp mã nguồn player bên trong `<iframe>` của bên thứ ba (YouTube/Vimeo) ngoài việc phủ watermark lên trên; không cam kết chặn được các thiết bị quay phần cứng vật lý (camera ngoài, card capture HDMI rời) ngoài việc dùng watermark pháp chứng để truy vết và xử lý kỷ luật tài khoản vi phạm.
+* **In-Scope Bắt buộc (TASK-087)**: Tích hợp YouTube Headless Stream API, triệt tiêu 100% controls mặc định của YouTube (`controls=0`, ẩn logo, ẩn nút "Watch on YouTube") và thay thế bằng PWD301 Custom Video Player Shell với thanh điều khiển Flat Editorial độc quyền.
+* **Out of scope (Nằm ngoài phạm vi)**: Không cam kết chặn được các thiết bị quay phần cứng vật lý (camera ngoài, card capture HDMI rời) ngoài việc dùng watermark pháp chứng để truy vết và xử lý kỷ luật tài khoản vi phạm.
 
 ---
 
 ## 2. Bất Biến Thanh Trừng Toàn Diện (Purge & Decommissioning Invariant)
 
 Mọi coding agent trong hiện tại và tương lai BẮT BUỘC tuân thủ:
-1. **Bãi bỏ phân phối MP4 thô**: Video bài học lưu trữ nội bộ không bao giờ được trả về trực tiếp dưới dạng file tải về cho học viên qua `/student/files/<id>/download`. Mọi lượt truy cập đều phải chuyển mã sang định dạng HLS phân đoạn và giải mã qua token phiên ngắn hạn.
-2. **Triệt tiêu lỗ hổng nhảy cóc tiến độ**: Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`. Mọi tiến độ hoàn thành bài học bắt buộc tích lũy thời gian thực tế qua chuỗi nhịp tim (Heartbeat) kiểm tra Wall-Clock Time.
-3. **Thủy ấn động bất biến**: Lớp phủ thủy ấn không được phép ẩn hoặc xóa. Mọi hành vi can thiệp DOM vào thẻ Watermark đều phải bị `MutationObserver` phát hiện và kích hoạt màn hình đen bảo vệ ngay lập tức.
+1. **Bãi bỏ phân phối MP4 thô & Lưu trữ cục bộ trên VPS**: Video bài học nội bộ không bao giờ được trả về trực tiếp dưới dạng file tải về cho học viên qua `/student/files/<id>/download`. Nghiêm cấm lưu trữ video thô đa gigabyte trực tiếp trên ổ cứng VPS mà phải sử dụng kiến trúc phân mảnh HLS hoặc Headless Video Stream (YouTube Unlisted).
+2. **Bãi bỏ Iframe YouTube Thô**: Mọi luồng video YouTube BẮT BUỘC bọc trong PWD301 Custom Player Shell; nghiêm cấm để lộ thanh điều khiển hay logo mặc định của YouTube.
+3. **Triệt tiêu lỗ hổng nhảy cóc tiến độ**: Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`. Mọi tiến độ hoàn thành bài học bắt buộc tích lũy thời gian thực tế qua chuỗi nhịp tim (Heartbeat) kiểm tra Wall-Clock Time.
+4. **Thủy ấn động bất biến**: Lớp phủ thủy ấn không được phép ẩn hoặc xóa. Mọi hành vi can thiệp DOM vào thẻ Watermark đều phải bị `MutationObserver` phát hiện và kích hoạt màn hình đen bảo vệ ngay lập tức.

@@ -800,7 +800,8 @@ def create_app(
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' "
-                "https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net "
+                "https://www.youtube.com https://s.ytimg.com; "
                 "worker-src 'self' blob:; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "img-src 'self' data: https:; "

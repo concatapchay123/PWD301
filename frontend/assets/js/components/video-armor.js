@@ -1,15 +1,19 @@
 /**
- * VideoArmor: Dynamic Forensic Watermark, DOM Armor & Anti-Tamper Client Defense (TASK-085).
+ * VideoArmor: Dynamic Forensic Watermark, DOM Armor & Anti-Tamper Client Defense (TASK-085 & Refinement).
  *
  * Capabilities:
- * - Dynamic Floating Forensic Watermark: Identifies student (MSSV/Name, Email, IP, Timestamp)
- *   with subtle, non-intrusive rendering (opacity ~0.18) drifting smoothly across quadrants.
- * - MutationObserver DOM Guard: Watches container subtree. If the watermark element is
- *   deleted, hidden (display:none, opacity:0, hidden attribute), or detached, instantly triggers
- *   a fail-closed Blackout screen, pauses underlying media, and reports DOM_TAMPER violation.
- * - DevTools / Debugger Timing Bouncer: Detects execution pauses typical of debugger breakpoints.
- * - Tab Blur / Visibility Guard: Pauses playback when user switches away from the active window/tab.
- * - Keyboard / Capture Defense: Intercepts PrintScreen keyup events to clear clipboard and warn.
+ * - Silent Guarded Forensic Watermark: Identifies student (MSSV/Name, Email, IP, Timestamp).
+ *   In normal playback, the watermark is hidden from view (display: none) to provide a clean,
+ *   unobtrusive study experience. Only when a security violation occurs (DevTools, screen capture,
+ *   DOM tampering) is the watermark dynamically revealed alongside the Blackout security card.
+ * - MutationObserver DOM Guard: Watches container subtree. If unauthorized tampering or removal
+ *   of video/armor nodes occurs, instantly triggers a fail-closed Blackout screen and pauses media.
+ * - Tab Blur / Visibility Guard: Pauses media playback when the student switches away from the active
+ *   tab or minimizes the window, without triggering a disruptive lockout.
+ * - Keyboard & DevTools Defense: Intercepts PrintScreen, Windows Snipping Tool (Win+Shift+S),
+ *   Inspect shortcuts (Ctrl+Shift+I/J/C, F12) to block capture attempts and trigger Blackout.
+ * - Self-Recovery: Allows the student to click "Khôi phục và Tiếp tục học" once the unauthorized
+ *   action stops, while automatically recording a security telemetry event.
  */
 
 class VideoArmor {
@@ -26,11 +30,12 @@ class VideoArmor {
     this.blackoutEl = null;
     this.observer = null;
     this.repositionTimer = null;
-    this.timingCheckTimer = null;
+    this.devtoolsCheckTimer = null;
 
     this._onVisibilityChange = this._onVisibilityChange.bind(this);
     this._onWindowBlur = this._onWindowBlur.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
+    this._checkDevTools = this._checkDevTools.bind(this);
 
     this._init();
   }
@@ -50,6 +55,7 @@ class VideoArmor {
     this._attachObserver();
     this._bindEvents();
     this._startRepositioning();
+    this._startDevToolsCheck();
   }
 
   _formatWatermarkText() {
@@ -77,16 +83,18 @@ class VideoArmor {
       pointerEvents: 'none',
       userSelect: 'none',
       webkitUserSelect: 'none',
-      opacity: '0.18',
-      color: 'rgba(255, 255, 255, 0.85)',
+      display: 'none', // Hidden during normal playback per user instruction
+      opacity: '0.9',
+      color: '#f8fafc',
       fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
       fontSize: '12px',
       letterSpacing: '0.5px',
-      padding: '4px 10px',
-      borderRadius: '4px',
-      backgroundColor: 'rgba(0, 0, 0, 0.35)',
-      textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)',
-      transition: 'top 2s ease, left 2s ease, opacity 0.5s ease',
+      padding: '6px 12px',
+      borderRadius: '6px',
+      backgroundColor: 'rgba(15, 23, 42, 0.92)',
+      border: '1px solid rgba(239, 68, 68, 0.5)',
+      boxShadow: '0 4px 14px rgba(0, 0, 0, 0.6)',
+      transition: 'top 2s ease, left 2s ease, opacity 0.3s ease',
       whiteSpace: 'nowrap'
     });
 
@@ -95,7 +103,7 @@ class VideoArmor {
   }
 
   reposition() {
-    if (!this.watermarkEl || this.isBlackedOut) return;
+    if (!this.watermarkEl) return;
 
     this.watermarkEl.textContent = this._formatWatermarkText();
 
@@ -118,6 +126,27 @@ class VideoArmor {
     }
   }
 
+  _startDevToolsCheck() {
+    const win = (typeof window !== 'undefined') ? window : null;
+    if (win && win.setInterval && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
+      this.devtoolsCheckTimer = win.setInterval(this._checkDevTools, 2000);
+      if (this.devtoolsCheckTimer && typeof this.devtoolsCheckTimer.unref === 'function') {
+        this.devtoolsCheckTimer.unref();
+      }
+    }
+  }
+
+  _checkDevTools() {
+    if (this.isBlackedOut) return;
+    const win = (typeof window !== 'undefined') ? window : null;
+    if (!win) return;
+    const widthThreshold = win.outerWidth - win.innerWidth > 160;
+    const heightThreshold = win.outerHeight - win.innerHeight > 160;
+    if (widthThreshold || heightThreshold) {
+      this.triggerBlackout('DEVTOOLS_DETECTED');
+    }
+  }
+
   _attachObserver() {
     const Obs = (typeof MutationObserver !== 'undefined') ? MutationObserver : (global.MutationObserver || null);
     if (!Obs) return;
@@ -130,7 +159,7 @@ class VideoArmor {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['style', 'class', 'hidden']
+      attributeFilter: ['data-armor-guard', 'data-armor-blackout']
     });
   }
 
@@ -139,17 +168,9 @@ class VideoArmor {
 
     let tampered = false;
 
+    // Check if the watermark element was forcefully removed from DOM
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       tampered = true;
-    }
-
-    if (this.watermarkEl && this.watermarkEl.style) {
-      const display = this.watermarkEl.style.display;
-      const opacity = this.watermarkEl.style.opacity;
-      const visibility = this.watermarkEl.style.visibility;
-      if (display === 'none' || opacity === '0' || visibility === 'hidden') {
-        tampered = true;
-      }
     }
 
     if (tampered) {
@@ -166,6 +187,16 @@ class VideoArmor {
     const doc = (typeof document !== 'undefined') ? document : null;
     if (!doc) return;
 
+    // Reveal the watermark prominently during blackout
+    if (this.watermarkEl) {
+      Object.assign(this.watermarkEl.style, {
+        display: 'block',
+        opacity: '0.95',
+        zIndex: '10002'
+      });
+      this.watermarkEl.textContent = this._formatWatermarkText();
+    }
+
     const blackout = doc.createElement('div');
     blackout.className = 'video-armor-blackout';
     blackout.setAttribute('data-armor-blackout', 'true');
@@ -177,7 +208,7 @@ class VideoArmor {
       left: '0',
       width: '100%',
       height: '100%',
-      backgroundColor: '#0a0a0c',
+      backgroundColor: '#090d16',
       color: '#f87171',
       zIndex: '10000',
       display: 'flex',
@@ -186,33 +217,68 @@ class VideoArmor {
       justifyContent: 'center',
       padding: '24px',
       textAlign: 'center',
-      fontFamily: 'Inter, system-ui, sans-serif'
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif'
     });
 
     const card = doc.createElement('div');
     card.className = 'video-armor-blackout-card';
+    Object.assign(card.style, {
+      maxWidth: '480px',
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      border: '1px solid rgba(239, 68, 68, 0.4)',
+      borderRadius: '12px',
+      padding: '24px',
+      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)'
+    });
 
     const header = doc.createElement('div');
-    header.style.fontSize = '24px';
-    header.style.marginBottom = '12px';
+    header.style.fontSize = '20px';
+    header.style.fontWeight = '700';
+    header.style.marginBottom = '10px';
     header.textContent = '🛡️ CẢNH BÁO AN NINH BẢN QUYỀN';
     card.appendChild(header);
 
     const sub = doc.createElement('div');
-    sub.style.fontSize = '15px';
+    sub.style.fontSize = '14px';
     sub.style.fontWeight = '600';
     sub.style.color = '#ef4444';
-    sub.style.marginBottom = '8px';
-    sub.textContent = 'PHÁT HIỆN HÀNH VI CAN THIỆP GIAO DIỆN / THỦY ẤN';
+    sub.style.marginBottom = '10px';
+
+    if (reason === 'SCREEN_CAPTURE_ATTEMPT') {
+      sub.textContent = 'PHÁT HIỆN THAO TÁC CHỤP / QUAY MÀN HÌNH';
+    } else if (reason === 'DEVTOOLS_DETECTED') {
+      sub.textContent = 'PHÁT HIỆN CÔNG CỤ DEVTOOLS / MÃ NGUỒN';
+    } else if (reason === 'DOM_TAMPER') {
+      sub.textContent = 'PHÁT HIỆN CAN THIỆP GIAO DIỆN / THỦY ẤN';
+    } else {
+      sub.textContent = 'PHÁT HIỆN HÀNH VI GIAN LẬN / CAN THIỆP HỆ THỐNG';
+    }
     card.appendChild(sub);
 
     const msg = doc.createElement('div');
-    msg.style.fontSize = '13px';
-    msg.style.color = '#d4d4d8';
+    msg.style.fontSize = '12px';
+    msg.style.color = '#cbd5e1';
     msg.style.lineHeight = '1.6';
     msg.style.marginBottom = '16px';
-    msg.textContent = 'Hệ thống đã tự động khóa phiên phát video do phát hiện thao tác can thiệp DOM hoặc cố tình ẩn thủy ấn bảo vệ bản quyền. Mọi dữ liệu phiên học đã được ghi nhận vào nhật ký an ninh.';
+    msg.textContent = 'Hệ thống đã tự động khóa phiên phát video để bảo vệ bản quyền bài giảng. Mọi hành vi can thiệp và danh tính phiên học đã được ghi nhận vào nhật ký an ninh.';
     card.appendChild(msg);
+
+    // Explicit forensic watermark badge inside the warning card
+    const watermarkBadge = doc.createElement('div');
+    watermarkBadge.className = 'video-armor-badge';
+    Object.assign(watermarkBadge.style, {
+      fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+      fontSize: '11px',
+      color: '#fca5a5',
+      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+      padding: '8px 12px',
+      borderRadius: '6px',
+      border: '1px dashed rgba(239, 68, 68, 0.4)',
+      marginBottom: '18px',
+      wordBreak: 'break-all'
+    });
+    watermarkBadge.textContent = `HỌC VIÊN: ${this._formatWatermarkText()}`;
+    card.appendChild(watermarkBadge);
 
     const restoreBtn = doc.createElement('button');
     restoreBtn.className = 'video-armor-restore-btn';
@@ -221,11 +287,12 @@ class VideoArmor {
       background: '#dc2626',
       color: '#ffffff',
       border: 'none',
-      padding: '8px 18px',
+      padding: '8px 20px',
       borderRadius: '6px',
-      fontWeight: '500',
+      fontWeight: '600',
       cursor: 'pointer',
-      fontSize: '13px'
+      fontSize: '13px',
+      transition: 'background-color 0.2s ease'
     });
     card.appendChild(restoreBtn);
 
@@ -254,26 +321,32 @@ class VideoArmor {
     this.blackoutEl = null;
     this.isBlackedOut = false;
 
+    // Re-hide watermark during normal playback
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       this._createWatermark();
     } else {
-      Object.assign(this.watermarkEl.style, {
-        display: 'block',
-        visibility: 'visible',
-        opacity: '0.18'
-      });
+      this.watermarkEl.style.display = 'none';
     }
   }
 
   _pauseAllMedia() {
     if (!this.container) return;
+    if (this.container._customPlayer && typeof this.container._customPlayer.pause === 'function') {
+      try { this.container._customPlayer.pause(); } catch (_) {}
+    }
     const videos = this.container.querySelectorAll('video');
     const audios = this.container.querySelectorAll('audio');
+    const iframes = this.container.querySelectorAll('iframe');
     const mediaList = [...videos, ...audios];
     for (const m of mediaList) {
       if (typeof m.pause === 'function') {
         try { m.pause(); } catch (_) {}
       }
+    }
+    for (const ifr of iframes) {
+      try {
+        ifr.contentWindow?.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+      } catch (_) {}
     }
   }
 
@@ -293,15 +366,18 @@ class VideoArmor {
   _onVisibilityChange() {
     const doc = (typeof document !== 'undefined') ? document : null;
     if (doc && doc.visibilityState === 'hidden') {
+      // Pause playback when tab is hidden, without disruptive lockout
       this._pauseAllMedia();
     }
   }
 
   _onWindowBlur() {
+    // Pause playback when focus is lost, without disruptive lockout
     this._pauseAllMedia();
   }
 
   _onKeyUp(event) {
+    // 1. PrintScreen key
     if (event.key === 'PrintScreen') {
       if (typeof event.preventDefault === 'function') event.preventDefault();
 
@@ -310,9 +386,28 @@ class VideoArmor {
         try { nav.clipboard.writeText(''); } catch (_) {}
       }
 
-      this.onSecurityViolation('SCREEN_CAPTURE_ATTEMPT', {
-        timestamp: new Date().toISOString()
-      });
+      this.triggerBlackout('SCREEN_CAPTURE_ATTEMPT');
+      return;
+    }
+
+    // 2. F12 (DevTools toggle)
+    if (event.key === 'F12') {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      this.triggerBlackout('DEVTOOLS_DETECTED');
+      return;
+    }
+
+    // 3. Shortcuts: Ctrl+Shift+I / J / C (Inspect/DevTools) or Ctrl+Shift+S / Win+Shift+S (Snipping)
+    const isModifier = event.ctrlKey || event.metaKey;
+    if (isModifier && event.shiftKey) {
+      const keyLower = String(event.key || '').toLowerCase();
+      if (['i', 'j', 'c'].includes(keyLower)) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        this.triggerBlackout('DEVTOOLS_DETECTED');
+      } else if (keyLower === 's') {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        this.triggerBlackout('SCREEN_CAPTURE_ATTEMPT');
+      }
     }
   }
 
@@ -325,7 +420,7 @@ class VideoArmor {
     const win = (typeof window !== 'undefined') ? window : global;
     if (win && win.clearInterval) {
       if (this.repositionTimer) win.clearInterval(this.repositionTimer);
-      if (this.timingCheckTimer) win.clearInterval(this.timingCheckTimer);
+      if (this.devtoolsCheckTimer) win.clearInterval(this.devtoolsCheckTimer);
     }
 
     const doc = (typeof document !== 'undefined') ? document : null;

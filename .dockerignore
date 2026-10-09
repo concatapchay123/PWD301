@@ -1,11 +1,17 @@
-# Git
+# Git & Worktrees
 .git
 .gitignore
+.gitattributes
+.worktrees/
 
 # Virtual Environments
 .venv/
 venv/
 env/
+
+# Node Modules & Frontend Dev Dependencies
+node_modules/
+package-lock.json
 
 # Python caches and bytecode
 __pycache__/
@@ -13,7 +19,7 @@ __pycache__/
 *$py.class
 *.so
 
-# Testing and linting caches
+# Testing, Linting & Typecheck caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -21,10 +27,38 @@ __pycache__/
 .coverage.*
 htmlcov/
 coverage.xml
+tests/
 
-# LLM context bundles and large documentation dumps
+# Documentation, Architecture, Tasks & Audit Reports
+docs/
+tasks/
+audit/
+showcase/
+scratch/
+skill-observations/
+ROUND_*.md
+SYSTEM_DATA_*.md
+FINAL_PROJECT_*.md
+*.log
+chrome.log
+
+# LLM context bundles and large dumps
 PROJECT_CONTEXT_FOR_GEMINI.md
 PROJECT_CONTEXT_FOR_GEMINI_AI.md
+
+# Media, Assets & Videos (Served via Cloud/Volume/CDN)
+*.mp4
+*.webm
+*.ts
+*.m3u8
+*.png
+*.jpg
+*.jpeg
+*.docx
+*.pdf
+*.zip
+*.tar
+*.gz
 
 # Local runtime directories & uploads (persisted via Docker volumes instead)
 storage/*

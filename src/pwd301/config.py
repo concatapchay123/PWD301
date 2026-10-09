@@ -68,6 +68,15 @@ class BaseConfig:
     FILE_BACKUP_ROOT: Path = Path(os.environ.get("FILE_BACKUP_ROOT", "./backups"))
     EXPORT_ROOT: Path = Path(os.environ.get("EXPORT_ROOT", "./exports"))
 
+    # Decoupled Cloud Storage backend (local disk vs S3 / Cloudflare R2)
+    STORAGE_BACKEND: str = os.environ.get("STORAGE_BACKEND", "local").lower()
+    S3_ENDPOINT_URL: str | None = os.environ.get("S3_ENDPOINT_URL")
+    S3_ACCESS_KEY_ID: str | None = os.environ.get("S3_ACCESS_KEY_ID")
+    S3_SECRET_ACCESS_KEY: str | None = os.environ.get("S3_SECRET_ACCESS_KEY")
+    S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "pwd301-assets")
+    S3_REGION_NAME: str = os.environ.get("S3_REGION_NAME", "auto")
+    S3_PUBLIC_DOMAIN: str | None = os.environ.get("S3_PUBLIC_DOMAIN")
+
     # File upload limits (Current business invariant: video strictly < 1 GB)
     MAX_IMAGE_BYTES: int = int(os.environ.get("MAX_IMAGE_BYTES", "10000000"))
     MAX_PDF_BYTES: int = int(os.environ.get("MAX_PDF_BYTES", "50000000"))
@@ -154,6 +163,20 @@ class BaseConfig:
             self.ATTEMPT_HEARTBEAT_SECONDS = int(os.environ["ATTEMPT_HEARTBEAT_SECONDS"])
         if "TEXT_AUTOSAVE_DEBOUNCE_MS" in os.environ:
             self.TEXT_AUTOSAVE_DEBOUNCE_MS = int(os.environ["TEXT_AUTOSAVE_DEBOUNCE_MS"])
+        if "STORAGE_BACKEND" in os.environ:
+            self.STORAGE_BACKEND = os.environ["STORAGE_BACKEND"].lower()
+        if "S3_ENDPOINT_URL" in os.environ:
+            self.S3_ENDPOINT_URL = os.environ["S3_ENDPOINT_URL"]
+        if "S3_ACCESS_KEY_ID" in os.environ:
+            self.S3_ACCESS_KEY_ID = os.environ["S3_ACCESS_KEY_ID"]
+        if "S3_SECRET_ACCESS_KEY" in os.environ:
+            self.S3_SECRET_ACCESS_KEY = os.environ["S3_SECRET_ACCESS_KEY"]
+        if "S3_BUCKET_NAME" in os.environ:
+            self.S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
+        if "S3_REGION_NAME" in os.environ:
+            self.S3_REGION_NAME = os.environ["S3_REGION_NAME"]
+        if "S3_PUBLIC_DOMAIN" in os.environ:
+            self.S3_PUBLIC_DOMAIN = os.environ["S3_PUBLIC_DOMAIN"]
 
 
 class DevelopmentConfig(BaseConfig):

@@ -1885,8 +1885,13 @@ class StudentView {
       let activeProgressTimer = null;
       let activeIframeMessageListener = null;
       let activeIframePollInterval = null;
+      let activeCustomPlayerCtrl = null;
 
       const cleanupPreviousLesson = () => {
+        if (activeCustomPlayerCtrl && typeof activeCustomPlayerCtrl.destroy === 'function') {
+          try { activeCustomPlayerCtrl.destroy(); } catch (_) {}
+          activeCustomPlayerCtrl = null;
+        }
         if (activeProgressTimer) {
           clearInterval(activeProgressTimer);
           activeProgressTimer = null;
@@ -3100,14 +3105,14 @@ class StudentView {
                   <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
                     <div class="flex items-center gap-2">
                       <span class="material-symbols-outlined text-[16px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'}">
-                        ${isCompleted ? 'verified' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'smart_display' : 'lock_clock')}
+                        ${isCompleted ? 'verified' : 'lock_clock'}
                       </span>
                       <span id="cisco-anti-seek-label" class="font-medium text-[11px] sm:text-xs">
-                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'Video YouTube: Bạn có thể theo dõi tiến độ video.' : 'Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.')}
+                        ${isCompleted ? 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.' : 'Trình phát bảo vệ bản quyền PWD301: Khóa tua nhanh đang bật • Xem tuần tự để ghi nhận tiến độ.'}
                       </span>
                     </div>
                     <span id="cisco-anti-seek-badge" class="font-mono text-[11px] px-2 py-0.5 rounded ${isCompleted ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">
-                      ${isCompleted ? '100%' : (/youtube\.com|youtu\.be/i.test(lesson.video_url || '') ? 'YouTube' : 'Tiến độ: 0%')}
+                      ${isCompleted ? '100%' : 'Tiến độ: 0%'}
                     </span>
                   </div>
                 </div>
@@ -3717,106 +3722,21 @@ class StudentView {
             }
           };
 
-          if (videoEl && videoEl.tagName === 'VIDEO') {
-            customPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
+          const playerContainer = document.getElementById('cisco-stream-player-container');
+          if (playerContainer || videoEl) {
+            activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
+              streamUrl: lesson.video_url,
               isCompleted,
               onProgress: (maxWatched, dur) => updateProgressUI(maxWatched, dur),
               onComplete: (dur) => handleVideoCompleted(dur)
             });
-          } else if (videoEl && videoEl.tagName === 'IFRAME') {
-            if (typeof VideoArmor !== 'undefined' && videoEl.parentElement) {
-              const currentUser = (typeof AuthState !== 'undefined' && AuthState.getUser) ? AuthState.getUser() : {};
-              VideoArmor.mount(videoEl.parentElement, {
-                student: currentUser,
-                ip: (typeof window !== 'undefined' && window.clientIp) || '127.0.0.1'
-              });
-            }
-            const iframeSrc = videoEl.src || '';
-            let iframeOrigin = '';
-            try {
-              const parsed = new URL(iframeSrc);
-              iframeOrigin = parsed.origin;
-            } catch (_) {}
-
-            let maxWatchedTime = 0;
-            let iframeDuration = 0;
-
-            activeIframeMessageListener = (event) => {
-              let data = null;
-              if (typeof event.data === 'string') {
-                try { data = JSON.parse(event.data); } catch (_) {}
-              } else if (typeof event.data === 'object' && event.data !== null) {
-                data = event.data;
-              }
-              if (!data) return;
-
-              if (data.event === 'infoDelivery' && data.info) {
-                const info = data.info;
-                if (typeof info.duration === 'number' && info.duration > 0) iframeDuration = info.duration;
-                if (typeof info.currentTime === 'number') {
-                  if (info.currentTime > maxWatchedTime) {
-                    if (isCompleted || info.currentTime - maxWatchedTime <= 3.0) {
-                      maxWatchedTime = info.currentTime;
-                    }
-                  }
-                  if (iframeDuration > 0) {
-                    updateProgressUI(maxWatchedTime, iframeDuration);
-                    if ((isCompleted || maxWatchedTime >= iframeDuration * 0.90) && info.currentTime >= iframeDuration - 2.0) {
-                      handleVideoCompleted(iframeDuration);
-                    }
-                  }
-                }
-                if (info.playerState === 0 && (isCompleted || iframeDuration <= 0 || maxWatchedTime >= iframeDuration * 0.90)) {
-                  handleVideoCompleted(iframeDuration || 60);
-                }
-              }
-
-              if (data.event === 'timeupdate' && data.data) {
-                const cur = data.data.seconds || 0;
-                const dur = data.data.duration || 0;
-                if (dur > 0) iframeDuration = dur;
-                if (cur > maxWatchedTime) {
-                  if (isCompleted || cur - maxWatchedTime <= 3.0) {
-                    maxWatchedTime = cur;
-                  }
-                }
-                if (iframeDuration > 0) {
-                  updateProgressUI(maxWatchedTime, iframeDuration);
-                  if ((isCompleted || maxWatchedTime >= iframeDuration * 0.90) && cur >= iframeDuration - 2.0) {
-                    handleVideoCompleted(iframeDuration);
-                  }
-                }
-              } else if (data.event === 'ended' && (isCompleted || iframeDuration <= 0 || maxWatchedTime >= iframeDuration * 0.90)) {
-                handleVideoCompleted(iframeDuration || 60);
-              }
-            };
-
-            window.addEventListener('message', activeIframeMessageListener);
-
-            const handshake = () => {
-              try {
-                if (!videoEl.contentWindow) return;
-                videoEl.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*');
-                videoEl.contentWindow.postMessage(JSON.stringify({ method: 'addEventListener', value: 'timeupdate' }), '*');
-                videoEl.contentWindow.postMessage(JSON.stringify({ method: 'addEventListener', value: 'ended' }), '*');
-              } catch (_) {}
-            };
-            videoEl.addEventListener('load', () => { handshake(); setTimeout(handshake, 500); });
-
-            activeIframePollInterval = setInterval(() => {
-              try {
-                if (!videoEl.contentWindow) return;
-                videoEl.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'getCurrentTime' }), '*');
-                if (iframeDuration <= 0) {
-                  videoEl.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'getDuration' }), '*');
-                }
-              } catch (_) {}
-            }, 1000);
+            customPlayerCtrl = activeCustomPlayerCtrl;
           }
 
           // Supplementary videos setup: strictly lock forward seeking by default
-          (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((_, idx) => {
+          (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
             StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
+              streamUrl: url,
               isCompleted: isCompleted,
               onProgress: null,
               onComplete: null
@@ -4276,30 +4196,83 @@ class StudentView {
     }
   }
 
-  // Helper to render video player (YouTube iframe, Vimeo iframe, or HTML5 video)
+  // Helper to render video player (Proprietary PWD301 Custom Player Shell for YouTube and HTML5/HLS)
   static _getEmbedVideoHtml(url, playerId = 'lesson-stream-player', isCompleted = false) {
     if (!url) return '';
     const trimmed = String(url).trim();
-    // YouTube (regular watch, embed, v, youtu.be, shorts, live, extra parameters, or embed code)
     const ytId = UI.parseYouTubeId(trimmed);
+
     if (ytId) {
-      const baseEmbed = UI.getYouTubeEmbedUrl(ytId);
-      const glue = baseEmbed.includes('?') ? '&' : '?';
-      return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="${baseEmbed}${glue}enablejsapi=1&rel=0&modestbranding=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      return `
+        <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
+          <!-- Headless YouTube Stream mounting layer (Scaled 105% and clipped with overflow-hidden to conceal all edge branding) -->
+          <div class="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center pointer-events-none">
+            <div id="${playerId}-yt" class="w-full h-full aspect-video scale-105 origin-center"></div>
+          </div>
+
+          <!-- Anti-Redirect Shield (Click anywhere to toggle Play/Pause) -->
+          <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
+
+          <!-- Big Play Button Overlay -->
+          <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
+            <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
+          </button>
+
+          <!-- PWD301 Flat Warm Editorial Custom Control Bar -->
+          <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
+            <!-- Scrubber Track -->
+            <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="${isCompleted ? 'Tua video tự do' : 'Khóa tua nhanh: Chỉ có thể tua lại đoạn đã xem'}">
+              <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
+              <div id="${playerId}-watched-bar" class="absolute left-0 top-0 bottom-0 bg-amber-500/30 rounded-full w-0 pointer-events-none"></div>
+              <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs text-slate-200">
+              <div class="flex items-center gap-3">
+                <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
+                  <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
+                </button>
+                <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
+                  <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
+                </button>
+                <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
+                  1.0x
+                </button>
+                <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
+                  <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
+                  <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
+                </span>
+                <button type="button" id="${playerId}-fullscreen-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Toàn màn hình">
+                  <span class="material-symbols-outlined text-[20px] align-middle">fullscreen</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
     }
-    // Vimeo
+
+    // Vimeo fallback
     const vimeoMatch = trimmed.match(/vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^\/]*)\/videos\/|album\/(?:\d+)\/video\/|video\/|)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
       return `<iframe id="${playerId}" class="w-full h-full aspect-video rounded-xl bg-black" src="https://player.vimeo.com/video/${vimeoMatch[1]}?api=1" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
     }
-    // Direct file / HLS Encrypted Stream with Anti-Seek Custom Controls & VideoArmor
+
+    // Direct file / Encrypted HLS stream with Custom Controls & VideoArmor
     const isHls = trimmed.includes('.m3u8') || trimmed.includes('/video/playlist');
     return `
-      <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true" tabindex="0">
-        <video id="${playerId}" oncontextmenu="return false;" controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture playsinline class="w-full h-full aspect-video bg-slate-950 object-contain cursor-pointer" src="${isHls ? '' : UI.escapeHtml(trimmed)}" data-hls-src="${isHls ? UI.escapeHtml(trimmed) : ''}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>
+      <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true" data-player-type="native" tabindex="0">
+        <video id="${playerId}" oncontextmenu="return false;" controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture playsinline class="w-full h-full aspect-video bg-slate-950 object-contain cursor-pointer" ${isHls ? '' : `src="${UI.escapeHtml(trimmed)}"`} data-hls-src="${isHls ? UI.escapeHtml(trimmed) : ''}" preload="metadata"><p>Trình duyệt của bạn không hỗ trợ thẻ video HTML5.</p></video>
+
+        <!-- Anti-Redirect Shield (Click anywhere to toggle Play/Pause) -->
+        <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
 
         <!-- Big Play Button Overlay -->
-        <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-10 cursor-pointer" aria-label="Phát video">
+        <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
           <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
         </button>
 
@@ -4324,6 +4297,9 @@ class StudentView {
             </div>
 
             <div class="flex items-center gap-2">
+              <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
+                1.0x
+              </button>
               <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
                 <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
                 <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
@@ -4339,12 +4315,14 @@ class StudentView {
   }
 
   static setupCustomVideoPlayer(playerId, options = {}) {
-    const video = document.getElementById(playerId);
-    if (!video || video.tagName !== 'VIDEO') return null;
     const container = document.getElementById(`${playerId}-container`);
+    if (!container) return null;
+    const playerType = container.getAttribute('data-player-type') || 'native';
+
     const bigPlayBtn = document.getElementById(`${playerId}-big-play`);
     const playBtn = document.getElementById(`${playerId}-play-btn`);
     const muteBtn = document.getElementById(`${playerId}-mute-btn`);
+    const speedBtn = document.getElementById(`${playerId}-speed-btn`);
     const timeDisplay = document.getElementById(`${playerId}-time`);
     const track = document.getElementById(`${playerId}-progress-track`);
     const bufferedBar = document.getElementById(`${playerId}-buffered-bar`);
@@ -4352,44 +4330,13 @@ class StudentView {
     const playedBar = document.getElementById(`${playerId}-played-bar`);
     const fullscreenBtn = document.getElementById(`${playerId}-fullscreen-btn`);
     const lockIndicator = document.getElementById(`${playerId}-lock-indicator`);
-
-    // Encrypted HLS streaming playback initialization
-    let hlsInstance = null;
-    const streamSrc = options.streamUrl || video.src || video.getAttribute('data-hls-src') || '';
-    if (streamSrc && (streamSrc.includes('.m3u8') || streamSrc.includes('/video/playlist'))) {
-      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hlsInstance = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          xhrSetup: (xhr) => {
-            xhr.withCredentials = true;
-          }
-        });
-        hlsInstance.loadSource(streamSrc);
-        hlsInstance.attachMedia(video);
-      } else if (typeof video.canPlayType === 'function' && video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamSrc;
-      }
-    }
-
-    // Dynamic Forensic Watermark & Anti-Tamper Armor attachment
-    let armorInstance = null;
-    if (typeof VideoArmor !== 'undefined' && container) {
-      const student = (typeof AuthState !== 'undefined' && AuthState.getUser) ? AuthState.getUser() : {};
-      armorInstance = VideoArmor.mount(container, {
-        student,
-        ip: (typeof window !== 'undefined' && window.clientIp) || '127.0.0.1',
-        onSecurityViolation: (reason, details) => {
-          if (typeof ApiClient !== 'undefined' && ApiClient.recordTelemetry) {
-            ApiClient.recordTelemetry('VIDEO_SECURITY_VIOLATION', { reason, ...details });
-          }
-        }
-      });
-    }
+    const shield = document.getElementById(`${playerId}-shield`);
 
     let isDone = !!options.isCompleted;
     let maxWatched = isDone ? 999999 : 0;
     let lastToastTime = 0;
+    let currentSpeedIdx = 0;
+    const speedList = [1.0, 1.25, 1.5, 2.0, 0.75];
 
     if (watchedBar) watchedBar.style.width = isDone ? '100%' : '0%';
     if (playedBar) playedBar.style.width = '0%';
@@ -4408,6 +4355,277 @@ class StudentView {
       const s = Math.floor(seconds % 60);
       return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     };
+
+    // Mount VideoArmor on the container
+    let armorInstance = null;
+    if (typeof VideoArmor !== 'undefined' && container) {
+      const student = (typeof AuthState !== 'undefined' && AuthState.getUser) ? AuthState.getUser() : {};
+      armorInstance = VideoArmor.mount(container, {
+        student,
+        ip: (typeof window !== 'undefined' && window.clientIp) || '127.0.0.1',
+        onSecurityViolation: (reason, details) => {
+          if (typeof ApiClient !== 'undefined' && ApiClient.recordTelemetry) {
+            ApiClient.recordTelemetry('VIDEO_SECURITY_VIOLATION', { reason, ...details });
+          }
+        }
+      });
+    }
+
+    if (fullscreenBtn && container) {
+      fullscreenBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!document.fullscreenElement) {
+          if (container.requestFullscreen) container.requestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+        }
+      };
+    }
+
+    // =========================================================================
+    // BRANCH A: YOUTUBE HEADLESS STREAM DRIVER
+    // =========================================================================
+    if (playerType === 'youtube') {
+      const ytId = container.getAttribute('data-yt-id');
+      let ytPlayer = null;
+      let tickerTimer = null;
+      let isYtPlaying = false;
+
+      const updatePlayState = () => {
+        if (!playBtn) return;
+        const icon = playBtn.querySelector('.material-symbols-outlined');
+        if (isYtPlaying) {
+          if (icon) icon.textContent = 'pause';
+          if (bigPlayBtn) bigPlayBtn.classList.add('hidden');
+        } else {
+          if (icon) icon.textContent = 'play_arrow';
+          if (bigPlayBtn) bigPlayBtn.classList.remove('hidden');
+        }
+      };
+
+      const togglePlay = () => {
+        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
+        const state = ytPlayer.getPlayerState();
+        if (state === 1) { // playing
+          ytPlayer.pauseVideo();
+        } else {
+          ytPlayer.playVideo();
+        }
+      };
+
+      if (bigPlayBtn) bigPlayBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+      if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+      if (shield) shield.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+
+      if (muteBtn) {
+        muteBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!ytPlayer) return;
+          const muted = ytPlayer.isMuted();
+          if (muted) {
+            ytPlayer.unMute();
+            const icon = muteBtn.querySelector('.material-symbols-outlined');
+            if (icon) icon.textContent = 'volume_up';
+          } else {
+            ytPlayer.mute();
+            const icon = muteBtn.querySelector('.material-symbols-outlined');
+            if (icon) icon.textContent = 'volume_off';
+          }
+        };
+      }
+
+      if (speedBtn) {
+        speedBtn.onclick = (e) => {
+          e.stopPropagation();
+          currentSpeedIdx = (currentSpeedIdx + 1) % speedList.length;
+          const spd = speedList[currentSpeedIdx];
+          speedBtn.textContent = `${spd}x`;
+          if (ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
+            ytPlayer.setPlaybackRate(spd);
+          }
+        };
+      }
+
+      if (track) {
+        track.onclick = (e) => {
+          e.stopPropagation();
+          if (!ytPlayer || typeof ytPlayer.getDuration !== 'function') return;
+          const dur = ytPlayer.getDuration() || 0;
+          if (!dur || dur <= 0) return;
+          const rect = track.getBoundingClientRect();
+          const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          const targetTime = clickRatio * dur;
+
+          if (isDone || targetTime <= maxWatched) {
+            ytPlayer.seekTo(targetTime, true);
+          } else {
+            ytPlayer.seekTo(maxWatched, true);
+            showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
+          }
+        };
+      }
+
+      const ensureYouTubeAPI = () => {
+        return new Promise((resolve) => {
+          if (window.YT && window.YT.Player) {
+            resolve(window.YT);
+            return;
+          }
+          if (!document.getElementById('youtube-iframe-api-script')) {
+            const tag = document.createElement('script');
+            tag.id = 'youtube-iframe-api-script';
+            tag.src = 'https://www.youtube.com/iframe_api';
+            const firstScript = document.getElementsByTagName('script')[0] || document.head;
+            firstScript.parentNode.insertBefore(tag, firstScript);
+          }
+          const checkTimer = setInterval(() => {
+            if (window.YT && window.YT.Player) {
+              clearInterval(checkTimer);
+              resolve(window.YT);
+            }
+          }, 100);
+        });
+      };
+
+      ensureYouTubeAPI().then((YT) => {
+        const mount = document.getElementById(`${playerId}-yt`);
+        if (!mount) return;
+        ytPlayer = new YT.Player(`${playerId}-yt`, {
+          videoId: ytId,
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            modestbranding: 1,
+            rel: 0,
+            iv_load_policy: 3,
+            disablekb: 1,
+            fs: 0,
+            playsinline: 1,
+            enablejsapi: 1,
+            origin: window.location.origin
+          },
+          events: {
+            onReady: () => {
+              updatePlayState();
+            },
+            onStateChange: (event) => {
+              // 1: playing, 2: paused, 0: ended
+              isYtPlaying = (event.data === 1);
+              updatePlayState();
+              if (event.data === 0) {
+                const dur = ytPlayer.getDuration() || 0;
+                if (isDone || (dur > 0 && maxWatched >= dur * 0.90)) {
+                  if (!isDone) {
+                    isDone = true;
+                    maxWatched = dur || 999999;
+                    if (lockIndicator) {
+                      lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+                      lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+                    }
+                    if (track) track.title = 'Tua video tự do';
+                  }
+                  if (typeof options.onComplete === 'function') options.onComplete(dur);
+                } else if (!isDone) {
+                  showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
+                }
+              }
+            }
+          }
+        });
+
+        container._customPlayer = {
+          pause: () => { try { ytPlayer?.pauseVideo(); } catch (_) {} },
+          play: () => { try { ytPlayer?.playVideo(); } catch (_) {} }
+        };
+
+        tickerTimer = setInterval(() => {
+          if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
+          const cur = ytPlayer.getCurrentTime() || 0;
+          const dur = ytPlayer.getDuration() || 0;
+          const loaded = (typeof ytPlayer.getVideoLoadedFraction === 'function') ? ytPlayer.getVideoLoadedFraction() : 0;
+
+          if (!isDone && cur > maxWatched + 0.8) {
+            ytPlayer.seekTo(maxWatched, true);
+            return;
+          }
+
+          if (cur > maxWatched) maxWatched = cur;
+
+          const pct = dur > 0 ? (cur / dur) * 100 : 0;
+          const watchedPct = isDone ? 100 : (dur > 0 ? (maxWatched / dur) * 100 : 0);
+
+          if (playedBar) playedBar.style.width = `${pct}%`;
+          if (watchedBar) watchedBar.style.width = `${Math.min(100, watchedPct)}%`;
+          if (bufferedBar) bufferedBar.style.width = `${loaded * 100}%`;
+          if (timeDisplay) timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+
+          if (typeof options.onProgress === 'function') {
+            options.onProgress(maxWatched, dur);
+          }
+
+          if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.5) {
+            if (!isDone) {
+              isDone = true;
+              maxWatched = dur || 999999;
+              if (lockIndicator) {
+                lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+                lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+              }
+              if (track) track.title = 'Tua video tự do';
+            }
+            if (typeof options.onComplete === 'function') {
+              options.onComplete(dur);
+            }
+          }
+        }, 250);
+      });
+
+      return {
+        armor: armorInstance,
+        hls: null,
+        unlockSeeking: () => {
+          isDone = true;
+          maxWatched = 999999;
+          if (lockIndicator) {
+            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
+            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
+          }
+          if (track) track.title = 'Tua video tự do';
+        },
+        destroy: () => {
+          if (tickerTimer) clearInterval(tickerTimer);
+          if (armorInstance && typeof armorInstance.destroy === 'function') armorInstance.destroy();
+          if (ytPlayer && typeof ytPlayer.destroy === 'function') ytPlayer.destroy();
+        }
+      };
+    }
+
+    // =========================================================================
+    // BRANCH B: NATIVE HTML5 & ENCRYPTED HLS DRIVER
+    // =========================================================================
+    const video = document.getElementById(playerId);
+    if (!video || video.tagName !== 'VIDEO') return null;
+
+    let hlsInstance = null;
+    if (video.hasAttribute('src') && !video.getAttribute('src')) {
+      video.removeAttribute('src');
+    }
+    const streamSrc = options.streamUrl || video.getAttribute('data-hls-src') || (video.getAttribute('src') || '') || video.src || '';
+    if (streamSrc && (streamSrc.includes('.m3u8') || streamSrc.includes('/video/playlist'))) {
+      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          xhrSetup: (xhr) => {
+            xhr.withCredentials = true;
+          }
+        });
+        hlsInstance.loadSource(streamSrc);
+        hlsInstance.attachMedia(video);
+      } else if (typeof video.canPlayType === 'function' && video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = streamSrc;
+      }
+    }
 
     const updatePlayState = () => {
       if (!playBtn) return;
@@ -4431,6 +4649,7 @@ class StudentView {
 
     if (bigPlayBtn) bigPlayBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
     if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+    if (shield) shield.onclick = (e) => { e.stopPropagation(); togglePlay(); };
     video.onclick = () => togglePlay();
 
     if (muteBtn) {
@@ -4442,19 +4661,16 @@ class StudentView {
       };
     }
 
-    if (fullscreenBtn && container) {
-      fullscreenBtn.onclick = (e) => {
+    if (speedBtn) {
+      speedBtn.onclick = (e) => {
         e.stopPropagation();
-        if (!document.fullscreenElement) {
-          if (container.requestFullscreen) container.requestFullscreen();
-          else if (video.requestFullscreen) video.requestFullscreen();
-        } else {
-          if (document.exitFullscreen) document.exitFullscreen();
-        }
+        currentSpeedIdx = (currentSpeedIdx + 1) % speedList.length;
+        const spd = speedList[currentSpeedIdx];
+        speedBtn.textContent = `${spd}x`;
+        video.playbackRate = spd;
       };
     }
 
-    // Scrubber click: STRICT anti-seek
     if (track) {
       track.onclick = (e) => {
         e.stopPropagation();
@@ -4464,21 +4680,15 @@ class StudentView {
         const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         const targetTime = clickRatio * dur;
 
-        if (isDone) {
+        if (isDone || targetTime <= maxWatched) {
           video.currentTime = targetTime;
         } else {
-          // Strictly lock forward seeking: only allow jumping back to segments already watched
-          if (targetTime <= maxWatched) {
-            video.currentTime = targetTime;
-          } else {
-            video.currentTime = maxWatched;
-            showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
-          }
+          video.currentTime = maxWatched;
+          showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
         }
       };
     }
 
-    // Seeking event listener: strictly clamp forward jumps (from devtools, keyboard, or touch)
     video.addEventListener('seeking', () => {
       if (!isDone && video.currentTime > maxWatched + 0.3) {
         video.currentTime = maxWatched;
@@ -4486,7 +4696,6 @@ class StudentView {
       }
     });
 
-    // Keyboard guard: prevent forward seeking keys
     const handleKeydown = (e) => {
       if (!isDone && (['ArrowRight', 'KeyL', 'PageDown'].includes(e.code) || e.key === 'ArrowRight')) {
         e.preventDefault();
@@ -4497,20 +4706,16 @@ class StudentView {
     if (container) container.addEventListener('keydown', handleKeydown);
     video.addEventListener('keydown', handleKeydown);
 
-    // Timeupdate listener
     video.addEventListener('timeupdate', () => {
       const cur = video.currentTime;
       const dur = video.duration || 0;
 
-      // Disallow playback jumping forward past allowed buffer
       if (!isDone && cur > maxWatched + 0.8) {
         video.currentTime = maxWatched;
         return;
       }
 
-      if (cur > maxWatched) {
-        maxWatched = cur;
-      }
+      if (cur > maxWatched) maxWatched = cur;
 
       const pct = dur > 0 ? (cur / dur) * 100 : 0;
       const watchedPct = isDone ? 100 : (dur > 0 ? (maxWatched / dur) * 100 : 0);
@@ -4523,7 +4728,6 @@ class StudentView {
         options.onProgress(maxWatched, dur);
       }
 
-      // Completion check: require at least 90% watched AND near the end
       if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.0) {
         if (!isDone) {
           isDone = true;
@@ -4569,6 +4773,11 @@ class StudentView {
         showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
       }
     });
+
+    container._customPlayer = {
+      pause: () => { try { video.pause(); } catch (_) {} },
+      play: () => { try { video.play(); } catch (_) {} }
+    };
 
     return {
       armor: armorInstance,

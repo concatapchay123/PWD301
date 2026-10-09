@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import uuid
+from collections import defaultdict
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -1028,17 +1029,24 @@ def assessments_view() -> Any:
             .order_by(Assessment.created_at.desc())
             .all()
         )
-        for a in assessments:
-            attempts_for_a = (
+        assessment_ids = [a.id for a in assessments]
+        attempts_by_assessment: dict[int, list[AssessmentAttempt]] = defaultdict(list)
+        if assessment_ids:
+            all_attempts = (
                 sess.query(AssessmentAttempt)
                 .filter(
-                    AssessmentAttempt.assessment_id == a.id,
+                    AssessmentAttempt.assessment_id.in_(assessment_ids),
                     AssessmentAttempt.student_user_id == actor.id,
                     AssessmentAttempt.status != "CANCELLED",
                 )
                 .order_by(AssessmentAttempt.id.asc())
                 .all()
             )
+            for att in all_attempts:
+                attempts_by_assessment[att.assessment_id].append(att)
+
+        for a in assessments:
+            attempts_for_a = attempts_by_assessment.get(a.id, [])
             a_attempts_count = len(attempts_for_a)
             a_limit = a.attempt_limit
             a_is_limit_reached = bool(
@@ -1798,17 +1806,24 @@ def student_course_detail(course_id: str) -> Any:
     )
 
     serialized_assessments = []
-    for a in assessments:
-        attempts_for_a = (
+    assessment_ids = [a.id for a in assessments]
+    attempts_by_assessment: dict[int, list[AssessmentAttempt]] = defaultdict(list)
+    if assessment_ids:
+        all_attempts = (
             db.session.query(AssessmentAttempt)
             .filter(
-                AssessmentAttempt.assessment_id == a.id,
+                AssessmentAttempt.assessment_id.in_(assessment_ids),
                 AssessmentAttempt.student_user_id == actor.id,
                 AssessmentAttempt.status != "CANCELLED",
             )
             .order_by(AssessmentAttempt.id.asc())
             .all()
         )
+        for att in all_attempts:
+            attempts_by_assessment[att.assessment_id].append(att)
+
+    for a in assessments:
+        attempts_for_a = attempts_by_assessment.get(a.id, [])
         a_attempts_count = len(attempts_for_a)
         a_limit = a.attempt_limit
         a_is_limit_reached = bool(
@@ -2662,16 +2677,35 @@ def get_lesson_hls_playlist_route(course_id: str, lesson_id: str) -> Any:
     if not playlist_path.exists():
         # Look for video file asset in lesson resources
         source_path = None
+        storage_root = Path(current_app.config.get("STORAGE_LOCAL_ROOT", "storage"))
         for res in getattr(lesson, "resources", []):
             fa = getattr(res, "file_asset", None)
-            if (
-                fa
-                and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/")))
-                and fa.primary_blob
-                and fa.primary_blob.storage_path
-            ):
-                source_path = fa.primary_blob.storage_path
-                break
+            if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
+                rev = getattr(fa, "current_revision", None) or (
+                    fa.revisions[-1] if getattr(fa, "revisions", None) else None
+                )
+                blob = getattr(rev, "blob", None) if rev else None
+                if blob and getattr(blob, "storage_key", None):
+                    candidate = storage_root / blob.storage_key
+                    if candidate.exists():
+                        source_path = str(candidate)
+                        break
+
+        # Fallback to previous lesson revision resources if needed
+        if not source_path and getattr(lesson, "previous_lesson", None):
+            prev = lesson.previous_lesson
+            for res in getattr(prev, "resources", []):
+                fa = getattr(res, "file_asset", None)
+                if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
+                    rev = getattr(fa, "current_revision", None) or (
+                        fa.revisions[-1] if getattr(fa, "revisions", None) else None
+                    )
+                    blob = getattr(rev, "blob", None) if rev else None
+                    if blob and getattr(blob, "storage_key", None):
+                        candidate = storage_root / blob.storage_key
+                        if candidate.exists():
+                            source_path = str(candidate)
+                            break
 
         if not source_path or not Path(source_path).exists():
             raise ResourceNotFoundError("No protected video stream available for this lesson.")
@@ -2745,6 +2779,10 @@ def get_lesson_hls_key_route(course_id: str, lesson_id: str) -> Any:
     return resp
 
 
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<segment_name>",
+    methods=["GET"],
+)
 @student_bp.route(
     "/courses/<course_id>/lessons/<lesson_id>/video/segments/<segment_name>",
     methods=["GET"],

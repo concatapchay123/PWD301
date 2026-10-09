@@ -303,7 +303,7 @@ test('VideoArmor intercepts PrintScreen key to discourage screen capture', async
   for (const id of intervals) clearInterval(id);
 });
 
-test('VideoArmor triggers Blackout when watermark style is tampered with (display none)', async () => {
+test('VideoArmor keeps watermark silent during normal playback and reveals on DevTools violation', async () => {
   const { mockDocument, mockWindow, MockElement, MockMutationObserver, intervals } = createMockDOM();
   global.document = mockDocument;
   global.window = mockWindow;
@@ -312,30 +312,38 @@ test('VideoArmor triggers Blackout when watermark style is tampered with (displa
   const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
 
   const container = new MockElement('div');
+  let violationCaught = false;
+  let violationReason = '';
   const armor = VideoArmor.mount(container, {
-    student: { email: 'student@example.com' }
+    student: { email: 'student@example.com' },
+    onSecurityViolation: (reason) => {
+      violationCaught = true;
+      violationReason = reason;
+    }
   });
 
   const watermark = container.querySelector('.video-armor-watermark');
   assert.ok(watermark);
+  // Watermark is silent during normal playback
+  assert.equal(watermark.style.display, 'none', 'Watermark must be hidden during normal playback');
 
-  // Malicious user sets display: none
-  watermark.style.display = 'none';
-  if (mockDocument._observerCallback) {
-    mockDocument._observerCallback([{
-      type: 'attributes',
-      attributeName: 'style',
-      target: watermark
-    }]);
-  }
+  // Trigger F12 DevTools keyup
+  mockWindow.dispatchEvent({
+    type: 'keyup',
+    key: 'F12',
+    preventDefault: () => {}
+  });
 
   const blackout = container.querySelector('.video-armor-blackout');
-  assert.ok(blackout, 'Blackout screen must be rendered upon style tampering');
+  assert.ok(blackout, 'Blackout screen must be rendered upon F12 DevTools detection');
+  assert.equal(watermark.style.display, 'block', 'Watermark must be revealed on blackout');
+  assert.equal(violationCaught, true, 'Violation callback must fire');
+  assert.equal(violationReason, 'DEVTOOLS_DETECTED');
 
   // Test restoration
   armor.restore();
   assert.equal(container.querySelector('.video-armor-blackout'), null, 'Blackout must be cleared on restore');
-  assert.equal(watermark.style.display, 'block', 'Watermark style must be restored to visible');
+  assert.equal(watermark.style.display, 'none', 'Watermark must return to hidden state after restore');
 
   armor.destroy();
   for (const id of intervals) clearInterval(id);

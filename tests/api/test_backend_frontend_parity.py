@@ -283,6 +283,8 @@ def test_frontend_static_assets_and_contract_parity(client: FlaskClient) -> None
         "deleteLessonResource",
         "createAssessmentQuestion",
         "batchCreateAssessmentQuestions",
+        "forgotPassword",
+        "resetPassword",
     ]
     for method in critical_methods:
         pattern = rf"(async\s+)?{method}\s*\("
@@ -292,9 +294,12 @@ def test_frontend_static_assets_and_contract_parity(client: FlaskClient) -> None
     frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "assets", "js")
     js_files = [
         os.path.join(frontend_dir, "router.js"),
+        os.path.join(frontend_dir, "views", "auth.js"),
         os.path.join(frontend_dir, "views", "instructor.js"),
+        os.path.join(frontend_dir, "views", "instructor-exams.js"),
         os.path.join(frontend_dir, "views", "student.js"),
         os.path.join(frontend_dir, "views", "admin.js"),
+        os.path.join(frontend_dir, "components", "video-armor.js"),
     ]
 
     # Extract all ApiClient.<method> calls

@@ -27,15 +27,15 @@ Across the entire codebase, **1,338+ automated tests** were executed and verifie
 | Test Category | Directory / Suite | Total Tests | Passed | Failed | Skipped | Pass Rate |
 |---|---|:---:|:---:|:---:|:---:|:---:|
 | **Unit & Core Services** | `tests/unit` | 512 | 512 | 0 | 0 | **100%** |
-| **REST API & Web Endpoints** | `tests/api` | 555 | 555 | 0 | 0 | **100%** |
+| **REST API & Web Endpoints** | `tests/api` | 557 | 557 | 0 | 0 | **100%** |
 | **Security & Hardening** | `tests/security` | 134 | 134 | 0 | 0 | **100%** |
 | **Concurrency & Leases** | `tests/concurrency` | 28 | 28 | 0 | 0 | **100%** |
-| **Frontend Contract Parity** | `tests/frontend` | 42 | 42 | 0 | 0 | **100%** |
+| **Frontend Contract Parity** | `tests/frontend` | 132 | 132 | 0 | 0 | **100%** |
 | **Integration Workflows** | `tests/integration` | 55 | 55 | 0 | 4 | **100%** |
-| **End-to-End Scenarios** | `tests/e2e` | 12 | 12 | 0 | 0 | **100%** |
-| **TOTAL SYSTEM COVERAGE** | **All Categories** | **1,338** | **1,338** | **0** | **4** | **100%** |
+| **Root Domain & Adversarial** | `tests/` | 225 | 225 | 0 | 0 | **100%** |
+| **TOTAL SYSTEM COVERAGE** | **All Categories** | **1,643** | **1,639** | **0** | **4** | **100%** |
 
-*(Note: The 4 skipped tests in integration relate to optional local Docker ClamAV daemon connectivity checks, correctly skipped when running under pure SQLite/local test harnesses without ClamAV daemon).*
+*(Note: The 4 skipped tests in integration relate to optional disposable SQL Server instance connectivity checks, correctly skipped when running under SQLite/local test harness).*
 
 ---
 

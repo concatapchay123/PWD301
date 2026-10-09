@@ -19,7 +19,6 @@ Each course features:
 
 from __future__ import annotations
 
-import base64
 import decimal
 import io
 import json
@@ -93,19 +92,16 @@ from pwd301.services.file_service import attach_resource_to_lesson, store_file_s
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("seed_3_rich_courses")
 
-# Tiny 1-second silent H.264 MP4 container (valid ISO-BMFF)
-SAMPLE_MP4_BYTES = base64.b64decode(
-    "AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADhtb292AAAAbG12aGQAAAAA10QkPtdEJD4AAAEAAAAAA+gAAQ"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIdHJhawAAAF"
-    "x0a2hkAAAAHtdEJD7XRCQ+AAAAAQAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAEAAAAAEAAAAAAAAAAAAAAAJtZGlhAAAAIG1kaGQAAAAA10QkPtdEJD4AAB1MAAAdTAAAAE"
-    "AAAAAANDhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAAAABVmlkZW9IYW5kbGVyAAAAAQptaW5mAAAAFHZtaGQAAAAB"
-    "AAAAAAAAAAAAAAAAMWRpbmYAAAAcZHJlZgAAAAAAAAABAAAAHGRyb2MAAAABdXJsIAAAAAEAAAEIc3RibAAAAGhzdHNx"
-    "AAAAAAAAAAAAAAAJYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAgACABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAABg//wAAABxzdHRzAAAAAAAAAAEAAAABAAAdTAAAAAAkc3RzYwAAAAAAAAABAAAAAQAA"
-    "AAEAAAABAAAAAAAAABxzdHN6AAAAAAAAAAAAAAABAAAB8AAAAClzdGNvAAAAAAAAAAEAAAA4AAAAFm1kYXQAAAAB8gAAA"
-    "QAAAAI="
+_sample_valid_path = Path("storage/sample_valid.mp4")
+_sample_blob_path = Path(
+    "storage/blobs/b2/45/b245e984edd68f476f085f69badb1a3d90caf38bdf87c91ac4caae9a7802a9f1"
 )
+if _sample_valid_path.exists():
+    SAMPLE_MP4_BYTES = _sample_valid_path.read_bytes()
+elif _sample_blob_path.exists():
+    SAMPLE_MP4_BYTES = _sample_blob_path.read_bytes()
+else:
+    SAMPLE_MP4_BYTES = b""
 
 
 def generate_course_cover_png(

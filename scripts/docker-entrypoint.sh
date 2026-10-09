@@ -38,13 +38,15 @@ fi
 
 # Execute default Gunicorn server if no command or just 'gunicorn' is passed
 if [ "$#" -eq 0 ] || { [ "$1" = "gunicorn" ] && [ "$#" -eq 1 ]; }; then
-    echo "Starting Gunicorn WSGI Server on port ${PORT:-5000} (workers=${GUNICORN_WORKERS:-4}, threads=${GUNICORN_THREADS:-2}, timeout=${GUNICORN_TIMEOUT:-120}s)..."
+    echo "Starting Gunicorn WSGI Server on port ${PORT:-5000} (workers=${GUNICORN_WORKERS:-2}, threads=${GUNICORN_THREADS:-4}, timeout=${GUNICORN_TIMEOUT:-120}s, max_requests=${GUNICORN_MAX_REQUESTS:-1000})..."
     exec gunicorn \
         ${RELOAD_FLAG} \
         --bind "0.0.0.0:${PORT:-5000}" \
-        --workers "${GUNICORN_WORKERS:-4}" \
-        --threads "${GUNICORN_THREADS:-2}" \
+        --workers "${GUNICORN_WORKERS:-2}" \
+        --threads "${GUNICORN_THREADS:-4}" \
         --timeout "${GUNICORN_TIMEOUT:-120}" \
+        --max-requests "${GUNICORN_MAX_REQUESTS:-1000}" \
+        --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-100}" \
         --access-logfile "-" \
         --error-logfile "-" \
         "wsgi:app"

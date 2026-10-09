@@ -194,30 +194,32 @@ Toàn bộ 27 lỗi kiểm thử và khiếm khuyết được phát hiện tron
     - **Vị trí**: `src/pwd301/blueprints/instructor/routes.py:1408` và `tests/api/test_course_metadata_and_lesson_approval_remediation.py`.
     - **Hiện tượng**: Tạo bài giảng trong khóa học đã xuất bản hỗ trợ cả hai mô hình (gom cụm changeset hoặc gửi yêu cầu duyệt lẻ trả về 202). Cần khôi phục phân nhánh linh hoạt.
 
-### Nhóm P2: Chất lượng Mã nguồn / Dead Code / Maintainability
-- Rà soát các import trùng lặp trong các file blueprint `routes.py`.
-- Chuẩn hóa hàm format lỗi tiếng Việt trên `ApiClient` trong `frontend/assets/js/api.js`.
-- Loại bỏ các comment cũ không còn giá trị trong `attempt_service.py` và `lesson_service.py`.
+12. **[P1-09] Mất kết nối luồng Quên mật khẩu Frontend ↔ Backend (Disconnected Flow)**:
+    - **Vị trí**: `frontend/assets/js/views/auth.js:878` và `frontend/assets/js/api.js`.
+    - **Hiện tượng**: Giao diện tab "Quên mật khẩu" (`auth.js`) gọi `ApiClient.forgotPassword(email)` nhưng phương thức này chưa từng được định nghĩa trên `ApiClient` trong `api.js`. Khi học viên bấm gửi yêu cầu khôi phục mật khẩu, client bị lỗi `TypeError: ApiClient.forgotPassword is not a function`.
+    - **Khắc phục**: Triển khai `ApiClient.forgotPassword(email)` và `ApiClient.resetPassword(token, password, confirmPassword)` kết nối với các route `@auth_bp.route("/forgot-password")` và `@auth_bp.route("/reset-password/<token>")`.
 
-### Nhóm P3: Tối ưu Hóa Hiệu năng / Truy vấn Database
-- Kiểm tra các truy vấn N+1 khi duyệt danh sách bài học và tài nguyên (`joinedload`/`selectinload` trên `Lesson.resources` và `Course.lessons`).
-- Tối ưu hóa chuỗi tính toán tiến độ khóa học trong `completion_service.py`.
+13. **[P2-01] Khoảng trống phạm vi kiểm thử tĩnh Hợp đồng Frontend Parity**:
+    - **Vị trí**: `tests/api/test_backend_frontend_parity.py:293`.
+    - **Hiện tượng**: Kiểm thử `test_frontend_static_assets_and_contract_parity` chỉ quét `router.js`, `instructor.js`, `student.js`, `admin.js`, bỏ sót `auth.js`, `instructor-exams.js`, `components/video-armor.js`. Do đó lỗi thiếu `forgotPassword` không bị kiểm thử bắt được.
+    - **Khắc phục**: Mở rộng danh sách tệp kiểm thử bao quát 100% tệp JavaScript trong `frontend/assets/js/`.
+
+14. **[P2-02] Vấn đề hiệu năng: Double-nested N+1 Query trong Student Assessments**:
+    - **Vị trí**: `src/pwd301/blueprints/student/routes.py:1031` (dashboard) và `1801` (course assessments).
+    - **Hiện tượng**: `AssessmentAttempt` bị truy vấn lặp đi lặp lại bên trong vòng lặp `for a in assessments:`, tạo ra $N+1$ lượt gọi cơ sở dữ liệu thay vì 1 batch query.
+    - **Khắc phục**: Tối ưu hóa gom cụm truy vấn theo `AssessmentAttempt.assessment_id.in_(assessment_ids)` và nhóm bằng `defaultdict(list)` trong bộ nhớ.
 
 ---
 
-## 7. KẾ HOẠCH HÀNH ĐỘNG CHO ROUND 2 (EXECUTION PLAN)
-1. **Fix P0 & P1 Backend Services**:
-   - `attempt_service.py`: Cập nhật logic xác thực lease token khi submit.
-   - `lesson_service.py`: Lưu trữ `estimated_duration_minutes`.
-   - `enrollment_service.py`: Đảo thứ tự kiểm tra self-reference.
-   - `instructor/routes.py`: Bổ sung kiểm tra lock pending changeset cho learning units và phân nhánh bài học.
-2. **Fix P1 Frontend Parity**:
-   - `api.js`: Thêm `ApiClient.recordTelemetry`.
-3. **Đồng bộ Test Suites**:
-   - Cung cấp `admin_password` cho các test nhạy cảm.
-   - Đồng bộ assertions HLS DRM và Zero-Trust Heartbeat.
-   - Inject fixture `physical_backup_engine`.
-   - Đặt trạng thái PUBLISHED cho các fixture kiểm thử tiên quyết.
-4. **Kiểm tra Xác minh Sau Sửa chữa**:
-   - Chạy toàn bộ test suites (`pytest tests/unit tests/api`).
-   - Ghi nhận báo cáo vào `ROUND_2_FIXES.md`.
+## 7. KẾ HOẠCH HÀNH ĐỘNG CHO ROUND 2 & ROUND 4 (EXECUTION ROADMAP)
+1. **Fix Round 2 (Functional & Parity Repairs)**:
+   - Thêm `forgotPassword` và `resetPassword` vào `frontend/assets/js/api.js`.
+   - Mở rộng `test_backend_frontend_parity.py` bao quát toàn bộ các tệp frontend JS.
+   - Bổ sung test kiểm thử vòng đời khôi phục mật khẩu trong `test_auth_web.py`.
+2. **Verification Round 3**:
+   - Chạy toàn bộ kiểm tra: lint (`ruff`), format, type check (`mypy`), hợp đồng repo (`repo_check.py`), frontend node tests (`node --test`), pytest.
+3. **Fix Round 4 (Optimization & Complexity Reduction)**:
+   - Tối ưu hóa truy vấn batch $O(1)$ cho `AssessmentAttempt` trong `student/routes.py`.
+   - Giảm thiểu độ trễ cơ sở dữ liệu và lượng cấp phát bộ nhớ.
+4. **Final Round 5**:
+   - Đóng toàn bộ ma trận kiểm tra role-by-role và lập báo cáo `FINAL_PROJECT_REPAIR_REPORT.md`.
