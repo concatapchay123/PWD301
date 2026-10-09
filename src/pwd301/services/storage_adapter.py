@@ -29,12 +29,14 @@ def _get_boto3() -> Any | None:
     if not _boto3_imported:
         _boto3_imported = True
         try:
-            import boto3
+            import boto3  # type: ignore[import-not-found]
 
             _boto3_module = boto3
         except ImportError:
             _boto3_module = None
-            logger.info("boto3 is not installed. Cloud storage offloading disabled, using local disk.")
+            logger.info(
+                "boto3 is not installed. Cloud storage offloading disabled, using local disk."
+            )
     return _boto3_module
 
 
@@ -114,10 +116,17 @@ def download_blob_from_cloud(storage_key: str, dest_path: Path) -> bool:
     try:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         client.download_file(bucket, storage_key, str(dest_path))
-        logger.info("Successfully fetched blob %s from cloud bucket %s to %s", storage_key, bucket, dest_path)
+        logger.info(
+            "Successfully fetched blob %s from cloud bucket %s to %s",
+            storage_key,
+            bucket,
+            dest_path,
+        )
         return True
     except Exception as exc:
-        logger.warning("Failed to download blob %s from cloud bucket %s: %s", storage_key, bucket, exc)
+        logger.warning(
+            "Failed to download blob %s from cloud bucket %s: %s", storage_key, bucket, exc
+        )
         return False
 
 

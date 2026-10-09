@@ -27,3 +27,19 @@ Mọi coding agent trong hiện tại và tương lai BẮT BUỘC tuân thủ:
 2. **Bãi bỏ Iframe YouTube Thô**: Mọi luồng video YouTube BẮT BUỘC bọc trong PWD301 Custom Player Shell; nghiêm cấm để lộ thanh điều khiển hay logo mặc định của YouTube.
 3. **Triệt tiêu lỗ hổng nhảy cóc tiến độ**: Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`. Mọi tiến độ hoàn thành bài học bắt buộc tích lũy thời gian thực tế qua chuỗi nhịp tim (Heartbeat) kiểm tra Wall-Clock Time.
 4. **Thủy ấn động bất biến**: Lớp phủ thủy ấn không được phép ẩn hoặc xóa. Mọi hành vi can thiệp DOM vào thẻ Watermark đều phải bị `MutationObserver` phát hiện và kích hoạt màn hình đen bảo vệ ngay lập tức.
+
+---
+
+## 3. Chiến Lược 20 Khóa Học Hoạt Động & Mô Hình YouTube Unlisted Kín Đáo (Production Contract)
+
+Được Chủ dự án quyết định và phê duyệt ngày 09/10/2026:
+1. **Mục tiêu 20 Khóa Học Hoạt Động Thật (Production 20-Course Milestone)**:
+   - Hệ thống sẵn sàng vận hành tối thiểu 20 khóa học thực tế với hàng trăm bài giảng video mà không tiêu tốn dung lượng ổ đĩa hạn hẹp của VPS (10–25 GB SSD).
+   - 100% video của 20 khóa học này được lưu trữ và truyền phát theo mô hình **YouTube Unlisted** (Không công khai).
+2. **Quy Chuẩn Trình Phát Học Viên (100% Stealth Custom Player)**:
+   - Tuyệt đối ẩn 100% mọi nhận diện của YouTube (logo, channel title, watch on youtube, thanh điều khiển đỏ, gợi ý video liên quan).
+   - Video được bọc trong PWD301 Custom Video Player Shell với lớp giáp Anti-Redirect Shield, thanh điều khiển phẳng Flat Warm Editorial, khóa tua tiến độ học thực tế, và thủy ấn động pháp chứng trôi ngẫu nhiên.
+3. **Tính Năng Dán Link Kín Đáo (Stealth Link Input in Studio UI)**:
+   - Ô nhập đường dẫn video YouTube trong Studio bài giảng được duy trì nguyên vẹn như một tính năng nền/ẩn tinh tế để quản trị viên và giảng viên dán link nhanh chóng.
+   - Giao diện người dùng vẫn ưu tiên sự thanh lịch, không gây rối mắt, đồng thời hỗ trợ đầy đủ luồng dán link YouTube Unlisted cho toàn bộ 20 khóa học.
+

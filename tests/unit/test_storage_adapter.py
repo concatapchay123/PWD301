@@ -54,18 +54,26 @@ def test_storage_adapter_mock_boto3_operations(app: Flask, tmp_path: Path) -> No
         app.config["S3_ENDPOINT_URL"] = "https://s3.example.com"
 
         mock_s3 = MagicMock()
-        with patch("pwd301.services.storage_adapter.get_s3_client", return_value=(mock_s3, "test-bucket")):
+        with patch(
+            "pwd301.services.storage_adapter.get_s3_client", return_value=(mock_s3, "test-bucket")
+        ):
             # 1. Test upload
             local_file = tmp_path / "sample.bin"
             local_file.write_bytes(b"hello world")
             assert upload_blob_to_cloud(local_file, "blobs/ab/cd/hash") is True
-            mock_s3.upload_file.assert_called_once_with(str(local_file), "test-bucket", "blobs/ab/cd/hash")
+            mock_s3.upload_file.assert_called_once_with(
+                str(local_file), "test-bucket", "blobs/ab/cd/hash"
+            )
 
             # 2. Test download
             dest_file = tmp_path / "downloaded.bin"
             assert download_blob_from_cloud("blobs/ab/cd/hash", dest_file) is True
-            mock_s3.download_file.assert_called_once_with("test-bucket", "blobs/ab/cd/hash", str(dest_file))
+            mock_s3.download_file.assert_called_once_with(
+                "test-bucket", "blobs/ab/cd/hash", str(dest_file)
+            )
 
             # 3. Test delete
             assert delete_blob_from_cloud("blobs/ab/cd/hash") is True
-            mock_s3.delete_object.assert_called_once_with(Bucket="test-bucket", Key="blobs/ab/cd/hash")
+            mock_s3.delete_object.assert_called_once_with(
+                Bucket="test-bucket", Key="blobs/ab/cd/hash"
+            )

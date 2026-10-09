@@ -428,4 +428,3 @@ def run_worker_loop(
             # Idle queue: sleep and progressive backoff
             time.sleep(current_delay)
             current_delay = min(current_delay * 1.5, max_idle_seconds)
-

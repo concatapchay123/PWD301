@@ -30,6 +30,16 @@ All previous obsolete workflows and legacy designs regarding external video embe
    - Docker JSON logging must enforce strict rotation (`max-size: 10m`, `max-file: 3`).
    - Background worker loops must utilize Adaptive Polling backoff during idle states, eliminating wasteful CPU cycles and idle database query flood.
 
+4. **Strategic 20-Course Active Deployment Milestone & Stealth YouTube Unlisted Invariant**:
+   - To achieve the critical production milestone of hosting at least 20 fully active courses with hundreds of lecture videos without exhausting the VPS storage (10–25 GB SSD), 100% of these 20 course videos are served via **YouTube Unlisted**.
+   - **Stealth YouTube Concealment:** The student video player conceals 100% of YouTube branding, title overlays, progress bars, channel avatars, and external links, strictly wrapping the playback in the PWD301 Custom Player Shell with anti-seek lock, dynamic forensic watermark, and VideoArmor anti-tamper blackout.
+   - **Stealth Link Input in Studio UI:** The video URL input in the Instructor Studio is preserved as an elegant, stealth feature allowing direct pasting of YouTube Unlisted links, enabling seamless population of all 20 courses without local VPS disk consumption.
+
+5. **Decoupled Cloud Object Storage Selection — Backblaze B2 (Zero Credit-Card Friction)**:
+   - To offload the ~6.5 GB course documents, PDF textbooks, and slide decks without consuming VPS disk, **Backblaze B2** is canonically selected as the primary cloud object storage provider.
+   - Backblaze B2 provides 10 GB permanent free storage with zero credit card / Visa requirements (SMS OTP verification only) and native S3 API compatibility (`storage_adapter.py`).
+   - Student UI supports seamless 1-click in-app direct download on all file cards without third-party redirection.
+
 ---
 
 # Completed task: TASK-086 — Video DRM Playback Repair, Full System HLS Streaming & Smart VideoArmor Anti-Tamper Enforcement

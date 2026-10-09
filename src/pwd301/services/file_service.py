@@ -1145,8 +1145,7 @@ def get_file_for_download(
     if not physical_path.is_relative_to(storage_root):
         raise FileAccessDeniedError("Physical file path escapes designated storage root.")
     if (not physical_path.exists() or not physical_path.is_file()) and (
-        not download_blob_from_cloud(blob.storage_key, physical_path)
-        or not physical_path.exists()
+        not download_blob_from_cloud(blob.storage_key, physical_path) or not physical_path.exists()
     ):
         raise FileStorageError("Physical file blob not found on disk.")
 

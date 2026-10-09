@@ -2385,7 +2385,12 @@ class StudentView {
           }
 
           return `
-            <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-emerald-500/50 hover:shadow-xs transition-all flex items-center justify-between gap-2.5 group">
+            <a
+              href="${downloadUrl}"
+              download
+              class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-emerald-500/60 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 hover:shadow-xs transition-all flex items-center justify-between gap-2.5 group cursor-pointer block text-inherit no-underline select-none"
+              title="Nhấp để tải về ${UI.escapeHtml(fname)}"
+            >
               <div class="flex items-center gap-2.5 min-w-0">
                 <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 border ${badgeColor}">
                   ${ext}
@@ -2397,15 +2402,13 @@ class StudentView {
                   ${sizeStr ? `<span class="text-[10px] text-slate-400 font-mono">${sizeStr}</span>` : ''}
                 </div>
               </div>
-              <a
-                href="${downloadUrl}"
-                download
-                class="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors shrink-0"
-                title="Tải về ${UI.escapeHtml(fname)}"
+              <span
+                class="p-1.5 rounded-lg text-slate-400 group-hover:text-emerald-600 group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950/40 transition-colors shrink-0 pointer-events-none"
+                aria-hidden="true"
               >
                 <span class="material-symbols-outlined text-[18px]">download</span>
-              </a>
-            </div>
+              </span>
+            </a>
           `;
         };
 
@@ -3377,12 +3380,17 @@ class StudentView {
                   <h3 class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider font-mono">Tài liệu đính kèm bài giảng (${lessonResources.length})</h3>
                   <div class="space-y-2">
                     ${lessonResources.map(r => `
-                      <div class="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-                        <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(r.filename || r.name)}</span>
-                        <a href="/student/files/${encodeURIComponent(r.asset_id || r.id)}/download" download class="c-btn c-btn-secondary c-btn-sm inline-flex items-center gap-1 text-emerald-600">
+                      <a
+                        href="/student/files/${encodeURIComponent(r.asset_id || r.id)}/download"
+                        download
+                        class="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-emerald-500/60 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 transition-all cursor-pointer group text-inherit no-underline select-none"
+                        title="Nhấp để tải về ${UI.escapeHtml(r.filename || r.name)}"
+                      >
+                        <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 truncate">${UI.escapeHtml(r.filename || r.name)}</span>
+                        <span class="c-btn c-btn-secondary c-btn-sm inline-flex items-center gap-1 text-emerald-600 shrink-0 pointer-events-none">
                           <span class="material-symbols-outlined text-[16px]">download</span> Tải về
-                        </a>
-                      </div>
+                        </span>
+                      </a>
                     `).join('')}
                   </div>
                 </div>
@@ -3736,8 +3744,8 @@ class StudentView {
           // Supplementary videos setup: strictly lock forward seeking by default
           (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
             StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
-              streamUrl: url,
               isCompleted: isCompleted,
+              streamUrl: url,
               onProgress: null,
               onComplete: null
             });
