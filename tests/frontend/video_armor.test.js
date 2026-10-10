@@ -303,48 +303,26 @@ test('VideoArmor intercepts PrintScreen key to discourage screen capture', async
   for (const id of intervals) clearInterval(id);
 });
 
-test('VideoArmor keeps watermark silent during normal playback and reveals on DevTools violation', async () => {
+test('VideoArmor keeps an internal watermark visible and detects CSS hiding', () => {
   const { mockDocument, mockWindow, MockElement, MockMutationObserver, intervals } = createMockDOM();
-  global.document = mockDocument;
-  global.window = mockWindow;
-  global.MutationObserver = MockMutationObserver;
-
+  global.document = mockDocument; global.window = mockWindow; global.MutationObserver = MockMutationObserver;
   const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
-
   const container = new MockElement('div');
-  let violationCaught = false;
-  let violationReason = '';
-  const armor = VideoArmor.mount(container, {
-    student: { email: 'student@example.com' },
-    onSecurityViolation: (reason) => {
-      violationCaught = true;
-      violationReason = reason;
-    }
-  });
-
-  const watermark = container.querySelector('.video-armor-watermark');
-  assert.ok(watermark);
-  // Watermark is silent during normal playback
-  assert.equal(watermark.style.display, 'none', 'Watermark must be hidden during normal playback');
-
-  // Trigger F12 DevTools keyup
-  mockWindow.dispatchEvent({
-    type: 'keyup',
-    key: 'F12',
-    preventDefault: () => {}
-  });
-
-  const blackout = container.querySelector('.video-armor-blackout');
-  assert.ok(blackout, 'Blackout screen must be rendered upon F12 DevTools detection');
-  assert.equal(watermark.style.display, 'block', 'Watermark must be revealed on blackout');
-  assert.equal(violationCaught, true, 'Violation callback must fire');
-  assert.equal(violationReason, 'DEVTOOLS_DETECTED');
-
-  // Test restoration
-  armor.restore();
-  assert.equal(container.querySelector('.video-armor-blackout'), null, 'Blackout must be cleared on restore');
-  assert.equal(watermark.style.display, 'none', 'Watermark must return to hidden state after restore');
-
-  armor.destroy();
-  for (const id of intervals) clearInterval(id);
+  const armor = VideoArmor.mount(container, { student: { email: 's@test' }, ip: '203.0.113.2' });
+  try {
+    assert.equal(armor.watermarkEl.style.display, 'block');
+    armor.watermarkEl.style.visibility = 'hidden';
+    armor._inspectMutations([]);
+    assert.equal(armor.isBlackedOut, true);
+    armor.restore();
+    assert.equal(armor.watermarkEl.style.visibility, 'visible');
+  } finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
+});
+test('VideoArmor does not label an F12 key as proof of tampering', () => {
+  const { mockDocument, mockWindow, MockElement, MockMutationObserver, intervals } = createMockDOM();
+  global.document = mockDocument; global.window = mockWindow; global.MutationObserver = MockMutationObserver;
+  const { VideoArmor } = require('../../frontend/assets/js/components/video-armor.js');
+  const armor = VideoArmor.mount(new MockElement('div'));
+  try { mockWindow.dispatchEvent({ type: 'keyup', key: 'F12', preventDefault() {} }); assert.equal(armor.isBlackedOut, false); assert.doesNotMatch(armor._formatWatermarkText(), /127\.0\.0\.1|domain\.local/); }
+  finally { armor.destroy(); for (const id of intervals) clearInterval(id); }
 });

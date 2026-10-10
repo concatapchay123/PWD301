@@ -992,6 +992,18 @@ class InstructorView {
   // =========================================================================
   // 3.0. Single-Page Curriculum Studio Implementation (Low-Tech Optimized)
   // =========================================================================
+  static openCoursePreview(course, initialLessonId = null) {
+    let preview = null;
+    UI.openModal({
+      title: 'Xem trước giáo trình',
+      bodyHtml: '<div id="instructor-course-tree-preview"></div>',
+      size: 'xl',
+      onClose: () => preview?.querySelectorAll('video').forEach(video => video.pause()),
+    });
+    preview = document.getElementById('instructor-course-tree-preview');
+    window.AdminView.renderReviewerCoursePreview(preview, course, initialLessonId);
+  }
+
   static async initSinglePageCurriculumStudio(container, course, changesetStatus, initialLessonId = null, initialUnitId = null, assessments = null) {
     const cId = course.course_id || course.id;
     const treeContainer = container.querySelector('#tree-units-container');
@@ -3274,45 +3286,13 @@ class InstructorView {
         prevBtn.onclick = () => {
           scrapeBlocksFromDom();
           const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
-          const modalBody = `
-            <div class="space-y-6 text-sm font-sans">
-              <div class="border-b border-[#E8E6DF] dark:border-[#2E2D2B] pb-4">
-                <h3 class="text-xl font-bold text-[#222120] dark:text-[#EDEDEB]">${UI.escapeHtml(payload.title)}</h3>
-                ${payload.summary ? `<p class="text-xs text-[#5C5B57] dark:text-[#9E9D99] mt-2 italic">${UI.escapeHtml(payload.summary)}</p>` : ''}
-              </div>
-
-              <!-- Rendered Markdown -->
-              <div class="prose dark:prose-invert max-w-none text-xs leading-relaxed">
-                ${UI.renderMarkdown(payload.markdown_content || '')}
-              </div>
-
-              <!-- Quizzes Preview -->
-              ${payload.quiz && payload.quiz.length ? `
-                <div class="space-y-3 pt-4 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-primary">Câu hỏi ôn tập nhanh</h4>
-                  ${payload.quiz.map((q, qIdx) => `
-                    <div class="p-4 rounded-xl bg-[#FAF9F5] dark:bg-[#1E1E1E] border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-2 text-xs">
-                      <div class="font-bold text-[#222120] dark:text-[#EDEDEB]">Câu ${qIdx + 1}: ${UI.escapeHtml(q.question)}</div>
-                      <div class="space-y-1">
-                        ${(q.options || []).map((opt, oIdx) => `
-                          <div class="p-2 rounded-lg border ${oIdx === q.correct_index ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 font-bold' : 'border-[#E8E6DF] dark:border-[#2E2D2B]'}">
-                            ${String.fromCharCode(65 + oIdx)}. ${UI.escapeHtml(opt)} ${oIdx === q.correct_index ? '✓ (Đáp án đúng)' : ''}
-                          </div>
-                        `).join('')}
-                      </div>
-                      ${q.explanation ? `<p class="text-[11px] text-[#8F8E8A] italic">Giải thích: ${UI.escapeHtml(q.explanation)}</p>` : ''}
-                    </div>
-                  `).join('')}
-                </div>
-              ` : ''}
-            </div>
-          `;
-
-          UI.openModal({
-            title: 'Xem trước bài giảng (Góc nhìn học viên)',
-            bodyHtml: modalBody,
-            size: 'lg'
-          });
+          const selectedId = activeLessonId || 'local-preview';
+          const existingLessons = course.lessons || [];
+          const selectedLesson = existingLessons.find(lesson => String(lesson.lesson_id || lesson.id) === String(selectedId));
+          const previewLesson = { ...selectedLesson, ...payload, lesson_id: selectedId, learning_unit_id: activeUnitId };
+          const previewLessons = existingLessons.map(lesson => String(lesson.lesson_id || lesson.id) === String(selectedId) ? previewLesson : lesson);
+          if (!selectedLesson) previewLessons.push(previewLesson);
+          InstructorView.openCoursePreview({ ...course, lessons: previewLessons }, selectedId);
         };
       }
 
@@ -4635,10 +4615,18 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
 
             <!-- Action Buttons -->
             <div class="flex items-center gap-2 shrink-0 self-start md:self-auto">
+              <a
+                href="#/student/lessons/reader?course_id=${cId}&preview=1"
+                class="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                title="Xem trước toàn bộ khóa học với cây thư mục bài học (Góc nhìn học viên)"
+              >
+                <span class="material-symbols-outlined text-[18px] text-primary">visibility</span>
+                <span>Xem trước khóa học</span>
+              </a>
               <button
                 type="button"
                 id="btn-open-lesson-studio"
-                class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 <span class="material-symbols-outlined text-[18px]">add_circle</span>
                 <span>Soạn bài giảng mới</span>
@@ -4713,9 +4701,9 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
                       <span>Soạn nội dung</span>
                     </a>
                     <a
-                      href="#/student/lessons/reader?course_id=${cId}&lesson_id=${lId}"
+                      href="#/student/lessons/reader?course_id=${cId}&lesson_id=${lId}&preview=1"
                       class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold transition-colors flex items-center gap-1"
-                      title="Xem trước góc nhìn học viên"
+                      title="Xem trước góc nhìn học viên với cây thư mục bài học"
                     >
                       <span class="material-symbols-outlined text-[15px]">visibility</span>
                       <span>Xem thử</span>
@@ -5789,6 +5777,16 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             </h1>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" id="asm-results-title">Đang tải dữ liệu bài nộp...</p>
           </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              id="export-gradebook-pdf-btn"
+              class="px-4 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-xs transition cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+              <span>Xuất bảng điểm PDF</span>
+            </button>
+          </div>
         </div>
 
         <!-- Dynamic Results Content Container -->
@@ -5800,6 +5798,54 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         </div>
       </div>
     `;
+
+    const exportPdfBtn = document.getElementById('export-gradebook-pdf-btn');
+    if (exportPdfBtn) {
+      exportPdfBtn.onclick = async () => {
+        const originalContent = exportPdfBtn.innerHTML;
+        try {
+          exportPdfBtn.classList.add('opacity-70', 'pointer-events-none');
+          exportPdfBtn.innerHTML = '<span class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span> <span>Đang tạo PDF...</span>';
+          const pdfUrl = `/instructor/assessments/${encodeURIComponent(assessmentId)}/gradebook.pdf`;
+          const res = await fetch(pdfUrl, {
+            headers: { 'Accept': 'application/pdf' },
+            credentials: 'same-origin'
+          });
+          if (!res.ok) {
+            let errMsg = 'Không thể xuất bảng điểm PDF.';
+            try {
+              const errJson = await res.json();
+              if (errJson.error?.message) errMsg = errJson.error.message;
+              else if (errJson.message) errMsg = errJson.message;
+            } catch (_) {}
+            throw new Error(errMsg);
+          }
+          const blob = await res.blob();
+          let filename = `bang_diem_mon_thi_${assessmentId}.pdf`;
+          const disposition = res.headers.get('Content-Disposition') || '';
+          const fnMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+          if (fnMatch) {
+            filename = decodeURIComponent(fnMatch[1] || fnMatch[2]);
+          }
+          const blobUrl = window.URL.createObjectURL(blob);
+          const tempA = document.createElement('a');
+          tempA.href = blobUrl;
+          tempA.download = filename;
+          document.body.appendChild(tempA);
+          tempA.click();
+          setTimeout(() => {
+            document.body.removeChild(tempA);
+            window.URL.revokeObjectURL(blobUrl);
+          }, 1000);
+          UI.showToast('Đã tải xuống bảng điểm lớp (PDF) thành công!', 'success');
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi xuất tệp PDF.', 'error');
+        } finally {
+          exportPdfBtn.classList.remove('opacity-70', 'pointer-events-none');
+          exportPdfBtn.innerHTML = originalContent;
+        }
+      };
+    }
 
     try {
       const data = await ApiClient.getAssessmentAttempts(assessmentId, page);

@@ -105,19 +105,12 @@ def test_cannot_bypass_minimum_duration_with_high_view_fraction(
     sess.commit()
 
     # An attacker or script attempts to send view_fraction=0.95 with only seconds_increment=5
-    p1 = record_lesson_progress(
-        actor=student_user,
-        lesson_id=lesson.id,
-        seconds_increment=5,
-        view_fraction=0.95,
-    )
+    from pwd301.services.exceptions import LessonValidationError
 
-    # Must NOT have jumped to 300s!
-    assert p1.seconds_spent == 5, f"Expected 5 seconds spent, got {p1.seconds_spent}"
-    assert float(p1.max_view_fraction) == 0.95
-    assert p1.completed_at is None, (
-        "Lesson must NOT be marked completed without fulfilling 300 seconds wall-clock time!"
-    )
+    with pytest.raises(LessonValidationError, match="playback session"):
+        record_lesson_progress(
+            actor=student_user, lesson_id=lesson.id, seconds_increment=5, view_fraction=0.95
+        )
 
 
 def test_rapid_ping_spam_is_capped_by_server_wall_clock(

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from flask import current_app
+from flask import current_app, has_app_context
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -166,6 +166,22 @@ def _check_storage_health() -> dict[str, Any]:
     }
 
 
+def _check_cloud_storage_health() -> dict[str, Any]:
+    """Probe the configured private bucket; never fall back from S3 to disk."""
+    from pwd301.services.storage_adapter import get_s3_client, is_cloud_storage_enabled
+
+    if not is_cloud_storage_enabled():
+        return {"status": "HEALTHY", "backend": "local"}
+    try:
+        client, bucket = get_s3_client()
+        if client is None or bucket is None:
+            return {"status": "DOWN", "backend": "s3", "error": "Storage configuration unavailable"}
+        client.head_bucket(Bucket=bucket)
+        return {"status": "HEALTHY", "backend": "s3"}
+    except Exception:
+        return {"status": "DOWN", "backend": "s3", "error": "Private bucket probe failed"}
+
+
 def _check_clamav_health() -> dict[str, Any]:
     """Test ClamAV daemon connectivity via TCP socket ping."""
     host = os.environ.get("CLAMAV_HOST", "127.0.0.1")
@@ -181,6 +197,16 @@ def _check_clamav_health() -> dict[str, Any]:
             response = sock.recv(1024).strip()
             latency_ms = int((time.perf_counter() - t0) * 1000)
             if b"PONG" in response:
+                # VERSION confirms an engine with loaded signatures, beyond socket liveness.
+                with socket.create_connection((host, port), timeout=timeout) as version_socket:
+                    version_socket.sendall(b"VERSION\n")
+                    version = version_socket.recv(1024).decode(errors="replace").strip()
+                if not version.startswith("ClamAV ") or version.count("/") < 2:
+                    return {
+                        "status": "DOWN",
+                        "connected": True,
+                        "note": "Scanner signatures not ready",
+                    }
                 return {
                     "status": "HEALTHY",
                     "latency_ms": latency_ms,
@@ -201,7 +227,7 @@ def _check_clamav_health() -> dict[str, Any]:
             "latency_ms": latency_ms,
             "connected": False,
             "endpoint": f"{host}:{port}",
-            "note": "ClamAV daemon unreachable (built-in heuristic fallback scanner active)",
+            "note": "ClamAV daemon unreachable; uploads remain fail-closed",
         }
 
 
@@ -248,6 +274,17 @@ def _check_workers_health(sess: Session | scoped_session[Any]) -> dict[str, Any]
         status = "HEALTHY"
         if stuck_jobs > 0 or failed > 20:
             status = "DEGRADED"
+        heartbeat_path = os.environ.get("WORKER_HEARTBEAT_PATH")
+        if not heartbeat_path and current_app.config.get("APP_ENV") == "production":
+            status = "DOWN"
+        if heartbeat_path:
+            try:
+                heartbeat = json.loads(Path(heartbeat_path).read_text(encoding="utf-8"))
+                age = time.time() - float(heartbeat["timestamp"])
+                if age < 0 or age > 30:
+                    status = "DOWN"
+            except (OSError, ValueError, KeyError, TypeError):
+                status = "DOWN"
 
         return {
             "status": status,
@@ -334,6 +371,7 @@ def check_system_health(
     clamav_health = _check_clamav_health()
     worker_health = _check_workers_health(sess)
     mail_health = _check_mail_queue_health(sess)
+    cloud_health = _check_cloud_storage_health()
 
     # Latest backup check
     latest_backup = sess.query(BackupRun).order_by(BackupRun.started_at.desc()).first()
@@ -395,7 +433,7 @@ def check_system_health(
             "note": clamav_health.get("note"),
         },
         "storage_minio": {
-            "name": "MinIO Local / S3 File Store",
+            "name": "Private File Store",
             "status": storage_health["status"],
             "directories": storage_health.get("directories", {}),
         },
@@ -414,6 +452,18 @@ def check_system_health(
             "oldest_pending_at": mail_health.get("oldest_pending_at"),
         },
     }
+    services_matrix["cloud_storage"] = cloud_health
+    if any(
+        component.get("status") != "HEALTHY"
+        for component in (
+            db_health,
+            storage_health,
+            cloud_health,
+            clamav_health,
+            worker_health,
+        )
+    ):
+        overall_status = "DOWN"
 
     report: dict[str, Any] = {
         "status": overall_status,
@@ -481,7 +531,10 @@ def get_real_system_telemetry() -> dict[str, Any]:
 
     # Attempt to load host hardware telemetry snapshot if running in a container
     host_snapshot: dict[str, Any] | None = None
-    if is_container:
+    production = os.environ.get("APP_ENV") == "production" or (
+        has_app_context() and current_app.config.get("APP_ENV") == "production"
+    )
+    if is_container and not production:
         snapshot_paths = [
             Path(__file__).resolve().parent / ".host_telemetry.json",
             Path("/app/src/pwd301/.host_telemetry.json"),
@@ -500,11 +553,13 @@ def get_real_system_telemetry() -> dict[str, Any]:
 
     host_name = (
         (host_snapshot.get("hostname") if host_snapshot else None)
-        or os.environ.get("HOST_NAME")
+        or (os.environ.get("HOST_NAME") if not production else None)
         or hostname
     )
     host_os = (
-        (host_snapshot.get("os") if host_snapshot else None) or os.environ.get("HOST_OS") or os_name
+        (host_snapshot.get("os") if host_snapshot else None)
+        or (os.environ.get("HOST_OS") if not production else None)
+        or os_name
     )
     node_label = f"Docker ({hostname[:12]})" if is_container else f"Host ({hostname})"
 
@@ -587,7 +642,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
 
         # Reconcile with Host RAM when running inside container
         target_host_total = None
-        if is_container:
+        if is_container and not production:
             if host_snapshot and host_snapshot.get("memory", {}).get("total_gb"):
                 target_host_total = float(host_snapshot["memory"]["total_gb"])
             elif "HOST_TOTAL_RAM_GB" in os.environ:
@@ -653,7 +708,7 @@ def get_real_system_telemetry() -> dict[str, Any]:
             cg_mem_limit: int | None = None
             cg_mem_usage: int | None = None
             cg_cpu_pct: float | None = None
-            container_info: dict[str, Any] = {}
+            container_info = {}
 
             # Cgroups v2
             v2_max = "/sys/fs/cgroup/memory.max"
@@ -1110,6 +1165,10 @@ def _get_backup_root() -> Path:
 
 def _prune_expired_backups(sess: Session | scoped_session[Any], retention_days: int = 30) -> int:
     """Prune expired backup records and physically unlinked files per retention policy."""
+    # Production pruning belongs to the authenticated archive workflow. Age alone
+    # must never remove an unarchived/manual recovery copy.
+    if current_app.config.get("ENV") == "production":
+        return 0
     cutoff = utc_now() - datetime.timedelta(days=retention_days)
     expired = (
         sess.query(BackupRun)
@@ -1329,7 +1388,35 @@ def list_backups(
     sess = _resolve_session(session)
 
     runs = sess.query(BackupRun).order_by(BackupRun.started_at.desc()).all()
-    return [b.to_dict() for b in runs]
+    result = []
+    root = _get_backup_root().resolve()
+    for backup in runs:
+        data = backup.to_dict()
+        data.update(file_size_bytes=None, checksum_sha256=None, created_at=data.get("started_at"))
+        artifact = Path(backup.storage_location or "")
+        if (
+            artifact.resolve().is_relative_to(root)
+            and artifact.is_file()
+            and not artifact.is_symlink()
+        ):
+            try:
+                manifest = json.loads(
+                    artifact.with_name(artifact.name + ".manifest.json").read_text(encoding="utf-8")
+                )
+                digest = manifest.get("sha256", "")
+                if (
+                    manifest.get("format") == "PWD301_SQLSERVER_BACKUP_MANIFEST"
+                    and manifest.get("database_backup_name") == artifact.name
+                    and manifest.get("file_size") == artifact.stat().st_size
+                    and isinstance(digest, str)
+                    and len(digest) == 64
+                    and all(char in "0123456789abcdef" for char in digest)
+                ):
+                    data.update(file_size_bytes=manifest["file_size"], checksum_sha256=digest)
+            except (OSError, ValueError, TypeError):
+                pass
+        result.append(data)
+    return result
 
 
 def _resolve_backup(backup_id: str, sess: Session | scoped_session[Any]) -> BackupRun:

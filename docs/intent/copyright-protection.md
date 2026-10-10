@@ -1,45 +1,16 @@
-# Tuyên Bố Mục Tiêu (Statement of Intent): Hệ Thống Bảo Vệ Bản Quyền & Chống Gian Lận (TASK-085)
+# Copyright protection and deployment intent — approved 2026-10-09
 
-Tài liệu này là nguồn sự thật (Source of Truth) xác lập mục tiêu, phạm vi và ranh giới bất biến cho hệ thống Bảo Vệ Bản Quyền & Chống Can Thiệp Mã Nguồn của nền tảng PWD301, được thống nhất và phê duyệt qua phiên phỏng vấn `/grill-me` ngày 07/10/2026.
+## Approved outcome
+PWD301 reuses its YouTube/custom-player backend and frontend. Official YouTube embedding keeps branding and navigation visible where the provider requires it. No obscuring shields or watermark overlays cover the iframe. PWD301 controls and identity are outside that surface. Unlisted links can be shared; no promise of DRM or complete prevention of copying is made.
 
----
+## Internal media
+Internal encrypted HLS retains continuous forensic watermark and DOM/CSS blackout defense. Raw lesson video downloads are denied to learners across every download entrypoint. Blackout stops playback and heartbeat; client tamper checks are deterrence, not proof of misconduct.
 
-## 1. Bản Tuyên Bố Mục Tiêu (Statement of Intent)
+## Learning progress
+Server-clock durable playback sessions serialize credit, bound movement and persist per-media frontiers. Start credits zero, retry is idempotent, multiple workers/tabs do not multiply time, and long gaps are not credited. Existing minimum-time, viewed-most, quiz and historical completion rules remain. Signals cannot prove attention.
 
-* **Outcome (Kết quả)**: Xây dựng hệ thống bảo vệ bản quyền và chống gian lận đa tầng cho PWD301 kết hợp: **Mã hóa luồng phân mảnh HLS (AES-128)**, **Thủy ấn động pháp chứng (Dynamic Forensic Watermark)**, **Lớp giáp chống can thiệp Client (Client Armor & DevTools Bouncer)**, và **Kiểm soát tiến độ Zero-Trust Máy chủ (Server-Authoritative Wall-Clock Heartbeat)**.
-* **User (Người thụ hưởng)**: Giảng viên, Nhà trường và Quản trị viên (bảo vệ quyền sở hữu trí tuệ bài giảng và đảm bảo tính liêm chính học thuật).
-* **Why now (Lý do)**: Triệt tiêu nguy cơ học viên tải lậu trực tiếp video MP4 thô, dùng phần mềm quay trộm bài giảng không để lại dấu vết, hoặc dùng DevTools/Extension can thiệp mã nguồn để bypass thời lượng xem và hoàn thành khóa học ảo.
-* **Success (Tiêu chí thành công)**:
-  1. Học viên không thể lấy link tải trực tiếp file video thô; luồng phát nội bộ được phân mảnh và mã hóa.
-  2. Mọi màn hình phát video (cả video nội bộ và YouTube) đều có thủy ấn định danh học viên (`MSSV - Email - IP - Timestamp`) trôi ngẫu nhiên, không thể xóa hoặc crop mà không làm hỏng video.
-  3. Khi có hành vi can thiệp DOM (xóa Watermark), mở DevTools (F12) hoặc rời cửa sổ, trình phát tự động kích hoạt **Blackout (màn hình đen)**, tạm dừng video và ghi nhận sự kiện kiểm toán (`AuditEvent`).
-  4. Mọi nỗ lực gửi payload gian lận tiến độ đều bị máy chủ từ chối 100% nếu thiếu chuỗi nhịp tim (Heartbeat) xác thực thời gian xem thực tế.
-* **Constraint (Ràng buộc cứng)**: Chạy hoàn toàn trên Web Browser tiêu chuẩn (Chrome, Edge, Firefox), giữ vững kiến trúc Pure Headless REST API của PWD301, không làm chậm trải nghiệm học tập của người dùng trung thực.
-* **In-Scope Bắt buộc (TASK-087)**: Tích hợp YouTube Headless Stream API, triệt tiêu 100% controls mặc định của YouTube (`controls=0`, ẩn logo, ẩn nút "Watch on YouTube") và thay thế bằng PWD301 Custom Video Player Shell với thanh điều khiển Flat Editorial độc quyền.
-* **Out of scope (Nằm ngoài phạm vi)**: Không cam kết chặn được các thiết bị quay phần cứng vật lý (camera ngoài, card capture HDMI rời) ngoài việc dùng watermark pháp chứng để truy vết và xử lý kỷ luật tài khoản vi phạm.
+## Storage and deployment
+YouTube Unlisted is the target delivery for 20 staging courses. Backblaze B2 private stores scanned documents with verified content and short-lived download tickets. Local quarantine/cache have bounded budgets; cloud egress follows provider pricing. VPS target is Linux x64, 8 GB RAM, at least two CPUs and 40 GB SSD; SQL Server 2022 Express is the production database edition.
 
----
-
-## 2. Bất Biến Thanh Trừng Toàn Diện (Purge & Decommissioning Invariant)
-
-Mọi coding agent trong hiện tại và tương lai BẮT BUỘC tuân thủ:
-1. **Bãi bỏ phân phối MP4 thô & Lưu trữ cục bộ trên VPS**: Video bài học nội bộ không bao giờ được trả về trực tiếp dưới dạng file tải về cho học viên qua `/student/files/<id>/download`. Nghiêm cấm lưu trữ video thô đa gigabyte trực tiếp trên ổ cứng VPS mà phải sử dụng kiến trúc phân mảnh HLS hoặc Headless Video Stream (YouTube Unlisted).
-2. **Bãi bỏ Iframe YouTube Thô**: Mọi luồng video YouTube BẮT BUỘC bọc trong PWD301 Custom Player Shell; nghiêm cấm để lộ thanh điều khiển hay logo mặc định của YouTube.
-3. **Triệt tiêu lỗ hổng nhảy cóc tiến độ**: Nghiêm cấm mọi logic tự động gán `seconds_spent = minimum_completion_seconds` chỉ vì client gửi `view_fraction >= 0.90`. Mọi tiến độ hoàn thành bài học bắt buộc tích lũy thời gian thực tế qua chuỗi nhịp tim (Heartbeat) kiểm tra Wall-Clock Time.
-4. **Thủy ấn động bất biến**: Lớp phủ thủy ấn không được phép ẩn hoặc xóa. Mọi hành vi can thiệp DOM vào thẻ Watermark đều phải bị `MutationObserver` phát hiện và kích hoạt màn hình đen bảo vệ ngay lập tức.
-
----
-
-## 3. Chiến Lược 20 Khóa Học Hoạt Động & Mô Hình YouTube Unlisted Kín Đáo (Production Contract)
-
-Được Chủ dự án quyết định và phê duyệt ngày 09/10/2026:
-1. **Mục tiêu 20 Khóa Học Hoạt Động Thật (Production 20-Course Milestone)**:
-   - Hệ thống sẵn sàng vận hành tối thiểu 20 khóa học thực tế với hàng trăm bài giảng video mà không tiêu tốn dung lượng ổ đĩa hạn hẹp của VPS (10–25 GB SSD).
-   - 100% video của 20 khóa học này được lưu trữ và truyền phát theo mô hình **YouTube Unlisted** (Không công khai).
-2. **Quy Chuẩn Trình Phát Học Viên (100% Stealth Custom Player)**:
-   - Tuyệt đối ẩn 100% mọi nhận diện của YouTube (logo, channel title, watch on youtube, thanh điều khiển đỏ, gợi ý video liên quan).
-   - Video được bọc trong PWD301 Custom Video Player Shell với lớp giáp Anti-Redirect Shield, thanh điều khiển phẳng Flat Warm Editorial, khóa tua tiến độ học thực tế, và thủy ấn động pháp chứng trôi ngẫu nhiên.
-3. **Tính Năng Dán Link Kín Đáo (Stealth Link Input in Studio UI)**:
-   - Ô nhập đường dẫn video YouTube trong Studio bài giảng được duy trì nguyên vẹn như một tính năng nền/ẩn tinh tế để quản trị viên và giảng viên dán link nhanh chóng.
-   - Giao diện người dùng vẫn ưu tiên sự thanh lịch, không gây rối mắt, đồng thời hỗ trợ đầy đủ luồng dán link YouTube Unlisted cho toàn bộ 20 khóa học.
-
+## Acceptance
+Only fresh automated, real SQL Express, browser, B2, backup/restore and load evidence can close their respective gates. Synthetic metadata or mocked providers never count as live proof. This round prepares artifacts/staging and does not migrate real data, change DNS or open production.

@@ -1,27 +1,11 @@
-/**
- * VideoArmor: Dynamic Forensic Watermark, DOM Armor & Anti-Tamper Client Defense (TASK-085 & Refinement).
- *
- * Capabilities:
- * - Silent Guarded Forensic Watermark: Identifies student (MSSV/Name, Email, IP, Timestamp).
- *   In normal playback, the watermark is hidden from view (display: none) to provide a clean,
- *   unobtrusive study experience. Only when a security violation occurs (DevTools, screen capture,
- *   DOM tampering) is the watermark dynamically revealed alongside the Blackout security card.
- * - MutationObserver DOM Guard: Watches container subtree. If unauthorized tampering or removal
- *   of video/armor nodes occurs, instantly triggers a fail-closed Blackout screen and pauses media.
- * - Tab Blur / Visibility Guard: Pauses media playback when the student switches away from the active
- *   tab or minimizes the window, without triggering a disruptive lockout.
- * - Keyboard & DevTools Defense: Intercepts PrintScreen, Windows Snipping Tool (Win+Shift+S),
- *   Inspect shortcuts (Ctrl+Shift+I/J/C, F12) to block capture attempts and trigger Blackout.
- * - Self-Recovery: Allows the student to click "Khôi phục và Tiếp tục học" once the unauthorized
- *   action stops, while automatically recording a security telemetry event.
- */
+/** Internal HLS watermark and best-effort DOM guard. Browser controls cannot prevent capture. */
 
 class VideoArmor {
   constructor(container, options = {}) {
     this.container = container;
     this.options = options;
     this.student = options.student || {};
-    this.ip = options.ip || '127.0.0.1';
+    this.ip = options.ip || 'IP chưa được xác nhận';
     this.onSecurityViolation = options.onSecurityViolation || (() => {});
     this.repositionIntervalMs = options.repositionIntervalMs || 7000;
     this.isBlackedOut = false;
@@ -35,7 +19,7 @@ class VideoArmor {
     this._onVisibilityChange = this._onVisibilityChange.bind(this);
     this._onWindowBlur = this._onWindowBlur.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
-    this._checkDevTools = this._checkDevTools.bind(this);
+
 
     this._init();
   }
@@ -55,12 +39,12 @@ class VideoArmor {
     this._attachObserver();
     this._bindEvents();
     this._startRepositioning();
-    this._startDevToolsCheck();
+
   }
 
   _formatWatermarkText() {
     const studentId = this.student.student_code || this.student.full_name || 'HỌC VIÊN';
-    const email = this.student.email || 'student@domain.local';
+    const email = this.student.email || 'Email chưa được xác nhận';
     const now = new Date();
     const timeStr = now.toLocaleTimeString ? now.toLocaleTimeString('vi-VN', { hour12: false }) : now.toTimeString().slice(0, 8);
     return `${studentId} • ${email} • ${this.ip} • ${timeStr}`;
@@ -83,7 +67,8 @@ class VideoArmor {
       pointerEvents: 'none',
       userSelect: 'none',
       webkitUserSelect: 'none',
-      display: 'none', // Hidden during normal playback per user instruction
+      display: 'block',
+      visibility: 'visible',
       opacity: '0.9',
       color: '#f8fafc',
       fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
@@ -105,6 +90,7 @@ class VideoArmor {
   reposition() {
     if (!this.watermarkEl) return;
 
+    this._inspectMutations([]);
     this.watermarkEl.textContent = this._formatWatermarkText();
 
     const randomTop = Math.floor(Math.random() * 74) + 8;
@@ -126,27 +112,6 @@ class VideoArmor {
     }
   }
 
-  _startDevToolsCheck() {
-    const win = (typeof window !== 'undefined') ? window : null;
-    if (win && win.setInterval && typeof win.outerWidth === 'number' && typeof win.innerWidth === 'number') {
-      this.devtoolsCheckTimer = win.setInterval(this._checkDevTools, 2000);
-      if (this.devtoolsCheckTimer && typeof this.devtoolsCheckTimer.unref === 'function') {
-        this.devtoolsCheckTimer.unref();
-      }
-    }
-  }
-
-  _checkDevTools() {
-    if (this.isBlackedOut) return;
-    const win = (typeof window !== 'undefined') ? window : null;
-    if (!win) return;
-    const widthThreshold = win.outerWidth - win.innerWidth > 160;
-    const heightThreshold = win.outerHeight - win.innerHeight > 160;
-    if (widthThreshold || heightThreshold) {
-      this.triggerBlackout('DEVTOOLS_DETECTED');
-    }
-  }
-
   _attachObserver() {
     const Obs = (typeof MutationObserver !== 'undefined') ? MutationObserver : (global.MutationObserver || null);
     if (!Obs) return;
@@ -159,7 +124,7 @@ class VideoArmor {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-armor-guard', 'data-armor-blackout']
+      attributeFilter: ['data-armor-guard', 'data-armor-blackout', 'style', 'class', 'hidden']
     });
   }
 
@@ -171,6 +136,13 @@ class VideoArmor {
     // Check if the watermark element was forcefully removed from DOM
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       tampered = true;
+    }
+
+    let element = this.watermarkEl;
+    while (element && !tampered) {
+      const computed = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(element) : element.style;
+      if (element.hidden || computed?.display === 'none' || computed?.visibility === 'hidden' || computed?.visibility === 'collapse' || (computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) <= 0)) tampered = true;
+      element = element.parentElement;
     }
 
     if (tampered) {
@@ -285,7 +257,7 @@ class VideoArmor {
     restoreBtn.textContent = 'Khôi phục và Tiếp tục học';
     Object.assign(restoreBtn.style, {
       background: '#dc2626',
-      color: '#ffffff',
+      color: '#f8fafc',
       border: 'none',
       padding: '8px 20px',
       borderRadius: '6px',
@@ -321,11 +293,11 @@ class VideoArmor {
     this.blackoutEl = null;
     this.isBlackedOut = false;
 
-    // Re-hide watermark during normal playback
+    // Restore the visible internal watermark
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       this._createWatermark();
     } else {
-      this.watermarkEl.style.display = 'none';
+      Object.assign(this.watermarkEl.style, { display: 'block', visibility: 'visible', opacity: '0.9' });
     }
   }
 
@@ -390,25 +362,7 @@ class VideoArmor {
       return;
     }
 
-    // 2. F12 (DevTools toggle)
-    if (event.key === 'F12') {
-      if (typeof event.preventDefault === 'function') event.preventDefault();
-      this.triggerBlackout('DEVTOOLS_DETECTED');
-      return;
-    }
-
-    // 3. Shortcuts: Ctrl+Shift+I / J / C (Inspect/DevTools) or Ctrl+Shift+S / Win+Shift+S (Snipping)
-    const isModifier = event.ctrlKey || event.metaKey;
-    if (isModifier && event.shiftKey) {
-      const keyLower = String(event.key || '').toLowerCase();
-      if (['i', 'j', 'c'].includes(keyLower)) {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        this.triggerBlackout('DEVTOOLS_DETECTED');
-      } else if (keyLower === 's') {
-        if (typeof event.preventDefault === 'function') event.preventDefault();
-        this.triggerBlackout('SCREEN_CAPTURE_ATTEMPT');
-      }
-    }
+    // Developer tools shortcuts are not evidence of DOM tampering.
   }
 
   destroy() {

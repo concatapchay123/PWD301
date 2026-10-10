@@ -76,6 +76,12 @@ function parseGroupedAttemptChoices(question) {
 }
 
 class StudentView {
+  static dashboardActivity(enrollments = [], upcoming = []) {
+    return {
+      showHero: enrollments.length > 0,
+      subtitle: upcoming.length > 0 ? 'Theo dõi bài kiểm tra sắp tới và tiến độ của bạn.' : 'Theo dõi khóa học và tiến độ của bạn ngay bên dưới.',
+    };
+  }
   static getAttemptScoreState(data) {
     const released = data?.score_status === 'RELEASED' || data?.is_released === true;
     if (!released) {
@@ -224,7 +230,7 @@ class StudentView {
               Chào buổi sáng, Sinh viên
             </h1>
             <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed" id="student-welcome-sub">
-              Bạn có bài kiểm tra sắp tới và các nội dung bài học đang tiếp diễn. Tiếp tục hành trình học tập ngay bên dưới.
+              Theo dõi khóa học, tiến độ và lịch kiểm tra của bạn ngay bên dưới.
             </p>
           </div>
         </div>
@@ -299,7 +305,7 @@ class StudentView {
           <div class="xl:col-span-8 space-y-6">
             
             <!-- Hero Continue Card -->
-            <div class="c-card p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden" id="dashboard-hero-continue-card">
+            <div class="c-card p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden hidden" id="dashboard-hero-continue-card">
               <div class="space-y-4">
                 <div class="flex items-center justify-between gap-3">
                   <div class="flex items-center gap-2">
@@ -311,7 +317,7 @@ class StudentView {
                   </div>
                   <span class="text-xs font-medium text-slate-400 flex items-center gap-1">
                     <span class="material-symbols-outlined text-[16px]">schedule</span>
-                    <span>Còn khoảng 45 phút học</span>
+                    <span>Tiếp tục theo tiến độ của bạn</span>
                   </span>
                 </div>
 
@@ -567,7 +573,11 @@ class StudentView {
       }
 
       // Update Hero Continue Card
-      if (enrollments.length > 0) {
+      const activity = StudentView.dashboardActivity(enrollments, upcoming);
+      const subtitle = document.getElementById('student-welcome-sub');
+      if (subtitle) subtitle.textContent = activity.subtitle;
+      if (activity.showHero) {
+        document.getElementById('dashboard-hero-continue-card')?.classList.remove('hidden');
         const heroCourse = activeEnrollments[0] || enrollments[0];
         const heroCode = document.getElementById('hero-course-code');
         const heroTitle = document.getElementById('hero-course-title');
@@ -1886,8 +1896,11 @@ class StudentView {
       let activeIframeMessageListener = null;
       let activeIframePollInterval = null;
       let activeCustomPlayerCtrl = null;
+      let extraPlayerControllers = [];
 
       const cleanupPreviousLesson = () => {
+        extraPlayerControllers.forEach(ctrl => ctrl?.destroy());
+        extraPlayerControllers = [];
         if (activeCustomPlayerCtrl && typeof activeCustomPlayerCtrl.destroy === 'function') {
           try { activeCustomPlayerCtrl.destroy(); } catch (_) {}
           activeCustomPlayerCtrl = null;
@@ -2348,6 +2361,25 @@ class StudentView {
         accordionContainer.innerHTML = modulesHtml + finalTestHtml;
       };
 
+      if (container._fileDownloadHandler) container.removeEventListener('click', container._fileDownloadHandler);
+      container._fileDownloadHandler = async event => {
+        const link = event.target.closest?.('[data-download-asset]');
+        if (!link || !link.dataset.downloadAsset) return;
+        event.preventDefault();
+        try {
+          const ticket = await ApiClient.getFileDownloadTicket(link.dataset.downloadAsset);
+          if (link.isConnected === false) return;
+          const url = ticket?.data?.url || ticket?.url;
+          if (!url) throw new Error('Không thể cấp quyền tải tài liệu.');
+          const parsed = new URL(url, window.location.origin);
+          if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Đường dẫn tải không hợp lệ.');
+          const anchor = document.createElement('a');
+          anchor.href = parsed.href; anchor.rel = 'noopener noreferrer';
+          anchor.download = ''; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+        } catch (error) { UI.showToast(error.message || 'Không thể tải tài liệu.', 'error'); }
+      };
+      container.addEventListener('click', container._fileDownloadHandler);
+
       // Render Resources Accordion (Grouped by Chapter & Lesson)
       const resourcesContainer = document.getElementById('sidebar-panel-resources');
       const renderSidebarResources = () => {
@@ -2387,7 +2419,7 @@ class StudentView {
           return `
             <a
               href="${downloadUrl}"
-              download
+              data-download-asset="${UI.escapeHtml(r.asset_id || r.file_asset?.public_id || r.id || r.resource_id || '')}"
               class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-emerald-500/60 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 hover:shadow-xs transition-all flex items-center justify-between gap-2.5 group cursor-pointer block text-inherit no-underline select-none"
               title="Nhấp để tải về ${UI.escapeHtml(fname)}"
             >
@@ -3001,19 +3033,24 @@ class StudentView {
           }
 
           // Multi-tier Video Detection: video_url -> video_urls array -> lesson resources
+          if (Array.isArray(lesson.playback_media) && lesson.playback_media.length) {
+            lesson.video_urls = lesson.playback_media.map(media => media.url);
+            lesson.video_url = lesson.playback_media[0].url;
+          }
           let activeVideoUrl = lesson.video_url || null;
           if (!activeVideoUrl && Array.isArray(lesson.video_urls) && lesson.video_urls.length > 0) {
             activeVideoUrl = lesson.video_urls[0];
           }
-          if (!activeVideoUrl && Array.isArray(lesson.resources)) {
+          if (!activeVideoUrl && isPreview && Array.isArray(lesson.resources)) {
             const vidRes = lesson.resources.find(r => {
               const mime = (r.file_asset?.mime_type || r.mime_type || '').toLowerCase();
               const fn = (r.file_asset?.original_filename || r.filename || r.label || '').toLowerCase();
-              return mime.startsWith('video/') || fn.match(/\.(mp4|webm|mkv|mov)$/i);
+              const scanStatus = r.file_asset?.scan_status || r.scan_status;
+              return scanStatus === 'CLEAN' && (mime.startsWith('video/') || fn.match(/\.(mp4|webm|mkv|mov)$/i));
             });
             if (vidRes) {
-              const baseUrl = vidRes.file_url || vidRes.download_url || `/student/files/${vidRes.file_asset?.public_id || vidRes.id}/download`;
-              activeVideoUrl = baseUrl.includes('disposition=') ? baseUrl : `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}disposition=inline`;
+              const assetId = vidRes.asset_id || vidRes.file_asset_id || vidRes.file_asset?.public_id;
+              if (assetId) activeVideoUrl = `/api/files/${encodeURIComponent(assetId)}/stream`;
             }
           }
           lesson.video_url = activeVideoUrl;
@@ -3102,7 +3139,7 @@ class StudentView {
               <!-- Media Player / Video Block -->
               ${lesson.video_url ? `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
-                  <div class="aspect-video w-full bg-black relative">
+                  <div class="w-full bg-slate-950 relative">
                     ${StudentView._getEmbedVideoHtml(lesson.video_url, 'cisco-stream-player', isCompleted)}
                   </div>
                   <div class="px-4 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
@@ -3125,7 +3162,7 @@ class StudentView {
               ${(lesson.video_urls || []).filter(url => url !== lesson.video_url).map((url, index) => `
                 <section class="space-y-2">
                   <h3 class="text-xs font-bold text-slate-700 dark:text-slate-300">Video bổ sung ${index + 2}</h3>
-                  <div class="aspect-video rounded-xl overflow-hidden bg-slate-900">
+                  <div class="rounded-xl overflow-hidden bg-slate-900">
                     ${StudentView._getEmbedVideoHtml(url, `cisco-extra-video-${index}`, isCompleted)}
                   </div>
                 </section>
@@ -3557,6 +3594,10 @@ class StudentView {
           const optInBtn = document.getElementById('btn-opt-in-revision');
           if (optInBtn) {
             optInBtn.onclick = async () => {
+              if (isPreview) {
+                UI.showToast('Xem thử không thay đổi phiên bản học tập của sinh viên.', 'info');
+                return;
+              }
               try {
                 optInBtn.disabled = true;
                 optInBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang chuyển đổi...';
@@ -3671,7 +3712,7 @@ class StudentView {
                 return;
               }
               try {
-                const result = await ApiClient.recordLessonProgress(activeItem.id, 30, 1.0, false);
+                const result = await ApiClient.recordLessonProgress(activeItem.id, 0, 1.0, false);
                 if (!result?.is_completed) {
                   UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
                   return;
@@ -3700,76 +3741,57 @@ class StudentView {
             }
           };
 
-          let customPlayerCtrl = null;
-
-          const handleVideoCompleted = async (durationSec) => {
-            if (videoWatched) return;
-            videoWatched = true;
-            if (customPlayerCtrl) customPlayerCtrl.unlockSeeking();
-            if (antiSeekLabel) {
-              antiSeekLabel.textContent = 'Đã hoàn thành 100% video • Bạn có thể tua lại nội dung tùy ý.';
+          const trackedLessonId = activeItem.id;
+          const handleConfirmed = result => {
+            const body = document.getElementById('cisco-lesson-content-body');
+            if (!body || body.dataset.lessonId !== String(trackedLessonId)) return;
+            if (result.is_video_complete) {
+              videoWatched = true;
+              if (antiSeekLabel) antiSeekLabel.textContent = 'Hệ thống đã ghi nhận đủ tiến độ video.';
+              document.getElementById('cisco-mini-quiz-section')?.classList.remove('hidden');
+              if (completeBtn && !hasMiniQuiz) completeBtn.disabled = false;
             }
-            if (antiSeekBadge) {
-              antiSeekBadge.textContent = '100%';
-              antiSeekBadge.className = 'font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
-            }
-            const quizSec = document.getElementById('cisco-mini-quiz-section');
-            if (quizSec) quizSec.classList.remove('hidden');
-
-            if (completeBtn && !hasMiniQuiz) {
-              completeBtn.disabled = false;
-              completeBtn.className = 'px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer';
-              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> <span>Đánh dấu hoàn thành</span>';
-            }
-
-            if (!isPreview) {
-              try {
-                const res = await ApiClient.recordLessonProgress(activeItem.id, Math.round(durationSec || 60), 1.0, false);
-                if (res?.is_completed) setLessonCompleted();
-              } catch (_) {}
-            }
+            if (result.is_completed) setLessonCompleted();
           };
-
+          const mediaFor = url => lesson.playback_media?.find(media => media.url === url)?.media_id || lesson.media_id;
+          const pauseOthers = own => {
+            [activeCustomPlayerCtrl, ...extraPlayerControllers].forEach(ctrl => { if (ctrl && ctrl !== own) ctrl.pause(true); });
+          };
           const playerContainer = document.getElementById('cisco-stream-player-container');
           if (playerContainer || videoEl) {
             activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
-              streamUrl: lesson.video_url,
-              isCompleted,
-              onProgress: (maxWatched, dur) => updateProgressUI(maxWatched, dur),
-              onComplete: (dur) => handleVideoCompleted(dur)
+              streamUrl: lesson.video_url, lessonId: trackedLessonId, mediaId: mediaFor(lesson.video_url),
+              clientIp: lesson.client_ip, preview: isPreview, isCompleted,
+              onPlaying: () => pauseOthers(activeCustomPlayerCtrl),
+              onProgress: updateProgressUI, onConfirmed: handleConfirmed
             });
-            customPlayerCtrl = activeCustomPlayerCtrl;
           }
-
-          // Supplementary videos setup: strictly lock forward seeking by default
           (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
-            StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
-              isCompleted: isCompleted,
-              streamUrl: url,
-              onProgress: null,
-              onComplete: null
+            let ctrl;
+            ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
+              isCompleted, streamUrl: url, lessonId: trackedLessonId, mediaId: mediaFor(url),
+              clientIp: lesson.client_ip, preview: isPreview, supplementary: true,
+              onPlaying: () => pauseOthers(ctrl),
+              onConfirmed: result => { if (result.is_completed) handleConfirmed(result); }
             });
+            extraPlayerControllers.push(ctrl);
           });
-
-          // Heartbeat Progress Tracker
-          if (!isPreview) {
-            activeProgressTimer = setInterval(() => {
-              const bodyRoot = document.getElementById('cisco-lesson-content-body');
-              if (!bodyRoot || bodyRoot.dataset.lessonId !== String(activeItem.id)) {
-                clearInterval(activeProgressTimer);
-                activeProgressTimer = null;
-                return;
-              }
-              const trackLessonId = activeItem.id;
-              ApiClient.recordLessonProgress(trackLessonId, 15, videoWatched ? 1.0 : 0.5, false)
-                .then(res => {
-                  const currentBody = document.getElementById('cisco-lesson-content-body');
-                  if (currentBody && currentBody.dataset.lessonId === String(trackLessonId)) {
-                    if (res?.is_completed) setLessonCompleted();
-                  }
-                })
-                .catch(() => {});
-            }, 15000);
+          if (!isPreview && !hasVideo) {
+            const contentTracker = StudentView.createPlaybackTracker(trackedLessonId, `content:${trackedLessonId}`, {
+              onConfirmed: handleConfirmed,
+              isAlive: () => { const body = document.getElementById('cisco-lesson-content-body'); return !!body && body.dataset.lessonId === String(trackedLessonId); },
+              onError: error => UI.showToast(error.message || 'Không thể lưu tiến độ học.', 'warning')
+            });
+            const updateContent = () => {
+              contentTracker.update(document.visibilityState === 'hidden' ? 'paused' : 'playing', 0, 1);
+              void contentTracker.flush();
+            };
+            contentTracker.ready.then(updateContent).catch(() => {});
+            document.addEventListener('visibilitychange', updateContent);
+            extraPlayerControllers.push({ pause: () => { contentTracker.update('paused', 0, 1); void contentTracker.flush(); }, destroy: () => {
+              document.removeEventListener('visibilitychange', updateContent);
+              contentTracker.update('paused', 0, 1); void contentTracker.flush(); contentTracker.destroy();
+            } });
           }
 
           // Mini-Quiz Engine Handler (Coursera-Style Slide Pagination & Passing Threshold)
@@ -3976,7 +3998,7 @@ class StudentView {
                   }
 
                   if (isCorrect) correctCount++;
-                  questionResults.push({ card, qData, qType, isCorrect, feedbackDetail });
+                  questionResults.push({ card, qData, qType, qIdx, isCorrect, feedbackDetail });
                 });
 
                 const percent = Math.round((correctCount / totalQuizSlides) * 100);
@@ -3985,7 +4007,7 @@ class StudentView {
 
                 if (isPassed) {
                   // PASS: Reveal answers & explanations on all cards
-                  questionResults.forEach(({ card, qData, qType, isCorrect, feedbackDetail }) => {
+                  questionResults.forEach(({ card, qData, qType, qIdx, isCorrect, feedbackDetail }) => {
                     const explDiv = card.querySelector('.cisco-quiz-explanation');
 
                     if (qType === 'MULTIPLE_CHOICE') {
@@ -4062,9 +4084,15 @@ class StudentView {
                   });
 
                   const targetLessonId = activeItem.id;
+                  if (isPreview) {
+                    if (banner) banner.innerHTML = `<span class="font-semibold text-emerald-700 dark:text-emerald-300">Xem thử: ${correctCount}/${totalQuizSlides} (${percent}%). Không ghi nhận tiến độ.</span>`;
+                    if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+                    checkQuizBtn.disabled = false;
+                    return;
+                  }
                   try {
                     if (hasVideo) {
-                      await ApiClient.recordLessonProgress(targetLessonId, 30, 1.0, false);
+                      await ApiClient.recordLessonProgress(targetLessonId, 0, 1.0, false);
                     }
                     const result = await ApiClient.completeLessonMiniQuiz(targetLessonId, answers);
                     const currentBody = document.getElementById('cisco-lesson-content-body');
@@ -4212,22 +4240,13 @@ class StudentView {
 
     if (ytId) {
       return `
-        <div class="relative group w-full h-full aspect-video rounded-xl overflow-hidden bg-slate-950 flex flex-col justify-end select-none" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
-          <!-- Headless YouTube Stream mounting layer (Scaled 105% and clipped with overflow-hidden to conceal all edge branding) -->
-          <div class="absolute inset-0 w-full h-full overflow-hidden flex items-center justify-center pointer-events-none">
-            <div id="${playerId}-yt" class="w-full h-full aspect-video scale-105 origin-center"></div>
-          </div>
-
-          <!-- Anti-Redirect Shield (Click anywhere to toggle Play/Pause) -->
-          <div id="${playerId}-shield" class="absolute inset-0 z-10 cursor-pointer bg-transparent" title="Nhấp để Phát/Tạm dừng"></div>
-
-          <!-- Big Play Button Overlay -->
-          <button type="button" id="${playerId}-big-play" class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-white/20 text-white flex items-center justify-center backdrop-blur-sm transition-all shadow-xl group-hover:scale-105 z-20 cursor-pointer" aria-label="Phát video">
-            <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
-          </button>
-
+        <div class="relative group w-full rounded-xl bg-slate-950 flex flex-col select-none" id="${playerId}-container" data-custom-player="true" data-player-type="youtube" data-yt-id="${ytId}" tabindex="0">
+          <div class="w-full aspect-video"><div id="${playerId}-yt" class="w-full h-full"></div></div>
+          <p id="${playerId}-identity" class="text-xs text-slate-300 px-3 py-2"></p>
+          <p id="${playerId}-status" role="status" class="text-xs text-amber-300 px-3"></p>
+          <button type="button" id="${playerId}-retry" class="hidden px-4 py-2 text-slate-200">Thử lại video</button>
           <!-- PWD301 Flat Warm Editorial Custom Control Bar -->
-          <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
+          <div class="relative bg-slate-950 p-3 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
             <!-- Scrubber Track -->
             <div class="relative w-full h-2.5 bg-slate-700/60 rounded-full cursor-pointer group/track hover:h-3 transition-all" id="${playerId}-progress-track" title="${isCompleted ? 'Tua video tự do' : 'Khóa tua nhanh: Chỉ có thể tua lại đoạn đã xem'}">
               <div id="${playerId}-buffered-bar" class="absolute left-0 top-0 bottom-0 bg-slate-500/40 rounded-full w-0 transition-all pointer-events-none"></div>
@@ -4235,7 +4254,7 @@ class StudentView {
               <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
             </div>
 
-            <div class="flex items-center justify-between text-xs text-slate-200">
+            <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
               <div class="flex items-center gap-3">
                 <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
                   <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
@@ -4243,6 +4262,7 @@ class StudentView {
                 <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
                   <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
                 </button>
+                <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
                 <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
               </div>
 
@@ -4250,6 +4270,7 @@ class StudentView {
                 <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
                   1.0x
                 </button>
+                <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
                 <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
                   <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
                   <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
@@ -4284,6 +4305,7 @@ class StudentView {
           <span class="material-symbols-outlined text-[34px] ml-0.5 pointer-events-none">play_arrow</span>
         </button>
 
+        <p id="${playerId}-status" role="status" class="absolute top-2 left-2 text-xs text-amber-300"></p>
         <!-- Custom Control Bar -->
         <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent p-3 pt-6 flex flex-col gap-2 z-20 transition-opacity duration-200" id="${playerId}-controls">
           <!-- Scrubber Track -->
@@ -4293,7 +4315,7 @@ class StudentView {
             <div id="${playerId}-played-bar" class="absolute left-0 top-0 bottom-0 bg-indigo-500 rounded-full w-0 pointer-events-none"></div>
           </div>
 
-          <div class="flex items-center justify-between text-xs text-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-200">
             <div class="flex items-center gap-3">
               <button type="button" id="${playerId}-play-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Phát/Tạm dừng">
                 <span class="material-symbols-outlined text-[20px] align-middle">play_arrow</span>
@@ -4301,6 +4323,7 @@ class StudentView {
               <button type="button" id="${playerId}-mute-btn" class="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer" title="Bật/Tắt âm">
                 <span class="material-symbols-outlined text-[20px] align-middle">volume_up</span>
               </button>
+              <input id="${playerId}-volume" type="range" min="0" max="100" value="100" aria-label="Âm lượng" class="w-20" />
               <span id="${playerId}-time" class="font-mono text-[11px] text-slate-300">00:00 / 00:00</span>
             </div>
 
@@ -4308,7 +4331,8 @@ class StudentView {
               <button type="button" id="${playerId}-speed-btn" class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer" title="Tốc độ học">
                 1.0x
               </button>
-              <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
+              <button type="button" id="${playerId}-progress-retry" class="hidden px-4 py-2 text-xs text-amber-300">Thử Lưu Tiến Độ</button>
+                <span id="${playerId}-lock-indicator" class="text-[11px] ${isCompleted ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1 font-medium">
                 <span class="material-symbols-outlined text-[14px]">${isCompleted ? 'lock_open' : 'lock_clock'}</span>
                 <span>${isCompleted ? 'Đã mở khóa tua' : 'Khóa tua nhanh'}</span>
               </span>
@@ -4322,488 +4346,274 @@ class StudentView {
     `;
   }
 
+  static ensureYouTubeAPI() {
+    if (window.YT?.Player) return Promise.resolve(window.YT);
+    if (StudentView._youtubeApiPromise) return StudentView._youtubeApiPromise;
+    StudentView._youtubeApiPromise = new Promise((resolve, reject) => {
+      let script = document.getElementById('youtube-iframe-api-script');
+      const previous = window.onYouTubeIframeAPIReady;
+      const finish = error => {
+        clearTimeout(timer);
+        window.onYouTubeIframeAPIReady = previous;
+        if (error) {
+          script?.remove();
+          StudentView._youtubeApiPromise = null;
+          reject(error);
+        } else resolve(window.YT);
+      };
+      const timer = setTimeout(() => finish(new Error('Không thể tải YouTube trong 15 giây. Hãy thử lại.')), 15000);
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof previous === 'function') previous();
+        finish(window.YT?.Player ? null : new Error('YouTube chưa sẵn sàng.'));
+      };
+      if (!script) {
+        script = document.createElement('script');
+        script.id = 'youtube-iframe-api-script';
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.onerror = () => finish(new Error('Không thể kết nối YouTube. Hãy thử lại.'));
+        document.head.appendChild(script);
+      }
+    });
+    return StudentView._youtubeApiPromise;
+  }
+
+  static createPlaybackTracker(lessonId, mediaId, options = {}) {
+    let session = null, pending = null, flight = null, destroyed = false, flushQueued = false;
+    let sample = { state: 'paused', position_seconds: 0, playback_rate: 1 };
+    const apply = result => {
+      const data = result?.data || result;
+      session = { ...session, ...data };
+      if (!destroyed) options.onConfirmed?.(data);
+      return data;
+    };
+    const ready = ApiClient.startLessonPlayback(lessonId, mediaId).then(apply);
+    const flush = () => {
+      if (flight) { flushQueued = true; return flight.then(() => pending ? null : flight); }
+      const capturedSample = { ...sample };
+      flight = ready.then(() => {
+        if (!pending) pending = { playback_session_id: session.session_id, sequence: session.next_sequence, media_id: mediaId, ...capturedSample };
+        return ApiClient.recordPlaybackHeartbeat(lessonId, pending);
+      }).then(result => { pending = null; return apply(result); }).catch(error => {
+        if (!destroyed) options.onError?.(error);
+      }).finally(() => {
+        flight = null;
+        if (flushQueued && !pending) { flushQueued = false; void flush(); }
+      });
+      return flight;
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') { sample.state = 'paused'; void flush(); options.onHidden?.(); }
+    };
+    document.addEventListener('visibilitychange', visibility);
+    const timer = setInterval(() => {
+      if (options.isAlive && !options.isAlive()) {
+        sample.state = 'paused'; void flush(); tracker.destroy(); return;
+      }
+      if (sample.state === 'playing' && document.visibilityState !== 'hidden') void flush();
+    }, 10000);
+    ready.catch(error => { if (!destroyed) options.onError?.(error); });
+    const tracker = {
+      ready, flush,
+      update(state, position, rate) {
+        sample = { state, position_seconds: Math.max(0, Number(position) || 0), playback_rate: Number(rate) || 1 };
+      },
+      destroy() {
+        destroyed = true; clearInterval(timer);
+        document.removeEventListener('visibilitychange', visibility);
+      }
+    };
+    return tracker;
+  }
+
   static setupCustomVideoPlayer(playerId, options = {}) {
     const container = document.getElementById(`${playerId}-container`);
     if (!container) return null;
-    const playerType = container.getAttribute('data-player-type') || 'native';
-
-    const bigPlayBtn = document.getElementById(`${playerId}-big-play`);
-    const playBtn = document.getElementById(`${playerId}-play-btn`);
-    const muteBtn = document.getElementById(`${playerId}-mute-btn`);
-    const speedBtn = document.getElementById(`${playerId}-speed-btn`);
-    const timeDisplay = document.getElementById(`${playerId}-time`);
-    const track = document.getElementById(`${playerId}-progress-track`);
-    const bufferedBar = document.getElementById(`${playerId}-buffered-bar`);
-    const watchedBar = document.getElementById(`${playerId}-watched-bar`);
-    const playedBar = document.getElementById(`${playerId}-played-bar`);
-    const fullscreenBtn = document.getElementById(`${playerId}-fullscreen-btn`);
-    const lockIndicator = document.getElementById(`${playerId}-lock-indicator`);
-    const shield = document.getElementById(`${playerId}-shield`);
-
-    let isDone = !!options.isCompleted;
-    let maxWatched = isDone ? 999999 : 0;
-    let lastToastTime = 0;
-    let currentSpeedIdx = 0;
-    const speedList = [1.0, 1.25, 1.5, 2.0, 0.75];
-
-    if (watchedBar) watchedBar.style.width = isDone ? '100%' : '0%';
-    if (playedBar) playedBar.style.width = '0%';
-
-    const showThrottleToast = (msg, type = 'warning') => {
-      const now = Date.now();
-      if (now - lastToastTime > 2500) {
-        lastToastTime = now;
-        UI.showToast(msg, type);
+    const youtube = container.getAttribute('data-player-type') === 'youtube';
+    const get = suffix => document.getElementById(`${playerId}-${suffix}`);
+    const video = youtube ? null : document.getElementById(playerId);
+    const listeners = [], buttons = [];
+    let driver = null, hls = null, armor = null, tracker = null, disposed = false, playing = false;
+    let frontier = 0, unlocked = !!options.isCompleted, duration = 0, resumed = false, verifiedIp = options.clientIp || '';
+    let observedPosition = 0, observedAt = Date.now(), confirmedRate = 1, changingRate = false;
+    const listen = (element, name, handler) => { if (element) { element.addEventListener(name, handler); listeners.push([element, name, handler]); } };
+    const click = (suffix, handler) => { const el = get(suffix); if (el) { el.onclick = event => { event.stopPropagation(); handler(event); }; buttons.push(el); } };
+    const position = () => youtube ? driver?.getCurrentTime?.() || 0 : video?.currentTime || 0;
+    const rate = () => youtube ? driver?.getPlaybackRate?.() || 1 : video?.playbackRate || 1;
+    const seek = value => { observedPosition = value; observedAt = Date.now(); if (youtube) driver?.seekTo?.(value, true); else if (video) video.currentTime = value; };
+    const pause = (releaseSession = false) => {
+      if (youtube) driver?.pauseVideo?.(); else video?.pause();
+      if (releaseSession && tracker) {
+        tracker.update('paused', position(), rate()); void tracker.flush(); tracker.destroy(); tracker = null;
       }
     };
-
-    const formatTime = (seconds) => {
-      if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
-      const m = Math.floor(seconds / 60);
-      const s = Math.floor(seconds % 60);
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const status = message => { const el = get('status'); if (el) el.textContent = message; else if (message) UI.showToast(message, 'warning'); };
+    const reportError = error => { if (!disposed) { status(error.message || 'Không thể lưu tiến độ. Hãy thử lại.'); get('progress-retry')?.classList.remove('hidden'); } };
+    const confirmed = data => {
+      if (disposed || container.isConnected === false) return;
+      frontier = Number(data.frontier) || 0; duration = Number(data.duration) || duration;
+      unlocked = !!data.is_video_complete || !!data.is_completed;
+      if ((!resumed || data.seek_required) && driver) { seek(Math.min(Number(data.resume_position) || frontier, duration || frontier)); resumed = true; }
+      const lock = get('lock-indicator');
+      if (lock) lock.textContent = unlocked ? 'Đã mở khóa tua' : 'Khóa tua nhanh';
+      if (get('identity')) {
+        const user = typeof AuthState !== 'undefined' ? AuthState.getUser() || {} : {};
+        verifiedIp = data.client_ip || verifiedIp;
+        get('identity').textContent = [user.student_code, user.email, verifiedIp].filter(Boolean).join(' • ');
+      }
+      if (armor && data.client_ip) armor.ip = data.client_ip;
+      status(''); get('progress-retry')?.classList.add('hidden');
+      options.onConfirmed?.(data);
+      options.onProgress?.(frontier, duration);
+      if (unlocked) options.onComplete?.(duration);
     };
-
-    // Mount VideoArmor on the container
-    let armorInstance = null;
-    if (typeof VideoArmor !== 'undefined' && container) {
-      const student = (typeof AuthState !== 'undefined' && AuthState.getUser) ? AuthState.getUser() : {};
-      armorInstance = VideoArmor.mount(container, {
-        student,
-        ip: (typeof window !== 'undefined' && window.clientIp) || '127.0.0.1',
-        onSecurityViolation: (reason, details) => {
-          if (typeof ApiClient !== 'undefined' && ApiClient.recordTelemetry) {
-            ApiClient.recordTelemetry('VIDEO_SECURITY_VIOLATION', { reason, ...details });
-          }
-        }
+    const mediaId = youtube ? `youtube:${container.getAttribute('data-yt-id')}` : options.mediaId;
+    const startTracker = () => {
+      if (!options.lessonId || !mediaId || options.preview) return;
+      tracker?.destroy();
+      tracker = StudentView.createPlaybackTracker(options.lessonId, mediaId, { onConfirmed: confirmed, onError: reportError, onHidden: pause });
+    };
+    const transition = state => {
+      if (disposed || container.isConnected === false || changingRate) return;
+      const active = state === 'playing' && document.visibilityState !== 'hidden' && !armor?.isBlackedOut;
+      if (active && !playing) {
+        options.onPlaying?.();
+        if (!tracker) startTracker();
+      }
+      playing = active;
+      tracker?.update(active ? 'playing' : 'paused', position(), rate());
+      void tracker?.flush();
+      const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
+      if (icon) icon.textContent = playing ? 'pause' : 'play_arrow';
+    };
+    const toggle = () => { if (playing) pause(); else if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError); };
+    const paint = () => {
+      if (container.isConnected === false) { controller?.destroy(); return; }
+      if (disposed || !driver) return;
+      const cur = position(), dur = duration || (youtube ? driver.getDuration?.() : video.duration) || 0;
+      const elapsed = Math.max(0, (Date.now() - observedAt) / 1000);
+      if (youtube && !unlocked && cur > Math.max(frontier, observedPosition + (playing ? elapsed * rate() : 0)) + 1) {
+        seek(frontier); status('Bạn chỉ có thể tua trong đoạn đã được hệ thống ghi nhận.'); return;
+      }
+      observedPosition = cur; observedAt = Date.now();
+      tracker?.update(playing && !armor?.isBlackedOut ? 'playing' : 'paused', cur, rate());
+      const buffered = youtube ? driver.getVideoLoadedFraction?.() || 0 : video.buffered?.length && dur ? video.buffered.end(video.buffered.length - 1) / dur : 0;
+      if (get('buffered-bar')) get('buffered-bar').style.width = `${Math.max(0, Math.min(1, buffered)) * 100}%`;
+      if (get('played-bar')) get('played-bar').style.width = `${dur ? Math.min(100, cur / dur * 100) : 0}%`;
+      if (get('watched-bar')) get('watched-bar').style.width = `${dur ? Math.min(100, frontier / dur * 100) : 0}%`;
+      const fmt = seconds => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+      if (get('time')) get('time').textContent = `${fmt(cur)} / ${fmt(dur)}`;
+      if (get('speed-btn')) get('speed-btn').textContent = `${rate()}x`;
+      if (armor?.isBlackedOut && playing) { pause(); transition('paused'); }
+    };
+    const handleRateChange = async () => {
+      if (disposed || changingRate) return;
+      const newRate = rate(), wasPlaying = playing;
+      if (newRate === confirmedRate) { paint(); return; }
+      if (!tracker) { confirmedRate = newRate; paint(); return; }
+      changingRate = true;
+      tracker.update(wasPlaying ? 'playing' : 'paused', position(), confirmedRate);
+      pause();
+      const previous = await tracker.flush();
+      if (disposed) return;
+      if (previous) {
+        tracker.update('paused', position(), newRate);
+        await tracker.flush();
+      }
+      confirmedRate = newRate; changingRate = false; playing = false;
+      paint();
+      if (previous && wasPlaying && document.visibilityState !== 'hidden' && !armor?.isBlackedOut) {
+        if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError);
+      }
+    };
+    const seekAllowed = value => {
+      const limit = unlocked ? duration || Infinity : frontier;
+      seek(Math.max(0, Math.min(value, limit)));
+      if (value > limit) status('Bạn chỉ có thể tua trong đoạn đã được hệ thống ghi nhận.');
+    };
+    click('play-btn', toggle); click('big-play', toggle);
+    click('progress-retry', () => { if (!tracker) startTracker(); void tracker?.flush(); });
+    if (!youtube) click('shield', toggle);
+    click('mute-btn', () => { if (youtube) { if (driver?.isMuted()) driver.unMute(); else driver?.mute(); } else if (video) video.muted = !video.muted; });
+    listen(get('volume'), 'input', event => { const value = Number(event.target.value); if (youtube) driver?.setVolume?.(value); else if (video) video.volume = value / 100; });
+    click('speed-btn', () => {
+      const rates = youtube ? driver?.getAvailablePlaybackRates?.() || [1] : [0.75, 1, 1.25, 1.5, 2];
+      const supported = rates.filter(value => value >= 0.75 && value <= 2);
+      const next = supported[(supported.indexOf(rate()) + 1) % supported.length] || 1;
+      if (youtube) driver?.setPlaybackRate?.(next); else if (video) video.playbackRate = next;
+    });
+    click('progress-track', event => { const rect = get('progress-track').getBoundingClientRect(); seekAllowed((event.clientX - rect.left) / rect.width * duration); });
+    click('fullscreen-btn', () => { if (document.fullscreenElement) void document.exitFullscreen?.(); else void container.requestFullscreen?.(); });
+    listen(container, 'keydown', event => {
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target?.tagName)) return;
+      if ([' ', 'k', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault();
+        if (event.key === ' ' || event.key === 'k') toggle();
+        else seekAllowed(position() + (event.key === 'ArrowRight' ? 5 : -5));
+      }
+    });
+    container._customPlayer = { pause, play: toggle };
+    const hidden = () => { if (document.visibilityState === 'hidden') { pause(); transition('paused'); } };
+    listen(document, 'visibilitychange', hidden);
+    if (!youtube && typeof VideoArmor !== 'undefined') {
+      armor = VideoArmor.mount(container, {
+        student: typeof AuthState !== 'undefined' ? AuthState.getUser() : {}, ip: options.clientIp || '',
+        onSecurityViolation: (reason, details) => { pause(); transition('paused'); ApiClient.recordTelemetry?.('VIDEO_SECURITY_VIOLATION', { reason, ...details }); }
       });
     }
-
-    if (fullscreenBtn && container) {
-      fullscreenBtn.onclick = (e) => {
-        e.stopPropagation();
-        if (!document.fullscreenElement) {
-          if (container.requestFullscreen) container.requestFullscreen();
-        } else {
-          if (document.exitFullscreen) document.exitFullscreen();
-        }
-      };
-    }
-
-    // =========================================================================
-    // BRANCH A: YOUTUBE HEADLESS STREAM DRIVER
-    // =========================================================================
-    if (playerType === 'youtube') {
-      const ytId = container.getAttribute('data-yt-id');
-      let ytPlayer = null;
-      let tickerTimer = null;
-      let isYtPlaying = false;
-
-      const updatePlayState = () => {
-        if (!playBtn) return;
-        const icon = playBtn.querySelector('.material-symbols-outlined');
-        if (isYtPlaying) {
-          if (icon) icon.textContent = 'pause';
-          if (bigPlayBtn) bigPlayBtn.classList.add('hidden');
-        } else {
-          if (icon) icon.textContent = 'play_arrow';
-          if (bigPlayBtn) bigPlayBtn.classList.remove('hidden');
-        }
-      };
-
-      const togglePlay = () => {
-        if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
-        const state = ytPlayer.getPlayerState();
-        if (state === 1) { // playing
-          ytPlayer.pauseVideo();
-        } else {
-          ytPlayer.playVideo();
-        }
-      };
-
-      if (bigPlayBtn) bigPlayBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-      if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-      if (shield) shield.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-
-      if (muteBtn) {
-        muteBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (!ytPlayer) return;
-          const muted = ytPlayer.isMuted();
-          if (muted) {
-            ytPlayer.unMute();
-            const icon = muteBtn.querySelector('.material-symbols-outlined');
-            if (icon) icon.textContent = 'volume_up';
-          } else {
-            ytPlayer.mute();
-            const icon = muteBtn.querySelector('.material-symbols-outlined');
-            if (icon) icon.textContent = 'volume_off';
-          }
-        };
-      }
-
-      if (speedBtn) {
-        speedBtn.onclick = (e) => {
-          e.stopPropagation();
-          currentSpeedIdx = (currentSpeedIdx + 1) % speedList.length;
-          const spd = speedList[currentSpeedIdx];
-          speedBtn.textContent = `${spd}x`;
-          if (ytPlayer && typeof ytPlayer.setPlaybackRate === 'function') {
-            ytPlayer.setPlaybackRate(spd);
-          }
-        };
-      }
-
-      if (track) {
-        track.onclick = (e) => {
-          e.stopPropagation();
-          if (!ytPlayer || typeof ytPlayer.getDuration !== 'function') return;
-          const dur = ytPlayer.getDuration() || 0;
-          if (!dur || dur <= 0) return;
-          const rect = track.getBoundingClientRect();
-          const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-          const targetTime = clickRatio * dur;
-
-          if (isDone || targetTime <= maxWatched) {
-            ytPlayer.seekTo(targetTime, true);
-          } else {
-            ytPlayer.seekTo(maxWatched, true);
-            showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
-          }
-        };
-      }
-
-      const ensureYouTubeAPI = () => {
-        return new Promise((resolve) => {
-          if (window.YT && window.YT.Player) {
-            resolve(window.YT);
-            return;
-          }
-          if (!document.getElementById('youtube-iframe-api-script')) {
-            const tag = document.createElement('script');
-            tag.id = 'youtube-iframe-api-script';
-            tag.src = 'https://www.youtube.com/iframe_api';
-            const firstScript = document.getElementsByTagName('script')[0] || document.head;
-            firstScript.parentNode.insertBefore(tag, firstScript);
-          }
-          const checkTimer = setInterval(() => {
-            if (window.YT && window.YT.Player) {
-              clearInterval(checkTimer);
-              resolve(window.YT);
+    const initialize = async () => {
+      if (youtube) {
+        try {
+          const YT = await StudentView.ensureYouTubeAPI();
+          if (disposed) return;
+          driver = new YT.Player(`${playerId}-yt`, {
+            videoId: container.getAttribute('data-yt-id'),
+            playerVars: { controls: 0, rel: 0, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
+            events: {
+              onReady: () => { if (!disposed) { if (!options.supplementary) startTracker(); paint(); } },
+              onStateChange: event => { if (!disposed) transition(event.data === 1 ? 'playing' : event.data === 0 ? 'ended' : 'paused'); },
+              onPlaybackRateChange: () => { void handleRateChange(); },
+              onError: () => { if (!disposed) { transition('paused'); status('Video không khả dụng hoặc không cho phép nhúng. Hãy thử lại.'); get('retry')?.classList.remove('hidden'); } }
             }
-          }, 100);
-        });
-      };
-
-      ensureYouTubeAPI().then((YT) => {
-        const mount = document.getElementById(`${playerId}-yt`);
-        if (!mount) return;
-        ytPlayer = new YT.Player(`${playerId}-yt`, {
-          videoId: ytId,
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            modestbranding: 1,
-            rel: 0,
-            iv_load_policy: 3,
-            disablekb: 1,
-            fs: 0,
-            playsinline: 1,
-            enablejsapi: 1,
-            origin: window.location.origin
-          },
-          events: {
-            onReady: () => {
-              updatePlayState();
-            },
-            onStateChange: (event) => {
-              // 1: playing, 2: paused, 0: ended
-              isYtPlaying = (event.data === 1);
-              updatePlayState();
-              if (event.data === 0) {
-                const dur = ytPlayer.getDuration() || 0;
-                if (isDone || (dur > 0 && maxWatched >= dur * 0.90)) {
-                  if (!isDone) {
-                    isDone = true;
-                    maxWatched = dur || 999999;
-                    if (lockIndicator) {
-                      lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-                      lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-                    }
-                    if (track) track.title = 'Tua video tự do';
-                  }
-                  if (typeof options.onComplete === 'function') options.onComplete(dur);
-                } else if (!isDone) {
-                  showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
-                }
-              }
-            }
-          }
-        });
-
-        container._customPlayer = {
-          pause: () => { try { ytPlayer?.pauseVideo(); } catch (_) {} },
-          play: () => { try { ytPlayer?.playVideo(); } catch (_) {} }
-        };
-
-        tickerTimer = setInterval(() => {
-          if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function') return;
-          const cur = ytPlayer.getCurrentTime() || 0;
-          const dur = ytPlayer.getDuration() || 0;
-          const loaded = (typeof ytPlayer.getVideoLoadedFraction === 'function') ? ytPlayer.getVideoLoadedFraction() : 0;
-
-          if (!isDone && cur > maxWatched + 0.8) {
-            ytPlayer.seekTo(maxWatched, true);
-            return;
-          }
-
-          if (cur > maxWatched) maxWatched = cur;
-
-          const pct = dur > 0 ? (cur / dur) * 100 : 0;
-          const watchedPct = isDone ? 100 : (dur > 0 ? (maxWatched / dur) * 100 : 0);
-
-          if (playedBar) playedBar.style.width = `${pct}%`;
-          if (watchedBar) watchedBar.style.width = `${Math.min(100, watchedPct)}%`;
-          if (bufferedBar) bufferedBar.style.width = `${loaded * 100}%`;
-          if (timeDisplay) timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
-
-          if (typeof options.onProgress === 'function') {
-            options.onProgress(maxWatched, dur);
-          }
-
-          if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.5) {
-            if (!isDone) {
-              isDone = true;
-              maxWatched = dur || 999999;
-              if (lockIndicator) {
-                lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-                lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-              }
-              if (track) track.title = 'Tua video tự do';
-            }
-            if (typeof options.onComplete === 'function') {
-              options.onComplete(dur);
-            }
-          }
-        }, 250);
-      });
-
-      return {
-        armor: armorInstance,
-        hls: null,
-        unlockSeeking: () => {
-          isDone = true;
-          maxWatched = 999999;
-          if (lockIndicator) {
-            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-          }
-          if (track) track.title = 'Tua video tự do';
-        },
-        destroy: () => {
-          if (tickerTimer) clearInterval(tickerTimer);
-          if (armorInstance && typeof armorInstance.destroy === 'function') armorInstance.destroy();
-          if (ytPlayer && typeof ytPlayer.destroy === 'function') ytPlayer.destroy();
+          });
+        } catch (error) { reportError(error); get('retry')?.classList.remove('hidden'); }
+      } else if (video) {
+        driver = video;
+        const src = options.streamUrl || video.getAttribute('data-hls-src') || video.src || '';
+        if (src.includes('.m3u8') || src.includes('/video/playlist')) {
+          if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            hls = new Hls({ xhrSetup: xhr => { xhr.withCredentials = true; } });
+            hls.loadSource(src); hls.attachMedia(video);
+          } else if (video.canPlayType?.('application/vnd.apple.mpegurl')) video.src = src;
+          else status('Trình duyệt chưa hỗ trợ video này.');
         }
-      };
-    }
-
-    // =========================================================================
-    // BRANCH B: NATIVE HTML5 & ENCRYPTED HLS DRIVER
-    // =========================================================================
-    const video = document.getElementById(playerId);
-    if (!video || video.tagName !== 'VIDEO') return null;
-
-    let hlsInstance = null;
-    if (video.hasAttribute('src') && !video.getAttribute('src')) {
-      video.removeAttribute('src');
-    }
-    const streamSrc = options.streamUrl || video.getAttribute('data-hls-src') || (video.getAttribute('src') || '') || video.src || '';
-    if (streamSrc && (streamSrc.includes('.m3u8') || streamSrc.includes('/video/playlist'))) {
-      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hlsInstance = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          xhrSetup: (xhr) => {
-            xhr.withCredentials = true;
-          }
-        });
-        hlsInstance.loadSource(streamSrc);
-        hlsInstance.attachMedia(video);
-      } else if (typeof video.canPlayType === 'function' && video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamSrc;
-      }
-    }
-
-    const updatePlayState = () => {
-      if (!playBtn) return;
-      const icon = playBtn.querySelector('.material-symbols-outlined');
-      if (video.paused || video.ended) {
-        if (icon) icon.textContent = 'play_arrow';
-        if (bigPlayBtn) bigPlayBtn.classList.remove('hidden');
-      } else {
-        if (icon) icon.textContent = 'pause';
-        if (bigPlayBtn) bigPlayBtn.classList.add('hidden');
+        listen(video, 'playing', () => transition('playing'));
+        for (const event of ['pause', 'waiting', 'ended']) listen(video, event, () => transition(event === 'ended' ? 'ended' : 'paused'));
+        listen(video, 'error', () => { transition('paused'); status('Không thể tải video. Kiểm tra kết nối và thử lại.'); });
+        listen(video, 'seeking', () => { if (!unlocked && position() > frontier) seek(frontier); });
+        listen(video, 'loadedmetadata', () => { if (!tracker && !options.supplementary) startTracker(); });
+        if (video.readyState >= 1 && !options.supplementary) startTracker();
+        listen(video, 'ratechange', () => { void handleRateChange(); });
       }
     };
-
-    const togglePlay = () => {
-      if (video.paused || video.ended) {
-        video.play().catch(() => {});
-      } else {
-        video.pause();
+    click('retry', () => { driver?.destroy?.(); driver = null; get('retry')?.classList.add('hidden'); void initialize(); });
+    void initialize();
+    const ticker = setInterval(paint, 250);
+    const controller = {
+      armor, get hls() { return hls; }, pause,
+      applyConfirmed: confirmed,
+      destroy() {
+        if (disposed) return;
+        pause(); playing = false;
+        tracker?.update('paused', position(), rate());
+        void tracker?.flush(); tracker?.destroy();
+        disposed = true; clearInterval(ticker);
+        listeners.forEach(([element, event, handler]) => element.removeEventListener(event, handler));
+        buttons.forEach(element => { element.onclick = null; });
+        delete container._customPlayer;
+        armor?.destroy(); hls?.destroy(); if (youtube) driver?.destroy?.();
       }
     };
-
-    if (bigPlayBtn) bigPlayBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-    if (playBtn) playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-    if (shield) shield.onclick = (e) => { e.stopPropagation(); togglePlay(); };
-    video.onclick = () => togglePlay();
-
-    if (muteBtn) {
-      muteBtn.onclick = (e) => {
-        e.stopPropagation();
-        video.muted = !video.muted;
-        const icon = muteBtn.querySelector('.material-symbols-outlined');
-        if (icon) icon.textContent = video.muted ? 'volume_off' : 'volume_up';
-      };
-    }
-
-    if (speedBtn) {
-      speedBtn.onclick = (e) => {
-        e.stopPropagation();
-        currentSpeedIdx = (currentSpeedIdx + 1) % speedList.length;
-        const spd = speedList[currentSpeedIdx];
-        speedBtn.textContent = `${spd}x`;
-        video.playbackRate = spd;
-      };
-    }
-
-    if (track) {
-      track.onclick = (e) => {
-        e.stopPropagation();
-        const dur = video.duration;
-        if (!dur || dur <= 0) return;
-        const rect = track.getBoundingClientRect();
-        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const targetTime = clickRatio * dur;
-
-        if (isDone || targetTime <= maxWatched) {
-          video.currentTime = targetTime;
-        } else {
-          video.currentTime = maxWatched;
-          showThrottleToast('Khóa tua nhanh đang bật: Bạn chỉ có thể tua lại những đoạn video đã xem.');
-        }
-      };
-    }
-
-    video.addEventListener('seeking', () => {
-      if (!isDone && video.currentTime > maxWatched + 0.3) {
-        video.currentTime = maxWatched;
-        showThrottleToast('Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.');
-      }
-    });
-
-    const handleKeydown = (e) => {
-      if (!isDone && (['ArrowRight', 'KeyL', 'PageDown'].includes(e.code) || e.key === 'ArrowRight')) {
-        e.preventDefault();
-        e.stopPropagation();
-        showThrottleToast('Khóa tua nhanh đang bật: Cần xem tuần tự bài giảng để ghi nhận tiến độ.');
-      }
-    };
-    if (container) container.addEventListener('keydown', handleKeydown);
-    video.addEventListener('keydown', handleKeydown);
-
-    video.addEventListener('timeupdate', () => {
-      const cur = video.currentTime;
-      const dur = video.duration || 0;
-
-      if (!isDone && cur > maxWatched + 0.8) {
-        video.currentTime = maxWatched;
-        return;
-      }
-
-      if (cur > maxWatched) maxWatched = cur;
-
-      const pct = dur > 0 ? (cur / dur) * 100 : 0;
-      const watchedPct = isDone ? 100 : (dur > 0 ? (maxWatched / dur) * 100 : 0);
-
-      if (playedBar) playedBar.style.width = `${pct}%`;
-      if (watchedBar) watchedBar.style.width = `${Math.min(100, watchedPct)}%`;
-      if (timeDisplay) timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
-
-      if (typeof options.onProgress === 'function') {
-        options.onProgress(maxWatched, dur);
-      }
-
-      if (dur > 0 && maxWatched >= dur * 0.90 && cur >= dur - 1.0) {
-        if (!isDone) {
-          isDone = true;
-          maxWatched = dur || 999999;
-          if (lockIndicator) {
-            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-          }
-          if (track) track.title = 'Tua video tự do';
-        }
-        if (typeof options.onComplete === 'function') {
-          options.onComplete(dur);
-        }
-      }
-    });
-
-    video.addEventListener('progress', () => {
-      if (video.buffered.length > 0 && video.duration > 0 && bufferedBar) {
-        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
-        bufferedBar.style.width = `${(bufferedEnd / video.duration) * 100}%`;
-      }
-    });
-
-    video.addEventListener('play', updatePlayState);
-    video.addEventListener('pause', updatePlayState);
-    video.addEventListener('ended', () => {
-      updatePlayState();
-      const dur = video.duration || 0;
-      if (isDone || (dur > 0 && maxWatched >= dur * 0.90)) {
-        if (!isDone) {
-          isDone = true;
-          maxWatched = dur || 999999;
-          if (lockIndicator) {
-            lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-            lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-          }
-          if (track) track.title = 'Tua video tự do';
-        }
-        if (typeof options.onComplete === 'function') {
-          options.onComplete(dur);
-        }
-      } else if (!isDone) {
-        showThrottleToast('Bạn cần xem ít nhất 90% thời lượng video để hoàn thành.');
-      }
-    });
-
-    container._customPlayer = {
-      pause: () => { try { video.pause(); } catch (_) {} },
-      play: () => { try { video.play(); } catch (_) {} }
-    };
-
-    return {
-      armor: armorInstance,
-      hls: hlsInstance,
-      unlockSeeking: () => {
-        isDone = true;
-        maxWatched = 999999;
-        if (lockIndicator) {
-          lockIndicator.className = 'text-[11px] text-emerald-400 flex items-center gap-1 font-medium';
-          lockIndicator.innerHTML = '<span class="material-symbols-outlined text-[14px]">lock_open</span><span>Đã mở khóa tua</span>';
-        }
-        if (track) track.title = 'Tua video tự do';
-      },
-      destroy: () => {
-        if (armorInstance && typeof armorInstance.destroy === 'function') armorInstance.destroy();
-        if (hlsInstance && typeof hlsInstance.destroy === 'function') hlsInstance.destroy();
-      }
-    };
+    return controller;
   }
 
 
@@ -6353,6 +6163,8 @@ class StudentView {
       const { totalScore, maxPoints, passingScore, isPassed, scorePct } = scoreState;
       const questions = data.questions || [];
       const answerVisibilityPolicy = String(data.answer_visibility_policy || '').toUpperCase();
+      const answersVisible = data.answers_visible === true
+        || (data.answers_visible === undefined && answerVisibilityPolicy === 'IMMEDIATE');
       const hiddenAnswerPolicies = new Set(['NEVER', 'AFTER_CLOSE', 'AFTER_ALL_ATTEMPTS']);
       const assessType = (data.assessment_type || data.type || 'QUIZ').toUpperCase();
       const isFormalExam = assessType === 'MIDTERM' || assessType === 'FINAL_EXAM' || maxPoints >= 10;
@@ -6648,7 +6460,7 @@ class StudentView {
                       ? 'Câu trả lời đang được ẩn theo chính sách khảo thí'
                       : 'Không trả lời'))
                     : (q.chosen_answer || 'Không trả lời'));
-                  const correctAns = String(q.correct_answer || '');
+                  const correctAns = answersVisible ? String(q.correct_answer || '') : '';
                   const choices = q.choices || [];
                   const cardTone = isManualEssay
                     ? (manualEssayIsFullCredit ? 'border-emerald-200 dark:border-emerald-800' : 'border-amber-200 dark:border-amber-800')
@@ -6737,20 +6549,40 @@ class StudentView {
                       ${choices.length > 0 ? `
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
                           ${choices.map(c => {
-                            const isSelected = c.is_selected || (c.label && chosenAns.includes(c.label)) || (c.content && chosenAns.includes(c.content));
-                            const isTheCorrect = c.is_correct || (c.label && correctAns.includes(c.label));
-                            let badgeStyle = 'border-transparent bg-slate-50/60 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300';
-                            if (isTheCorrect) {
-                              badgeStyle = 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 font-semibold';
-                            } else if (isSelected && !isCorrect) {
-                              badgeStyle = 'border-rose-300 dark:border-rose-700 bg-rose-50/50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 font-semibold';
+                            const selectedKeys = q.selected_choice_keys || q.selected_choice_ids || [];
+                            const isSelected = c.is_selected === true || selectedKeys.includes(c.choice_key || c.choice_id);
+                            const hasAnswerKey = c.is_correct !== undefined && c.is_correct !== null;
+                            const mayShowChoiceCorrectness = hasAnswerKey && (answersVisible || (answerVisibilityPolicy === 'CORRECT_WRONG_ONLY' && isSelected));
+                            const isTheCorrect = c.is_correct === true;
+
+                            let badgeStyle = 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-slate-700 dark:text-slate-300';
+                            let tagHtml = '';
+
+                            if (mayShowChoiceCorrectness) {
+                              // Chế độ xem đầy đủ: Phân loại Đúng / Sai / Thiếu
+                              if (isSelected && isTheCorrect) {
+                                badgeStyle = 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500';
+                                tagHtml = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">✓ Đúng (Bạn đã chọn)</span>';
+                              } else if (isSelected && !isTheCorrect) {
+                                badgeStyle = 'border-rose-500 bg-rose-50/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-semibold ring-1 ring-rose-500';
+                                tagHtml = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300">✗ Sai (Bạn đã chọn)</span>';
+                              } else if (!isSelected && isTheCorrect) {
+                                badgeStyle = 'border-amber-400 border-dashed bg-amber-50/60 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-semibold';
+                                tagHtml = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">• Thiếu (Bỏ sót)</span>';
+                              }
+                            } else if (isSelected) {
+                              tagHtml = '<span class="text-slate-600 dark:text-slate-300 text-[11px] font-semibold">Bạn đã chọn</span>';
                             }
 
                             return `
-                              <div class="p-3 rounded-xl border ${badgeStyle} flex items-start gap-2">
-                                <strong class="font-bold ${isTheCorrect ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}">${c.label || ''}</strong>
-                                <span class="flex-1">${UI.escapeHtml(UI.cleanChoiceText(c.content || c.text || ''))}</span>
-                                ${isTheCorrect ? '<span class="text-emerald-600 font-bold">✓</span>' : (isSelected && !isCorrect ? '<span class="text-rose-600 font-bold">✗</span>' : '')}
+                              <div class="p-3 rounded-xl border ${badgeStyle} flex items-center justify-between gap-2.5 transition-all">
+                                <div class="flex items-start gap-2 min-w-0">
+                                  ${c.label ? `<strong class="font-bold shrink-0">${UI.escapeHtml(c.label)}.</strong>` : ''}
+                                  <span class="break-words">${UI.escapeHtml(UI.cleanChoiceText(c.content || c.text || ''))}</span>
+                                </div>
+                                <div class="shrink-0">
+                                  ${tagHtml}
+                                </div>
                               </div>
                             `;
                           }).join('')}
@@ -6758,7 +6590,7 @@ class StudentView {
                       ` : `
                         <div class="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40">
                           <div>${answerLabel}: <strong class="${isManualEssay ? (manualEssayIsFullCredit ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold') : (isCorrect ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold')}">${UI.escapeHtml(UI.cleanChoiceText(chosenAns))}</strong></div>
-                          ${correctAns ? `<div class="text-emerald-600">Đáp án chính xác: <strong>${UI.escapeHtml(UI.cleanChoiceText(correctAns))}</strong></div>` : ''}
+                          ${(correctAns && answerVisibilityPolicy !== 'CORRECT_WRONG_ONLY') ? `<div class="text-emerald-600">Đáp án chính xác: <strong>${UI.escapeHtml(UI.cleanChoiceText(correctAns))}</strong></div>` : ''}
                         </div>
                       `}
 
@@ -6768,42 +6600,18 @@ class StudentView {
                         </div>
                       ` : ''}
 
-                      <!-- Answer Evaluation & Indicator Bar -->
+                      <!-- Answer Evaluation Bar (Bỏ cụm UI A/B/C/D ở dưới) -->
                       <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                         <div class="flex items-center gap-2">
                           <span class="font-bold ${evaluationTone}">
                             ${evaluationLabel}
                           </span>
-                          ${correctAns ? `<span class="text-slate-400">• Đáp án chuẩn: <strong class="text-emerald-600">${UI.escapeHtml(correctAns)}</strong></span>` : ''}
+                          ${(correctAns && answerVisibilityPolicy !== 'CORRECT_WRONG_ONLY') ? `<span class="text-slate-400">• Đáp án chuẩn: <strong class="text-emerald-600">${UI.escapeHtml(correctAns)}</strong></span>` : ''}
                         </div>
-
-                        <!-- MC indicators [A][B][C][D] style matching mockup -->
-                        ${!isEssay ? `<div class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-semibold">
-                          ${['A', 'B', 'C', 'D'].map(letter => {
-                            const isMatch = correctAns.toUpperCase().includes(letter);
-                            const isChosen = chosenAns.toUpperCase().includes(letter);
-                            if (isMatch) {
-                              return `
-                                <span class="px-3 h-7 flex items-center justify-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-500 font-bold -my-[1px]">
-                                  <span class="material-symbols-outlined text-[14px]">check</span>
-                                  <span>${letter}</span>
-                                </span>
-                              `;
-                            }
-                            if (isChosen && !isMatch) {
-                              return `
-                                <span class="px-3 h-7 flex items-center justify-center gap-1 text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 font-bold">
-                                  <span>${letter}</span>
-                                </span>
-                              `;
-                            }
-                            return `<span class="w-8 h-7 flex items-center justify-center text-slate-400 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 last:border-r-0">${letter}</span>`;
-                          }).join('')}
-                        </div>` : ''}
                       </div>
 
                       <!-- Academic Explanation Box -->
-                      ${q.explanation ? `
+                      ${answersVisible && q.explanation ? `
                         <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1">
                           <div class="font-bold text-primary flex items-center gap-1">
                             <span class="material-symbols-outlined text-[15px]">school</span>
@@ -6915,6 +6723,55 @@ class StudentView {
         }
       } catch (error) {
         UI.showToast('Không thể tải trạng thái phúc khảo. Bạn có thể thử lại.', 'warning');
+      }
+
+      // Handle Student Result PDF Download via Blob Fetch
+      const pdfBtn = document.getElementById('download-student-result-pdf-btn');
+      if (pdfBtn) {
+        pdfBtn.onclick = async (e) => {
+          e.preventDefault();
+          const originalContent = pdfBtn.innerHTML;
+          try {
+            pdfBtn.classList.add('opacity-70', 'pointer-events-none');
+            pdfBtn.innerHTML = '<span class="w-4 h-4 border-2 border-slate-400 border-t-primary rounded-full animate-spin"></span> <span>Đang tạo PDF...</span>';
+            const res = await fetch(resultPdfHref, {
+              headers: { 'Accept': 'application/pdf' },
+              credentials: 'same-origin'
+            });
+            if (!res.ok) {
+              let errMsg = 'Không thể xuất bảng điểm PDF.';
+              try {
+                const errJson = await res.json();
+                if (errJson.error?.message) errMsg = errJson.error.message;
+                else if (errJson.message) errMsg = errJson.message;
+              } catch (_) {}
+              throw new Error(errMsg);
+            }
+            const blob = await res.blob();
+            let filename = `bang_diem_${attemptId}.pdf`;
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const fnMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+            if (fnMatch) {
+              filename = decodeURIComponent(fnMatch[1] || fnMatch[2]);
+            }
+            const blobUrl = window.URL.createObjectURL(blob);
+            const tempA = document.createElement('a');
+            tempA.href = blobUrl;
+            tempA.download = filename;
+            document.body.appendChild(tempA);
+            tempA.click();
+            setTimeout(() => {
+              document.body.removeChild(tempA);
+              window.URL.revokeObjectURL(blobUrl);
+            }, 1000);
+            UI.showToast('Đã tải xuống bảng điểm PDF thành công!', 'success');
+          } catch (err) {
+            UI.showToast(err.message || 'Lỗi tải tệp PDF.', 'error');
+          } finally {
+            pdfBtn.classList.remove('opacity-70', 'pointer-events-none');
+            pdfBtn.innerHTML = originalContent;
+          }
+        };
       }
 
       // Handle Appeal Button Click

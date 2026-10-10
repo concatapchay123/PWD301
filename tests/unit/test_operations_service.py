@@ -116,8 +116,26 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
 # =====================================================================
 
 
-def test_check_system_health_summary(app: Flask, admin_user: User) -> None:
-    """System health check returns valid high-level summary."""
+def test_check_system_health_summary(app: Flask, admin_user: User, monkeypatch) -> None:
+    """A healthy dependency probe yields a valid high-level summary.
+
+    This is a unit shape check; unavailable scanner/worker fail-closed behavior
+    is covered independently in test_deploy_readiness, not assumed healthy here.
+    """
+    monkeypatch.setattr(
+        "pwd301.services.operations_service._check_clamav_health", lambda: {"status": "HEALTHY"}
+    )
+    monkeypatch.setattr(
+        "pwd301.services.operations_service._check_workers_health",
+        lambda sess: {"status": "HEALTHY"},
+    )
+    monkeypatch.setattr(
+        "pwd301.services.operations_service._check_cloud_storage_health",
+        lambda: {"status": "HEALTHY"},
+    )
+    monkeypatch.setattr(
+        "pwd301.services.operations_service._check_storage_health", lambda: {"status": "HEALTHY"}
+    )
     with app.app_context():
         report = check_system_health(include_details=False, session=db.session)
         assert report["status"] in ("HEALTHY", "DEGRADED")

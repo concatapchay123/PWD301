@@ -48,6 +48,10 @@ class FileBlob(Base):
     size_bytes = db.Column(sa.BigInteger, nullable=False)
     detected_mime_type = db.Column(sa.Unicode(150), nullable=False)
     storage_key = db.Column(sa.Unicode(500), nullable=False, unique=True)
+    storage_backend = db.Column(
+        sa.String(10), nullable=False, default="local", server_default=sa.text("'local'")
+    )
+    cloud_verified_at = db.Column(UTCDateTime, nullable=True)
     status = db.Column(
         sa.String(20),
         nullable=False,
@@ -69,6 +73,9 @@ class FileBlob(Base):
     deleted_at = db.Column(UTCDateTime, nullable=True)
 
     __table_args__ = (
+        sa.CheckConstraint(
+            "storage_backend IN ('local','s3')", name="ck_file_blobs_storage_backend"
+        ),
         sa.CheckConstraint("size_bytes > 0", name="ck_file_blobs_1"),
         sa.CheckConstraint("status IN ('PRESENT','DELETING','DELETED')", name="ck_file_blobs_2"),
         sa.CheckConstraint("reference_count >= 0", name="ck_file_blobs_3"),
@@ -287,7 +294,7 @@ class FileAsset(Base):
         if (
             rev
             and getattr(rev, "scan_results", None)
-            and any(getattr(sr, "status", None) == "ERROR" for sr in rev.scan_results)
+            and any(getattr(sr, "status", None) == "ERROR" for sr in rev.current_scan_results)
         ):
             return "BLOCKED"
 
@@ -326,7 +333,7 @@ class FileAsset(Base):
         if revision is None or revision.status != "ACTIVE":
             return False
         malware_scans = [
-            result for result in revision.scan_results if result.scan_type == "MALWARE"
+            result for result in revision.current_scan_results if result.scan_type == "MALWARE"
         ]
         return bool(malware_scans) and all(result.status == "PASS" for result in malware_scans)
 
@@ -439,6 +446,20 @@ class FileRevision(Base):
     def public_id(self) -> uuid.UUID:
         """Synthetic public UUIDv5 identifier conforming to ADR-002."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"pwd301.file_revision.{self.id}")
+
+    @property
+    def current_scan_results(self) -> list[FileScanResult]:
+        """Latest persisted verdict per engine/type without deleting scan history."""
+        latest: dict[tuple[str, str], FileScanResult] = {}
+        for scan in self.scan_results:
+            key = (scan.scan_type, scan.engine)
+            previous = latest.get(key)
+            if previous is None or (scan.started_at, scan.id or 0) > (
+                previous.started_at,
+                previous.id or 0,
+            ):
+                latest[key] = scan
+        return list(latest.values())
 
 
 class FileScanResult(Base):

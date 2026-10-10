@@ -50,7 +50,7 @@ CREATE TABLE assessments (
     CONSTRAINT ck_assessments_5 CHECK (scoring_policy IN ('FIRST','LATEST','HIGHEST','AVERAGE')),
     CONSTRAINT ck_assessments_6 CHECK (passing_percent IS NULL OR (passing_percent >= 0 AND passing_percent <= 100)),
     CONSTRAINT ck_assessments_7 CHECK (score_release_policy IN ('IMMEDIATE','AFTER_CLOSE','INSTRUCTOR_RELEASE')),
-    CONSTRAINT ck_assessments_8 CHECK (answer_visibility_policy IN ('IMMEDIATE','AFTER_CLOSE','AFTER_ALL_ATTEMPTS','NEVER')),
+    CONSTRAINT ck_assessments_8 CHECK (answer_visibility_policy IN ('IMMEDIATE','AFTER_CLOSE','AFTER_ALL_ATTEMPTS','NEVER','CORRECT_WRONG_ONLY')),
     CONSTRAINT ck_assessments_9 CHECK (random_question_count IS NULL OR random_question_count > 0),
     CONSTRAINT ck_assessments_10 CHECK (open_at IS NULL OR close_at IS NULL OR open_at < close_at),
     CONSTRAINT ck_assessments_exam_layout CHECK (exam_layout IN ('STANDARD','FOCUS')),

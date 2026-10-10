@@ -175,7 +175,7 @@ def test_approved_lesson_revision_inherits_resources(
 
     serialized = _serialize_student_lesson(staged_lesson, None)
     assert serialized["video_url"] is not None
-    assert "/video/playlist.m3u8" in serialized["video_url"]
+    assert f"/video/{video_asset.public_id}/playlist.m3u8" in serialized["video_url"]
     assert len(serialized["video_urls"]) >= 1
 
 
@@ -407,6 +407,6 @@ def test_student_views_multi_video_lesson_and_anti_seek_defaults_locked(
         not in js_code
     )
     assert (
-        "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted: isCompleted,"
+        "setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {\n              isCompleted, streamUrl: url, lessonId: trackedLessonId,"
         in js_code
     )

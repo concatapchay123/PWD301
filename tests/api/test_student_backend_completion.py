@@ -367,7 +367,86 @@ def test_student_can_download_released_attempt_result_as_pdf(
     reader = PdfReader(io.BytesIO(pdf_res.data))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Khao thi Thuong ky Web" in text
-    assert "10.00 / 10.00" in text
+    # TASK-090 supersedes fixed .2f output with trimmed academic scores.
+    assert "10 / 10" in text
+    assert "10.00 / 10.00" not in text
+
+
+@pytest.mark.parametrize("role", ["instructor", "admin"])
+def test_gradebook_pdf_exports_every_page_and_preserves_pending_status(
+    client: FlaskClient, student_fixture: dict[str, Any], monkeypatch, role: str
+) -> None:
+    from pwd301.services import attempt_service, result_pdf_service
+
+    if role == "admin":
+        admin = register_user("pdf_admin@example.com", "Password@123", "PDF Admin")
+        assign_role_to_user(admin.id, "ADMIN")
+        from pwd301.models.identity import Role, UserRole
+
+        admin_role = db.session.query(Role).filter_by(code="ADMIN").one()
+        db.session.query(UserRole).filter_by(
+            user_id=admin.id, role_id=admin_role.id
+        ).one().assignment_reason = "SUB_ROLE:ADMIN_PRIMARY"
+        db.session.commit()
+        email = admin.email
+    else:
+        email = student_fixture["instructor"].email
+    login_client(client, email)
+    calls = []
+    captured = {}
+    rows = [
+        {
+            "student_id": str(uuid.uuid4()),
+            "student_code": f"SV-{i:03}",
+            "student_name": f"Thí sinh {i}",
+            "score_status": "RELEASED",
+            "status": "GRADED",
+            "percentage": 80,
+            "is_passed": True,
+            "submitted_at": "2026-10-10T08:00:00Z",
+        }
+        for i in range(100)
+    ] + [
+        {
+            "student_id": str(uuid.uuid4()),
+            "student_name": "Thí sinh cuối cùng",
+            "status": "IN_PROGRESS",
+            "score_status": "NOT_GRADED",
+            "submitted_at": None,
+        }
+    ]
+
+    def paginator(actor, assessment_id, *, page, per_page, session):
+        calls.append(page)
+        capped = min(100, per_page)
+        return {"total": 101, "pages": 2, "attempts": rows[(page - 1) * capped : page * capped]}
+
+    original_builder = result_pdf_service.build_assessment_gradebook_pdf
+
+    def builder(payload):
+        captured.update(payload)
+        return original_builder(payload)
+
+    monkeypatch.setattr(attempt_service, "list_assessment_student_results", paginator)
+    monkeypatch.setattr(result_pdf_service, "build_assessment_gradebook_pdf", builder)
+    assessment = student_fixture["assessment"]
+    response = client.get(f"/{role}/assessments/{assessment.public_id}/gradebook.pdf")
+    assert response.status_code == 200
+    assert calls == [1, 2]
+    text = " ".join(
+        "\n".join(
+            p.extract_text() or "" for p in PdfReader(io.BytesIO(response.data)).pages
+        ).split()
+    )
+    assert "Thí sinh cuối cùng" in text
+    assert "CHƯA CÔNG BỐ" in text
+    assert "SV-099" in text
+    assert all(row["student_id"] not in text for row in rows)
+    assert captured["total_candidates"] == 101
+    assert captured["submitted_count"] == 100
+    assert captured["failed_count"] == 0
+    assert captured["pass_rate_pct"] == 100
+    assert captured["duration_minutes"] == assessment.time_limit_minutes
 
 
 def test_student_cannot_download_result_pdf_before_score_release(
@@ -573,7 +652,7 @@ def test_student_course_detail_hides_unpublished_lessons(
 
 
 def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_submitted(
-    client: FlaskClient, student_fixture: dict[str, Any]
+    client: FlaskClient, student_fixture: dict[str, Any], playback_watch
 ) -> None:
     """Completing video progress alone must not complete a lesson that has a mini-quiz."""
     lesson = student_fixture["lesson"]
@@ -586,7 +665,7 @@ def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_su
         }
     ]
     lesson.markdown_content = (
-        "# Lesson\n\n<!-- video_url: https://videos.example/lesson.mp4 -->\n\n<!-- mini_quiz: "
+        "# Lesson\n\n<!-- video_url: https://youtu.be/abcdefghijk -->\n\n<!-- mini_quiz: "
         + json.dumps(quiz)
         + " -->"
     )
@@ -606,8 +685,8 @@ def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_su
         json={"seconds_increment": 60, "view_fraction": 0.8, "completed": True},
     )
 
-    assert partial_progress.status_code == 200
-    assert partial_progress.get_json()["is_completed"] is False
+    assert partial_progress.status_code == 400
+    assert not playback_watch(student_fixture["student"], lesson, 0.8)["is_completed"]
 
     partial_video_quiz = client.post(
         f"/student/lessons/{lesson.public_id}/quiz-completion",
@@ -621,7 +700,8 @@ def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_su
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
         json={"seconds_increment": 60, "view_fraction": 1.0, "completed": True},
     )
-    assert full_progress.status_code == 200
+    assert full_progress.status_code == 400
+    assert not playback_watch(student_fixture["student"], lesson)["is_completed"]
 
     incomplete_quiz = client.post(
         f"/student/lessons/{lesson.public_id}/quiz-completion",
@@ -640,10 +720,10 @@ def test_student_lesson_with_mini_quiz_stays_incomplete_until_every_answer_is_su
 
 
 def test_video_only_lesson_requires_full_view_fraction_before_completion(
-    client: FlaskClient, student_fixture: dict[str, Any]
+    client: FlaskClient, student_fixture: dict[str, Any], playback_watch
 ) -> None:
     lesson = student_fixture["lesson"]
-    lesson.markdown_content = "# Lesson\n\n<!-- video_url: https://videos.example/lesson.mp4 -->"
+    lesson.markdown_content = "# Lesson\n\n<!-- video_url: https://youtu.be/abcdefghijk -->"
     db.session.commit()
     csrf = login_client(client, "student_stu@pwd301.local")
 
@@ -652,16 +732,16 @@ def test_video_only_lesson_requires_full_view_fraction_before_completion(
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
         json={"seconds_increment": 60, "view_fraction": 0.8},
     )
-    assert partial.status_code == 200
-    assert partial.get_json()["is_completed"] is False
+    assert partial.status_code == 400
+    assert not playback_watch(student_fixture["student"], lesson, 0.8)["is_completed"]
 
     full = client.post(
         f"/student/lessons/{lesson.public_id}/progress",
         headers={"X-CSRFToken": csrf, "Accept": "application/json"},
         json={"seconds_increment": 60, "view_fraction": 1.0},
     )
-    assert full.status_code == 200
-    assert full.get_json()["is_completed"] is True
+    assert full.status_code == 400
+    assert playback_watch(student_fixture["student"], lesson)["is_completed"]
 
 
 def test_student_cannot_complete_a_malformed_mini_quiz(student_fixture, client):

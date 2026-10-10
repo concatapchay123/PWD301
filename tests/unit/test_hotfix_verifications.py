@@ -409,7 +409,7 @@ class TestEnrollmentCapacityEnforcement:
 class TestClamAVOversizedStreamHandling:
     """Verify ClamAV scanner handles oversized files (e.g. videos up to 1GB) gracefully."""
 
-    def test_oversized_file_delegates_to_heuristic(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_oversized_file_remains_unscanned(self, tmp_path: pytest.TempPathFactory) -> None:
         from pwd301.services.scanner_service import ClamAVScanner
 
         test_file = Path(str(tmp_path)) / "large_video.mp4"
@@ -417,7 +417,7 @@ class TestClamAVOversizedStreamHandling:
 
         scanner = ClamAVScanner(max_stream_bytes=500)
         verdict = scanner.scan_file(test_file)
-        assert verdict.status == "PASS"
+        assert verdict.status == "ERROR"
         assert "exceeds ClamAV stream limit" in verdict.details
 
     def test_normal_file_uses_instream(self, tmp_path: pytest.TempPathFactory) -> None:

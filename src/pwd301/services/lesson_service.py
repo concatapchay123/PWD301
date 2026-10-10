@@ -1609,6 +1609,7 @@ def record_lesson_progress(
     session: Session | scoped_session[Any] | None = None,
     enforce_wall_clock: bool = False,
     now: Any = None,
+    server_verified: bool = False,
 ) -> LessonProgress:
     """Record learning engagement heartbeat and evaluate monotonic completion (Algorithm 02).
 
@@ -1659,7 +1660,7 @@ def record_lesson_progress(
         sec = int(seconds_increment)
     except (ValueError, TypeError):
         raise LessonValidationError("seconds_increment must be an integer.") from None
-    if sec <= 0 or sec > MAX_PING_SECONDS:
+    if sec < (0 if server_verified else 1) or sec > MAX_PING_SECONDS:
         raise LessonValidationError(
             f"seconds_increment must be between 1 and {MAX_PING_SECONDS} seconds."
         )
@@ -1670,6 +1671,9 @@ def record_lesson_progress(
         raise LessonValidationError("view_fraction must be a float.") from None
     if not (0.0 <= vf <= 1.0):
         raise LessonValidationError("view_fraction must be between 0.0 and 1.0.")
+
+    if _lesson_requires_video_watch(lesson) and not server_verified:
+        raise LessonValidationError("A playback session is required for video progress.")
 
     # Verify student enrollment (ACTIVE or COMPLETED)
     enrollment = (
@@ -1763,12 +1767,14 @@ def record_lesson_progress(
 
     # Server-Authoritative Wall-Clock Pacing Enforcement (Anti-Bypass Iron Law)
     credited_sec = sec
-    if enforce_wall_clock and progress.last_activity_at is not None:
+    if enforce_wall_clock and not server_verified and progress.last_activity_at is None:
+        credited_sec = 0
+    if enforce_wall_clock and not server_verified and progress.last_activity_at is not None:
         now_clean = _to_naive_utc(now_ts)
         last_clean = _to_naive_utc(progress.last_activity_at)
         elapsed = (now_clean - last_clean).total_seconds() if (now_clean and last_clean) else 0.0
         # Cap credited increment to actual elapsed wall-clock seconds (+2.0s network jitter tolerance)
-        max_credible = max(0, int(elapsed + 2.0))
+        max_credible = max(0, int(elapsed)) if elapsed <= 20 else 0
         if sec > max_credible:
             credited_sec = max(0, min(sec, max_credible))
             if sec - elapsed > 5.0:
@@ -1912,9 +1918,10 @@ def complete_lesson_mini_quiz(
     progress = record_lesson_progress(
         actor=actor,
         lesson_id=lesson_id,
-        seconds_increment=1,
+        seconds_increment=0,
         view_fraction=0.0 if requires_video_watch else 1.0,
         session=sess,
+        server_verified=True,
     )
     now = utc_now()
     progress_snapshot: dict[str, Any] = {}
@@ -2355,6 +2362,40 @@ def create_lesson_change_request(
     return req, staged_lesson
 
 
+def lock_course_change_request(sess, change_request_id):
+    """Serialize review decisions and curriculum mutations for the same course."""
+    req = sess.get(CourseChangeRequest, change_request_id)
+    if req is None:
+        raise ResourceNotFoundError("Course change request not found.")
+    sess.query(Course).filter(Course.id == req.course_id).with_hint(
+        Course, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql"
+    ).with_for_update().populate_existing().one()
+    return (
+        sess.query(CourseChangeRequest)
+        .filter(CourseChangeRequest.id == req.id)
+        .with_hint(CourseChangeRequest, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
+
+
+def record_change_request_review(sess, actor, req, decision):
+    """Required audit stays in the transaction that applies the decision."""
+    from pwd301.services.audit_service import record_audit_event
+
+    record_audit_event(
+        actor,
+        f"COURSE_CHANGE_{decision}",
+        "COURSE_CHANGE_REQUEST",
+        req.id,
+        reason=req.review_reason,
+        before_state={"status": "PENDING"},
+        after_state={"status": decision, "course_id": str(req.course.public_id)},
+        session=sess,
+    )
+
+
 def approve_course_change_request(
     actor: User,
     change_request_id: int | uuid.UUID | str,
@@ -2374,9 +2415,7 @@ def approve_course_change_request(
     """
     sess = session if session is not None else db.session
 
-    req = sess.get(CourseChangeRequest, change_request_id)
-    if req is None:
-        raise ResourceNotFoundError("Course change request not found.")
+    req = lock_course_change_request(sess, change_request_id)
 
     is_admin_reviewer = bool(
         actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
@@ -2391,6 +2430,8 @@ def approve_course_change_request(
 
     now = utc_now()
     p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
+    if not isinstance(p_data, dict):
+        raise LessonValidationError("Change request payload must be a JSON object.")
     is_create_lesson = (
         p_data.get("action") == "CREATE_LESSON"
         or req.change_type == "CREATE_LESSON"
@@ -2630,12 +2671,14 @@ def approve_course_change_request(
                     session=sess,
                 )
 
+        record_change_request_review(sess, actor, req, "APPROVED")
         sess.flush()
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
+        if session is None:
+            try:
+                sess.commit()
+            except Exception:
+                sess.rollback()
+                raise
         return req
 
     for staged in staged_lessons:
@@ -2714,13 +2757,15 @@ def approve_course_change_request(
     req.review_reason = review_reason
     req.reviewed_at = now
     req.applied_at = now
+    record_change_request_review(sess, actor, req, "APPROVED")
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return req
 
@@ -2734,9 +2779,7 @@ def reject_course_change_request(
     """Reject a course change request and trash or revert its staged lessons."""
     sess = session if session is not None else db.session
 
-    req = sess.get(CourseChangeRequest, change_request_id)
-    if req is None:
-        raise ResourceNotFoundError("Course change request not found.")
+    req = lock_course_change_request(sess, change_request_id)
 
     is_admin_reviewer = bool(
         actor.is_admin and (actor.is_primary_admin or actor.has_admin_permission("COURSE_REVIEW"))
@@ -2751,6 +2794,8 @@ def reject_course_change_request(
 
     now = utc_now()
     p_data = json.loads(req.proposed_payload_json or "{}") if req.proposed_payload_json else {}
+    if not isinstance(p_data, dict):
+        raise LessonValidationError("Change request payload must be a JSON object.")
     is_changeset = (
         p_data.get("action") == "COURSE_VERSION_CHANGESET"
         or req.change_type == "COURSE_VERSION_CHANGESET"
@@ -2766,6 +2811,7 @@ def reject_course_change_request(
         req.reviewed_by_user_id = actor.id
         req.review_reason = review_reason
         req.reviewed_at = now
+        record_change_request_review(sess, actor, req, "REJECTED")
         sess.flush()
         if session is None:
             sess.commit()
@@ -2790,6 +2836,7 @@ def reject_course_change_request(
     req.reviewed_by_user_id = actor.id
     req.review_reason = review_reason
     req.reviewed_at = now
+    record_change_request_review(sess, actor, req, "REJECTED")
 
     if req.requested_by:
         with contextlib.suppress(Exception):
@@ -2815,11 +2862,12 @@ def reject_course_change_request(
 
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return req
 

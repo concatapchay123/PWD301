@@ -263,3 +263,64 @@ CREATE TABLE course_completion_summaries (
     CONSTRAINT fk_course_completion_summaries_source_period_id FOREIGN KEY (source_period_id) REFERENCES enrollment_periods (id) ON DELETE SET NULL
 );
 GO
+
+-- Durable playback and per-media learning progress (2026-10-09).
+-- Migration playback20261009; additive, no historical progress backfill.
+
+CREATE TABLE playback_sessions (
+	id BIGINT NOT NULL IDENTITY,
+	public_id UNIQUEIDENTIFIER NOT NULL,
+	enrollment_period_id BIGINT NOT NULL,
+	lesson_id BIGINT NOT NULL,
+	media_id VARCHAR(128) NOT NULL,
+	next_sequence INTEGER NOT NULL,
+	state VARCHAR(16) NOT NULL,
+	last_heartbeat_at DATETIME2(3) NULL,
+	last_position FLOAT NOT NULL,
+	last_rate FLOAT NOT NULL,
+	fractional_seconds FLOAT NOT NULL,
+	updated_at DATETIME2(3) NOT NULL,
+	row_version ROWVERSION NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_playback_period_lesson UNIQUE (enrollment_period_id, lesson_id),
+	CONSTRAINT ck_playback_sequence CHECK (next_sequence > 0),
+	CONSTRAINT ck_playback_state CHECK (state IN ('playing','paused','buffering','hidden','blackout','error')),
+	UNIQUE (public_id),
+	FOREIGN KEY(enrollment_period_id) REFERENCES enrollment_periods (id),
+	FOREIGN KEY(lesson_id) REFERENCES lessons (id)
+);
+GO
+
+CREATE TABLE lesson_media_progress (
+	id BIGINT NOT NULL IDENTITY,
+	enrollment_period_id BIGINT NOT NULL,
+	lesson_id BIGINT NOT NULL,
+	media_id VARCHAR(128) NOT NULL,
+	duration_seconds FLOAT NOT NULL,
+	frontier_seconds FLOAT NOT NULL,
+	updated_at DATETIME2(3) NOT NULL,
+	row_version ROWVERSION NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_media_period_lesson_media UNIQUE (enrollment_period_id, lesson_id, media_id),
+	CONSTRAINT ck_media_frontier CHECK (duration_seconds > 0 AND frontier_seconds >= 0 AND frontier_seconds <= duration_seconds),
+	FOREIGN KEY(enrollment_period_id) REFERENCES enrollment_periods (id),
+	FOREIGN KEY(lesson_id) REFERENCES lessons (id)
+);
+GO
+
+CREATE TABLE playback_receipts (
+	id BIGINT NOT NULL IDENTITY,
+	session_id BIGINT NOT NULL,
+	lease_id UNIQUEIDENTIFIER NOT NULL,
+	sequence INTEGER NOT NULL,
+	response_json NVARCHAR(max) NOT NULL,
+	created_at DATETIME2(3) NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_playback_receipt_lease_sequence UNIQUE (lease_id, sequence),
+	CONSTRAINT ck_playback_receipt_sequence CHECK (sequence > 0),
+	FOREIGN KEY(session_id) REFERENCES playback_sessions (id)
+);
+GO
+
+CREATE INDEX ix_playback_receipts_created_at ON playback_receipts (created_at);
+GO

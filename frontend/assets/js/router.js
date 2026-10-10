@@ -491,7 +491,7 @@ class AppRouter {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '');
       await StudentView.renderAttemptConsole(viewport, attId);
     } else if (path === '#/student/assessments/results' || (path.startsWith('#/student/') && path.endsWith('/results'))) {
-      const attId = query.id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
+      const attId = query.id || query.attempt_id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
       await StudentView.renderAttemptResults(viewport, attId);
     } else if (path === '#/student/ai-assistant') {
       await StudentView.renderAIAssistant(viewport);

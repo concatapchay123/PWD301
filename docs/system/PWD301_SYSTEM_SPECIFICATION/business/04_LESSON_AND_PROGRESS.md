@@ -6,7 +6,7 @@
 - Lesson order is mutable globally; prior completion remains.
 - Completion requires meaningful minimum wall-clock time and viewed-most evidence. Client assertions cannot skip or artificially satisfy duration without genuine accumulated heartbeat time.
 - Direct download of raw lesson video files (.mp4, .webm) is forbidden for students; all internal video must be served via encrypted HLS (AES-128) with short-lived session token exchange.
-- Video playback must render Dynamic Forensic Watermarking containing student identity ([Student ID] • [Email] • [IP] • [Timestamp]) with active DOM tamper protection (MutationObserver blackout defense).
+- Internal HLS playback displays dynamic student watermark with DOM/CSS tamper protection. YouTube uses official embedding without overlays; student identity and PWD301 controls remain outside the iframe. Client activity signals are not proof of attention.
 - Progress cache is derived; lesson_progress/results are authoritative.
 - Material rewrite does not reset completed students.
 - New lesson is optional Xem thêm for existing periods/completed learners.

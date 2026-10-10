@@ -675,11 +675,19 @@ def update_course(
         if thumb is not None:
             from pwd301.models.file_import import FileAsset
 
-            try:
-                asset_uuid = uuid.UUID(str(thumb))
-            except (ValueError, TypeError, AttributeError) as exc:
-                raise CourseValidationError("A valid cover image asset ID is required.") from exc
-            asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+            asset = None
+            if isinstance(thumb, int) or (isinstance(thumb, str) and thumb.isdigit()):
+                asset = sess.query(FileAsset).filter(FileAsset.id == int(thumb)).first()
+            if asset is None:
+                try:
+                    asset_uuid = uuid.UUID(str(thumb))
+                    asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+                except (ValueError, TypeError, AttributeError) as exc:
+                    if not is_approved_review:
+                        raise CourseValidationError(
+                            "A valid cover image asset ID is required."
+                        ) from exc
+                    asset = None
             if (
                 asset is None
                 or asset.course_id != course.id
@@ -689,8 +697,11 @@ def update_course(
                 or not asset.has_passed_malware_scan
                 or asset.mime_type.lower() not in {"image/jpeg", "image/png", "image/webp"}
             ):
-                raise CourseValidationError("Choose a clean image uploaded for this course.")
-            course.thumbnail_file_asset_id = asset.id
+                if not is_approved_review:
+                    raise CourseValidationError("Choose a clean image uploaded for this course.")
+                course.thumbnail_file_asset_id = asset.id if asset else None
+            else:
+                course.thumbnail_file_asset_id = asset.id
         else:
             course.thumbnail_file_asset_id = None
 
@@ -1018,6 +1029,14 @@ def change_course_status(
     if course is None:
         raise ResourceNotFoundError("Course not found.")
 
+    course = (
+        sess.query(Course)
+        .filter(Course.id == course.id)
+        .with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
     target_status = new_status.strip().upper()
     if target_status not in VALID_STATUSES:
         raise CourseValidationError(f"Invalid course status: '{new_status}'.")
@@ -1304,11 +1323,12 @@ def change_course_status(
         except Exception as exc:
             logger.warning("Failed to dispatch course submission notification to admins: %s", exc)
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if session is None:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return course
 

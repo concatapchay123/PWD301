@@ -54,6 +54,9 @@ PROJECT_CONTEXT_FOR_GEMINI_AI.md
 *.png
 *.jpg
 *.jpeg
+!frontend/**/*.png
+!frontend/**/*.jpg
+!frontend/**/*.jpeg
 *.docx
 *.pdf
 *.zip
@@ -79,3 +82,8 @@ desktop.ini
 *.bak
 *.tmp
 *.temp
+.env
+.env.*
+!.env.example
+!.env.production.example
+.superpowers/

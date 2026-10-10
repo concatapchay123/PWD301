@@ -37,7 +37,7 @@ DRAFT → PUBLISHED; open/closed được derive từ server time + open_at/clos
 | `monitoring_enabled` | `BIT` | No | `0` | Ghi nhận sự kiện rời tab/cửa sổ/toàn màn hình từ trình duyệt |
 | `request_fullscreen` | `BIT` | No | `0` | Đề nghị học viên bật toàn màn hình; trình duyệt không thể khóa hệ điều hành |
 | `score_release_policy` | `VARCHAR(24)` | No | `'IMMEDIATE'` | IMMEDIATE/AFTER_CLOSE/INSTRUCTOR_RELEASE |
-| `answer_visibility_policy` | `VARCHAR(32)` | No | `'AFTER_CLOSE'` | IMMEDIATE/AFTER_CLOSE/AFTER_ALL_ATTEMPTS/NEVER |
+| `answer_visibility_policy` | `VARCHAR(32)` | No | `'AFTER_CLOSE'` | IMMEDIATE/AFTER_CLOSE/AFTER_ALL_ATTEMPTS/NEVER/CORRECT_WRONG_ONLY; restricted review never reveals unselected answer keys or explanation |
 | `random_question_count` | `INT` | Yes |  | Tổng số câu chọn ngẫu nhiên nếu dùng pool |
 | `published_at` | `DATETIME2(3)` | Yes |  | Mốc publish đầu tiên; một khi đã set thì không được clear/đổi, và timing immutable từ mốc này |
 | `first_attempt_started_at` | `DATETIME2(3)` | Yes |  | Marker khóa structure/points |

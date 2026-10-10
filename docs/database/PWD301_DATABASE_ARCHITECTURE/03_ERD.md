@@ -191,3 +191,19 @@ erDiagram
 - `users.avatar_file_asset_id`, `courses.thumbnail_file_asset_id`, current revision pointers and background-job pointers are deferred FKs to break DDL cycles.
 - `audit_events.target_type/target_id` and `notification_events.target_type/target_id` are deliberately weak/polymorphic references because audit/notification history must survive target deletion. They are the exception, not the modeling default.
 - Vector store `vector_key` is not an FK because embeddings are not stored in the primary SQL Server schema.
+
+
+## Durable playback relationships — 2026-10-09
+
+```mermaid
+erDiagram
+    enrollment_periods ||--o{ playback_sessions : scopes
+    lessons ||--o{ playback_sessions : controls
+    enrollment_periods ||--o{ lesson_media_progress : preserves
+    lessons ||--o{ lesson_media_progress : contains
+    playback_sessions ||--o{ playback_receipts : records
+```
+
+A session row is unique per enrollment period and lesson. Its public lease GUID
+rotates on explicit playback activation; receipts retain their accepted lease
+GUID. Per-media frontiers do not depend on the source-array index.

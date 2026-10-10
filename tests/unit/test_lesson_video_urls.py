@@ -54,6 +54,7 @@ def test_student_lesson_exposes_all_links_without_metadata_comment():
         minimum_completion_seconds=0,
         viewed_fraction_required=1.0,
         resources=[],
+        previous_lesson=None,
     )
     result = _serialize_student_lesson(lesson, None)
     assert result["video_urls"] == urls

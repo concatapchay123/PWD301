@@ -27,6 +27,7 @@ from pwd301.models.question_bank import Question, QuestionRevision
 from pwd301.services.attempt_service import grade_essay_question
 from pwd301.services.exceptions import ConflictError
 from pwd301.services.user_service import assign_role_to_user, register_user
+from tests.conftest import require_disposable_sqlserver_target
 
 
 @pytest.mark.integration
@@ -34,6 +35,7 @@ def test_sqlserver_manual_grade_row_version_race(monkeypatch):
     database_url = os.environ.get("SQLSERVER_CONCURRENCY_URL")
     if not database_url:
         pytest.skip("SQLSERVER_CONCURRENCY_URL is required for disposable SQL Server coverage")
+    require_disposable_sqlserver_target(database_url)
 
     monkeypatch.setenv("DATABASE_URL", database_url)
     app = create_app("development")
@@ -65,8 +67,8 @@ def test_sqlserver_manual_grade_row_version_race(monkeypatch):
         course = Course(
             course_code=f"SQL-RACE-{suffix}",
             course_code_normalized=f"SQL-RACE-{suffix}".upper(),
-            title="SQL Server row-version race",
-            title_normalized="SQL SERVER ROW-VERSION RACE",
+            title=f"SQL Server row-version race {suffix}",
+            title_normalized=f"SQL SERVER ROW-VERSION RACE {suffix}".upper(),
             owner_instructor_id=instructor.id,
             status="PUBLISHED",
             published_at=now,

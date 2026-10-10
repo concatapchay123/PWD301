@@ -507,3 +507,21 @@ Suspend immediately revokes web/API access. The Attempt timer remains server-sid
 ## 29. Enrollment capacity race test pattern
 
 Two concurrent enrollment transactions must both lock the same Course row before counting capacity. Without that lock, `count < capacity` in both requests could overbook. This case is mandatory in the test plan.
+
+
+## Playback transaction boundary — 2026-10-09
+
+Session creation, takeover, reconciliation and heartbeat acquire the owning
+Enrollment row with SQL Server `UPDLOCK, HOLDLOCK` (SQLite regression tests do
+not prove these locks). They recheck published lesson and active enrollment
+period, serialize lease/frontier writes, reuse completion evaluation and commit
+the accepted heartbeat receipt in the same transaction. Caller-provided sessions
+retain commit ownership; route calls commit or roll back the complete operation.
+
+The first playing heartbeat receives zero credit. Consecutive playing signals
+can credit only elapsed server time up to a 20-second gap. A validated terminal pause can flush the preceding playing interval. Hidden,
+blackout, buffering, error states and larger gaps reset pacing. Fractional time is carried within the active lease, avoiding
+per-request jitter bonuses. A duplicate accepted sequence returns its persisted
+response; missing/out-of-order sequence or replaced lease is rejected. Another
+tab cannot concurrently multiply the same lesson credit. Position is bounded by
+elapsed time and supported rate; these signals still cannot prove attention.

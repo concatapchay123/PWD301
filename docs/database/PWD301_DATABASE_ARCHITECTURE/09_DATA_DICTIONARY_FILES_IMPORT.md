@@ -826,3 +826,13 @@ Asset phải safe trước READY.
 - BROKEN forces import_question NEEDS_REVIEW
 
 ---
+
+## Verified private cloud blob location (2026-10-09)
+
+`file_blobs.storage_backend` is VARCHAR(10), NOT NULL, default `local`, CHECK in (`local`,`s3`). Existing blobs remain local until an explicitly authorized migration verifies the cloud copy. `cloud_verified_at` is nullable UTC DATETIME2(3); a cloud ticket requires a verified timestamp. The original `storage_key`, SHA-256, size, references and historical revisions remain authoritative. A cloud upload is read back in bounded chunks to verify both size and SHA-256 before activation. Local source removal occurs only after metadata commit. Cloud rollback never deletes a shared object eagerly. Downgrade is blocked while cloud-only blobs exist.
+
+Private cloud download tickets expire after 60 seconds; they require the same object authorization and passing malware scans as local downloads. Raw lesson videos never receive document tickets. Temporary quarantine is limited to 2 GiB and verified download cache to 1 GiB/1 hour. Cache eviction never deletes quarantine evidence. These quotas require runtime validation under concurrent load before deployment readiness.
+
+### SQL Server reverse-path default repair
+
+Migration head `blobdefaultrepair20261009` preserves/verifies the canonical `storage_backend DEFAULT ('local')`. Its downgrade removes that named SQL Server default before the immutable predecessor drops the column. An intermediate downgrade stopped at `receiptretention20261009` temporarily lacks the database default; application defaults still apply, but raw SQL inserts must explicitly supply `storage_backend`. Production downgrades are not an approved deployment procedure. Re-upgrading this repair restores the canonical database default. No already-applied migration was edited.

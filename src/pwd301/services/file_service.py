@@ -12,13 +12,18 @@ Implements:
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import mimetypes
 import os
 import re
 import shutil
+import time
 import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
+from functools import wraps
 from pathlib import Path
 from typing import IO, Any, BinaryIO
 
@@ -58,7 +63,9 @@ from pwd301.services.scanner_service import (
     scan_file_all_engines,
 )
 from pwd301.services.storage_adapter import (
+    create_download_url,
     download_blob_from_cloud,
+    is_cloud_storage_enabled,
     upload_blob_to_cloud,
 )
 
@@ -332,6 +339,56 @@ def _resolve_file_asset(
     return None
 
 
+@contextmanager
+def filesystem_lease(lock_path: Path, timeout_seconds: float = 30) -> Iterator[None]:
+    """Cross-process lease reused by volume budgets and HLS generation."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock:
+        lock.seek(0, 2)
+        if lock.tell() == 0:
+            lock.write(b"1")
+            lock.flush()
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                lock.seek(0)
+                if os.name == "nt":
+                    msvcrt = importlib.import_module("msvcrt")
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl = importlib.import_module("fcntl")
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise FileStorageError(
+                        "Temporary file processing is busy; retry shortly."
+                    ) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            lock.seek(0)
+            if os.name == "nt":
+                msvcrt = importlib.import_module("msvcrt")
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl = importlib.import_module("fcntl")
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def with_storage_budget(function: Callable[..., Any]) -> Callable[..., Any]:
+    """Serialize temporary budget decisions across processes sharing the storage volume."""
+
+    @wraps(function)
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        with filesystem_lease(get_file_storage_root() / ".budget.lock"):
+            return function(*args, **kwargs)
+
+    return guarded
+
+
+@with_storage_budget
 def store_file_stream(
     actor: User,
     course_id: Course | int | uuid.UUID | str,
@@ -350,7 +407,7 @@ def store_file_stream(
     4. If hash exists in file_blobs: increments reference_count, reuses blob, deletes temp file.
     5. If hash is new: moves to hierarchical path (storage/blobs/ab/cd/<hash>), creates FileBlob.
     6. Creates FileAsset and FileRevision 1 in ACTIVE state, records passing FileScanResult.
-    7. Provides safe rollback: cleans up newly written disk files if DB commit fails.
+    7. Rollback retains content-addressed files for conservative orphan reconciliation.
     """
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
@@ -359,6 +416,7 @@ def store_file_stream(
     validate_file_metadata(clean_filename, content_type)
 
     quarantine_root = get_file_quarantine_root()
+    reserve_storage_space(quarantine_root, 0)
     temp_filename = f"upload_{uuid.uuid4().hex}.tmp"
     temp_path = quarantine_root / temp_filename
 
@@ -390,6 +448,7 @@ def store_file_stream(
                         f"File stream exceeded maximum limit of {max_video_exclusive} bytes."
                     )
 
+                reserve_storage_space(quarantine_root, len(chunk))
                 hasher.update(chunk)
                 f_out.write(chunk)
 
@@ -425,7 +484,11 @@ def store_file_stream(
 
         blob: FileBlob | None = None
 
-        if main_verdict.status == "PASS":
+        if (
+            main_verdict.status == "PASS"
+            and scan_verdicts
+            and all(v.status == "PASS" for v in scan_verdicts)
+        ):
             # Algorithm 12 Deduplication lookup for clean files
             blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
             if blob is not None and blob.status == "PRESENT":
@@ -454,12 +517,16 @@ def store_file_stream(
                 newly_created_dest = dest_path
 
                 storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
-                upload_blob_to_cloud(dest_path, storage_key)
+                cloud = is_cloud_storage_enabled() and not detected_mime.startswith("video/")
+                if cloud and not upload_blob_to_cloud(dest_path, storage_key):
+                    raise FileStorageError("Cloud upload could not be verified.")
                 blob = FileBlob(
                     sha256=digest_bytes,
                     size_bytes=total_size,
                     detected_mime_type=detected_mime,
                     storage_key=storage_key,
+                    storage_backend="s3" if cloud else "local",
+                    cloud_verified_at=now if cloud else None,
                     status="PRESENT",
                     reference_count=1,
                 )
@@ -521,6 +588,8 @@ def store_file_stream(
                 )
             )
             sess.commit()
+            if newly_created_dest is not None and blob.storage_backend == "s3":
+                newly_created_dest.unlink(missing_ok=True)
             return asset
 
         elif main_verdict.status == "FAIL":
@@ -658,12 +727,12 @@ def store_file_stream(
         # Clean up temporary quarantine file
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
-        # Rollback safety: clean up newly created physical storage file
-        if newly_created_dest is not None and newly_created_dest.exists():
-            newly_created_dest.unlink(missing_ok=True)
+        # A concurrent transaction may reference this content-addressed path.
+        # Retain it until conservative reconciliation; never erase a shared blob on rollback.
         raise
 
 
+@with_storage_budget
 def add_file_revision(
     actor: User,
     asset_id: FileAsset | int | uuid.UUID | str,
@@ -687,6 +756,7 @@ def add_file_revision(
     validate_file_metadata(clean_filename, content_type)
 
     quarantine_root = get_file_quarantine_root()
+    reserve_storage_space(quarantine_root, 0)
     temp_filename = f"rev_{uuid.uuid4().hex}.tmp"
     temp_path = quarantine_root / temp_filename
 
@@ -716,6 +786,7 @@ def add_file_revision(
                         f"File size exceeded maximum limit of {max_video_exclusive} bytes."
                     )
 
+                reserve_storage_space(quarantine_root, len(chunk))
                 hasher.update(chunk)
                 f_out.write(chunk)
 
@@ -735,7 +806,11 @@ def add_file_revision(
         )
         max_rev = max([r.revision_no for r in existing_revisions], default=0)
 
-        if main_verdict.status == "PASS":
+        if (
+            main_verdict.status == "PASS"
+            and scan_verdicts
+            and all(v.status == "PASS" for v in scan_verdicts)
+        ):
             # Deduplication lookup for clean revision
             blob = sess.query(FileBlob).filter(FileBlob.sha256 == digest_bytes).first()
             if blob is not None and blob.status == "PRESENT":
@@ -755,12 +830,16 @@ def add_file_revision(
                 newly_created_dest = dest_path
 
                 storage_key = f"blobs/{ab}/{cd}/{hex_hash}"
-                upload_blob_to_cloud(dest_path, storage_key)
+                cloud = is_cloud_storage_enabled() and not detected_mime.startswith("video/")
+                if cloud and not upload_blob_to_cloud(dest_path, storage_key):
+                    raise FileStorageError("Cloud upload could not be verified.")
                 blob = FileBlob(
                     sha256=digest_bytes,
                     size_bytes=total_size,
                     detected_mime_type=detected_mime,
                     storage_key=storage_key,
+                    storage_backend="s3" if cloud else "local",
+                    cloud_verified_at=now if cloud else None,
                     status="PRESENT",
                     reference_count=1,
                 )
@@ -823,6 +902,8 @@ def add_file_revision(
                 )
             )
             sess.commit()
+            if newly_created_dest is not None and blob.storage_backend == "s3":
+                newly_created_dest.unlink(missing_ok=True)
             return new_rev
 
         elif main_verdict.status == "FAIL":
@@ -939,8 +1020,7 @@ def add_file_revision(
         sess.rollback()
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
-        if newly_created_dest is not None and newly_created_dest.exists():
-            newly_created_dest.unlink(missing_ok=True)
+        # Retain content-addressed evidence; another transaction may share it.
         raise
 
 
@@ -1001,13 +1081,18 @@ def restore_file_asset(
     return asset
 
 
-def get_file_for_download(
+def latest_file_scan_results(revision: FileRevision) -> list[FileScanResult]:
+    """Current verdict per engine/type; historical records remain append-only."""
+    return revision.current_scan_results
+
+
+def authorize_file_download(
     actor: User | None,
     asset_id: FileAsset | int | uuid.UUID | str,
     revision_no: int | None = None,
     session: Session | scoped_session[Any] | None = None,
     public_course_thumbnail: bool = False,
-) -> tuple[FileAsset, FileBlob, Path]:
+) -> tuple[FileAsset, FileBlob, FileRevision]:
     """Authorize access and retrieve physical file path for streaming/download.
 
     Enforces Zero-Trust & Fail-Closed rules:
@@ -1119,7 +1204,7 @@ def get_file_for_download(
             raise FileSecurityQuarantineError(
                 "File revision is quarantined pending security clearance."
             )
-        for scan in revision.scan_results:
+        for scan in latest_file_scan_results(revision):
             if scan.status == "FAIL":
                 raise FileInfectedError("File security verification detected malware.")
             elif scan.status == "ERROR":
@@ -1140,16 +1225,140 @@ def get_file_for_download(
     if blob is None or blob.status != "PRESENT":
         raise FileSecurityQuarantineError("Physical storage blob is quarantined or missing.")
 
+    if not revision.scan_results or not any(
+        scan.status == "PASS" and scan.scan_type == "MALWARE"
+        for scan in latest_file_scan_results(revision)
+    ):
+        raise FileSecurityQuarantineError("File has no passing malware scan.")
+    return asset, blob, revision
+
+
+def get_file_for_download(
+    actor: User | None,
+    asset_id: FileAsset | int | uuid.UUID | str,
+    revision_no: int | None = None,
+    session: Session | scoped_session[Any] | None = None,
+    public_course_thumbnail: bool = False,
+) -> tuple[FileAsset, FileBlob, Path]:
+    asset, blob, revision = authorize_file_download(
+        actor, asset_id, revision_no, session, public_course_thumbnail
+    )
+    sess = session if session is not None else db.session
+    course = sess.get(Course, asset.course_id)
+    manager = actor is not None and (
+        actor.is_admin
+        or (
+            actor.has_role("INSTRUCTOR")
+            and course is not None
+            and course.owner_instructor_id == actor.id
+        )
+    )
+    if (asset.is_video or blob.detected_mime_type.startswith("video/")) and not manager:
+        raise FileAccessDeniedError("Learners must use protected video playback.")
+    return asset, blob, materialize_authorized_blob(blob)
+
+
+@with_storage_budget
+def materialize_authorized_blob(blob: FileBlob) -> Path:
+    """Internal bytes resolution: callers must authorize the asset before invocation."""
+    if blob.status != "PRESENT" or (
+        blob.storage_backend == "s3" and blob.cloud_verified_at is None
+    ):
+        raise FileSecurityQuarantineError("Blob is not available for protected processing.")
     storage_root = get_file_storage_root().resolve()
+    if blob.storage_backend == "s3":
+        storage_root = storage_root / "cache"
+        storage_root.mkdir(parents=True, exist_ok=True)
+        cleanup_storage_cache()
     physical_path = (storage_root / blob.storage_key).resolve()
     if not physical_path.is_relative_to(storage_root):
         raise FileAccessDeniedError("Physical file path escapes designated storage root.")
-    if (not physical_path.exists() or not physical_path.is_file()) and (
-        not download_blob_from_cloud(blob.storage_key, physical_path) or not physical_path.exists()
-    ):
-        raise FileStorageError("Physical file blob not found on disk.")
+    if not physical_path.is_file():
+        if blob.storage_backend != "s3":
+            raise FileStorageError("Physical file blob not found on disk.")
+        reserve_storage_space(storage_root, blob.size_bytes, cache=True)
+        if not download_blob_from_cloud(blob.storage_key, physical_path):
+            raise FileStorageError("Cloud blob is unavailable.")
+        digest = hashlib.sha256()
+        with physical_path.open("rb") as source:
+            while chunk := source.read(64 * 1024):
+                digest.update(chunk)
+        if physical_path.stat().st_size != blob.size_bytes or digest.hexdigest() != blob.sha256_hex:
+            physical_path.unlink(missing_ok=True)
+            raise FileStorageError("Cloud blob integrity verification failed.")
+    if blob.storage_backend == "s3":
+        physical_path.touch()
+    return physical_path
 
-    return asset, blob, physical_path
+
+def get_file_download_ticket(
+    actor: User | None,
+    asset_id: FileAsset | int | uuid.UUID | str,
+    revision_no: int | None = None,
+    disposition: str = "attachment",
+    session: Session | scoped_session[Any] | None = None,
+) -> dict[str, Any]:
+    asset, blob, revision = authorize_file_download(actor, asset_id, revision_no, session)
+    if asset.is_video or blob.detected_mime_type.startswith("video/"):
+        raise FileAccessDeniedError("Raw lesson video download tickets are not allowed.")
+    if disposition not in ("inline", "attachment"):
+        raise FileValidationError("Invalid download disposition.")
+    filename = sanitize_filename(revision.original_filename)
+    if blob.storage_backend == "s3":
+        if blob.cloud_verified_at is None:
+            raise FileStorageError("Cloud blob has not been verified.")
+        return {
+            "url": create_download_url(
+                blob.storage_key, filename, blob.detected_mime_type, disposition
+            ),
+            "expires_in": 60,
+        }
+    from urllib.parse import urlencode
+
+    params = {"disposition": disposition}
+    if revision_no is not None:
+        params["version"] = str(revision_no)
+    return {"url": f"/api/files/{asset.public_id}/download?{urlencode(params)}", "expires_in": None}
+
+
+def reserve_storage_space(root: Path, incoming_size: int, cache: bool = False) -> None:
+    root = Path(root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    used = sum(
+        path.stat().st_size for path in root.rglob("*") if path.is_file() and not path.is_symlink()
+    )
+    limit = int(
+        current_app.config.get(
+            "STORAGE_CACHE_MAX_BYTES" if cache else "FILE_QUARANTINE_MAX_BYTES",
+            1024**3 if cache else 2 * 1024**3,
+        )
+    )
+    if used + incoming_size > limit:
+        raise FileStorageError("Temporary storage quota exceeded.")
+    if shutil.disk_usage(root).free - incoming_size < int(
+        current_app.config.get("FILE_MIN_FREE_BYTES", 1024**3)
+    ):
+        raise FileStorageError("Insufficient free disk space for safe file processing.")
+
+
+def cleanup_storage_cache() -> int:
+    import time
+
+    root = (get_file_storage_root() / "cache").resolve()
+    if not root.exists():
+        return 0
+    cutoff = time.time() - int(current_app.config.get("STORAGE_CACHE_TTL_SECONDS", 3600))
+    removed = 0
+    for path in root.rglob("*"):
+        if (
+            path.is_file()
+            and not path.is_symlink()
+            and path.resolve().is_relative_to(root)
+            and path.stat().st_mtime < cutoff
+        ):
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed
 
 
 def attach_resource_to_lesson(
@@ -1446,6 +1655,8 @@ def rescan_file_asset(
         else:
             target_path = get_file_quarantine_root() / revision.quarantine_key
 
+    if revision.blob and revision.blob.storage_backend == "s3":
+        _, _, target_path = get_file_for_download(actor, asset, revision.revision_no, session=sess)
     if target_path is None or not target_path.exists():
         raise FileStorageError("Physical file for rescan could not be located on disk.")
 
@@ -1467,7 +1678,11 @@ def rescan_file_asset(
             )
         )
 
-    if main_verdict.status == "PASS":
+    if (
+        main_verdict.status == "PASS"
+        and scan_verdicts
+        and all(v.status == "PASS" for v in scan_verdicts)
+    ):
         hasher = hashlib.sha256()
         with open(target_path, "rb") as f:
             while True:
@@ -1568,11 +1783,32 @@ def rescan_file_asset(
         if not has_active:
             asset.status = "PENDING"
 
+    cloud_source = None
+    if (
+        revision.status == "ACTIVE"
+        and revision.blob is not None
+        and is_cloud_storage_enabled()
+        and not revision.blob.detected_mime_type.startswith("video/")
+    ):
+        cloud_blob = revision.blob
+        cloud_source = (
+            target_path
+            if cloud_blob.storage_backend == "s3"
+            else get_file_storage_root() / cloud_blob.storage_key
+        )
+        if not upload_blob_to_cloud(cloud_source, cloud_blob.storage_key):
+            sess.rollback()
+            raise FileStorageError("Rescanned cloud upload could not be verified.")
+        cloud_blob.storage_backend = "s3"
+        cloud_blob.cloud_verified_at = now
+
     try:
         sess.commit()
     except Exception:
         sess.rollback()
         raise
+    if cloud_source is not None:
+        cloud_source.unlink(missing_ok=True)
     return asset
 
 

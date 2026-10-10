@@ -4113,6 +4113,152 @@ def list_instructor_assessment_attempts_route(
     return jsonify(results), 200
 
 
+@instructor_bp.route("/assessments/<assessment_id>/gradebook.pdf", methods=["GET"])
+@instructor_required
+def export_instructor_assessment_gradebook_pdf_route(
+    assessment_id: str,
+) -> Response:
+    """Download full class gradebook & proctoring report as PDF (Instructor)."""
+    import io
+    import re
+    import urllib.parse
+
+    from flask import send_file
+
+    from pwd301.services.attempt_service import _resolve_assessment, list_assessment_student_results
+    from pwd301.services.authorization_service import require_course_manager
+    from pwd301.services.exceptions import ResourceNotFoundError
+    from pwd301.services.file_service import sanitize_filename
+    from pwd301.services.result_pdf_service import build_assessment_gradebook_pdf
+
+    actor = require_authenticated_actor()
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
+        raise ResourceNotFoundError("Bài khảo thí không tồn tại.")
+
+    require_course_manager(actor, assessment.course_id, session=db.session)
+
+    # The results service caps each page at 100; export the complete roster.
+    data = list_assessment_student_results(
+        actor,
+        assessment.id,
+        page=1,
+        per_page=100,
+        session=db.session,
+    )
+    attempts = data.get("attempts") or []
+    for page in range(2, int(data.get("pages") or 1) + 1):
+        attempts.extend(
+            list_assessment_student_results(
+                actor, assessment.id, page=page, per_page=100, session=db.session
+            ).get("attempts")
+            or []
+        )
+    released = [a for a in attempts if a.get("score_status") == "RELEASED"]
+
+    total_candidates = len(attempts)
+    submitted_count = sum(1 for a in attempts if a.get("submitted_at"))
+    passed_count = sum(1 for a in released if a.get("is_passed") or a.get("passed"))
+    failed_count = len(released) - passed_count
+    pass_rate = round((passed_count / len(released)) * 100, 2) if released else 0.0
+
+    scores = [
+        float(
+            a.get("percentage")
+            if a.get("percentage") is not None
+            else (
+                a.get("percent_score")
+                if a.get("percent_score") is not None
+                else (a.get("score") or 0)
+            )
+        )
+        for a in released
+    ]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else None
+    highest_score = max(scores) if scores else None
+    lowest_score = min(scores) if scores else None
+
+    roster = []
+    for a in attempts:
+        user_obj = a.get("user") or a.get("student") or {}
+        st_code = a.get("student_code") or user_obj.get("username") or "-"
+        st_name = (
+            a.get("student_name")
+            or user_obj.get("display_name")
+            or a.get("student_email")
+            or "Thí sinh"
+        )
+        roster.append(
+            {
+                "student_code": st_code,
+                "student_name": st_name,
+                "submitted_at": a.get("submitted_at") or a.get("created_at"),
+                "violation_count": int(a.get("violation_count") or a.get("focus_lost_count") or 0),
+                "score": a.get("percentage")
+                if a.get("percentage") is not None
+                else (
+                    a.get("percent_score")
+                    if a.get("percent_score") is not None
+                    else (a.get("score") or 0)
+                ),
+                "is_passed": bool(a.get("is_passed") or a.get("passed")),
+                "score_status": a.get("score_status"),
+            }
+        )
+
+    assess_type = getattr(assessment, "assessment_type", None)
+    type_name = str(getattr(assess_type, "name", assess_type) or "")
+
+    gradebook_payload = {
+        "assessment_title": assessment.title,
+        "assessment_type": type_name,
+        "course_title": assessment.course.title if assessment.course else "Khóa học",
+        "course_code": assessment.course.course_code if assessment.course else "-",
+        "instructor_name": actor.display_name or actor.email,
+        "duration_minutes": assessment.time_limit_minutes,
+        "total_candidates": total_candidates,
+        "submitted_count": submitted_count,
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "pass_rate_pct": pass_rate,
+        "average_score": avg_score,
+        "highest_score": highest_score,
+        "lowest_score": lowest_score,
+        "attempts": roster,
+    }
+
+    pdf_bytes = build_assessment_gradebook_pdf(gradebook_payload)
+    safe_title = sanitize_filename(
+        f"Bang-diem-{assessment.course.course_code if assessment.course else 'PWD301'}-{assessment.title}.pdf"
+    )
+    if not safe_title.lower().endswith(".pdf"):
+        safe_title = f"{safe_title}.pdf"
+
+    import unicodedata
+
+    ascii_clean = (
+        unicodedata.normalize("NFKD", safe_title).encode("ascii", "ignore").decode("ascii")
+    )
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9\.\-_]", "_", ascii_clean).strip("_") or "bang-diem.pdf"
+    if not ascii_fallback.lower().endswith(".pdf"):
+        ascii_fallback = f"{ascii_fallback}.pdf"
+    encoded_name = urllib.parse.quote(safe_title.encode("utf-8"))
+
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=ascii_fallback,
+        conditional=False,
+    )
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @instructor_bp.route("/attempts/<attempt_id>/focus-events", methods=["GET"])
 @instructor_required
 def get_instructor_attempt_focus_events_route(attempt_id: str) -> Any:

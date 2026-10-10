@@ -859,3 +859,26 @@ Historical learning result.
 - prerequisite eligibility vẫn giữ nếu prior completion hợp lệ
 
 ---
+
+
+## Durable playback additions — 2026-10-09
+
+Canonical DDL remains in `sql/002_course_learning.sql`; application migration
+`playback20261009` follows `b2storage20261009`. Existing lesson and enrollment
+identities and completion history are retained without destructive backfill.
+
+| Table | Columns and contract |
+|---|---|
+| `playback_sessions` | BIGINT identity PK; mutable public GUID lease; enrollment-period and lesson FKs (NO ACTION); unique period+lesson; canonical media ID; positive next sequence; validated playback state; UTC DATETIME2(3) heartbeat/update; last position/rate and fractional seconds; ROWVERSION. One row serializes all media playback for a learner and lesson. |
+| `lesson_media_progress` | BIGINT identity PK; period/lesson FKs (NO ACTION); unique period+lesson+media; trusted positive duration; continuous frontier constrained to [0,duration]; UTC update and ROWVERSION. Media ID is `youtube:<videoID>` or `hls:<assetGUID>:<revisionGUID>`; content-only sessions use `content:<lessonGUID>`. |
+| `playback_receipts` | BIGINT identity PK; session FK (NO ACTION); GUID lease+positive sequence unique; persisted response JSON; UTC creation time. Retries across processes replay the same accepted result without double credit. |
+
+No client-supplied duration becomes authoritative. YouTube duration is obtained
+from the server-side Data API; protected HLS duration is calculated from its
+completed, asset/revision-specific playlist. Historical completed lessons are
+not reset. Receipts are retained for the current active lease; replacing the lease deletes
+only its now-unusable receipts in the same locked transaction. Frontiers,
+completion and audit history are retained. A created-at index supports worker cleanup after 24 hours, including long-running
+leases. Expired retries fail their sequence check without being counted again.
+The index is added by migration `receiptretention20261009` because staging had
+already applied the original playback migration. This addition is schema intent, not evidence of live SQL deployment.

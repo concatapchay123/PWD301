@@ -16,6 +16,7 @@ from typing import Any
 from flask import (
     Response,
     current_app,
+    has_request_context,
     jsonify,
     request,
     send_file,
@@ -28,7 +29,6 @@ from pwd301.models.course import Enrollment, Lesson, LessonProgress
 from pwd301.services.analytics_service import get_student_learning_overview
 from pwd301.services.authorization_service import (
     _resolve_course,
-    _resolve_lesson,
     require_authenticated_actor,
     student_required,
 )
@@ -55,7 +55,6 @@ from pwd301.services.lesson_service import (
 from pwd301.services.recommendation_service import generate_course_recommendations
 from pwd301.services.video_drm_service import (
     generate_key_token,
-    get_lesson_hls_directory,
     transcode_to_encrypted_hls,
     verify_key_token,
 )
@@ -309,9 +308,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
             if is_video:
                 course_pub_id = les.course.public_id if les.course else ""
-                hls_url = (
-                    f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/playlist.m3u8"
-                )
+                hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{fa.public_id}/playlist.m3u8"
                 video_urls.append(hls_url)
                 if not video_url:
                     video_url = hls_url
@@ -340,7 +337,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                     )
                     if is_vid:
                         course_pub_id = les.course.public_id if les.course else ""
-                        hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/playlist.m3u8"
+                        hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{fa.public_id}/playlist.m3u8"
                         video_urls.append(hls_url)
                         if not video_url:
                             video_url = hls_url
@@ -412,6 +409,8 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
 
     return {
         "lesson_id": str(getattr(les, "public_id", None) or getattr(les, "id", "")),
+        "playback_media": _playback_media_descriptors(les, video_urls),
+        "client_ip": request.remote_addr if has_request_context() else None,
         "learning_unit_id": lu_id,
         "learning_unit_title": lu_title,
         "learning_unit_position": lu_pos,
@@ -444,6 +443,39 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
         },
         "resources": res_list,
     }
+
+
+def _playback_media_descriptors(lesson: Lesson, urls: list[str]) -> list[dict[str, str]]:
+    from pwd301.services.playback_service import lesson_media_ids
+    from pwd301.services.youtube_validator_service import extract_youtube_id
+
+    hls_ids = [mid for mid in lesson_media_ids(lesson) if mid.startswith("hls:")]
+    descriptors = []
+    for url in urls:
+        yt = extract_youtube_id(url)
+        media_id = (
+            f"youtube:{yt}"
+            if yt
+            else next((mid for mid in hls_ids if f"/video/{mid.split(':')[1]}/" in url), None)
+        )
+        if media_id:
+            descriptors.append({"url": url, "media_id": media_id})
+    return descriptors
+
+
+@student_bp.route("/lessons/<lesson_id>/playback-sessions", methods=["POST"])
+@student_required
+def start_student_playback_route(lesson_id: str) -> Any:
+    from pwd301.services.playback_service import start_playback_session
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise LessonValidationError("Invalid JSON payload.")
+    result = start_playback_session(
+        require_authenticated_actor(), lesson_id, payload.get("media_id")
+    )
+    result["client_ip"] = request.remote_addr
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @student_bp.route("/courses/<course_id>/lessons/<lesson_id>", methods=["GET"])
@@ -492,6 +524,12 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
     if not isinstance(payload, dict):
         raise LessonValidationError("Invalid JSON payload.")
 
+    if payload.get("playback_session_id"):
+        from pwd301.services.playback_service import record_playback_heartbeat
+
+        result = record_playback_heartbeat(actor, lesson_id, payload)
+        return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
     seconds_increment = payload.get("seconds_increment")
     if seconds_increment is None:
         seconds_increment = payload.get("time_spent_seconds", 0)
@@ -508,6 +546,19 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
+    if sec_int == 0:
+        from pwd301.services.playback_service import reconcile_lesson_progress
+
+        progress = reconcile_lesson_progress(actor, lesson_id, vf_float)
+        return jsonify(
+            {
+                "seconds_spent": progress.seconds_spent,
+                "max_view_fraction": float(progress.max_view_fraction),
+                "is_completed": bool(progress.completed_at),
+                "completed": bool(progress.completed_at),
+            }
+        ), 200
+
     bounded_sec = max(1, min(sec_int, 60))
     bounded_vf = max(0.0, min(vf_float, 1.0))
     client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
@@ -518,6 +569,7 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         seconds_increment=bounded_sec,
         view_fraction=bounded_vf,
         client_event_id=client_event_id,
+        enforce_wall_clock=True,
     )
 
     data = {
@@ -1353,9 +1405,10 @@ def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, A
                 result_data["assessment_type"] = (
                     assess_type.name if hasattr(assess_type, "name") else str(assess_type)
                 )
-            result_data["duration_minutes"] = getattr(attempt.assessment, "duration_minutes", 45)
+            result_data["duration_minutes"] = attempt.assessment.time_limit_minutes
             if attempt.assessment.course:
                 result_data["course_id"] = str(attempt.assessment.course.public_id)
+                result_data["course_title"] = attempt.assessment.course.title
                 result_data["assessment_code"] = attempt.assessment.course.course_code
                 inst = getattr(attempt.assessment.course, "owner_instructor", None)
                 if inst:
@@ -1409,12 +1462,25 @@ def attempt_result_pdf(attempt_id: str) -> Response:
     if not filename.lower().endswith(".pdf"):
         filename = f"{filename}.pdf"
 
+    import re
+    import unicodedata
+    import urllib.parse
+
+    ascii_clean = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+    ascii_fallback = re.sub(r"[^a-zA-Z0-9\.\-_]", "_", ascii_clean).strip("_") or "bang-diem.pdf"
+    if not ascii_fallback.lower().endswith(".pdf"):
+        ascii_fallback = f"{ascii_fallback}.pdf"
+    encoded_name = urllib.parse.quote(filename.encode("utf-8"))
+
     response = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=filename,
+        download_name=ascii_fallback,
         conditional=False,
+    )
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
     )
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -2619,17 +2685,26 @@ def download_student_course_file_route(asset_id: str, course_id: str | None = No
         if course is None or course.id != asset.course_id:
             raise ResourceNotFoundError("File asset not found for the specified course.")
 
+    disposition = request.args.get("disposition", "attachment").lower()
+    if disposition not in ("inline", "attachment"):
+        disposition = "attachment"
+
     # Invariant 25: Students cannot download raw lesson video files (.mp4/.webm)
     if asset.is_video or (
         blob.detected_mime_type and blob.detected_mime_type.lower().startswith("video/")
     ):
-        raise ForbiddenError(
-            "Direct download of lesson videos is restricted. Please view this lesson via the secure course player."
+        is_staff_viewer = bool(
+            actor.is_admin
+            or (
+                actor.has_role("INSTRUCTOR")
+                and course is not None
+                and course.owner_instructor_id == actor.id
+            )
         )
-
-    disposition = request.args.get("disposition", "attachment").lower()
-    if disposition not in ("inline", "attachment"):
-        disposition = "attachment"
+        if disposition != "inline" or not is_staff_viewer:
+            raise ForbiddenError(
+                "Direct download of lesson videos is restricted. Please view this lesson via the secure course player."
+            )
 
     clean_filename = sanitize_filename(asset.original_filename or asset.display_name)
     return send_file(
@@ -2645,138 +2720,24 @@ def download_student_course_file_route(asset_id: str, course_id: str | None = No
     "/courses/<course_id>/lessons/<lesson_id>/video/playlist.m3u8",
     methods=["GET"],
 )
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/playlist.m3u8", methods=["GET"]
+)
 @student_required
-def get_lesson_hls_playlist_route(course_id: str, lesson_id: str) -> Any:
-    """Serve encrypted HLS playlist with authenticated short-lived tokenized key URI."""
-    actor = require_authenticated_actor()
-    course = _resolve_course(course_id, session=db.session)
-    if course is None:
-        raise ResourceNotFoundError("Course not found.")
-
-    lesson = _resolve_lesson(lesson_id, session=db.session)
-    if lesson is None or lesson.course_id != course.id:
-        raise ResourceNotFoundError("Lesson not found.")
-
-    enrollment = (
-        db.session.query(Enrollment)
-        .filter(
-            Enrollment.student_user_id == actor.id,
-            Enrollment.course_id == course.id,
-            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
-        )
-        .first()
-    )
-    if enrollment is None:
-        raise ForbiddenError(
-            "You must have an active enrollment in this course to view this video."
-        )
-
-    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
-    playlist_path = hls_dir / "playlist.m3u8"
-
-    if not playlist_path.exists():
-        # Look for video file asset in lesson resources
-        source_path = None
-        storage_root = Path(current_app.config.get("STORAGE_LOCAL_ROOT", "storage"))
-        for res in getattr(lesson, "resources", []):
-            fa = getattr(res, "file_asset", None)
-            if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
-                rev = getattr(fa, "current_revision", None) or (
-                    fa.revisions[-1] if getattr(fa, "revisions", None) else None
-                )
-                blob = getattr(rev, "blob", None) if rev else None
-                if blob and getattr(blob, "storage_key", None):
-                    candidate = storage_root / blob.storage_key
-                    if candidate.exists():
-                        source_path = str(candidate)
-                        break
-
-        # Fallback to previous lesson revision resources if needed
-        if not source_path and getattr(lesson, "previous_lesson", None):
-            prev = lesson.previous_lesson
-            for res in getattr(prev, "resources", []):
-                fa = getattr(res, "file_asset", None)
-                if fa and (fa.is_video or (fa.mime_type and fa.mime_type.startswith("video/"))):
-                    rev = getattr(fa, "current_revision", None) or (
-                        fa.revisions[-1] if getattr(fa, "revisions", None) else None
-                    )
-                    blob = getattr(rev, "blob", None) if rev else None
-                    if blob and getattr(blob, "storage_key", None):
-                        candidate = storage_root / blob.storage_key
-                        if candidate.exists():
-                            source_path = str(candidate)
-                            break
-
-        if not source_path or not Path(source_path).exists():
-            raise ResourceNotFoundError("No protected video stream available for this lesson.")
-
-        transcode_to_encrypted_hls(
-            input_path=source_path,
-            output_dir=str(hls_dir),
-            key_uri_relative="key",
-            segment_duration_seconds=4,
-        )
-
-    playlist_content = playlist_path.read_text(encoding="utf-8")
-    token = generate_key_token(actor.id, course.id, lesson.id, expires_in=60)
-    # Inject short-lived token into URI="key" -> URI="key?token={token}"
-    modified_playlist = re.sub(
-        r'URI="([^"]*key[^"]*)"',
-        f'URI="key?token={token}"',
-        playlist_content,
-    )
-
-    resp = Response(modified_playlist, mimetype="application/vnd.apple.mpegurl")
-    resp.headers["Cache-Control"] = "private, no-store"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    return resp
+def get_lesson_hls_playlist_route(
+    course_id: str, lesson_id: str, asset_id: str | None = None
+) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "playlist")
 
 
 @student_bp.route(
     "/courses/<course_id>/lessons/<lesson_id>/video/key",
     methods=["GET"],
 )
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/key", methods=["GET"])
 @student_required
-def get_lesson_hls_key_route(course_id: str, lesson_id: str) -> Any:
-    """Serve 16-byte AES-128 decryption key to authorized enrolled student with valid token."""
-    actor = require_authenticated_actor()
-    course = _resolve_course(course_id, session=db.session)
-    if course is None:
-        raise ResourceNotFoundError("Course not found.")
-
-    lesson = _resolve_lesson(lesson_id, session=db.session)
-    if lesson is None or lesson.course_id != course.id:
-        raise ResourceNotFoundError("Lesson not found.")
-
-    enrollment = (
-        db.session.query(Enrollment)
-        .filter(
-            Enrollment.student_user_id == actor.id,
-            Enrollment.course_id == course.id,
-            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
-        )
-        .first()
-    )
-    if enrollment is None:
-        raise ForbiddenError(
-            "You must have an active enrollment in this course to view this video."
-        )
-
-    token = request.args.get("token", "")
-    valid, reason = verify_key_token(token, actor.id, course.id, lesson.id)
-    if not valid:
-        raise ForbiddenError(f"DRM key access denied: {reason}")
-
-    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
-    key_path = hls_dir / "enc.key"
-    if not key_path.exists():
-        raise ResourceNotFoundError("Encryption key not found.")
-
-    key_bytes = key_path.read_bytes()
-    resp = Response(key_bytes, mimetype="application/octet-stream")
-    resp.headers["Cache-Control"] = "private, no-store"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    return resp
+def get_lesson_hls_key_route(course_id: str, lesson_id: str, asset_id: str | None = None) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "key")
 
 
 @student_bp.route(
@@ -2787,47 +2748,64 @@ def get_lesson_hls_key_route(course_id: str, lesson_id: str) -> Any:
     "/courses/<course_id>/lessons/<lesson_id>/video/segments/<segment_name>",
     methods=["GET"],
 )
+@student_bp.route(
+    "/courses/<course_id>/lessons/<lesson_id>/video/<asset_id>/<segment_name>", methods=["GET"]
+)
 @student_required
-def get_lesson_hls_segment_route(course_id: str, lesson_id: str, segment_name: str) -> Any:
-    """Serve encrypted .ts segment file."""
+def get_lesson_hls_segment_route(
+    course_id: str, lesson_id: str, segment_name: str, asset_id: str | None = None
+) -> Any:
+    return _serve_lesson_hls(course_id, lesson_id, asset_id, "segment", segment_name)
+
+
+def _serve_lesson_hls(course_id, lesson_id, asset_id, kind, segment_name=None):
+    """All playlist/key/segment reads recheck lesson, object access and scan status."""
+    from pwd301.services.file_service import materialize_authorized_blob
+    from pwd301.services.video_drm_service import get_asset_hls_directory, resolve_lesson_hls_asset
+
     actor = require_authenticated_actor()
+    lesson = get_lesson_detail(actor, lesson_id, session=db.session)
     course = _resolve_course(course_id, session=db.session)
-    if course is None:
-        raise ResourceNotFoundError("Course not found.")
-
-    lesson = _resolve_lesson(lesson_id, session=db.session)
-    if lesson is None or lesson.course_id != course.id:
-        raise ResourceNotFoundError("Lesson not found.")
-
-    enrollment = (
-        db.session.query(Enrollment)
-        .filter(
-            Enrollment.student_user_id == actor.id,
-            Enrollment.course_id == course.id,
-            Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
+    if course is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson not found in this course.")
+    asset, blob, revision = resolve_lesson_hls_asset(actor, lesson, asset_id, session=db.session)
+    directory = get_asset_hls_directory(lesson, asset, revision)
+    if kind == "playlist":
+        playlist = directory / "playlist.m3u8"
+        if not playlist.is_file():
+            source = materialize_authorized_blob(blob)
+            transcode_to_encrypted_hls(str(source), str(directory), key_uri_relative="key")
+        token = generate_key_token(actor.id, course.id, lesson.id, expires_in=60)
+        key_url = f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/{asset.public_id}/key?token={token}"
+        content = re.sub(
+            r'URI="([^"]*key[^"]*)"', f'URI="{key_url}"', playlist.read_text(encoding="utf-8")
         )
-        .first()
-    )
-    if enrollment is None:
-        raise ForbiddenError(
-            "You must have an active enrollment in this course to view this video."
+        # Legacy primary URL has a different base directory; make media paths explicit.
+        content = re.sub(
+            r"(?m)^(segment_\d+\.ts)$",
+            lambda match: (
+                f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/{asset.public_id}/{match.group(1)}"
+            ),
+            content,
         )
-
-    # Guard against path traversal
-    if not re.match(r"^segment_\d+\.ts$", segment_name):
-        raise ResourceNotFoundError("Invalid segment name.")
-
-    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
-    segment_path = hls_dir / segment_name
-    if not segment_path.exists():
-        raise ResourceNotFoundError("Segment not found.")
-
-    resp = send_file(
-        str(segment_path.resolve()),
-        mimetype="video/MP2T",
-        as_attachment=False,
-        conditional=True,
-    )
-    resp.headers["Cache-Control"] = "private, no-store"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    return resp
+        response = Response(content, mimetype="application/vnd.apple.mpegurl")
+    elif kind == "key":
+        valid, reason = verify_key_token(
+            request.args.get("token", ""), actor.id, course.id, lesson.id
+        )
+        if not valid:
+            raise ForbiddenError(f"DRM key access denied: {reason}")
+        key = directory / "enc.key"
+        if not key.is_file() or key.stat().st_size != 16:
+            raise ResourceNotFoundError("Encryption key not found.")
+        response = Response(key.read_bytes(), mimetype="application/octet-stream")
+    else:
+        if not isinstance(segment_name, str) or not re.fullmatch(r"segment_\d+\.ts", segment_name):
+            raise ResourceNotFoundError("Invalid segment name.")
+        segment = directory / segment_name
+        if not segment.is_file():
+            raise ResourceNotFoundError("Segment not found.")
+        response = send_file(segment, mimetype="video/MP2T", conditional=True)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response

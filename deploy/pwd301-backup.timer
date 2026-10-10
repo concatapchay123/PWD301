@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily PWD301 backup, Sunday weekly archive
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=pwd301-backup.service
+
+[Install]
+WantedBy=timers.target

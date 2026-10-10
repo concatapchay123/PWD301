@@ -87,6 +87,19 @@ def get_authenticated_actor() -> User | None:
             # If an Authorization header was supplied but invalid/malformed -> fail closed!
             return None
 
+        url_token = request.args.get("token")
+        if url_token and url_token.strip():
+            try:
+                from pwd301.services.jwt_auth_service import verify_access_token
+
+                user, claims = verify_access_token(url_token.strip())
+                if user and user.is_active:
+                    g.current_user = user
+                    g.jwt_claims = claims
+                    return user
+            except Exception:
+                pass
+
     # 2. JWT authentication context already resolved
     jwt_user = getattr(g, "current_user", None)
     if jwt_user is not None and isinstance(jwt_user, User) and jwt_user.is_active:
@@ -96,13 +109,13 @@ def get_authenticated_actor() -> User | None:
     # Invariant: Web session cookies must NEVER authenticate requests to CSRF-exempt
     # API endpoints (/api/*) to prevent Cross-Site Request Forgery (CSRF).
     # REST API clients must supply Bearer JWT.
-    # Exception: Safe GET requests to /api/files/<asset_id>/download allow session cookies
+    # Exception: Safe GET requests to /api/files/<asset_id>/download or /stream allow session cookies
     # for web browser users (safe, idempotent GET per ADR-002 and 09_FILE_IMPORT_API.md).
     if has_request_context() and (request.path == "/api" or request.path.startswith("/api/")):
         is_safe_file_download = (
             request.method == "GET"
             and request.path.startswith("/api/files/")
-            and request.path.endswith("/download")
+            and (request.path.endswith("/download") or request.path.endswith("/stream"))
         )
         if not is_safe_file_download:
             return None

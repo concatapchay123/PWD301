@@ -31,11 +31,26 @@ def health_deep() -> tuple[Response, int]:
     from pwd301.services.operations_service import check_system_health
 
     report = check_system_health(include_details=False, session=db.session)
-    report["version"] = pwd301.__version__
-    report["env"] = current_app.config.get("ENV", "unknown")
-
-    status_code = 200 if report["status"] in ("HEALTHY", "DEGRADED") else 503
-    return jsonify(report), status_code
+    status_code = 200 if report["status"] == "HEALTHY" else 503
+    # Anonymous probes need states, not private paths, queue metadata or raw errors.
+    # Full operational diagnostics remain on the authenticated administrator API.
+    public = {
+        "status": report["status"],
+        "database": {
+            key: value
+            for key, value in report.get("database", {}).items()
+            if key in {"status", "latency_ms"}
+        },
+        "storage": {"status": report.get("storage", {}).get("status", "UNKNOWN")},
+        "services": {
+            name: {key: value for key, value in service.items() if key in {"status", "latency_ms"}}
+            for name, service in report.get("services", {}).items()
+        },
+        "timestamp": report.get("timestamp"),
+        "version": pwd301.__version__,
+        "env": current_app.config.get("APP_ENV", "unknown"),
+    }
+    return jsonify(public), status_code
 
 
 @core_bp.route("/", methods=["GET"])

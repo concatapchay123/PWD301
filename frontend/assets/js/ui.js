@@ -1514,25 +1514,25 @@ class UI {
   // =========================================================================
   static parseYouTubeId(url) {
     if (!url) return null;
-    const str = String(url).trim();
-    // Matches:
-    // - youtu.be/ID
-    // - youtube.com/watch?v=ID or &v=ID
-    // - youtube.com/embed/ID
-    // - youtube.com/v/ID
-    // - youtube.com/shorts/ID
-    // - youtube.com/live/ID
-    // - iframe code containing youtube URL
-    const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/;
-    const match = str.match(regExp);
-    if (match && match[1]) return match[1];
-    if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
-    return null;
+    const text = String(url).trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(text)) return text;
+    const iframe = text.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i);
+    try {
+      const parsed = new URL(iframe ? iframe[1] : text);
+      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+      const host = parsed.hostname.toLowerCase();
+      let id;
+      if (host === 'youtu.be') id = parsed.pathname.split('/')[1];
+      else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host)) {
+        id = parsed.pathname === '/watch' ? parsed.searchParams.get('v') : parsed.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/]+)\/?$/)?.[1];
+      }
+      return /^[a-zA-Z0-9_-]{11}$/.test(id || '') ? id : null;
+    } catch (_) { return null; }
   }
 
   static getYouTubeEmbedUrl(id) {
     if (!id) return '';
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`;
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`;
   }
 
   // =========================================================================

@@ -13,7 +13,9 @@ import urllib.error
 import urllib.request
 import uuid
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
+
+from flask import current_app
 
 from pwd301.extensions import db
 from pwd301.models.course import Course, Lesson
@@ -26,12 +28,65 @@ YOUTUBE_OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 USER_AGENT = "PWD301-LMS/1.0 (HealthScanner)"
 
 
+def get_youtube_metadata(video_id: str, timeout: float = 4.0) -> dict[str, Any]:
+    """Fetch trusted duration/status; oEmbed alone never proves playback availability.
+
+    API credentials are server-only. Do not include request URLs in errors/logs.
+    """
+    if not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        return {"valid": False, "reason": "invalid_id"}
+    key = current_app.config.get("YOUTUBE_API_KEY")
+    if not key:
+        return {"valid": False, "reason": "metadata_not_configured"}
+    params = urlencode({"part": "contentDetails,status", "id": video_id, "key": key})
+    req = urllib.request.Request(
+        "https://www.googleapis.com/youtube/v3/videos?" + params,
+        headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            data = json.loads(response.read(1_000_001))
+        items = data.get("items", [])
+        if not items:
+            return {"valid": False, "reason": "unavailable"}
+        item = items[0]
+        duration = item.get("contentDetails", {}).get("duration", "")
+        match = re.fullmatch(r"P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?", duration)
+        seconds = (
+            sum(
+                float(value or 0) * scale
+                for value, scale in zip(match.groups(), (86400, 3600, 60, 1), strict=True)
+            )
+            if match
+            else 0
+        )
+        status = item.get("status", {})
+        embeddable = status.get("embeddable") is True
+        valid = (
+            embeddable
+            and seconds > 0
+            and status.get("uploadStatus") == "processed"
+            and status.get("privacyStatus") in {"public", "unlisted"}
+        )
+        return {
+            "valid": valid,
+            "video_id": video_id,
+            "duration_seconds": seconds,
+            "embeddable": embeddable,
+            "reason": None if valid else "not_playable",
+        }
+    except (urllib.error.URLError, TimeoutError, ValueError, TypeError, KeyError):
+        return {"valid": False, "reason": "metadata_network_error", "network_error": True}
+
+
 def extract_youtube_id(url: str) -> str | None:
     """Extract standard 11-char YouTube ID from any valid YouTube URL."""
     if not url or not isinstance(url, str):
         return None
     url = url.strip()
     parsed = urlparse(url)
+    if parsed.scheme not in {"https", "http"} or parsed.username or parsed.password:
+        return None
     host = (parsed.hostname or "").lower()
     video_id = None
     if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
@@ -50,7 +105,7 @@ def extract_youtube_id(url: str) -> str | None:
 
 
 def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[str, Any]:
-    """Verify that a YouTube video exists, is public, and allows external embedding.
+    """Perform preliminary oEmbed metadata validation, not a playback guarantee.
 
     Returns dict with:
         valid: bool
@@ -84,6 +139,27 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
             if response.status == 200:
                 raw_data = response.read().decode("utf-8")
                 info = json.loads(raw_data)
+                metadata = (
+                    get_youtube_metadata(yt_id, timeout=timeout)
+                    if current_app.config.get("YOUTUBE_API_KEY")
+                    else None
+                )
+                if metadata is not None and not metadata.get("valid"):
+                    return {
+                        "valid": False,
+                        "video_id": yt_id,
+                        "title": info.get("title"),
+                        "author_name": info.get("author_name"),
+                        "reason": (
+                            "Không thể lấy metadata YouTube. Vui lòng thử lại."
+                            if metadata.get("network_error")
+                            else "Video không khả dụng hoặc không cho phép nhúng."
+                        ),
+                        "status_code": None if metadata.get("network_error") else 403,
+                        "network_error": bool(metadata.get("network_error")),
+                        "validation_source": "youtube_data_api",
+                        "playback_guaranteed": False,
+                    }
                 return {
                     "valid": True,
                     "video_id": yt_id,
@@ -91,8 +167,13 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
                     "author_name": info.get("author_name"),
                     "reason": None,
                     "status_code": 200,
+                    "validation_source": "youtube_data_api" if metadata else "oembed_preliminary",
+                    "playback_guaranteed": False,
+                    "duration_seconds": metadata.get("duration_seconds") if metadata else None,
+                    "embeddable": metadata.get("embeddable") if metadata else None,
                 }
     except urllib.error.HTTPError as err:
+        transient = err.code == 429 or err.code >= 500
         if err.code == 404:
             reason = "Video không tồn tại hoặc đã bị tác giả gỡ bỏ khỏi YouTube."
         elif err.code in {400, 401, 403}:
@@ -106,6 +187,7 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
             "author_name": None,
             "reason": reason,
             "status_code": err.code,
+            "network_error": transient,
         }
     except Exception as exc:
         logger.warning("YouTube oEmbed check encountered network/timeout error: %s", exc)
@@ -129,7 +211,11 @@ def verify_youtube_embeddability(url_or_id: str, timeout: float = 4.0) -> dict[s
     }
 
 
-def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[dict[str, Any]]:
+def scan_and_notify_broken_youtube_videos(
+    course_id: int | None = None,
+    lesson_id: int | None = None,
+    retry_network_errors: bool = False,
+) -> list[dict[str, Any]]:
     """Scan published courses/lessons for broken or non-embeddable YouTube videos.
 
     If a broken video is detected, dispatches an in-app notification to the course instructor.
@@ -144,11 +230,12 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
     broken_reports: list[dict[str, Any]] = []
 
     for course in courses:
-        lessons = (
-            db.session.query(Lesson)
-            .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
-            .all()
+        lessons_query = db.session.query(Lesson).filter(
+            Lesson.course_id == course.id, Lesson.deleted_at.is_(None)
         )
+        if lesson_id is not None:
+            lessons_query = lessons_query.filter(Lesson.id == lesson_id)
+        lessons = lessons_query.all()
         for lesson in lessons:
             from pwd301.blueprints.instructor.routes import _extract_video_urls_from_markdown
 
@@ -158,6 +245,8 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
                 if not yt_id:
                     continue  # Non-YouTube or uploaded video
                 check = verify_youtube_embeddability(yt_id)
+                if retry_network_errors and check.get("network_error"):
+                    raise RuntimeError("YouTube metadata unavailable; retry this lesson scan.")
                 if not check["valid"] and not check.get("network_error"):
                     report = {
                         "course_id": course.id,
@@ -195,6 +284,10 @@ def scan_and_notify_broken_youtube_videos(course_id: int | None = None) -> list[
                                     session=db.session,
                                 )
                             except Exception as notif_err:
+                                if retry_network_errors:
+                                    raise RuntimeError(
+                                        "Video notification could not persist; retry this lesson scan."
+                                    ) from None
                                 logger.error(
                                     "Failed to dispatch broken video notification: %s", notif_err
                                 )

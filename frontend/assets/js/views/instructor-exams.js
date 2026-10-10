@@ -3524,6 +3524,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       <option value="LATEST" ${config.scoringPolicy === 'LATEST' ? 'selected' : ''}>Lấy lần thi mới nhất</option>
                     </select>
                   </div>
+
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-answer-visibility-policy">
+                      Chính sách xem lại kết quả bài thi
+                    </label>
+                    <select id="cfg-answer-visibility-policy" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
+                      <option value="IMMEDIATE" ${config.answerVisibilityPolicy === 'IMMEDIATE' || !config.answerVisibilityPolicy ? 'selected' : ''}>Xem đầy đủ (Đáp án đúng, câu đã chọn &amp; giải thích)</option>
+                      <option value="CORRECT_WRONG_ONLY" ${config.answerVisibilityPolicy === 'CORRECT_WRONG_ONLY' ? 'selected' : ''}>Chỉ xem đúng/sai (Không hiển thị đáp án đúng câu sai)</option>
+                      <option value="NEVER" ${config.answerVisibilityPolicy === 'NEVER' ? 'selected' : ''}>Không cho xem lại chi tiết (Chỉ xem điểm tổng kết)</option>
+                      <option value="AFTER_CLOSE" ${config.answerVisibilityPolicy === 'AFTER_CLOSE' ? 'selected' : ''}>Xem đầy đủ sau khi đóng bài thi</option>
+                      <option value="AFTER_ALL_ATTEMPTS" ${config.answerVisibilityPolicy === 'AFTER_ALL_ATTEMPTS' ? 'selected' : ''}>Xem đầy đủ sau lượt cuối hoặc khi đóng bài thi</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
@@ -3909,6 +3922,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const maxAtt = attemptsRaw ? parseInt(attemptsRaw, 10) : null;
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
+        const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
         const policy = InstructorView.readExamPolicy();
         window.ExamStore.saveDraft({ config: {
           duration,
@@ -3917,6 +3931,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           maxAttempts: maxAtt,
           shuffleQuestions: shuffle,
           scoringPolicy,
+          answerVisibilityPolicy,
           examLayout: policy.exam_layout,
           monitoringEnabled: policy.monitoring_enabled,
           requestFullscreen: policy.request_fullscreen
@@ -3934,6 +3949,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           require_password: false,
           shuffle_questions: shuffle,
           scoring_policy: scoringPolicy,
+          answer_visibility_policy: answerVisibilityPolicy,
           ...policy
         };
         if (openAtIso) asmPayload.open_at = openAtIso;
@@ -4323,6 +4339,20 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </div>
 
                   <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Chính sách xem lại kết quả bài thi</label>
+                    <select
+                      id="edit-exam-answer-visibility-policy"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="IMMEDIATE" ${assessment.answer_visibility_policy === 'IMMEDIATE' || !assessment.answer_visibility_policy ? 'selected' : ''}>Xem đầy đủ (Đáp án đúng, câu đã chọn &amp; giải thích)</option>
+                      <option value="CORRECT_WRONG_ONLY" ${assessment.answer_visibility_policy === 'CORRECT_WRONG_ONLY' ? 'selected' : ''}>Chỉ xem đúng/sai (Không hiển thị đáp án đúng câu sai)</option>
+                      <option value="NEVER" ${assessment.answer_visibility_policy === 'NEVER' ? 'selected' : ''}>Không cho xem lại chi tiết (Chỉ xem điểm tổng kết)</option>
+                      <option value="AFTER_CLOSE" ${assessment.answer_visibility_policy === 'AFTER_CLOSE' ? 'selected' : ''}>Xem đầy đủ sau khi đóng bài thi</option>
+                      <option value="AFTER_ALL_ATTEMPTS" ${assessment.answer_visibility_policy === 'AFTER_ALL_ATTEMPTS' ? 'selected' : ''}>Xem đầy đủ sau lượt cuối hoặc khi đóng bài thi</option>
+                    </select>
+                  </div>
+
+                  <div>
                     <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Bố cục hiển thị câu hỏi</label>
                     <select
                       id="edit-exam-layout"
@@ -4665,12 +4695,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
         try {
           UI.showToast('Đang lưu thay đổi...', 'info');
+          const ansVisibility = document.getElementById('edit-exam-answer-visibility-policy')?.value || 'IMMEDIATE';
           const payload = {
             title: title,
             duration_minutes: duration,
             max_attempts: maxAttempts,
             attempt_limit: maxAttempts,
             scoring_policy: scoringPolicy,
+            answer_visibility_policy: ansVisibility,
             exam_layout: examLayout,
             shuffle_questions: shuffle,
             monitoring_enabled: monitoring,
@@ -4686,6 +4718,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           assessment.max_attempts = maxAttempts;
           assessment.attempt_limit = maxAttempts;
           assessment.scoring_policy = scoringPolicy;
+          assessment.answer_visibility_policy = ansVisibility;
           assessment.exam_layout = examLayout;
           assessment.shuffle_questions = shuffle;
           assessment.monitoring_enabled = monitoring;
