@@ -466,11 +466,14 @@ class AppRouter {
     // --- Student Routes ---
     if (path === '#/student/dashboard') {
       await StudentView.renderDashboard(viewport);
-    } else if (path === '#/student/catalog') {
+    } else if (path === '#/student/catalog' || path === '#/student/courses/catalog') {
       await StudentView.renderCatalog(viewport);
     } else if (path === '#/student/courses') {
       await StudentView.renderMyLearning(viewport);
-    } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/'))) {
+    } else if (path === '#/student/courses/intro' || path === '#/student/courses/overview' || (path.startsWith('#/student/courses/') && (path.endsWith('/intro') || path.endsWith('/overview')))) {
+      const courseId = query.id || path.replace('#/student/courses/', '').replace('/intro', '').replace('/overview', '');
+      await StudentView.renderCourseOverview(viewport, courseId);
+    } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/') && path !== '#/student/courses/catalog')) {
       const courseId = query.id || path.replace('#/student/courses/', '');
       await StudentView.renderCourseConsole(viewport, courseId, query.lesson_id || null, query.exam_id || null, query.tab || 'outline');
     } else if (path === '#/student/lessons/reader' || (path.startsWith('#/student/courses/') && path.includes('/lessons/'))) {

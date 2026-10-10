@@ -763,29 +763,8 @@ class StudentView {
           </div>
         </div>
 
-        <!-- Recommended For You Spotlight Banner (Algorithm 14) -->
-        <div id="catalog-recommendations-banner" class="hidden rounded-2xl bg-[#1E1B4B] bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 text-white p-6 shadow-xl border border-indigo-700/40 space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center justify-center shrink-0">
-                <span class="material-symbols-outlined text-[22px]">auto_awesome</span>
-              </div>
-              <div>
-                <div class="flex items-center gap-2">
-                  <h2 class="font-extrabold text-base sm:text-lg text-[#F8FAFC]">Được đề xuất cho bạn</h2>
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 uppercase tracking-wider">Bạch tuộc AI</span>
-                </div>
-                <p class="text-xs text-indigo-200/90 mt-0.5">Các khóa học tối ưu dựa trên trình độ và lộ trình học tập của bạn</p>
-              </div>
-            </div>
-          </div>
-          <div id="catalog-recommendations-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <!-- Dynamically populated -->
-          </div>
-        </div>
-
-        <!-- Catalog Grid (Standardized 3-column Course Cards matching My Learning & Instructor) -->
-        <div id="catalog-courses-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Catalog Grid (4-column responsive grid with embedded recommendations) -->
+        <div id="catalog-courses-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <div class="col-span-full text-center py-16 text-slate-400">
             <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
             <p class="text-sm">Đang tải danh mục khóa học...</p>
@@ -825,6 +804,8 @@ class StudentView {
       grid.innerHTML = filtered.map(c => {
         const cid = c.course_id || c.id;
         const isEnrolled = enrolledCourseIds.has(String(cid));
+        const isRec = Boolean(c.is_recommended);
+        const targetUrl = isEnrolled ? `#/student/courses/detail?id=${cid}` : `#/student/courses/intro?id=${cid}`;
 
         const colorPresets = [
           { bg: 'from-blue-600 via-indigo-600 to-violet-700', icon: 'terminal', iconColor: 'text-blue-200' },
@@ -840,10 +821,10 @@ class StudentView {
         const preset = colorPresets[hashSeed % colorPresets.length];
 
         return `
-          <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4">
+          <div class="c-card c-card-hover p-5 flex flex-col justify-between space-y-4 relative ${isRec ? 'border-2 border-emerald-500/70 shadow-[0_0_20px_rgba(16,185,129,0.18)] dark:bg-gradient-to-b dark:from-slate-900 dark:to-emerald-950/20 ring-1 ring-emerald-500/30' : ''}">
             <div class="space-y-3">
               <!-- Standardized Aspect-Video Thumbnail Cover -->
-              <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '#/student/courses/detail?id=${cid}'">
+              <div class="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 cursor-pointer" onclick="window.location.hash = '${targetUrl}'">
                 ${c.thumbnail_url ? `
                   <img src="${UI.escapeHtml(c.thumbnail_url)}" alt="${UI.escapeHtml(c.title)}" class="w-full h-full object-cover object-center hover:scale-105 transition-transform duration-300" onerror="this.remove()" />
                 ` : `
@@ -855,9 +836,17 @@ class StudentView {
                 `}
               </div>
 
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(c.course_code)}</span>
-                <div class="flex items-center gap-2">
+              <div class="flex items-center justify-between flex-wrap gap-1.5">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(c.course_code)}</span>
+                  ${isRec ? `
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 flex items-center gap-1 shadow-xs">
+                      <span class="material-symbols-outlined text-[13px]">auto_awesome</span>
+                      <span>Đề xuất</span>
+                    </span>
+                  ` : ''}
+                </div>
+                <div class="flex items-center gap-1.5">
                   ${isEnrolled ? `
                     <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-1">
                       <span class="material-symbols-outlined text-[13px]">check_circle</span>
@@ -869,11 +858,18 @@ class StudentView {
               </div>
 
               <h3
-                class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer"
-                onclick="window.location.hash = '#/student/courses/detail?id=${cid}'"
+                class="font-extrabold text-slate-900 dark:text-white text-base leading-snug hover:text-primary transition-colors cursor-pointer line-clamp-2"
+                onclick="window.location.hash = '${targetUrl}'"
               >
                 ${UI.escapeHtml(c.title)}
               </h3>
+
+              ${isRec && c.recommendation_reason ? `
+                <p class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium italic flex items-center gap-1 line-clamp-1">
+                  <span class="material-symbols-outlined text-[13px]">psychology</span>
+                  <span>${UI.escapeHtml(c.recommendation_reason)}</span>
+                </p>
+              ` : ''}
 
               <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
                 ${UI.escapeHtml(c.description || c.summary || 'Khóa học đào tạo chính quy theo chuẩn đầu ra ABET.')}
@@ -892,10 +888,11 @@ class StudentView {
                   </a>
                 ` : `
                   <a
-                    href="#/student/courses/detail?id=${cid}"
+                    href="#/student/courses/intro?id=${cid}"
                     class="flex-1 c-btn c-btn-secondary c-btn-sm text-center"
+                    title="Xem trang giới thiệu khóa học"
                   >
-                    <span>Chi tiết</span>
+                    <span>Giới thiệu</span>
                   </a>
                   <button
                     type="button"
@@ -927,9 +924,10 @@ class StudentView {
     };
 
     try {
-      const [resCatalog, resEnrolled] = await Promise.all([
+      const [resCatalog, resEnrolled, recs] = await Promise.all([
         ApiClient.getCatalogCourses(),
         ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] })),
+        ApiClient.getRecommendations(4).catch(() => []),
       ]);
       allCourses = resCatalog.items || resCatalog.courses || [];
       const enrolledList = resEnrolled.enrollments || resEnrolled.courses || [];
@@ -938,36 +936,29 @@ class StudentView {
         if (e.id) enrolledCourseIds.add(String(e.id));
       });
 
-      // Render recommendations spotlight banner asynchronously
-      const recBanner = document.getElementById('catalog-recommendations-banner');
-      const recList = document.getElementById('catalog-recommendations-list');
-      ApiClient.getRecommendations(3).then(recs => {
-        if (!document.getElementById('catalog-recommendations-list')) return;
-        if (recBanner && recList && Array.isArray(recs) && recs.length > 0) {
-          recList.innerHTML = recs.map(r => `
-            <div class="bg-white/10 hover:bg-white/[0.14] backdrop-blur-xs rounded-xl p-4 border border-white/15 hover:border-indigo-400/40 flex flex-col justify-between space-y-3 transition-all duration-200 shadow-sm">
-              <div>
-                <div class="flex items-center justify-between text-[11px] font-mono text-indigo-200">
-                  <span class="font-bold tracking-wide">${UI.escapeHtml(r.course_code)}</span>
-                  <span class="px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-100 border border-indigo-400/30 font-sans font-bold text-[10px]">${UI.escapeHtml(r.difficulty || 'Mới')}</span>
-                </div>
-                <h3 class="font-bold text-[#F8FAFC] text-sm mt-1.5 line-clamp-1">${UI.escapeHtml(r.title)}</h3>
-                <p class="text-xs text-indigo-100/90 line-clamp-2 mt-1 leading-relaxed">${UI.escapeHtml(r.explanation || r.description || '')}</p>
-              </div>
-              <a href="#/student/courses/detail?id=${r.course_id}" class="w-full py-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-950 font-bold text-xs text-center transition-all shadow-sm hover:shadow active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer">
-                <span>Xem khóa học</span>
-                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-              </a>
-            </div>
-          `).join('');
-          recBanner.classList.remove('hidden');
-        } else if (recBanner) {
-          recBanner.classList.add('hidden');
-        }
-      }).catch(() => {
-        const b = document.getElementById('catalog-recommendations-banner');
-        if (b) b.classList.add('hidden');
-      });
+      // Integrate top 4 recommendations into the catalog (Ghim 4 khóa học đề xuất lên đầu)
+      if (Array.isArray(recs) && recs.length > 0) {
+        const recMap = new Map();
+        recs.forEach(r => {
+          const rId = String(r.course_id || r.id);
+          recMap.set(rId, r);
+        });
+
+        const recCourses = [];
+        const otherCourses = [];
+        allCourses.forEach(c => {
+          const cid = String(c.course_id || c.id);
+          if (recMap.has(cid)) {
+            const rData = recMap.get(cid);
+            c.is_recommended = true;
+            c.recommendation_reason = rData.explanation || rData.rule_explanation || rData.ai_explanation || '';
+            recCourses.push(c);
+          } else {
+            otherCourses.push(c);
+          }
+        });
+        allCourses = [...recCourses, ...otherCourses];
+      }
 
       renderFiltered();
     } catch (err) {
@@ -1183,7 +1174,7 @@ class StudentView {
           </div>
         </div>
 
-        <div id="my-learning-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div id="my-learning-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           <div class="col-span-full text-center py-16 text-slate-400">
             <span class="inline-block animate-spin text-2xl mb-2">⏳</span>
             <p class="text-sm">Đang nạp danh sách khóa học của bạn...</p>
@@ -1348,6 +1339,554 @@ class StudentView {
       renderList();
     } catch (err) {
       grid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-500">Lỗi tải khóa học: ${UI.escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // =========================================================================
+  // 3.5 Course Landing Page (Student Overview & Syllabus Roadmap)
+  // Dedicated landing page for course introduction, syllabus preview, instructor
+  // bio, FAQ, and enrollment CTA before jumping into the learning console.
+  // Supports dynamic Canvas Blocks configured by Instructors.
+  // =========================================================================
+  static async renderCourseOverview(container, courseId, previewMode = false) {
+    if (!container) return;
+    container.innerHTML = `
+      <div class="min-h-[70vh] flex items-center justify-center py-20 text-slate-400">
+        <div class="text-center space-y-3">
+          <span class="inline-block animate-spin text-4xl text-primary">⏳</span>
+          <p class="text-sm font-semibold text-slate-600 dark:text-slate-300">Đang chuẩn bị trang giới thiệu khóa học...</p>
+        </div>
+      </div>
+    `;
+
+    try {
+      const courseRes = await ApiClient.getCourse(courseId);
+      const course = courseRes?.course || courseRes?.data || courseRes;
+      if (!course || !course.id) {
+        throw new Error('Không tìm thấy thông tin khóa học.');
+      }
+
+      // Check enrollment status
+      let isEnrolled = false;
+      try {
+        const enrollmentsData = await ApiClient.getStudentEnrollments();
+        const enrollments = enrollmentsData?.enrollments || [];
+        isEnrolled = enrollments.some(e => String(e.course_id || e.id) === String(course.id));
+      } catch (e) {
+        isEnrolled = false;
+      }
+
+      // Fetch syllabus preview
+      let modules = [];
+      let totalExams = 0;
+      try {
+        const sylRes = await ApiClient.getCourseDetail(course.id);
+        modules = sylRes?.learning_units || sylRes?.modules || sylRes?.syllabus || [];
+        totalExams = (sylRes?.assessments || []).length || modules.reduce((acc, m) => acc + (m.assessments || []).length, 0);
+      } catch (e) {
+        modules = [];
+      }
+
+      const totalLessons = modules.reduce((acc, m) => acc + (m.lessons || []).length, 0);
+
+      // Parse structured Canvas Blocks if available
+      let canvasBlocks = null;
+      try {
+        if (course.description && typeof course.description === 'string' && course.description.trim().startsWith('{')) {
+          const parsed = JSON.parse(course.description);
+          if (parsed && (parsed.format === 'canvas_blocks' || Array.isArray(parsed.blocks))) {
+            canvasBlocks = parsed.blocks || [];
+          }
+        }
+      } catch (e) {
+        canvasBlocks = null;
+      }
+
+      const hasCustomBlocks = Array.isArray(canvasBlocks) && canvasBlocks.length > 0;
+
+      // Extract metadata values
+      const instructorName = course.instructor_name || course.instructor?.full_name || 'Đội ngũ Giảng viên Chuyên môn';
+      const instructorTitle = course.instructor?.title || 'Giảng viên Bộ môn Mạng & ATTT';
+      const courseCode = course.code || 'PWD301';
+      const courseTitle = course.title || 'Khóa học Đào tạo Chuyên sâu';
+      const courseLevel = course.level === 'ADVANCED' ? 'Chuyên sâu' : (course.level === 'INTERMEDIATE' ? 'Trung cấp' : 'Nhập môn');
+      const plainDesc = course.description && !hasCustomBlocks ? course.description : 'Khóa học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo giáo trình chuẩn quốc tế, giúp học viên làm chủ công nghệ và ứng dụng thực tiễn.';
+
+      // Render standard or custom blocks
+      let blocksHtml = '';
+
+      if (hasCustomBlocks) {
+        // Render custom instructor blocks
+        blocksHtml = canvasBlocks.map((block, idx) => {
+          const bType = block.type;
+          const bData = block.data || {};
+
+          if (bType === 'hero') {
+            return `
+              <section class="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 p-8 sm:p-12 text-white shadow-xl">
+                <div class="relative z-10 max-w-3xl space-y-5">
+                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                    <span class="material-symbols-outlined text-[16px]">verified</span>
+                    <span>${UI.escapeHtml(bData.badge || `${courseCode} • ${courseLevel}`)}</span>
+                  </div>
+                  <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+                    ${UI.escapeHtml(bData.headline || courseTitle)}
+                  </h1>
+                  <p class="text-base sm:text-lg text-slate-300 leading-relaxed">
+                    ${UI.escapeHtml(bData.subtitle || plainDesc)}
+                  </p>
+                  <div class="flex flex-wrap items-center gap-4 pt-3">
+                    ${isEnrolled ? `
+                      <a href="#/student/courses/detail?id=${course.id}" class="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 inline-flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[20px]">play_circle</span>
+                        <span>Vào học bài ngay</span>
+                      </a>
+                    ` : `
+                      <button type="button" id="btn-enroll-course-${idx}" class="btn-enroll-action px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
+                        <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
+                        <span>Ghi danh khóa học</span>
+                      </button>
+                    `}
+                    <a href="#syllabus-section" class="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700 inline-flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[18px]">list_alt</span>
+                      <span>Xem lộ trình đào tạo</span>
+                    </a>
+                  </div>
+                </div>
+              </section>
+            `;
+          }
+
+          if (bType === 'highlights') {
+            const items = bData.items || [
+              { icon: 'schedule', title: '15 tuần học', desc: 'Lộ trình linh hoạt' },
+              { icon: 'menu_book', title: `${totalLessons} bài giảng`, desc: 'Lý thuyết & Lab thực hành' },
+              { icon: 'quiz', title: `${totalExams} bài kiểm tra`, desc: 'Đánh giá năng lực chuẩn' },
+              { icon: 'verified', title: 'Chứng chỉ môn', desc: 'Xác thực chuẩn đầu ra' }
+            ];
+            return `
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                ${items.map(it => `
+                  <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+                    <span class="material-symbols-outlined text-2xl text-emerald-500">${UI.escapeHtml(it.icon || 'star')}</span>
+                    <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(it.title)}</h4>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(it.desc)}</p>
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          }
+
+          if (bType === 'richtext') {
+            return `
+              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span class="material-symbols-outlined text-emerald-500">article</span>
+                  <span>${UI.escapeHtml(bData.title || 'Thông tin chi tiết')}</span>
+                </h3>
+                <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed space-y-3 prose dark:prose-invert max-w-none">
+                  ${UI.escapeHtml(bData.content || '').replace(/\n/g, '<br/>')}
+                </div>
+              </div>
+            `;
+          }
+
+          if (bType === 'media') {
+            return `
+              <div class="rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 shadow-xl p-4 sm:p-6 space-y-3">
+                <div class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center">
+                  ${bData.video_url ? `
+                    <iframe class="w-full h-full" src="${UI.escapeHtml(bData.video_url)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                  ` : (bData.image_url ? `
+                    <img src="${UI.escapeHtml(bData.image_url)}" alt="${UI.escapeHtml(courseTitle)}" class="w-full h-full object-cover"/>
+                  ` : `
+                    <div class="text-slate-600 text-sm flex items-center gap-2">
+                      <span class="material-symbols-outlined text-4xl">play_circle</span>
+                      <span>Chưa có video trailer giới thiệu</span>
+                    </div>
+                  `)}
+                </div>
+                ${bData.caption ? `<p class="text-xs text-center text-slate-400">${UI.escapeHtml(bData.caption)}</p>` : ''}
+              </div>
+            `;
+          }
+
+          if (bType === 'bio') {
+            return `
+              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-6">
+                <div class="w-20 h-20 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-3xl font-black shrink-0">
+                  ${UI.escapeHtml((bData.name || instructorName).charAt(0))}
+                </div>
+                <div class="space-y-1.5 flex-1 min-w-0">
+                  <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Giảng viên giảng dạy</span>
+                  <h3 class="text-xl font-bold text-slate-900 dark:text-white">${UI.escapeHtml(bData.name || instructorName)}</h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(bData.title || instructorTitle)}</p>
+                  <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 pt-1 leading-relaxed">${UI.escapeHtml(bData.bio || 'Chuyên gia giàu kinh nghiệm trong lĩnh vực đào tạo công nghệ và an ninh mạng.')}</p>
+                </div>
+              </div>
+            `;
+          }
+
+          if (bType === 'faq') {
+            const faqs = bData.items || [
+              { q: 'Khóa học này dành cho ai?', a: 'Khóa học thiết kế cho sinh viên ngành Công nghệ thông tin, An toàn thông tin và người đi làm muốn củng cố kỹ năng chuyên môn.' },
+              { q: 'Học online có bài tập thực hành không?', a: 'Hệ thống tích hợp phòng lab mô phỏng và bài tập thực hành theo từng chương học.' },
+              { q: 'Làm thế nào để nhận chứng nhận hoàn thành?', a: 'Bạn cần hoàn thành tối thiểu 80% thời lượng bài học và vượt qua các bài kiểm tra khảo thí.' }
+            ];
+            return `
+              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span class="material-symbols-outlined text-emerald-500">help</span>
+                  <span>Câu hỏi thường gặp (FAQ)</span>
+                </h3>
+                <div class="space-y-3">
+                  ${faqs.map((faq, fIdx) => `
+                    <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
+                      <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
+                        <h4 class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(faq.q)}</h4>
+                        <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
+                      </div>
+                      <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
+                        ${UI.escapeHtml(faq.a)}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }
+
+          return '';
+        }).join('');
+      } else {
+        // Standard Rich Landing Page layout
+        blocksHtml = `
+          <!-- 1. Hero Section -->
+          <section class="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 p-8 sm:p-12 text-white shadow-xl">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+              <div class="lg:col-span-7 space-y-5">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+                  <span class="material-symbols-outlined text-[16px]">verified</span>
+                  <span>${UI.escapeHtml(courseCode)} • ${UI.escapeHtml(courseLevel)}</span>
+                </div>
+                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+                  ${UI.escapeHtml(courseTitle)}
+                </h1>
+                <p class="text-base sm:text-lg text-slate-300 leading-relaxed max-w-2xl">
+                  ${UI.escapeHtml(plainDesc)}
+                </p>
+                <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300 pt-2">
+                  <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-400">person</span>
+                    <span>${UI.escapeHtml(instructorName)}</span>
+                  </div>
+                  <span>•</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-400">menu_book</span>
+                    <span>${modules.length} chương (${totalLessons} bài học)</span>
+                  </div>
+                  <span>•</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-400">quiz</span>
+                    <span>${totalExams} bài kiểm tra</span>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-4 pt-4">
+                  ${isEnrolled ? `
+                    <a href="#/student/courses/detail?id=${course.id}" class="px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[20px]">play_circle</span>
+                      <span>Vào học bài ngay</span>
+                    </a>
+                  ` : `
+                    <button type="button" id="btn-enroll-course-main" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
+                      <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
+                      <span>Ghi danh khóa học</span>
+                    </button>
+                  `}
+                  <a href="#syllabus-section" class="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700 inline-flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px]">list_alt</span>
+                    <span>Xem đề cương chi tiết</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Media / Trailer Box -->
+              <div class="lg:col-span-5">
+                <div class="aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative flex items-center justify-center group">
+                  <div class="absolute inset-0 bg-gradient-to-tr from-emerald-950/40 to-slate-900/60 z-0"></div>
+                  <div class="relative z-10 text-center space-y-3 p-6">
+                    <div class="w-16 h-16 rounded-full bg-emerald-500/90 text-slate-950 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30 group-hover:scale-110 transition-transform cursor-pointer" onclick="UI.showToast('Khóa học sẵn sàng học ngay sau khi ghi danh.', 'info')">
+                      <span class="material-symbols-outlined text-3xl font-bold">play_arrow</span>
+                    </div>
+                    <div>
+                      <p class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Xem giới thiệu khóa học</p>
+                      <p class="text-[11px] text-slate-400 mt-0.5">Thời lượng bài giảng: Chuẩn đầu ra quốc tế</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 2. Highlights Grid -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-2xl text-emerald-500">schedule</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">15 tuần học</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Chủ động tiến độ học tập</p>
+            </div>
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-2xl text-emerald-500">menu_book</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalLessons} bài học</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Lý thuyết & phòng lab thực hành</p>
+            </div>
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-2xl text-emerald-500">quiz</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalExams} bài khảo thí</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Đánh giá chuẩn đầu ra</p>
+            </div>
+            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-2xl text-emerald-500">military_tech</span>
+              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Chứng nhận hoàn thành</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Chứng nhận điện tử chính quy</p>
+            </div>
+          </div>
+
+          <!-- 3. Learning Objectives -->
+          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span class="material-symbols-outlined text-emerald-500">psychology</span>
+              <span>Chuẩn đầu ra & Bạn sẽ học được gì</span>
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
+              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
+                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Nắm vững kiến thức nền tảng và phương pháp tư duy kỹ thuật theo chuẩn công nghiệp.</span>
+              </div>
+              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
+                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Thực hành mô phỏng lab trực tiếp, xử lý sự cố và tình huống thực tiễn.</span>
+              </div>
+              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
+                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Tối ưu hóa quy trình làm việc và kỹ năng tự học nghiên cứu chuyên sâu.</span>
+              </div>
+              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
+                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Đủ điều kiện tham gia các kỳ thi đánh giá năng lực và chứng chỉ nghề nghiệp.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Instructor Bio -->
+          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-6">
+            <div class="w-20 h-20 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-3xl font-black shrink-0">
+              ${UI.escapeHtml(instructorName.charAt(0))}
+            </div>
+            <div class="space-y-1.5 flex-1 min-w-0">
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Giảng viên phụ trách</span>
+              <h3 class="text-xl font-bold text-slate-900 dark:text-white">${UI.escapeHtml(instructorName)}</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(instructorTitle)}</p>
+              <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 pt-1 leading-relaxed">
+                Giảng viên giàu kinh nghiệm thực chiến trong các dự án công nghệ lớn và giảng dạy chuyên sâu tại khoa Công nghệ thông tin.
+              </p>
+            </div>
+          </div>
+
+          <!-- 5. FAQ Section -->
+          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span class="material-symbols-outlined text-emerald-500">help</span>
+              <span>Câu hỏi thường gặp (FAQ)</span>
+            </h3>
+            <div class="space-y-3">
+              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
+                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
+                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Tôi có thể học mọi lúc mọi nơi trên điện thoại không?</h4>
+                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
+                </div>
+                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
+                  Có, giao diện học tập được tối ưu hoàn toàn cho mọi thiết bị từ máy tính bàn, máy tính bảng đến điện thoại di động.
+                </div>
+              </div>
+              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
+                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
+                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Khi gặp thắc mắc về bài học tôi có thể hỏi ai?</h4>
+                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
+                </div>
+                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
+                  Bạn có thể trò chuyện trực tiếp với Bạch tuộc trợ lí AI ngay trong phòng học hoặc trao đổi với Giảng viên phụ trách trong các phiên giải đáp.
+                </div>
+              </div>
+              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
+                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
+                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Khóa học có yêu cầu điều kiện tiên quyết nào không?</h4>
+                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
+                </div>
+                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
+                  Hệ thống tự động kiểm tra điều kiện tiên quyết của môn học. Nếu bạn chưa đạt môn tiên quyết, hệ thống sẽ gợi ý bạn hoàn thành môn học đó trước.
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Always render the Syllabus Section
+      const syllabusHtml = `
+        <div id="syllabus-section" class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-outlined text-emerald-500">account_tree</span>
+                <span>Lộ trình đào tạo & Đề cương chi tiết</span>
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">Nội dung bài giảng được cấu trúc bài bản theo từng chuyên đề</p>
+            </div>
+            <span class="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 self-start sm:self-auto">
+              ${modules.length} chương • ${totalLessons} bài học
+            </span>
+          </div>
+
+          <div class="space-y-3">
+            ${modules.length === 0 ? `
+              <p class="text-xs text-slate-400 italic py-4 text-center">Đang cập nhật đề cương chi tiết cho môn học này.</p>
+            ` : modules.map((m, mIdx) => `
+              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 overflow-hidden">
+                <div class="p-4 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors syllabus-mod-toggle" data-idx="${mIdx}">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-xs font-bold shrink-0">
+                      ${mIdx + 1}
+                    </span>
+                    <h4 class="text-sm font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(m.title)}</h4>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <span class="text-xs text-slate-400 font-mono">${(m.lessons || []).length} bài</span>
+                    <span class="material-symbols-outlined text-slate-400 text-[18px] transition-transform duration-200 syllabus-mod-icon">expand_more</span>
+                  </div>
+                </div>
+                <div class="syllabus-mod-body ${mIdx === 0 ? '' : 'hidden'} px-4 pb-3 space-y-1.5 border-t border-slate-200/60 dark:border-slate-700/60 pt-3">
+                  ${(m.lessons || []).map((l, lIdx) => `
+                    <div class="p-2 rounded-xl flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="material-symbols-outlined text-[15px] text-slate-400">play_circle</span>
+                        <span class="truncate">${mIdx + 1}.${lIdx + 1} ${UI.escapeHtml(l.title)}</span>
+                      </div>
+                      <span class="text-[10px] text-slate-400 font-mono shrink-0">${l.duration_seconds ? `${Math.round(l.duration_seconds / 60)} phút` : 'Lý thuyết'}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      // Full Page Shell
+      container.innerHTML = `
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in font-sans">
+          <!-- Back Nav -->
+          <div class="flex items-center justify-between">
+            <a href="#/student/courses/catalog" class="text-xs font-semibold text-slate-500 hover:text-emerald-600 flex items-center gap-1.5 transition-colors">
+              <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+              <span>Quay lại Danh mục khóa học</span>
+            </a>
+            ${isEnrolled ? `
+              <span class="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>Đã ghi danh</span>
+              </span>
+            ` : ''}
+          </div>
+
+          <!-- Dynamic Blocks -->
+          ${blocksHtml}
+
+          <!-- Syllabus Section -->
+          ${syllabusHtml}
+
+          <!-- Bottom Sticky/Static CTA -->
+          <div class="p-8 sm:p-10 rounded-3xl bg-slate-900 border border-slate-800 text-white text-center space-y-4 shadow-xl">
+            <h3 class="text-2xl sm:text-3xl font-black tracking-tight">Sẵn sàng nâng cao năng lực cùng môn học?</h3>
+            <p class="text-sm text-slate-400 max-w-xl mx-auto">
+              Tham gia ngay hôm nay để truy cập hệ thống tài liệu, phòng lab tương tác và được hỗ trợ 24/7 bởi Bạch tuộc trợ lí AI.
+            </p>
+            <div class="pt-2">
+              ${isEnrolled ? `
+                <a href="#/student/courses/detail?id=${course.id}" class="px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[20px]">play_circle</span>
+                  <span>Vào phòng học</span>
+                </a>
+              ` : `
+                <button type="button" class="btn-enroll-action px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
+                  <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
+                  <span>Ghi danh ngay</span>
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Wire FAQ Accordions
+      container.querySelectorAll('.faq-item').forEach(item => {
+        const q = item.querySelector('.faq-question');
+        const a = item.querySelector('.faq-answer');
+        const icon = item.querySelector('.faq-icon');
+        if (q && a) {
+          q.onclick = () => {
+            const isHidden = a.classList.contains('hidden');
+            a.classList.toggle('hidden', !isHidden);
+            if (icon) icon.classList.toggle('rotate-180', isHidden);
+          };
+        }
+      });
+
+      // Wire Syllabus Accordions
+      container.querySelectorAll('.syllabus-mod-toggle').forEach(btn => {
+        btn.onclick = () => {
+          const body = btn.parentElement.querySelector('.syllabus-mod-body');
+          const icon = btn.querySelector('.syllabus-mod-icon');
+          if (body) {
+            const isHidden = body.classList.contains('hidden');
+            body.classList.toggle('hidden', !isHidden);
+            if (icon) icon.classList.toggle('rotate-180', isHidden);
+          }
+        };
+      });
+
+      // Wire Enrollment Action Buttons
+      container.querySelectorAll('.btn-enroll-action').forEach(btn => {
+        btn.onclick = async () => {
+          const cId = btn.dataset.id;
+          btn.disabled = true;
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = `<span class="inline-block animate-spin text-[16px]">⏳</span> <span>Đang xử lý...</span>`;
+          try {
+            await ApiClient.enrollCourse(cId);
+            UI.showToast('Ghi danh thành công! Đang chuyển đến phòng học...', 'success');
+            setTimeout(() => {
+              window.location.hash = `#/student/courses/detail?id=${cId}`;
+            }, 800);
+          } catch (err) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+            UI.showToast(err.message || 'Ghi danh không thành công. Vui lòng thử lại.', 'error');
+          }
+        };
+      });
+
+    } catch (err) {
+      container.innerHTML = `
+        <div class="max-w-xl mx-auto py-20 text-center space-y-4">
+          <span class="material-symbols-outlined text-5xl text-rose-500">error</span>
+          <h2 class="text-xl font-bold text-slate-900 dark:text-white">Không thể tải thông tin khóa học</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(err.message || 'Lỗi kết nối máy chủ.')}</p>
+          <a href="#/student/courses/catalog" class="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold inline-block shadow-sm">
+            Quay lại Danh mục
+          </a>
+        </div>
+      `;
     }
   }
 
@@ -1661,6 +2200,10 @@ class StudentView {
         ? Math.round(rawProgVal)
         : (allLessons.length > 0 ? Math.round((allLessons.filter(l => l.is_completed || l.progress?.is_completed).length / allLessons.length) * 100) : 0);
 
+      // Saved Sidebar Width from LocalStorage
+      const savedSidebarWidth = parseInt(localStorage.getItem('pwd301_console_sidebar_width') || '360', 10);
+      const initialSidebarWidth = Math.max(260, Math.min(520, savedSidebarWidth));
+
       // Render Primary Shell
       container.innerHTML = `
         <div id="cisco-console-root" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
@@ -1686,11 +2229,14 @@ class StudentView {
                 <h1 class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs md:max-w-md" title="${UI.escapeHtml(course.title)}">
                   ${UI.escapeHtml(course.title)}
                 </h1>
-
-
-
-
-
+                <a
+                  href="#/student/courses/intro?id=${course.id}"
+                  class="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 ml-1 cursor-pointer"
+                  title="Xem trang giới thiệu khóa học"
+                >
+                  <span class="material-symbols-outlined text-[15px]">info</span>
+                  <span>Giới thiệu môn</span>
+                </a>
               </div>
             </div>
 
@@ -1718,10 +2264,11 @@ class StudentView {
           <!-- 2. Workspace Body: Left Sidebar + Right Content Canvas -->
           <div class="flex-1 flex overflow-hidden relative">
             
-            <!-- Left Sidebar (Collapsible Cisco Headlist Tree) -->
+            <!-- Left Sidebar (Collapsible Cisco Headlist Tree with Drag Resize) -->
             <aside
               id="cisco-console-sidebar"
-              class="w-80 sm:w-88 md:w-96 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 overflow-hidden transition-all duration-300 z-10"
+              class="border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0 overflow-hidden z-10"
+              style="width: ${initialSidebarWidth}px;"
             >
               <!-- Triple Tabs: Course Outline, Resources & Bạch tuộc AI -->
               <div class="h-12 border-b border-slate-200 dark:border-slate-800 grid grid-cols-3 text-xs font-bold select-none shrink-0" id="sidebar-tab-strip">
@@ -1855,6 +2402,15 @@ class StudentView {
               </div>
             </aside>
 
+            <!-- Draggable Resizable Splitter Handle -->
+            <div
+              id="course-console-splitter"
+              class="w-1.5 hover:w-2 -mx-0.5 relative z-20 cursor-col-resize select-none bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500 active:bg-emerald-600 transition-all duration-150 flex items-center justify-center group shrink-0"
+              title="Kéo sang trái/phải để dãn/hẹp menu (260px - 520px). Nhấp đúp để thu gọn/mở rộng."
+            >
+              <div class="h-8 w-0.5 rounded-full bg-slate-400 dark:bg-slate-600 group-hover:bg-white transition-colors"></div>
+            </div>
+
             <!-- Right Content Canvas (Scrollable) -->
             <main
               id="cisco-console-canvas"
@@ -1919,12 +2475,81 @@ class StudentView {
         }
       };
 
-      // Sidebar Toggle Handler
+      // Sidebar Toggle & Resizable Splitter Handler
       const sidebarEl = document.getElementById('cisco-console-sidebar');
+      const splitterEl = document.getElementById('course-console-splitter');
       const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+
       if (sidebarToggleBtn && sidebarEl) {
         sidebarToggleBtn.onclick = () => {
-          sidebarEl.classList.toggle('hidden');
+          const isHidden = sidebarEl.classList.contains('hidden') || sidebarEl.style.display === 'none';
+          if (isHidden) {
+            sidebarEl.classList.remove('hidden');
+            sidebarEl.style.display = 'flex';
+            if (splitterEl) splitterEl.style.display = 'flex';
+            const savedW = parseInt(localStorage.getItem('pwd301_console_sidebar_width') || '360', 10);
+            sidebarEl.style.width = Math.max(260, Math.min(520, savedW)) + 'px';
+          } else {
+            sidebarEl.classList.add('hidden');
+            sidebarEl.style.display = 'none';
+            if (splitterEl) splitterEl.style.display = 'none';
+          }
+        };
+      }
+
+      // Drag to Resize Sidebar Splitter Handle
+      if (splitterEl && sidebarEl) {
+        let isDragging = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        splitterEl.onmousedown = (e) => {
+          e.preventDefault();
+          isDragging = true;
+          startX = e.clientX;
+          startWidth = sidebarEl.getBoundingClientRect().width;
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+
+          const onMouseMove = (moveEvent) => {
+            if (!isDragging) return;
+            const delta = moveEvent.clientX - startX;
+            let newWidth = startWidth + delta;
+            newWidth = Math.max(260, Math.min(520, newWidth));
+            sidebarEl.style.width = `${newWidth}px`;
+          };
+
+          const onMouseUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            const finalWidth = parseInt(sidebarEl.style.width, 10);
+            if (finalWidth >= 260 && finalWidth <= 520) {
+              localStorage.setItem('pwd301_console_sidebar_width', String(finalWidth));
+            }
+          };
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        };
+
+        // Double click splitter to collapse / expand
+        splitterEl.ondblclick = () => {
+          const curW = sidebarEl.getBoundingClientRect().width;
+          if (curW > 50 && !sidebarEl.classList.contains('hidden') && sidebarEl.style.display !== 'none') {
+            sidebarEl.classList.add('hidden');
+            sidebarEl.style.display = 'none';
+            splitterEl.style.display = 'none';
+          } else {
+            sidebarEl.classList.remove('hidden');
+            sidebarEl.style.display = 'flex';
+            splitterEl.style.display = 'flex';
+            const savedW = parseInt(localStorage.getItem('pwd301_console_sidebar_width') || '360', 10);
+            sidebarEl.style.width = Math.max(260, Math.min(520, savedW)) + 'px';
+          }
         };
       }
 
@@ -2128,7 +2753,7 @@ class StudentView {
         };
       }
 
-      // Render Outline Accordion
+      // Render Outline Accordion (Timeline Spine View)
       const accordionContainer = document.getElementById('outline-accordion-list');
       const renderSidebarOutline = () => {
         if (!accordionContainer) return;
@@ -2152,24 +2777,22 @@ class StudentView {
           const modProgress = mod._totalCount > 0 ? `${mod._completedCount} / ${mod._totalCount}` : '';
 
           return `
-            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 overflow-hidden transition-all shadow-2xs">
-              <!-- Module Header Button -->
+            <div class="relative group/mod select-none">
+              <!-- Chapter Header Bar on Spine -->
               <div
-                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors select-none group/mod"
+                class="flex items-center justify-between gap-2.5 cursor-pointer py-1.5 select-none relative"
                 data-mod-id="${mod.id}"
                 onclick="window._ciscoToggleMod('${mod.id}')"
               >
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${modCompleted ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}">
-                    <span class="material-symbols-outlined text-[16px]">
-                      ${modCompleted ? 'check' : 'radio_button_unchecked'}
-                    </span>
-                  </span>
-                  <div class="min-w-0">
-                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-600 transition-colors" title="${UI.escapeHtml(mod.title)}">
-                      ${UI.escapeHtml(mod.title)}
-                    </h3>
-                  </div>
+                <!-- Double Concentric Circle on Timeline Spine -->
+                <div class="absolute -left-[27px] top-1.5 w-6 h-6 rounded-full border-2 border-emerald-400 bg-slate-900 dark:bg-slate-950 flex items-center justify-center shrink-0 z-10 shadow-[0_0_8px_rgba(52,211,153,0.4)]">
+                  <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+                </div>
+
+                <div class="min-w-0 pr-2">
+                  <h3 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-500 transition-colors" title="${UI.escapeHtml(mod.title)}">
+                    Chương ${mod.position || mIdx + 1}: ${UI.escapeHtml(mod.title)}
+                  </h3>
                 </div>
 
                 <div class="flex items-center gap-2 shrink-0">
@@ -2178,106 +2801,150 @@ class StudentView {
                       ${modProgress}
                     </span>
                   ` : ''}
-                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-emerald-500' : ''}">
                     expand_more
                   </span>
                 </div>
               </div>
 
-              <!-- Module Sub-Items (Expanded List with Dotted Connector Line) -->
-              <div class="${isExpanded ? '' : 'hidden'} border-t border-slate-100 dark:border-slate-800/60 p-2 bg-slate-50/40 dark:bg-slate-950/30">
-                <div class="relative pl-3 ml-2 border-l-2 border-dashed border-slate-300 dark:border-slate-700 space-y-1 py-1">
-                  
-                  <!-- Sub-Lessons -->
-                  ${modLessons.map((l, lIdx) => {
-                    const lId = String(l.lesson_id || l.id);
-                    const isCur = activeItem && activeItem.type === 'lesson' && String(activeItem.id) === lId;
-                    const isDone = l._isCompleted;
-                    const isUnlocked = l._isUnlocked;
-                    const displayCode = l._displayCode || `${mod.position || mIdx+1}.${lIdx+1}`;
+              <!-- Module Sub-Items (Expanded List along Timeline) -->
+              <div class="${isExpanded ? '' : 'hidden'} mt-2 space-y-2">
+                
+                <!-- Sub-Lessons -->
+                ${modLessons.map((l, lIdx) => {
+                  const lId = String(l.lesson_id || l.id);
+                  const isCur = activeItem && activeItem.type === 'lesson' && String(activeItem.id) === lId;
+                  const isDone = l._isCompleted;
+                  const isUnlocked = l._isUnlocked;
+                  const displayCode = l._displayCode || `${mod.position || mIdx+1}.${lIdx+1}`;
 
-                    if (!isUnlocked) {
-                      return `
+                  if (!isUnlocked) {
+                    return `
+                      <div class="relative flex items-center">
+                        <!-- Grey Dot on Spine -->
+                        <div class="absolute -left-[27px] w-6 flex items-center justify-center z-10">
+                          <div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
+                        </div>
+
                         <div
-                          class="p-2.5 rounded-xl text-slate-400 opacity-60 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-800/50"
+                          class="w-full p-2 rounded-xl text-slate-400 dark:text-slate-400 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none hover:bg-slate-100/30 dark:hover:bg-slate-800/30 transition-colors"
                           onclick="UI.showToast('Bài học đang bị khóa. Vui lòng hoàn thành bài học trước để mở khóa.', 'warning')"
                           title="Chưa mở khóa"
                         >
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="material-symbols-outlined text-[16px] text-slate-400 shrink-0">lock</span>
-                            <span class="truncate font-medium text-slate-400 dark:text-slate-500">${displayCode} ${UI.escapeHtml(l.title)}</span>
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 flex items-center justify-center text-slate-400 shrink-0">
+                              <span class="material-symbols-outlined text-[16px]">lock</span>
+                            </span>
+                            <span class="text-xs font-medium text-slate-400 dark:text-slate-500 truncate">${displayCode} ${UI.escapeHtml(l.title)}</span>
                           </div>
-                          <span class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-500 text-[10px] font-bold shrink-0">
+                          <span class="px-2 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-slate-500 text-[10px] font-semibold shrink-0">
                             Khóa
                           </span>
                         </div>
-                      `;
-                    }
+                      </div>
+                    `;
+                  }
 
+                  if (isCur) {
                     return `
+                      <div class="relative flex items-center" id="outline-active-lesson">
+                        <!-- Glowing Neon Green Dot on Spine -->
+                        <div class="absolute -left-[27px] w-6 flex items-center justify-center z-10">
+                          <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-4 ring-emerald-500/25 shadow-[0_0_8px_rgba(52,211,153,0.7)]"></div>
+                        </div>
+
+                        <!-- Active Lesson Capsule Card -->
+                        <div
+                          class="w-full p-2.5 rounded-2xl bg-emerald-950/60 dark:bg-emerald-950/70 border border-emerald-500/50 flex items-center justify-between gap-2.5 cursor-pointer select-none shadow-lg shadow-emerald-950/40 text-white transition-all hover:border-emerald-400"
+                          onclick="window._ciscoSelectItem('lesson', '${lId}')"
+                        >
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="w-7 h-7 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center shrink-0 font-bold shadow-sm">
+                              <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                            </span>
+                            <span class="text-xs font-bold text-white truncate" title="${displayCode} ${UI.escapeHtml(l.title)}">
+                              ${displayCode} ${UI.escapeHtml(l.title)}
+                            </span>
+                          </div>
+                          <span class="px-2.5 py-1 rounded-full bg-emerald-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shrink-0 shadow-sm">
+                            ĐANG HỌC
+                          </span>
+                        </div>
+                      </div>
+                    `;
+                  }
+
+                  return `
+                    <div class="relative flex items-center">
+                      <!-- Dot on Spine -->
+                      <div class="absolute -left-[27px] w-6 flex items-center justify-center z-10">
+                        <div class="w-1.5 h-1.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-slate-500'}"></div>
+                      </div>
+
                       <div
-                        class="p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none ${isCur ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-900 dark:text-emerald-100 border-l-4 border-emerald-600 font-bold shadow-2xs ring-1 ring-emerald-500/20' : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'}"
+                        class="w-full p-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none hover:bg-slate-100 dark:hover:bg-slate-800/80"
                         onclick="window._ciscoSelectItem('lesson', '${lId}')"
                       >
-                        <div class="flex items-center gap-2 min-w-0">
-                          ${isCur ? `
-                            <span class="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs animate-pulse" title="Đang học">
-                              <span class="material-symbols-outlined text-[14px]">play_arrow</span>
-                            </span>
-                          ` : `
-                            <span class="material-symbols-outlined text-[16px] shrink-0 ${isDone ? 'text-emerald-600' : 'text-slate-400'}">
-                              ${isDone ? 'check_circle' : 'radio_button_unchecked'}
-                            </span>
-                          `}
-                          <span class="truncate ${isCur ? 'font-bold text-emerald-900 dark:text-emerald-100' : 'font-medium'}">${displayCode} ${UI.escapeHtml(l.title)}</span>
-                        </div>
-                        ${isCur ? `
-                          <span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider shrink-0 shadow-2xs flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                            <span>Đang học</span>
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <span class="w-7 h-7 rounded-full ${isDone ? 'bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 text-slate-400'} flex items-center justify-center shrink-0">
+                            <span class="material-symbols-outlined text-[16px]">${isDone ? 'check' : 'play_arrow'}</span>
                           </span>
-                        ` : (isDone ? `
+                          <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate hover:text-emerald-500 transition-colors">${displayCode} ${UI.escapeHtml(l.title)}</span>
+                        </div>
+                        ${isDone ? `
                           <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
                             Đã xong
                           </span>
-                        ` : '')}
+                        ` : ''}
                       </div>
-                    `;
-                  }).join('')}
+                    </div>
+                  `;
+                }).join('')}
 
-                  <!-- Module Checkpoint Exams (Locked or Unlocked) -->
-                  ${modExams.map((e) => {
-                    const eId = String(e.assessment_id || e.id);
-                    const isCur = activeItem && activeItem.type === 'exam' && String(activeItem.id) === eId;
-                    const isDone = e._isCompleted;
-                    const isUnlocked = e._isUnlocked;
+                <!-- Module Checkpoint Exams (Locked or Unlocked) -->
+                ${modExams.map((e) => {
+                  const eId = String(e.assessment_id || e.id);
+                  const isCur = activeItem && activeItem.type === 'exam' && String(activeItem.id) === eId;
+                  const isDone = e._isCompleted;
+                  const isUnlocked = e._isUnlocked;
 
-                    if (!isUnlocked) {
-                      return `
+                  if (!isUnlocked) {
+                    return `
+                      <div class="relative flex items-center">
+                        <div class="absolute -left-[27px] w-6 flex items-center justify-center z-10">
+                          <div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
+                        </div>
                         <div
-                          class="p-2 rounded-xl text-slate-400 opacity-60 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none bg-slate-100/40 dark:bg-slate-800/20"
+                          class="w-full p-2 rounded-xl text-slate-400 opacity-60 flex items-center justify-between gap-2 text-xs cursor-not-allowed select-none bg-slate-100/40 dark:bg-slate-800/20"
                           onclick="UI.showToast('${UI.escapeHtml(e._lockReason || 'Bài kiểm tra đang bị khóa.')}', 'warning')"
                           title="${UI.escapeHtml(e._lockReason || 'Chưa mở khóa')}"
                         >
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="material-symbols-outlined text-[16px] text-slate-400 shrink-0">lock</span>
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 flex items-center justify-center text-slate-400 shrink-0">
+                              <span class="material-symbols-outlined text-[16px]">lock</span>
+                            </span>
                             <span class="truncate font-medium">${UI.escapeHtml(e.title)}</span>
                           </div>
                           <span class="px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-500 text-[10px] font-bold shrink-0">
                             Khóa
                           </span>
                         </div>
-                      `;
-                    }
+                      </div>
+                    `;
+                  }
 
-                    return `
+                  return `
+                    <div class="relative flex items-center">
+                      <div class="absolute -left-[27px] w-6 flex items-center justify-center z-10">
+                        <div class="w-1.5 h-1.5 rounded-full ${isDone ? 'bg-purple-500' : 'bg-slate-500'}"></div>
+                      </div>
                       <div
-                        class="p-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none ${isCur ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-950 dark:text-purple-100 border-l-4 border-purple-600 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'}"
+                        class="w-full p-2 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none ${isCur ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-950 dark:text-purple-100 border border-purple-500 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}"
                         onclick="window._ciscoSelectItem('exam', '${eId}')"
                       >
-                        <div class="flex items-center gap-2 min-w-0">
-                          <span class="material-symbols-outlined text-[16px] shrink-0 ${isDone ? 'text-purple-600' : 'text-slate-400'}">
-                            ${isDone ? 'task_alt' : 'assignment'}
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <span class="w-7 h-7 rounded-full ${isDone ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'} flex items-center justify-center shrink-0">
+                            <span class="material-symbols-outlined text-[16px]">${isDone ? 'task_alt' : 'assignment'}</span>
                           </span>
                           <span class="truncate font-semibold">${UI.escapeHtml(e.title)}</span>
                         </div>
@@ -2285,10 +2952,10 @@ class StudentView {
                           Bài kiểm tra
                         </span>
                       </div>
-                    `;
-                  }).join('')}
+                    </div>
+                  `;
+                }).join('')}
 
-                </div>
               </div>
             </div>
           `;
@@ -2297,7 +2964,7 @@ class StudentView {
         let finalTestHtml = '';
         if (rootExams && rootExams.length > 0) {
           finalTestHtml = `
-            <div class="mt-4 pt-3 border-t-2 border-dashed border-slate-200 dark:border-slate-800 space-y-2">
+            <div class="mt-4 pt-3 border-t-2 border-dashed border-slate-200 dark:border-slate-800 space-y-2 relative">
               <div class="px-1 flex items-center justify-between">
                 <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1 font-mono">
                   <span class="material-symbols-outlined text-[15px]">military_tech</span>
@@ -2318,7 +2985,7 @@ class StudentView {
                       onclick="UI.showToast('${UI.escapeHtml(fe._lockReason || 'Final Test chưa mở khóa.')}', 'warning')"
                       title="${UI.escapeHtml(fe._lockReason || 'Đang khóa')}"
                     >
-                      <div class="flex items-center gap-2 min-w-0">
+                      <div class="flex items-center gap-2.5 min-w-0">
                         <span class="w-7 h-7 rounded-lg bg-slate-200/60 dark:bg-slate-800 text-slate-400 flex items-center justify-center shrink-0">
                           <span class="material-symbols-outlined text-[16px]">lock</span>
                         </span>
@@ -2339,7 +3006,7 @@ class StudentView {
                     class="p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none shadow-2xs ${isCur ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/60 text-purple-950 dark:text-purple-100 shadow-xs' : 'border-purple-200 dark:border-purple-800/80 bg-white dark:bg-slate-900 hover:border-purple-400 hover:shadow-xs'}"
                     onclick="window._ciscoSelectItem('exam', '${feId}')"
                   >
-                    <div class="flex items-center gap-2 min-w-0">
+                    <div class="flex items-center gap-2.5 min-w-0">
                       <span class="w-7 h-7 rounded-lg ${isDone ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80' : 'bg-purple-100 text-purple-600 dark:bg-purple-900/60'} flex items-center justify-center shrink-0">
                         <span class="material-symbols-outlined text-[16px]">${isDone ? 'task_alt' : 'assignment_turned_in'}</span>
                       </span>
@@ -2358,7 +3025,20 @@ class StudentView {
           `;
         }
 
-        accordionContainer.innerHTML = modulesHtml + finalTestHtml;
+        accordionContainer.innerHTML = `
+          <div class="relative pl-7 pr-1 py-2 space-y-5 before:absolute before:left-3 before:top-4 before:bottom-4 before:w-[2px] before:bg-slate-700/60 before:rounded-full">
+            ${modulesHtml}
+            ${finalTestHtml}
+          </div>
+        `;
+
+        // Auto-scroll to active lesson node
+        setTimeout(() => {
+          const activeEl = document.getElementById('outline-active-lesson');
+          if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 150);
       };
 
       if (container._fileDownloadHandler) container.removeEventListener('click', container._fileDownloadHandler);
@@ -2403,92 +3083,81 @@ class StudentView {
           const sizeStr = sizeKb ? (sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`) : '';
           const downloadUrl = r.download_url || `/student/files/${encodeURIComponent(r.asset_id || r.id || r.resource_id)}/download`;
 
-          let badgeColor = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800';
-          if (['PDF'].includes(ext)) {
-            badgeColor = 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400 border-rose-200 dark:border-rose-800';
-          } else if (['MP4', 'WEBM', 'MKV', 'AVI', 'MOV'].includes(ext)) {
-            badgeColor = 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800';
-          } else if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) {
-            badgeColor = 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+          let badgeColor = 'bg-red-950/40 text-red-400 border border-red-500/40';
+          if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) {
+            badgeColor = 'bg-purple-950/40 text-purple-400 border border-purple-500/40';
           } else if (['DOC', 'DOCX'].includes(ext)) {
-            badgeColor = 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+            badgeColor = 'bg-blue-950/40 text-blue-400 border border-blue-500/40';
           } else if (['PPT', 'PPTX'].includes(ext)) {
-            badgeColor = 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+            badgeColor = 'bg-amber-950/40 text-amber-400 border border-amber-500/40';
+          } else if (['MP4', 'WEBM', 'MKV', 'AVI', 'MOV'].includes(ext)) {
+            badgeColor = 'bg-sky-950/40 text-sky-400 border border-sky-500/40';
           }
 
           return `
-            <a
-              href="${downloadUrl}"
-              data-download-asset="${UI.escapeHtml(r.asset_id || r.file_asset?.public_id || r.id || r.resource_id || '')}"
-              class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 hover:border-emerald-500/60 hover:bg-emerald-50/20 dark:hover:bg-emerald-950/20 hover:shadow-xs transition-all flex items-center justify-between gap-2.5 group cursor-pointer block text-inherit no-underline select-none"
-              title="Nhấp để tải về ${UI.escapeHtml(fname)}"
-            >
-              <div class="flex items-center gap-2.5 min-w-0">
-                <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 border ${badgeColor}">
-                  ${ext}
-                </span>
-                <div class="min-w-0">
-                  <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-emerald-600 transition-colors" title="${UI.escapeHtml(fname)}">
-                    ${UI.escapeHtml(fname)}
-                  </p>
-                  ${sizeStr ? `<span class="text-[10px] text-slate-400 font-mono">${sizeStr}</span>` : ''}
-                </div>
-              </div>
-              <span
-                class="p-1.5 rounded-lg text-slate-400 group-hover:text-emerald-600 group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950/40 transition-colors shrink-0 pointer-events-none"
-                aria-hidden="true"
+            <div class="relative flex items-center pl-4 before:absolute before:left-0 before:top-1/2 before:w-3.5 before:h-[2px] before:bg-slate-600/70 before:rounded-full">
+              <a
+                href="${downloadUrl}"
+                data-download-asset="${UI.escapeHtml(r.asset_id || r.file_asset?.public_id || r.id || r.resource_id || '')}"
+                class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#131b24] hover:border-emerald-500/50 hover:bg-emerald-50/20 dark:hover:bg-[#182330] shadow-sm transition-all flex items-center justify-between gap-2.5 group cursor-pointer block text-inherit no-underline select-none"
+                title="Nhấp để tải về ${UI.escapeHtml(fname)}"
               >
-                <span class="material-symbols-outlined text-[18px]">download</span>
-              </span>
-            </a>
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-8 h-8 rounded-lg font-mono font-bold text-[10px] flex items-center justify-center shrink-0 ${badgeColor}">
+                    ${ext}
+                  </span>
+                  <div class="min-w-0">
+                    <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-emerald-400 transition-colors" title="${UI.escapeHtml(fname)}">
+                      ${UI.escapeHtml(fname)}
+                    </p>
+                    ${sizeStr ? `<span class="text-[10px] text-slate-400 font-mono">${sizeStr}</span>` : ''}
+                  </div>
+                </div>
+                <span class="p-1.5 rounded-lg text-slate-400 group-hover:text-emerald-400 transition-colors shrink-0">
+                  <span class="material-symbols-outlined text-[18px]">download</span>
+                </span>
+              </a>
+            </div>
           `;
         };
 
-        let html = `
-          <div class="text-xs text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <span>Tài liệu bài giảng theo chương:</span>
-            <span class="font-mono text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">${totalResourceCount} tệp</span>
-          </div>
-        `;
+        let itemsHtml = '';
 
         // 1. General Course Resources Section (if any)
         if (generalCourseResources.length > 0) {
           const isGenExpanded = expandedResGeneral;
-          html += `
-            <div class="rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/20 dark:bg-indigo-950/20 overflow-hidden transition-all shadow-2xs">
+          itemsHtml += `
+            <div class="relative group/gen select-none">
               <div
-                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 transition-colors select-none group/gen"
+                class="flex items-center justify-between gap-2.5 cursor-pointer py-1.5 select-none relative"
                 onclick="window._ciscoToggleResGeneral()"
               >
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <span class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-200 dark:border-indigo-800">
-                    <span class="material-symbols-outlined text-[18px]">school</span>
-                  </span>
-                  <div class="min-w-0">
-                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/gen:text-indigo-600 transition-colors">
-                      Tài liệu chung khóa học
-                    </h3>
-                  </div>
+                <div class="absolute -left-[27px] top-0.5 w-7 h-7 rounded-full border-2 border-indigo-400 bg-slate-900 dark:bg-[#111827] text-indigo-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_10px_rgba(99,102,241,0.35)]">
+                  <span class="material-symbols-outlined text-[16px]">school</span>
                 </div>
-
+                <div class="min-w-0 pr-2">
+                  <h3 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/gen:text-indigo-400 transition-colors">
+                    Tài liệu chung khóa học
+                  </h3>
+                </div>
                 <div class="flex items-center gap-2 shrink-0">
-                  <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
                     ${generalCourseResources.length} tệp
                   </span>
-                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isGenExpanded ? 'rotate-180 text-indigo-600' : ''}">
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isGenExpanded ? 'rotate-180 text-indigo-400' : ''}">
                     expand_more
                   </span>
                 </div>
               </div>
 
-              <div class="${isGenExpanded ? '' : 'hidden'} border-t border-indigo-100 dark:border-indigo-900/40 p-2.5 bg-white/60 dark:bg-slate-900/40 space-y-1.5">
+              <div class="${isGenExpanded ? '' : 'hidden'} mt-2 space-y-2 pl-3">
                 ${generalCourseResources.map(renderFileItem).join('')}
               </div>
             </div>
           `;
         }
 
-        // 2. Chapters (Modules) Accordion
+        // 2. Chapters (Modules) Timeline Tree
         modules.forEach((mod, mIdx) => {
           // Filter lessons that actually have resources
           const lessonsWithFiles = (mod.lessons || []).map((les, lIdx) => {
@@ -2502,56 +3171,58 @@ class StudentView {
             };
           }).filter(item => item.lRes.length > 0);
 
-          // If no lessons in this module have files, hide the module
           if (lessonsWithFiles.length === 0) return;
 
           const modTotalFiles = lessonsWithFiles.reduce((acc, item) => acc + item.lRes.length, 0);
           const isModExpanded = expandedResModuleIds.has(String(mod.id));
 
-          html += `
-            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 overflow-hidden transition-all shadow-2xs">
-              <!-- Module Header Button -->
+          itemsHtml += `
+            <div class="relative group/mod select-none">
+              <!-- Chapter Node on Spine with glowing neon folder icon -->
               <div
-                class="p-3 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors select-none group/mod"
+                class="flex items-center justify-between gap-2.5 cursor-pointer py-1.5 select-none relative"
                 onclick="window._ciscoToggleResMod('${mod.id}')"
               >
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <span class="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/50 dark:border-emerald-800/50">
-                    <span class="material-symbols-outlined text-[18px]">folder</span>
-                  </span>
-                  <div class="min-w-0">
-                    <h3 class="text-xs font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-600 transition-colors" title="${UI.escapeHtml(mod.title)}">
-                      ${UI.escapeHtml(mod.title)}
-                    </h3>
-                  </div>
+                <!-- Neon Teal Glowing Folder Circle on Timeline Spine -->
+                <div class="absolute -left-[27px] top-0.5 w-7 h-7 rounded-full border-2 border-emerald-400 bg-slate-900 dark:bg-[#0d1f1c] text-emerald-400 flex items-center justify-center shrink-0 z-10 shadow-[0_0_12px_rgba(52,211,153,0.35)]">
+                  <span class="material-symbols-outlined text-[16px]">folder</span>
                 </div>
-
+                <div class="min-w-0 pr-2">
+                  <h3 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover/mod:text-emerald-400 transition-colors" title="${UI.escapeHtml(mod.title)}">
+                    Chương ${mod.position || mIdx + 1}: ${UI.escapeHtml(mod.title)}
+                  </h3>
+                </div>
                 <div class="flex items-center gap-2 shrink-0">
-                  <span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                     ${modTotalFiles} tệp
                   </span>
-                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isModExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                  <span class="material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${isModExpanded ? 'rotate-180 text-emerald-400' : ''}">
                     expand_more
                   </span>
                 </div>
               </div>
 
-              <!-- Module Sub-Items (Lessons that have resources) -->
-              <div class="${isModExpanded ? '' : 'hidden'} border-t border-slate-100 dark:border-slate-800/60 p-2.5 bg-slate-50/40 dark:bg-slate-950/30 space-y-2">
+              <!-- Expanded Lessons List -->
+              <div class="${isModExpanded ? '' : 'hidden'} mt-2.5 space-y-2.5">
                 ${lessonsWithFiles.map(({ les, lRes, lesId, displayCode }) => {
                   const isLesExpanded = expandedResLessonIds.has(lesId);
                   return `
-                    <div class="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/50 overflow-hidden">
-                      <!-- Lesson Header Toggle (does NOT navigate away, only toggles files) -->
+                    <div class="relative select-none">
+                      <!-- Small green dot on spine -->
+                      <div class="absolute -left-[27px] top-1.5 w-6 flex items-center justify-center z-10">
+                        <div class="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-500/20"></div>
+                      </div>
+
+                      <!-- Lesson Header Toggle -->
                       <div
-                        class="p-2.5 flex items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors select-none group/les"
+                        class="flex items-center justify-between gap-2 cursor-pointer py-1 select-none group/les"
                         onclick="window._ciscoToggleResLesson('${lesId}')"
                       >
                         <div class="flex items-center gap-2 min-w-0">
-                          <span class="material-symbols-outlined text-[16px] text-slate-400 group-hover/les:text-emerald-600 transition-colors shrink-0">
-                            description
+                          <span class="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700/80 text-slate-500 dark:text-slate-300 flex items-center justify-center shrink-0">
+                            <span class="material-symbols-outlined text-[15px]">description</span>
                           </span>
-                          <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover/les:text-emerald-600 transition-colors" title="${UI.escapeHtml(les.title)}">
+                          <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate group-hover/les:text-emerald-400 transition-colors" title="${UI.escapeHtml(les.title)}">
                             ${displayCode} ${UI.escapeHtml(les.title)}
                           </span>
                         </div>
@@ -2559,14 +3230,14 @@ class StudentView {
                           <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             ${lRes.length} tệp
                           </span>
-                          <span class="material-symbols-outlined text-[16px] text-slate-400 transition-transform duration-200 ${isLesExpanded ? 'rotate-180 text-emerald-600' : ''}">
+                          <span class="material-symbols-outlined text-[16px] text-slate-400 transition-transform duration-200 ${isLesExpanded ? 'rotate-180 text-emerald-400' : ''}">
                             expand_more
                           </span>
                         </div>
                       </div>
 
-                      <!-- Lesson Files List (Collapsible) -->
-                      <div class="${isLesExpanded ? '' : 'hidden'} p-2 space-y-1.5 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-950/40">
+                      <!-- Nested File Cards with Elbow Connectors -->
+                      <div class="${isLesExpanded ? '' : 'hidden'} mt-2 space-y-2 pl-3">
                         ${lRes.map(renderFileItem).join('')}
                       </div>
                     </div>
@@ -2577,7 +3248,15 @@ class StudentView {
           `;
         });
 
-        resourcesContainer.innerHTML = html;
+        resourcesContainer.innerHTML = `
+          <div class="text-xs text-slate-400 pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between select-none">
+            <span>Tài liệu bài giảng theo chương:</span>
+            <span class="font-mono text-xs font-bold text-emerald-500 dark:text-emerald-400">${totalResourceCount} tệp</span>
+          </div>
+          <div class="relative pl-7 pr-1 py-2 space-y-5 before:absolute before:left-3 before:top-4 before:bottom-4 before:w-[2px] before:bg-slate-700/60 before:rounded-full">
+            ${itemsHtml}
+          </div>
+        `;
       };
 
       // Global window helpers for inline onclick
