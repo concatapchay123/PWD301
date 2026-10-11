@@ -2029,6 +2029,7 @@ def student_course_detail(course_id: str) -> Any:
         )
 
     contact_info = None
+    trailer_url = None
     clean_desc = course.description or ""
     if course.description and "<!-- contact_info:" in course.description:
         m_contact = re.search(
@@ -2038,8 +2039,27 @@ def student_course_detail(course_id: str) -> Any:
             with contextlib.suppress(Exception):
                 contact_info = json.loads(m_contact.group(1))
         clean_desc = re.sub(
-            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", course.description, flags=re.DOTALL
+            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_desc, flags=re.DOTALL
         ).strip()
+
+    if course.description and "<!-- trailer_url:" in course.description:
+        m_trailer = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", course.description, re.DOTALL)
+        if m_trailer:
+            trailer_url = m_trailer.group(1).strip()
+        clean_desc = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_desc, flags=re.DOTALL
+        ).strip()
+    elif course.description and course.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            parsed_d = json.loads(course.description)
+            if isinstance(parsed_d, dict):
+                trailer_url = parsed_d.get("video_url") or parsed_d.get("trailer_url")
+                if not trailer_url and isinstance(parsed_d.get("blocks"), list):
+                    for b in parsed_d["blocks"]:
+                        if isinstance(b, dict) and b.get("data") and b["data"].get("video_url"):
+                            trailer_url = b["data"]["video_url"]
+                            break
+                clean_desc = parsed_d.get("summary") or clean_desc
 
     instructor_email = course.owner_instructor.email if course.owner_instructor else None
     if not contact_info:
@@ -2145,6 +2165,8 @@ def student_course_detail(course_id: str) -> Any:
                 ),
                 "instructor_email": instructor_email,
                 "contact_info": contact_info,
+                "trailer_url": trailer_url,
+                "video_url": trailer_url,
             },
             "enrollment": (
                 {

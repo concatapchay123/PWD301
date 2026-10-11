@@ -1347,7 +1347,7 @@ class InstructorView {
                     class="w-full py-1.5 px-2.5 rounded-lg border border-dashed border-purple-300 dark:border-purple-800 hover:border-purple-500 bg-purple-50/30 dark:bg-purple-950/20 text-[11px] font-bold text-purple-700 dark:text-purple-300 flex items-center justify-center gap-1 transition-colors cursor-pointer"
                   >
                     <span class="material-symbols-outlined text-[14px]">quiz</span>
-                    <span>+ Tạo bài kiểm tra</span>
+                    <span>Tạo bài kiểm tra</span>
                   </a>
                 </div>
               ` : '')}
@@ -3884,7 +3884,13 @@ class InstructorView {
             <!-- Flexible Studio Layout with Resizable Sidebar -->
             <div class="flex flex-col lg:flex-row gap-0 items-start relative w-full" id="single-page-curriculum-studio">
               <!-- Left Column: Cây Giáo trình (Outline Tree) -->
-              <aside class="w-full lg:shrink-0 space-y-4" id="curriculum-tree-pane" style="width: 360px;">
+              <aside class="w-full lg:shrink-0 space-y-4 relative" id="curriculum-tree-pane" style="width: 360px;">
+                <!-- Edge Resizer Handle: invisible right border strip (desktop only) -->
+                <div
+                  id="curriculum-sidebar-resizer"
+                  class="hidden lg:block absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize select-none z-20 hover:bg-primary/20 transition-colors"
+                  title="Kéo viền phải để tùy chỉnh độ rộng Cấu trúc bài giảng"
+                ></div>
                 <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-5 shadow-xs space-y-4">
                   <div class="flex items-center justify-between pb-3 border-b border-[#E8E6DF] dark:border-[#2E2D2B]">
                     <div class="flex items-center gap-2">
@@ -3917,17 +3923,8 @@ class InstructorView {
                 </div>
               </aside>
 
-              <!-- Resizer Handle (desktop only) -->
-              <div
-                id="curriculum-sidebar-resizer"
-                class="hidden lg:flex w-4 hover:w-4 items-center justify-center cursor-col-resize select-none shrink-0 group py-4 transition-all z-10 self-stretch"
-                title="Kéo để tùy chỉnh độ rộng menu Cấu trúc bài giảng"
-              >
-                <div class="w-1.5 h-16 rounded-full bg-[#E8E6DF] dark:bg-[#2E2D2B] group-hover:bg-primary transition-all"></div>
-              </div>
-
               <!-- Right Column: Trình Soạn Thảo Khối Dọc (Modular Vertical Block Editor) -->
-              <main class="flex-1 min-w-0 w-full" id="curriculum-editor-pane">
+              <main class="flex-1 min-w-0 w-full pl-0 lg:pl-4" id="curriculum-editor-pane">
                 <!-- Populated dynamically based on selected lesson -->
               </main>
             </div>
@@ -4488,15 +4485,18 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   }
 
   // =========================================================================
-  // 2.9. Course Landing Page Canvas Block Editor Modal
-  // Provides instructors with a full visual block editor to craft custom
-  // landing pages (Hero, Rich Text, Highlights, Media, Bio, FAQ, CTA).
-  // Stores configuration as serialized JSON inside course.description.
+  // 2.9. Unified Standard Course Introduction & Academic Governance Modal
+  // Replaces legacy block builder with a clean 1-form system template:
+  // - Course Summary & Video Trailer (YouTube / HLS / File Upload < 100MB)
+  // - Real Student Learning Outcomes (SLOs)
+  // - Completion Rules & Prerequisites
+  // - Instructor Contact Channels
+  // - Single unified Save action for the entire page
   // =========================================================================
   static async openCourseLandingEditorModal(course) {
     const cId = course.course_id || course.id;
 
-    // Refresh course from backend to ensure freshest description
+    // Refresh course from backend to ensure freshest persistent data
     try {
       const freshCourse = await ApiClient.getCourse(cId);
       if (freshCourse && (freshCourse.course || freshCourse.data)) {
@@ -4504,410 +4504,355 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       }
     } catch (e) {}
 
-    // Parse existing blocks
-    let blocks = [];
-    try {
-      if (course.description && typeof course.description === 'string' && course.description.trim().startsWith('{')) {
-        const parsed = JSON.parse(course.description);
-        if (parsed && Array.isArray(parsed.blocks)) {
-          blocks = parsed.blocks;
-        }
+    // 1. Extract Description, Trailer URL, Contact Info
+    let rawDesc = course.description || '';
+    let videoUrl = course.trailer_url || course.video_url || '';
+    let contactInfo = course.contact_info || {
+      email: course.instructor_email || '',
+      phone: '',
+      group: '',
+      office_hours: ''
+    };
+
+    // Extract from comments if embedded
+    if (typeof rawDesc === 'string') {
+      if (rawDesc.includes('<!-- trailer_url:')) {
+        const mTr = rawDesc.match(/<!--\s*trailer_url:\s*(.*?)\s*-->/s);
+        if (mTr && !videoUrl) videoUrl = mTr[1].trim();
+        rawDesc = rawDesc.replace(/<!--\s*trailer_url:\s*.*?\s*-->\n*/gs, '').trim();
       }
-    } catch (e) {
-      blocks = [];
+      if (rawDesc.includes('<!-- contact_info:')) {
+        const mCo = rawDesc.match(/<!--\s*contact_info:\s*(\{.*?\})\s*-->/s);
+        if (mCo) {
+          try {
+            contactInfo = Object.assign({}, contactInfo, JSON.parse(mCo[1]));
+          } catch (e) {}
+        }
+        rawDesc = rawDesc.replace(/<!--\s*contact_info:\s*\{.*?\}\s*-->\n*/gs, '').trim();
+      }
+      // If legacy JSON canvas_blocks
+      if (rawDesc.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(rawDesc);
+          if (parsed.summary) rawDesc = parsed.summary;
+          if (parsed.video_url && !videoUrl) videoUrl = parsed.video_url;
+          if (Array.isArray(parsed.blocks)) {
+            const hBlock = parsed.blocks.find(b => b.type === 'hero');
+            if (hBlock?.data?.video_url && !videoUrl) videoUrl = hBlock.data.video_url;
+            if (hBlock?.data?.subtitle && !rawDesc) rawDesc = hBlock.data.subtitle;
+          }
+        } catch (e) {}
+      }
     }
 
-    if (blocks.length === 0) {
-      blocks = [
-        {
-          id: 'block_' + Date.now() + '_hero',
-          type: 'hero',
-          data: {
-            badge: `${course.code || course.course_code || 'PWD301'} • Chuẩn đầu ra`,
-            headline: course.title || 'Tiêu đề khóa học',
-            subtitle: (typeof course.description === 'string' && !course.description.startsWith('{')) ? course.description : 'Khóa học trang bị kiến thức chuyên sâu và kỹ năng thực hành chuẩn quốc tế.',
-            video_url: ''
+    // 2. Extract Learning Objectives (SLOs)
+    let slos = [];
+    if (course.learning_objectives) {
+      if (Array.isArray(course.learning_objectives)) {
+        slos = course.learning_objectives.map((s, idx) => ({
+          title: s.title || s.name || `SLO-${idx + 1}`,
+          description: s.description || s.content || String(s),
+          weight: s.weight || ''
+        }));
+      } else if (typeof course.learning_objectives === 'string') {
+        try {
+          const parsed = JSON.parse(course.learning_objectives);
+          if (Array.isArray(parsed)) {
+            slos = parsed.map((s, idx) => ({
+              title: s.title || s.name || `SLO-${idx + 1}`,
+              description: s.description || s.content || String(s),
+              weight: s.weight || ''
+            }));
           }
-        },
-        {
-          id: 'block_' + (Date.now() + 1) + '_highlights',
-          type: 'highlights',
-          data: {
-            items: [
-              { icon: 'schedule', title: '15 tuần học', desc: 'Lộ trình linh hoạt' },
-              { icon: 'menu_book', title: 'Bài giảng chuyên sâu', desc: 'Lý thuyết & Thực hành' },
-              { icon: 'quiz', title: 'Khảo thí chuẩn hóa', desc: 'Đánh giá năng lực' },
-              { icon: 'military_tech', title: 'Chứng chỉ chính quy', desc: 'Xác thực chuẩn đầu ra' }
-            ]
-          }
-        },
-        {
-          id: 'block_' + (Date.now() + 2) + '_richtext',
-          type: 'richtext',
-          data: {
-            title: 'Tổng quan & Định hướng môn học',
-            content: 'Môn học này cung cấp cho sinh viên nền tảng lý thuyết vững chắc kết hợp phương pháp luận thực tiễn. Sinh viên sẽ được tiếp cận các công cụ, kỹ thuật hiện đại và áp dụng giải quyết bài toán thực tế.'
-          }
-        },
-        {
-          id: 'block_' + (Date.now() + 3) + '_bio',
-          type: 'bio',
-          data: {
-            name: course.instructor_name || 'TS. Nguyễn An Ninh',
-            title: 'Giảng viên Bộ môn Mạng & ATTT',
-            bio: 'Chuyên gia giàu kinh nghiệm trong nghiên cứu, giảng dạy và triển khai các giải pháp an toàn thông tin tại các tổ chức hàng đầu.'
-          }
-        },
-        {
-          id: 'block_' + (Date.now() + 4) + '_faq',
-          type: 'faq',
-          data: {
-            items: [
-              { q: 'Khóa học này yêu cầu kiến thức nền tảng nào?', a: 'Sinh viên cần nắm vững kiến thức cơ bản về mạng máy tính và lập trình căn bản.' },
-              { q: 'Học viên có được thực hành trên môi trường lab thực tế không?', a: 'Có, các bài học đều có bài thực hành lab tương tác trên hệ thống.' },
-              { q: 'Hình thức đánh giá môn học như thế nào?', a: 'Đánh giá dựa trên tiến độ hoàn thành bài giảng và kết quả các bài kiểm tra khảo thí.' }
-            ]
-          }
+        } catch (e) {
+          slos = course.learning_objectives.split('\n').filter(s => s.trim()).map((s, idx) => ({
+            title: `SLO-${idx + 1}`,
+            description: s.trim(),
+            weight: ''
+          }));
         }
+      }
+    }
+    if (slos.length === 0) {
+      slos = [
+        { title: 'SLO-1 • Phân tích & Giải quyết Vấn đề', description: 'Sinh viên có khả năng phân tích một bài toán kỹ thuật phần mềm phức tạp và áp dụng các nguyên lý máy tính để xác định giải pháp phù hợp.', weight: '30%' },
+        { title: 'SLO-2 • Thiết kế Hệ thống & Kiểm thử', description: 'Sinh viên có khả năng thiết kế, cài đặt và đánh giá giải pháp dựa trên máy tính nhằm đáp ứng tập hợp các yêu cầu điện toán xác định theo chuẩn kiến trúc RESTful & CSDL quan hệ.', weight: '50%' },
+        { title: 'SLO-3 • Giao tiếp & Tài liệu Kỹ thuật', description: 'Sinh viên có khả năng truyền đạt hiệu quả các luận điểm kỹ thuật trong các ngữ cảnh chuyên môn khác nhau qua báo cáo tài liệu và mã nguồn chuẩn chỉnh.', weight: '20%' }
       ];
     }
 
-    const renderBlocksList = () => {
-      const container = document.getElementById('canvas-editor-blocks-container');
-      if (!container) return;
-
-      if (blocks.length === 0) {
-        container.innerHTML = `
-          <div class="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 space-y-2">
-            <span class="material-symbols-outlined text-4xl">view_agenda</span>
-            <p class="text-xs font-semibold">Chưa có khối nội dung nào. Bấm vào các nút bên trên để thêm khối.</p>
-          </div>
-        `;
-        return;
+    // 3. Extract Completion Rules
+    let compReqs = {};
+    if (course.completion_requirements) {
+      if (typeof course.completion_requirements === 'object') compReqs = course.completion_requirements;
+      else if (typeof course.completion_requirements === 'string') {
+        try { compReqs = JSON.parse(course.completion_requirements); } catch (e) {}
       }
-
-      container.innerHTML = blocks.map((b, idx) => {
-        let blockFormHtml = '';
-        const d = b.data || {};
-
-        if (b.type === 'hero') {
-          blockFormHtml = `
-            <div class="space-y-3 pt-2">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Huy hiệu / Tag nổi bật</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="badge" value="${UI.escapeHtml(d.badge || '')}"/>
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Video Trailer URL (YouTube Embed)</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="video_url" placeholder="https://www.youtube.com/embed/..." value="${UI.escapeHtml(d.video_url || '')}"/>
-                </div>
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Tiêu đề lớn (Headline)</label>
-                <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white" data-field="headline" value="${UI.escapeHtml(d.headline || '')}"/>
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Mô tả tóm tắt (Subtitle)</label>
-                <textarea rows="2" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="subtitle">${UI.escapeHtml(d.subtitle || '')}</textarea>
-              </div>
-            </div>
-          `;
-        } else if (b.type === 'richtext') {
-          blockFormHtml = `
-            <div class="space-y-3 pt-2">
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Tiêu đề đoạn văn</label>
-                <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white" data-field="title" value="${UI.escapeHtml(d.title || '')}"/>
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Nội dung chi tiết (hỗ trợ xuống dòng)</label>
-                <textarea rows="4" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white leading-relaxed" data-field="content">${UI.escapeHtml(d.content || '')}</textarea>
-              </div>
-            </div>
-          `;
-        } else if (b.type === 'media') {
-          blockFormHtml = `
-            <div class="space-y-3 pt-2">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Video Embed URL (YouTube/Vimeo)</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="video_url" value="${UI.escapeHtml(d.video_url || '')}"/>
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Hoặc Ảnh minh họa URL</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="image_url" value="${UI.escapeHtml(d.image_url || '')}"/>
-                </div>
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Chú thích phương tiện</label>
-                <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="caption" value="${UI.escapeHtml(d.caption || '')}"/>
-              </div>
-            </div>
-          `;
-        } else if (b.type === 'bio') {
-          blockFormHtml = `
-            <div class="space-y-3 pt-2">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Họ tên Giảng viên</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white" data-field="name" value="${UI.escapeHtml(d.name || '')}"/>
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Học hàm / Học vị / Chức danh</label>
-                  <input type="text" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="title" value="${UI.escapeHtml(d.title || '')}"/>
-                </div>
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Tiểu sử & Kinh nghiệm chuyên môn</label>
-                <textarea rows="2" class="block-input w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white" data-field="bio">${UI.escapeHtml(d.bio || '')}</textarea>
-              </div>
-            </div>
-          `;
-        } else if (b.type === 'faq') {
-          const faqItems = d.items || [];
-          blockFormHtml = `
-            <div class="space-y-3 pt-2">
-              <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300">Danh sách câu hỏi thường gặp:</p>
-              <div class="space-y-2 faq-items-list" data-block-idx="${idx}">
-                ${faqItems.map((fi, fIdx) => `
-                  <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
-                    <div class="flex items-center justify-between gap-2">
-                      <input type="text" class="faq-q-input w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white" data-fidx="${fIdx}" placeholder="Câu hỏi..." value="${UI.escapeHtml(fi.q || '')}"/>
-                      <button type="button" class="btn-del-faq text-rose-500 hover:text-rose-700 p-1 cursor-pointer shrink-0" data-fidx="${fIdx}">
-                        <span class="material-symbols-outlined text-[16px]">close</span>
-                      </button>
-                    </div>
-                    <textarea rows="2" class="faq-a-input w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300" data-fidx="${fIdx}" placeholder="Câu trả lời...">${UI.escapeHtml(fi.a || '')}</textarea>
-                  </div>
-                `).join('')}
-              </div>
-              <button type="button" class="btn-add-faq px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer" data-block-idx="${idx}">
-                <span class="material-symbols-outlined text-[15px]">add</span>
-                <span>Thêm câu hỏi</span>
-              </button>
-            </div>
-          `;
-        } else if (b.type === 'highlights') {
-          const items = d.items || [];
-          blockFormHtml = `
-            <div class="space-y-2 pt-2">
-              <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300">4 điểm nổi bật chính:</p>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                ${items.map((it, itIdx) => `
-                  <div class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-1">
-                    <div class="flex items-center gap-2">
-                      <input type="text" class="hl-icon-input w-20 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono" data-itidx="${itIdx}" placeholder="icon" value="${UI.escapeHtml(it.icon || 'star')}"/>
-                      <input type="text" class="hl-title-input flex-1 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold" data-itidx="${itIdx}" placeholder="Tiêu đề" value="${UI.escapeHtml(it.title || '')}"/>
-                    </div>
-                    <input type="text" class="hl-desc-input w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-500" data-itidx="${itIdx}" placeholder="Mô tả phụ" value="${UI.escapeHtml(it.desc || '')}"/>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-        }
-
-        const typeLabels = {
-          hero: { label: 'Khối Hero & Banner Đầu Trang', icon: 'flag', color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' },
-          highlights: { label: 'Khối Điểm Nổi Bật (Stats Grid)', icon: 'insights', color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40' },
-          richtext: { label: 'Khối Văn Bản & Mô Tả Chi Tiết', icon: 'article', color: 'text-blue-500 bg-blue-50 dark:bg-blue-950/40' },
-          media: { label: 'Khối Video Trailer & Hình Ảnh', icon: 'movie', color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40' },
-          bio: { label: 'Khối Thông Tin Giảng Viên', icon: 'badge', color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40' },
-          faq: { label: 'Khối Câu Hỏi Thường Gặp (FAQ)', icon: 'help', color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40' }
-        };
-
-        const tInfo = typeLabels[b.type] || { label: 'Khối Tùy Biến', icon: 'widgets', color: 'text-slate-500 bg-slate-100' };
-
-        return `
-          <div class="canvas-block-card p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3" data-idx="${idx}">
-            <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800 select-none">
-              <div class="flex items-center gap-2">
-                <span class="w-6 h-6 rounded-lg ${tInfo.color} flex items-center justify-center material-symbols-outlined text-[15px] shrink-0">
-                  ${tInfo.icon}
-                </span>
-                <span class="text-xs font-bold text-slate-900 dark:text-white">${tInfo.label}</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <button type="button" class="btn-block-up p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${idx === 0 ? 'opacity-30 cursor-not-allowed' : ''}" data-idx="${idx}" title="Di chuyển lên">
-                  <span class="material-symbols-outlined text-[16px]">arrow_upward</span>
-                </button>
-                <button type="button" class="btn-block-down p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${idx === blocks.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}" data-idx="${idx}" title="Di chuyển xuống">
-                  <span class="material-symbols-outlined text-[16px]">arrow_downward</span>
-                </button>
-                <button type="button" class="btn-block-del p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer ml-1" data-idx="${idx}" title="Xóa khối này">
-                  <span class="material-symbols-outlined text-[16px]">delete</span>
-                </button>
-              </div>
-            </div>
-            ${blockFormHtml}
-          </div>
-        `;
-      }).join('');
-
-      // Wire block field changes
-      container.querySelectorAll('.block-input').forEach(input => {
-        input.oninput = (e) => {
-          const card = e.target.closest('.canvas-block-card');
-          const idx = parseInt(card.dataset.idx, 10);
-          const field = e.target.dataset.field;
-          if (blocks[idx] && field) {
-            blocks[idx].data = blocks[idx].data || {};
-            blocks[idx].data[field] = e.target.value;
-          }
-        };
-      });
-
-      // Wire Move Up
-      container.querySelectorAll('.btn-block-up').forEach(btn => {
-        btn.onclick = () => {
-          const idx = parseInt(btn.dataset.idx, 10);
-          if (idx <= 0) return;
-          const temp = blocks[idx];
-          blocks[idx] = blocks[idx - 1];
-          blocks[idx - 1] = temp;
-          renderBlocksList();
-        };
-      });
-
-      // Wire Move Down
-      container.querySelectorAll('.btn-block-down').forEach(btn => {
-        btn.onclick = () => {
-          const idx = parseInt(btn.dataset.idx, 10);
-          if (idx >= blocks.length - 1) return;
-          const temp = blocks[idx];
-          blocks[idx] = blocks[idx + 1];
-          blocks[idx + 1] = temp;
-          renderBlocksList();
-        };
-      });
-
-      // Wire Delete
-      container.querySelectorAll('.btn-block-del').forEach(btn => {
-        btn.onclick = () => {
-          const idx = parseInt(btn.dataset.idx, 10);
-          blocks.splice(idx, 1);
-          renderBlocksList();
-        };
-      });
-
-      // Wire FAQ Add/Del/Input
-      container.querySelectorAll('.btn-add-faq').forEach(btn => {
-        btn.onclick = () => {
-          const bIdx = parseInt(btn.dataset.blockIdx, 10);
-          if (blocks[bIdx]) {
-            blocks[bIdx].data = blocks[bIdx].data || {};
-            blocks[bIdx].data.items = blocks[bIdx].data.items || [];
-            blocks[bIdx].data.items.push({ q: 'Câu hỏi mới?', a: 'Nội dung trả lời giải đáp.' });
-            renderBlocksList();
-          }
-        };
-      });
-
-      container.querySelectorAll('.btn-del-faq').forEach(btn => {
-        btn.onclick = (e) => {
-          const card = e.target.closest('.canvas-block-card');
-          const bIdx = parseInt(card.dataset.idx, 10);
-          const fIdx = parseInt(btn.dataset.fidx, 10);
-          if (blocks[bIdx]?.data?.items) {
-            blocks[bIdx].data.items.splice(fIdx, 1);
-            renderBlocksList();
-          }
-        };
-      });
-
-      container.querySelectorAll('.faq-q-input').forEach(input => {
-        input.oninput = (e) => {
-          const card = e.target.closest('.canvas-block-card');
-          const bIdx = parseInt(card.dataset.idx, 10);
-          const fIdx = parseInt(e.target.dataset.fidx, 10);
-          if (blocks[bIdx]?.data?.items?.[fIdx]) {
-            blocks[bIdx].data.items[fIdx].q = e.target.value;
-          }
-        };
-      });
-
-      container.querySelectorAll('.faq-a-input').forEach(input => {
-        input.oninput = (e) => {
-          const card = e.target.closest('.canvas-block-card');
-          const bIdx = parseInt(card.dataset.idx, 10);
-          const fIdx = parseInt(e.target.dataset.fidx, 10);
-          if (blocks[bIdx]?.data?.items?.[fIdx]) {
-            blocks[bIdx].data.items[fIdx].a = e.target.value;
-          }
-        };
-      });
-
-      // Wire Highlights items input
-      container.querySelectorAll('.hl-title-input, .hl-desc-input, .hl-icon-input').forEach(input => {
-        input.oninput = (e) => {
-          const card = e.target.closest('.canvas-block-card');
-          const bIdx = parseInt(card.dataset.idx, 10);
-          const itIdx = parseInt(e.target.dataset.itidx, 10);
-          if (blocks[bIdx]?.data?.items?.[itIdx]) {
-            if (e.target.classList.contains('hl-title-input')) blocks[bIdx].data.items[itIdx].title = e.target.value;
-            if (e.target.classList.contains('hl-desc-input')) blocks[bIdx].data.items[itIdx].desc = e.target.value;
-            if (e.target.classList.contains('hl-icon-input')) blocks[bIdx].data.items[itIdx].icon = e.target.value;
-          }
-        };
-      });
-    };
+    }
+    const minProgressVal = compReqs.min_progress_percent !== undefined ? compReqs.min_progress_percent : 80;
+    const minScoreVal = compReqs.min_assessment_score !== undefined ? compReqs.min_assessment_score : 5.0;
 
     const modalBodyHtml = `
-      <div class="space-y-5 text-sans">
-        <!-- Toolbar: Add New Blocks -->
-        <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-primary text-[17px]">add_circle</span>
-              <span>Thêm khối nội dung mới:</span>
-            </span>
-            <span class="text-[11px] text-slate-400">Chọn khối để thêm vào cuối trang</span>
+      <div class="space-y-6 text-sans">
+        <!-- 1. THÔNG TIN GIỚI THIỆU & VIDEO TRAILER -->
+        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">movie</span>
+              <span>1. Giới thiệu tổng quan & Video Trailer</span>
+            </h3>
+            <span class="text-[11px] text-slate-400 font-medium">Hiển thị ở khu vực Hero đầu trang</span>
           </div>
-          <div class="flex flex-wrap items-center gap-2 pt-1" id="canvas-add-block-buttons">
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:text-emerald-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="hero">
-              <span class="material-symbols-outlined text-[15px] text-emerald-500">flag</span>
-              <span>+ Hero</span>
-            </button>
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-amber-500 hover:text-amber-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="highlights">
-              <span class="material-symbols-outlined text-[15px] text-amber-500">insights</span>
-              <span>+ Điểm nổi bật</span>
-            </button>
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:text-blue-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="richtext">
-              <span class="material-symbols-outlined text-[15px] text-blue-500">article</span>
-              <span>+ Văn bản</span>
-            </button>
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-purple-500 hover:text-purple-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="media">
-              <span class="material-symbols-outlined text-[15px] text-purple-500">movie</span>
-              <span>+ Video / Ảnh</span>
-            </button>
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:text-indigo-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="bio">
-              <span class="material-symbols-outlined text-[15px] text-indigo-500">badge</span>
-              <span>+ Giảng viên</span>
-            </button>
-            <button type="button" class="btn-add-block px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-rose-500 hover:text-rose-600 transition-colors inline-flex items-center gap-1 cursor-pointer" data-type="faq">
-              <span class="material-symbols-outlined text-[15px] text-rose-500">help</span>
-              <span>+ FAQ</span>
-            </button>
+
+          <div class="space-y-1.5">
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+              Mô tả tóm tắt môn học <span class="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="unified-course-description"
+              rows="3"
+              placeholder="VD: Môn học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo chuẩn quốc tế..."
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 resize-none leading-relaxed"
+            >${UI.escapeHtml(rawDesc)}</textarea>
+          </div>
+
+          <!-- Video Trailer Section: YouTube URL on top, File Upload below -->
+          <div class="space-y-3 pt-2">
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Video Trailer trực tuyến (Link YouTube hoặc HLS stream)
+                </label>
+                <span class="text-[11px] text-slate-400">Hỗ trợ link youtube.com, youtu.be, embed hoặc link m3u8</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">link</span>
+                  <input
+                    type="url"
+                    id="unified-trailer-url"
+                    value="${UI.escapeHtml(videoUrl)}"
+                    placeholder="VD: https://www.youtube.com/watch?v=dQw4w9WgXcQ hoặc https://youtu.be/..."
+                    class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+                <button
+                  type="button"
+                  id="btn-test-trailer-video"
+                  class="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-emerald-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span class="material-symbols-outlined text-[16px]">play_circle</span>
+                  <span>Kiểm tra phát</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Upload File Video below -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Hoặc tải lên file Video Trailer từ máy tính
+                </label>
+                <span class="text-[11px] text-slate-400">Dung lượng tối đa 100 MB • Định dạng MP4 / WebM</span>
+              </div>
+              <div
+                id="unified-video-dropzone"
+                class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-white/50 dark:bg-slate-900/40 relative group"
+              >
+                <input type="file" id="unified-video-file-input" accept="video/mp4,video/webm" class="hidden" />
+                <div class="flex flex-col items-center justify-center gap-1.5">
+                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span class="material-symbols-outlined text-[20px]">cloud_upload</span>
+                  </div>
+                  <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Bấm để chọn file video hoặc kéo thả file vào đây
+                  </p>
+                  <p class="text-[11px] text-slate-400">Hệ thống quét an toàn fail-closed tự động</p>
+                </div>
+                <div id="unified-video-upload-progress" class="hidden mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <div class="flex items-center justify-between text-xs font-bold text-emerald-500 mb-1">
+                    <span id="upload-progress-text">Đang tải video lên máy chủ...</span>
+                    <span id="upload-progress-percent">0%</span>
+                  </div>
+                  <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                    <div id="upload-progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preview Box (Inline preview container) -->
+            <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div class="flex items-center justify-between text-xs text-slate-300">
+                <span class="font-bold flex items-center gap-1.5 text-emerald-400">
+                  <span class="material-symbols-outlined text-[16px]">visibility</span>
+                  <span>Xem trước Trailer</span>
+                </span>
+                <button type="button" id="btn-close-trailer-preview" class="text-slate-400 hover:text-white text-xs cursor-pointer">
+                  Đóng preview
+                </button>
+              </div>
+              <div id="unified-trailer-preview-player" class="aspect-video w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
+                <!-- Mounted dynamically -->
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Blocks Container -->
-        <div id="canvas-editor-blocks-container" class="space-y-4 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-          <!-- Rendered dynamically -->
+        <!-- 2. CHUẨN ĐẦU RA (SLOs) -->
+        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+            <div>
+              <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[16px]">verified</span>
+                <span>2. Chuẩn đầu ra môn học (Student Learning Outcomes - SLO)</span>
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Sinh viên sẽ được trang bị những năng lực và kỹ năng cụ thể sau khi hoàn thành</p>
+            </div>
+            <button
+              type="button"
+              id="btn-add-unified-slo"
+              class="px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
+            >
+              <span class="material-symbols-outlined text-[16px]">add</span>
+              <span>Thêm chuẩn đầu ra</span>
+            </button>
+          </div>
+
+          <div id="unified-slos-list" class="space-y-3">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- 3. QUY CHUẨN HOÀN THÀNH & ĐIỀU KIỆN HỌC VỤ -->
+        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center material-symbols-outlined text-[16px]">rule</span>
+              <span>3. Quy chuẩn Học vụ & Điều kiện Hoàn thành</span>
+            </h3>
+            <span class="text-[11px] text-slate-400 font-medium">Tiêu chí cấp chứng nhận hoàn thành</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Tỉ lệ xem bài học tối thiểu (%)
+              </label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  id="unified-min-progress"
+                  min="1"
+                  max="100"
+                  value="${minProgressVal}"
+                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                />
+                <span class="text-xs text-slate-500 font-bold">%</span>
+              </div>
+              <p class="text-[11px] text-slate-400">Học viên cần đạt tối thiểu % tiến độ bài giảng để được tính hoàn thành môn.</p>
+            </div>
+
+            <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Điểm khảo thí đạt tối thiểu (Thang 10)
+              </label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  id="unified-min-score"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value="${minScoreVal}"
+                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                />
+                <span class="text-xs text-slate-500 font-bold">/ 10</span>
+              </div>
+              <p class="text-[11px] text-slate-400">Điểm số bài kiểm tra khảo thí tối thiểu để được cấp chứng nhận.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. KÊNH LIÊN HỆ GIẢNG VIÊN & HỖ TRỢ HỌC VIÊN -->
+        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">support_agent</span>
+              <span>4. Kênh Liên hệ Giảng viên & Hỗ trợ Học vụ</span>
+            </h3>
+            <span class="text-[11px] text-slate-400 font-medium">Học viên có thể liên hệ trực tiếp khi cần giải đáp</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Email Giảng viên phụ trách <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="email"
+                id="unified-contact-email"
+                value="${UI.escapeHtml(contactInfo.email || course.instructor_email || '')}"
+                placeholder="VD: giangvien@pwd301.edu.vn"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Số điện thoại liên hệ <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+              </label>
+              <input
+                type="tel"
+                id="unified-contact-phone"
+                value="${UI.escapeHtml(contactInfo.phone || '')}"
+                placeholder="VD: 0912 345 678"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Link Group trao đổi học tập (Zalo, Teams, Telegram...) <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+              </label>
+              <input
+                type="url"
+                id="unified-contact-group"
+                value="${UI.escapeHtml(contactInfo.group || '')}"
+                placeholder="VD: https://zalo.me/g/... hoặc https://teams.microsoft.com/..."
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Giờ tiếp sinh viên / Văn phòng <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+              </label>
+              <input
+                type="text"
+                id="unified-contact-office-hours"
+                value="${UI.escapeHtml(contactInfo.office_hours || '')}"
+                placeholder="VD: Thứ 3 & Thứ 5 (14:00 - 16:30) tại P.302"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
         </div>
       </div>
     `;
 
     UI.openModal({
       title: `
-        <div class="flex items-center gap-2.5">
-          <div class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-            <span class="material-symbols-outlined text-[18px]">web</span>
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[20px]">web</span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-[#222120] dark:text-[#EDEDEB]">Biên tập Trang Giới thiệu Khóa học</span>
-            <span class="px-2 py-0.5 rounded-md bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-mono text-xs font-bold border border-[#E8E6DF] dark:border-[#383734]">${UI.escapeHtml(course.code || course.course_code || '')}</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-black text-[#222120] dark:text-[#EDEDEB] text-sm sm:text-base">Biên tập Trang Giới thiệu & Học vụ</span>
+              <span class="px-2 py-0.5 rounded-md bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-mono text-xs font-bold border border-[#E8E6DF] dark:border-[#383734]">${UI.escapeHtml(course.code || course.course_code || '')}</span>
+            </div>
+            <p class="text-[11px] text-[#8F8E8A] font-medium">Template chuẩn hệ thống: Tự động đồng bộ chuẩn đầu ra, đề cương bài giảng và học vụ</p>
           </div>
         </div>
       `,
@@ -4924,8 +4869,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             <button type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onclick="UI.closeModal()">
               Hủy bỏ
             </button>
-            <button type="button" id="btn-save-canvas-landing" class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer">
-              <span class="material-symbols-outlined text-[16px]">save</span>
+            <button type="button" id="btn-save-unified-intro" class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 text-xs font-black transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer">
+              <span class="material-symbols-outlined text-[17px]">save</span>
               <span>Lưu thay đổi</span>
             </button>
           </div>
@@ -4934,88 +4879,289 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
       size: 'xl'
     });
 
-    renderBlocksList();
+    // Helper: Render SLOs List
+    const renderSLOs = () => {
+      const sloContainer = document.getElementById('unified-slos-list');
+      if (!sloContainer) return;
+      if (slos.length === 0) {
+        sloContainer.innerHTML = `
+          <div class="text-center py-6 text-slate-400 text-xs italic border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+            Chưa có chuẩn đầu ra nào. Bấm nút "+ Thêm chuẩn đầu ra" bên trên để tạo.
+          </div>
+        `;
+        return;
+      }
+      sloContainer.innerHTML = slos.map((s, idx) => `
+        <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2 slo-item-card" data-idx="${idx}">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 flex-1">
+              <span class="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0">
+                ${idx + 1}
+              </span>
+              <input
+                type="text"
+                class="slo-title-input flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white"
+                data-idx="${idx}"
+                value="${UI.escapeHtml(s.title || '')}"
+                placeholder="Tiêu đề SLO (VD: SLO-${idx + 1} • Kỹ năng thực hành)"
+              />
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <input
+                type="text"
+                class="slo-weight-input w-20 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-center text-slate-700 dark:text-slate-300"
+                data-idx="${idx}"
+                value="${UI.escapeHtml(s.weight || '')}"
+                placeholder="Trọng số %"
+              />
+              <button
+                type="button"
+                class="btn-del-slo p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                data-idx="${idx}"
+                title="Xóa chuẩn đầu ra này"
+              >
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            </div>
+          </div>
+          <div>
+            <textarea
+              rows="2"
+              class="slo-desc-input w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 leading-relaxed outline-none focus:border-indigo-500"
+              data-idx="${idx}"
+              placeholder="Mô tả năng lực, chuẩn kiến thức và kỹ năng đạt được..."
+            >${UI.escapeHtml(s.description || '')}</textarea>
+          </div>
+        </div>
+      `).join('');
 
-    // Wire Add Block Buttons
-    document.querySelectorAll('#canvas-add-block-buttons .btn-add-block').forEach(btn => {
-      btn.onclick = () => {
-        const type = btn.dataset.type;
-        const newBlock = {
-          id: 'block_' + Date.now() + '_' + type,
-          type,
-          data: {}
+      // Wire SLO Inputs
+      sloContainer.querySelectorAll('.slo-title-input').forEach(input => {
+        input.oninput = (e) => {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (slos[idx]) slos[idx].title = e.target.value;
         };
-        if (type === 'hero') {
-          newBlock.data = {
-            badge: `${course.code || course.course_code || 'PWD301'} • Chuẩn đầu ra`,
-            headline: course.title || 'Tiêu đề khóa học',
-            subtitle: 'Mô tả tóm tắt nội dung bài học và định hướng ứng dụng thực tế.',
-            video_url: ''
-          };
-        } else if (type === 'richtext') {
-          newBlock.data = {
-            title: 'Tiêu đề đoạn nội dung',
-            content: 'Nội dung chi tiết được biên tập cho học viên.'
-          };
-        } else if (type === 'media') {
-          newBlock.data = {
-            video_url: '',
-            image_url: '',
-            caption: 'Ảnh / Video giới thiệu khóa học'
-          };
-        } else if (type === 'bio') {
-          newBlock.data = {
-            name: course.instructor_name || 'TS. Nguyễn An Ninh',
-            title: 'Giảng viên Bộ môn Mạng & ATTT',
-            bio: 'Tiểu sử giảng viên và thông tin chuyên môn.'
-          };
-        } else if (type === 'faq') {
-          newBlock.data = {
-            items: [
-              { q: 'Khóa học có chứng nhận sau khi hoàn thành không?', a: 'Có, học viên hoàn thành trên 80% tiến độ và đạt các bài thi sẽ được cấp chứng nhận điện tử.' }
-            ]
-          };
-        } else if (type === 'highlights') {
-          newBlock.data = {
-            items: [
-              { icon: 'schedule', title: '15 tuần học', desc: 'Lộ trình linh hoạt' },
-              { icon: 'menu_book', title: 'Bài giảng chuyên sâu', desc: 'Lý thuyết & Thực hành' },
-              { icon: 'quiz', title: 'Khảo thí chuẩn hóa', desc: 'Đánh giá năng lực' },
-              { icon: 'military_tech', title: 'Chứng chỉ chính quy', desc: 'Xác thực chuẩn đầu ra' }
-            ]
-          };
-        }
-        blocks.push(newBlock);
-        renderBlocksList();
-      };
-    });
+      });
+      sloContainer.querySelectorAll('.slo-weight-input').forEach(input => {
+        input.oninput = (e) => {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (slos[idx]) slos[idx].weight = e.target.value;
+        };
+      });
+      sloContainer.querySelectorAll('.slo-desc-input').forEach(input => {
+        input.oninput = (e) => {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (slos[idx]) slos[idx].description = e.target.value;
+        };
+      });
+      sloContainer.querySelectorAll('.btn-del-slo').forEach(btn => {
+        btn.onclick = (e) => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          slos.splice(idx, 1);
+          renderSLOs();
+        };
+      });
+    };
 
-    // Wire Save Button
-    const saveBtn = document.getElementById('btn-save-canvas-landing');
+    renderSLOs();
+
+    // Wire Add SLO Button
+    const addSloBtn = document.getElementById('btn-add-unified-slo');
+    if (addSloBtn) {
+      addSloBtn.onclick = () => {
+        const nextIdx = slos.length + 1;
+        slos.push({
+          title: `SLO-${nextIdx} • Chuẩn năng lực chuyên môn`,
+          description: 'Mô tả chi tiết kiến thức và kỹ năng đạt được sau bài học.',
+          weight: '20%'
+        });
+        renderSLOs();
+      };
+    }
+
+    // Helper: Mount Trailer Preview
+    const mountTrailerPreview = (url) => {
+      const previewBox = document.getElementById('unified-trailer-preview-box');
+      const playerContainer = document.getElementById('unified-trailer-preview-player');
+      if (!previewBox || !playerContainer) return;
+
+      if (!url || !url.trim()) {
+        previewBox.classList.add('hidden');
+        playerContainer.innerHTML = '';
+        return;
+      }
+
+      previewBox.classList.remove('hidden');
+      const cleanUrl = url.trim();
+      const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+
+      if (ytMatch) {
+        playerContainer.innerHTML = `
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0"
+            class="w-full h-full border-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          ></iframe>
+        `;
+      } else {
+        playerContainer.innerHTML = `
+          <video src="${cleanUrl}" controls autoplay playsinline class="w-full h-full object-contain"></video>
+        `;
+      }
+    };
+
+    // Wire Test Video Button
+    const testVideoBtn = document.getElementById('btn-test-trailer-video');
+    const trailerInput = document.getElementById('unified-trailer-url');
+    if (testVideoBtn && trailerInput) {
+      testVideoBtn.onclick = () => {
+        const url = trailerInput.value.trim();
+        if (!url) {
+          UI.showToast('Vui lòng nhập Link Video trước khi kiểm tra phát.', 'warning');
+          return;
+        }
+        mountTrailerPreview(url);
+      };
+    }
+
+    const closePreviewBtn = document.getElementById('btn-close-trailer-preview');
+    if (closePreviewBtn) {
+      closePreviewBtn.onclick = () => {
+        const previewBox = document.getElementById('unified-trailer-preview-box');
+        const playerContainer = document.getElementById('unified-trailer-preview-player');
+        if (previewBox) previewBox.classList.add('hidden');
+        if (playerContainer) playerContainer.innerHTML = '';
+      };
+    }
+
+    // Wire File Upload Box
+    const dropzone = document.getElementById('unified-video-dropzone');
+    const fileInput = document.getElementById('unified-video-file-input');
+    const progressBox = document.getElementById('unified-video-upload-progress');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const progressPercent = document.getElementById('upload-progress-percent');
+    const progressText = document.getElementById('upload-progress-text');
+
+    if (dropzone && fileInput) {
+      dropzone.onclick = (e) => {
+        if (e.target !== fileInput) fileInput.click();
+      };
+
+      const handleFileUpload = async (file) => {
+        if (!file) return;
+        if (file.size > 100 * 1024 * 1024) {
+          UI.showToast('Dung lượng video vượt quá giới hạn 100 MB!', 'error');
+          return;
+        }
+        if (!file.type.startsWith('video/')) {
+          UI.showToast('Vui lòng chọn file định dạng video (.mp4, .webm)!', 'warning');
+          return;
+        }
+
+        if (progressBox) progressBox.classList.remove('hidden');
+        if (progressText) progressText.textContent = `Đang tải ${file.name}...`;
+        if (progressBar) progressBar.style.width = '45%';
+        if (progressPercent) progressPercent.textContent = '45%';
+
+        try {
+          const res = await ApiClient.uploadCourseFile(cId, file, file.name, 'RESOURCE');
+          const uploadedAsset = res?.asset || res?.data || res;
+          const downloadUrl = uploadedAsset?.download_url || (uploadedAsset?.public_id ? `/student/courses/${cId}/files/${uploadedAsset.public_id}/download` : '');
+
+          if (progressBar) progressBar.style.width = '100%';
+          if (progressPercent) progressPercent.textContent = '100%';
+          if (progressText) progressText.textContent = 'Tải lên hoàn tất & Đã sẵn sàng!';
+
+          if (downloadUrl && trailerInput) {
+            trailerInput.value = downloadUrl;
+            UI.showToast('Tải video trailer thành công! Đã tự động cập nhật đường dẫn.', 'success');
+            mountTrailerPreview(downloadUrl);
+          }
+        } catch (err) {
+          UI.showToast(err.message || 'Lỗi khi tải video lên máy chủ.', 'error');
+          if (progressText) progressText.textContent = 'Lỗi tải lên!';
+        }
+      };
+
+      fileInput.onchange = (e) => {
+        const file = e.target.files?.[0];
+        if (file) handleFileUpload(file);
+      };
+
+      dropzone.ondragover = (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-emerald-500', 'bg-emerald-500/5');
+      };
+      dropzone.ondragleave = () => {
+        dropzone.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+      };
+      dropzone.ondrop = (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+        const file = e.dataTransfer?.files?.[0];
+        if (file) handleFileUpload(file);
+      };
+    }
+
+    // Wire Unified Save Button
+    const saveBtn = document.getElementById('btn-save-unified-intro');
     if (saveBtn) {
       saveBtn.onclick = async () => {
+        const descVal = (document.getElementById('unified-course-description')?.value || '').trim();
+        const trUrlVal = (document.getElementById('unified-trailer-url')?.value || '').trim();
+        const cEmail = (document.getElementById('unified-contact-email')?.value || '').trim();
+        const cPhone = (document.getElementById('unified-contact-phone')?.value || '').trim();
+        const cGroup = (document.getElementById('unified-contact-group')?.value || '').trim();
+        const cOffice = (document.getElementById('unified-contact-office-hours')?.value || '').trim();
+        const minProg = parseInt(document.getElementById('unified-min-progress')?.value || '80', 10);
+        const minSc = parseFloat(document.getElementById('unified-min-score')?.value || '5.0');
+
+        if (!cEmail) {
+          UI.showToast('Vui lòng nhập Email liên hệ của Giảng viên.', 'warning');
+          return;
+        }
+
         saveBtn.disabled = true;
         const origHtml = saveBtn.innerHTML;
         saveBtn.innerHTML = `<span class="inline-block animate-spin text-[16px]">⏳</span> <span>Đang lưu...</span>`;
 
         try {
-          const payload = {
-            format: 'canvas_blocks',
-            version: 1,
-            updated_at: new Date().toISOString(),
-            blocks,
-            summary: blocks.find(b => b.type === 'hero')?.data?.subtitle || 'Khóa học đào tạo chuyên sâu PWD301'
+          const contactPayload = {
+            email: cEmail,
+            phone: cPhone,
+            group: cGroup,
+            office_hours: cOffice
           };
+
+          const compPayload = {
+            min_progress_percent: isNaN(minProg) ? 80 : Math.max(1, Math.min(100, minProg)),
+            min_assessment_score: isNaN(minSc) ? 5.0 : Math.max(0, Math.min(10, minSc))
+          };
+
           await ApiClient.updateCourse(cId, {
-            description: JSON.stringify(payload)
+            description: descVal,
+            trailer_url: trUrlVal,
+            video_url: trUrlVal,
+            learning_objectives: JSON.stringify(slos),
+            completion_requirements: JSON.stringify(compPayload),
+            contact_info: contactPayload
           });
-          course.description = JSON.stringify(payload);
-          UI.showToast('Đã lưu thiết kế Trang Giới thiệu thành công!', 'success');
+
+          // Sync in-memory course object
+          course.description = descVal;
+          course.trailer_url = trUrlVal;
+          course.video_url = trUrlVal;
+          course.learning_objectives = slos;
+          course.completion_requirements = compPayload;
+          course.contact_info = contactPayload;
+
+          UI.showToast('Đã lưu thông tin Trang Giới thiệu & Học vụ thành công!', 'success');
           UI.closeModal();
         } catch (err) {
           saveBtn.disabled = false;
           saveBtn.innerHTML = origHtml;
-          UI.showToast(err.message || 'Lỗi lưu Trang Giới thiệu.', 'error');
+          UI.showToast(err.message || 'Lỗi khi lưu Trang Giới thiệu.', 'error');
         }
       };
     }

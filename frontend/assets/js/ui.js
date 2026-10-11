@@ -1389,15 +1389,7 @@ class UI {
   }
 
   static difficultyBadge(diff) {
-    const d = String(diff || '').toUpperCase();
-    if (d === 'BEGINNER') {
-      return '<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300 border border-sky-200 dark:border-sky-800">Cơ bản</span>';
-    } else if (d === 'INTERMEDIATE') {
-      return '<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Trung cấp</span>';
-    } else if (d === 'ADVANCED') {
-      return '<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">Nâng cao</span>';
-    }
-    return `<span class="px-2 py-0.2 rounded text-[10px] font-bold bg-[#F4F1EA] text-[#5C5B57] dark:bg-[#262524] dark:text-[#9E9D99] border border-[#E8E6DF] dark:border-[#2E2D2B]">${diff || 'Khác'}</span>`;
+    return '';
   }
 
   // =========================================================================

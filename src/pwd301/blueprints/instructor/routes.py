@@ -502,8 +502,9 @@ def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
     ]
     enrollments_count = len(active_enrollments)
 
-    # Extract dynamic contact_info if stored in course description
+    # Extract dynamic contact_info and trailer_url if stored in course description
     contact_info = None
+    trailer_url = None
     clean_description = c.description or ""
     if c.description and "<!-- contact_info:" in c.description:
         m_contact = re.search(r"<!--\s*contact_info:\s*(\{.*?\})\s*-->", c.description, re.DOTALL)
@@ -511,8 +512,27 @@ def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
             with contextlib.suppress(Exception):
                 contact_info = json.loads(m_contact.group(1))
         clean_description = re.sub(
-            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", c.description, flags=re.DOTALL
+            r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_description, flags=re.DOTALL
         ).strip()
+
+    if c.description and "<!-- trailer_url:" in c.description:
+        m_trailer = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", c.description, re.DOTALL)
+        if m_trailer:
+            trailer_url = m_trailer.group(1).strip()
+        clean_description = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_description, flags=re.DOTALL
+        ).strip()
+    elif c.description and c.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            parsed_d = json.loads(c.description)
+            if isinstance(parsed_d, dict):
+                trailer_url = parsed_d.get("video_url") or parsed_d.get("trailer_url")
+                if not trailer_url and isinstance(parsed_d.get("blocks"), list):
+                    for b in parsed_d["blocks"]:
+                        if isinstance(b, dict) and b.get("data") and b["data"].get("video_url"):
+                            trailer_url = b["data"]["video_url"]
+                            break
+                clean_description = parsed_d.get("summary") or clean_description
 
     if not contact_info:
         contact_info = {
@@ -558,6 +578,8 @@ def _serialize_course(c: Course, summary: bool = False) -> dict[str, Any]:
         "instructor_name": instructor_name,
         "instructor_email": instructor_email,
         "contact_info": contact_info,
+        "trailer_url": trailer_url,
+        "video_url": trailer_url,
         "enrollments_count": enrollments_count,
         "enrolled_count": enrollments_count,
         "lessons": active_lessons,
@@ -752,6 +774,24 @@ def update_course_route(course_id: str) -> Any:
     for key in ("capacity", "storage_quota_bytes", "thumbnail_file_asset_id"):
         if payload.get(key) == "":
             payload[key] = None
+
+    if "trailer_url" in payload or "video_url" in payload:
+        trailer_val = (
+            payload.pop("trailer_url", None) or payload.pop("video_url", None) or ""
+        ).strip()
+        c_inst = _resolve_course(course_id, session=db.session)
+        cur_desc = (
+            payload.get("description")
+            if "description" in payload
+            else (c_inst.description if c_inst else "")
+        )
+        clean_desc = re.sub(
+            r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", cur_desc or "", flags=re.DOTALL
+        ).strip()
+        if trailer_val:
+            payload["description"] = f"{clean_desc}\n\n<!-- trailer_url: {trailer_val} -->".strip()
+        else:
+            payload["description"] = clean_desc
 
     if "contact_info" in payload:
         contact_dict = payload.pop("contact_info")

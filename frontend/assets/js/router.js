@@ -175,6 +175,16 @@ class AppRouter {
   }
 
   handleRoute() {
+    const rawHash = window.location.hash || '';
+    if (rawHash.startsWith('#') && !rawHash.startsWith('#/')) {
+      const targetId = rawHash.slice(1);
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      return Promise.resolve();
+    }
+
     if (this._isRouting) {
       this._rerouteRequested = true;
       return this._routingPromise;

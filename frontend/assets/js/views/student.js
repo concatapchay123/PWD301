@@ -76,6 +76,141 @@ function parseGroupedAttemptChoices(question) {
 }
 
 class StudentView {
+  static setupMatchingBoard(board, onChange) {
+    if (!board) return;
+    const svg = board.querySelector('.matching-board-svg');
+    const counter = board.querySelector('.matching-board-counter');
+    const progress = board.querySelector('.matching-board-progress');
+    const totalPairs = board.querySelectorAll('.matching-card-left').length;
+    const activeMatches = new Map(); // leftKey -> rightPos
+    let selectedLeftKey = null;
+
+    // Read initial values from hidden selects
+    const hiddenSelects = board.querySelectorAll('select.interactive-slot-select, select.cisco-quiz-matching-select');
+    hiddenSelects.forEach(sel => {
+      const lKey = sel.dataset.groupIndex || sel.dataset.pidx;
+      const val = sel.value;
+      if (val) {
+        const rCard = Array.from(board.querySelectorAll('.matching-card-right')).find(c =>
+          c.dataset.rightKey === val || c.dataset.rightText === val
+        );
+        if (rCard) {
+          activeMatches.set(String(lKey), String(rCard.dataset.rightPos));
+        }
+      }
+    });
+
+    const redraw = () => {
+      if (!svg) return;
+      const bRect = board.getBoundingClientRect();
+      svg.innerHTML = '';
+      activeMatches.forEach((rPos, lKey) => {
+        const lPort = board.querySelector(`[data-port="left-${lKey}"]`);
+        const rPort = board.querySelector(`[data-port="right-${rPos}"]`);
+        if (!lPort || !rPort) return;
+        const lpRect = lPort.getBoundingClientRect();
+        const rpRect = rPort.getBoundingClientRect();
+        const x1 = lpRect.left + lpRect.width / 2 - bRect.left;
+        const y1 = lpRect.top + lpRect.height / 2 - bRect.top;
+        const x2 = rpRect.left + rpRect.width / 2 - bRect.left;
+        const y2 = rpRect.top + rpRect.height / 2 - bRect.top;
+        const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
+        const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', '#10b981');
+        path.setAttribute('stroke-width', '3');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('style', 'filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.7));');
+        svg.appendChild(path);
+      });
+
+      // Update card and dot styles
+      board.querySelectorAll('.port-dot').forEach(dot => {
+        dot.className = 'port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all';
+      });
+      board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
+        c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400');
+        c.classList.add('border-slate-700/80');
+      });
+
+      if (selectedLeftKey !== null) {
+        const selCard = board.querySelector(`.matching-card-left[data-left-key="${selectedLeftKey}"]`);
+        const selDot = board.querySelector(`[data-port="left-${selectedLeftKey}"]`);
+        if (selCard) selCard.classList.add('ring-2', 'ring-teal-400', 'border-teal-400');
+        if (selDot) selDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-teal-400 bg-teal-400 ring-4 ring-teal-400/20 shrink-0 transition-all';
+      }
+
+      activeMatches.forEach((rPos, lKey) => {
+        const lCard = board.querySelector(`.matching-card-left[data-left-key="${lKey}"]`);
+        const rCard = board.querySelector(`.matching-card-right[data-right-pos="${rPos}"]`);
+        const lDot = board.querySelector(`[data-port="left-${lKey}"]`);
+        const rDot = board.querySelector(`[data-port="right-${rPos}"]`);
+        if (lCard) { lCard.classList.remove('border-slate-700/80'); lCard.classList.add('border-emerald-500/60'); }
+        if (rCard) { rCard.classList.remove('border-slate-700/80'); rCard.classList.add('border-emerald-500/60'); }
+        if (lDot) lDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+        if (rDot) rDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+      });
+
+      if (counter) counter.textContent = `${activeMatches.size}/${totalPairs} đã nối`;
+      if (progress) progress.style.width = `${Math.round((activeMatches.size / totalPairs) * 100)}%`;
+    };
+
+    board.querySelectorAll('.matching-card-left').forEach(card => {
+      card.onclick = () => {
+        const lKey = String(card.dataset.leftKey);
+        if (selectedLeftKey === lKey) selectedLeftKey = null;
+        else selectedLeftKey = lKey;
+        redraw();
+      };
+    });
+
+    board.querySelectorAll('.matching-card-right').forEach(card => {
+      card.onclick = () => {
+        const rPos = String(card.dataset.rightPos);
+        const rVal = card.dataset.rightKey || card.dataset.rightText;
+        if (selectedLeftKey !== null) {
+          for (const [k, v] of activeMatches.entries()) {
+            if (v === rPos) {
+              activeMatches.delete(k);
+              if (typeof onChange === 'function') onChange(k, '');
+            }
+          }
+          activeMatches.set(selectedLeftKey, rPos);
+          if (typeof onChange === 'function') onChange(selectedLeftKey, rVal);
+          selectedLeftKey = null;
+          redraw();
+        } else {
+          for (const [k, v] of activeMatches.entries()) {
+            if (v === rPos) {
+              activeMatches.delete(k);
+              if (typeof onChange === 'function') onChange(k, '');
+            }
+          }
+          redraw();
+        }
+      };
+    });
+
+    const resetBtn = board.querySelector('.btn-clear-matches');
+    if (resetBtn) {
+      resetBtn.onclick = () => {
+        for (const [k, v] of activeMatches.entries()) {
+          if (typeof onChange === 'function') onChange(k, '');
+        }
+        activeMatches.clear();
+        selectedLeftKey = null;
+        redraw();
+      };
+    }
+
+    window.addEventListener('resize', redraw);
+    requestAnimationFrame(redraw);
+    board._redrawMatches = redraw;
+  }
+
   static dashboardActivity(enrollments = [], upcoming = []) {
     return {
       showHero: enrollments.length > 0,
@@ -598,7 +733,7 @@ class StudentView {
         if (heroInstructor) heroInstructor.textContent = `GV hướng dẫn: ${heroCourse.instructor_name || 'Hội đồng Khoa học'}`;
 
         if (heroContinueBtn) heroContinueBtn.href = `#/student/courses/detail?id=${heroCourse.course_id}`;
-        if (heroSyllabusBtn) heroSyllabusBtn.href = `#/student/courses/detail?id=${heroCourse.course_id}`;
+        if (heroSyllabusBtn) heroSyllabusBtn.href = `#/student/courses/overview?id=${heroCourse.course_id}`;
       }
 
       // Render Enrolled Courses Grid
@@ -839,12 +974,6 @@ class StudentView {
               <div class="flex items-center justify-between flex-wrap gap-1.5">
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs font-bold font-mono text-primary bg-primary-subtle px-2.5 py-0.5 rounded-full">${UI.escapeHtml(c.course_code)}</span>
-                  ${isRec ? `
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 flex items-center gap-1 shadow-xs">
-                      <span class="material-symbols-outlined text-[13px]">auto_awesome</span>
-                      <span>Đề xuất</span>
-                    </span>
-                  ` : ''}
                 </div>
                 <div class="flex items-center gap-1.5">
                   ${isEnrolled ? `
@@ -853,7 +982,12 @@ class StudentView {
                       <span>Đã ghi danh</span>
                     </span>
                   ` : ''}
-                  ${UI.difficultyBadge(c.difficulty)}
+                  ${isRec ? `
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 flex items-center gap-1 shadow-xs">
+                      <span class="material-symbols-outlined text-[13px]">auto_awesome</span>
+                      <span>Đề xuất</span>
+                    </span>
+                  ` : ''}
                 </div>
               </div>
 
@@ -863,13 +997,6 @@ class StudentView {
               >
                 ${UI.escapeHtml(c.title)}
               </h3>
-
-              ${isRec && c.recommendation_reason ? `
-                <p class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium italic flex items-center gap-1 line-clamp-1">
-                  <span class="material-symbols-outlined text-[13px]">psychology</span>
-                  <span>${UI.escapeHtml(c.recommendation_reason)}</span>
-                </p>
-              ` : ''}
 
               <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
                 ${UI.escapeHtml(c.description || c.summary || 'Khóa học đào tạo chính quy theo chuẩn đầu ra ABET.')}
@@ -949,9 +1076,8 @@ class StudentView {
         allCourses.forEach(c => {
           const cid = String(c.course_id || c.id);
           if (recMap.has(cid)) {
-            const rData = recMap.get(cid);
             c.is_recommended = true;
-            c.recommendation_reason = rData.explanation || rData.rule_explanation || rData.ai_explanation || '';
+            delete c.recommendation_reason;
             recCourses.push(c);
           } else {
             otherCourses.push(c);
@@ -1376,11 +1502,12 @@ class StudentView {
         isEnrolled = false;
       }
 
-      // Fetch syllabus preview
+      // Fetch syllabus and detailed course metadata
       let modules = [];
       let totalExams = 0;
+      let sylRes = null;
       try {
-        const sylRes = await ApiClient.getCourseDetail(course.id);
+        sylRes = await ApiClient.getCourseDetail(course.id);
         modules = sylRes?.learning_units || sylRes?.modules || sylRes?.syllabus || [];
         totalExams = (sylRes?.assessments || []).length || modules.reduce((acc, m) => acc + (m.assessments || []).length, 0);
       } catch (e) {
@@ -1389,238 +1516,195 @@ class StudentView {
 
       const totalLessons = modules.reduce((acc, m) => acc + (m.lessons || []).length, 0);
 
-      // Parse structured Canvas Blocks if available
-      let canvasBlocks = null;
-      try {
-        if (course.description && typeof course.description === 'string' && course.description.trim().startsWith('{')) {
-          const parsed = JSON.parse(course.description);
-          if (parsed && (parsed.format === 'canvas_blocks' || Array.isArray(parsed.blocks))) {
-            canvasBlocks = parsed.blocks || [];
-          }
+      // 1. Video Trailer URL & Clean Description extraction
+      let videoUrl = course.trailer_url || course.video_url || sylRes?.course?.trailer_url || sylRes?.course?.video_url || '';
+      let rawDesc = course.description || sylRes?.course?.description || '';
+      let contactInfo = course.contact_info || sylRes?.course?.contact_info || {
+        email: course.instructor_email || sylRes?.course?.instructor_email || '',
+        phone: '',
+        group: '',
+        office_hours: ''
+      };
+
+      if (typeof rawDesc === 'string') {
+        if (rawDesc.includes('<!-- trailer_url:')) {
+          const mTr = rawDesc.match(/<!--\s*trailer_url:\s*(.*?)\s*-->/s);
+          if (mTr && !videoUrl) videoUrl = mTr[1].trim();
+          rawDesc = rawDesc.replace(/<!--\s*trailer_url:\s*.*?\s*-->\n*/gs, '').trim();
         }
-      } catch (e) {
-        canvasBlocks = null;
+        if (rawDesc.includes('<!-- contact_info:')) {
+          const mCo = rawDesc.match(/<!--\s*contact_info:\s*(\{.*?\})\s*-->/s);
+          if (mCo) {
+            try {
+              contactInfo = Object.assign({}, contactInfo, JSON.parse(mCo[1]));
+            } catch (e) {}
+          }
+          rawDesc = rawDesc.replace(/<!--\s*contact_info:\s*\{.*?\}\s*-->\n*/gs, '').trim();
+        }
+        if (rawDesc.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(rawDesc);
+            if (parsed.summary) rawDesc = parsed.summary;
+            if (parsed.video_url && !videoUrl) videoUrl = parsed.video_url;
+            if (Array.isArray(parsed.blocks)) {
+              const hBlock = parsed.blocks.find(b => b.type === 'hero');
+              if (hBlock?.data?.video_url && !videoUrl) videoUrl = hBlock.data.video_url;
+              if (hBlock?.data?.subtitle && !rawDesc) rawDesc = hBlock.data.subtitle;
+            }
+          } catch (e) {}
+        }
       }
 
-      const hasCustomBlocks = Array.isArray(canvasBlocks) && canvasBlocks.length > 0;
+      // 2. Learning Objectives (SLOs)
+      let slos = [];
+      const rawSLOs = course.learning_objectives || sylRes?.course?.learning_objectives;
+      if (rawSLOs) {
+        if (Array.isArray(rawSLOs)) {
+          slos = rawSLOs.map((s, idx) => ({
+            title: s.title || s.name || `SLO-${idx + 1}`,
+            description: s.description || s.content || String(s),
+            weight: s.weight || ''
+          }));
+        } else if (typeof rawSLOs === 'string') {
+          try {
+            const parsed = JSON.parse(rawSLOs);
+            if (Array.isArray(parsed)) {
+              slos = parsed.map((s, idx) => ({
+                title: s.title || s.name || `SLO-${idx + 1}`,
+                description: s.description || s.content || String(s),
+                weight: s.weight || ''
+              }));
+            }
+          } catch (e) {
+            slos = rawSLOs.split('\n').filter(s => s.trim()).map((s, idx) => ({
+              title: `SLO-${idx + 1}`,
+              description: s.trim(),
+              weight: ''
+            }));
+          }
+        }
+      }
+      if (slos.length === 0) {
+        slos = [
+          { title: 'SLO-1 • Kiến thức Nền tảng & Phân tích', description: 'Nắm vững kiến thức chuyên môn, các phương pháp luận và kỹ thuật định chuẩn theo giáo trình quốc tế.', weight: '30%' },
+          { title: 'SLO-2 • Thực hành Lab & Xử lý Tình huống', description: 'Có khả năng phân tích, vận dụng công cụ thực hành mô phỏng lab trực tiếp và giải quyết bài toán nghiệp vụ.', weight: '50%' },
+          { title: 'SLO-3 • Kỹ năng Tổng hợp & Đánh giá Chuyên sâu', description: 'Thành thạo kỹ năng tư duy phản biện, hoàn thiện báo cáo học thuật và sẵn sàng tham gia các kỳ khảo thí chuẩn hóa.', weight: '20%' }
+        ];
+      }
+
+      // 3. Completion Requirements
+      let compReqs = {};
+      const rawComp = course.completion_requirements || sylRes?.course?.completion_requirements;
+      if (rawComp) {
+        if (typeof rawComp === 'object') compReqs = rawComp;
+        else if (typeof rawComp === 'string') {
+          try { compReqs = JSON.parse(rawComp); } catch (e) {}
+        }
+      }
+      const minProgress = compReqs.min_progress_percent !== undefined ? compReqs.min_progress_percent : 80;
+      const minScore = compReqs.min_assessment_score !== undefined ? compReqs.min_assessment_score : 5.0;
+
+      // 4. Prerequisites
+      const prerequisites = sylRes?.prerequisites || course.prerequisites || [];
 
       // Extract metadata values
-      const instructorName = course.instructor_name || course.instructor?.full_name || 'Đội ngũ Giảng viên Chuyên môn';
+      const instructorName = course.instructor_name || sylRes?.course?.instructor_name || course.instructor?.full_name || 'Đội ngũ Giảng viên Chuyên môn';
       const instructorTitle = course.instructor?.title || 'Giảng viên Bộ môn Mạng & ATTT';
-      const courseCode = course.code || 'PWD301';
+      const courseCode = course.code || course.course_code || 'PWD301';
       const courseTitle = course.title || 'Khóa học Đào tạo Chuyên sâu';
-      const courseLevel = course.level === 'ADVANCED' ? 'Chuyên sâu' : (course.level === 'INTERMEDIATE' ? 'Trung cấp' : 'Nhập môn');
-      const plainDesc = course.description && !hasCustomBlocks ? course.description : 'Khóa học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo giáo trình chuẩn quốc tế, giúp học viên làm chủ công nghệ và ứng dụng thực tiễn.';
+      const plainDesc = rawDesc || 'Khóa học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo giáo trình chuẩn quốc tế, giúp học viên làm chủ công nghệ và ứng dụng thực tiễn.';
 
-      // Render standard or custom blocks
-      let blocksHtml = '';
+      // Full Page Shell matching standard layout
+      container.innerHTML = `
+        <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-8 animate-fade-in font-sans">
+          <!-- Back Nav Bar -->
+          <div class="flex items-center justify-between pb-1">
+            <a href="#/student/courses/catalog" class="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-emerald-400 transition-colors">
+              <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+              <span>Quay lại Danh mục khóa học</span>
+            </a>
+            ${isEnrolled ? `
+              <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Đã ghi danh</span>
+              </span>
+            ` : ''}
+          </div>
 
-      if (hasCustomBlocks) {
-        // Render custom instructor blocks
-        blocksHtml = canvasBlocks.map((block, idx) => {
-          const bType = block.type;
-          const bData = block.data || {};
-
-          if (bType === 'hero') {
-            return `
-              <section class="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 p-8 sm:p-12 text-white shadow-xl">
-                <div class="relative z-10 max-w-3xl space-y-5">
-                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
-                    <span class="material-symbols-outlined text-[16px]">verified</span>
-                    <span>${UI.escapeHtml(bData.badge || `${courseCode} • ${courseLevel}`)}</span>
-                  </div>
-                  <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-                    ${UI.escapeHtml(bData.headline || courseTitle)}
-                  </h1>
-                  <p class="text-base sm:text-lg text-slate-300 leading-relaxed">
-                    ${UI.escapeHtml(bData.subtitle || plainDesc)}
-                  </p>
-                  <div class="flex flex-wrap items-center gap-4 pt-3">
-                    ${isEnrolled ? `
-                      <a href="#/student/courses/detail?id=${course.id}" class="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 inline-flex items-center gap-2">
-                        <span class="material-symbols-outlined text-[20px]">play_circle</span>
-                        <span>Vào học bài ngay</span>
-                      </a>
-                    ` : `
-                      <button type="button" id="btn-enroll-course-${idx}" class="btn-enroll-action px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
-                        <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
-                        <span>Ghi danh khóa học</span>
-                      </button>
-                    `}
-                    <a href="#syllabus-section" class="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700 inline-flex items-center gap-2">
-                      <span class="material-symbols-outlined text-[18px]">list_alt</span>
-                      <span>Xem lộ trình đào tạo</span>
-                    </a>
-                  </div>
-                </div>
-              </section>
-            `;
-          }
-
-          if (bType === 'highlights') {
-            const items = bData.items || [
-              { icon: 'schedule', title: '15 tuần học', desc: 'Lộ trình linh hoạt' },
-              { icon: 'menu_book', title: `${totalLessons} bài giảng`, desc: 'Lý thuyết & Lab thực hành' },
-              { icon: 'quiz', title: `${totalExams} bài kiểm tra`, desc: 'Đánh giá năng lực chuẩn' },
-              { icon: 'verified', title: 'Chứng chỉ môn', desc: 'Xác thực chuẩn đầu ra' }
-            ];
-            return `
-              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                ${items.map(it => `
-                  <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-                    <span class="material-symbols-outlined text-2xl text-emerald-500">${UI.escapeHtml(it.icon || 'star')}</span>
-                    <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${UI.escapeHtml(it.title)}</h4>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(it.desc)}</p>
-                  </div>
-                `).join('')}
-              </div>
-            `;
-          }
-
-          if (bType === 'richtext') {
-            return `
-              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span class="material-symbols-outlined text-emerald-500">article</span>
-                  <span>${UI.escapeHtml(bData.title || 'Thông tin chi tiết')}</span>
-                </h3>
-                <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed space-y-3 prose dark:prose-invert max-w-none">
-                  ${UI.escapeHtml(bData.content || '').replace(/\n/g, '<br/>')}
-                </div>
-              </div>
-            `;
-          }
-
-          if (bType === 'media') {
-            return `
-              <div class="rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 shadow-xl p-4 sm:p-6 space-y-3">
-                <div class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center">
-                  ${bData.video_url ? `
-                    <iframe class="w-full h-full" src="${UI.escapeHtml(bData.video_url)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                  ` : (bData.image_url ? `
-                    <img src="${UI.escapeHtml(bData.image_url)}" alt="${UI.escapeHtml(courseTitle)}" class="w-full h-full object-cover"/>
-                  ` : `
-                    <div class="text-slate-600 text-sm flex items-center gap-2">
-                      <span class="material-symbols-outlined text-4xl">play_circle</span>
-                      <span>Chưa có video trailer giới thiệu</span>
-                    </div>
-                  `)}
-                </div>
-                ${bData.caption ? `<p class="text-xs text-center text-slate-400">${UI.escapeHtml(bData.caption)}</p>` : ''}
-              </div>
-            `;
-          }
-
-          if (bType === 'bio') {
-            return `
-              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-6">
-                <div class="w-20 h-20 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-3xl font-black shrink-0">
-                  ${UI.escapeHtml((bData.name || instructorName).charAt(0))}
-                </div>
-                <div class="space-y-1.5 flex-1 min-w-0">
-                  <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Giảng viên giảng dạy</span>
-                  <h3 class="text-xl font-bold text-slate-900 dark:text-white">${UI.escapeHtml(bData.name || instructorName)}</h3>
-                  <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(bData.title || instructorTitle)}</p>
-                  <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 pt-1 leading-relaxed">${UI.escapeHtml(bData.bio || 'Chuyên gia giàu kinh nghiệm trong lĩnh vực đào tạo công nghệ và an ninh mạng.')}</p>
-                </div>
-              </div>
-            `;
-          }
-
-          if (bType === 'faq') {
-            const faqs = bData.items || [
-              { q: 'Khóa học này dành cho ai?', a: 'Khóa học thiết kế cho sinh viên ngành Công nghệ thông tin, An toàn thông tin và người đi làm muốn củng cố kỹ năng chuyên môn.' },
-              { q: 'Học online có bài tập thực hành không?', a: 'Hệ thống tích hợp phòng lab mô phỏng và bài tập thực hành theo từng chương học.' },
-              { q: 'Làm thế nào để nhận chứng nhận hoàn thành?', a: 'Bạn cần hoàn thành tối thiểu 80% thời lượng bài học và vượt qua các bài kiểm tra khảo thí.' }
-            ];
-            return `
-              <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-                <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span class="material-symbols-outlined text-emerald-500">help</span>
-                  <span>Câu hỏi thường gặp (FAQ)</span>
-                </h3>
-                <div class="space-y-3">
-                  ${faqs.map((faq, fIdx) => `
-                    <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
-                      <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
-                        <h4 class="text-sm font-bold text-slate-900 dark:text-white">${UI.escapeHtml(faq.q)}</h4>
-                        <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
-                      </div>
-                      <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
-                        ${UI.escapeHtml(faq.a)}
-                      </div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            `;
-          }
-
-          return '';
-        }).join('');
-      } else {
-        // Standard Rich Landing Page layout
-        blocksHtml = `
           <!-- 1. Hero Section -->
-          <section class="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 p-8 sm:p-12 text-white shadow-xl">
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+          <section class="rounded-3xl bg-slate-900/90 dark:bg-[#12161f] border border-slate-800 p-8 sm:p-10 shadow-2xl relative overflow-hidden">
+            <div class="absolute -top-32 -left-32 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
               <div class="lg:col-span-7 space-y-5">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
-                  <span class="material-symbols-outlined text-[16px]">verified</span>
-                  <span>${UI.escapeHtml(courseCode)} • ${UI.escapeHtml(courseLevel)}</span>
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-xs font-bold font-mono">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>${UI.escapeHtml(courseCode)}</span>
                 </div>
-                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+                
+                <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
                   ${UI.escapeHtml(courseTitle)}
                 </h1>
-                <p class="text-base sm:text-lg text-slate-300 leading-relaxed max-w-2xl">
+
+                <p class="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl">
                   ${UI.escapeHtml(plainDesc)}
                 </p>
-                <div class="flex flex-wrap items-center gap-4 text-xs text-slate-300 pt-2">
-                  <div class="flex items-center gap-1.5">
+
+                <div class="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-slate-300 pt-1">
+                  <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-emerald-400">person</span>
-                    <span>${UI.escapeHtml(instructorName)}</span>
+                    <span class="font-medium">${UI.escapeHtml(instructorName)}</span>
                   </div>
-                  <span>•</span>
-                  <div class="flex items-center gap-1.5">
+                  <span class="text-slate-600">•</span>
+                  <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-emerald-400">menu_book</span>
-                    <span>${modules.length} chương (${totalLessons} bài học)</span>
+                    <span class="font-medium">${modules.length} chương (${totalLessons} bài học)</span>
                   </div>
-                  <span>•</span>
-                  <div class="flex items-center gap-1.5">
-                    <span class="material-symbols-outlined text-[18px] text-emerald-400">quiz</span>
-                    <span>${totalExams} bài kiểm tra</span>
+                  <span class="text-slate-600">•</span>
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-400">schedule</span>
+                    <span class="font-medium">15 tuần học</span>
+                  </div>
+                  <span class="text-slate-600">•</span>
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px] text-emerald-400">fact_check</span>
+                    <span class="font-medium">${totalExams} bài kiểm tra</span>
                   </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-4 pt-4">
+
+                <div class="flex flex-wrap items-center gap-4 pt-2">
                   ${isEnrolled ? `
                     <a href="#/student/courses/detail?id=${course.id}" class="px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2">
                       <span class="material-symbols-outlined text-[20px]">play_circle</span>
                       <span>Vào học bài ngay</span>
                     </a>
                   ` : `
-                    <button type="button" id="btn-enroll-course-main" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
+                    <button type="button" class="btn-enroll-action px-7 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
                       <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
                       <span>Ghi danh khóa học</span>
                     </button>
                   `}
-                  <a href="#syllabus-section" class="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700 inline-flex items-center gap-2">
+                  <button type="button" id="overview-view-syllabus-btn" class="btn-scroll-syllabus px-6 py-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-bold text-sm transition-all border border-slate-700/80 inline-flex items-center gap-2 cursor-pointer shadow-sm active:scale-95">
                     <span class="material-symbols-outlined text-[18px]">list_alt</span>
                     <span>Xem đề cương chi tiết</span>
-                  </a>
+                  </button>
                 </div>
               </div>
 
-              <!-- Media / Trailer Box -->
+              <!-- Media Preview Box (Col 5) with Active Video Player Support -->
               <div class="lg:col-span-5">
-                <div class="aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative flex items-center justify-center group">
-                  <div class="absolute inset-0 bg-gradient-to-tr from-emerald-950/40 to-slate-900/60 z-0"></div>
-                  <div class="relative z-10 text-center space-y-3 p-6">
-                    <div class="w-16 h-16 rounded-full bg-emerald-500/90 text-slate-950 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30 group-hover:scale-110 transition-transform cursor-pointer" onclick="UI.showToast('Khóa học sẵn sàng học ngay sau khi ghi danh.', 'info')">
-                      <span class="material-symbols-outlined text-3xl font-bold">play_arrow</span>
-                    </div>
+                <div id="course-hero-media-box" class="aspect-video w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative flex items-center justify-center group">
+                  ${course.thumbnail_url ? `
+                    <img src="${UI.escapeHtml(course.thumbnail_url)}" alt="${UI.escapeHtml(courseTitle)}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500" />
+                  ` : `
+                    <div class="absolute inset-0 bg-gradient-to-tr from-emerald-950/60 via-slate-900 to-slate-950 opacity-90"></div>
+                  `}
+                  <div class="relative z-10 text-center space-y-3 p-6 flex flex-col items-center">
+                    <button type="button" id="btn-play-hero-trailer" class="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 flex items-center justify-center shadow-xl shadow-emerald-500/40 group-hover:scale-110 transition-transform cursor-pointer border-0">
+                      <span class="material-symbols-outlined text-3xl font-black">play_arrow</span>
+                    </button>
                     <div>
-                      <p class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Xem giới thiệu khóa học</p>
-                      <p class="text-[11px] text-slate-400 mt-0.5">Thời lượng bài giảng: Chuẩn đầu ra quốc tế</p>
+                      <p class="text-xs font-extrabold text-emerald-400 tracking-wider uppercase">Xem giới thiệu khóa học</p>
+                      <p class="text-[11px] text-slate-400 mt-0.5">${videoUrl ? 'Video giới thiệu chính thức • Bấm để phát trực tiếp' : 'Thời lượng bài giảng: Chuẩn đầu ra quốc tế'}</p>
                     </div>
                   </div>
                 </div>
@@ -1630,192 +1714,236 @@ class StudentView {
 
           <!-- 2. Highlights Grid -->
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-2xl text-emerald-500">schedule</span>
-              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">15 tuần học</h4>
-              <p class="text-xs text-slate-500 dark:text-slate-400">Chủ động tiến độ học tập</p>
+            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-400">schedule</span>
+              <h4 class="text-base font-extrabold text-white">15 tuần học</h4>
+              <p class="text-xs text-slate-400">Chủ động tiến độ học tập</p>
             </div>
-            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-2xl text-emerald-500">menu_book</span>
-              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalLessons} bài học</h4>
-              <p class="text-xs text-slate-500 dark:text-slate-400">Lý thuyết & phòng lab thực hành</p>
+            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-400">menu_book</span>
+              <h4 class="text-base font-extrabold text-white">${totalLessons} bài học</h4>
+              <p class="text-xs text-slate-400">Lý thuyết & phòng lab thực hành</p>
             </div>
-            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-2xl text-emerald-500">quiz</span>
-              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">${totalExams} bài khảo thí</h4>
-              <p class="text-xs text-slate-500 dark:text-slate-400">Đánh giá chuẩn đầu ra</p>
+            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-400">fact_check</span>
+              <h4 class="text-base font-extrabold text-white">${totalExams} bài khảo thí</h4>
+              <p class="text-xs text-slate-400">Đánh giá chuẩn đầu ra</p>
             </div>
-            <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-2xl text-emerald-500">military_tech</span>
-              <h4 class="text-base font-extrabold text-slate-900 dark:text-white">Chứng nhận hoàn thành</h4>
-              <p class="text-xs text-slate-500 dark:text-slate-400">Chứng nhận điện tử chính quy</p>
-            </div>
-          </div>
-
-          <!-- 3. Learning Objectives -->
-          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-emerald-500">psychology</span>
-              <span>Chuẩn đầu ra & Bạn sẽ học được gì</span>
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
-              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
-                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Nắm vững kiến thức nền tảng và phương pháp tư duy kỹ thuật theo chuẩn công nghiệp.</span>
-              </div>
-              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
-                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Thực hành mô phỏng lab trực tiếp, xử lý sự cố và tình huống thực tiễn.</span>
-              </div>
-              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
-                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Tối ưu hóa quy trình làm việc và kỹ năng tự học nghiên cứu chuyên sâu.</span>
-              </div>
-              <div class="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                <span class="material-symbols-outlined text-emerald-500 text-[18px] shrink-0 mt-0.5">check_circle</span>
-                <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Đủ điều kiện tham gia các kỳ thi đánh giá năng lực và chứng chỉ nghề nghiệp.</span>
-              </div>
+            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
+              <span class="material-symbols-outlined text-3xl text-emerald-400">emoji_events</span>
+              <h4 class="text-base font-extrabold text-white">Chứng nhận hoàn thành</h4>
+              <p class="text-xs text-slate-400">Chứng nhận điện tử chính quy</p>
             </div>
           </div>
 
-          <!-- 4. Instructor Bio -->
-          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-6">
-            <div class="w-20 h-20 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-3xl font-black shrink-0">
-              ${UI.escapeHtml(instructorName.charAt(0))}
-            </div>
-            <div class="space-y-1.5 flex-1 min-w-0">
-              <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Giảng viên phụ trách</span>
-              <h3 class="text-xl font-bold text-slate-900 dark:text-white">${UI.escapeHtml(instructorName)}</h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400">${UI.escapeHtml(instructorTitle)}</p>
-              <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 pt-1 leading-relaxed">
-                Giảng viên giàu kinh nghiệm thực chiến trong các dự án công nghệ lớn và giảng dạy chuyên sâu tại khoa Công nghệ thông tin.
-              </p>
-            </div>
-          </div>
-
-          <!-- 5. FAQ Section -->
-          <div class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span class="material-symbols-outlined text-emerald-500">help</span>
-              <span>Câu hỏi thường gặp (FAQ)</span>
-            </h3>
-            <div class="space-y-3">
-              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
-                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
-                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Tôi có thể học mọi lúc mọi nơi trên điện thoại không?</h4>
-                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
-                </div>
-                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
-                  Có, giao diện học tập được tối ưu hoàn toàn cho mọi thiết bị từ máy tính bàn, máy tính bảng đến điện thoại di động.
-                </div>
+          <!-- 3. Learning Objectives (SLO) & Academic Governance (Upgraded 2-Column Standard Block) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Chuẩn đầu ra SLO (Col 7) -->
+            <div class="lg:col-span-7 p-7 sm:p-8 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-6">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
+                <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-emerald-400 text-2xl">psychology</span>
+                  <span>Chuẩn đầu ra môn học (Student Learning Outcomes - SLO)</span>
+                </h3>
+                <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold font-mono">
+                  ${slos.length} Chuẩn đầu ra
+                </span>
               </div>
-              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
-                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
-                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Khi gặp thắc mắc về bài học tôi có thể hỏi ai?</h4>
-                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
-                </div>
-                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
-                  Bạn có thể trò chuyện trực tiếp với Bạch tuộc trợ lí AI ngay trong phòng học hoặc trao đổi với Giảng viên phụ trách trong các phiên giải đáp.
-                </div>
-              </div>
-              <div class="faq-item rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-4 transition-all">
-                <div class="faq-question flex items-center justify-between gap-3 cursor-pointer select-none">
-                  <h4 class="text-sm font-bold text-slate-900 dark:text-white">Khóa học có yêu cầu điều kiện tiên quyết nào không?</h4>
-                  <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 faq-icon">expand_more</span>
-                </div>
-                <div class="faq-answer hidden pt-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-200/60 dark:border-slate-700/60 mt-3">
-                  Hệ thống tự động kiểm tra điều kiện tiên quyết của môn học. Nếu bạn chưa đạt môn tiên quyết, hệ thống sẽ gợi ý bạn hoàn thành môn học đó trước.
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-
-      // Always render the Syllabus Section
-      const syllabusHtml = `
-        <div id="syllabus-section" class="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-outlined text-emerald-500">account_tree</span>
-                <span>Lộ trình đào tạo & Đề cương chi tiết</span>
-              </h3>
-              <p class="text-xs text-slate-400 mt-0.5">Nội dung bài giảng được cấu trúc bài bản theo từng chuyên đề</p>
-            </div>
-            <span class="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 self-start sm:self-auto">
-              ${modules.length} chương • ${totalLessons} bài học
-            </span>
-          </div>
-
-          <div class="space-y-3">
-            ${modules.length === 0 ? `
-              <p class="text-xs text-slate-400 italic py-4 text-center">Đang cập nhật đề cương chi tiết cho môn học này.</p>
-            ` : modules.map((m, mIdx) => `
-              <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 overflow-hidden">
-                <div class="p-4 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors syllabus-mod-toggle" data-idx="${mIdx}">
-                  <div class="flex items-center gap-3 min-w-0">
-                    <span class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center justify-center text-xs font-bold shrink-0">
-                      ${mIdx + 1}
-                    </span>
-                    <h4 class="text-sm font-bold text-slate-900 dark:text-white truncate">${UI.escapeHtml(m.title)}</h4>
-                  </div>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <span class="text-xs text-slate-400 font-mono">${(m.lessons || []).length} bài</span>
-                    <span class="material-symbols-outlined text-slate-400 text-[18px] transition-transform duration-200 syllabus-mod-icon">expand_more</span>
-                  </div>
-                </div>
-                <div class="syllabus-mod-body ${mIdx === 0 ? '' : 'hidden'} px-4 pb-3 space-y-1.5 border-t border-slate-200/60 dark:border-slate-700/60 pt-3">
-                  ${(m.lessons || []).map((l, lIdx) => `
-                    <div class="p-2 rounded-xl flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
-                      <div class="flex items-center gap-2.5 min-w-0">
-                        <span class="material-symbols-outlined text-[15px] text-slate-400">play_circle</span>
-                        <span class="truncate">${mIdx + 1}.${lIdx + 1} ${UI.escapeHtml(l.title)}</span>
+              <div class="space-y-3.5">
+                ${slos.map((s, sIdx) => `
+                  <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2 hover:border-slate-700/80 transition-colors">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center shrink-0">
+                          ${sIdx + 1}
+                        </span>
+                        <h4 class="text-sm font-bold text-white">${UI.escapeHtml(s.title || `SLO-${sIdx + 1}`)}</h4>
                       </div>
-                      <span class="text-[10px] text-slate-400 font-mono shrink-0">${l.duration_seconds ? `${Math.round(l.duration_seconds / 60)} phút` : 'Lý thuyết'}</span>
+                      ${s.weight ? `
+                        <span class="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-[11px] font-mono font-bold shrink-0">
+                          Trọng số: ${UI.escapeHtml(s.weight)}
+                        </span>
+                      ` : ''}
                     </div>
-                  `).join('')}
+                    <p class="text-xs text-slate-300 leading-relaxed font-normal pl-8">
+                      ${UI.escapeHtml(s.description || '')}
+                    </p>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Quy chuẩn Học vụ & Giảng viên (Col 5) -->
+            <div class="lg:col-span-5 p-7 sm:p-8 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-6">
+              <div class="space-y-5">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
+                  <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
+                    <span class="material-symbols-outlined text-emerald-400 text-2xl">school</span>
+                    <span>Quy chuẩn Học vụ & Giảng viên</span>
+                  </h3>
+                </div>
+
+                <!-- Môn tiên quyết -->
+                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <span class="material-symbols-outlined text-amber-400 text-[18px]">account_tree</span>
+                    <span>Môn học tiên quyết:</span>
+                  </div>
+                  ${prerequisites.length > 0 ? `
+                    <div class="space-y-1.5 pt-1">
+                      ${prerequisites.map(pr => `
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
+                          <span class="font-bold text-white">${UI.escapeHtml(pr.code || pr.course_code || '')} - ${UI.escapeHtml(pr.title || '')}</span>
+                          <span class="px-2 py-0.5 rounded text-[11px] font-bold ${pr.is_satisfied ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}">
+                            ${pr.is_satisfied ? 'Đã thỏa' : 'Chưa đạt'}
+                          </span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : `
+                    <p class="text-xs text-emerald-400/90 font-medium pt-0.5 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                      <span>Không yêu cầu môn tiên quyết. Sinh viên có thể học ngay!</span>
+                    </p>
+                  `}
+                </div>
+
+                <!-- Tiêu chí hoàn thành -->
+                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-2">
+                  <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <span class="material-symbols-outlined text-emerald-400 text-[18px]">verified_user</span>
+                    <span>Điều kiện hoàn thành & Cấp chứng nhận:</span>
+                  </div>
+                  <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside pt-0.5">
+                    <li>Hoàn thành tối thiểu <strong class="text-white">${minProgress}%</strong> tiến độ bài giảng.</li>
+                    <li>Điểm các bài khảo thí đạt tối thiểu <strong class="text-white">${minScore}/10</strong>.</li>
+                    <li>Cấp chứng nhận điện tử chính quy ngay sau khi thỏa điều kiện.</li>
+                  </ul>
+                </div>
+
+                <!-- Giảng viên & Kênh hỗ trợ -->
+                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 flex items-center justify-center text-xl font-black shrink-0">
+                      ${UI.escapeHtml((instructorName || 'G').charAt(0))}
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="text-sm font-bold text-white truncate">${UI.escapeHtml(instructorName)}</h4>
+                      <p class="text-xs text-slate-400">${UI.escapeHtml(instructorTitle)}</p>
+                    </div>
+                  </div>
+
+                  <div class="space-y-1.5 pt-1 text-xs text-slate-300">
+                    ${contactInfo.email ? `
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-slate-400">mail</span>
+                        <a href="mailto:${UI.escapeHtml(contactInfo.email)}" class="text-emerald-400 hover:underline truncate">${UI.escapeHtml(contactInfo.email)}</a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.phone ? `
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[16px] text-slate-400">call</span>
+                        <a href="tel:${UI.escapeHtml(contactInfo.phone)}" class="hover:underline">${UI.escapeHtml(contactInfo.phone)}</a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.group ? `
+                      <div class="flex items-center gap-2 pt-1">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-400">groups</span>
+                        <a href="${UI.escapeHtml(contactInfo.group)}" target="_blank" class="px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold hover:bg-emerald-500/20 transition-colors inline-flex items-center gap-1">
+                          <span>Group trao đổi học tập</span>
+                          <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                        </a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.office_hours ? `
+                      <div class="flex items-center gap-2 text-[11px] text-slate-400 pt-0.5">
+                        <span class="material-symbols-outlined text-[15px]">schedule</span>
+                        <span>Giờ tiếp sinh viên: ${UI.escapeHtml(contactInfo.office_hours)}</span>
+                      </div>
+                    ` : ''}
+                  </div>
                 </div>
               </div>
-            `).join('')}
-          </div>
-        </div>
-      `;
 
-      // Full Page Shell
-      container.innerHTML = `
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in font-sans">
-          <!-- Back Nav -->
-          <div class="flex items-center justify-between">
-            <a href="#/student/courses/catalog" class="text-xs font-semibold text-slate-500 hover:text-emerald-600 flex items-center gap-1.5 transition-colors">
-              <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-              <span>Quay lại Danh mục khóa học</span>
-            </a>
-            ${isEnrolled ? `
-              <span class="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                <span>Đã ghi danh</span>
-              </span>
-            ` : ''}
+              <div class="pt-3 border-t border-slate-800/80 flex items-center gap-2 text-xs text-slate-400">
+                <span class="material-symbols-outlined text-emerald-400 text-[18px]">verified</span>
+                <span>Thông tin học vụ chính thức từ Ban chủ nhiệm Khoa</span>
+              </div>
+            </div>
           </div>
 
-          <!-- Dynamic Blocks -->
-          ${blocksHtml}
+          <!-- 4. Syllabus Section -->
+          <div id="syllabus-section" class="p-8 sm:p-10 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800/80">
+              <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-emerald-400 text-2xl">account_tree</span>
+                  <span>Lộ trình đào tạo & Đề cương chi tiết</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">Nội dung bài giảng được cấu trúc bài bản theo từng chuyên đề.</p>
+              </div>
+              <div class="flex items-center gap-2.5 self-start sm:self-auto">
+                <button type="button" id="syllabus-toggle-all-btn" class="text-xs font-semibold text-slate-400 hover:text-emerald-400 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition-colors flex items-center gap-1 cursor-pointer">
+                  <span class="material-symbols-outlined text-[16px]">unfold_more</span>
+                  <span id="syllabus-toggle-all-text">Mở rộng tất cả</span>
+                </button>
+                <span class="text-xs font-mono font-bold text-emerald-400 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800/80">
+                  ${modules.length} chương • ${totalLessons} bài học
+                </span>
+              </div>
+            </div>
 
-          <!-- Syllabus Section -->
-          ${syllabusHtml}
+            <div class="space-y-3 pt-2">
+              ${modules.length === 0 ? `
+                <p class="text-xs text-slate-400 italic py-8 text-center">Đang cập nhật đề cương chi tiết cho môn học này.</p>
+              ` : modules.map((m, mIdx) => `
+                <div class="rounded-2xl border border-slate-800 bg-slate-800/30 overflow-hidden transition-all">
+                  <div class="p-4 sm:p-5 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-800/50 transition-colors syllabus-mod-toggle" data-idx="${mIdx}">
+                    <div class="flex items-center gap-3.5 min-w-0">
+                      <span class="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center text-xs font-black shrink-0">
+                        ${mIdx + 1}
+                      </span>
+                      <h4 class="text-sm font-bold text-white truncate">${UI.escapeHtml(m.title)}</h4>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                      <span class="text-xs text-slate-400 font-mono">${(m.lessons || []).length} bài</span>
+                      <span class="material-symbols-outlined text-slate-400 text-[20px] transition-transform duration-200 syllabus-mod-icon">expand_more</span>
+                    </div>
+                  </div>
+                  <div class="syllabus-mod-body ${mIdx === 0 ? '' : 'hidden'} px-5 pb-4 space-y-2 border-t border-slate-800/60 pt-3">
+                    ${(m.lessons || []).map((l, lIdx) => `
+                      <div class="p-3 rounded-xl flex items-center justify-between gap-3 text-xs bg-slate-900/60 border border-slate-800/40 hover:border-slate-700/60 transition-colors">
+                        <div class="flex items-center gap-3 min-w-0">
+                          <span class="material-symbols-outlined text-[18px] text-emerald-400">play_circle</span>
+                          <span class="text-slate-200 font-medium truncate">${mIdx + 1}.${lIdx + 1} ${UI.escapeHtml(l.title)}</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-slate-400 font-mono text-[11px] shrink-0">
+                          <span>Lý thuyết</span>
+                          <span>${l.duration_seconds ? `${Math.round(l.duration_seconds / 60)} phút` : '45 phút'}</span>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
 
-          <!-- Bottom Sticky/Static CTA -->
-          <div class="p-8 sm:p-10 rounded-3xl bg-slate-900 border border-slate-800 text-white text-center space-y-4 shadow-xl">
+          <!-- 5. Bottom CTA Banner -->
+          <div class="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-slate-900 via-[#121d1b] to-slate-900 border border-emerald-500/20 text-white text-center space-y-4 shadow-2xl relative overflow-hidden">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">
+              <span class="material-symbols-outlined text-[16px]">rocket_launch</span>
+              <span>Bắt đầu hành trình cùng chúng tôi</span>
+            </div>
             <h3 class="text-2xl sm:text-3xl font-black tracking-tight">Sẵn sàng nâng cao năng lực cùng môn học?</h3>
-            <p class="text-sm text-slate-400 max-w-xl mx-auto">
+            <p class="text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
               Tham gia ngay hôm nay để truy cập hệ thống tài liệu, phòng lab tương tác và được hỗ trợ 24/7 bởi Bạch tuộc trợ lí AI.
             </p>
-            <div class="pt-2">
+            <div class="pt-3">
               ${isEnrolled ? `
                 <a href="#/student/courses/detail?id=${course.id}" class="px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2">
                   <span class="material-symbols-outlined text-[20px]">play_circle</span>
-                  <span>Vào phòng học</span>
+                  <span>Vào phòng học ngay</span>
                 </a>
               ` : `
                 <button type="button" class="btn-enroll-action px-8 py-3.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2 cursor-pointer" data-id="${course.id}">
@@ -1828,32 +1956,145 @@ class StudentView {
         </div>
       `;
 
-      // Wire FAQ Accordions
-      container.querySelectorAll('.faq-item').forEach(item => {
-        const q = item.querySelector('.faq-question');
-        const a = item.querySelector('.faq-answer');
-        const icon = item.querySelector('.faq-icon');
-        if (q && a) {
-          q.onclick = () => {
-            const isHidden = a.classList.contains('hidden');
-            a.classList.toggle('hidden', !isHidden);
-            if (icon) icon.classList.toggle('rotate-180', isHidden);
-          };
+      // Helper: Open Trailer Lightbox Modal
+      const openTrailerLightbox = (url, ytId) => {
+        let contentHtml = '';
+        if (ytId) {
+          contentHtml = `
+            <div class="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl">
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&enablejsapi=1"
+                class="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+              ></iframe>
+            </div>
+          `;
+        } else {
+          contentHtml = `
+            <div class="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl flex items-center justify-center">
+              <video src="${url}" controls autoplay playsinline class="w-full h-full object-contain"></video>
+            </div>
+          `;
         }
-      });
 
-      // Wire Syllabus Accordions
-      container.querySelectorAll('.syllabus-mod-toggle').forEach(btn => {
-        btn.onclick = () => {
-          const body = btn.parentElement.querySelector('.syllabus-mod-body');
-          const icon = btn.querySelector('.syllabus-mod-icon');
-          if (body) {
-            const isHidden = body.classList.contains('hidden');
-            body.classList.toggle('hidden', !isHidden);
-            if (icon) icon.classList.toggle('rotate-180', isHidden);
+        UI.openModal({
+          title: `
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-emerald-500 text-[20px]">movie</span>
+              <span class="font-bold text-sm sm:text-base text-slate-900 dark:text-white">Trailer Giới thiệu: ${UI.escapeHtml(courseTitle)}</span>
+            </div>
+          `,
+          bodyHtml: contentHtml,
+          footerHtml: `
+            <div class="flex justify-end w-full">
+              <button type="button" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer transition-colors" onclick="UI.closeModal()">
+                Đóng
+              </button>
+            </div>
+          `,
+          size: 'xl'
+        });
+      };
+
+      // Wire Active Hero Trailer Play Button
+      const playHeroBtn = document.getElementById('btn-play-hero-trailer');
+      const heroMediaBox = document.getElementById('course-hero-media-box');
+      if (playHeroBtn && heroMediaBox) {
+        playHeroBtn.onclick = () => {
+          if (!videoUrl || !videoUrl.trim()) {
+            UI.showToast('Khóa học hiện đang hoàn thiện video trailer giới thiệu. Thầy/Cô sẽ sớm cập nhật video.', 'info');
+            return;
+          }
+          const cleanUrl = videoUrl.trim();
+          const ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
+
+          if (ytMatch) {
+            heroMediaBox.innerHTML = `
+              <div class="relative w-full h-full bg-black">
+                <iframe
+                  id="hero-trailer-iframe"
+                  src="https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&rel=0&enablejsapi=1"
+                  class="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowfullscreen
+                ></iframe>
+                <button
+                  type="button"
+                  id="btn-hero-video-expand"
+                  class="absolute top-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105 z-20"
+                  title="Xem phóng to rạp chiếu"
+                >
+                  <span class="material-symbols-outlined text-[16px]">open_in_full</span>
+                  <span>Phóng to</span>
+                </button>
+              </div>
+            `;
+          } else {
+            heroMediaBox.innerHTML = `
+              <div class="relative w-full h-full bg-black flex items-center justify-center">
+                <video
+                  id="hero-trailer-video"
+                  src="${cleanUrl}"
+                  controls
+                  autoplay
+                  playsinline
+                  class="w-full h-full object-contain"
+                ></video>
+                <button
+                  type="button"
+                  id="btn-hero-video-expand"
+                  class="absolute top-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700/80 flex items-center gap-1.5 shadow-xl backdrop-blur-md cursor-pointer transition-all hover:scale-105 z-20"
+                  title="Xem phóng to rạp chiếu"
+                >
+                  <span class="material-symbols-outlined text-[16px]">open_in_full</span>
+                  <span>Phóng to</span>
+                </button>
+              </div>
+            `;
+          }
+
+          const expandBtn = document.getElementById('btn-hero-video-expand');
+          if (expandBtn) {
+            expandBtn.onclick = () => {
+              openTrailerLightbox(cleanUrl, ytMatch ? ytMatch[1] : null);
+            };
           }
         };
+      }
+      // Wire individual syllabus module toggles
+      container.querySelectorAll('.syllabus-mod-toggle').forEach(header => {
+        header.onclick = () => {
+          const card = header.closest('.rounded-2xl');
+          const body = card?.querySelector('.syllabus-mod-body');
+          const icon = header.querySelector('.syllabus-mod-icon');
+          if (body) body.classList.toggle('hidden');
+          if (icon) icon.classList.toggle('rotate-180');
+        };
       });
+
+      // Wire Syllabus Expand/Collapse All
+      const toggleAllBtn = container.querySelector('#syllabus-toggle-all-btn');
+      const toggleAllText = container.querySelector('#syllabus-toggle-all-text');
+      if (toggleAllBtn) {
+        let allExpanded = false;
+        toggleAllBtn.onclick = () => {
+          allExpanded = !allExpanded;
+          container.querySelectorAll('.syllabus-mod-body').forEach(body => {
+            body.classList.toggle('hidden', !allExpanded);
+          });
+          container.querySelectorAll('.syllabus-mod-icon').forEach(icon => {
+            icon.classList.toggle('rotate-180', allExpanded);
+          });
+          if (toggleAllText) {
+            toggleAllText.textContent = allExpanded ? 'Thu gọn tất cả' : 'Mở rộng tất cả';
+          }
+          const iconSpan = toggleAllBtn.querySelector('.material-symbols-outlined');
+          if (iconSpan) {
+            iconSpan.textContent = allExpanded ? 'unfold_less' : 'unfold_more';
+          }
+        };
+      }
 
       // Wire Enrollment Action Buttons
       container.querySelectorAll('.btn-enroll-action').forEach(btn => {
@@ -4008,37 +4249,84 @@ class StudentView {
                             </div>
                           ` : ''}
 
-                          ${qType === 'MATCHING' ? `
-                            <div class="space-y-3 p-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/30 dark:bg-amber-950/20">
-                              <div class="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                                <span class="material-symbols-outlined text-[18px] text-amber-600">join_inner</span>
-                                <span>Ghép từng khái niệm ở Cột Trái với ý nghĩa đúng ở Cột Phải:</span>
-                              </div>
-                              <div class="space-y-2.5 pt-1">
-                                ${(q.pairs || []).map((p, pIdx) => {
-                                  // Shuffle right options deterministically to prevent obvious line-up
-                                  const shuffledOptions = [...(q.pairs || [])].sort((a, b) => (a.right > b.right ? 1 : -1));
-                                  return `
-                                    <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 p-3 rounded-xl border border-amber-200/80 dark:border-amber-800/60 bg-white dark:bg-slate-900 cisco-quiz-matching-row shadow-2xs" data-qidx="${qIdx}" data-pidx="${pIdx}">
-                                      <div class="flex items-center gap-2.5 sm:w-1/2 font-medium text-xs sm:text-sm text-slate-800 dark:text-slate-200">
-                                        <span class="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-xs flex items-center justify-center shrink-0">${pIdx + 1}</span>
-                                        <span class="font-semibold">${UI.escapeHtml(p.left)}</span>
-                                      </div>
-                                      <div class="flex items-center gap-2 sm:w-1/2">
-                                        <span class="material-symbols-outlined text-amber-500 text-[18px] hidden sm:inline shrink-0">arrow_forward</span>
-                                        <select class="cisco-quiz-matching-select w-full px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-amber-500 transition-all cursor-pointer font-medium" data-qidx="${qIdx}" data-pidx="${pIdx}">
-                                          <option value="">-- Chọn ý nghĩa tương ứng --</option>
-                                          ${shuffledOptions.map(optPair => `
-                                            <option value="${UI.escapeHtml(optPair.right)}">${UI.escapeHtml(optPair.right)}</option>
-                                          `).join('')}
-                                        </select>
-                                      </div>
+                          ${qType === 'MATCHING' ? (() => {
+                            const pairs = q.pairs || [];
+                            const shuffledOptions = [...pairs].map((p, idx) => ({ idx, text: p.right })).sort((a, b) => {
+                              const hashA = (a.text + qIdx).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+                              const hashB = (b.text + qIdx).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+                              return hashA - hashB;
+                            });
+                            const leftLetter = (i) => String(i + 1).padStart(2, '0');
+                            const rightLetter = (i) => String.fromCharCode(65 + i);
+
+                            return `
+                              <div class="matching-challenge-board cisco-quiz-matching-board bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl p-5 select-none relative overflow-hidden" data-cisco-quiz-qidx="${qIdx}">
+                                <div class="flex items-center justify-between gap-3 mb-2">
+                                  <span class="text-emerald-400 font-bold text-[11px] uppercase tracking-wider">Thử thách ghép đôi</span>
+                                  <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 matching-board-counter">0/${pairs.length} đã nối</span>
+                                </div>
+                                <h4 class="text-sm font-bold text-white mb-1">Ghép đúng các cặp khái niệm và ý nghĩa tương ứng</h4>
+                                <p class="text-xs text-slate-400 mb-3">Chọn một mục bên trái, sau đó chọn chức năng đúng ở bên phải để nối.</p>
+                                <div class="h-1 w-full bg-slate-800 rounded-full mb-5 overflow-hidden">
+                                  <div class="h-full bg-emerald-500 transition-all duration-300 w-0 matching-board-progress"></div>
+                                </div>
+
+                                <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible matching-board-svg"></svg>
+
+                                <!-- Hidden selects for grading compatibility -->
+                                <div class="hidden">
+                                  ${pairs.map((p, pIdx) => `
+                                    <select class="cisco-quiz-matching-select" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                      <option value="">--</option>
+                                      ${pairs.map(opt => `<option value="${UI.escapeHtml(opt.right)}">${UI.escapeHtml(opt.right)}</option>`).join('')}
+                                    </select>
+                                  `).join('')}
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-8 md:gap-14 relative z-10">
+                                  <div class="space-y-3">
+                                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                                      <span>Cột A · Khái niệm</span>
+                                      <span>${pairs.length} mục</span>
                                     </div>
-                                  `;
-                                }).join('')}
+                                    ${pairs.map((p, pIdx) => `
+                                      <div class="matching-card-left cisco-quiz-matching-row p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-left-key="${pIdx}" data-qidx="${qIdx}" data-pidx="${pIdx}">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                          <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${leftLetter(pIdx)}</span>
+                                          <span class="font-semibold text-xs text-slate-200 truncate">${UI.escapeHtml(p.left)}</span>
+                                        </div>
+                                        <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="left-${pIdx}"></span>
+                                      </div>
+                                    `).join('')}
+                                  </div>
+
+                                  <div class="space-y-3">
+                                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                                      <span>Cột B · Ý nghĩa</span>
+                                      <span>${pairs.length} mục</span>
+                                    </div>
+                                    ${shuffledOptions.map((opt, rPos) => `
+                                      <div class="matching-card-right p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-right-text="${UI.escapeHtml(opt.text)}" data-right-pos="${rPos}">
+                                        <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="right-${rPos}"></span>
+                                        <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                                          <span class="font-medium text-xs text-slate-200 text-right truncate">${UI.escapeHtml(opt.text)}</span>
+                                          <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${rightLetter(rPos)}</span>
+                                        </div>
+                                      </div>
+                                    `).join('')}
+                                  </div>
+                                </div>
+
+                                <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                                  <button type="button" class="btn-clear-matches inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-colors">
+                                    <span class="material-symbols-outlined text-[14px]">restart_alt</span>
+                                    <span>Xóa lựa chọn</span>
+                                  </button>
+                                  <span class="text-[11px] text-slate-500">Bấm một mục trái rồi bấm một mục phải để nối</span>
+                                </div>
                               </div>
-                            </div>
-                          ` : ''}
+                            `;
+                          })() : ''}
 
                           ${qType === 'TRUE_FALSE' ? `
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -4486,6 +4774,10 @@ class StudentView {
             let hasPassedQuiz = false;
 
             const updateQuizSlideView = () => {
+              const activeMatchingBoard = quizSection.querySelector(`.cisco-quiz-card:nth-child(${currentQuizSlide + 1}) .cisco-quiz-matching-board`);
+              if (activeMatchingBoard && typeof activeMatchingBoard._redrawMatches === 'function') {
+                requestAnimationFrame(() => activeMatchingBoard._redrawMatches());
+              }
               if (totalQuizSlides < 2) return;
               const cards = quizSection.querySelectorAll('.cisco-quiz-card');
               cards.forEach((c, idx) => {
@@ -4853,7 +5145,15 @@ class StudentView {
                   inp.value = '';
                   inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
-                quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
+                quizSection.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
+              const qIdx = board.dataset.ciscoQuizQidx;
+              StudentView.setupMatchingBoard(board, (leftKey, rightVal) => {
+                const sel = board.querySelector(`.cisco-quiz-matching-select[data-qidx="${qIdx}"][data-pidx="${leftKey}"]`);
+                if (sel) sel.value = rightVal;
+              });
+            });
+
+            quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
                 quizSection.querySelectorAll('.cisco-quiz-matching-row').forEach(row => {
                   row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
@@ -5973,37 +6273,153 @@ class StudentView {
                       const selectedKeys = new Set(
                         (Array.isArray(q.selected_choice_keys) ? q.selected_choice_keys : []).map(String)
                       );
-                      const renderSlot = group => {
-                        const left = grouped.kind === 'MATCH'
-                          ? (group.choices[0]?.interaction_left || `Item ${group.index}`)
-                          : `Blank ${group.index}`;
+
+                      if (grouped.kind === 'MATCH') {
+                        const pairs = grouped.groups.map(group => {
+                          const leftText = group.choices[0]?.interaction_left || `Mục ${group.index}`;
+                          const selectedChoice = group.choices.find(c => selectedKeys.has(String(c.choice_key || c.choice_id || c.id)));
+                          return {
+                            groupIndex: group.index,
+                            left: leftText,
+                            choices: group.choices,
+                            selectedChoiceKey: selectedChoice ? String(selectedChoice.choice_key || selectedChoice.choice_id || selectedChoice.id) : ''
+                          };
+                        });
+                        const allRightOptions = [];
+                        const seenRight = new Set();
+                        grouped.groups.forEach(group => {
+                          group.choices.forEach(c => {
+                            if (!seenRight.has(c.answerText)) {
+                              seenRight.add(c.answerText);
+                              allRightOptions.push({
+                                text: c.answerText,
+                                key: String(c.choice_key || c.choice_id || c.id)
+                              });
+                            }
+                          });
+                        });
+                        const shuffledRight = [...allRightOptions].sort((a, b) => {
+                          const hashA = (a.text + (q.id || idx)).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+                          const hashB = (b.text + (q.id || idx)).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+                          return hashA - hashB;
+                        });
+
+                        const leftLetter = (i) => String(i + 1).padStart(2, '0');
+                        const rightLetter = (i) => String.fromCharCode(65 + i);
+
+                        return `
+                          <div class="matching-challenge-board bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl p-5 select-none relative overflow-hidden my-3" data-exam-matching-qidx="${idx}">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                              <span class="text-emerald-400 font-bold text-[11px] uppercase tracking-wider">Thử thách ghép đôi</span>
+                              <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 matching-board-counter">0/${pairs.length} đã nối</span>
+                            </div>
+                            <h4 class="text-sm font-bold text-white mb-1">${UI.escapeHtml(questionText)}</h4>
+                            <p class="text-xs text-slate-400 mb-3">Chọn một mục bên trái, sau đó chọn chức năng đúng ở bên phải để nối.</p>
+                            <div class="h-1 w-full bg-slate-800 rounded-full mb-5 overflow-hidden">
+                              <div class="h-full bg-emerald-500 transition-all duration-300 w-0 matching-board-progress"></div>
+                            </div>
+
+                            <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible matching-board-svg"></svg>
+
+                            <!-- Hidden Selects for auto-save sync -->
+                            <div class="hidden">
+                              ${pairs.map(p => `
+                                <select class="interactive-slot-select" data-group-index="${p.groupIndex}">
+                                  <option value="">--</option>
+                                  ${p.choices.map(c => {
+                                    const key = String(c.choice_key || c.choice_id || c.id);
+                                    return `<option value="${UI.escapeHtml(key)}" data-answer-text="${UI.escapeHtml(c.answerText)}" ${p.selectedChoiceKey === key ? 'selected' : ''}>${UI.escapeHtml(c.answerText)}</option>`;
+                                  }).join('')}
+                                </select>
+                              `).join('')}
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-8 md:gap-14 relative z-10">
+                              <div class="space-y-3">
+                                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                                  <span>Cột A · Khái niệm</span>
+                                  <span>${pairs.length} mục</span>
+                                </div>
+                                ${pairs.map((p, lIdx) => `
+                                  <div class="matching-card-left p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-left-key="${p.groupIndex}">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${leftLetter(lIdx)}</span>
+                                      <span class="font-semibold text-xs text-slate-200 truncate">${UI.escapeHtml(p.left)}</span>
+                                    </div>
+                                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="left-${p.groupIndex}"></span>
+                                  </div>
+                                `).join('')}
+                              </div>
+
+                              <div class="space-y-3">
+                                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                                  <span>Cột B · Ý nghĩa</span>
+                                  <span>${pairs.length} mục</span>
+                                </div>
+                                ${shuffledRight.map((r, rPos) => `
+                                  <div class="matching-card-right p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-right-text="${UI.escapeHtml(r.text)}" data-right-pos="${rPos}">
+                                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="right-${rPos}"></span>
+                                    <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                                      <span class="font-medium text-xs text-slate-200 text-right truncate">${UI.escapeHtml(r.text)}</span>
+                                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${rightLetter(rPos)}</span>
+                                    </div>
+                                  </div>
+                                `).join('')}
+                              </div>
+                            </div>
+
+                            <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                              <button type="button" class="btn-clear-matches inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-colors">
+                                <span class="material-symbols-outlined text-[14px]">restart_alt</span>
+                                <span>Xóa lựa chọn</span>
+                              </button>
+                              <span class="text-[11px] text-slate-500">Bấm một mục trái rồi bấm một mục phải để nối</span>
+                            </div>
+                          </div>
+                        `;
+                      }
+
+                      // DRAG AND DROP: Clean slots without dropdowns!
+                      const usedTokens = new Set();
+                      const renderDragSlot = group => {
+                        const selectedChoice = group.choices.find(c => selectedKeys.has(String(c.choice_key || c.choice_id || c.id)));
+                        const selectedAnswerText = selectedChoice ? selectedChoice.answerText : '';
+                        if (selectedAnswerText) usedTokens.add(selectedAnswerText.toLocaleLowerCase());
+
                         const options = group.choices.map(choice => {
                           const key = String(choice.choice_key || choice.choice_id || choice.id);
                           const answerText = choice.answerText;
                           return `<option value="${UI.escapeHtml(key)}" data-answer-text="${UI.escapeHtml(answerText)}" ${selectedKeys.has(key) ? 'selected' : ''}>${UI.escapeHtml(answerText)}</option>`;
                         }).join('');
-                        return `<span class="interactive-drop-slot inline-flex flex-col align-middle gap-1 mx-1 my-1 min-w-32 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-950/30 p-2" data-group-index="${group.index}">
-                          <label class="text-[10px] font-semibold text-indigo-800 dark:text-indigo-200">${UI.escapeHtml(left)}</label>
-                          <select class="interactive-slot-select w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-900 dark:text-slate-100" data-group-index="${group.index}" aria-label="${UI.escapeHtml(left)}">
-                            <option value="">Choose an answer</option>${options}
+
+                        return `
+                          <span class="interactive-drop-slot interactive-drag-slot-display inline-flex items-center justify-center min-w-[80px] px-3 py-1.5 mx-1 my-1 rounded-xl border-2 border-dashed border-indigo-400 dark:border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-xs font-bold text-indigo-700 dark:text-indigo-300 cursor-pointer align-middle transition-all hover:border-indigo-500 hover:bg-indigo-100/50" data-group-index="${group.index}" title="Nhấp để xóa từ khỏi ô này">
+                            ${selectedAnswerText ? `<span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-bold text-xs inline-flex items-center gap-1">${UI.escapeHtml(selectedAnswerText)} <span class="material-symbols-outlined text-[13px]">close</span></span>` : '___'}
+                          </span>
+                          <select class="interactive-slot-select hidden" data-group-index="${group.index}" aria-label="Blank ${group.index}">
+                            <option value="">--</option>${options}
                           </select>
-                        </span>`;
+                        `;
                       };
 
                       let groupCursor = 0;
                       const escapedQuestion = UI.escapeHtml(questionText);
-                      const promptWithSlots = grouped.kind === 'MATCH'
-                        ? escapedQuestion
-                        : escapedQuestion.replace(/_{3,}/g, () => renderSlot(grouped.groups[groupCursor++] || grouped.groups[grouped.groups.length - 1]));
-                      const remainingSlots = grouped.kind === 'MATCH'
-                        ? grouped.groups.map(renderSlot).join('')
-                        : grouped.groups.slice(groupCursor).map(renderSlot).join('');
-                      const tokenLabels = grouped.kind === 'DRAG'
-                        ? Array.from(new Set(grouped.groups.flatMap(group => group.choices.map(choice => choice.answerText))))
-                        : [];
-                      const tokenBank = tokenLabels.length ? `<div class="interactive-token-bank mt-3 flex flex-wrap gap-2" aria-label="Draggable answer tokens">
-                        ${tokenLabels.map(token => `<button type="button" draggable="true" class="interactive-token cursor-grab touch-manipulation rounded-full border border-indigo-200 dark:border-indigo-800 bg-indigo-100 dark:bg-indigo-900 px-3 py-1.5 text-xs font-semibold text-indigo-950 dark:text-indigo-100" data-token="${UI.escapeHtml(token)}">${UI.escapeHtml(token)}</button>`).join('')}
-                      </div>` : '';
+                      const promptWithSlots = escapedQuestion.replace(/_{3,}/g, () => renderDragSlot(grouped.groups[groupCursor++] || grouped.groups[grouped.groups.length - 1]));
+                      const remainingSlots = grouped.groups.slice(groupCursor).map(renderDragSlot).join('');
+                      const tokenLabels = Array.from(new Set(grouped.groups.flatMap(group => group.choices.map(choice => choice.answerText))));
+
+                      const tokenBank = tokenLabels.length ? `
+                        <div class="interactive-token-bank mt-4 p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 select-none" aria-label="Ngân hàng từ">
+                          <span class="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-2">Ngân hàng từ (Nhấp hoặc kéo thả để điền vào ô trống):</span>
+                          <div class="flex flex-wrap gap-2">
+                            ${tokenLabels.map(token => {
+                              const isUsed = usedTokens.has(token.toLocaleLowerCase());
+                              return `<button type="button" draggable="true" class="interactive-token cursor-grab active:cursor-grabbing px-3.5 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-2xs transition-all ${isUsed ? 'opacity-30 pointer-events-none' : ''}" data-token="${UI.escapeHtml(token)}">${UI.escapeHtml(token)}</button>`;
+                            }).join('')}
+                          </div>
+                        </div>
+                      ` : '';
+
                       return `<div>${promptWithSlots}${remainingSlots ? `<div class="mt-2 flex flex-wrap items-start gap-2">${remainingSlots}</div>` : ''}</div>${tokenBank}`;
                     })()}
                   </div>
@@ -6411,6 +6827,25 @@ class StudentView {
         };
       });
 
+      // Interactive matching board wiring for exams
+      container.querySelectorAll('.matching-challenge-board[data-exam-matching-qidx]').forEach(board => {
+        StudentView.setupMatchingBoard(board, (lKey, rVal) => {
+          const select = board.querySelector(`select.interactive-slot-select[data-group-index="${lKey}"]`);
+          if (select) {
+            if (rVal) {
+              const opt = Array.from(select.options).find(o =>
+                (o.dataset.answerText || '').toLocaleLowerCase() === String(rVal).toLocaleLowerCase() || o.value === String(rVal)
+              );
+              select.value = opt ? opt.value : '';
+            } else {
+              select.value = '';
+            }
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+      });
+
+      // Interactive Drag & Drop token and slot events
       container.querySelectorAll('.interactive-token').forEach(tokenButton => {
         tokenButton.addEventListener('dragstart', event => {
           event.dataTransfer?.setData('text/plain', tokenButton.dataset.token || '');
@@ -6419,7 +6854,7 @@ class StudentView {
         tokenButton.addEventListener('click', () => {
           const card = tokenButton.closest('.question-card');
           const selects = Array.from(card?.querySelectorAll('select.interactive-slot-select') || []);
-          const target = selects.find(select => !select.value) || selects[0];
+          const target = selects.find(select => !select.value);
           if (!target) return;
           const tokenText = (tokenButton.dataset.token || '').toLocaleLowerCase();
           const option = Array.from(target.options).find(item =>
@@ -6428,33 +6863,69 @@ class StudentView {
           if (option) {
             target.value = option.value;
             target.dispatchEvent(new Event('change', { bubbles: true }));
+            const gIndex = target.dataset.groupIndex;
+            const slotDisplay = card.querySelector(`.interactive-drag-slot-display[data-group-index="${gIndex}"]`);
+            if (slotDisplay) {
+              slotDisplay.innerHTML = `<span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-bold text-xs inline-flex items-center gap-1">${UI.escapeHtml(tokenButton.dataset.token || '')} <span class="material-symbols-outlined text-[13px]">close</span></span>`;
+            }
+            tokenButton.classList.add('opacity-30', 'pointer-events-none');
           }
         });
       });
 
-      container.querySelectorAll('.interactive-drop-slot').forEach(dropSlot => {
-        dropSlot.addEventListener('dragover', event => {
-          event.preventDefault();
-          dropSlot.classList.add('ring-2', 'ring-indigo-400');
-          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-        });
-        dropSlot.addEventListener('dragleave', event => {
-          if (!dropSlot.contains(event.relatedTarget)) {
-            dropSlot.classList.remove('ring-2', 'ring-indigo-400');
+      container.querySelectorAll('.interactive-drag-slot-display').forEach(slotDisplay => {
+        slotDisplay.addEventListener('click', () => {
+          const card = slotDisplay.closest('.question-card');
+          const gIndex = slotDisplay.dataset.groupIndex;
+          const select = card.querySelector(`select.interactive-slot-select[data-group-index="${gIndex}"]`);
+          if (!select || !select.value) return;
+          const selOption = select.options[select.selectedIndex];
+          const oldText = (selOption?.dataset.answerText || '').toLocaleLowerCase();
+          select.value = '';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          slotDisplay.textContent = '___';
+          const tokenBtn = Array.from(card.querySelectorAll('.interactive-token')).find(btn =>
+            (btn.dataset.token || '').toLocaleLowerCase() === oldText
+          );
+          if (tokenBtn) {
+            tokenBtn.classList.remove('opacity-30', 'pointer-events-none');
           }
         });
-        dropSlot.addEventListener('drop', event => {
+
+        slotDisplay.addEventListener('dragover', event => {
           event.preventDefault();
-          dropSlot.classList.remove('ring-2', 'ring-indigo-400');
+          slotDisplay.classList.add('ring-2', 'ring-indigo-400');
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        });
+        slotDisplay.addEventListener('dragleave', event => {
+          if (!slotDisplay.contains(event.relatedTarget)) {
+            slotDisplay.classList.remove('ring-2', 'ring-indigo-400');
+          }
+        });
+        slotDisplay.addEventListener('drop', event => {
+          event.preventDefault();
+          slotDisplay.classList.remove('ring-2', 'ring-indigo-400');
           const tokenText = (event.dataTransfer?.getData('text/plain') || '').toLocaleLowerCase();
-          const select = dropSlot.querySelector('select.interactive-slot-select');
+          const card = slotDisplay.closest('.question-card');
+          const gIndex = slotDisplay.dataset.groupIndex;
+          const select = card.querySelector(`select.interactive-slot-select[data-group-index="${gIndex}"]`);
           if (!tokenText || !select) return;
           const option = Array.from(select.options).find(item =>
             (item.dataset.answerText || '').toLocaleLowerCase() === tokenText
           );
           if (option) {
+            // Free any previous token in this slot
+            if (select.value) {
+              const oldOpt = select.options[select.selectedIndex];
+              const oldTxt = (oldOpt?.dataset.answerText || '').toLocaleLowerCase();
+              const oldBtn = Array.from(card.querySelectorAll('.interactive-token')).find(b => (b.dataset.token || '').toLocaleLowerCase() === oldTxt);
+              if (oldBtn) oldBtn.classList.remove('opacity-30', 'pointer-events-none');
+            }
             select.value = option.value;
             select.dispatchEvent(new Event('change', { bubbles: true }));
+            slotDisplay.innerHTML = `<span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-bold text-xs inline-flex items-center gap-1">${UI.escapeHtml(option.dataset.answerText || '')} <span class="material-symbols-outlined text-[13px]">close</span></span>`;
+            const newBtn = Array.from(card.querySelectorAll('.interactive-token')).find(b => (b.dataset.token || '').toLocaleLowerCase() === tokenText);
+            if (newBtn) newBtn.classList.add('opacity-30', 'pointer-events-none');
           }
         });
       });
