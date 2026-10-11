@@ -183,7 +183,8 @@ def test_build_assessment_gradebook_pdf_invariants():
 
     # 2. Assessment: Type + Title, without UUID in parentheses
     assert "Kiểm tra Giữa kỳ" in full_text
-    assert "Kiến trúc Backend" in full_text
+    normalized_full_text = " ".join(full_text.split())
+    assert "Kiến trúc Backend" in normalized_full_text
     assert "d8cb2d87-0596-40aa-bbc9-5593c83e6d97" not in full_text
 
     # 3. Proctoring standard: Always "Có giám sát nâng cao"

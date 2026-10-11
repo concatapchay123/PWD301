@@ -211,6 +211,9 @@ def test_student_can_fetch_drm_playlist_and_key(
     change_course_status(admin, course_sample.id, "APPROVED")
     change_course_status(instructor_user, course_sample.id, "PUBLISHED")
 
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not found on system PATH")
+
     # Generate 1s test mp4 via ffmpeg
     temp_dir = tempfile.mkdtemp(prefix="pwd301_drm_api_")
     test_mp4 = os.path.join(temp_dir, "test.mp4")

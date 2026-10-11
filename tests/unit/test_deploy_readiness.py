@@ -48,7 +48,10 @@ def test_production_rejects_insecure_session_cookie(monkeypatch):
 def test_production_compose_has_private_services():
     from pathlib import Path
 
-    import yaml
+    try:
+        import yaml
+    except ImportError:
+        pytest.skip("PyYAML is not installed")
 
     services = yaml.safe_load(Path("deploy/compose.production.yml").read_text())["services"]
     for name in ("db", "clamav", "web", "worker"):

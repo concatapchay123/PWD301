@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from pwd301.services.video_drm_service import (
     generate_key_token,
     transcode_to_encrypted_hls,
@@ -54,6 +56,8 @@ def test_generate_and_verify_key_token() -> None:
 
 
 def test_transcode_to_encrypted_hls() -> None:
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not found on system PATH")
     temp_dir = tempfile.mkdtemp(prefix="pwd301_drm_test_")
     try:
         input_mp4 = os.path.join(temp_dir, "input.mp4")

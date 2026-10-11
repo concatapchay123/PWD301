@@ -627,7 +627,18 @@ def test_get_real_system_telemetry_cgroup_memory_limit(
     }
 
     orig_exists = os.path.exists
-    monkeypatch.setattr(os.path, "exists", lambda p: p in mock_files or orig_exists(p))
+    monkeypatch.setattr(
+        os.path,
+        "exists",
+        lambda p: (
+            str(p) in mock_files
+            or (
+                not str(p).startswith("/sys/fs/cgroup/")
+                and str(p) != "/.dockerenv"
+                and orig_exists(p)
+            )
+        ),
+    )
 
     orig_open = builtins.open
 
@@ -732,7 +743,18 @@ def test_get_real_system_telemetry_container_isolation_with_host_metrics(
     }
 
     orig_exists = os.path.exists
-    monkeypatch.setattr(os.path, "exists", lambda p: p in mock_files or orig_exists(p))
+    monkeypatch.setattr(
+        os.path,
+        "exists",
+        lambda p: (
+            str(p) in mock_files
+            or (
+                not str(p).startswith("/sys/fs/cgroup/")
+                and str(p) != "/.dockerenv"
+                and orig_exists(p)
+            )
+        ),
+    )
 
     orig_is_file = Path.is_file
     monkeypatch.setattr(
