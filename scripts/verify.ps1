@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 $Python = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
-& $Python -c 'import os; from scripts.test_database_guard import require_disposable_database; require_disposable_database(os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:"))'
+& $Python -c "import os; from scripts.test_database_guard import require_disposable_database; require_disposable_database(os.environ.get('TEST_DATABASE_URL', 'sqlite:///:memory:'))"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "== Repository contract =="
