@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
 from pwd301.models.ai_rag import AIConversation, AIMessage
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision
+from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, User
 from pwd301.models.types import utc_now
 from pwd301.services.assessment_service import (
@@ -401,6 +401,18 @@ class TestFileStorageTraversalHardening:
             security_checks_completed_at=now,
         )
         db.session.add(rev)
+        db.session.flush()
+        for scan_type in ("MALWARE", "FILE_VALIDATION"):
+            db.session.add(
+                FileScanResult(
+                    file_revision_id=rev.id,
+                    scan_type=scan_type,
+                    engine="isolated_fixture",
+                    status="PASS",
+                    started_at=now,
+                    completed_at=now,
+                )
+            )
         db.session.commit()
 
         # Attempt to download as admin: must be blocked due to path escape

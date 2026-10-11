@@ -477,6 +477,7 @@ def create_app(
     config_cls = config_by_name[config_name]
     config_obj = config_cls() if isinstance(config_cls, type) else config_cls
     app.config.from_object(config_obj)
+    app.config["APP_ENV"] = config_name
     if config_override:
         app.config.update(config_override)
 
@@ -807,7 +808,7 @@ def create_app(
                 "img-src 'self' data: https:; "
                 "font-src 'self' data: https://fonts.gstatic.com; "
                 "connect-src 'self' https://cdn.tailwindcss.com; "
-                "frame-src 'self' https://www.youtube.com https://youtube.com "
+                "frame-src 'self' blob: https://www.youtube.com https://youtube.com "
                 "https://www.youtube-nocookie.com https://*.youtube.com "
                 "https://*.youtube-nocookie.com https://player.vimeo.com https://*.vimeo.com; "
                 "media-src 'self' data: blob: https:; "

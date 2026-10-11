@@ -194,8 +194,13 @@ def test_api_update_course_optimistic_concurrency(
         instructor_user,
         {"course_code": "OCC-101", "title": "OCC Course"},
     )
-    course.row_version = b"\x00\x00\x00\x00\x00\x00\x00\x01"
+    if db.engine.dialect.name == "sqlite":
+        course.row_version = b"\x00\x00\x00\x00\x00\x00\x00\x01"
     db.session.commit()
+    db.session.refresh(course)
+    current_version = bytes(course.row_version)
+    stale_version = bytearray(current_version)
+    stale_version[-1] ^= 1
 
     tokens = create_token_pair(instructor_user)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
@@ -206,7 +211,7 @@ def test_api_update_course_optimistic_concurrency(
         headers=headers,
         json={
             "title": "Conflicting Update",
-            "row_version": "0x0000000000000002",
+            "row_version": "0x" + stale_version.hex(),
         },
     )
     assert resp.status_code == 409
@@ -217,7 +222,7 @@ def test_api_update_course_optimistic_concurrency(
         headers=headers,
         json={
             "title": "Matching OCC Title",
-            "row_version": "0x0000000000000001",
+            "row_version": "0x" + current_version.hex(),
         },
     )
     assert resp.status_code == 200

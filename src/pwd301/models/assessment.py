@@ -162,7 +162,7 @@ class Assessment(Base):
             name="ck_assessments_7",
         ),
         sa.CheckConstraint(
-            "answer_visibility_policy IN ('IMMEDIATE','AFTER_CLOSE','AFTER_ALL_ATTEMPTS','NEVER')",
+            "answer_visibility_policy IN ('IMMEDIATE','AFTER_CLOSE','AFTER_ALL_ATTEMPTS','NEVER','CORRECT_WRONG_ONLY')",
             name="ck_assessments_8",
         ),
         sa.CheckConstraint(

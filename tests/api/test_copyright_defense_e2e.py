@@ -20,14 +20,20 @@ from flask.testing import FlaskClient
 
 from pwd301.extensions import db
 from pwd301.models.course import Enrollment, EnrollmentPeriod
-from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
+from pwd301.models.file_import import (
+    FileAsset,
+    FileBlob,
+    FileRevision,
+    FileScanResult,
+    LessonResource,
+)
 from pwd301.models.identity import Role, User
 from pwd301.models.notification_audit import AuditEvent
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.file_service import get_file_storage_root
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
-from pwd301.services.video_drm_service import get_lesson_hls_directory
+from pwd301.services.video_drm_service import get_asset_hls_directory
 
 
 @pytest.fixture
@@ -169,6 +175,11 @@ def test_copyright_protection_end_to_end_defense(
         status="PASS",
     )
     sess.add(scan)
+    sess.add(
+        LessonResource(
+            lesson_id=lesson.id, file_asset_id=asset.id, position=1, label="Protected video"
+        )
+    )
 
     # Enroll student
     enrollment = Enrollment(
@@ -204,10 +215,10 @@ def test_copyright_protection_end_to_end_defense(
         if isinstance(err_body.get("error"), dict)
         else str(err_body.get("error"))
     )
-    assert "restricted" in err_msg.lower() or "secure" in err_msg.lower()
+    assert "protected video playback" in err_msg.lower()
 
     # Create mock HLS directory with encrypted playlist
-    hls_dir = get_lesson_hls_directory(course.id, lesson.id)
+    hls_dir = get_asset_hls_directory(lesson, asset, rev)
     hls_dir.mkdir(parents=True, exist_ok=True)
     raw_key = os.urandom(16)
     (hls_dir / "enc.key").write_bytes(raw_key)
@@ -231,15 +242,14 @@ def test_copyright_protection_end_to_end_defense(
     assert p_resp.status_code == 200
     p_text = p_resp.get_data(as_text=True)
     assert "#EXT-X-KEY:METHOD=AES-128" in p_text
-    assert 'URI="key?token=' in p_text
+    assert f"/video/{asset.public_id}/key?token=" in p_text
 
     # Extract token
-    match = re.search(r'URI="key\?token=([^"]+)"', p_text)
+    match = re.search(r'URI="([^\"]+/key\?token=[^\"]+)"', p_text)
     assert match is not None
-    key_token = match.group(1)
+    key_url = match.group(1)
 
     # DEFENSE 3: Fetch DRM key with valid token
-    key_url = f"/student/courses/{course.public_id}/lessons/{lesson.public_id}/video/key?token={key_token}"
     k_resp = client.get(key_url)
     assert k_resp.status_code == 200
     assert len(k_resp.data) == 16
@@ -260,30 +270,38 @@ def test_copyright_protection_end_to_end_defense(
 
     progress_url = f"/api/lessons/{lesson.public_id}/progress"
 
-    # Initial baseline heartbeat ping (3s)
-    first_resp = client.post(
-        progress_url,
-        json={"seconds_increment": 3, "view_fraction": 0.05},
+    session_response = client.post(
+        f"/api/lessons/{lesson.public_id}/playback-sessions",
+        json={"media_id": f"hls:{asset.public_id}:{rev.public_id}"},
         headers=jwt_headers,
     )
+    assert session_response.status_code == 200
+    playback = session_response.get_json()["data"]
+    payload = {
+        "playback_session_id": playback["session_id"],
+        "sequence": 1,
+        "media_id": playback["media_id"],
+        "position_seconds": 0,
+        "playback_rate": 1,
+        "state": "playing",
+    }
+    first_resp = client.post(progress_url, json=payload, headers=jwt_headers)
     assert first_resp.status_code == 200
-
-    # Attacker immediately fires fraudulent ping claiming 60s within milliseconds
+    assert first_resp.get_json()["data"]["credited_seconds"] == 0
     cheat_resp = client.post(
         progress_url,
-        json={"seconds_increment": 60, "view_fraction": 1.0, "is_completed": True},
+        json={**payload, "sequence": 2, "position_seconds": 10, "is_completed": True},
         headers=jwt_headers,
     )
     assert cheat_resp.status_code == 200
-    cheat_data = cheat_resp.get_json() or {}
-
-    # The backend must NOT grant 60 seconds; it must cap it to the elapsed wall-clock time
-    data_obj = cheat_data.get("data") or cheat_data
-    seconds_recorded = data_obj.get("seconds_spent", 0)
-    assert seconds_recorded <= 10, f"Expected wall-clock clamped seconds, got {seconds_recorded}"
-    assert data_obj.get("is_completed") is False, (
-        "Fraudulent progress jump must NOT mark lesson complete"
+    data_obj = cheat_resp.get_json()["data"]
+    assert data_obj["seconds_spent"] == 0 and data_obj["seek_required"]
+    assert not data_obj["is_completed"]
+    # A legacy payload is denied outright rather than trusted as a first heartbeat.
+    rejected = client.post(
+        progress_url, json={"seconds_increment": 60, "view_fraction": 1.0}, headers=jwt_headers
     )
+    assert rejected.status_code == 400
 
     # Check that audit log recorded anomaly
     audit_evt = sess.query(AuditEvent).filter_by(action="LESSON_PROGRESS_PACE_ANOMALY").first()

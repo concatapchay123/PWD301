@@ -1,10 +1,13 @@
 # PWD301 — Intelligent Enterprise Learning & Assessment Management Platform
 
+> **VPS readiness (2026-10-10): Chưa DEPLOY_READY.** Ba bảng playback mới đưa DDL lên 76 bảng. Kết quả release phải xem [VPS_READINESS_REPORT.md](docs/deployment/VPS_READINESS_REPORT.md); các số PASS/lịch sử bên dưới không thay thế nghiệm thu staging và bản tích hợp TASK-089/090.
+
+
 <div align="center">
 
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)
 ![Flask Headless](https://img.shields.io/badge/Backend-Flask%20Headless%20REST%20API-black?logo=flask&logoColor=white)
-![MS SQL Server 2022](https://img.shields.io/badge/Database-MS%20SQL%20Server%202022%20(73%20B%E1%BA%A3ng)-CC292B?logo=microsoftsqlserver&logoColor=white)
+![MS SQL Server 2022](https://img.shields.io/badge/Database-MS%20SQL%20Server%202022%20(76%20B%E1%BA%A3ng)-CC292B?logo=microsoftsqlserver&logoColor=white)
 ![Docker Compose](https://img.shields.io/badge/Container-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 ![ClamAV Antivirus](https://img.shields.io/badge/Security-ClamAV%20Fail--Closed-red)
 ![Google Gemini AI](https://img.shields.io/badge/AI-Gemini%20Flash%20(Multi--Key%20Pool)-orange?logo=google&logoColor=white)
@@ -30,7 +33,7 @@
 - **Single-DOM SPA (Warm Editorial / Cisco NetAcad)**: High-performance Vanilla JavaScript Single-Page Application with hash-based routing, zero-bundle overhead, sub-100ms micro-loading, a unified Cisco NetAcad 3-column learning console, and an eye-friendly warm charcoal aesthetic.
 - **Server-Authoritative Assessment Engine**: 100% automated objective grading, Word (`.docx`) exam import studio with 50/50 split live-card parsing, strict single-active-tab lease heartbeat fencing (`lease_token`, `lease_epoch`), and immutable snapshot preservation.
 - **Resilient Multi-Key AI Ecosystem ("Bạch Tuộc AI")**: Integrated with Google Gemini Flash models via a thread-safe multi-key rotation pool, multi-model fallback cascades (`gemini-flash-latest`), zero-leak reconnaissance guardrails, sub-5s response latency, and role-scoped RAG.
-- **Enterprise Defense-in-Depth**: MS SQL Server 2022 normalized across 73 relational tables, RFC 4122 public UUIDs, `ROWVERSION` optimistic concurrency, ClamAV fail-closed malware quarantine (<1 GB video), physical host telemetry (Intel Core i9-14900HX, 31.7 GB RAM), and a 4-step controlled live database restore workflow.
+- **Enterprise Defense-in-Depth**: MS SQL Server 2022 normalized across 76 relational tables, RFC 4122 public UUIDs, `ROWVERSION` optimistic concurrency, ClamAV fail-closed malware quarantine (<1 GB video), actual OS/container telemetry, and a 4-step controlled live database restore workflow.
 
 ---
 
@@ -66,7 +69,7 @@ flowchart TD
     %% TẦNG 4: HẠ TẦNG & DỮ LIỆU CHUẨN
     subgraph TierInfra ["  4. HẠ TẦNG & DỮ LIỆU (INFRASTRUCTURE & PERSISTENCE)  "]
         STORE_FILE[("🛡️ An toàn Tệp & Lưu trữ\n(ClamAV Fail-Closed • /quarantine Isolation)")]
-        STORE_DB[("🗄️ Microsoft SQL Server 2022\n(Lõi 73 Bảng • RFC 4122 UUID • ROWVERSION OCC)")]
+        STORE_DB[("🗄️ Microsoft SQL Server 2022\n(Lõi 76 Bảng • RFC 4122 UUID • ROWVERSION OCC)")]
         STORE_AI["☁️ Google Gemini Cloud API\n(gemini-flash-latest • Multi-Model Cascade)"]
         STORE_HOST["💻 Host Telemetry Bridge\n(i9-14900HX • 31.7GB RAM • 551.6GB Disk)"]
     end
@@ -131,7 +134,7 @@ flowchart TD
     SUB_MONITOR --> TELEMETRY
     SUB_MONITOR --> AUDIT_TRAIL
 
-    Q_COURSE -->|Phê duyệt| DB_COMMIT[("🗄️ CSDL MSSQL 73 Bảng\n(Cập nhật Trạng thái & Audit Log)")]
+    Q_COURSE -->|Phê duyệt| DB_COMMIT[("🗄️ CSDL MSSQL 76 Bảng\n(Cập nhật Trạng thái & Audit Log)")]
     Q_CHANGE -->|Chấp thuận Diff| DB_COMMIT
     Q_INST -->|Nâng cấp vai trò INSTRUCTOR| DB_COMMIT
     DB_RESTORE -->|Khôi phục an toàn| DB_COMMIT
@@ -348,7 +351,7 @@ Dự án áp dụng kỷ luật kỹ thuật phần mềm nghiêm ngặt với q
 | **End-to-End (E2E)** | Mô phỏng toàn trình vòng đời Học viên, Giảng viên, Khảo thí | `test_student_lifecycle_e2e.py` | **100% PASS** |
 | **Static Code Quality** | Rà soát cú pháp, PEP8, kiểu dữ liệu, an ninh mã nguồn | `ruff check src tests` | **0 errors** |
 | **Frontend Syntax** | Thẩm định cú pháp toàn bộ tệp JavaScript SPA | `node --check` | **0 errors** |
-| **Repo Contract Check** | Thẩm định 73 bảng DDL SQL Server, Markdown fences, file contract | `python scripts/repo_check.py` | **100% PASS** |
+| **Repo Contract Check** | Thẩm định 76 bảng DDL SQL Server, Markdown fences, file contract | `python scripts/repo_check.py` | **100% PASS** |
 
 ### Lệnh Thực thi Kiểm tra Tổng thể
 - **Trên Windows PowerShell**: `./scripts/verify.ps1`
@@ -386,7 +389,7 @@ Hệ thống được phát triển bám sát và hiện thực hóa đầy đ�
 | Yêu cầu Rubric Topic 9 | Hiện thực hóa tại Hệ thống PWD301 | Mức độ Nâng cấp Vượt bậc |
 |---|---|:---:|
 | **Framework Flask, Python 3.11+** | Backend Flask Modular Monolith tổ chức chuyên nghiệp, chia tầng Controller / Service / Model rõ ràng. | Chuẩn mực Doanh nghiệp |
-| **CSDL Quan hệ SQL Server** | Kiến trúc **73 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION` OCC. | Vượt xa CRUD cơ bản (gấp 18 lần yêu cầu) |
+| **CSDL Quan hệ SQL Server** | Kiến trúc **76 bảng quan hệ** chuẩn hóa trên Microsoft SQL Server 2022, khóa chính BigInt kết hợp Public UUID, `ROWVERSION` OCC. | Vượt xa CRUD cơ bản (gấp 18 lần yêu cầu) |
 | **Quản lý Khóa học & Bài giảng** | Khóa học có điều kiện tiên quyết DAG, bài giảng Notion-style, video Anti-Seek, đính kèm tệp quét ClamAV, duyệt Diff Side-by-Side. | Đẳng cấp Cisco NetAcad / Notion |
 | **Khảo thí Trắc nghiệm Khách quan** | Exam Studio bóc tách trực tiếp file Word (`.docx`), 50/50 live preview, phòng chờ thông minh, chống gian lận Fullscreen, khóa tab Lease Fencing. | Đạt chuẩn Khảo thí Azota |
 | **Phân quyền Tối thiểu 3 Roles** | 3 vai trò chuẩn `STUDENT`, `INSTRUCTOR`, `ADMIN` kèm **5 nhóm quyền Admin phụ (Sub-roles)** với kiểm soát truy cập cấp đối tượng (Object-level IDOR Defense). | Bảo mật Đa tầng Phân cấp |
@@ -405,7 +408,7 @@ Hệ thống được phát triển bám sát và hiện thực hóa đầy đ�
   - [Danh mục Quy tắc Bất biến Bắt buộc](file:///e:/PWD301/docs/system/PWD301_SYSTEM_SPECIFICATION/implementation/06_NON_NEGOTIABLE_INVARIANTS.md)
 - **Đặc tả Cơ sở Dữ liệu Chuẩn mực**: [`docs/database/PWD301_DATABASE_ARCHITECTURE/`](file:///e:/PWD301/docs/database/PWD301_DATABASE_ARCHITECTURE/)
   - [Tài liệu Tổng quan CSDL & Sơ đồ ERD](file:///e:/PWD301/docs/database/PWD301_DATABASE_ARCHITECTURE/03_ERD.md)
-  - [Mã nguồn 73 DDL SQL Server Chuẩn](file:///e:/PWD301/docs/database/PWD301_DATABASE_ARCHITECTURE/sql/)
+  - [Mã nguồn 76 DDL SQL Server Chuẩn](file:///e:/PWD301/docs/database/PWD301_DATABASE_ARCHITECTURE/sql/)
 - **Kho Sơ đồ Tương tác Độc lập**: [`docs/diagrams/`](file:///e:/PWD301/docs/diagrams/)
   - [Sơ đồ Kiến trúc Hệ thống (HTML)](docs/diagrams/system-architecture.html)
   - [Sơ đồ Workflow Admin & Sub-admins (HTML)](docs/diagrams/admin-workflow.html)

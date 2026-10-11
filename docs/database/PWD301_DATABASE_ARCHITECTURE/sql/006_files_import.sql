@@ -13,6 +13,8 @@ CREATE TABLE file_blobs (
     size_bytes BIGINT NOT NULL,
     detected_mime_type NVARCHAR(150) NOT NULL,
     storage_key NVARCHAR(500) NOT NULL,
+    storage_backend VARCHAR(10) NOT NULL DEFAULT ('local'),
+    cloud_verified_at DATETIME2(3) NULL,
     status VARCHAR(20) NOT NULL DEFAULT ('PRESENT'),
     reference_count INT NOT NULL DEFAULT (0),
     created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
@@ -20,6 +22,7 @@ CREATE TABLE file_blobs (
     CONSTRAINT pk_file_blobs PRIMARY KEY (id),
     CONSTRAINT uq_file_blobs_sha256_1 UNIQUE (sha256),
     CONSTRAINT uq_file_blobs_storage_key_2 UNIQUE (storage_key),
+    CONSTRAINT ck_file_blobs_storage_backend CHECK (storage_backend IN ('local','s3')),
     CONSTRAINT ck_file_blobs_1 CHECK (size_bytes > 0),
     CONSTRAINT ck_file_blobs_2 CHECK (status IN ('PRESENT','DELETING','DELETED')),
     CONSTRAINT ck_file_blobs_3 CHECK (reference_count >= 0)

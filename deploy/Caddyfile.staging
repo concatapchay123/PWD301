@@ -1,0 +1,9 @@
+https://localhost:8443 {
+    tls internal
+    reverse_proxy web:5000
+}
+
+# Loopback-only browser smoke surface; production still exposes HTTPS exclusively.
+http://localhost:8080 {
+    reverse_proxy web:5000
+}

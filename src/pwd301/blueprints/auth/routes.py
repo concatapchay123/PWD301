@@ -45,6 +45,24 @@ from pwd301.services.user_service import (
 )
 
 
+@auth_bp.get("/runtime-config")
+def runtime_config():
+    """Publish only UI environment flags; secrets are never included."""
+    environment = current_app.config.get("APP_ENV", "production")
+    if environment not in {"development", "testing", "production"}:
+        environment = "production"
+    enabled = environment in {"development", "testing"} and bool(
+        current_app.config.get("SEED_DEMO_DATA", False)
+    )
+    response = jsonify(
+        success=True,
+        data={"environment": environment, "demo_accounts_enabled": enabled},
+        error=None,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _is_safe_redirect_url(target: str) -> bool:
     """Validate that target redirect URL is strictly local and cannot trigger open redirect."""
     if not target or not isinstance(target, str):

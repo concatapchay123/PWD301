@@ -101,6 +101,7 @@ from pwd301.models.operations import (
     SystemBackup,
     SystemHealthSnapshot,
 )
+from pwd301.models.playback import MediaProgress, PlaybackReceipt, PlaybackSession
 from pwd301.models.question_bank import (
     Question,
     QuestionChoice,
@@ -112,6 +113,9 @@ from pwd301.models.question_bank import (
 from pwd301.models.types import register_sqlite_functions
 
 __all__ = [
+    "PlaybackSession",
+    "MediaProgress",
+    "PlaybackReceipt",
     # Identity & Auth
     "User",
     "AnonymousUser",

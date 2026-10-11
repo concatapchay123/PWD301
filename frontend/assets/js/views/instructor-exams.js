@@ -1626,8 +1626,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     );
 
     let activeTab = 'drag'; // 'drag' | 'fill' | 'match'
-    let pendingImageAssetId = null
-    let imageUploadInProgress = false
+    let pendingImageAssetId = null;
+    let imageUploadInProgress = false;
 
     container.innerHTML = `
       <div id="interactive-builder-root" class="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100">
@@ -1655,7 +1655,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
             <!-- LEFT: Builder Form (6 cols) -->
-            <div class="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-5">
+            <div class="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
               
               <!-- Tab Switcher -->
               <div>
@@ -1673,7 +1673,39 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 </div>
               </div>
 
-              <!-- FORM 1: Kéo thả từ vào chỗ trống -->
+              <!-- Question Meta & Asset Toolbar (Bloom & Image Upload directly integrated) -->
+              <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <label for="interactive-bloom-select" class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[16px] text-teal-600">psychology</span>
+                    <span>Mức độ tư duy:</span>
+                  </label>
+                  <select id="interactive-bloom-select" class="px-2.5 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded-lg outline-none bg-white dark:bg-slate-700 font-semibold text-slate-800 dark:text-slate-200">
+                    <option value="Nhận biết">Nhận biết</option>
+                    <option value="Thông hiểu" selected>Thông hiểu</option>
+                    <option value="Vận dụng">Vận dụng</option>
+                  </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <input type="file" id="interactive-image-input" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+                  <button type="button" id="btn-trigger-image-upload" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors" title="Tải ảnh lên hoặc bấm Ctrl+V để dán trực tiếp">
+                    <span class="material-symbols-outlined text-[16px] text-teal-600">add_photo_alternate</span>
+                    <span>Thêm ảnh</span>
+                    <span class="text-[10px] text-slate-400 font-normal">(Ctrl+V)</span>
+                  </button>
+                  <div id="interactive-image-preview-container" class="hidden items-center gap-1.5 bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 px-2 py-0.5 rounded-lg shadow-2xs">
+                    <img id="interactive-image-thumb" src="" alt="Thumbnail" class="w-5 h-5 object-cover rounded" />
+                    <span id="interactive-image-filename" class="text-[11px] font-medium text-slate-700 dark:text-slate-300 max-w-[100px] truncate">ảnh.png</span>
+                    <button type="button" id="btn-remove-interactive-image" class="text-slate-400 hover:text-rose-500 flex items-center justify-center p-0.5" title="Xóa ảnh">
+                      <span class="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p id="interactive-image-status" class="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">PNG, JPEG, WebP hoặc GIF dưới 5 MB. Có thể bấm Ctrl+V khi đang nhập để dán ảnh trực tiếp.</p>
+
+              <!-- FORM 1: Kéo thả từ vào chỗ trống (1:1 từ, không có từ nhiễu) -->
               <div id="form-container-drag" class="space-y-4">
                 <div>
                   <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -1685,18 +1717,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     class="w-full p-3 text-xs sm:text-sm border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: Giao thức [HTTPS] bảo vệ đường truyền bằng chứng chỉ [SSL/TLS] chạy mặc định trên cổng [443]."
                   ></textarea>
-                  <span class="text-[11px] text-slate-500 dark:text-slate-300 mt-1 block">Ví dụ: Giao thức [HTTPS] bảo vệ đường truyền. Từ trong [ ] trở thành ô trống.</span>
-                </div>
-
-                <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Từ lựa chọn thêm (Không bắt buộc)</label>
-                  <input
-                    type="text"
-                    id="drag-distractors-input"
-                    class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
-                    placeholder="Ví dụ: HTTP, 80, 21, SSH"
-                    value=""
-                  />
+                  <span class="text-[11px] text-slate-500 dark:text-slate-300 mt-1 block">Ví dụ: Giao thức [HTTPS] bảo vệ đường truyền. Mỗi cụm trong [ ] sẽ trở thành 1 ô trống và 1 từ tương ứng trong ngân hàng từ.</span>
                 </div>
               </div>
 
@@ -1725,8 +1746,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     placeholder="Ví dụ: JWT, JSON Web Token, jwt"
                     value=""
                   />
-                <p class="text-[11px] text-slate-500 dark:text-slate-300 mt-1">Nhiều cách viết cho cùng một ô: ngăn bằng dấu phẩy. Nhiều ô: ngăn nhóm đáp án bằng dấu chấm phẩy.</p></div>
-
+                  <p class="text-[11px] text-slate-500 dark:text-slate-300 mt-1">Nhiều cách viết cho cùng một ô: ngăn bằng dấu phẩy. Nhiều ô: ngăn nhóm đáp án bằng dấu chấm phẩy.</p>
+                </div>
               </div>
 
               <!-- FORM 3: Ghép đôi cặp tương ứng -->
@@ -1737,7 +1758,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     type="text"
                     id="match-stem-input"
                     class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
-                    placeholder="Ví dụ: Ghép giao thức với cổng mạng tương ứng"
+                    placeholder="Ví dụ: Ghép công cụ bảo mật với chức năng tương ứng"
                   />
                 </div>
 
@@ -1751,25 +1772,25 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </div>
                   <div id="match-pairs-list" class="space-y-2">
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: HTTP" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
+                      <input type="text" placeholder="Ví dụ: Nmap" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Nmap" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Cổng 80" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
+                      <input type="text" placeholder="Ví dụ: Quét cổng và nhận diện dịch vụ" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Quét cổng và nhận diện dịch vụ" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: HTTPS" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
+                      <input type="text" placeholder="Ví dụ: Wireshark" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Wireshark" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Cổng 443" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
+                      <input type="text" placeholder="Ví dụ: Bắt và phân tích gói tin mạng" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Bắt và phân tích gói tin mạng" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: SSH" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
+                      <input type="text" placeholder="Ví dụ: Metasploit" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Metasploit" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Cổng 22" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
+                      <input type="text" placeholder="Ví dụ: Mô phỏng khai thác lỗ hổng bảo mật" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Mô phỏng khai thác lỗ hổng bảo mật" />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Shared Meta -->
+              <!-- Shared Meta (Points & Explanation) -->
               <div class="pt-4 border-t border-slate-100 dark:border-slate-700 space-y-4">
                 <div>
                   <label for="interactive-points-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Điểm cho câu hỏi</label>
@@ -1779,24 +1800,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   <label for="interactive-exp-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Lời giải thích (Không bắt buộc)</label>
                   <input type="text" id="interactive-exp-input" class="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800" placeholder="Giải thích đáp án sau khi học viên nộp bài..." />
                 </div>
-                <details class="rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-                  <summary class="cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">Tùy chọn thêm</summary>
-                  <div class="space-y-4 mt-4">
-                <div>
-                  <label for="interactive-bloom-select" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Mức độ tư duy</label>
-                  <select id="interactive-bloom-select" class="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 font-semibold">
-                    <option value="Nhận biết">Nhận biết</option>
-                    <option value="Thông hiểu" selected>Thông hiểu</option>
-                    <option value="Vận dụng">Vận dụng</option>
-                  </select>
-                </div>
-              <div>
-                <label for="interactive-image-input" class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Ảnh minh họa (Không bắt buộc)</label>
-                <input type="file" id="interactive-image-input" accept="image/png,image/jpeg,image/webp,image/gif" class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800" />
-                <p id="interactive-image-status" class="mt-1 text-[11px] text-slate-500 dark:text-slate-300">PNG, JPEG, WebP hoặc GIF, tối đa 5 MB.</p>
-              </div>
-                  </div>
-                </details>
               </div>
 
               <!-- Submit Button -->
@@ -1821,7 +1824,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></span>
                     <h3 class="text-sm font-bold text-slate-900 dark:text-white">Xem trước câu hỏi</h3>
                   </div>
-                  <span class="text-[11px] px-2 py-0.5 rounded bg-teal-50 text-teal-700 font-semibold">Góc nhìn học viên</span>
+                  <span class="text-[11px] px-2 py-0.5 rounded bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 font-semibold border border-teal-200 dark:border-teal-800">Góc nhìn học viên</span>
                 </div>
 
                 <div id="interactive-live-preview-box" class="min-h-[160px] flex flex-col justify-center">
@@ -1829,7 +1832,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 </div>
 
                 <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <button type="button" id="btn-test-interactive-answer" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs transition-colors">
+                  <button type="button" id="btn-test-interactive-answer" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/40 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs transition-colors">
                     Kiểm tra đáp án
                   </button>
                   <span id="test-feedback-msg" class="text-xs font-semibold text-slate-500"></span>
@@ -1865,6 +1868,83 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     InstructorView.bindExamWorkflowHeaderEvents(2, '#/instructor/exams/matrix', () => {
       window.location.hash = '#/instructor/exams/matrix';
+    });
+
+    // Image upload handler (File input & Ctrl+V clipboard)
+    const handleImageUpload = async (file) => {
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+        UI.showToast('Vui lòng chọn hoặc dán ảnh định dạng PNG, JPEG, WebP hoặc GIF dung lượng dưới 5 MB.', 'warning');
+        return;
+      }
+      if (!draft.courseId) {
+        UI.showToast('Vui lòng chọn khóa học trước khi thêm ảnh vào câu hỏi.', 'warning');
+        return;
+      }
+      imageUploadInProgress = true;
+      const status = document.getElementById('interactive-image-status');
+      if (status) status.textContent = 'Đang tải lên và quét an toàn...';
+      try {
+        const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
+        pendingImageAssetId = uploaded?.asset_id || uploaded?.public_id || null;
+        if (!pendingImageAssetId) throw new Error('Không nhận được mã định danh tệp sau khi tải lên.');
+        const containerEl = document.getElementById('interactive-image-preview-container');
+        const thumbEl = document.getElementById('interactive-image-thumb');
+        const filenameEl = document.getElementById('interactive-image-filename');
+        if (containerEl && thumbEl && filenameEl) {
+          thumbEl.src = URL.createObjectURL(file);
+          filenameEl.textContent = file.name || 'Ảnh đã dán';
+          containerEl.classList.remove('hidden');
+          containerEl.classList.add('inline-flex');
+        }
+        if (status) status.textContent = `Đã gắn ảnh: ${file.name || 'Ảnh từ bộ nhớ đệm'}`;
+        UI.showToast('Đã tải ảnh câu hỏi lên thành công.', 'success');
+      } catch (error) {
+        pendingImageAssetId = null;
+        if (status) status.textContent = 'Không thể tải ảnh lên.';
+        UI.showToast(error.message || 'Tải ảnh câu hỏi thất bại.', 'error');
+      } finally {
+        imageUploadInProgress = false;
+      }
+    };
+
+    // Clipboard paste listener (Ctrl+V)
+    document.getElementById('interactive-builder-root')?.addEventListener('paste', async (event) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            event.preventDefault();
+            await handleImageUpload(file);
+            break;
+          }
+        }
+      }
+    });
+
+    document.getElementById('btn-trigger-image-upload')?.addEventListener('click', () => {
+      document.getElementById('interactive-image-input')?.click();
+    });
+
+    document.getElementById('interactive-image-input')?.addEventListener('change', async (event) => {
+      const file = event.currentTarget.files?.[0];
+      if (file) await handleImageUpload(file);
+    });
+
+    document.getElementById('btn-remove-interactive-image')?.addEventListener('click', () => {
+      pendingImageAssetId = null;
+      const input = document.getElementById('interactive-image-input');
+      if (input) input.value = '';
+      const previewCont = document.getElementById('interactive-image-preview-container');
+      if (previewCont) {
+        previewCont.classList.add('hidden');
+        previewCont.classList.remove('inline-flex');
+      }
+      const status = document.getElementById('interactive-image-status');
+      if (status) status.textContent = 'PNG, JPEG, WebP hoặc GIF dưới 5 MB. Có thể bấm Ctrl+V khi đang nhập để dán ảnh trực tiếp.';
     });
 
     // Tab switcher logic
@@ -1909,9 +1989,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           <input type="text" placeholder="Khái niệm A" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" />
           <span class="text-slate-400">➔</span>
           <input type="text" placeholder="Ý nghĩa B" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" />
-          <button type="button" class="text-slate-400 hover:text-rose-500" onclick="this.parentElement.remove(); renderLivePreview();">×</button>
+          <button type="button" class="text-slate-400 hover:text-rose-500 p-1" onclick="this.parentElement.remove(); renderLivePreview();">×</button>
         `;
         list.appendChild(row);
+        row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', renderLivePreview));
         renderLivePreview();
       }
     });
@@ -1926,35 +2007,30 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       const inputId = activeTab === 'drag' ? 'drag-stem-input' : activeTab === 'fill' ? 'fill-stem-input' : 'match-stem-input';
       if (!document.getElementById(inputId)?.value.trim()) {
-        previewBox.innerHTML = '<p class="text-sm text-slate-600 dark:text-slate-300 text-center py-8">Nhập nội dung ở bên trái để xem trước câu hỏi.</p>';
+        previewBox.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Nhập nội dung ở bên trái để xem trước câu hỏi.</p>';
         return;
       }
 
       if (activeTab === 'drag') {
         const text = document.getElementById('drag-stem-input')?.value || '';
-        const tokens = [...text.matchAll(/\[(.*?)\]/g)].map(match => match[1]);
-        const distractors = (document.getElementById('drag-distractors-input')?.value || '')
-          .split(',')
-          .map(value => value.trim())
-          .filter(Boolean);
-        const allPills = [...tokens, ...distractors];
+        const tokens = [...text.matchAll(/\[(.*?)\]/g)].map(match => match[1].trim()).filter(Boolean);
         let previewHtml = UI.escapeHtml(text);
-        tokens.forEach(token => {
+        tokens.forEach((token, sIdx) => {
           const safeToken = UI.escapeHtml(token);
           previewHtml = previewHtml.replace(
             `[${safeToken}]`,
-            `<button type="button" class="drop-slot inline-block border-2 border-dashed border-teal-500 bg-teal-50/40 rounded-lg px-3 py-1 min-w-[60px] text-center font-bold text-teal-700 text-xs" data-expected="${safeToken}" aria-label="Drop a word here">___</button>`
+            `<button type="button" class="drop-slot inline-flex items-center justify-center border-2 border-dashed border-teal-500 bg-teal-50/60 dark:bg-teal-950/40 rounded-xl px-3 py-1 min-w-[72px] text-center font-bold text-teal-700 dark:text-teal-300 text-xs transition-all hover:border-teal-600 align-middle mx-1 cursor-pointer" data-expected="${safeToken}" data-slot-index="${sIdx}" title="Nhấp để gỡ từ khỏi ô">___</button>`
           );
         });
 
         previewBox.innerHTML = `
-          <div class="space-y-4">
+          <div class="space-y-4 select-none">
             <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-loose">${previewHtml}</div>
             <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-              <span class="text-[11px] font-bold text-slate-500 block mb-1.5">Drag or select a word:</span>
+              <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-2">Ngân hàng từ (Nhấp hoặc kéo thả để điền vào ô trống):</span>
               <div class="flex flex-wrap gap-2" id="preview-drag-pills">
-                ${allPills.map((word, index) => `
-                  <button type="button" draggable="true" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white font-bold text-xs cursor-grab drag-pill-btn" data-word-index="${index}" data-word="${UI.escapeHtml(word)}">${UI.escapeHtml(word)}</button>
+                ${tokens.map((word, index) => `
+                  <button type="button" draggable="true" class="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs cursor-grab active:cursor-grabbing shadow-xs transition-all drag-pill-btn" data-word-index="${index}" data-word="${UI.escapeHtml(word)}">${UI.escapeHtml(word)}</button>
                 `).join('')}
               </div>
             </div>
@@ -1962,28 +2038,54 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         `;
 
         const assignWord = (slot, wordIndex) => {
-          const previousIndex = Number(slot.dataset.wordIndex);
-          if (Number.isInteger(previousIndex)) {
+          const previousIndex = slot.dataset.wordIndex ? Number(slot.dataset.wordIndex) : null;
+          if (previousIndex !== null && Number.isInteger(previousIndex)) {
             const previousPill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${previousIndex}"]`);
-            if (previousPill) previousPill.disabled = false;
+            if (previousPill) {
+              previousPill.disabled = false;
+              previousPill.classList.remove('opacity-30', 'pointer-events-none');
+            }
           }
           const pill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${wordIndex}"]`);
           if (!pill) return;
           slot.dataset.wordIndex = String(wordIndex);
-          slot.textContent = pill.dataset.word || '';
+          slot.innerHTML = `<span class="px-2 py-0.5 rounded-lg bg-teal-600 text-white text-xs font-bold inline-flex items-center gap-1">${UI.escapeHtml(pill.dataset.word || '')} <span class="material-symbols-outlined text-[13px]">close</span></span>`;
+          slot.classList.remove('border-dashed');
+          slot.classList.add('border-solid', 'border-teal-600');
           pill.disabled = true;
+          pill.classList.add('opacity-30', 'pointer-events-none');
         };
+
+        const removeWordFromSlot = (slot) => {
+          const wIndex = slot.dataset.wordIndex ? Number(slot.dataset.wordIndex) : null;
+          if (wIndex !== null && Number.isInteger(wIndex)) {
+            const pill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${wIndex}"]`);
+            if (pill) {
+              pill.disabled = false;
+              pill.classList.remove('opacity-30', 'pointer-events-none');
+            }
+          }
+          delete slot.dataset.wordIndex;
+          slot.textContent = '___';
+          slot.classList.add('border-dashed');
+          slot.classList.remove('border-solid', 'border-teal-600');
+        };
+
         previewBox.querySelectorAll('.drag-pill-btn').forEach(pill => {
           pill.addEventListener('click', () => {
             const emptySlot = Array.from(previewBox.querySelectorAll('.drop-slot'))
-              .find(slot => !slot.dataset.wordIndex);
+              .find(slot => slot.dataset.wordIndex === undefined);
             if (emptySlot) assignWord(emptySlot, Number(pill.dataset.wordIndex));
           });
           pill.addEventListener('dragstart', event => {
             event.dataTransfer?.setData('text/plain', pill.dataset.wordIndex || '');
           });
         });
+
         previewBox.querySelectorAll('.drop-slot').forEach(slot => {
+          slot.addEventListener('click', () => {
+            if (slot.dataset.wordIndex !== undefined) removeWordFromSlot(slot);
+          });
           slot.addEventListener('dragover', event => event.preventDefault());
           slot.addEventListener('drop', event => {
             event.preventDefault();
@@ -1993,12 +2095,13 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             if (Number.isInteger(wordIndex)) assignWord(slot, wordIndex);
           });
         });
+
       } else if (activeTab === 'fill') {
         const stem = document.getElementById('fill-stem-input')?.value || '';
         let liveBlankIndex = 0;
         const stemRendered = UI.escapeHtml(stem).replace(/_{3,}/g, () => {
           const blankIndex = liveBlankIndex++;
-          return `<input type="text" id="live-fill-input-${blankIndex}" aria-label="Answer for blank ${blankIndex + 1}" placeholder="Blank ${blankIndex + 1}" class="inline-block px-2 py-1 text-xs font-bold border-b-2 border-teal-600 bg-teal-50/50 outline-none w-32 text-center" />`;
+          return `<input type="text" id="live-fill-input-${blankIndex}" aria-label="Ô trống ${blankIndex + 1}" placeholder="Ô ${blankIndex + 1}" class="inline-block px-2.5 py-1 text-xs font-semibold rounded-lg border-b-2 border-teal-600 bg-teal-50/60 dark:bg-teal-950/40 text-slate-800 dark:text-slate-100 outline-none w-32 text-center focus:ring-1 focus:ring-teal-500" />`;
         });
         previewBox.innerHTML = `
           <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
@@ -2006,31 +2109,203 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           </div>
         `;
       } else if (activeTab === 'match') {
-        const stem = document.getElementById('match-stem-input')?.value || '';
+        const stem = document.getElementById('match-stem-input')?.value.trim() || 'Ghép các mục tương ứng';
         const rows = document.querySelectorAll('.match-pair-row');
         const pairs = Array.from(rows).map(row => ({
           left: row.querySelector('.pair-left')?.value.trim() || '',
           right: row.querySelector('.pair-right')?.value.trim() || ''
         })).filter(pair => pair.left && pair.right);
-        const matchRows = InstructorView.buildInteractiveMatchPreview(pairs);
+
+        if (pairs.length < 2) {
+          previewBox.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-400 text-center py-8">Cần nhập ít nhất 2 cặp đầy đủ để xem trước nối từ.</p>';
+          return;
+        }
+
+        // Shuffle right options deterministically or randomly for realistic preview
+        const shuffledRight = pairs.map((p, idx) => ({ idx, text: p.right }))
+          .sort(() => Math.random() - 0.5);
+
+        const leftLetter = (i) => String(i + 1).padStart(2, '0');
+        const rightLetter = (i) => String.fromCharCode(65 + i);
 
         previewBox.innerHTML = `
-          <div class="space-y-3">
-            <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">${UI.escapeHtml(stem)}</p>
-            <p class="text-[11px] text-slate-600 dark:text-slate-300">Chọn một đáp án cho mỗi mục:</p>
-            <div class="space-y-2">
-              ${matchRows.map((row, index) => `
-                <label class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-                  <span class="font-bold text-slate-900 dark:text-white sm:w-1/2">${index + 1}. ${UI.escapeHtml(row.left)}</span>
-                  <select class="preview-match-choice w-full sm:w-1/2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-xs text-slate-900 dark:text-slate-100" data-expected="${UI.escapeHtml(row.expected)}" aria-label="Ghép với ${UI.escapeHtml(row.left)}">
-                    <option value="">Chọn đáp án</option>
-                    ${row.options.map(option => `<option value="${UI.escapeHtml(option)}">${UI.escapeHtml(option)}</option>`).join('')}
-                  </select>
-                </label>
-              `).join('')}
+          <div class="matching-challenge-board bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl p-5 select-none relative overflow-hidden" id="instructor-preview-matching-board">
+            <!-- Header -->
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <span class="text-emerald-400 font-bold text-[11px] uppercase tracking-wider">Thử thách ghép đôi</span>
+              <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40" id="preview-match-counter">0/${pairs.length} đã nối</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-1">${UI.escapeHtml(stem)}</h4>
+            <p class="text-xs text-slate-400 mb-3">Chọn một mục bên trái, sau đó chọn chức năng đúng ở bên phải để nối.</p>
+            <div class="h-1 w-full bg-slate-800 rounded-full mb-5 overflow-hidden">
+              <div id="preview-match-progress" class="h-full bg-emerald-500 transition-all duration-300 w-0"></div>
+            </div>
+
+            <!-- SVG Curves Overlay -->
+            <svg id="preview-matching-svg" class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible"></svg>
+
+            <!-- 2 Columns Container -->
+            <div class="grid grid-cols-2 gap-8 md:gap-14 relative z-10">
+              <!-- Left Column (A) -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                  <span>Cột A · Khái niệm</span>
+                  <span>${pairs.length} mục</span>
+                </div>
+                ${pairs.map((p, lIdx) => `
+                  <div class="matching-card-left p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-left-idx="${lIdx}" id="prev-left-card-${lIdx}">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${leftLetter(lIdx)}</span>
+                      <span class="font-semibold text-xs text-slate-200 truncate">${UI.escapeHtml(p.left)}</span>
+                    </div>
+                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="left-${lIdx}"></span>
+                  </div>
+                `).join('')}
+              </div>
+
+              <!-- Right Column (B) -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
+                  <span>Cột B · Ý nghĩa</span>
+                  <span>${pairs.length} mục</span>
+                </div>
+                ${shuffledRight.map((r, rPos) => `
+                  <div class="matching-card-right p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-right-orig-idx="${r.idx}" data-right-pos="${rPos}" id="prev-right-card-${rPos}">
+                    <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="right-${rPos}"></span>
+                    <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                      <span class="font-medium text-xs text-slate-200 text-right truncate">${UI.escapeHtml(r.text)}</span>
+                      <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${rightLetter(rPos)}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Footer Controls -->
+            <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <button type="button" id="btn-reset-preview-matches" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-colors">
+                <span class="material-symbols-outlined text-[14px]">restart_alt</span>
+                <span>Xóa lựa chọn</span>
+              </button>
+              <span class="text-[11px] text-slate-500">Bấm một mục trái rồi bấm một mục phải để nối</span>
             </div>
           </div>
         `;
+
+        // Interactive matching state
+        const board = document.getElementById('instructor-preview-matching-board');
+        const svg = document.getElementById('preview-matching-svg');
+        const counter = document.getElementById('preview-match-counter');
+        const progress = document.getElementById('preview-match-progress');
+        const activeMatches = new Map(); // leftIdx -> rightPos
+        let selectedLeftIdx = null;
+
+        const updateMatchingLines = () => {
+          if (!board || !svg) return;
+          const bRect = board.getBoundingClientRect();
+          svg.innerHTML = '';
+          activeMatches.forEach((rPos, lIdx) => {
+            const lPort = board.querySelector(`[data-port="left-${lIdx}"]`);
+            const rPort = board.querySelector(`[data-port="right-${rPos}"]`);
+            if (!lPort || !rPort) return;
+            const lpRect = lPort.getBoundingClientRect();
+            const rpRect = rPort.getBoundingClientRect();
+            const x1 = lpRect.left + lpRect.width / 2 - bRect.left;
+            const y1 = lpRect.top + lpRect.height / 2 - bRect.top;
+            const x2 = rpRect.left + rpRect.width / 2 - bRect.left;
+            const y2 = rpRect.top + rpRect.height / 2 - bRect.top;
+            const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
+            const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', '#10b981');
+            path.setAttribute('stroke-width', '3');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('style', 'filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.7));');
+            svg.appendChild(path);
+          });
+
+          // Update styles of cards and dots
+          board.querySelectorAll('.port-dot').forEach(dot => {
+            dot.className = 'port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all';
+          });
+          board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
+            c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400');
+            c.classList.add('border-slate-700/80');
+          });
+
+          if (selectedLeftIdx !== null) {
+            const selCard = board.querySelector(`[data-left-idx="${selectedLeftIdx}"]`);
+            const selDot = board.querySelector(`[data-port="left-${selectedLeftIdx}"]`);
+            if (selCard) selCard.classList.add('ring-2', 'ring-teal-400', 'border-teal-400');
+            if (selDot) selDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-teal-400 bg-teal-400 ring-4 ring-teal-400/20 shrink-0 transition-all';
+          }
+
+          activeMatches.forEach((rPos, lIdx) => {
+            const lCard = board.querySelector(`[data-left-idx="${lIdx}"]`);
+            const rCard = board.querySelector(`[data-right-pos="${rPos}"]`);
+            const lDot = board.querySelector(`[data-port="left-${lIdx}"]`);
+            const rDot = board.querySelector(`[data-port="right-${rPos}"]`);
+            if (lCard) { lCard.classList.remove('border-slate-700/80'); lCard.classList.add('border-emerald-500/60'); }
+            if (rCard) { rCard.classList.remove('border-slate-700/80'); rCard.classList.add('border-emerald-500/60'); }
+            if (lDot) lDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            if (rDot) rDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+          });
+
+          if (counter) counter.textContent = `${activeMatches.size}/${pairs.length} đã nối`;
+          if (progress) progress.style.width = `${Math.round((activeMatches.size / pairs.length) * 100)}%`;
+        };
+
+        // Click on Left card
+        board.querySelectorAll('.matching-card-left').forEach(card => {
+          card.addEventListener('click', () => {
+            const lIdx = Number(card.dataset.leftIdx);
+            if (selectedLeftIdx === lIdx) {
+              selectedLeftIdx = null;
+            } else {
+              selectedLeftIdx = lIdx;
+            }
+            updateMatchingLines();
+          });
+        });
+
+        // Click on Right card
+        board.querySelectorAll('.matching-card-right').forEach(card => {
+          card.addEventListener('click', () => {
+            const rPos = Number(card.dataset.rightPos);
+            if (selectedLeftIdx !== null) {
+              // Remove any existing connection using this rPos
+              for (const [k, v] of activeMatches.entries()) {
+                if (v === rPos) activeMatches.delete(k);
+              }
+              activeMatches.set(selectedLeftIdx, rPos);
+              selectedLeftIdx = null;
+              updateMatchingLines();
+            } else {
+              for (const [k, v] of activeMatches.entries()) {
+                if (v === rPos) activeMatches.delete(k);
+              }
+              updateMatchingLines();
+            }
+          });
+        });
+
+        // Reset
+        document.getElementById('btn-reset-preview-matches')?.addEventListener('click', () => {
+          activeMatches.clear();
+          selectedLeftIdx = null;
+          updateMatchingLines();
+        });
+
+        window.addEventListener('resize', updateMatchingLines);
+        requestAnimationFrame(updateMatchingLines);
+
+        // Store matches on previewBox for the test answer button
+        previewBox._activeMatches = activeMatches;
+        previewBox._shuffledRight = shuffledRight;
+        previewBox._pairs = pairs;
       }
     };
 
@@ -2058,51 +2333,21 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           feedbackMsg.innerHTML = `<span class="text-rose-600 font-bold">Chưa đúng đáp án.</span>`;
         }
       } else {
-        const choices = Array.from(previewBox.querySelectorAll('.preview-match-choice'));
-        const correctCount = choices.length;
-        const correctSelected = choices.filter(input => input.value && input.value === input.dataset.expected).length;
-        const isCompleteMatch = correctCount > 0 && correctSelected === correctCount;
-        feedbackMsg.textContent = isCompleteMatch
-          ? `Đúng ${correctSelected}/${correctCount} cặp.`
-          : `Đúng ${correctSelected}/${correctCount} cặp. Hãy chọn một đáp án cho mỗi mục.`;
-        feedbackMsg.className = isCompleteMatch
+        const activeMatches = previewBox._activeMatches || new Map();
+        const shuffledRight = previewBox._shuffledRight || [];
+        const pairs = previewBox._pairs || [];
+        let correctCount = 0;
+        activeMatches.forEach((rPos, lIdx) => {
+          const matchedOrigIdx = shuffledRight[rPos]?.idx;
+          if (matchedOrigIdx === lIdx) correctCount++;
+        });
+        const isComplete = pairs.length > 0 && correctCount === pairs.length;
+        feedbackMsg.textContent = isComplete
+          ? `✓ Xuất sắc! Nối chính xác 100% (${correctCount}/${pairs.length} cặp).`
+          : `Đúng ${correctCount}/${pairs.length} cặp. ${activeMatches.size < pairs.length ? 'Hãy hoàn thành tất cả các cặp.' : 'Hãy thử ghép lại.'}`;
+        feedbackMsg.className = isComplete
           ? 'text-xs font-bold text-emerald-600'
           : 'text-xs font-bold text-amber-600';
-      }
-    });
-
-    document.getElementById('interactive-image-input')?.addEventListener('change', async event => {
-      const input = event.currentTarget;
-      const file = input.files?.[0];
-      const status = document.getElementById('interactive-image-status');
-      if (!file) return;
-      if (file.size > 5 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
-        input.value = '';
-        UI.showToast('Vui lòng chọn ảnh định dạng PNG, JPEG, WebP hoặc GIF dung lượng dưới 5 MB.', 'warning');
-        return;
-      }
-      if (!draft.courseId) {
-        UI.showToast('Vui lòng chọn khóa học trước khi thêm ảnh vào câu hỏi.', 'warning');
-        input.value = '';
-        return;
-      }
-      input.disabled = true;
-      imageUploadInProgress = true;
-      if (status) status.textContent = 'Đang tải lên và quét an toàn...';
-      try {
-        const uploaded = await ApiClient.uploadCourseFile(draft.courseId, file);
-        pendingImageAssetId = uploaded?.asset_id || uploaded?.public_id || null;
-        if (!pendingImageAssetId) throw new Error('Không nhận được mã định danh tệp sau khi tải lên.');
-        if (status) status.textContent = `Đã gắn ảnh: ${file.name}`;
-        UI.showToast('Đã tải ảnh câu hỏi lên thành công. Ảnh sẽ hiển thị sau khi hoàn tất quét an toàn.', 'success');
-      } catch (error) {
-        input.value = '';
-        pendingImageAssetId = null;
-        if (status) status.textContent = 'Không thể tải ảnh lên.';
-        UI.showToast(error.message || 'Tải ảnh câu hỏi thất bại.', 'error');
-      } finally {
-        imageUploadInProgress = false;
-        input.disabled = false;
       }
     });
 
@@ -2122,6 +2367,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       field.insertAdjacentElement('afterend', hint);
       field.focus();
     };
+
     document.getElementById('interactive-builder-root')?.addEventListener('input', event => {
       const field = event.target;
       if (!field.classList?.contains('interactive-field-error')) return;
@@ -2160,18 +2406,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           return;
         }
         const cleanStem = stem.replace(/\[(.*?)\]/g, '___');
-        const distractors = (document.getElementById('drag-distractors-input')?.value || '')
-          .split(',').map(word => word.trim()).filter(Boolean);
-        const optionsByValue = new Map();
-        [...tokens, ...distractors].forEach(word => {
-          const key = word.toLocaleLowerCase();
-          if (!optionsByValue.has(key)) optionsByValue.set(key, word);
-        });
-        const options = Array.from(optionsByValue.values());
-        if (options.length > 16) {
-          showInteractiveError('drag-distractors-input', 'Tối đa 16 từ lựa chọn, gồm đáp án và từ thêm.');
-          return;
-        }
+        // No distractors allowed (strictly 1:1 tokens)
+        const options = [...new Set(tokens)];
         const choices = tokens.flatMap((answer, blankIndex) => options.map((option, optionIndex) => ({
           content: `[[PWD301:G:DRAG:${blankIndex + 1}]]${option}`,
           is_correct: option.toLocaleLowerCase() === answer.toLocaleLowerCase(),
@@ -2268,16 +2504,22 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           pairs
         };
       }
+
       if (newQuestion) {
         if (pendingImageAssetId) newQuestion.image_asset_id = pendingImageAssetId;
         window.ExamStore.appendQuestions([newQuestion]);
         pendingImageAssetId = null;
         const imageInput = document.getElementById('interactive-image-input');
         if (imageInput) imageInput.value = '';
+        const previewCont = document.getElementById('interactive-image-preview-container');
+        if (previewCont) {
+          previewCont.classList.add('hidden');
+          previewCont.classList.remove('inline-flex');
+        }
         const imageStatus = document.getElementById('interactive-image-status');
-        if (imageStatus) imageStatus.textContent = 'PNG, JPEG, WebP, or GIF up to 5 MB.';
+        if (imageStatus) imageStatus.textContent = 'PNG, JPEG, WebP hoặc GIF dưới 5 MB. Có thể bấm Ctrl+V khi đang nhập để dán ảnh trực tiếp.';
         interactiveQuestions.push(newQuestion);
-        for (const id of ['drag-stem-input', 'drag-distractors-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input', 'interactive-exp-input']) {
+        for (const id of ['drag-stem-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input', 'interactive-exp-input']) {
           const field = document.getElementById(id);
           if (field) field.value = '';
         }
@@ -2293,8 +2535,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         UI.showToast('Đã thêm câu hỏi. Bạn có thể soạn câu tiếp theo.', 'success');
       }
     });
-
-    const chr = (n) => String.fromCharCode(n);
 
     // Render Questions List
     const renderQuestionsList = () => {
@@ -2359,8 +2599,12 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     });
 
     // Form live listeners
-    ['drag-stem-input', 'drag-distractors-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input'].forEach(id => {
+    ['drag-stem-input', 'fill-stem-input', 'fill-answers-input', 'match-stem-input'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', renderLivePreview);
+    });
+
+    document.querySelectorAll('.match-pair-row input').forEach(inp => {
+      inp.addEventListener('input', renderLivePreview);
     });
 
     renderLivePreview();
@@ -3524,6 +3768,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       <option value="LATEST" ${config.scoringPolicy === 'LATEST' ? 'selected' : ''}>Lấy lần thi mới nhất</option>
                     </select>
                   </div>
+
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-answer-visibility-policy">
+                      Chính sách xem lại kết quả bài thi
+                    </label>
+                    <select id="cfg-answer-visibility-policy" class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800">
+                      <option value="IMMEDIATE" ${config.answerVisibilityPolicy === 'IMMEDIATE' || !config.answerVisibilityPolicy ? 'selected' : ''}>Xem đầy đủ (Đáp án đúng, câu đã chọn &amp; giải thích)</option>
+                      <option value="CORRECT_WRONG_ONLY" ${config.answerVisibilityPolicy === 'CORRECT_WRONG_ONLY' ? 'selected' : ''}>Chỉ xem đúng/sai (Không hiển thị đáp án đúng câu sai)</option>
+                      <option value="NEVER" ${config.answerVisibilityPolicy === 'NEVER' ? 'selected' : ''}>Không cho xem lại chi tiết (Chỉ xem điểm tổng kết)</option>
+                      <option value="AFTER_CLOSE" ${config.answerVisibilityPolicy === 'AFTER_CLOSE' ? 'selected' : ''}>Xem đầy đủ sau khi đóng bài thi</option>
+                      <option value="AFTER_ALL_ATTEMPTS" ${config.answerVisibilityPolicy === 'AFTER_ALL_ATTEMPTS' ? 'selected' : ''}>Xem đầy đủ sau lượt cuối hoặc khi đóng bài thi</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
@@ -3909,6 +4166,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const maxAtt = attemptsRaw ? parseInt(attemptsRaw, 10) : null;
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
+        const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
         const policy = InstructorView.readExamPolicy();
         window.ExamStore.saveDraft({ config: {
           duration,
@@ -3917,6 +4175,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           maxAttempts: maxAtt,
           shuffleQuestions: shuffle,
           scoringPolicy,
+          answerVisibilityPolicy,
           examLayout: policy.exam_layout,
           monitoringEnabled: policy.monitoring_enabled,
           requestFullscreen: policy.request_fullscreen
@@ -3934,6 +4193,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           require_password: false,
           shuffle_questions: shuffle,
           scoring_policy: scoringPolicy,
+          answer_visibility_policy: answerVisibilityPolicy,
           ...policy
         };
         if (openAtIso) asmPayload.open_at = openAtIso;
@@ -4323,6 +4583,20 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </div>
 
                   <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Chính sách xem lại kết quả bài thi</label>
+                    <select
+                      id="edit-exam-answer-visibility-policy"
+                      class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                    >
+                      <option value="IMMEDIATE" ${assessment.answer_visibility_policy === 'IMMEDIATE' || !assessment.answer_visibility_policy ? 'selected' : ''}>Xem đầy đủ (Đáp án đúng, câu đã chọn &amp; giải thích)</option>
+                      <option value="CORRECT_WRONG_ONLY" ${assessment.answer_visibility_policy === 'CORRECT_WRONG_ONLY' ? 'selected' : ''}>Chỉ xem đúng/sai (Không hiển thị đáp án đúng câu sai)</option>
+                      <option value="NEVER" ${assessment.answer_visibility_policy === 'NEVER' ? 'selected' : ''}>Không cho xem lại chi tiết (Chỉ xem điểm tổng kết)</option>
+                      <option value="AFTER_CLOSE" ${assessment.answer_visibility_policy === 'AFTER_CLOSE' ? 'selected' : ''}>Xem đầy đủ sau khi đóng bài thi</option>
+                      <option value="AFTER_ALL_ATTEMPTS" ${assessment.answer_visibility_policy === 'AFTER_ALL_ATTEMPTS' ? 'selected' : ''}>Xem đầy đủ sau lượt cuối hoặc khi đóng bài thi</option>
+                    </select>
+                  </div>
+
+                  <div>
                     <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Bố cục hiển thị câu hỏi</label>
                     <select
                       id="edit-exam-layout"
@@ -4665,12 +4939,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
         try {
           UI.showToast('Đang lưu thay đổi...', 'info');
+          const ansVisibility = document.getElementById('edit-exam-answer-visibility-policy')?.value || 'IMMEDIATE';
           const payload = {
             title: title,
             duration_minutes: duration,
             max_attempts: maxAttempts,
             attempt_limit: maxAttempts,
             scoring_policy: scoringPolicy,
+            answer_visibility_policy: ansVisibility,
             exam_layout: examLayout,
             shuffle_questions: shuffle,
             monitoring_enabled: monitoring,
@@ -4686,6 +4962,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           assessment.max_attempts = maxAttempts;
           assessment.attempt_limit = maxAttempts;
           assessment.scoring_policy = scoringPolicy;
+          assessment.answer_visibility_policy = ansVisibility;
           assessment.exam_layout = examLayout;
           assessment.shuffle_questions = shuffle;
           assessment.monitoring_enabled = monitoring;

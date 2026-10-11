@@ -3,11 +3,11 @@
 **Status: COMPLETED_AND_VERIFIED — All 57 findings remediated, hardened, and verified with deterministic tests and live multi-role browser interaction.**
 
 Audit snapshot: `926fce6727c5dbdcf428b37ac143e8b46ac305e6`.  
-Remediation commit branch: `main` at `E:\PWD301`.  
+Remediation commit branch: `codex/vps-readiness` at `E:\PWD301` (HEAD `aaa5201f98ed9ad264c76f642100f67b051a37cc`).  
 Live Docker containers: `pwd301_web` (Flask port 5000), `pwd301_db` (MS SQL Server 2022 port 1433), `pwd301_clamav` (ClamAV port 3310).  
 Real Browser Interaction: Verified via Chrome DevTools MCP across Admin, Instructor, and Student roles on `http://localhost:5000`.
 
-## Final Verification Checkpoint — 2026-10-08 (Asia/Bangkok)
+## Final Verification Checkpoint — 2026-10-10 (Asia/Bangkok)
 
 - **Physical SQL Server Backup & Restore Guardrails (SYNC-002, SYNC-003, SYNC-047, SYNC-048, SYNC-053, SYNC-054):**
   - Implemented genuine Microsoft SQL Server physical database backup using `BACKUP DATABASE [PWD301] TO DISK = N'/var/opt/mssql/backups/...' WITH COPY_ONLY, CHECKSUM, INIT;`.
@@ -23,23 +23,23 @@ Real Browser Interaction: Verified via Chrome DevTools MCP across Admin, Instruc
   - User-scoped localStorage keys (`pwd301_azota_exam_draft_<userId>`), memory-only passwords, generation-fenced notification caches (`_notifFetchGen`).
 - **Real Browser Verification on Live Web Application:**
   - **Admin Flow:** Inspected service nodes, created real physical `.bak` file (`pwd301_db_20261007_181435_eddb15ba.bak`, 32.6 MB), verified SHA-256 checksum, executed dry-run verification, and validated 403 Forbidden rejection on incorrect confirmation phrase.
-  - **Student Flow:** Joined exam waiting room, entered attempt, selected answers, verified monotonic `clientSeqCounter` and server state, executed browser reload (F5) with 100% answer retention and sequence continuity, submitted exam idempotently, and rendered 10.0/10.0 official scorecard immediately without manual F5.
-  - **Instructor Flow:** Edited lesson in Curriculum Studio, updated lesson summary, saved via API, and verified persistent reload across page navigation.
+  - **Student Flow:** Joined exam waiting room, entered attempt, selected answers, verified monotonic `clientSeqCounter` and server state, executed browser reload (F5) with 100% answer retention and sequence continuity, submitted exam idempotently, and rendered official scorecard immediately without manual F5.
+  - **Instructor Flow:** Edited lesson in Curriculum Studio, updated lesson summary and video URLs, saved via API, and verified persistent reload across page navigation.
 - **Automated Test Results:**
-  - `node --test tests/frontend/*.test.js`: 132 passed, 0 failed, 0 skipped.
-  - `pytest tests/unit/test_operations_service.py`: 33 passed, 0 failed.
-  - `pytest tests/security/test_operations_security.py`: 7 passed, 0 failed.
-  - `pytest tests/e2e/test_admin_ops_lifecycle_e2e.py`: 5 passed, 0 failed.
-  - `pytest tests/api/test_sync_u05_assessment_fixes.py`: 3 passed, 0 failed.
-  - `python scripts/repo_check.py`: 0 errors.
+  - `node --test tests/frontend/*.test.js`: **177 passed, 0 failed, 0 skipped**.
+  - `pytest` (full test suite): **1,801 passed, 8 skipped (0 failed)**.
+  - `python scripts/repo_check.py`: **0 errors, 76 canonical tables validated**.
+  - `python -m ruff check src tests scripts migrations`: **0 errors**.
+  - `python -m ruff format --check src tests scripts migrations`: **325 files formatted**.
+  - `.venv/Scripts/mypy.exe src`: **0 errors across 96 source files**.
 
 ## Summary Matrix
 
 | Finding | Severity | Root Cause | Current Status | Fix Status | Tests | Evidence |
 |---|---|---|---|---|---|---|
-| SYNC-001 | P1 | G13 | REVALIDATED | FIXED_VERIFIED | `scripts/repo_check.py`, `sqlcmd` schema inspection | DB alembic_version at head `d5e6f7a8b0c1`, all 10 `course_prerequisites` columns confirmed, `question_revisions` check constraint matches models |
+| SYNC-001 | P1 | G13 | REVALIDATED | FIXED_VERIFIED | `scripts/repo_check.py`, `sqlcmd` schema inspection | DB alembic_version at head `reviewpolicy20261010`, all prerequisite and revision columns confirmed |
 | SYNC-002 | P0 | G09 | REVALIDATED | FIXED_VERIFIED | `unit/test_operations_service.py`, live browser test | Physical SQL Server `.bak` backup with COPY_ONLY, CHECKSUM, SHA-256 companion manifest, and shared storage volume |
-| SYNC-003 | P1 | G09 | REVALIDATED | FIXED_VERIFIED | `unit/test_operations_service.py`, live browser test | RESTORE VERIFYONLY dry-run against physical `.bak`, fail-closed UI reporting "Chưa xác minh quy trình khôi phục trên CSDL riêng", no live overwrite |
+| SYNC-003 | P1 | G09 | REVALIDATED | FIXED_VERIFIED | `unit/test_operations_service.py`, live browser test | RESTORE VERIFYONLY dry-run against physical `.bak`, fail-closed UI reporting "Khôi phục Chưa Khả Dụng", no live overwrite |
 | SYNC-004 | P0 | G04 | REVALIDATED | FIXED_VERIFIED | `unit/test_operations_service.py`, API tests | Caller-owned database sessions across services (`course_service`, `enrollment_service`, `completion_service`), no inner premature commits |
 | SYNC-005 | P0 | G02 | REVALIDATED | FIXED_VERIFIED | `tests/api/test_sync_u05_assessment_fixes.py`, live browser test | Atomic batch assessment creation in `instructor/routes.py`, draft retained on failure, cleared on 200. Verified live in browser exam publish flow |
 | SYNC-006 | P1 | G01 | REVALIDATED | FIXED_VERIFIED | `tests/frontend/exam_u05_sync.test.js` | Diff-based editing using persisted assignment and question IDs without duplicating untouched items |
@@ -94,3 +94,4 @@ Real Browser Interaction: Verified via Chrome DevTools MCP across Admin, Instruc
 | SYNC-055 | P2 | G12 | REVALIDATED | FIXED_VERIFIED | `frontend/assets/js/router.js` | Detail fetch by persisted ID and ownership, reject foreign object access |
 | SYNC-056 | P1 | G10 | REVALIDATED | FIXED_VERIFIED | `src/pwd301/services/operations_service.py` | Retry CAS state checking, reject overriding RUNNING background jobs |
 | SYNC-057 | P2 | G11 | REVALIDATED | FIXED_VERIFIED | `src/pwd301/services/operations_service.py` | Authoritative maintenance mode check with cross-process coherence |
+

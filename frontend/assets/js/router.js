@@ -175,6 +175,16 @@ class AppRouter {
   }
 
   handleRoute() {
+    const rawHash = window.location.hash || '';
+    if (rawHash.startsWith('#') && !rawHash.startsWith('#/')) {
+      const targetId = rawHash.slice(1);
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      return Promise.resolve();
+    }
+
     if (this._isRouting) {
       this._rerouteRequested = true;
       return this._routingPromise;
@@ -466,11 +476,14 @@ class AppRouter {
     // --- Student Routes ---
     if (path === '#/student/dashboard') {
       await StudentView.renderDashboard(viewport);
-    } else if (path === '#/student/catalog') {
+    } else if (path === '#/student/catalog' || path === '#/student/courses/catalog') {
       await StudentView.renderCatalog(viewport);
     } else if (path === '#/student/courses') {
       await StudentView.renderMyLearning(viewport);
-    } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/'))) {
+    } else if (path === '#/student/courses/intro' || path === '#/student/courses/overview' || (path.startsWith('#/student/courses/') && (path.endsWith('/intro') || path.endsWith('/overview')))) {
+      const courseId = query.id || path.replace('#/student/courses/', '').replace('/intro', '').replace('/overview', '');
+      await StudentView.renderCourseOverview(viewport, courseId);
+    } else if (path === '#/student/courses/detail' || (path.startsWith('#/student/courses/') && !path.includes('/lessons/') && path !== '#/student/courses/catalog')) {
       const courseId = query.id || path.replace('#/student/courses/', '');
       await StudentView.renderCourseConsole(viewport, courseId, query.lesson_id || null, query.exam_id || null, query.tab || 'outline');
     } else if (path === '#/student/lessons/reader' || (path.startsWith('#/student/courses/') && path.includes('/lessons/'))) {
@@ -491,7 +504,7 @@ class AppRouter {
       const attId = query.id || path.replace('#/student/assessments/attempts/', '');
       await StudentView.renderAttemptConsole(viewport, attId);
     } else if (path === '#/student/assessments/results' || (path.startsWith('#/student/') && path.endsWith('/results'))) {
-      const attId = query.id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
+      const attId = query.id || query.attempt_id || path.replace('#/student/assessments/attempts/', '').replace('/results', '');
       await StudentView.renderAttemptResults(viewport, attId);
     } else if (path === '#/student/ai-assistant') {
       await StudentView.renderAIAssistant(viewport);

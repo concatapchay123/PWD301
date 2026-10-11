@@ -12,10 +12,13 @@ import re
 
 import pytest
 import sqlalchemy as sa
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from flask_migrate import downgrade, upgrade
 
 from pwd301 import create_app
 from pwd301.extensions import db
+from tests.conftest import require_disposable_sqlserver_target
 
 
 @pytest.mark.integration
@@ -23,6 +26,7 @@ def test_sqlserver_migrations_upgrade_downgrade_upgrade_roundtrip(monkeypatch):
     database_url = os.environ.get("SQLSERVER_MIGRATION_URL")
     if not database_url:
         pytest.skip("SQLSERVER_MIGRATION_URL is required for disposable SQL Server coverage")
+    require_disposable_sqlserver_target(database_url)
 
     monkeypatch.setenv("DATABASE_URL", database_url)
     app = create_app("development")
@@ -59,5 +63,9 @@ def test_sqlserver_migrations_upgrade_downgrade_upgrade_roundtrip(monkeypatch):
             revision = connection.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-        assert revision == "c4d5e6f7a8b0"
+        config = Config("migrations/alembic.ini")
+        config.set_main_option("script_location", "migrations")
+        heads = ScriptDirectory.from_config(config).get_heads()
+        assert len(heads) == 1
+        assert revision == heads[0]
         db.engine.dispose()

@@ -52,6 +52,9 @@ class BaseConfig:
     # Reverse proxy configuration
     USE_PROXY_FIX: bool = os.environ.get("USE_PROXY_FIX", "true").lower() in ("true", "1", "yes")
     NUM_PROXIES: int = int(os.environ.get("NUM_PROXIES", "1"))
+    CLAMAV_ENABLED: bool = False
+    CLAMAV_MAX_STREAM_BYTES: int = 100_000_000
+    CLAMAV_TIMEOUT: float = 30.0
 
     # Large file streaming / Reverse proxy offload
     USE_X_ACCEL_REDIRECT: bool = os.environ.get("USE_X_ACCEL_REDIRECT", "false").lower() in (
@@ -76,6 +79,11 @@ class BaseConfig:
     S3_BUCKET_NAME: str = os.environ.get("S3_BUCKET_NAME", "pwd301-assets")
     S3_REGION_NAME: str = os.environ.get("S3_REGION_NAME", "auto")
     S3_PUBLIC_DOMAIN: str | None = os.environ.get("S3_PUBLIC_DOMAIN")
+    YOUTUBE_API_KEY: str | None = os.environ.get("YOUTUBE_API_KEY")
+    STORAGE_CACHE_MAX_BYTES: int = 1_073_741_824
+    STORAGE_CACHE_TTL_SECONDS: int = 3600
+    FILE_QUARANTINE_MAX_BYTES: int = 2_147_483_648
+    FILE_MIN_FREE_BYTES: int = 1_073_741_824
 
     # File upload limits (Current business invariant: video strictly < 1 GB)
     MAX_IMAGE_BYTES: int = int(os.environ.get("MAX_IMAGE_BYTES", "10000000"))
@@ -177,6 +185,25 @@ class BaseConfig:
             self.S3_REGION_NAME = os.environ["S3_REGION_NAME"]
         if "S3_PUBLIC_DOMAIN" in os.environ:
             self.S3_PUBLIC_DOMAIN = os.environ["S3_PUBLIC_DOMAIN"]
+        self.YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+        self.CLAMAV_ENABLED = os.environ.get("CLAMAV_ENABLED", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.CLAMAV_MAX_STREAM_BYTES = int(os.environ.get("CLAMAV_MAX_STREAM_BYTES", "100000000"))
+        self.CLAMAV_TIMEOUT = float(os.environ.get("CLAMAV_TIMEOUT", "30"))
+        for setting in (
+            "STORAGE_CACHE_MAX_BYTES",
+            "STORAGE_CACHE_TTL_SECONDS",
+            "FILE_QUARANTINE_MAX_BYTES",
+            "FILE_MIN_FREE_BYTES",
+        ):
+            if setting in os.environ:
+                value = int(os.environ[setting])
+                if value <= 0:
+                    raise ValueError(f"{setting} must be positive.")
+                setattr(self, setting, value)
 
 
 class DevelopmentConfig(BaseConfig):
@@ -248,6 +275,17 @@ class ProductionConfig(BaseConfig):
             self.REMEMBER_COOKIE_SECURE = os.environ.get(
                 "REMEMBER_COOKIE_SECURE", "true"
             ).lower() in ("true", "1", "yes")
+        if not self.SESSION_COOKIE_SECURE:
+            raise ValueError("SESSION_COOKIE_SECURE must be true in production.")
+        if not self.REMEMBER_COOKIE_SECURE:
+            raise ValueError("REMEMBER_COOKIE_SECURE must be true in production.")
+        self.CLAMAV_ENABLED = os.environ.get("CLAMAV_ENABLED", "true").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if not self.CLAMAV_ENABLED:
+            raise ValueError("CLAMAV_ENABLED must be true in production.")
 
 
 config_by_name: dict[str, type[BaseConfig]] = {

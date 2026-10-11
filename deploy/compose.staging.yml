@@ -1,0 +1,11 @@
+# Disposable test environment; never combine this file with an existing production project.
+services:
+  db:
+    ports:
+      - "127.0.0.1:15439:1433"
+  proxy:
+    ports: !override
+      - "127.0.0.1:18443:8443"
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro

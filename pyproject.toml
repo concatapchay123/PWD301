@@ -64,6 +64,9 @@ module = [
   "psutil",
   "reportlab",
   "reportlab.*",
+  "boto3",
+  "boto3.*",
+  "botocore.*",
 ]
 ignore_missing_imports = true
 

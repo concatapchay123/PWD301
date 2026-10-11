@@ -14,6 +14,8 @@ test('change request review uses a full page with before and after content', asy
     escapeHtml: value => String(value ?? ''),
     renderMarkdown: value => String(value ?? ''),
     showToast: () => {},
+    confirm: async () => true,
+    refreshCurrentRoute: () => {},
   };
   const ApiClient = {
     getAdminChangeRequests: async () => ({ change_requests: [{
@@ -38,7 +40,7 @@ test('change request review uses a full page with before and after content', asy
   assert.equal(window.location.hash, '#/admin/governance?tab=courses');
 });
 
-test('pending Admin queue offers one review action before a decision', async () => {
+test('pending Admin queue offers inspection and confirmed quick approval', async () => {
   const tbody = { innerHTML: '', querySelectorAll: () => [] };
   const box = {
     innerHTML: '',
@@ -65,9 +67,26 @@ test('pending Admin queue offers one review action before a decision', async () 
     window, UI, ApiClient, console,
     document: { getElementById: id => id === 'courses-review-box' ? box : id === 'change-requests-tbody' ? tbody : null },
   }, { filename });
-  await window.AdminView.renderTabCoursesReview({ innerHTML: '' });
-  assert.match(tbody.innerHTML, /Xét duyệt/);
+  await window.AdminView.renderTabCoursesReview({ innerHTML: '', querySelector: () => box });
+  assert.match(tbody.innerHTML, />Xem</);
+  assert.match(tbody.innerHTML, /quick-pass-cr-btn/);
+  assert.match(tbody.innerHTML, />Duyệt</);
   assert.doesNotMatch(tbody.innerHTML, /approve-cr-btn|reject-cr-btn/);
+});
+
+test('course queue renders into its route container while the previous route still exists', async () => {
+  const oldBox = { innerHTML: 'Previous route', querySelector: () => null, querySelectorAll: () => [] };
+  const newBox = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
+  const container = { innerHTML: '', querySelector: () => newBox };
+  const window = {};
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8'), {
+    window, console, UI: { escapeHtml: String, formatDate: String, formatDateTime: String },
+    ApiClient: { getPendingCourses: async () => ({ courses: [] }), getAdminChangeRequests: async () => ({ change_requests: [] }) },
+    document: { getElementById: id => id === 'courses-review-box' ? oldBox : null },
+  });
+  await window.AdminView.renderTabCoursesReview(container);
+  assert.match(newBox.innerHTML, /Khóa học chờ duyệt/);
+  assert.equal(oldBox.innerHTML, 'Previous route');
 });
 
 test('learning unit review compares the unit title instead of course metadata', () => {
@@ -215,4 +234,28 @@ test('course review opens as a full page with approval after inspection', async 
   assert.equal(typeof elements['modal-approve-course-btn'].onclick, 'function');
   await elements['modal-approve-course-btn'].onclick();
   assert.equal(window.location.hash, '#/admin/governance?tab=courses');
+});
+
+test('change approval cancellation and server errors preserve the inspected request', async () => {
+  const elements = { 'diff-approve-btn': {}, 'diff-reject-btn': {} };
+  const window = { location: { hash: '#/admin/change-requests/review?id=7' } };
+  let confirmed = false;
+  let writes = 0;
+  const errors = [];
+  const UI = { escapeHtml: String, renderMarkdown: String, confirm: async () => confirmed,
+    showToast: message => errors.push(message), refreshCurrentRoute: () => { throw new Error('Must not refresh on failure'); } };
+  const ApiClient = { reviewAdminChangeRequest: async () => { writes++; throw new Error('Request already resolved'); } };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8'), {
+    window, UI, ApiClient, document: { getElementById: id => elements[id] || null }, console,
+  });
+  window.AdminView.renderChangeRequestReviewDetail({ innerHTML: '' }, {
+    id: 7, target_type: 'LESSON', status: 'PENDING', original_data: {}, proposed_payload: { title: 'New' },
+  });
+  await elements['diff-approve-btn'].onclick();
+  assert.equal(writes, 0);
+  confirmed = true;
+  await elements['diff-approve-btn'].onclick();
+  assert.equal(writes, 1);
+  assert.equal(window.location.hash, '#/admin/change-requests/review?id=7');
+  assert.match(errors[0], /Request already resolved/);
 });

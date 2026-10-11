@@ -6,6 +6,20 @@
 class AuthView {
   static isCapsLockActive = false;
 
+  static attachDemoButtons(root) {
+    root.querySelectorAll('.seed-acc-btn').forEach(btn => {
+      btn.onclick = () => {
+        const email = document.getElementById('login-email');
+        const password = document.getElementById('login-password');
+        if (email) email.value = btn.dataset.email || '';
+        if (password) password.value = btn.dataset.pass || '';
+        window._demoSelectedRole = btn.dataset.role || null;
+        document.getElementById('auth-error-alert')?.classList.add('hidden');
+        document.getElementById('login-submit-btn')?.focus();
+      };
+    });
+  }
+
   static checkCapsLock(event) {
     if (!event || typeof event.getModifierState !== 'function') {
       return false;
@@ -73,7 +87,7 @@ class AuthView {
     };
   }
 
-  static render() {
+  static render(runtime = {}) {
     return `
       <div class="min-h-full w-full flex flex-col justify-center items-center px-4 py-8 sm:py-14 bg-[#FAF9F5] dark:bg-[#191919] font-sans selection:bg-[#ECE8DF] selection:text-[#222120] dark:selection:bg-[#37352F] dark:selection:text-[#EDEDEB]">
         
@@ -189,7 +203,7 @@ class AuthView {
                 </label>
                 <span class="text-[10px] text-[#8F8E8A] flex items-center gap-1">
                   <span class="material-symbols-outlined text-[13px] text-emerald-600">lock</span>
-                  Bảo mật TLS
+                  ${window.location?.protocol === 'https:' ? 'Bảo mật TLS' : 'Kết nối cục bộ'}
                 </span>
               </div>
 
@@ -210,8 +224,10 @@ class AuthView {
               </div>
             </form>
 
+            <div id="auth-demo-anchor">
+            ${runtime.demo_accounts_enabled === true && ['development', 'testing'].includes(runtime.environment) ? `
             <!-- Quick Seed Demo Accounts Accordion -->
-            <div class="pt-3 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
+            <div id="auth-demo-accounts" class="pt-3 border-t border-[#E8E6DF] dark:border-[#2E2D2B]">
               <details class="group">
                 <summary class="flex items-center justify-between text-xs font-semibold text-[#8F8E8A] hover:text-[#222120] dark:hover:text-[#EDEDEB] cursor-pointer select-none py-1">
                   <span class="flex items-center gap-1.5">
@@ -268,6 +284,8 @@ class AuthView {
                   </button>
                 </div>
               </details>
+            </div>
+            ` : ''}
             </div>
           </div>
 
@@ -506,6 +524,26 @@ class AuthView {
   }
 
   static attachEvents() {
+    const anchor = document.getElementById('auth-demo-anchor');
+    if (anchor && typeof fetch === 'function') {
+      fetch('/auth/runtime-config', { credentials: 'same-origin', cache: 'no-store' })
+        .then(response => response.ok ? response.json() : null)
+        .then(result => {
+          if (anchor.isConnected) {
+            const config = result?.data;
+            if (config?.demo_accounts_enabled === true && ['development', 'testing'].includes(config.environment)) {
+              const template = document.createElement('template');
+              template.innerHTML = AuthView.render(config);
+              const panel = template.content.querySelector('#auth-demo-accounts');
+              if (panel) {
+                anchor.replaceChildren(panel);
+                AuthView.attachDemoButtons(anchor);
+              }
+            }
+          }
+        })
+        .catch(() => {}); // Default render already omits demo credentials.
+    }
     // Login elements
     const loginForm = document.getElementById('auth-login-form');
     const emailInput = document.getElementById('login-email');
@@ -654,16 +692,7 @@ class AuthView {
       };
     }
 
-    // Seed account buttons
-    document.querySelectorAll('.seed-acc-btn').forEach(btn => {
-      btn.onclick = () => {
-        if (emailInput) emailInput.value = btn.dataset.email || '';
-        if (passInput) passInput.value = btn.dataset.pass || '';
-        window._demoSelectedRole = btn.dataset.role || null;
-        hideError();
-        if (submitBtn) submitBtn.focus();
-      };
-    });
+    AuthView.attachDemoButtons(document);
 
     const showError = (msg) => {
       if (errorAlert && errorText) {

@@ -251,9 +251,9 @@ def test_api_record_progress_jwt(
     )
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["seconds_spent"] == 35
-    assert data["is_completed"] is True
-    assert data["completed_at"] is not None
+    assert data["seconds_spent"] == 0
+    assert data["is_completed"] is False
+    assert data["completed_at"] is None
 
 
 def test_api_record_activity_alias_jwt(
@@ -292,7 +292,7 @@ def test_api_record_activity_alias_jwt(
     )
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["seconds_spent"] == 20
+    assert data["seconds_spent"] == 0
     assert data["is_completed"] is False
 
 

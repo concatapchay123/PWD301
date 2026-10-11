@@ -39,6 +39,12 @@ def seed_baseline(session: Session | scoped_session[Any]) -> dict[str, Any]:
     Returns:
         Summary dictionary of created vs existing records.
     """
+    if os.environ.get("APP_ENV") == "production":
+        password = os.environ.get("ADMIN_PASSWORD", "")
+        if len(password) < 12 or password == DEFAULT_ADMIN_PASSWORD:
+            raise ValueError("ADMIN_PASSWORD must be supplied securely for production bootstrap.")
+        if not os.environ.get("ADMIN_EMAIL"):
+            raise ValueError("ADMIN_EMAIL must be supplied for production bootstrap.")
     summary: dict[str, Any] = {
         "roles_created": [],
         "roles_existing": [],

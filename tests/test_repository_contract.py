@@ -21,7 +21,9 @@ def test_database_is_not_duplicated_under_system_spec() -> None:
 def test_canonical_ddl_has_expected_table_count() -> None:
     sql_dir = ROOT / "docs/database/PWD301_DATABASE_ARCHITECTURE/sql"
     ddl = "\n".join(p.read_text(encoding="utf-8") for p in sorted(sql_dir.glob("*.sql")))
-    assert len(re.findall(r"\bCREATE\s+TABLE\b", ddl, flags=re.IGNORECASE)) == 73
+    assert len(re.findall(r"\bCREATE\s+TABLE\b", ddl, flags=re.IGNORECASE)) == 76
+    for table in ("playback_sessions", "lesson_media_progress", "playback_receipts"):
+        assert re.search(rf"\bCREATE\s+TABLE\s+{table}\b", ddl, flags=re.IGNORECASE)
 
 
 def test_current_task_exists() -> None:

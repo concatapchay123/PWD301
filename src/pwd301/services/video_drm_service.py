@@ -13,8 +13,10 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -40,10 +42,12 @@ class VideoDRMKeyAuthError(VideoDRMError):
 def _get_app_secret() -> str:
     """Retrieve app secret key for HMAC token signing."""
     try:
-        secret = current_app.config.get("SECRET_KEY", "pwd301-default-drm-secret")
+        secret = current_app.config.get("SECRET_KEY")
+        if not secret:
+            raise VideoDRMKeyAuthError("Configured application signing key is required.")
         return str(secret)
-    except RuntimeError:
-        return "pwd301-default-drm-secret"
+    except RuntimeError as error:
+        raise VideoDRMKeyAuthError("Application context is required for DRM signing.") from error
 
 
 def generate_key_token(
@@ -139,6 +143,58 @@ def transcode_to_encrypted_hls(
     key_uri_relative: str = "key",
     segment_duration_seconds: int = 4,
 ) -> str:
+    """Serialize generation and publish the playlist only after complete encryption."""
+    from pwd301.services.file_service import filesystem_lease
+
+    output = Path(output_dir)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    def complete(directory: Path) -> bool:
+        playlist = directory / "playlist.m3u8"
+        key = directory / "enc.key"
+        if not playlist.is_file() or not key.is_file() or key.stat().st_size != 16:
+            return False
+        with playlist.open(encoding="utf-8") as stream:
+            content = stream.read(1_000_001)
+        segments = re.findall(r"(?m)^(segment_\d+\.ts)$", content)
+        return bool(
+            len(content) <= 1_000_000
+            and "#EXT-X-ENDLIST" in content
+            and "#EXT-X-KEY:METHOD=AES-128" in content
+            and segments
+            and all((directory / filename).is_file() for filename in segments)
+        )
+
+    with filesystem_lease(output.parent / (output.name + ".generation.lock")):
+        if complete(output):
+            return str(output / "playlist.m3u8")
+        try:
+            with tempfile.TemporaryDirectory(prefix="pwd301-hls-", dir=output.parent) as temporary:
+                staging = Path(temporary)
+                _generate_encrypted_hls(
+                    input_path, str(staging), key_uri_relative, segment_duration_seconds
+                )
+                if not complete(staging):
+                    raise VideoDRMTranscodeError("Encrypted HLS generation is incomplete.")
+                output.mkdir(parents=True, exist_ok=True)
+                (staging / "enc.key").chmod(0o600)
+                for segment in staging.glob("segment_*.ts"):
+                    segment.replace(output / segment.name)
+                (staging / "enc.key").replace(output / "enc.key")
+                (staging / "playlist.m3u8").replace(output / "playlist.m3u8")
+                return str(output / "playlist.m3u8")
+        except subprocess.TimeoutExpired as error:
+            raise VideoDRMTranscodeError(
+                "Video processing exceeded its bounded runtime; retry later."
+            ) from error
+
+
+def _generate_encrypted_hls(
+    input_path: str,
+    output_dir: str,
+    key_uri_relative: str = "key",
+    segment_duration_seconds: int = 4,
+) -> str:
     """Transcode source video to AES-128 encrypted HLS playlist and segments using FFmpeg.
 
     Args:
@@ -196,7 +252,7 @@ def transcode_to_encrypted_hls(
     ]
 
     try:
-        subprocess.run(cmd_copy, capture_output=True, text=True, check=True)
+        subprocess.run(cmd_copy, capture_output=True, text=True, check=True, timeout=30)
         logger.info(f"Successfully transcoded HLS (copy): {playlist_file}")
         return str(playlist_file)
     except subprocess.CalledProcessError:
@@ -212,6 +268,8 @@ def transcode_to_encrypted_hls(
         "libx264",
         "-preset",
         "veryfast",
+        "-threads",
+        "1",
         "-c:a",
         "aac",
         "-hls_time",
@@ -226,7 +284,7 @@ def transcode_to_encrypted_hls(
     ]
 
     try:
-        subprocess.run(cmd_encode, capture_output=True, text=True, check=True)
+        subprocess.run(cmd_encode, capture_output=True, text=True, check=True, timeout=60)
         logger.info(f"Successfully transcoded HLS (re-encode): {playlist_file}")
         return str(playlist_file)
     except subprocess.CalledProcessError as err:
@@ -245,3 +303,30 @@ def get_lesson_hls_directory(course_id: int, lesson_id: int) -> Path:
     hls_dir = storage_base / "drm_hls" / f"course_{course_id}" / f"lesson_{lesson_id}"
     hls_dir.mkdir(parents=True, exist_ok=True)
     return hls_dir
+
+
+def get_asset_hls_directory(lesson, asset, revision) -> Path:
+    """A changed revision cannot reuse another asset's encrypted media cache."""
+    return (
+        get_lesson_hls_directory(lesson.course_id, lesson.id)
+        / str(asset.public_id)
+        / str(revision.public_id)
+    )
+
+
+def resolve_lesson_hls_asset(actor, lesson, asset_id=None, session=None):
+    """Apply the same object authorization and scan guards to every HLS request."""
+    from pwd301.extensions import db
+    from pwd301.services.exceptions import ResourceNotFoundError
+    from pwd301.services.file_service import authorize_file_download
+
+    resources = lesson.resources
+    if not resources and lesson.previous_lesson:
+        resources = lesson.previous_lesson.resources
+    for resource in resources:
+        asset = resource.file_asset
+        if asset and asset.is_video and (asset_id is None or str(asset.public_id) == str(asset_id)):
+            return authorize_file_download(
+                actor, asset.public_id, session=session if session is not None else db.session
+            )
+    raise ResourceNotFoundError("No protected video attached to this lesson.")

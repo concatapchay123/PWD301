@@ -119,6 +119,12 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
     if not isinstance(payload, dict):
         raise LessonValidationError("Invalid JSON payload.")
 
+    if payload.get("playback_session_id"):
+        from pwd301.services.playback_service import record_playback_heartbeat
+
+        result = record_playback_heartbeat(actor, lesson_id, payload)
+        return jsonify({"success": True, "data": result, "error": None, **result}), 200
+
     seconds_increment = (
         payload.get("seconds_increment")
         if payload.get("seconds_increment") is not None
@@ -152,6 +158,13 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
+    if sec_int == 0:
+        from pwd301.services.playback_service import reconcile_lesson_progress
+
+        return jsonify(
+            _serialize_progress(reconcile_lesson_progress(actor, lesson_id, vf_float))
+        ), 200
+
     progress = record_lesson_progress(
         actor=actor,
         lesson_id=lesson_id,
@@ -161,6 +174,22 @@ def record_progress_api(lesson_id: str) -> tuple[Response, int] | Response:
         enforce_wall_clock=True,
     )
     return jsonify(_serialize_progress(progress)), 200
+
+
+@api_lesson_bp.route("/<lesson_id>/playback-sessions", methods=["POST"])
+@jwt_required
+@student_required
+def start_playback_api(lesson_id: str) -> Any:
+    from pwd301.services.playback_service import start_playback_session
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise LessonValidationError("Invalid JSON payload.")
+    result = start_playback_session(
+        require_authenticated_actor(), lesson_id, payload.get("media_id")
+    )
+    result["client_ip"] = request.remote_addr
+    return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
 
 @api_lesson_bp.route("/<lesson_id>/activity", methods=["POST"])

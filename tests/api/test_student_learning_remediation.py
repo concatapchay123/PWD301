@@ -3,7 +3,7 @@
 Verifies:
 1. Completed students can view course lessons and progress (no 403 lock-out).
 2. Completed students can download course files and stream video assets.
-3. Video watch (>=90%) auto-satisfies minimum duration requirement.
+3. Video progress credits only elapsed server time and preserves minimum duration.
 4. Re-enrolling a completed course preserves 100% progress and graduation status.
 5. Student certificate endpoint (/student/courses/<cid>/certificate) returns verification payload.
 6. Server-side sequential learning enforcement when enabled on course.
@@ -30,7 +30,6 @@ from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.file_service import attach_resource_to_lesson, store_file_stream
 from pwd301.services.lesson_service import (
     create_lesson,
-    record_lesson_progress,
 )
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -97,7 +96,7 @@ def remediation_fixture(app: Flask) -> dict[str, Any]:
             "title": "Lesson 1 - Video Foundations",
             "summary": "Foundations",
             "markdown_content": """# Lesson 1
-<!-- video_urls: ["https://example.com/video1.mp4"] -->
+<!-- video_urls: ["https://youtu.be/abcdefghijk"] -->
 Content of lesson 1
 """,
             "estimated_duration_minutes": 15,
@@ -159,7 +158,7 @@ Content of lesson 1
 
 
 def test_completed_student_can_view_lesson_and_progress(
-    client: FlaskClient, remediation_fixture: dict[str, Any]
+    client: FlaskClient, remediation_fixture: dict[str, Any], playback_watch
 ):
     student = remediation_fixture["student"]
     course = remediation_fixture["course"]
@@ -168,9 +167,7 @@ def test_completed_student_can_view_lesson_and_progress(
 
     # Enroll and complete course
     enrollment = enroll_student(actor=student, course_id=course.id, session=sess)
-    record_lesson_progress(
-        actor=student, lesson_id=lesson1.id, seconds_increment=60, view_fraction=1.0, session=sess
-    )
+    playback_watch(student, lesson1)
     enrollment.status = "COMPLETED"
     enrollment.completed_at = utc_now()
     sess.commit()
@@ -218,7 +215,7 @@ def test_completed_student_can_download_course_files(
 
 
 def test_video_completion_satisfies_minimum_seconds(
-    client: FlaskClient, remediation_fixture: dict[str, Any]
+    client: FlaskClient, remediation_fixture: dict[str, Any], playback_watch
 ):
     student = remediation_fixture["student"]
     course = remediation_fixture["course"]
@@ -228,17 +225,16 @@ def test_video_completion_satisfies_minimum_seconds(
     _enrollment = enroll_student(actor=student, course_id=course.id, session=sess)
     csrf_token = login_client(client, student.email)
 
-    # Send heartbeats accumulating up to minimum_completion_seconds (60s) with 95% view fraction
-    for _ in range(4):
-        resp = client.post(
-            f"/student/lessons/{lesson1.public_id}/progress",
-            json={"seconds_increment": 15, "view_fraction": 0.95},
-            headers={"X-CSRFToken": csrf_token},
-        )
-        assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["max_view_fraction"] >= 0.95
-    assert data["is_completed"] is True
+    # Legacy client timing/completion claims are rejected before crediting video.
+    rejected = client.post(
+        f"/student/lessons/{lesson1.public_id}/progress",
+        json={"seconds_increment": 60, "view_fraction": 0.95},
+        headers={"X-CSRFToken": csrf_token},
+    )
+    assert rejected.status_code == 400
+    data = playback_watch(student, lesson1, 0.95)
+    assert data["seconds_spent"] >= lesson1.minimum_completion_seconds
+    assert data["is_video_complete"] and data["is_completed"]
 
 
 def test_reenroll_completed_course_preserves_progress(
@@ -297,7 +293,9 @@ def test_student_course_certificate_endpoint(
     assert data["course_code"] == course.course_code
 
 
-def test_sequential_learning_enforcement(client: FlaskClient, remediation_fixture: dict[str, Any]):
+def test_sequential_learning_enforcement(
+    client: FlaskClient, remediation_fixture: dict[str, Any], playback_watch
+):
     student = remediation_fixture["student"]
     course = remediation_fixture["course"]
     lesson1 = remediation_fixture["lesson1"]
@@ -327,9 +325,7 @@ def test_sequential_learning_enforcement(client: FlaskClient, remediation_fixtur
     assert "Previous lessons must be completed" in resp2.get_json()["error"]["message"]
 
     # Now complete lesson 1
-    record_lesson_progress(
-        actor=student, lesson_id=lesson1.id, seconds_increment=60, view_fraction=1.0, session=sess
-    )
+    playback_watch(student, lesson1)
     sess.commit()
 
     # Now lesson 2 becomes accessible
@@ -341,7 +337,7 @@ def test_sequential_learning_enforcement(client: FlaskClient, remediation_fixtur
 
 
 def test_student_course_progress_synchronization_and_serialization(
-    client: FlaskClient, remediation_fixture: dict[str, Any]
+    client: FlaskClient, remediation_fixture: dict[str, Any], playback_watch
 ):
     """Verify deep-layer progress synchronization across all student endpoints.
 
@@ -368,13 +364,7 @@ def test_student_course_progress_synchronization_and_serialization(
     assert p_data["current_progress_percent"] == 0.0
 
     # 2. Complete Lesson 1 (1 out of 2 = 50.0%)
-    record_lesson_progress(
-        actor=student,
-        lesson_id=lesson1.id,
-        seconds_increment=60,
-        view_fraction=1.0,
-        session=sess,
-    )
+    playback_watch(student, lesson1)
     sess.commit()
 
     # 3. Check /student/courses/<id>/progress
@@ -406,6 +396,7 @@ def test_student_course_progress_synchronization_and_serialization(
 
 def test_calculate_course_progress_historical_revisions_retained(
     remediation_fixture: dict[str, Any],
+    playback_watch,
 ):
     """Verify that completing a lesson whose status is later changed to HISTORICAL
     does not cause student progress to drop or reset to 0%.
@@ -421,13 +412,7 @@ def test_calculate_course_progress_historical_revisions_retained(
     sess.commit()
 
     # Complete Lesson 1
-    record_lesson_progress(
-        actor=student,
-        lesson_id=lesson1.id,
-        seconds_increment=60,
-        view_fraction=1.0,
-        session=sess,
-    )
+    playback_watch(student, lesson1)
     sess.commit()
 
     # Progress should be 50.0%

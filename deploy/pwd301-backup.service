@@ -1,0 +1,12 @@
+[Unit]
+Description=PWD301 encrypted verified backup archive
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/pwd301
+ExecStart=/usr/bin/docker compose --env-file /opt/pwd301/.env.production -f /opt/pwd301/deploy/compose.production.yml --profile operations run --rm backup
+TimeoutStartSec=3600
+UMask=0077

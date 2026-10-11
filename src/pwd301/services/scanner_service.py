@@ -457,48 +457,8 @@ class ClamAVScanner(BaseScanner):
 
         return host, int(port), float(timeout), int(max_stream_bytes)
 
-    def _scan_by_path(
-        self, host: str, port: int, timeout: float, file_path: Path
-    ) -> ScanVerdict | None:
-        """Attempt path-based scan via nSCAN command when daemon shares filesystem with host."""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            sock.connect((host, port))
-            sock.sendall(f"nSCAN {file_path.resolve().as_posix()}\n".encode())
-            resp = b""
-            while True:
-                data = sock.recv(1024)
-                if not data:
-                    break
-                resp += data
-                if b"\n" in resp or b"\0" in resp:
-                    break
-            sock.close()
-            resp_str = resp.decode("utf-8", errors="replace").strip().strip("\0")
-            if resp_str.endswith("OK"):
-                return ScanVerdict(
-                    status="PASS",
-                    engine_name=self.ENGINE_NAME,
-                    engine_version=self.ENGINE_VERSION,
-                    details="ClamAV path-based scan passed with clean verdict",
-                )
-            if "FOUND" in resp_str:
-                prefix = resp_str.split("FOUND")[0].strip()
-                sig_name = prefix.split(":")[-1].strip() or "ClamAV-Malware-Signature"
-                return ScanVerdict(
-                    status="FAIL",
-                    engine_name=self.ENGINE_NAME,
-                    engine_version=self.ENGINE_VERSION,
-                    signature_name=sig_name,
-                    details=f"ClamAV detected malware signature: {sig_name}",
-                )
-        except Exception:
-            pass
-        return None
-
     def scan_file(self, file_path: Path) -> ScanVerdict:
-        """Stream file to ClamAV daemon via nINSTREAM, with path fallback for oversized files."""
+        """Stream within the configured capacity; files beyond it remain unscanned."""
         if not file_path.is_file():
             return ScanVerdict(
                 status="ERROR",
@@ -511,16 +471,13 @@ class ClamAVScanner(BaseScanner):
         file_size = file_path.stat().st_size
 
         if file_size > max_stream_bytes:
-            path_verdict = self._scan_by_path(host, port, timeout, file_path)
-            if path_verdict is not None:
-                return path_verdict
             return ScanVerdict(
-                status="PASS",
+                status="ERROR",
                 engine_name=self.ENGINE_NAME,
                 engine_version=self.ENGINE_VERSION,
                 details=(
                     f"File ({file_size} B) exceeds ClamAV stream limit ({max_stream_bytes} B); "
-                    "delegated to heuristic scanner"
+                    "no complete ClamAV scan was performed; access remains blocked"
                 ),
             )
 

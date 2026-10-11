@@ -7,15 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from flask import Response, current_app, jsonify, make_response, request, send_file
+from flask_login import current_user
 
 from pwd301.blueprints.api_files import api_file_bp
-from pwd301.extensions import db
+from pwd301.extensions import csrf, db
 from pwd301.services.authorization_service import (
     admin_required,
     get_authenticated_actor,
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import (
+    FileAccessDeniedError,
     FileInfectedError,
     FileSecurityQuarantineError,
     FileSizeLimitExceededError,
@@ -25,8 +27,11 @@ from pwd301.services.file_service import (
     LimitingStream,
     _serialize_file_asset,
     add_file_revision,
+    authorize_file_download,
+    get_file_download_ticket,
     get_file_for_download,
     get_file_scan_history,
+    materialize_authorized_blob,
     quarantine_override,
     rescan_file_asset,
     restore_file_asset,
@@ -43,11 +48,12 @@ def get_file_metadata_api(asset_id: str) -> tuple[Response, int] | Response:
     """Retrieve FileAsset metadata conforming to ADR-002 (zero internal PK leakage)."""
     actor = get_authenticated_actor()
     # Check download/view permissions to ensure authorized viewer
-    asset, blob, _ = get_file_for_download(actor, asset_id, session=db.session)
+    asset, blob, _ = authorize_file_download(actor, asset_id, session=db.session)
     return jsonify(_serialize_file_asset(asset)), 200
 
 
 @api_file_bp.route("/<asset_id>/download", methods=["GET"])
+@api_file_bp.route("/<asset_id>/stream", methods=["GET"])
 def download_file_api(asset_id: str) -> Response:
     """Download or stream file content with fail-closed security and secure headers.
 
@@ -58,11 +64,32 @@ def download_file_api(asset_id: str) -> Response:
     - Accurate Content-Type
     """
     actor = get_authenticated_actor()
+    is_preview = request.path.endswith("/stream")
     version_param = request.args.get("version")
+    if (
+        is_preview
+        and version_param is not None
+        and (not version_param.isascii() or not version_param.isdigit() or int(version_param) < 1)
+    ):
+        raise FileValidationError("version must be a positive integer.")
     revision_no = int(version_param) if version_param and version_param.isdigit() else None
-    asset, blob, physical_path = get_file_for_download(
-        actor, asset_id, revision_no=revision_no, session=db.session
-    )
+    if is_preview:
+        asset, blob, _ = authorize_file_download(
+            actor, asset_id, revision_no=revision_no, session=db.session
+        )
+        reviewer = actor is not None and (
+            (actor.is_admin and actor.has_admin_permission("COURSE_REVIEW"))
+            or (actor.has_role("INSTRUCTOR") and asset.course.owner_instructor_id == actor.id)
+        )
+        if not reviewer:
+            raise FileAccessDeniedError(
+                "Only the current course owner or course reviewer can preview files."
+            )
+        physical_path = materialize_authorized_blob(blob)
+    else:
+        asset, blob, physical_path = get_file_for_download(
+            actor, asset_id, revision_no=revision_no, session=db.session
+        )
 
     if revision_no is not None:
         target_rev = next((r for r in asset.revisions if r.revision_no == revision_no), None)
@@ -72,7 +99,7 @@ def download_file_api(asset_id: str) -> Response:
         target_rev.original_filename if target_rev else asset.display_name
     )
 
-    disposition = request.args.get("disposition", "attachment").lower()
+    disposition = "inline" if is_preview else request.args.get("disposition", "attachment").lower()
     if disposition not in ("inline", "attachment"):
         disposition = "attachment"
 
@@ -92,8 +119,10 @@ def download_file_api(asset_id: str) -> Response:
                 f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
             )
             resp.headers["Content-Type"] = blob.detected_mime_type
+            resp.headers["Accept-Ranges"] = "bytes"
+            resp.headers["Cache-Control"] = "private, no-store"
             return resp
-        except (ValueError, Exception):
+        except ValueError:
             pass
 
     # Standard streaming fallback with HTTP range requests (conditional=True)
@@ -113,6 +142,8 @@ def download_file_api(asset_id: str) -> Response:
         f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
     )
     resp.headers["Content-Type"] = blob.detected_mime_type
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Cache-Control"] = "private, no-store"
     return resp
 
 
@@ -262,3 +293,36 @@ def quarantine_override_api(asset_id: str) -> tuple[Response, int] | Response:
         admin_actor=actor, asset_id=asset_id, reason=reason, session=db.session
     )
     return jsonify(_serialize_file_asset(asset)), 200
+
+
+@api_file_bp.route("/<asset_id>/download-ticket", methods=["POST"])
+def download_ticket_api(asset_id):
+    actor = get_authenticated_actor()
+    # This one browser POST explicitly enforces CSRF despite the JWT blueprint exemption.
+    # An explicit invalid Authorization header never falls back to the session.
+    if request.headers.get("Authorization") is None:
+        if current_app.config.get("WTF_CSRF_ENABLED", True):
+            csrf.protect()
+        if current_user.is_authenticated and current_user.is_active:
+            actor = current_user._get_current_object()
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise FileValidationError("Download ticket payload must be a JSON object.")
+    version = payload.get("version")
+    if version is not None and (
+        isinstance(version, bool) or not isinstance(version, int) or version < 1
+    ):
+        raise FileValidationError("version must be a positive integer.")
+    ticket = get_file_download_ticket(
+        actor,
+        asset_id,
+        revision_no=version,
+        disposition=payload.get("disposition", "attachment"),
+        session=db.session,
+    )
+    response = jsonify(ticket)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response

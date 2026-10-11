@@ -10,6 +10,7 @@ Tests targeted vectors:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import uuid
 
@@ -540,12 +541,13 @@ class TestVector2MaliciousUnscannedFileStatuses:
         clean_storage_key = f"blobs/clean_{uuid.uuid4().hex[:8]}.pdf"
         clean_file_path = storage_root / clean_storage_key
         clean_file_path.parent.mkdir(parents=True, exist_ok=True)
-        clean_file_path.write_bytes(b"%PDF-1.4 Clean Revision 2 Content")
+        clean_content = b"%PDF-1.4 Clean Revision 2 Content"
+        clean_file_path.write_bytes(clean_content)
 
         clean_blob = FileBlob(
             storage_key=clean_storage_key,
-            sha256=b"0" * 32,
-            size_bytes=32,
+            sha256=hashlib.sha256(clean_content).digest(),
+            size_bytes=len(clean_content),
             detected_mime_type="application/pdf",
             status="PRESENT",
         )
@@ -583,11 +585,21 @@ class TestVector2MaliciousUnscannedFileStatuses:
             blob_id=clean_blob.id,
             original_filename="multi_rev_clean.pdf",
             detected_mime_type="application/pdf",
-            size_bytes=32,
+            size_bytes=len(clean_content),
             status="ACTIVE",
             uploaded_by_user_id=instructor_1.id,
         )
         db.session.add_all([rev1, rev2])
+        db.session.flush()
+        for scan_type in ("MALWARE", "FILE_VALIDATION"):
+            db.session.add(
+                FileScanResult(
+                    file_revision_id=rev2.id,
+                    scan_type=scan_type,
+                    engine="isolated_fixture",
+                    status="PASS",
+                )
+            )
         db.session.commit()
 
         login_web_user(client, student_a)

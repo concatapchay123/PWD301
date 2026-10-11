@@ -2807,7 +2807,7 @@ def get_attempt_result_for_student(
     - Student can only view their own attempt; managing instructor or admin can view all.
     - score_release_policy ('IMMEDIATE', 'AFTER_CLOSE', 'INSTRUCTOR_RELEASE'):
       If not yet released, returns score_status='SCORE_HIDDEN' with masked scores.
-    - answer_visibility_policy ('IMMEDIATE', 'AFTER_CLOSE', 'AFTER_ALL_ATTEMPTS', 'NEVER'):
+    - answer_visibility_policy includes 'CORRECT_WRONG_ONLY' for selected choices only:
       Controls visibility of explanations and question-level breakdowns.
     """
     sess = session if session is not None else db.session
@@ -2887,10 +2887,10 @@ def get_attempt_result_for_student(
             close_at = _normalize_dt(assessment.close_at) if assessment else None
             curr_now = _normalize_dt(now)
             show_answers = bool(close_at and curr_now and curr_now >= close_at)
-    elif ans_policy == "NEVER":
+    elif ans_policy in ("CORRECT_WRONG_ONLY", "NEVER"):
         show_answers = False
 
-    question_grades = []
+    question_grades: list[dict[str, Any]] = []
     for aq in attempt.attempt_questions:
         grade = aq.current_grade or (
             sess.query(AttemptQuestionGrade)
@@ -2923,10 +2923,18 @@ def get_attempt_result_for_student(
                 "position": cs.position,
                 "is_selected": str(cs.choice_key_snapshot) in selected_key_set,
             }
-            if show_answers:
-                choice_dict["is_correct"] = (
-                    bool(cs.source_choice.is_correct) if cs.source_choice else False
+            if show_answers or (ans_policy == "CORRECT_WRONG_ONLY" and choice_dict["is_selected"]):
+                revision = aq.source_question_revision
+                revision_choice = cs.source_choice or next(
+                    (
+                        choice
+                        for choice in (revision.choices if revision else [])
+                        if str(choice.choice_key) == str(cs.choice_key_snapshot)
+                    ),
+                    None,
                 )
+                if revision_choice is not None:
+                    choice_dict["is_correct"] = bool(revision_choice.is_correct)
             choices_list.append(choice_dict)
 
         awarded_pts = (
@@ -2963,6 +2971,9 @@ def get_attempt_result_for_student(
     )
     is_passed = bool(result.passed) if result and result.passed is not None else False
 
+    if not (is_admin or is_manager) and ans_policy == "NEVER":
+        question_grades = []
+
     return {
         "attempt_id": str(attempt.public_id),
         "assessment_id": str(assessment.public_id) if assessment else None,
@@ -2971,6 +2982,7 @@ def get_attempt_result_for_student(
         "score_status": "RELEASED",
         "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
         "answer_visibility_policy": ans_policy,
+        "answers_visible": show_answers,
         "raw_score": raw_score,
         "total_score": raw_score,
         "max_score": max_score,

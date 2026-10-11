@@ -412,6 +412,18 @@ class ApiClient {
     return await ApiClient.request(`/student/courses/${courseId}/lessons/${lessonId}`);
   }
 
+  static async startLessonPlayback(lessonId, mediaId) {
+    return ApiClient.request(`/student/lessons/${encodeURIComponent(lessonId)}/playback-sessions`, { method: 'POST', body: { media_id: mediaId } });
+  }
+
+  static async recordPlaybackHeartbeat(lessonId, heartbeat) {
+    return ApiClient.request(`/student/lessons/${encodeURIComponent(lessonId)}/progress`, { method: 'POST', body: heartbeat });
+  }
+
+  static async getFileDownloadTicket(assetId, version = null, disposition = 'attachment') {
+    return ApiClient.request(`/api/files/${encodeURIComponent(assetId)}/download-ticket`, { method: 'POST', body: { ...(version ? { version } : {}), disposition } });
+  }
+
   static async recordLessonProgress(lessonId, secondsIncrement = 15, viewFraction = 1.0, completed = false, clientEventId = null) {
     const eventId = clientEventId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9)));
     return await ApiClient.request(`/student/lessons/${lessonId}/progress`, {

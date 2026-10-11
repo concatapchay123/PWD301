@@ -20,10 +20,6 @@ from sqlalchemy.orm import Session
 from pwd301.extensions import db
 from pwd301.models.course import Course, CoursePrerequisite, Enrollment
 from pwd301.models.identity import Role, User
-from pwd301.services.gemini_service import (
-    MockGeminiClient,
-    set_gemini_client_override,
-)
 from pwd301.services.recommendation_service import generate_course_recommendations
 from pwd301.services.user_service import assign_role_to_user, register_user
 
@@ -228,33 +224,20 @@ def test_exclusion_of_active_and_archived_courses(
     assert str(c_archived.public_id) not in rec_ids
 
 
-def test_graceful_degradation_on_gemini_failure(
+def test_instant_rule_based_recommendations_without_gemini(
     app: Flask,
     student_user: User,
     instructor_user: User,
 ) -> None:
-    """When Gemini throws errors (timeout, quota), recommendation service falls back gracefully."""
+    """Recommendation service operates instantaneously without external Gemini AI calls."""
     sess: Session = db.session
     c = _create_course(sess, instructor_user.id, "AI101", "AI Overview", "Tech", "BEGINNER")
     sess.commit()
 
-    # Inject simulated timeout in mock client
-    mock_client = MockGeminiClient()
-    mock_client.simulate_timeout = True
-    set_gemini_client_override(mock_client)
-
-    try:
-        recs = generate_course_recommendations(actor=student_user, limit=5, session=sess)
-        assert len(recs) >= 1
-        assert recs[0]["course_id"] == str(c.public_id)
-        # Fallback explanation should be present without crashing
-        assert recs[0]["explanation"] != ""
-        assert (
-            "introductory" in recs[0]["explanation"].lower()
-            or "relevant" in recs[0]["explanation"].lower()
-        )
-    finally:
-        set_gemini_client_override(None)
+    recs = generate_course_recommendations(actor=student_user, limit=5, session=sess)
+    assert len(recs) >= 1
+    assert recs[0]["course_id"] == str(c.public_id)
+    assert recs[0]["explanation"] == ""
 
 
 def test_zero_internal_pk_leakage_in_recommendations(

@@ -1,6 +1,6 @@
 """Unit tests for PWD301 domain models.
 
-Validates the 73 canonical tables, column types, constraints, computed properties,
+Validates the 76 canonical tables, column types, constraints, computed properties,
 and entity relationships across all 9 domains.
 """
 
@@ -127,11 +127,15 @@ EXPECTED_73_TABLES = {
 }
 
 
-def test_exactly_73_tables_registered():
-    """Verify exactly 73 canonical tables are registered in metadata."""
+def test_exactly_76_tables_registered():
+    """Verify original domains plus three durable playback tables are registered."""
     registered = set(db.metadata.tables.keys())
-    assert len(registered) == 73
-    assert registered == EXPECTED_73_TABLES
+    assert len(registered) == 76
+    assert registered == EXPECTED_73_TABLES | {
+        "playback_sessions",
+        "lesson_media_progress",
+        "playback_receipts",
+    }
 
 
 def test_user_creation_and_defaults(app):

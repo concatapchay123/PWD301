@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from flask import Flask
 
+from pwd301.services.exceptions import FileStorageError
 from pwd301.services.storage_adapter import (
     delete_blob_from_cloud,
     download_blob_from_cloud,
@@ -39,9 +42,8 @@ def test_storage_adapter_missing_credentials(app: Flask) -> None:
         app.config["S3_SECRET_ACCESS_KEY"] = None
 
         assert is_cloud_storage_enabled() is True
-        client, bucket = get_s3_client()
-        assert client is None
-        assert bucket is None
+        with pytest.raises(FileStorageError):
+            get_s3_client()
 
 
 def test_storage_adapter_mock_boto3_operations(app: Flask, tmp_path: Path) -> None:
@@ -60,6 +62,10 @@ def test_storage_adapter_mock_boto3_operations(app: Flask, tmp_path: Path) -> No
             # 1. Test upload
             local_file = tmp_path / "sample.bin"
             local_file.write_bytes(b"hello world")
+            mock_s3.get_object.return_value = {
+                "Body": io.BytesIO(b"hello world"),
+                "ContentLength": 11,
+            }
             assert upload_blob_to_cloud(local_file, "blobs/ab/cd/hash") is True
             mock_s3.upload_file.assert_called_once_with(
                 str(local_file), "test-bucket", "blobs/ab/cd/hash"
@@ -67,10 +73,14 @@ def test_storage_adapter_mock_boto3_operations(app: Flask, tmp_path: Path) -> No
 
             # 2. Test download
             dest_file = tmp_path / "downloaded.bin"
-            assert download_blob_from_cloud("blobs/ab/cd/hash", dest_file) is True
-            mock_s3.download_file.assert_called_once_with(
-                "test-bucket", "blobs/ab/cd/hash", str(dest_file)
+            mock_s3.download_file.side_effect = lambda bucket, key, path: Path(path).write_bytes(
+                b"hello world"
             )
+            assert download_blob_from_cloud("blobs/ab/cd/hash", dest_file) is True
+            args = mock_s3.download_file.call_args.args
+            assert args[:2] == ("test-bucket", "blobs/ab/cd/hash")
+            assert args[2].endswith(".partial")
+            assert dest_file.read_bytes() == b"hello world"
 
             # 3. Test delete
             assert delete_blob_from_cloud("blobs/ab/cd/hash") is True

@@ -1,0 +1,190 @@
+name: pwd301-production
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-environment: &environment
+  APP_ENV: production
+  FLASK_DEBUG: "0"
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+  DATABASE_URL: ${DATABASE_URL:?Set runtime DATABASE_URL}
+  SESSION_COOKIE_SECURE: "true"
+  REMEMBER_COOKIE_SECURE: "true"
+  USE_PROXY_FIX: "true"
+  NUM_PROXIES: "1"
+  SEED_DEMO_DATA: "false"
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_REGION_NAME: ${S3_REGION_NAME:-}
+  YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  CLAMAV_ENABLED: "true"
+  CLAMAV_MAX_STREAM_BYTES: "100000000"
+  CLAMAV_TIMEOUT: "30"
+  WORKER_HEARTBEAT_PATH: /app/storage/.worker-heartbeat.json
+  FILE_STORAGE_ROOT: /app/storage
+  FILE_QUARANTINE_ROOT: /app/quarantine
+  FILE_BACKUP_ROOT: /var/opt/mssql/backups
+  SQLSERVER_BACKUP_ROOT: /var/opt/mssql/backups
+  EXPORT_ROOT: /app/exports
+  FILE_MIN_FREE_BYTES: "1073741824"
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  MAIL_HOST: ${MAIL_HOST:-}
+  MAIL_USERNAME: ${MAIL_USERNAME:-}
+  MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+
+x-app: &app
+  image: ${PWD301_IMAGE:?Set immutable PWD301_IMAGE}
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  environment: *environment
+  entrypoint: []
+  volumes:
+    - storage:/app/storage
+    - quarantine:/app/quarantine
+    - backups:/var/opt/mssql/backups
+    - exports:/app/exports
+  networks: [private]
+  logging: *logging
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+
+services:
+  backup-permissions:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    user: "0:0"
+    entrypoint: [/bin/sh, -c]
+    command: ["chown 10001:0 /var/opt/mssql/backups && chmod 0770 /var/opt/mssql/backups"]
+    volumes: ["backups:/var/opt/mssql/backups"]
+    networks: [private]
+    mem_limit: 128m
+    logging: *logging
+    restart: "no"
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    depends_on:
+      backup-permissions: {condition: service_completed_successfully}
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD:?Set database bootstrap password}
+    volumes:
+      - sql:/var/opt/mssql
+      - backups:/var/opt/mssql/backups
+      - ./mssql.production.conf:/var/opt/mssql/mssql.conf:ro
+    mem_limit: 2560m
+    logging: *logging
+    networks: [private]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -C -No']
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+  clamav:
+    image: pwd301-clamav:1.4.3-stream100m
+    build:
+      context: .
+      dockerfile: Dockerfile.clamav
+    volumes:
+      - signatures:/var/lib/clamav
+    mem_limit: 3072m
+    logging: *logging
+    networks: [private]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "clamdscan --ping 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+  release:
+    <<: *app
+    profiles: [release]
+    restart: "no"
+    command: [python, scripts/bootstrap_release.py]
+    environment:
+      <<: *environment
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?Set migration DATABASE_URL}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?Set migration DATABASE_URL}
+      RUNTIME_DATABASE_URL: ${DATABASE_URL:?Set runtime DATABASE_URL}
+      DB_PASSWORD: ${DB_PASSWORD:?Set bootstrap password}
+      DB_NAME: ${DB_NAME:-PWD301}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set application database password}
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?Set migrator database password}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set initial administrator email}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set initial administrator password}
+    depends_on:
+      db: {condition: service_healthy}
+    mem_limit: 600m
+  web:
+    <<: *app
+    command: [gunicorn, --bind, "0.0.0.0:5000", --workers, "2", --threads, "4", --max-requests, "1000", --max-requests-jitter, "100", --timeout, "120", "wsgi:app"]
+    mem_limit: 600m
+    depends_on:
+      db: {condition: service_healthy}
+      clamav: {condition: service_healthy}
+  worker:
+    <<: *app
+    command: [python, scripts/run_worker.py]
+    mem_limit: 300m
+    healthcheck:
+      test: [CMD, python, scripts/worker_healthcheck.py]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      db: {condition: service_healthy}
+      clamav: {condition: service_healthy}
+  proxy:
+    image: caddy:2.10.2-alpine
+    environment:
+      PWD301_DOMAIN: ${PWD301_DOMAIN:?Set public domain}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls:/data
+      - caddy_config:/config
+    networks: [private]
+    mem_limit: 128m
+    logging: *logging
+    restart: unless-stopped
+  backup:
+    <<: *app
+    profiles: [operations]
+    restart: "no"
+    command: [python, scripts/backup_archive.py]
+    environment:
+      <<: *environment
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set backup operator identity}
+      BACKUP_BUCKET_NAME: ${BACKUP_BUCKET_NAME:-}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+    mem_limit: 300m
+    depends_on:
+      db: {condition: service_healthy}
+
+networks:
+  private:
+
+volumes:
+  sql:
+  backups:
+  storage:
+  quarantine:
+  exports:
+  signatures:
+  tls:
+  caddy_config:

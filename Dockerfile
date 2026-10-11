@@ -3,7 +3,7 @@
 # ==============================================================================
 # Stage 1: Build stage (compile wheels and prepare dependencies)
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12.12-slim-bookworm AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -18,14 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.lock .
 RUN pip install --upgrade pip setuptools wheel \
-    && pip wheel --no-cache-dir --wheel-dir /build/wheels -r requirements.txt setuptools wheel
+    && pip wheel --no-cache-dir --wheel-dir /build/wheels --require-hashes -r requirements.lock
 
 # ==============================================================================
 # Stage 2: Final runtime stage (minimal footprint, non-root user)
 # ==============================================================================
-FROM python:3.12-slim-bookworm AS final
+FROM python:3.12.12-slim-bookworm AS final
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -64,8 +64,7 @@ RUN mkdir -p /app/storage /app/quarantine /app/backups /app/exports /app/instanc
 # Copy application code into container
 COPY --chown=appuser:appgroup . /app
 
-# Install the application package
-RUN pip install --no-cache-dir --no-deps --no-build-isolation -e .
+# PYTHONPATH points to the immutable source; no editable install or build backend at runtime.
 
 # Ensure entrypoint script is executable
 RUN chmod +x /app/scripts/docker-entrypoint.sh

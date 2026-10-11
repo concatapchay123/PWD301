@@ -16,6 +16,7 @@ from pwd301.models.types import utc_now
 from pwd301.services.course_service import create_course
 from pwd301.services.question_bank_service import create_question, create_question_revision
 from pwd301.services.user_service import assign_role_to_user, register_user
+from tests.conftest import require_disposable_sqlserver_target
 
 
 @pytest.mark.integration
@@ -24,6 +25,7 @@ def test_sqlserver_revision_activation_preserves_immutable_children(monkeypatch,
     database_url = os.environ.get("SQLSERVER_MIGRATION_URL")
     if not database_url:
         pytest.skip("SQLSERVER_MIGRATION_URL is required for disposable SQL Server coverage")
+    require_disposable_sqlserver_target(database_url)
     monkeypatch.setenv("DATABASE_URL", database_url)
     app = create_app("development")
     with app.app_context():

@@ -1,3 +1,91 @@
+# TASK-090 — Comprehensive Assessment Review Engine, High-End Academic PDF System, NetAcad-Style Course Preview, Uploaded Video Streaming, and Robust Approval Workflow
+
+**Status:** COMPLETED
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-09
+**Plan:** `docs/superpowers/plans/2026-10-09-comprehensive-assessment-review-pdf-and-course-approval-system.md`
+**Completed Date:** 2026-10-10
+**Verification:** `docs/tasks/TASK-090_VERIFICATION_REPORT.md`; scope/review: `docs/tasks/TASK-090_CODE_REVIEW.md`. Native PDF iframe verified in connected Edge: the project owner directly confirmed PDF display and scrolling to page 2. Automated screenshots cannot capture that native viewer; this limitation is disclosed in the report. Latest full verifier PASS: 1796 backend passed / 8 SQL-only skipped; full frontend 177 passed. SQL-only gates executed separately on verified disposable SQL Server (46-test integrated run plus migration/playback/grade/revision gates). No deployment readiness claim.
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows, legacy code, and outdated specifications regarding assessment review UI, gradebook PDF formats, horizontal course preview pills, and direct video file links are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire PWD301 system:
+
+1. **Permanent Purge of Legacy MC Indicators [A][B][C][D]**:
+   - The detached `[A][B][C][D]` button cluster at the bottom right of question cards is PERMANENTLY DELETED.
+   - All question choices must directly display visual status indicators: Emerald Green (`✓ Đúng`) for correct selections, Crimson Red (`✗ Sai`) for incorrect selections, and Amber/Orange (`• Thiếu/Bỏ sót`) for missed correct options (in Full Review mode).
+2. **Permanent Abolition of Encrypted / UUID Codes in Academic PDFs**:
+   - Individual result PDFs and Class gradebooks must NEVER print raw UUID strings (`56a7d14f-...`) in place of candidate selected answers, course names, or assessment titles.
+   - Candidate selected choices must render readable choice text / labels.
+   - Examination authority location is standardized to `"Thành phố Hồ Chí Minh, ngày ... tháng ... năm ..."`.
+   - Proctoring standard is permanently locked to `"Có giám sát nâng cao"`.
+3. **Permanent Purge of Rigid Score Formatting (`.2f`)**:
+   - Scores must use humanized academic formatting: whole numbers drop trailing zeros (`100`, `0`, `50`), fractional numbers round to at most 2 decimal places (`50.5`, `33.33`).
+4. **Permanent Purge of Fragmented Horizontal Preview Pills**:
+   - Course preview for Instructors and Admins must use the standardized 2-column NetAcad layout: Left Sidebar Course Tree (Chapters -> Lessons with instant switching), Right Panel complete learning workspace (Video, Resources, Markdown, Interactive Quiz) in bypass-pacing preview mode.
+5. **Permanent Purge of Direct Download Routing for Uploaded Video Playback**:
+   - Video tags must NEVER be routed to `/student/files/<id>/download` (which is restricted under DRM and student role check).
+   - Dedicated authenticated Range-request streaming endpoint (`/api/files/<asset_id>/stream`) must serve uploaded video playback to authorized reviewers.
+6. **Zero-Crash Course & Change Request Approval Engine**:
+   - Course review and change request review endpoints must never throw 500 errors. All transition edge cases (resource detach/attach, curriculum updates, draft approvals) must be fully handled and audited.
+
+---
+
+# TASK-089 — Admin Deep Diff & Unified Change Review Engine, Button Workflow Modernization, and Academic Gradebook PDF System
+
+**Status:** COMPLETED
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-09
+**Completed Date:** 2026-10-09
+**Plan:** `docs/superpowers/plans/2026-10-09-admin-review-diff-and-pdf-export.md`
+**Browser Verification Evidence:** Verified via Chrome DevTools MCP live on `http://127.0.0.1:5000` with authentic user actions, network responses, and visual screenshots:
+1. **Admin Queue Table Buttons:** On `#admin/governance?tab=courses`, column `XÉT DUYỆT` now places `[Xem]` first (blue/slate) and `[Duyệt]` second (green). Clicking `[Duyệt]` triggers `UI.confirm` modal (`steps/865/media_0.png`).
+2. **Admin Change Request Detail Diff:** Navigated via `[Xem]` to `#admin/change-requests/review?id=70007`. Deep diff shows `Chi tiết các điểm thay đổi (1 mục)`, additions highlighted in emerald green, deletions struck through in soft rose, and 9 unchanged fields neatly collapsed (`steps/878/media_0.png`).
+3. **Admin Review Detail Modals:** Clicking `[Phê duyệt]` launches `UI.confirm`. Clicking `[Từ chối]` launches reason prompt (validating >= 5 chars) followed by secondary `UI.confirm` (`steps/889/media_0.png`).
+4. **Instructor Gradebook PDF Export:** Visited `#/instructor/courses/70009/assessments/50004/results`. Clicked `[Xuất bảng điểm PDF]` in header -> downloaded 50,749-byte class roster PDF with academic headers and signature blocks, displaying success toast (`steps/948/media_0.png`).
+5. **Student Result PDF Export:** Visited `#/student/assessments/results?id=e4a0ee06-24cd-455f-83a4-8b11b4cbb9fe`. Clicked `[Xuất bảng điểm (PDF)]` -> downloaded 50,058-byte student result PDF via authenticated Blob fetch with RFC 5987 headers, displaying success toast (`steps/980/media_0.png`).
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows and legacy designs regarding course change requests, diff visualization, unconfirmed review actions, and unmanaged PDF downloads are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire system:
+
+1. **Permanent Purge of Partial 3-Field Course Diff & Catch-All "Thay đổi khác"**:
+   - The legacy course comparison that only checked `title`, `category`, and `description` is PERMANENTLY DELETED.
+   - All course metadata change requests must compare 100% of writable course fields: `title`, `slug`, `course_code`, `category`, `difficulty`, `summary`, `description`, `learning_objectives`, `target_audience`, `completion_requirements`, `capacity`, `storage_quota_bytes`, and `thumbnail_file_asset_id`.
+   - The generic fallback badge `"Thay đổi khác"` in change request queues is PERMANENTLY BANNED. Every change request is strictly categorized into: `Khóa học` (Course Metadata), `Bài học` (Lesson Content & Media), `Khung giáo trình` (Course Version Changeset), `Xóa bài học` (Lesson Deletion), or `Môn tiên quyết` (Prerequisite Request).
+
+2. **Permanent Abolition of Identical Before vs. After Panels**:
+   - Rendering identical text without visual diff highlighting on both sides is PERMANENTLY FORBIDDEN.
+   - Changed fields must render explicit visual indicators: `[ĐÃ SỬA]` pill badge, original values struck through in soft red (`line-through text-rose-700 bg-rose-50`), proposed values highlighted in soft green (`text-emerald-700 bg-emerald-50 font-medium`).
+   - Unchanged fields must be collapsed by default under an expandable summary to eliminate cognitive clutter.
+
+3. **Permanent Purge of Unconfirmed Review Mutations & Outdated Button Labels**:
+   - Review buttons `"Từ chối yêu cầu"` and `"Phê duyệt & Áp dụng thay đổi"` are PERMANENTLY SUPERSEDED by concise, standard action labels: `[Từ chối]` and `[Phê duyệt]`.
+   - Unconfirmed review mutations (clicking approve and directly committing without confirmation) are STRICTLY FORBIDDEN.
+   - Detail view `[Phê duyệt]` must open an explicit `UI.confirm` modal before applying changes.
+   - Detail view `[Từ chối]` must open a reason prompt modal (`UI.prompt`, min 5 characters) followed by an explicit `UI.confirm` modal.
+   - In queue tables (`#admin/governance?tab=courses`), the action column is standardized to: `[Xem]` (blue/slate visual inspect) placed FIRST, and `[Duyệt]` (green quick pass with `UI.confirm`) placed SECOND.
+
+4. **Permanent Purge of Unmanaged Direct `<a download>` PDF Links**:
+   - Using unmanaged `<a href="..." download>` for authenticated PDF endpoints is PERMANENTLY SUPERSEDED.
+   - All PDF downloads must be orchestrated via JavaScript Blob fetch with authentication headers, validating response status codes and surfacing JSON error messages via user-facing toasts instead of downloading corrupted `result.json` files.
+   - Server-side PDF endpoints must supply dual `Content-Disposition` headers containing ASCII fallback filenames and RFC 5987 / 6266 `filename*=UTF-8''` parameters for native Windows file handling.
+
+5. **Mandatory Academic Gradebook Engine**:
+   - The system establishes a formal Academic Gradebook PDF Engine for student individual transcripts and class-wide rosters for Instructors and Admins, featuring official academic headers, executive score statistics, candidate roster with proctoring violation counts, and formal examination committee signature blocks.
+
+---
+
+# TASK-088 — VPS deployment readiness (approved plan, 2026-10-09)
+
+**Status:** IN_PROGRESS — not DEPLOY_READY.
+**Baseline:** 6ebbaaa; branch codex/vps-readiness.
+**Target:** Ubuntu/Linux x64, 8 GB RAM, two CPUs, 40 GB SSD, SQL Server 2022 Express; B2 private documents and official YouTube embedding.
+**Scope:** durable pacing, player lifecycle, verified cloud offload, production artifact, isolated staging, backup recovery and truthful release gates. No production data migration, DNS changes or publication.
+**Overrides approved by owner:** supersedes older TASK-085/086/087 requirements for 100% YouTube concealment, overlays on YouTube, SQL1280MB/ClamAV800MB caps, and unlimited zero-egress claims. Their previous completion notes below are historical evidence, not current release certification.
+**Plan:** docs/superpowers/plans/2026-10-09-vps-readiness.md
+**Evidence/report:** docs/deployment/VPS_READINESS_REPORT.md
+
+---
+
 # Completed task: TASK-087 — System-Wide Memory & Legacy Workflow Purge, Hardware Hardening, Decoupled Cloud Storage & PWD301 Proprietary Custom Video Player Shell
 
 **Status:** COMPLETED  

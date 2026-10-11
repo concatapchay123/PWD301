@@ -392,9 +392,8 @@ class TestM2AdversarialGatingAndLifecycle:
             json={"completed": True, "time_spent_seconds": 150, "view_fraction": 1.0},
             headers={"Accept": "application/json"},
         )
-        assert post_resp.status_code == 200
-        data = post_resp.get_json()
-        assert data.get("completed") is True
+        # Client completion flags cannot bypass an unverified attached video.
+        assert post_resp.status_code == 400
 
         # 2. Reload lesson and check completed progress state
         resp = client.get(
@@ -403,7 +402,7 @@ class TestM2AdversarialGatingAndLifecycle:
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["progress"]["is_completed"] is True
+        assert data["progress"]["is_completed"] is False
 
     # =========================================================================
     # 3. MY LEARNING HUB & LIFECYCLE ACTIONS

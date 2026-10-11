@@ -16,11 +16,14 @@ Implements:
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import json
 import logging
+import os
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
@@ -95,17 +98,24 @@ def enqueue_background_job(
             .filter(
                 BackgroundJob.job_type == job_type,
                 BackgroundJob.dedupe_key == dedupe_key,
-                BackgroundJob.status.in_(["QUEUED", "RUNNING"]),
             )
+            .with_hint(BackgroundJob, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .populate_existing()
             .first()
         )
-        if existing is not None:
+        if existing is not None and existing.status in {"QUEUED", "RUNNING"}:
             logger.info(
                 "Reusing existing active job %s for dedupe_key %s",
                 existing.job_key,
                 dedupe_key,
             )
             return existing
+        if existing is not None:
+            # Dedupe is an active-dispatch lease. Keep the historical job/UUID,
+            # release its unique key before issuing the next independent run.
+            existing.dedupe_key = None
+            sess.flush()
 
     job = BackgroundJob(
         job_key=uuid.uuid4(),
@@ -296,6 +306,24 @@ def execute_background_job(
                 if actor:
                     rescan_file_asset(actor=actor, asset_id=asset_id, session=sess)
 
+        elif job.job_type == "CLEANUP":
+            if payload.get("scope") == "youtube-lesson-validation":
+                from pwd301.services.youtube_validator_service import (
+                    scan_and_notify_broken_youtube_videos,
+                )
+
+                scan_and_notify_broken_youtube_videos(
+                    course_id=int(payload["course_id"]),
+                    lesson_id=int(payload["lesson_id"]),
+                    retry_network_errors=True,
+                )
+            else:
+                from pwd301.services.playback_service import cleanup_playback_receipts
+                from pwd301.services.storage_maintenance_service import reconcile_storage
+
+                reconcile_storage(delete_orphans=False)
+                cleanup_playback_receipts(session=sess)
+
         elif job.job_type == "VIDEO_TRANSCODE":
             from pwd301.services.video_drm_service import (
                 get_lesson_hls_directory,
@@ -401,6 +429,40 @@ def run_worker_once(session: Session | scoped_session[Any] | None = None) -> boo
     return execute_background_job(job, session=sess)
 
 
+@contextlib.contextmanager
+def worker_heartbeat():
+    """Pulse independently of long scan/backup jobs, without claiming job progress."""
+    raw_path = os.environ.get("WORKER_HEARTBEAT_PATH")
+    if not raw_path:
+        yield
+        return
+    destination = Path(raw_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stop = threading.Event()
+
+    def write():
+        temporary = destination.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps({"timestamp": time.time()}), encoding="utf-8")
+        os.replace(temporary, destination)
+
+    def pulse():
+        while not stop.wait(5):
+            try:
+                write()
+            except OSError:
+                logger.error("Cannot update worker liveness signal.")
+                return
+
+    write()
+    thread = threading.Thread(target=pulse, name="worker-liveness", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
 def run_worker_loop(
     poll_interval_seconds: float = 2.0,
     max_iterations: int | None = None,
@@ -414,17 +476,69 @@ def run_worker_loop(
     """
     iterations = 0
     current_delay = poll_interval_seconds
+    next_maintenance_at = time.monotonic()
+    next_video_scan_at = time.monotonic()
     logger.info(
         "Starting PWD301 Background Worker daemon loop (adaptive polling 1.0s - %.1fs)...",
         max_idle_seconds,
     )
-    while max_iterations is None or iterations < max_iterations:
-        processed = run_worker_once()
-        iterations += 1
-        if processed:
-            # Active queue: reset to minimum delay for fast processing
-            current_delay = min(poll_interval_seconds, 1.0)
-        else:
-            # Idle queue: sleep and progressive backoff
-            time.sleep(current_delay)
-            current_delay = min(current_delay * 1.5, max_idle_seconds)
+    with worker_heartbeat():
+        while max_iterations is None or iterations < max_iterations:
+            if time.monotonic() >= next_video_scan_at:
+                _schedule_youtube_checks()
+                next_video_scan_at = time.monotonic() + 21600
+            if time.monotonic() >= next_maintenance_at:
+                enqueue_background_job(
+                    job_type="CLEANUP",
+                    payload={"scope": "storage-and-playback-receipts"},
+                    dedupe_key="storage-and-playback-receipt-maintenance",
+                    priority=200,
+                    run_async=False,
+                )
+                db.session.commit()
+                next_maintenance_at = time.monotonic() + 1800
+            processed = run_worker_once()
+            iterations += 1
+            if processed:
+                current_delay = min(poll_interval_seconds, 1.0)
+            else:
+                time.sleep(current_delay)
+                current_delay = min(current_delay * 1.5, max_idle_seconds)
+
+
+def _schedule_youtube_checks() -> int:
+    """Reuse the durable cleanup queue, one small retryable job per lesson."""
+    if not current_app.config.get("YOUTUBE_API_KEY"):
+        return 0
+    from pwd301.models.course import Course, Lesson
+
+    lessons = (
+        db.session.query(Lesson.id, Lesson.course_id, Lesson.markdown_content)
+        .join(Course, Course.id == Lesson.course_id)
+        .filter(
+            Lesson.status == "PUBLISHED",
+            Lesson.deleted_at.is_(None),
+            Course.status != "ARCHIVED",
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
+    count = 0
+    for lesson in lessons:
+        if "youtu" not in (lesson.markdown_content or "").lower():
+            continue
+        enqueue_background_job(
+            job_type="CLEANUP",
+            payload={
+                "scope": "youtube-lesson-validation",
+                "course_id": lesson.course_id,
+                "lesson_id": lesson.id,
+            },
+            dedupe_key=f"youtube-lesson-validation:{lesson.id}",
+            priority=300,
+            run_async=False,
+        )
+        count += 1
+    if count:
+        db.session.commit()
+    return count

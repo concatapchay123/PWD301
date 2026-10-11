@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from pathlib import Path
 
 import pytest
 from flask import Flask
@@ -19,13 +20,14 @@ from pwd301.models.file_import import (
     FileBlob,
     FileRevision,
     FileScanResult,
+    LessonResource,
 )
 from pwd301.models.identity import Role, User
 from pwd301.services.course_service import change_course_status, create_course
 from pwd301.services.lesson_service import create_lesson
 from pwd301.services.user_service import assign_role_to_user, register_user
 from pwd301.services.video_drm_service import (
-    get_lesson_hls_directory,
+    get_asset_hls_directory,
     transcode_to_encrypted_hls,
 )
 
@@ -190,7 +192,7 @@ def test_student_cannot_download_raw_lesson_video(
     data = resp.get_json() or {}
     error_obj = data.get("error")
     msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
-    assert "restricted" in msg.lower() or "secure" in msg.lower()
+    assert "protected video playback" in msg.lower()
 
 
 def test_student_can_fetch_drm_playlist_and_key(
@@ -241,8 +243,54 @@ def test_student_can_fetch_drm_playlist_and_key(
         },
     )
 
-    # Pre-generate HLS directory for lesson
-    hls_dir = get_lesson_hls_directory(course_sample.id, lesson.id)
+    # Streaming fixtures require an attached, active and scanned video revision.
+    video_bytes = Path(test_mp4).read_bytes()
+    blob = FileBlob(
+        sha256=hashlib.sha256(video_bytes).digest(),
+        size_bytes=len(video_bytes),
+        detected_mime_type="video/mp4",
+        storage_key=f"fixture/{uuid.uuid4()}.mp4",
+        status="PRESENT",
+    )
+    sess.add(blob)
+    sess.flush()
+    asset = FileAsset(
+        course_id=course_sample.id,
+        created_by_user_id=instructor_user.id,
+        asset_type="RESOURCE",
+        display_name="Protected MP4",
+        status="ACTIVE",
+    )
+    sess.add(asset)
+    sess.flush()
+    revision = FileRevision(
+        file_asset_id=asset.id,
+        blob_id=blob.id,
+        revision_no=1,
+        is_current=True,
+        original_filename="test.mp4",
+        detected_mime_type="video/mp4",
+        size_bytes=len(video_bytes),
+        status="ACTIVE",
+        uploaded_by_user_id=instructor_user.id,
+    )
+    sess.add(revision)
+    sess.flush()
+    sess.add(
+        FileScanResult(
+            file_revision_id=revision.id,
+            scan_type="MALWARE",
+            engine="fixture-scanner",
+            status="PASS",
+        )
+    )
+    sess.add(
+        LessonResource(
+            lesson_id=lesson.id, file_asset_id=asset.id, position=1, label="Protected MP4"
+        )
+    )
+    sess.flush()
+    hls_dir = get_asset_hls_directory(lesson, asset, revision)
     transcode_to_encrypted_hls(
         input_path=test_mp4,
         output_dir=str(hls_dir),
@@ -279,15 +327,14 @@ def test_student_can_fetch_drm_playlist_and_key(
     playlist_text = resp.get_data(as_text=True)
 
     assert "#EXT-X-KEY:METHOD=AES-128" in playlist_text
-    assert 'URI="key?token=' in playlist_text
+    assert f"/video/{asset.public_id}/key?token=" in playlist_text
 
     # Extract token
-    match = re.search(r'URI="key\?token=([^"]+)"', playlist_text)
+    match = re.search(r'URI="([^\"]+/key\?token=[^\"]+)"', playlist_text)
     assert match is not None
-    key_token = match.group(1)
+    key_url = match.group(1)
 
     # 2. Fetch key using valid token
-    key_url = f"/student/courses/{course_sample.public_id}/lessons/{lesson.public_id}/video/key?token={key_token}"
     key_resp = client.get(key_url)
     assert key_resp.status_code == 200, f"Expected 200 OK for DRM key, got {key_resp.status_code}"
     assert len(key_resp.data) == 16, f"Expected 16 bytes AES key, got {len(key_resp.data)}"

@@ -99,12 +99,13 @@ def test_core_health_liveness(client: FlaskClient) -> None:
     assert "version" in data
 
 
-def test_core_health_readiness(client: FlaskClient) -> None:
-    """GET /health/deep responds with 200 OK deep readiness status."""
+def test_core_health_readiness(client: FlaskClient, monkeypatch, tmp_path) -> None:
+    """Missing mandatory worker/scanner cannot be declared deployment-ready."""
+    monkeypatch.setenv("WORKER_HEARTBEAT_PATH", str(tmp_path / "missing-worker-heartbeat.json"))
     resp = client.get("/health/deep")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
     data = resp.get_json()
-    assert data["status"] in ("HEALTHY", "DEGRADED")
+    assert data["status"] != "HEALTHY"
     assert "database" in data
     assert data["database"]["status"] == "HEALTHY"
     assert "storage" in data
@@ -223,9 +224,10 @@ def test_admin_backup_full_lifecycle_api(
 
 
 def test_maintenance_mode_middleware_interception(
-    client: FlaskClient, admin_user: User, student_user: User
+    client: FlaskClient, admin_user: User, student_user: User, monkeypatch, tmp_path
 ) -> None:
     """Maintenance mode intercepts student requests with HTTP 503 while allowing admin & health."""
+    monkeypatch.setenv("WORKER_HEARTBEAT_PATH", str(tmp_path / "missing-worker-heartbeat.json"))
     admin_tokens = create_token_pair(admin_user)
     admin_headers = {"Authorization": f"Bearer {admin_tokens['access_token']}"}
 
@@ -278,7 +280,8 @@ def test_maintenance_mode_middleware_interception(
 
     # 7. Health probes and login routes are NOT blocked during maintenance
     assert client.get("/health").status_code == 200
-    assert client.get("/health/deep").status_code == 200
+    # Health remains reachable; missing required dependencies still report 503.
+    assert client.get("/health/deep").status_code == 503
     assert client.get("/auth/login").status_code == 200
 
     # 8. Admin concludes maintenance
