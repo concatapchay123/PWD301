@@ -201,6 +201,16 @@ class AppRouter {
         do {
           this._rerouteRequested = false;
           routeHash = window.location.hash || '#/';
+          const departureGuard = this.beforeRouteLeave;
+          if (departureGuard) {
+            const allowed = await departureGuard.leave();
+            if (!allowed) {
+              window.history.replaceState(null, '', departureGuard.routeHash);
+              this._rerouteRequested = false;
+              break;
+            }
+            if (this.beforeRouteLeave === departureGuard) this.beforeRouteLeave = null;
+          }
           await this.renderRoute(routeHash);
         } while (
           this._rerouteRequested
@@ -1646,34 +1656,27 @@ class AppRouter {
 
   async handleDeleteNotification(notifId) {
     if (!notifId || !this.notificationsCache) return;
-    const itemIndex = (this.notificationsCache.items || []).findIndex(i => String(i.id) === String(notifId));
-    if (itemIndex === -1) return;
-
-    const previousItems = [...this.notificationsCache.items];
-    const previousUnread = this.notificationsCache.unread_count;
-    const item = this.notificationsCache.items[itemIndex];
-    const wasUnread = !item.is_read && !item.read;
-
-    // Optimistic removal
-    this.notificationsCache.items.splice(itemIndex, 1);
-    if (wasUnread && typeof this.notificationsCache.unread_count === 'number' && this.notificationsCache.unread_count > 0) {
-      this.notificationsCache.unread_count--;
-    }
-    this.saveCachedNotifications();
-    this.updateBadgeFromCache();
-    this.renderNotificationsDropdownContent();
-
+    const owner = this.getNotificationCacheKey();
+    this._notifFetchGen = (this._notifFetchGen || 0) + 1;
     try {
       await ApiClient.deleteNotification(notifId);
-      if (window.UI) UI.showToast('Đã xóa thông báo.', 'info');
-    } catch (err) {
-      if (this.notificationsCache) {
-        this.notificationsCache.items = previousItems;
-        this.notificationsCache.unread_count = previousUnread;
+      if (!owner || owner !== this.getNotificationCacheKey()) return;
+      this._notifFetchGen++;
+      const index = (this.notificationsCache?.items || []).findIndex(i => String(i.id) === String(notifId));
+      if (index >= 0) {
+        const item = this.notificationsCache.items[index];
+        this.notificationsCache.items.splice(index, 1);
+        if (!item.is_read && !item.read) {
+          this.notificationsCache.unread_count = Math.max(0, (this.notificationsCache.unread_count || 0) - 1);
+        }
         this.saveCachedNotifications();
         this.updateBadgeFromCache();
         this.renderNotificationsDropdownContent();
       }
+      if (window.UI) UI.showToast('Đã xóa thông báo.', 'info');
+      if (typeof ApiClient.getNotifications === 'function') await this.fetchNotifications(true);
+    } catch (err) {
+      if (!owner || owner !== this.getNotificationCacheKey()) return;
       if (window.UI) UI.showToast('Không thể xóa thông báo: ' + (err.message || ''), 'error');
     }
   }
@@ -1681,34 +1684,29 @@ class AppRouter {
   async handleNotificationItemClick(notifId, link) {
     if (!notifId || !this.notificationsCache) return;
 
-    // Optimistic local update
+    const owner = this.getNotificationCacheKey();
     const item = (this.notificationsCache.items || []).find(i => i.id === notifId);
     if (item && !item.is_read && !item.read) {
-      item.is_read = true;
-      item.read = true;
-      if (typeof this.notificationsCache.unread_count === 'number' && this.notificationsCache.unread_count > 0) {
-        this.notificationsCache.unread_count--;
-      }
-      this.saveCachedNotifications();
-      this.updateBadgeFromCache();
-      this.renderNotificationsDropdownContent();
-
-      // Background API sync with rollback
+      this._notifFetchGen = (this._notifFetchGen || 0) + 1;
       try {
         await ApiClient.markNotificationRead(notifId);
-      } catch (err) {
-        if (this.notificationsCache) {
-          item.is_read = false;
-          item.read = false;
-          if (typeof this.notificationsCache.unread_count === 'number') {
-            this.notificationsCache.unread_count++;
-          }
+        if (!owner || owner !== this.getNotificationCacheKey()) return;
+        this._notifFetchGen++;
+        const current = (this.notificationsCache?.items || []).find(i => String(i.id) === String(notifId));
+        if (current && !current.is_read && !current.read) {
+          current.is_read = true;
+          current.read = true;
+          this.notificationsCache.unread_count = Math.max(0, (this.notificationsCache.unread_count || 0) - 1);
           this.saveCachedNotifications();
           this.updateBadgeFromCache();
           this.renderNotificationsDropdownContent();
         }
+      } catch (err) {
+        if (!owner || owner !== this.getNotificationCacheKey()) return;
+        if (window.UI) UI.showToast('Chưa lưu được trạng thái đã đọc. Vui lòng thử lại.', 'error');
       }
     }
+    if (!owner || owner !== this.getNotificationCacheKey()) return;
 
     // Open detailed reading modal so user can fully read notification
     if (item) {
@@ -1793,33 +1791,26 @@ class AppRouter {
 
   async handleMarkAllRead() {
     if (!this.notificationsCache) return;
-
-    const previousItems = JSON.parse(JSON.stringify(this.notificationsCache.items || []));
-    const previousUnread = this.notificationsCache.unread_count;
-
-    // Optimistic local update
-    (this.notificationsCache.items || []).forEach(i => {
-      i.is_read = true;
-      i.read = true;
-    });
-    this.notificationsCache.unread_count = 0;
-    this.saveCachedNotifications();
-    this.updateBadgeFromCache();
-    this.renderNotificationsDropdownContent();
-
+    const owner = this.getNotificationCacheKey();
+    const role = this.currentRole;
+    this._notifFetchGen = (this._notifFetchGen || 0) + 1;
     try {
-      await ApiClient.markAllNotificationsRead(null, this.currentRole);
-      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
-        UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
-      }
-    } catch (err) {
+      await ApiClient.markAllNotificationsRead(null, role);
+      if (!owner || owner !== this.getNotificationCacheKey()) return;
+      this._notifFetchGen++;
       if (this.notificationsCache) {
-        this.notificationsCache.items = previousItems;
-        this.notificationsCache.unread_count = previousUnread;
+        (this.notificationsCache.items || []).forEach(i => { i.is_read = true; i.read = true; });
+        this.notificationsCache.unread_count = 0;
         this.saveCachedNotifications();
         this.updateBadgeFromCache();
         this.renderNotificationsDropdownContent();
       }
+      if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
+        UI.showToast('Đã đánh dấu tất cả thông báo là đã đọc.', 'success');
+      }
+      if (typeof ApiClient.getNotifications === 'function') await this.fetchNotifications(true);
+    } catch (err) {
+      if (!owner || owner !== this.getNotificationCacheKey()) return;
       if (typeof UI !== 'undefined' && typeof UI.showToast === 'function') {
         UI.showToast('Không thể đánh dấu tất cả đã đọc: ' + (err.message || ''), 'error');
       }
@@ -1832,6 +1823,8 @@ class AppRouter {
     const fetchRole = this.currentRole || 'STUDENT';
     this._notifFetchGen = (this._notifFetchGen || 0) + 1;
     const fetchGen = this._notifFetchGen;
+    const ownsFetch = () => Boolean(this.currentUser) && this.currentUser.id === fetchUserId
+      && (this.currentRole || 'STUDENT') === fetchRole && this._notifFetchGen === fetchGen;
     this.beginNotificationFetch();
     if (typeof ApiClient === 'undefined' || typeof ApiClient.getNotifications !== 'function') {
       const error = new Error('Notification client is unavailable.');
@@ -1842,7 +1835,7 @@ class AppRouter {
     try {
       const currentRole = fetchRole;
       const data = await ApiClient.getNotifications({ role: currentRole });
-      if (!this.currentUser || this.currentUser.id !== fetchUserId || (this.currentRole || 'STUDENT') !== fetchRole || this._notifFetchGen !== fetchGen) {
+      if (!ownsFetch()) {
         return; // Discard stale cross-user / cross-role response
       }
       if (data && Array.isArray(data.items)) {
@@ -1890,6 +1883,7 @@ class AppRouter {
         }
       }
     } catch (e) {
+      if (!ownsFetch()) return;
       this.markNotificationFetchDegraded(e, forceRender);
     }
   }

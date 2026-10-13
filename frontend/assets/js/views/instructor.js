@@ -654,6 +654,7 @@ class InstructorView {
       .replace(/<!--\s*video_url:\s*\S+?\s*-->\s*/gs, '')
       .replace(/<!--\s*mini_quiz:.*?-->\s*/gs, '')
       .replace(/<!--\s*mini_quiz_passing:\s*\d+\s*-->\s*/gs, '')
+      .replace(/<!--\s*PWD301_BLOCKS:.*?-->\s*/gs, '')
       .trim();
 
     if (cleanMd) {
@@ -755,6 +756,52 @@ class InstructorView {
       });
     }
 
+    const manifestMatch = rawMd.match(/<!--\s*PWD301_BLOCKS:\s*(.+?)\s*-->/s);
+    if (manifestMatch) {
+      try {
+        const saved = JSON.parse(manifestMatch[1]);
+        const valid = Array.isArray(saved) && saved.length <= 1000
+          && saved.every(b => b && ['text', 'video', 'document', 'quiz'].includes(b.type));
+        const savedText = valid ? saved.filter(b => b.type === 'text').map(b => String(b.content || '').trim()).filter(Boolean).join('\n\n') : '';
+        if (valid && savedText === cleanMd) {
+          const attached = Array.isArray(lesson.resources) ? lesson.resources : [];
+          const claimed = new Set();
+          let quizIndex = 0;
+          const restored = saved.map((b, index) => {
+            const id = String(b.id || `blk_saved_${index}`);
+            if (b.type === 'text') return { id, type: 'text', content: String(b.content || '') };
+            if (b.type === 'quiz') {
+              const quiz = blocks.filter(item => item.type === 'quiz')[quizIndex++];
+              return quiz ? { ...quiz, id } : null;
+            }
+            const files = (Array.isArray(b.files) ? b.files : []).flatMap(ref => {
+              const resource = attached.find(item =>
+                (ref.resource_id && String(item.resource_id) === String(ref.resource_id))
+                || (ref.asset_id && String(item.asset_id) === String(ref.asset_id)));
+              if (!resource) return [];
+              claimed.add(resource);
+              return [{ ...resource, title: resource.filename || resource.title || 'Tài liệu' }];
+            });
+            if (b.type === 'document') return { id, type: 'document', title: String(b.title || 'Tài liệu'), files };
+            return { id, type: 'video', videoType: b.videoType === 'UPLOAD' ? 'UPLOAD' : 'YOUTUBE',
+              url: videoUrls.includes(b.url) ? b.url : '', title: String(b.title || 'Video bài giảng'), files };
+          }).filter(Boolean);
+          const remaining = attached.filter(item => !claimed.has(item));
+          if (remaining.length) {
+            const extra = InstructorView.parseLessonToBlocks({ ...lesson, markdown_content: '', video_urls: [], quiz: [], resources: remaining });
+            restored.push(...extra.filter(b => b.type !== 'text'));
+          }
+          const includedUrls = new Set(restored.filter(b => b.type === 'video').map(b => b.url));
+          for (const url of videoUrls) {
+            if (!includedUrls.has(url)) restored.push({ id: 'blk_' + Math.random().toString(36).slice(2, 9), type: 'video', videoType: 'YOUTUBE', url, files: [] });
+          }
+          restored.push(...blocks.filter(b => b.type === 'quiz').slice(quizIndex));
+          if (restored.length) return restored;
+        }
+      } catch (error) {
+        console.warn('Không thể đọc bố cục bài giảng đã lưu:', error);
+      }
+    }
     return blocks;
   }
 
@@ -813,6 +860,15 @@ class InstructorView {
       const passingPercent = meta.quiz_passing_percent || 80;
       finalMd += '\n<!-- mini_quiz_passing: ' + passingPercent + ' -->';
     }
+    const manifest = blocks.map(b => {
+      if (b.type === 'text') return { id: b.id, type: b.type, content: String(b.content || '') };
+      if (b.type === 'quiz') return { id: b.id, type: b.type };
+      return { id: b.id, type: b.type, title: b.title, videoType: b.videoType,
+        url: b.type === 'video' ? String(b.url || '').trim() : undefined,
+        files: (Array.isArray(b.files) ? b.files : []).map(f => ({ resource_id: f.resource_id, asset_id: f.asset_id })) };
+    });
+    const manifestJson = JSON.stringify(manifest).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+    finalMd += '\n\n<!-- PWD301_BLOCKS: ' + manifestJson + ' -->';
 
     return {
       title: (meta.title || 'Bài giảng').trim(),
@@ -1588,11 +1644,12 @@ class InstructorView {
           const temp = unit.lessons[lIdx];
           unit.lessons[lIdx] = unit.lessons[lIdx - 1];
           unit.lessons[lIdx - 1] = temp;
-          const orderedIds = unit.lessons.map(l => l.lesson_id || l.id);
+          const orderedIds = currentUnits.flatMap(u => (u.lessons || []).map(l => l.lesson_id || l.id));
           try {
-            await ApiClient.reorderLessons(cId, orderedIds);
+            const res = await ApiClient.reorderLessons(cId, orderedIds);
+            if (res?.pending_approval) currentUnits = snapshot;
             renderTree();
-            UI.showToast('Đã di chuyển bài giảng lên.', 'success');
+            UI.showToast(res?.pending_approval ? res.message : 'Đã di chuyển bài giảng lên.', res?.pending_approval ? 'info' : 'success');
           } catch (err) {
             currentUnits = snapshot;
             renderTree();
@@ -1612,11 +1669,12 @@ class InstructorView {
           const temp = unit.lessons[lIdx];
           unit.lessons[lIdx] = unit.lessons[lIdx + 1];
           unit.lessons[lIdx + 1] = temp;
-          const orderedIds = unit.lessons.map(l => l.lesson_id || l.id);
+          const orderedIds = currentUnits.flatMap(u => (u.lessons || []).map(l => l.lesson_id || l.id));
           try {
-            await ApiClient.reorderLessons(cId, orderedIds);
+            const res = await ApiClient.reorderLessons(cId, orderedIds);
+            if (res?.pending_approval) currentUnits = snapshot;
             renderTree();
-            UI.showToast('Đã di chuyển bài giảng xuống.', 'success');
+            UI.showToast(res?.pending_approval ? res.message : 'Đã di chuyển bài giảng xuống.', res?.pending_approval ? 'info' : 'success');
           } catch (err) {
             currentUnits = snapshot;
             renderTree();
@@ -1719,9 +1777,11 @@ class InstructorView {
             dstUnit.lessons.push(movedLesson);
 
             try {
-              await ApiClient.updateLesson(lessonId, { learning_unit_id: targetUnitId });
+              const orderedIds = currentUnits.flatMap(u => (u.lessons || []).map(l => l.lesson_id || l.id));
+              const res = await ApiClient.reorderLessons(cId, orderedIds, { lesson_id: lessonId, learning_unit_id: targetUnitId });
+              if (res?.pending_approval) currentUnits = snapshot;
               renderTree();
-              UI.showToast('Đã chuyển bài giảng vào Chương mới.', 'success');
+              UI.showToast(res?.pending_approval ? res.message : 'Đã chuyển bài giảng vào Chương mới.', res?.pending_approval ? 'info' : 'success');
             } catch (err) {
               currentUnits = snapshot;
               renderTree();
@@ -1792,11 +1852,12 @@ class InstructorView {
             const snapshot = JSON.parse(JSON.stringify(currentUnits));
             const [movedLesson] = unit.lessons.splice(srcLessonIdx, 1);
             unit.lessons.splice(targetLessonIdx, 0, movedLesson);
-            const orderedIds = unit.lessons.map(l => l.lesson_id || l.id);
+            const orderedIds = currentUnits.flatMap(u => (u.lessons || []).map(l => l.lesson_id || l.id));
             try {
-              await ApiClient.reorderLessons(cId, orderedIds);
+              const res = await ApiClient.reorderLessons(cId, orderedIds);
+              if (res?.pending_approval) currentUnits = snapshot;
               renderTree();
-              UI.showToast('Đã di chuyển thứ tự bài giảng.', 'success');
+              UI.showToast(res?.pending_approval ? res.message : 'Đã di chuyển thứ tự bài giảng.', res?.pending_approval ? 'info' : 'success');
             } catch (err) {
               currentUnits = snapshot;
               renderTree();
@@ -1820,11 +1881,11 @@ class InstructorView {
           dstUnit.lessons.splice(targetLessonIdx, 0, movedLesson);
 
           try {
-            await ApiClient.updateLesson(srcLessonId, { learning_unit_id: targetUnitId });
-            const orderedIds = dstUnit.lessons.map(l => l.lesson_id || l.id);
-            await ApiClient.reorderLessons(cId, orderedIds);
+            const orderedIds = currentUnits.flatMap(u => (u.lessons || []).map(l => l.lesson_id || l.id));
+            const res = await ApiClient.reorderLessons(cId, orderedIds, { lesson_id: srcLessonId, learning_unit_id: targetUnitId });
+            if (res?.pending_approval) currentUnits = snapshot;
             renderTree();
-            UI.showToast('Đã chuyển bài giảng sang Chương mới.', 'success');
+            UI.showToast(res?.pending_approval ? res.message : 'Đã chuyển bài giảng sang Chương mới.', res?.pending_approval ? 'info' : 'success');
           } catch (err) {
             currentUnits = snapshot;
             renderTree();
@@ -1942,6 +2003,11 @@ class InstructorView {
 
     let selectLessonGen = 0;
     let isEditorDirty = false;
+    InstructorView.installLessonDepartureGuard(editorContainer, () => isEditorDirty);
+    editorContainer.addEventListener('input', () => { isEditorDirty = true; }, { passive: true });
+    editorContainer.addEventListener('change', () => { isEditorDirty = true; }, { passive: true });
+    editorContainer.addEventListener('paste', () => { isEditorDirty = true; }, { passive: true });
+    editorContainer.addEventListener('drop', () => { isEditorDirty = true; }, { passive: true });
 
     // Select and load lesson into editor
     const selectLesson = async (lessonId, unitId) => {
@@ -1953,6 +2019,7 @@ class InstructorView {
         );
         if (!leave) return;
       }
+      const previousRouteLessonId = new URLSearchParams((window.location.hash || '').split('?')[1] || '').get('lesson_id');
       isEditorDirty = false;
       const currentGen = ++selectLessonGen;
       activeLessonId = lessonId;
@@ -1983,6 +2050,7 @@ class InstructorView {
         };
         activeBlocks = InstructorView.parseLessonToBlocks(lessonData);
         renderEditor();
+        InstructorView.replaceLessonEditorRoute(cId, previousRouteLessonId, lessonId);
         isEditorDirty = false;
       } catch (err) {
         if (currentGen !== selectLessonGen || String(activeLessonId) !== String(lessonId)) {
@@ -2178,16 +2246,14 @@ class InstructorView {
         `;
       } else if (block.type === 'video') {
         const vFiles = Array.isArray(block.files) ? block.files : [];
-        let ytEmbed = '';
+        let ytEmbed = '<div class="h-full flex items-center justify-center text-xs text-slate-400">Xem trước video</div>';
         if (block.url && (block.url.includes('youtube.com') || block.url.includes('youtu.be') || block.url.includes('vimeo.com'))) {
           let videoId = '';
           const match = block.url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
           if (match) videoId = match[1];
           if (videoId) {
             ytEmbed = `
-              <div class="mt-2.5 aspect-video rounded-xl overflow-hidden bg-black max-w-lg border border-[#E8E6DF] dark:border-[#2E2D2B]">
-                <iframe class="w-full h-full" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
-              </div>
+              <iframe class="w-full h-full" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
             `;
           }
         }
@@ -2208,7 +2274,7 @@ class InstructorView {
                   ${isLocked ? 'disabled' : ''}
                 />
               </div>
-              ${ytEmbed}
+              <div class="block-video-preview mt-2.5 aspect-video rounded-xl overflow-hidden bg-slate-900 max-w-lg border border-[#E8E6DF] dark:border-[#2E2D2B]">${ytEmbed}</div>
             </div>
 
             <!-- 2. Khu vực lớn bên dưới: Tải video từ máy tính (< 1 GB) -->
@@ -2838,6 +2904,7 @@ class InstructorView {
           const targetUnitId = activeUnitId;
           const targetGen = selectLessonGen;
           const payload = InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta);
+          const submittedSnapshot = JSON.stringify(payload);
           const res = await ApiClient.updateLesson(targetLessonId, payload);
 
           const newLessonId = res?.lesson?.lesson_id || res?.lesson_id || res?.id;
@@ -2846,6 +2913,7 @@ class InstructorView {
             if (String(activeLessonId) === String(targetLessonId) && selectLessonGen === targetGen) {
               activeLessonId = newLessonId;
               activeLessonMeta.status = res?.lesson?.status || res?.status || 'DRAFT';
+              InstructorView.replaceLessonEditorRoute(cId, targetLessonId, newLessonId);
             }
             const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${targetLessonId}"]`);
             if (treeItem) {
@@ -2868,7 +2936,7 @@ class InstructorView {
           if (unit && unit.lessons) {
             const l = unit.lessons.find(item => String(item.lesson_id || item.id) === String(resolvedId));
             if (l) {
-              l.title = activeLessonMeta.title;
+              l.title = res?.lesson?.title || payload.title;
               if (l.status === 'PUBLISHED') l.status = 'MODIFIED';
             }
           }
@@ -2876,11 +2944,24 @@ class InstructorView {
           const treeItem = treeContainer.querySelector(`.lesson-tree-item[data-lesson-id="${resolvedId}"]`);
           if (treeItem) {
             const titleEl = treeItem.querySelector('.lesson-item-title');
-            if (titleEl) titleEl.textContent = activeLessonMeta.title;
+            if (titleEl) titleEl.textContent = res?.lesson?.title || payload.title;
           }
 
           if (selectLessonGen === targetGen && String(activeLessonId) === String(resolvedId)) {
-            isEditorDirty = false;
+            scrapeBlocksFromDom();
+            isEditorDirty = JSON.stringify(InstructorView.serializeBlocksToPayload(activeBlocks, activeLessonMeta)) !== submittedSnapshot;
+            if (String(resolvedId) !== String(targetLessonId)) {
+              const acknowledgedResources = (res?.lesson || res)?.resources || [];
+              for (const block of activeBlocks) {
+                for (const file of block.files || []) {
+                  const acknowledged = acknowledgedResources.find(resource =>
+                    (file.asset_id && String(resource.asset_id) === String(file.asset_id))
+                    || (file.resource_id && String(resource.resource_id) === String(file.resource_id)));
+                  if (acknowledged) Object.assign(file, acknowledged);
+                }
+              }
+              renderEditor();
+            }
           }
 
           if (res && (res.pending_approval || res.status === 202)) {
@@ -2915,6 +2996,7 @@ class InstructorView {
             type: 'text',
             content: ''
           });
+          isEditorDirty = true;
           renderEditor();
         };
       }
@@ -2927,6 +3009,7 @@ class InstructorView {
             videoType: 'YOUTUBE',
             url: ''
           });
+          isEditorDirty = true;
           renderEditor();
         };
       }
@@ -2939,6 +3022,7 @@ class InstructorView {
             title: 'Tài liệu đính kèm',
             files: []
           });
+          isEditorDirty = true;
           renderEditor();
         };
       }
@@ -2959,6 +3043,7 @@ class InstructorView {
             ],
             explanation: ''
           });
+          isEditorDirty = true;
           renderEditor();
         };
       }
@@ -2973,7 +3058,8 @@ class InstructorView {
           scrapeBlocksFromDom();
           if (activeBlocks[bIdx]) {
             activeBlocks[bIdx].q_type = newType;
-            renderEditor();
+            isEditorDirty = true;
+          renderEditor();
           }
         };
       });
@@ -2987,7 +3073,8 @@ class InstructorView {
           if (activeBlocks[bIdx]) {
             if (!activeBlocks[bIdx].pairs) activeBlocks[bIdx].pairs = [];
             activeBlocks[bIdx].pairs.push({ left: '', right: '' });
-            renderEditor();
+            isEditorDirty = true;
+          renderEditor();
           }
         };
       });
@@ -3001,7 +3088,8 @@ class InstructorView {
           scrapeBlocksFromDom();
           if (activeBlocks[bIdx] && activeBlocks[bIdx].pairs) {
             activeBlocks[bIdx].pairs.splice(pIdx, 1);
-            renderEditor();
+            isEditorDirty = true;
+          renderEditor();
           }
         };
       });
@@ -3015,6 +3103,7 @@ class InstructorView {
           const temp = activeBlocks[idx];
           activeBlocks[idx] = activeBlocks[idx - 1];
           activeBlocks[idx - 1] = temp;
+          isEditorDirty = true;
           renderEditor();
         };
       });
@@ -3027,6 +3116,7 @@ class InstructorView {
           const temp = activeBlocks[idx];
           activeBlocks[idx] = activeBlocks[idx + 1];
           activeBlocks[idx + 1] = temp;
+          isEditorDirty = true;
           renderEditor();
         };
       });
@@ -3034,30 +3124,46 @@ class InstructorView {
       editorContainer.querySelectorAll('.btn-block-delete').forEach(btn => {
         btn.onclick = async () => {
           const idx = parseInt(btn.dataset.idx, 10);
-          const conf = await UI.confirm('Xóa nội dung', 'Xác nhận xóa phần nội dung này?', 'Xóa');
-          if (!conf) return;
-          scrapeBlocksFromDom();
           const targetLessonId = activeLessonId;
+          const targetGen = selectLessonGen;
           const targetBlock = activeBlocks[idx];
+          if (!targetBlock) return;
+          const ownsBlock = () => selectLessonGen === targetGen && String(activeLessonId) === String(targetLessonId) && activeBlocks.includes(targetBlock);
+          const conf = await UI.confirm('Xóa nội dung', 'Xác nhận xóa phần nội dung này?', 'Xóa');
+          if (!conf || !ownsBlock()) return;
+          scrapeBlocksFromDom();
           if (targetBlock && Array.isArray(targetBlock.files) && targetBlock.files.length > 0) {
-            for (const f of targetBlock.files) {
+            for (const f of [...targetBlock.files]) {
+              if (!ownsBlock()) return;
               const rId = f.resource_id || f.id || f.asset_id;
               if (rId) {
                 try {
                   const res = await ApiClient.detachLessonResource(cId, targetLessonId, rId);
+                  if (!ownsBlock()) return;
                   if (res && (res.pending_approval || res.status === 202)) {
+                    f.pending_delete = true;
                     UI.showToast(res.message || 'Yêu cầu gỡ tệp đính kèm đã gửi Quản trị viên để xét duyệt.', 'info');
+                    isEditorDirty = true;
+          renderEditor();
+                    return;
                   }
+                  targetBlock.files = targetBlock.files.filter(file => file !== f);
                 } catch (e) {
-                  console.warn('Could not detach resource on block delete:', e);
+                  if (ownsBlock()) {
+                    isEditorDirty = true;
+          renderEditor();
+                    UI.showToast(e.message || 'Không thể gỡ tệp đính kèm.', 'error');
+                  }
+                  return;
                 }
               }
             }
           }
-          if (String(activeLessonId) === String(targetLessonId)) {
-            activeBlocks.splice(idx, 1);
+          if (ownsBlock()) {
+            activeBlocks.splice(activeBlocks.indexOf(targetBlock), 1);
             isEditorDirty = true;
-            renderEditor();
+            isEditorDirty = true;
+          renderEditor();
           }
         };
       });
@@ -3068,11 +3174,12 @@ class InstructorView {
         const cardBlockId = activeBlocks[bIdx]?.id;
         const targetLessonId = activeLessonId;
         const uploadGen = selectLessonGen;
+        const ownsCard = () => selectLessonGen === uploadGen && String(activeLessonId) === String(targetLessonId) && activeBlocks.some(block => block.id === cardBlockId);
         if (fileInput) {
           fileInput.onchange = async (e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
-            if (!file) return;
+            if (!file || !ownsCard()) return;
             scrapeBlocksFromDom();
             const formData = new FormData();
             formData.append('file', file);
@@ -3086,7 +3193,7 @@ class InstructorView {
                 return;
               }
               if (selectLessonGen === uploadGen && String(activeLessonId) === String(targetLessonId)) {
-                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+                const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
                 if (targetBlock) {
                   if (!targetBlock.files) targetBlock.files = [];
                   targetBlock.files.push({
@@ -3096,7 +3203,8 @@ class InstructorView {
                     file_url: res.file_url || '',
                     file_size_bytes: file.size
                   });
-                  renderEditor();
+                  isEditorDirty = true;
+          renderEditor();
                 }
               }
               UI.showToast('Đã tải tài liệu thành công!', 'success');
@@ -3111,29 +3219,31 @@ class InstructorView {
           delBtn.onclick = async () => {
             const fIdx = parseInt(delBtn.dataset.fileIdx, 10);
             const rId = delBtn.dataset.resourceId;
-            const targetGen = selectLessonGen;
+            if (!ownsCard()) return;
+            const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
+            const targetFile = targetBlock?.files?.find(file => String(file.resource_id || file.id || file.asset_id) === String(rId)) || targetBlock?.files?.[fIdx];
+            if (!targetFile) return;
             scrapeBlocksFromDom();
             try {
               if (rId) {
                 const res = await ApiClient.detachLessonResource(cId, targetLessonId, rId);
                 if (res && (res.pending_approval || res.status === 202)) {
                   UI.showToast(res.message || 'Yêu cầu gỡ tệp đính kèm đã được gửi tới Quản trị viên để xét duyệt.', 'info');
-                  if (selectLessonGen === targetGen && String(activeLessonId) === String(targetLessonId)) {
-                    const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
-                    if (targetBlock?.files && targetBlock.files[fIdx]) {
-                      targetBlock.files[fIdx].pending_delete = true;
-                    }
-                    renderEditor();
+                  if (ownsCard() && targetBlock.files.includes(targetFile)) {
+                    targetFile.pending_delete = true;
+                    isEditorDirty = true;
+          renderEditor();
                   }
                   return;
                 }
               }
-              if (selectLessonGen === targetGen && String(activeLessonId) === String(targetLessonId)) {
-                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+              if (ownsCard()) {
                 if (targetBlock?.files) {
-                  targetBlock.files.splice(fIdx, 1);
+                  targetBlock.files = targetBlock.files.filter(file => file !== targetFile);
+                  isEditorDirty = true;
                 }
-                renderEditor();
+                isEditorDirty = true;
+          renderEditor();
               }
               UI.showToast('Đã xóa tệp đính kèm.', 'success');
             } catch (err) {
@@ -3147,7 +3257,13 @@ class InstructorView {
         if (videoUrlInput) {
           videoUrlInput.onchange = () => {
             scrapeBlocksFromDom();
-            renderEditor();
+            isEditorDirty = true;
+            const preview = card.querySelector('.block-video-preview');
+            if (preview) {
+              const previewTemplate = document.createElement('template');
+              previewTemplate.innerHTML = renderBlockHtml(activeBlocks[bIdx], bIdx);
+              preview.innerHTML = previewTemplate.content.querySelector('.block-video-preview')?.innerHTML || '';
+            }
           };
         }
 
@@ -3161,7 +3277,7 @@ class InstructorView {
 
         const handleUploadVideoFiles = async (filesList) => {
           const files = Array.from(filesList || []);
-          if (!files.length) return;
+          if (!files.length || !ownsCard()) return;
 
           // Fail-closed video size constraint: < 1 GB (1024 * 1024 * 1024 bytes)
           const MAX_VIDEO_SIZE = 1024 * 1024 * 1024;
@@ -3177,6 +3293,7 @@ class InstructorView {
 
           let successCount = 0;
           for (let i = 0; i < files.length; i++) {
+            if (!ownsCard()) break;
             const file = files[i];
             if (progressFileName) progressFileName.textContent = `Đang tải: ${file.name} (${i + 1}/${files.length})`;
             const initialPct = Math.round(((i + 0.3) / files.length) * 100);
@@ -3189,8 +3306,13 @@ class InstructorView {
 
             try {
               const res = await ApiClient.attachLessonResource(cId, targetLessonId, formData);
-              if (String(activeLessonId) === String(targetLessonId)) {
-                const targetBlock = activeBlocks.find(b => b.id === cardBlockId) || activeBlocks[bIdx];
+              if (!ownsCard()) break;
+              if (res && (res.pending_approval || res.status === 202)) {
+                UI.showToast(res.message || 'Video đang chờ phê duyệt.', 'info');
+                continue;
+              }
+              if (ownsCard()) {
+                const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
                 if (targetBlock) {
                   if (!targetBlock.files) targetBlock.files = [];
                   targetBlock.files.push({
@@ -3212,8 +3334,9 @@ class InstructorView {
           }
 
           if (uploadProgress) uploadProgress.classList.add('hidden');
-          if (successCount > 0 && String(activeLessonId) === String(targetLessonId)) {
-            renderEditor();
+          if (successCount > 0 && ownsCard()) {
+            isEditorDirty = true;
+          renderEditor();
             UI.showToast(`Đã tải lên ${successCount} video thành công!`, 'success');
           }
         };
@@ -3261,17 +3384,30 @@ class InstructorView {
           delBtn.onclick = async () => {
             const fIdx = parseInt(delBtn.dataset.fileIdx, 10);
             const rId = delBtn.dataset.resourceId;
+            if (!ownsCard()) return;
+            const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
+            const targetFile = targetBlock?.files?.find(file => String(file.resource_id || file.id || file.asset_id) === String(rId)) || targetBlock?.files?.[fIdx];
+            if (!targetFile) return;
             const conf = await UI.confirm('Xóa video', 'Xác nhận xóa video này khỏi bài giảng?', 'Xóa');
-            if (!conf) return;
+            if (!conf || !ownsCard() || !targetBlock.files.includes(targetFile)) return;
             scrapeBlocksFromDom();
             try {
               if (rId) {
-                await ApiClient.detachLessonResource(cId, activeLessonId, rId);
+                const res = await ApiClient.detachLessonResource(cId, targetLessonId, rId);
+                if (!ownsCard()) return;
+                if (res && (res.pending_approval || res.status === 202)) {
+                  targetFile.pending_delete = true;
+                  isEditorDirty = true;
+          renderEditor();
+                  UI.showToast(res.message || 'Yêu cầu gỡ video đang chờ phê duyệt.', 'info');
+                  return;
+                }
               }
-              if (activeBlocks[bIdx]?.files) {
-                activeBlocks[bIdx].files.splice(fIdx, 1);
-              }
-              renderEditor();
+              if (!ownsCard()) return;
+              targetBlock.files = targetBlock.files.filter(file => file !== targetFile);
+              isEditorDirty = true;
+              isEditorDirty = true;
+          renderEditor();
               UI.showToast('Đã xóa video bài giảng.', 'success');
             } catch (err) {
               UI.showToast(err.message || 'Lỗi xóa video bài giảng.', 'error');
@@ -3320,6 +3456,10 @@ class InstructorView {
 
       // Quiz Image Upload & Paste (Ctrl+V) Handlers
       editorContainer.querySelectorAll('.curriculum-block-card').forEach((card, bIdx) => {
+        const quizBlockId = activeBlocks[bIdx]?.id;
+        const imageLessonId = activeLessonId;
+        const imageGen = selectLessonGen;
+        const ownsQuizCard = () => quizBlockId !== undefined && quizBlockId !== null && selectLessonGen === imageGen && String(activeLessonId) === String(imageLessonId) && activeBlocks.some(block => block.id === quizBlockId);
         const qTextarea = card.querySelector('.block-quiz-question');
         const qFileInput = card.querySelector('.block-quiz-question-file');
         const btnRemoveQImg = card.querySelector('.btn-remove-quiz-img');
@@ -3331,9 +3471,12 @@ class InstructorView {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (re) => {
+              if (!ownsQuizCard()) return;
               scrapeBlocksFromDom();
-              if (activeBlocks[bIdx]) {
-                activeBlocks[bIdx].image_url = re.target.result;
+              const targetBlock = activeBlocks.find(block => block.id === quizBlockId);
+              if (targetBlock) {
+                targetBlock.image_url = re.target.result;
+                isEditorDirty = true;
                 renderEditor();
               }
             };
@@ -3352,9 +3495,12 @@ class InstructorView {
                   e.preventDefault();
                   const reader = new FileReader();
                   reader.onload = (re) => {
+                    if (!ownsQuizCard()) return;
                     scrapeBlocksFromDom();
-                    if (activeBlocks[bIdx]) {
-                      activeBlocks[bIdx].image_url = re.target.result;
+                    const targetBlock = activeBlocks.find(block => block.id === quizBlockId);
+                    if (targetBlock) {
+                      targetBlock.image_url = re.target.result;
+                      isEditorDirty = true;
                       renderEditor();
                       UI.showToast('Đã dán ảnh minh họa vào câu hỏi!', 'success');
                     }
@@ -3374,7 +3520,8 @@ class InstructorView {
             if (activeBlocks[bIdx]) {
               activeBlocks[bIdx].image_url = '';
               activeBlocks[bIdx].question_image_url = '';
-              renderEditor();
+              isEditorDirty = true;
+          renderEditor();
             }
           };
         }
@@ -3384,13 +3531,18 @@ class InstructorView {
             const oIdx = parseInt(fileIn.dataset.optIdx, 10);
             const file = e.target.files?.[0];
             e.target.value = '';
-            if (!file) return;
+            if (!file || !ownsQuizCard()) return;
+            scrapeBlocksFromDom();
+            const optionSnapshot = JSON.stringify(activeBlocks.find(block => block.id === quizBlockId)?.options || []);
             const reader = new FileReader();
             reader.onload = (re) => {
+              if (!ownsQuizCard()) return;
               scrapeBlocksFromDom();
-              if (activeBlocks[bIdx]) {
-                if (!activeBlocks[bIdx].option_images) activeBlocks[bIdx].option_images = [];
-                activeBlocks[bIdx].option_images[oIdx] = re.target.result;
+              const targetBlock = activeBlocks.find(block => block.id === quizBlockId);
+              if (targetBlock && JSON.stringify(targetBlock.options || []) === optionSnapshot) {
+                if (!targetBlock.option_images) targetBlock.option_images = [];
+                targetBlock.option_images[oIdx] = re.target.result;
+                isEditorDirty = true;
                 renderEditor();
               }
             };
@@ -3405,14 +3557,19 @@ class InstructorView {
             for (let i = 0; i < items.length; i++) {
               if (items[i].type.indexOf('image') !== -1) {
                 const file = items[i].getAsFile();
-                if (file) {
+                if (file && ownsQuizCard()) {
                   e.preventDefault();
+                  scrapeBlocksFromDom();
+                  const optionSnapshot = JSON.stringify(activeBlocks.find(block => block.id === quizBlockId)?.options || []);
                   const reader = new FileReader();
                   reader.onload = (re) => {
+                    if (!ownsQuizCard()) return;
                     scrapeBlocksFromDom();
-                    if (activeBlocks[bIdx]) {
-                      if (!activeBlocks[bIdx].option_images) activeBlocks[bIdx].option_images = [];
-                      activeBlocks[bIdx].option_images[oIdx] = re.target.result;
+                    const targetBlock = activeBlocks.find(block => block.id === quizBlockId);
+                    if (targetBlock && JSON.stringify(targetBlock.options || []) === optionSnapshot) {
+                      if (!targetBlock.option_images) targetBlock.option_images = [];
+                      targetBlock.option_images[oIdx] = re.target.result;
+                      isEditorDirty = true;
                       renderEditor();
                       UI.showToast(`Đã dán ảnh cho phương án ${String.fromCharCode(65 + oIdx)}!`, 'success');
                     }
@@ -3432,15 +3589,12 @@ class InstructorView {
             scrapeBlocksFromDom();
             if (activeBlocks[bIdx] && activeBlocks[bIdx].option_images) {
               activeBlocks[bIdx].option_images[oIdx] = '';
-              renderEditor();
+              isEditorDirty = true;
+          renderEditor();
             }
           };
         });
       });
-      // Track unsaved modifications to prevent losing work
-      editorContainer.addEventListener('input', () => { isEditorDirty = true; }, { passive: true });
-      editorContainer.addEventListener('change', () => { isEditorDirty = true; }, { passive: true });
-
       // Activate Microsoft Word Standard Ribbon Toolbar
       InstructorView.wireWordRibbon(editorContainer);
     };
@@ -6149,18 +6303,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           saveAcademicBtn.disabled = true;
           saveAcademicBtn.innerHTML = `<span class="inline-block animate-spin text-[14px]">⏳</span> <span>Đang lưu...</span>`;
 
-          let hasPendingApproval = false;
-
-          // 4.1. Save SLOs
           const toSaveSLOs = harvestDOMtoSLOs();
-          const sloRes = await ApiClient.updateCourse(cId, { learning_objectives: toSaveSLOs });
-          course.learning_objectives = toSaveSLOs;
-          customSLOs = [...toSaveSLOs];
-          if (sloRes && (sloRes.pending_approval || sloRes.status === 'pending_approval')) {
-            hasPendingApproval = true;
-          }
-
-          // 4.2. Save Completion Rules
           const rulesPayload = {
             minimum_progress_percent: parseFloat(document.getElementById('rule-min-progress')?.value || '80'),
             minimum_grade_score: parseFloat(document.getElementById('rule-min-score')?.value || '5.0'),
@@ -6169,49 +6312,27 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
             require_required_assessments: Boolean(document.getElementById('rule-require-assessments')?.checked),
             allow_certificate: Boolean(document.getElementById('rule-allow-certificate')?.checked),
           };
-          await ApiClient.updateCourseCompletionRules(cId, rulesPayload);
-
-          const prereqErrors = [];
-
-          // 4.3. Sync Staged Prerequisites
-          const toDelete = stagedPrerequisites.filter(p => p.is_deleted && !p.is_new);
-          for (const item of toDelete) {
-            const pId = item.course_id || item.prerequisite_course_id || item.id;
-            try {
-              const delRes = await ApiClient.deleteCoursePrerequisite(cId, pId);
-              if (delRes && (delRes.pending_approval || delRes.status === 'pending_approval')) {
-                hasPendingApproval = true;
-              }
-            } catch (delErr) {
-              console.warn('Failed to delete prereq:', pId, delErr);
-              prereqErrors.push(`Xóa môn ${item.course_code || pId}: ${delErr.message || delErr}`);
-            }
-          }
-
-          const toAdd = stagedPrerequisites.filter(p => p.is_new && !p.is_deleted);
-          for (const item of toAdd) {
-            const pId = item.course_id || item.prerequisite_course_id || item.id;
-            try {
-              const addRes = await ApiClient.addCoursePrerequisite(cId, {
-                prerequisite_course_id: pId,
-                min_grade_point: item.min_grade_point || 5.0,
+          const prereqId = item => String(item.course_id || item.prerequisite_course_id || item.id);
+          const result = await ApiClient.saveCourseAcademicSettings(cId, {
+            learning_objectives: toSaveSLOs,
+            completion_rules: rulesPayload,
+            prerequisites: {
+              remove: stagedPrerequisites.filter(p => p.is_deleted && !p.is_new).map(prereqId),
+              add: stagedPrerequisites.filter(p => p.is_new && !p.is_deleted).map(item => ({
+                prerequisite_course_id: prereqId(item),
+                min_grade_point: item.min_grade_point ?? 5.0,
                 reason: item.reason || 'Yêu cầu chuẩn hóa đề cương'
-              });
-              if (addRes && (addRes.status === 'pending_approval' || addRes.pending_approval)) {
-                hasPendingApproval = true;
-              }
-            } catch (addErr) {
-              console.warn('Failed to add prereq:', pId, addErr);
-              prereqErrors.push(`Thêm môn ${item.course_code || pId}: ${addErr.message || addErr}`);
+              }))
             }
-          }
+          });
+          const hasPendingApproval = Boolean(result.pending_approval);
+          course.learning_objectives = result.course?.learning_objectives ?? toSaveSLOs;
+          customSLOs = [...toSaveSLOs];
 
           // 4.4. Refresh state
           await loadPrerequisites();
 
-          if (prereqErrors.length > 0) {
-            UI.showToast(`Lưu học vụ hoàn tất một phần. Có lỗi môn tiên quyết: ${prereqErrors.join('; ')}`, 'warning');
-          } else if (hasPendingApproval) {
+          if (hasPendingApproval) {
             if (pendingBadge) pendingBadge.classList.remove('hidden');
             UI.showToast('Khóa học đã ban hành: Một số thay đổi học vụ đã được gửi tới Quản trị viên để xét duyệt!', 'info');
           } else {
@@ -7471,6 +7592,45 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   // =========================================================================
   // 3.7. Dedicated Fullscreen Low-Tech Lesson Authoring Studio
   // =========================================================================
+  static replaceLessonEditorRoute(courseId, previousLessonId, lessonId) {
+    const previousHash = window.location?.hash || '';
+    const [path, rawQuery = ''] = previousHash.split('?');
+    if (path !== '#/instructor/courses/manage') return;
+    const params = new URLSearchParams(rawQuery);
+    if (params.get('id') !== String(courseId)) return;
+    const selectedLesson = params.get('lesson_id');
+    if (selectedLesson && selectedLesson !== String(previousLessonId)) return;
+    params.set('lesson_id', String(lessonId));
+    const nextHash = `${path}?${params}`;
+    window.history.replaceState(null, '', nextHash);
+    const guard = (window.app || window.appRouter)?.beforeRouteLeave;
+    if (guard?.routeHash === previousHash) guard.routeHash = nextHash;
+  }
+
+  static installLessonDepartureGuard(container, isDirty) {
+    const router = window.app || window.appRouter;
+    if (window._curriculumUnloadHandler) window.removeEventListener('beforeunload', window._curriculumUnloadHandler);
+    const unload = event => {
+      if (container.isConnected !== false && isDirty()) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window._curriculumUnloadHandler = unload;
+    window.addEventListener('beforeunload', unload);
+    if (router) router.beforeRouteLeave = {
+      routeHash: window.location.hash,
+      leave: async () => {
+        const allowed = container.isConnected === false || !isDirty() || await UI.confirm(
+          'Thay đổi chưa lưu', 'Rời trang sẽ bỏ các thay đổi bài giảng chưa được lưu.',
+          'Rời Trang', 'Tiếp Tục Chỉnh Sửa', true
+        );
+        if (allowed) window.removeEventListener('beforeunload', unload);
+        return allowed;
+      }
+    };
+  }
+
   static isActiveLessonStudio(root) {
     return Boolean(root?.isConnected && document.getElementById('lesson-studio-root') === root);
   }

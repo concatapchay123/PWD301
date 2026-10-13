@@ -1,16 +1,4 @@
-"""Domain models package for PWD301.
-
-Aggregates and re-exports all 71 canonical domain models across 9 logical domains:
-1. Identity & Auth (8 tables)
-2. Course & Learning (10 tables)
-3. Question Bank (5 tables)
-4. Assessment Structure (6 tables)
-5. Assessment Attempt & Regrading (13 tables)
-6. File Storage & Document Import (10 tables)
-7. AI & RAG Retrieval (8 tables)
-8. Notifications & Audit (5 tables)
-9. Operations & Health (6 tables)
-"""
+"""Canonical domain models registered in the application metadata."""
 
 from __future__ import annotations
 
@@ -60,6 +48,7 @@ from pwd301.models.course import (
     LearningUnit,
     Lesson,
     LessonProgress,
+    LessonProgressReceipt,
 )
 from pwd301.models.file_import import (
     DocumentImportJob,
@@ -137,6 +126,7 @@ __all__ = [
     "EnrollmentPeriod",
     "EnrollmentEvent",
     "LessonProgress",
+    "LessonProgressReceipt",
     "CourseCompletionSummary",
     # Question Bank
     "Question",

@@ -94,6 +94,7 @@ def test_restore_rejects_path_traversal(app: Flask) -> None:
                 backup_id=backup.public_id,
                 confirmation_phrase="CONFIRM_DATABASE_RESTORE",
                 password="secret_password",
+                reason="Verify path traversal rejection with otherwise valid confirmation",
             )
 
 

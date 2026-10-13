@@ -37,6 +37,246 @@ from pwd301.services.user_service import assign_role_to_user, register_user
 UUID_REGEX = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 
+def test_sync016_academic_save_rolls_back_all_parts(client, remediation_env):
+    from pwd301.models.course import Course, CourseChangeRequest, CourseCompletionRule
+
+    course = remediation_env["course"]
+    actor = remediation_env["instructor"]
+    course_id = str(course.public_id)
+    original_objectives = course.learning_objectives
+    original_requirements = course.completion_requirements
+    original_rule = db.session.query(CourseCompletionRule).filter_by(course_id=course.id).one()
+    original_progress = float(original_rule.minimum_progress_percent)
+    csrf = login_session(client, actor.email)
+    response = client.put(
+        f"/instructor/courses/{course_id}/academic-settings",
+        json={
+            "learning_objectives": [{"title": "A new objective"}],
+            "completion_rules": {"minimum_progress_percent": 92},
+            "prerequisites": {"add": [{"prerequisite_course_id": str(uuid.uuid4())}], "remove": []},
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 400
+    db.session.expire_all()
+    persisted = db.session.query(Course).filter_by(public_id=uuid.UUID(course_id)).one()
+    assert persisted.learning_objectives == original_objectives
+    assert persisted.completion_requirements == original_requirements
+    assert db.session.query(CourseChangeRequest).filter_by(course_id=persisted.id).count() == 0
+    rule = db.session.query(CourseCompletionRule).filter_by(course_id=persisted.id).one()
+    assert float(rule.minimum_progress_percent) == original_progress
+
+
+def test_sync016_published_objectives_remain_queued(client, remediation_env):
+    from pwd301.models.course import CourseChangeRequest, CourseCompletionRule
+
+    course = remediation_env["course"]
+    actor = remediation_env["instructor"]
+    original_objectives = course.learning_objectives
+    course_id = str(course.public_id)
+    csrf = login_session(client, actor.email)
+    response = client.put(
+        f"/instructor/courses/{course_id}/academic-settings",
+        json={
+            "learning_objectives": [{"title": "Proposed objective"}],
+            "completion_rules": {"minimum_progress_percent": 92},
+            "prerequisites": {"add": [], "remove": []},
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 202
+    assert response.get_json()["data"]["pending_approval"] is True
+    db.session.expire_all()
+    assert course.learning_objectives == original_objectives
+    assert (
+        db.session.query(CourseChangeRequest)
+        .filter_by(course_id=course.id, status="PENDING")
+        .count()
+        == 1
+    )
+    rule = db.session.query(CourseCompletionRule).filter_by(course_id=course.id).one()
+    assert float(rule.minimum_progress_percent) == 92
+
+
+def test_sync016_cross_instructor_prerequisite_stays_pending(client, remediation_env):
+    from pwd301.models.course import CourseChangeRequest, CoursePrerequisite
+
+    actor = remediation_env["instructor"]
+    course = remediation_env["course"]
+    other = register_user(
+        email="academic_peer@pwd301.local",
+        password="Password@123",
+        display_name="Academic peer",
+        session=db.session,
+    )
+    assign_role_to_user(other.id, "INSTRUCTOR", session=db.session)
+    peer_course = create_course(
+        actor=other,
+        data={"course_code": "PEER016", "title": "Academic Peer Course"},
+        session=db.session,
+    )
+    peer_course.status = "PUBLISHED"
+    db.session.commit()
+    course_id, peer_id = str(course.public_id), str(peer_course.public_id)
+    csrf = login_session(client, actor.email)
+    payload = {
+        "learning_objectives": [],
+        "completion_rules": {},
+        "prerequisites": {"add": [{"prerequisite_course_id": peer_id}], "remove": []},
+    }
+    for _ in range(2):
+        response = client.put(
+            f"/instructor/courses/{course_id}/academic-settings",
+            json=payload,
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code == 202
+    assert db.session.query(CoursePrerequisite).filter_by(course_id=course.id).count() == 0
+    assert (
+        db.session.query(CourseChangeRequest)
+        .filter_by(
+            course_id=course.id,
+            change_type="PREREQUISITE",
+            target_id=peer_course.id,
+            status="PENDING",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_sync016_published_removal_retry_queues_one_review(client, remediation_env):
+    from pwd301.models.course import CourseChangeRequest
+
+    actor = remediation_env["instructor"]
+    course = remediation_env["course"]
+    prereq = create_course(
+        actor=actor,
+        data={"course_code": "PRE016", "title": "Academic Prerequisite"},
+        session=db.session,
+    )
+    prereq.status = "PUBLISHED"
+    from pwd301.services.enrollment_service import add_course_prerequisite
+
+    add_course_prerequisite(actor, course.id, prereq.id, session=db.session)
+    db.session.commit()
+    course_id, prereq_id = str(course.public_id), str(prereq.public_id)
+    csrf = login_session(client, actor.email)
+    for _ in range(2):
+        response = client.put(
+            f"/instructor/courses/{course_id}/academic-settings",
+            json={
+                "learning_objectives": [],
+                "completion_rules": {},
+                "prerequisites": {"add": [], "remove": [prereq_id]},
+            },
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code == 202
+    assert (
+        db.session.query(CourseChangeRequest)
+        .filter_by(
+            course_id=course.id,
+            change_type="PREREQUISITE",
+            target_id=prereq.id,
+            status="PENDING",
+        )
+        .count()
+        == 1
+    )
+
+
+def test_sync016_legacy_prerequisite_acknowledgements_are_committed(client, remediation_env):
+    from pwd301.models.course import CoursePrerequisite
+
+    actor = remediation_env["instructor"]
+    course = remediation_env["course"]
+    prereq = create_course(
+        actor=actor,
+        data={"course_code": "ACK016", "title": "Committed Prerequisite"},
+        session=db.session,
+    )
+    prereq.status = "PUBLISHED"
+    course.status = "DRAFT"
+    db.session.commit()
+    course_pk, prereq_pk = course.id, prereq.id
+    course_id, prereq_id = str(course.public_id), str(prereq.public_id)
+    csrf = login_session(client, actor.email)
+    response = client.post(
+        f"/instructor/courses/{course_id}/prerequisites",
+        json={"prerequisite_course_id": prereq_id},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 201
+    db.session.rollback()
+    assert (
+        db.session.query(CoursePrerequisite)
+        .filter_by(
+            course_id=course_pk,
+            prerequisite_course_id=prereq_pk,
+        )
+        .count()
+        == 1
+    )
+    response = client.delete(
+        f"/instructor/courses/{course_id}/prerequisites/{prereq_id}",
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 200
+    db.session.rollback()
+    assert (
+        db.session.query(CoursePrerequisite)
+        .filter_by(
+            course_id=course_pk,
+            prerequisite_course_id=prereq_pk,
+        )
+        .count()
+        == 0
+    )
+
+
+def test_sync016_peer_notification_failure_rolls_back_request(client, remediation_env, monkeypatch):
+    from pwd301.models.course import CourseChangeRequest
+
+    actor = remediation_env["instructor"]
+    course = remediation_env["course"]
+    peer = register_user(
+        email="academic_outbox@pwd301.local",
+        password="Password@123",
+        display_name="Academic notification peer",
+        session=db.session,
+    )
+    assign_role_to_user(peer.id, "INSTRUCTOR", session=db.session)
+    prereq = create_course(
+        actor=peer,
+        data={"course_code": "OUT016", "title": "Peer Notification Prerequisite"},
+        session=db.session,
+    )
+    prereq.status = "PUBLISHED"
+    db.session.commit()
+    course_pk = course.id
+    course_id, prereq_id = str(course.public_id), str(prereq.public_id)
+    csrf = login_session(client, actor.email)
+
+    def fail_notification(**kwargs):
+        raise RuntimeError("peer notification persistence failed")
+
+    monkeypatch.setattr(
+        "pwd301.services.notification_service.dispatch_notification", fail_notification
+    )
+    response = client.put(
+        f"/instructor/courses/{course_id}/academic-settings",
+        json={
+            "learning_objectives": [{"title": "Must roll back"}],
+            "completion_rules": {},
+            "prerequisites": {"add": [{"prerequisite_course_id": prereq_id}], "remove": []},
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 500
+    assert db.session.query(CourseChangeRequest).filter_by(course_id=course_pk).count() == 0
+
+
 def assert_adr002(data: Any) -> None:
     """Recursively verify no internal BigInt PKs are leaked in responses."""
     if isinstance(data, dict):
@@ -546,3 +786,376 @@ def test_student_ai_chat_with_course_context(
     data = res.get_json()
     assert "reply" in data or "response" in data
     assert_adr002(data)
+
+
+def test_sync004_quick_add_assignment_failure_leaves_no_question(
+    client, remediation_env, monkeypatch
+):
+    from pwd301.blueprints.instructor import routes
+    from pwd301.models.question_bank import Question
+    from pwd301.services.exceptions import AssessmentValidationError
+
+    inst = remediation_env["instructor"]
+    asm = create_assessment(
+        inst, remediation_env["course"].id, {"title": "Quick add atomic", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, inst.email)
+    before = db.session.query(Question).count()
+
+    def fail_assignment(*args, **kwargs):
+        raise AssessmentValidationError("injected assignment failure")
+
+    monkeypatch.setattr(routes, "assign_question", fail_assignment)
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/questions/create",
+        json={"question_type": "ESSAY", "content": "Atomic question", "points": 5},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 400
+    db.session.rollback()
+    assert db.session.query(Question).count() == before
+
+
+@pytest.mark.parametrize(
+    "question_fields",
+    [
+        {"question_type": "ESSAY"},
+        {"question_type": "SHORT_ANSWER", "accepted_answers": ["Alpha", "alpha", "Beta"]},
+        {
+            "question_type": "SINGLE_CHOICE",
+            "choices": [
+                {"content": "One", "is_correct": True},
+                {"content": "Two", "is_correct": False},
+            ],
+        },
+        {
+            "question_type": "MULTIPLE_CHOICE",
+            "choices": [
+                {"content": "One", "is_correct": True},
+                {"content": "Two", "is_correct": True},
+            ],
+        },
+    ],
+)
+def test_sync004_quick_add_ack_loss_retry_reuses_question(client, remediation_env, question_fields):
+    from pwd301.models.question_bank import Question
+
+    inst = remediation_env["instructor"]
+    asm = create_assessment(
+        inst, remediation_env["course"].id, {"title": "Retry quick add", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, inst.email)
+    endpoint = f"/instructor/assessments/{asm.public_id}/questions/create"
+    payload = {
+        "client_question_id": str(uuid.uuid4()),
+        "content": "One logical question",
+        "points": 5,
+        **question_fields,
+    }
+    first = client.post(endpoint, json=payload, headers={"X-CSRFToken": csrf})
+    assert first.status_code == 201
+    repeated = client.post(endpoint, json=payload, headers={"X-CSRFToken": csrf})
+    assert repeated.status_code == 200
+    assert (
+        repeated.get_json()["question"]["question_id"]
+        == first.get_json()["question"]["question_id"]
+    )
+    assert db.session.query(Question).filter_by(course_id=asm.course_id).count() == 1
+    changed = client.post(
+        endpoint, json={**payload, "content": "Different intent"}, headers={"X-CSRFToken": csrf}
+    )
+    assert changed.status_code == 409
+    db.session.expire_all()
+    assert db.session.query(Question).filter_by(course_id=asm.course_id).count() == 1
+    from pwd301.models.types import utc_now
+
+    asm.first_attempt_started_at = utc_now()
+    db.session.commit()
+    assert client.post(endpoint, json=payload, headers={"X-CSRFToken": csrf}).status_code == 200
+    assert (
+        client.post(
+            endpoint,
+            json={**payload, "client_question_id": str(uuid.uuid4())},
+            headers={"X-CSRFToken": csrf},
+        ).status_code
+        == 409
+    )
+
+
+@pytest.mark.parametrize("points", [0, -1, float("nan"), float("inf")])
+def test_sync004_quick_add_invalid_points_leave_no_question(client, remediation_env, points):
+    from pwd301.models.question_bank import Question
+
+    inst = remediation_env["instructor"]
+    asm = create_assessment(
+        inst,
+        remediation_env["course"].id,
+        {"title": "Points validation", "assessment_type": "QUIZ"},
+    )
+    csrf = login_session(client, inst.email)
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/questions/create",
+        json={
+            "client_question_id": str(uuid.uuid4()),
+            "question_type": "ESSAY",
+            "content": "Invalid points",
+            "points": points,
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 400
+    db.session.expire_all()
+    assert db.session.query(Question).filter_by(course_id=asm.course_id).count() == 0
+
+
+def test_sync004_quick_add_retry_key_cannot_cross_assessment(client, remediation_env):
+    inst = remediation_env["instructor"]
+    course = remediation_env["course"]
+    one = create_assessment(inst, course.id, {"title": "One", "assessment_type": "QUIZ"})
+    two = create_assessment(inst, course.id, {"title": "Two", "assessment_type": "QUIZ"})
+    csrf = login_session(client, inst.email)
+    payload = {
+        "client_question_id": str(uuid.uuid4()),
+        "question_type": "ESSAY",
+        "content": "Owned creation",
+        "points": 1,
+    }
+    assert (
+        client.post(
+            f"/instructor/assessments/{one.public_id}/questions/create",
+            json=payload,
+            headers={"X-CSRFToken": csrf},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/instructor/assessments/{two.public_id}/questions/create",
+            json=payload,
+            headers={"X-CSRFToken": csrf},
+        ).status_code
+        == 409
+    )
+
+
+def test_sync079_authoring_is_atomic_and_retry_preserves_question_identity(client, remediation_env):
+    from pwd301.models.question_bank import Question
+
+    inst = remediation_env["instructor"]
+    asm = create_assessment(
+        inst, remediation_env["course"].id, {"title": "Original title", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, inst.email)
+    endpoint = f"/instructor/assessments/{asm.public_id}/authoring"
+    stable_id = str(uuid.uuid4())
+    valid = {
+        "client_question_id": stable_id,
+        "question_type": "ESSAY",
+        "content": "Preserved question",
+        "difficulty": "REMEMBER",
+        "points": 5,
+    }
+    invalid = {
+        "client_question_id": str(uuid.uuid4()),
+        "question_type": "SHORT_ANSWER",
+        "content": "Missing key",
+        "difficulty": "REMEMBER",
+        "points": 5,
+        "accepted_answers": [],
+    }
+    failed = client.post(
+        endpoint,
+        json={"assessment": {"title": "Changed title"}, "questions": [valid, invalid]},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert failed.status_code == 400
+    db.session.expire_all()
+    assert asm.title == "Original title"
+    assert db.session.query(Question).count() == 0
+    for _ in range(2):
+        response = client.post(
+            endpoint,
+            json={"assessment": {"title": "Changed title"}, "questions": [valid]},
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code == 200, response.get_json()
+        assert response.get_json()["data"]["questions"][0]["question_id"] == stable_id
+    assert db.session.query(Question).count() == 1
+    assert len(asm.question_assignments) == 1
+
+
+@pytest.mark.parametrize("difficulty", ["ANALYZE", "EVALUATE", "CREATE"])
+def test_sync024_authoring_rejects_noncanonical_bloom(client, remediation_env, difficulty):
+    from pwd301.models.question_bank import Question
+
+    inst = remediation_env["instructor"]
+    asm = create_assessment(
+        inst, remediation_env["course"].id, {"title": "Bloom", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, inst.email)
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/authoring",
+        json={
+            "assessment": {"title": "Must not persist"},
+            "questions": [
+                {
+                    "question_type": "ESSAY",
+                    "content": "Valid first question",
+                    "difficulty": "APPLY",
+                    "points": 5,
+                },
+                {
+                    "question_type": "ESSAY",
+                    "content": "Unsupported Bloom",
+                    "difficulty": difficulty,
+                    "points": 5,
+                },
+            ],
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 400
+    db.session.expire_all()
+    assert asm.title == "Bloom"
+    assert not asm.question_assignments
+    assert db.session.query(Question).count() == 0
+
+
+def test_sync079_assessment_creation_retry_retains_identity(client, remediation_env):
+    from pwd301.models.assessment import Assessment
+
+    inst = remediation_env["instructor"]
+    course = remediation_env["course"]
+    csrf = login_session(client, inst.email)
+    stable_id = str(uuid.uuid4())
+    for _ in range(2):
+        response = client.post(
+            f"/instructor/courses/{course.public_id}/assessments",
+            json={"title": "Retry", "assessment_type": "QUIZ", "client_assessment_id": stable_id},
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code in (200, 201)
+        assert response.get_json()["assessment_id"] == stable_id
+    assert db.session.query(Assessment).filter_by(course_id=course.id).count() == 1
+
+
+@pytest.mark.parametrize("change", ["title", "content", "points"])
+def test_sync079_publish_rejects_changed_authoring_snapshot(client, remediation_env, change):
+    from pwd301.models.assessment import AssessmentQuestionAssignment
+    from pwd301.services.question_bank_service import update_question
+
+    actor = remediation_env["instructor"]
+    asm = create_assessment(
+        actor, remediation_env["course"].id, {"title": "Submitted", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, actor.email)
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/authoring",
+        json={
+            "assessment": {"title": "Submitted"},
+            "questions": [
+                {
+                    "client_question_id": str(uuid.uuid4()),
+                    "question_type": "ESSAY",
+                    "content": "Intended content",
+                    "difficulty": "REMEMBER",
+                    "points": 5,
+                }
+            ],
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 200
+    token = response.get_json()["data"]["authoring_token"]
+    assignment = (
+        db.session.query(AssessmentQuestionAssignment).filter_by(assessment_id=asm.id).one()
+    )
+    if change == "title":
+        asm.title = "Another editor title"
+    elif change == "content":
+        update_question(
+            actor,
+            assignment.question_id,
+            {"content": "Another editor content", "change_reason": "Concurrent edit"},
+            session=db.session,
+            commit=False,
+        )
+    else:
+        assignment.points = 7
+    db.session.commit()
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/publish",
+        json={"expected_authoring_token": token},
+        headers={"X-CSRFToken": csrf},
+    )
+    assert response.status_code == 409
+    db.session.expire_all()
+    assert asm.status == "DRAFT"
+
+
+def test_sync079_matching_authoring_token_publishes_and_remains_idempotent(client, remediation_env):
+    actor = remediation_env["instructor"]
+    asm = create_assessment(
+        actor, remediation_env["course"].id, {"title": "Submitted", "assessment_type": "QUIZ"}
+    )
+    csrf = login_session(client, actor.email)
+    response = client.post(
+        f"/instructor/assessments/{asm.public_id}/authoring",
+        json={
+            "assessment": {},
+            "questions": [
+                {
+                    "question_type": "ESSAY",
+                    "content": "Intended content",
+                    "difficulty": "REMEMBER",
+                    "points": 5,
+                }
+            ],
+        },
+        headers={"X-CSRFToken": csrf},
+    )
+    token = response.get_json()["data"]["authoring_token"]
+    for _ in range(2):
+        response = client.post(
+            f"/instructor/assessments/{asm.public_id}/publish",
+            json={"expected_authoring_token": token},
+            headers={"X-CSRFToken": csrf},
+        )
+        assert response.status_code == 200
+    detail = client.get(f"/instructor/assessments/{asm.public_id}").get_json()
+    assert detail["authoring_token"] == token
+    assert detail["status"] == "PUBLISHED"
+    from pwd301.services.assessment_service import get_assessment_detail
+
+    student_detail = get_assessment_detail(remediation_env["student"], asm.id)
+    assert "authoring_token" not in student_detail
+
+
+@pytest.mark.parametrize("operation", ["academic", "authoring"])
+def test_composite_mutations_use_standard_json_envelopes(client, remediation_env, operation):
+    from pwd301.services.assessment_service import create_assessment
+
+    actor = remediation_env["instructor"]
+    csrf = login_session(client, actor.email)
+    if operation == "academic":
+        response = client.put(
+            f"/instructor/courses/{remediation_env['course'].public_id}/academic-settings",
+            json={"learning_objectives": [], "completion_rules": {"minimum_progress_percent": 80}},
+            headers={"X-CSRFToken": csrf},
+        )
+    else:
+        assessment = create_assessment(
+            actor,
+            remediation_env["course"].id,
+            {"title": "Envelope contract", "assessment_type": "QUIZ"},
+        )
+        response = client.post(
+            f"/instructor/assessments/{assessment.public_id}/authoring",
+            json={"questions": []},
+            headers={"X-CSRFToken": csrf},
+        )
+    assert response.status_code in (200, 202)
+    body = response.get_json()
+    assert set(body) == {"success", "data", "error"}
+    assert body["success"] is True and body["error"] is None
+    assert isinstance(body["data"], dict)

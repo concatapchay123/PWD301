@@ -461,6 +461,7 @@ def test_autosave_rejected_on_submitted_attempt(
         actor=enrolled_student,
         attempt_id=attempt.id,
         idempotency_key=uuid.uuid4(),
+        raw_lease_token=lease_token,
         session=sess,
     )
 
@@ -583,3 +584,113 @@ def test_sync_offline_answers_batch(
     assert ans is not None
     assert ans.last_client_sequence == 3
     assert ans.answer_text == "Newest sequence 3 from offline sync"
+
+
+def test_sync058_empty_choices_clear_persisted_selection(
+    app, instructor_user, published_course, enrolled_student
+):
+    assessment = _make_assessment_with_questions(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    aq = next(q for q in attempt.attempt_questions if q.question_type_snapshot == "SINGLE_CHOICE")
+    save_attempt_answer(
+        enrolled_student,
+        attempt.id,
+        aq.id,
+        {
+            "selected_choice_keys": [str(aq.choice_snapshots[0].choice_key_snapshot)],
+            "client_sequence": 1,
+        },
+        token,
+        session=db.session,
+    )
+    save_attempt_answer(
+        enrolled_student,
+        attempt.id,
+        aq.id,
+        {"selected_choice_keys": [], "client_sequence": 2},
+        token,
+        session=db.session,
+    )
+    answer = db.session.query(AttemptAnswer).filter_by(attempt_question_id=aq.id).one()
+    assert db.session.query(AttemptAnswerChoice).filter_by(attempt_answer_id=answer.id).count() == 0
+
+
+def test_sync059_future_epoch_rejected(app, instructor_user, published_course, enrolled_student):
+    assessment = _make_assessment_with_questions(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    aq = attempt.attempt_questions[0]
+    with pytest.raises(StaleLeaseEpochError):
+        save_attempt_answer(
+            enrolled_student,
+            attempt.id,
+            aq.id,
+            {"answer_text": "future", "lease_epoch": attempt.lease_epoch + 1},
+            token,
+            session=db.session,
+        )
+
+
+def test_sync028_takeover_rejects_active_owner(
+    app, instructor_user, published_course, enrolled_student
+):
+    from pwd301.services.attempt_service import takeover_attempt_lease
+
+    assessment = _make_assessment_with_questions(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    with pytest.raises(AttemptLeaseConflictError):
+        takeover_attempt_lease(enrolled_student, attempt.id, session=db.session)
+
+
+def test_sync059_cached_attempt_cannot_save_after_terminal_transition(
+    app, instructor_user, published_course, enrolled_student
+):
+    import sqlalchemy as sa
+
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+
+    assessment = _make_assessment_with_questions(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    aq = attempt.attempt_questions[0]
+    db.session.execute(
+        sa.update(AssessmentAttempt)
+        .where(AssessmentAttempt.id == attempt.id)
+        .values(status="SUBMITTED", lease_token_hash=None),
+        execution_options={"synchronize_session": False},
+    )
+    with pytest.raises(AttemptLeaseConflictError):
+        save_attempt_answer(
+            enrolled_student,
+            attempt,
+            aq.id,
+            {"answer_text": "stale cached request"},
+            token,
+            session=db.session,
+        )
+    assert db.session.query(AttemptAnswer).filter_by(attempt_question_id=aq.id).count() == 0
+
+
+@pytest.mark.parametrize("operation", ["renew", "release"])
+def test_sync059_cached_lease_cannot_mutate_new_owner(
+    app, instructor_user, published_course, enrolled_student, operation
+):
+    import hashlib
+
+    import sqlalchemy as sa
+
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.services.attempt_service import release_attempt_lease, renew_attempt_lease
+
+    assessment = _make_assessment_with_questions(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    db.session.execute(
+        sa.update(AssessmentAttempt)
+        .where(AssessmentAttempt.id == attempt.id)
+        .values(
+            lease_token_hash=hashlib.sha256(b"new owner").digest(),
+            lease_epoch=attempt.lease_epoch + 1,
+        ),
+        execution_options={"synchronize_session": False},
+    )
+    operation_fn = renew_attempt_lease if operation == "renew" else release_attempt_lease
+    with pytest.raises(AttemptLeaseConflictError):
+        operation_fn(enrolled_student, attempt, token, session=db.session)

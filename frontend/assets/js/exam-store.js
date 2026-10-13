@@ -140,9 +140,11 @@ class ExamStore {
     const key = this.getStorageKey();
     if (key && scope.canAuthor) {
       try {
+        const savedAt = new Date().toISOString();
         // Sanitize password before persisting to durable storage
         const durablePayload = {
           ...this._memoryDraft,
+          lastSaved: savedAt,
           config: {
             ...this._memoryDraft.config,
             examPassword: ''
@@ -152,7 +154,7 @@ class ExamStore {
         delete durablePayload.storageError;
 
         localStorage.setItem(key, JSON.stringify(durablePayload));
-        this._memoryDraft.lastSaved = new Date().toISOString();
+        this._memoryDraft.lastSaved = savedAt;
         this._memoryDraft.storageFailed = false;
         delete this._memoryDraft.storageError;
       } catch (e) {
@@ -165,6 +167,9 @@ class ExamStore {
       // Memory-only (anonymous or non-persisted)
       this._memoryDraft.lastSaved = null;
       this._memoryDraft.storageFailed = false;
+    }
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pwd301:exam-draft', { detail: this._memoryDraft }));
     }
     return this._memoryDraft;
   }

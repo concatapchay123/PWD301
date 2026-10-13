@@ -39,6 +39,8 @@ def test_review_policy_downgrade_preserves_restricted_assessments(app, video_env
         },
     )
     assessment_id = assessment.id
+    original_revision = db.session.scalar(sa.text("SELECT version_num FROM alembic_version"))
+    original_tables = set(sa.inspect(db.engine).get_table_names())
     db.session.remove()
     with pytest.raises(SystemExit) as stopped:
         downgrade(
@@ -51,9 +53,9 @@ def test_review_policy_downgrade_preserves_restricted_assessments(app, video_env
         db.session.get(Assessment, assessment_id).answer_visibility_policy == "CORRECT_WRONG_ONLY"
     )
     assert (
-        db.session.scalar(sa.text("SELECT version_num FROM alembic_version"))
-        == "reviewpolicy20261010"
+        db.session.scalar(sa.text("SELECT version_num FROM alembic_version")) == original_revision
     )
+    assert set(sa.inspect(db.engine).get_table_names()) == original_tables
 
 
 @pytest.fixture

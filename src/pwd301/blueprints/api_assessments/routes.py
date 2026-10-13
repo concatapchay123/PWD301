@@ -102,7 +102,15 @@ def publish_assessment_route(assessment_id: str) -> tuple[Response, int] | Respo
     """
     actor = require_authenticated_actor()
 
-    assessment = publish_assessment(actor, assessment_id, session=db.session)
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise AssessmentValidationError("Publish options must be an object.")
+    assessment = publish_assessment(
+        actor,
+        assessment_id,
+        session=db.session,
+        expected_authoring_token=payload.get("expected_authoring_token"),
+    )
 
     return jsonify(_serialize_assessment(assessment, full=False)), 200
 

@@ -1264,7 +1264,7 @@ class UI {
 
     // Strip internal storage annotations (video_url, mini_quiz, contact_info)
     let text = String(raw)
-      .replace(/<!--\s*(?:video_url|mini_quiz|contact_info):[\s\S]*?-->/g, '')
+      .replace(/<!--\s*(?:video_urls?|mini_quiz|mini_quiz_passing|quiz_passing_percent|contact_info|PWD301_BLOCKS):[\s\S]*?-->/g, '')
       .trim();
 
     if (!text) return '';

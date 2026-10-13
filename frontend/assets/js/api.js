@@ -488,6 +488,12 @@ class ApiClient {
     return await ApiClient.request(`/student/attempt/${attemptId}`);
   }
 
+  static async renewAttemptLease(attemptId, leaseToken) {
+    return await ApiClient.request(`/student/attempt/${attemptId}/lease/renew`, {
+      method: 'POST', headers: { 'X-Attempt-Lease-Token': leaseToken }
+    });
+  }
+
   static async recordAttemptFocusEvent(attemptId, event) {
     return await ApiClient.request(`/student/attempt/${attemptId}/focus-events`, {
       method: 'POST',
@@ -759,10 +765,10 @@ class ApiClient {
     });
   }
 
-  static async reorderLessons(courseId, orderedLessonIds) {
+  static async reorderLessons(courseId, orderedLessonIds, move = null) {
     return await ApiClient.request(`/instructor/courses/${courseId}/lessons/reorder`, {
       method: 'POST',
-      body: { ordered_lesson_ids: orderedLessonIds }
+      body: { ordered_lesson_ids: orderedLessonIds, ...(move ? { move } : {}) }
     });
   }
 
@@ -886,6 +892,13 @@ class ApiClient {
     return await ApiClient.request(`/instructor/courses/${courseId}/completion-rules`);
   }
 
+  static async saveCourseAcademicSettings(courseId, data) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/academic-settings`, {
+      method: 'PUT',
+      body: data
+    });
+  }
+
   static async updateCourseCompletionRules(courseId, data) {
     return await ApiClient.request(`/instructor/courses/${courseId}/completion-rules`, {
       method: 'POST',
@@ -917,9 +930,10 @@ class ApiClient {
     });
   }
 
-  static async publishAssessment(assessmentId) {
+  static async publishAssessment(assessmentId, expectedAuthoringToken = null) {
     return await ApiClient.request(`/instructor/assessments/${assessmentId}/publish`, {
-      method: 'POST'
+      method: 'POST',
+      ...(expectedAuthoringToken ? { body: { expected_authoring_token: expectedAuthoringToken } } : {})
     });
   }
 
@@ -942,6 +956,11 @@ class ApiClient {
       method: 'POST',
       body: data
     });
+  }
+
+  static async saveAssessmentAuthoring(assessmentId, payload) {
+    const response = await ApiClient.request(`/instructor/assessments/${assessmentId}/authoring`, { method: 'POST', body: payload });
+    return response?.data || response;
   }
 
   static async createAssessmentQuestionsBatch(assessmentId, questions) {
@@ -1056,8 +1075,8 @@ class ApiClient {
     });
   }
 
-  static async suspendUser(userId, reason = '', password = '') {
-    const body = { reason };
+  static async suspendUser(userId, reason = '', password = '', confirmationPhrase = '') {
+    const body = { reason, confirmation_phrase: confirmationPhrase };
     if (password) body.password = password;
     return await ApiClient.request(`/admin/users/${userId}/suspend`, {
       method: 'POST',
@@ -1121,6 +1140,10 @@ class ApiClient {
 
   static async getAdminChangeRequests(status = 'ALL') {
     return await ApiClient.request(`/admin/change-requests?status=${encodeURIComponent(status)}`);
+  }
+
+  static async getAdminChangeRequest(requestId) {
+    return await ApiClient.request(`/admin/change-requests?request_id=${encodeURIComponent(requestId)}`);
   }
 
   static async reviewAdminChangeRequest(requestId, data) {

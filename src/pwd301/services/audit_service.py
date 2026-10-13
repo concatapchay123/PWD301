@@ -682,6 +682,9 @@ def suspend_user_account(
     if target_user is None:
         raise ResourceNotFoundError(f"User '{target_user_id}' not found.")
 
+    from pwd301.services.user_service import _lock_user_account_state
+
+    target_user = _lock_user_account_state(target_user, sess)
     if target_user.id == admin_actor.id:
         raise ValidationError("Administrators cannot suspend their own account.")
 
@@ -694,6 +697,10 @@ def suspend_user_account(
         raise AdminActionForbiddenError(
             "Chỉ Quản trị viên Cấp cao mới có quyền thay đổi trạng thái tài khoản Quản trị viên khác."
         )
+
+    if target_user.status == "SUSPENDED":
+        sess.commit()
+        return target_user
 
     # Guard: Last Admin Protection
     if target_user.is_admin:
@@ -774,6 +781,19 @@ def suspend_user_account(
             session=sess,
         )
 
+        from pwd301.services.notification_service import dispatch_notification
+        from pwd301.services.user_service import _account_suspension_event_key
+
+        dispatch_notification(
+            recipient_user=target_user.id,
+            event_type="ACCOUNT_SUSPENDED",
+            title="Tài khoản đã bị tạm khóa",
+            body=f"Lý do: {clean_reason}",
+            category="SECURITY",
+            force_email=True,
+            event_key=_account_suspension_event_key(target_user),
+            session=sess,
+        )
         sess.commit()
     except Exception as exc:
         sess.rollback()
@@ -814,10 +834,17 @@ def unsuspend_user_account(
     if target_user is None:
         raise ResourceNotFoundError(f"User '{target_user_id}' not found.")
 
+    from pwd301.services.user_service import _lock_user_account_state
+
+    target_user = _lock_user_account_state(target_user, sess)
     if target_user.is_admin and not admin_actor.is_primary_admin:
         raise AdminActionForbiddenError(
             "Chỉ Quản trị viên Cấp cao mới có quyền thay đổi trạng thái tài khoản Quản trị viên khác."
         )
+
+    if target_user.status == "ACTIVE":
+        sess.commit()
+        return target_user
 
     now = utc_now()
     clean_reason = (reason or "").strip() or None

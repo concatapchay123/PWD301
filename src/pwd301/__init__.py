@@ -705,8 +705,7 @@ def create_app(
                 resp.headers["Retry-After"] = "300"
                 return resp
 
-        # Fast path 3: Check maintenance window status with in-memory cache (TTL 15s)
-        # Only query database and parse actor if maintenance mode is actually active!
+        # Read durable maintenance authority on every admitted request.
         try:
             is_active, window = is_maintenance_active_cached(session=db.session)
         except Exception as exc:
@@ -714,7 +713,20 @@ def create_app(
                 "Failed to check maintenance status (possible DB disruption): %s",
                 exc,
             )
-            is_active, window = False, None
+            is_active, window = True, None
+
+        if is_active and window is None:
+            resp = jsonify(
+                {
+                    "error": {
+                        "code": "MAINTENANCE_STATUS_UNAVAILABLE",
+                        "message": "Cannot verify maintenance status. Please retry shortly.",
+                    }
+                }
+            )
+            resp.status_code = 503
+            resp.headers["Retry-After"] = "60"
+            return resp
 
         if is_active and window is not None:
             from pwd301.services.authorization_service import get_authenticated_actor

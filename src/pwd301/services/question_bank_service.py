@@ -384,6 +384,7 @@ def create_question(
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
     commit: bool = True,
+    public_id: uuid.UUID | None = None,
 ) -> Question:
     """Create a new Question with Revision 1, choices/accepted answers, and provenance.
 
@@ -634,6 +635,7 @@ def create_question(
         )
 
     question = Question(
+        **({"public_id": public_id} if public_id is not None else {}),
         course_id=course.id,
         lesson_id=target_lesson.id if target_lesson else None,
         creator_user_id=actor.id,
@@ -1150,6 +1152,7 @@ def create_question_revision(
     question_id: int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> tuple[QuestionRevision, QuestionCorrection | None]:
     """Create a new incremented revision for a question (ADR-003).
 
@@ -1579,7 +1582,16 @@ def create_question_revision(
         # Trigger RegradeJob creation for affected attempts
         from pwd301.services.regrade_worker import create_or_get_regrade_job
 
-        create_or_get_regrade_job(correction_record.id, session=sess)
+        job = create_or_get_regrade_job(correction_record.id, session=sess)
+        from pwd301.services.background_job_service import enqueue_background_job
+
+        enqueue_background_job(
+            job_type="REGRADE",
+            payload={"regrade_job_id": job.id},
+            dedupe_key=f"regrade:{job.id}",
+            run_async=False,
+            session=sess,
+        )
 
         # Record AuditEvent QUESTION_CORRECTION_CREATED
         _record_question_audit(
@@ -1619,11 +1631,12 @@ def create_question_revision(
     )
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return new_revision, correction_record
 
@@ -1633,6 +1646,7 @@ def update_question(
     question_id: int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> Question:
     """Update question metadata or edit content adhering to the Freeze Revision Invariant.
 
@@ -1695,7 +1709,9 @@ def update_question(
                 "change_reason is required when modifying a question that is in use."
             )
 
-        new_rev, _ = create_question_revision(actor, question.id, payload, session=sess)
+        new_rev, _ = create_question_revision(
+            actor, question.id, payload, session=sess, commit=commit
+        )
         sess.flush()
         return question
 
@@ -1899,11 +1915,12 @@ def update_question(
     question.updated_at = utc_now()
     sess.flush()
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return question
 

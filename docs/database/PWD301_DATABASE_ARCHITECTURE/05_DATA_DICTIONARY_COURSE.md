@@ -882,3 +882,7 @@ completion and audit history are retained. A created-at index supports worker cl
 leases. Expired retries fail their sequence check without being counted again.
 The index is added by migration `receiptretention20261009` because staging had
 already applied the original playback migration. This addition is schema intent, not evidence of live SQL deployment.
+
+## Lesson heartbeat receipts (2026-10-11)
+
+`lesson_progress_receipts` stores `(enrollment_period_id, lesson_id, client_event_id)` under unique constraint `uq_progress_receipts_event`, with BIGINT identity and UTC DATETIME2(3) creation time. The receipt and credited progress share one transaction; rollback permits retry, process restart does not permit double credit. Retain receipts until the owning period is purged; delete dependent receipts before period/lesson removal. No historical progress is backfilled or changed. Canonical DDL remains in `sql/002_course_learning.sql`; migration `syncprogress20261011` adds this table.

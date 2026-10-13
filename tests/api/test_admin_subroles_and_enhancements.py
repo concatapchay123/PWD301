@@ -481,12 +481,3 @@ def test_atomic_multi_role_management_api(app, client):
     assert remove_res.status_code == 200
     remove_data = remove_res.get_json()
     assert remove_data["roles"] == ["STUDENT"]
-
-    # Cleanup
-    with app.app_context():
-        uids = [admin_id, target_id]
-        db.session.query(UserRole).filter(UserRole.user_id.in_(uids)).delete(
-            synchronize_session=False
-        )
-        db.session.query(User).filter(User.id.in_(uids)).delete(synchronize_session=False)
-        db.session.commit()

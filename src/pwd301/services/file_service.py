@@ -1621,6 +1621,17 @@ def get_file_scan_history(
     return results
 
 
+def _prepare_rescan_copy(source: Path, destination: Path, size_bytes: int) -> None:
+    """Publish complete scanned bytes without consuming the rollback source."""
+    reserve_storage_space(destination.parent, size_bytes)
+    prepared = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copyfile(source, prepared)
+        os.replace(prepared, destination)
+    finally:
+        prepared.unlink(missing_ok=True)
+
+
 def rescan_file_asset(
     actor: User,
     asset_id: FileAsset | int | uuid.UUID | str,
@@ -1678,6 +1689,11 @@ def rescan_file_asset(
             )
         )
 
+    source_cleanup: Path | None = None
+    source_isolated = any(
+        target_path.resolve().is_relative_to(root.resolve())
+        for root in (get_file_quarantine_root(), get_file_infected_root())
+    )
     if (
         main_verdict.status == "PASS"
         and scan_verdicts
@@ -1702,7 +1718,8 @@ def rescan_file_asset(
             dest_dir.mkdir(parents=True, exist_ok=True)
             dest_path = dest_dir / hex_hash
             if target_path != dest_path:
-                os.replace(target_path, dest_path)
+                _prepare_rescan_copy(target_path, dest_path, revision.size_bytes)
+                source_cleanup = target_path
             blob = FileBlob(
                 sha256=digest_bytes,
                 size_bytes=revision.size_bytes,
@@ -1716,8 +1733,8 @@ def rescan_file_asset(
         else:
             if revision.blob_id != blob.id:
                 blob.reference_count += 1
-            if target_path.exists() and "quarantine" in str(target_path):
-                target_path.unlink(missing_ok=True)
+            if target_path.exists() and source_isolated:
+                source_cleanup = target_path
 
         for rev in asset.revisions:
             if rev.id != revision.id and (rev.is_current or rev.status == "ACTIVE"):
@@ -1746,7 +1763,12 @@ def rescan_file_asset(
             hex_hash = hasher.hexdigest()
             infected_path = infected_dir / hex_hash
             if target_path != infected_path:
-                os.replace(target_path, infected_path)
+                if source_isolated:
+                    _prepare_rescan_copy(target_path, infected_path, revision.size_bytes)
+                    source_cleanup = target_path
+                else:
+                    # Preserve immediate fail-closed removal of an infected shared live blob.
+                    os.replace(target_path, infected_path)
             revision.quarantine_key = f"infected/{hex_hash}"
 
         revision.status = "REJECTED"
@@ -1807,6 +1829,8 @@ def rescan_file_asset(
     except Exception:
         sess.rollback()
         raise
+    if source_cleanup is not None:
+        source_cleanup.unlink(missing_ok=True)
     if cloud_source is not None:
         cloud_source.unlink(missing_ok=True)
     return asset

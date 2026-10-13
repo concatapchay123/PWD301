@@ -2,6 +2,12 @@
 
 This file expands the relevant entries from the endpoint catalog. Authorization is object-level and all mutations re-check current state inside the service transaction.
 
+### `POST /instructor/courses/{course_id}/lessons/reorder`
+- Session authentication and CSRF; current course manager only. Supply the complete active course order in `ordered_lesson_ids`, including lessons in other chapters.
+- Optional `move` object contains `lesson_id` and destination `learning_unit_id`. Placement and order form one transaction and retain the Lesson ID/content. Both objects must belong to this course; reject deleted destinations, historical/trashed lessons, invalid/incomplete orders and destination chapter lesson/media limits.
+- Draft-course success is 200 with acknowledged lessons. For an approved/published/archived course, 202 and `pending_approval` mean one structural review intent was queued; current placement/order remain authoritative. Identical pending retries return the same request; a different proposal conflicts409 instead of falsely acknowledging the old proposal.
+- The existing Admin change-request review endpoint applies both placement and order in its review transaction. A failed mutation or required audit rolls back placement/order and keeps the request PENDING. Review metadata includes readable lesson/source/destination chapter names; the client displays those names and proposed order, retaining the current tree until approval.
+
 ### `GET /api/courses`
 - **Purpose:** Course catalog
 - **Authentication:** Optional/JWT
@@ -111,3 +117,12 @@ This file expands the relevant entries from the endpoint catalog. Authorization 
 - **Errors:** VALIDATION_ERROR; JSON error includes stable code, message, optional field errors, correlation ID.
 - **Idempotency:** request key optional
 - **Side effects:** —
+
+### `PUT /instructor/courses/{course_id}/academic-settings`
+- **Purpose:** Save the complete academic settings edit in one transaction.
+- **Authentication:** Same-origin session + CSRF.
+- **Authorization:** Current Course manager; prerequisite and approval policies still apply.
+- **Request:** `learning_objectives`, required `completion_rules` object, and optional `prerequisites` object containing `add` objects and `remove` public Course UUIDs. At most 100 prerequisite edits per request.
+- **Success:** Standard `{"success":true,"data":...,"error":null}` envelope. `data` contains `course`, `completion_rules` and `pending_approval`; 202 means review is pending, 200 means the submitted changes were applied.
+- **Atomicity:** Invalid settings or any prerequisite failure rolls back all submitted changes and review/notification intents. Published SLO/removal changes and peer prerequisite requests retain their existing approval workflows.
+- **Errors:** Standard validation/authorization/conflict error response; the client retains the submitted draft until acknowledgement.

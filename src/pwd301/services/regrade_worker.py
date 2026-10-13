@@ -237,6 +237,12 @@ def create_or_get_regrade_job(
     if correction is None:
         raise QuestionCorrectionNotFoundError("Question correction not found.")
 
+    # All submit/worker paths lock the correction before job/attempt writes.
+    sess.query(QuestionCorrection).filter(QuestionCorrection.id == correction.id).update(
+        {"status": QuestionCorrection.status}, synchronize_session=False
+    )
+    sess.refresh(correction)
+
     # Find existing job or create new one
     job = sess.query(RegradeJob).filter(RegradeJob.question_correction_id == correction.id).first()
 
@@ -332,6 +338,11 @@ def _evaluate_attempt_item_regrade(
     sess = session
     now = utc_now()
     attempt = item.attempt
+    # Different correction jobs can affect the same result and must not race.
+    sess.query(AssessmentAttempt).filter(AssessmentAttempt.id == attempt.id).update(
+        {"updated_at": AssessmentAttempt.updated_at}, synchronize_session=False
+    )
+    sess.refresh(attempt)
 
     # 1. Skip checks
     if attempt.is_detail_purged:
@@ -357,6 +368,13 @@ def _evaluate_attempt_item_regrade(
 
     target_rev = correction.to_revision
     corr_type = correction.correction_type
+    if corr_type == "ANSWER_ONLY":
+        target_rev = (
+            sess.query(QuestionRevision)
+            .filter(QuestionRevision.question_id == correction.question_id)
+            .order_by(QuestionRevision.revision_no.desc())
+            .first()
+        ) or target_rev
 
     # 2. Find affected questions in attempt
     affected_aqs = (
@@ -498,6 +516,13 @@ def _evaluate_attempt_item_regrade(
             reason_text = (
                 f"Auto regrade against revision {target_rev.revision_no}: {correction.reason}"
             )
+
+        # An earlier defective presentation retains its full-credit protection.
+        if corr_type == "ANSWER_ONLY" and grade and grade.grading_rule == "CONTENT_FULL_CREDIT":
+            awarded_pts = grade.awarded_points
+            grading_status = grade.grading_status
+            grading_rule = grade.grading_rule
+            target_rev = sess.get(QuestionRevision, grade.graded_against_revision_id) or target_rev
 
         # Idempotency check: if grade already matches target revision and score,
         # avoid redundant history records
@@ -682,6 +707,49 @@ def _evaluate_attempt_item_regrade(
     sess.flush()
 
 
+def _update_regrade_job_state(
+    job: RegradeJob, correction: QuestionCorrection | None, sess: Session | scoped_session[Any]
+) -> None:
+    """Reconcile job counters and terminal state in the caller transaction."""
+    # Update processed count
+    job.processed_items = (
+        sess.query(RegradeItem)
+        .filter(
+            RegradeItem.regrade_job_id == job.id,
+            RegradeItem.status.in_(["COMPLETED", "SKIPPED"]),
+        )
+        .count()
+    )
+
+    # Evaluate final job state
+    pending_count = (
+        sess.query(RegradeItem)
+        .filter(
+            RegradeItem.regrade_job_id == job.id,
+            RegradeItem.status.in_(["PENDING", "PROCESSING"]),
+        )
+        .count()
+    )
+    failed_count = (
+        sess.query(RegradeItem)
+        .filter(
+            RegradeItem.regrade_job_id == job.id,
+            RegradeItem.status == "FAILED",
+        )
+        .count()
+    )
+
+    if pending_count == 0 and failed_count == 0:
+        job.status = "COMPLETED"
+        job.completed_at = utc_now()
+        if correction:
+            correction.status = "APPLIED"
+    elif failed_count > 0:
+        job.status = "PARTIAL"
+    else:
+        job.status = "RUNNING"
+
+
 def process_regrade_job(
     job_id: RegradeJob | int | uuid.UUID | str,
     batch_size: int | None = None,
@@ -701,6 +769,18 @@ def process_regrade_job(
     if job is None:
         raise RegradeJobNotFoundError("Regrade job not found.")
 
+    if actor is not None:
+        require_course_manager(actor, job.question_correction.question.course_id, session=sess)
+
+    sess.query(QuestionCorrection).filter(
+        QuestionCorrection.id == job.question_correction_id
+    ).update({"status": QuestionCorrection.status}, synchronize_session=False)
+
+    # Serialize dispatcher/manual retries without duplicating item history.
+    sess.query(RegradeJob).filter(RegradeJob.id == job.id).update(
+        {"status": RegradeJob.status}, synchronize_session=False
+    )
+    sess.refresh(job)
     if job.status == "COMPLETED":
         return _serialize_regrade_job(job)
 
@@ -744,50 +824,15 @@ def process_regrade_job(
         sess.flush()
 
         try:
-            _evaluate_attempt_item_regrade(item, job, correction, session=sess)
+            with sess.begin_nested():
+                _evaluate_attempt_item_regrade(item, job, correction, session=sess)
         except Exception as exc:
             item.status = "FAILED"
             item.last_error = str(exc)[:2000]
             item.processed_at = utc_now()
             sess.flush()
 
-    # Update processed count
-    job.processed_items = (
-        sess.query(RegradeItem)
-        .filter(
-            RegradeItem.regrade_job_id == job.id,
-            RegradeItem.status.in_(["COMPLETED", "SKIPPED"]),
-        )
-        .count()
-    )
-
-    # Evaluate final job state
-    pending_count = (
-        sess.query(RegradeItem)
-        .filter(
-            RegradeItem.regrade_job_id == job.id,
-            RegradeItem.status.in_(["PENDING", "PROCESSING"]),
-        )
-        .count()
-    )
-    failed_count = (
-        sess.query(RegradeItem)
-        .filter(
-            RegradeItem.regrade_job_id == job.id,
-            RegradeItem.status == "FAILED",
-        )
-        .count()
-    )
-
-    if pending_count == 0 and failed_count == 0:
-        job.status = "COMPLETED"
-        job.completed_at = utc_now()
-        if correction:
-            correction.status = "APPLIED"
-    elif failed_count > 0:
-        job.status = "PARTIAL"
-    else:
-        job.status = "RUNNING"
+    _update_regrade_job_state(job, correction, sess)
 
     sess.flush()
     try:
@@ -823,6 +868,15 @@ def retry_regrade_job(
             raise ForbiddenError("You do not have permission to retry this regrade job.")
         if job.question_correction and job.question_correction.question:
             require_course_manager(actor, job.question_correction.question.course_id, session=sess)
+
+    # Retry must acquire the worker's parent locks before resetting item/job rows.
+    sess.query(QuestionCorrection).filter(
+        QuestionCorrection.id == job.question_correction_id
+    ).update({"status": QuestionCorrection.status}, synchronize_session=False)
+    sess.query(RegradeJob).filter(RegradeJob.id == job.id).update(
+        {"status": RegradeJob.status}, synchronize_session=False
+    )
+    sess.refresh(job)
 
     failed_items = (
         sess.query(RegradeItem)

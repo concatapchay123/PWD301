@@ -384,13 +384,22 @@ def test_update_assessment_optimistic_concurrency(
     import uuid
 
     asm = db.session.query(Assessment).filter(Assessment.public_id == uuid.UUID(asm_id)).first()
-    asm.row_version = b"\x00\x00\x00\x00\x00\x00\x00\x05"
+    if db.engine.dialect.name != "mssql":
+        asm.row_version = b"\x00\x00\x00\x00\x00\x00\x05"
+        db.session.commit()
+    stale_version = "0x" + bytes(asm.row_version).hex()
+    asm.title = "Concurrent committed edit"
+    if db.engine.dialect.name != "mssql":
+        asm.row_version = (int.from_bytes(asm.row_version, "big") + 1).to_bytes(8, "big")
     db.session.commit()
+    db.session.refresh(asm)
+    fresh_version = "0x" + bytes(asm.row_version).hex()
+    assert fresh_version != stale_version
 
     # Stale row_version should return 409 Conflict
     res_stale = client.patch(
         f"/api/assessments/{asm_id}",
-        json={"title": "Stale Update", "row_version": "0x0000000000000009"},
+        json={"title": "Stale Update", "row_version": stale_version},
         headers=auth_headers,
     )
     assert res_stale.status_code == 409
@@ -398,8 +407,47 @@ def test_update_assessment_optimistic_concurrency(
     # Matching row_version should succeed
     res_match = client.patch(
         f"/api/assessments/{asm_id}",
-        json={"title": "Fresh Update", "row_version": "0x0000000000000005"},
+        json={"title": "Fresh Update", "row_version": fresh_version},
         headers=auth_headers,
     )
     assert res_match.status_code == 200
     assert res_match.get_json()["title"] == "Fresh Update"
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_sync079_jwt_publish_honors_authoring_snapshot(
+    client: FlaskClient,
+    auth_headers: dict[str, str],
+    course: Course,
+    question: Question,
+    changed: bool,
+) -> None:
+    created = client.post(
+        f"/api/courses/{course.public_id}/assessments",
+        json={"title": "Conditional publish", "assessment_type": "QUIZ"},
+        headers=auth_headers,
+    )
+    assessment_id = created.get_json()["assessment_id"]
+    assigned = client.post(
+        f"/api/assessments/{assessment_id}/questions",
+        json={"question_id": str(question.public_id), "points": 5, "position": 1},
+        headers=auth_headers,
+    )
+    assert assigned.status_code == 201
+    detail = client.get(f"/api/assessments/{assessment_id}", headers=auth_headers).get_json()
+    token = detail["authoring_token"]
+    if changed:
+        edited = client.patch(
+            f"/api/assessments/{assessment_id}",
+            json={"title": "Another editor changed this"},
+            headers=auth_headers,
+        )
+        assert edited.status_code == 200
+    response = client.post(
+        f"/api/assessments/{assessment_id}/publish",
+        json={"expected_authoring_token": token},
+        headers=auth_headers,
+    )
+    assert response.status_code == (409 if changed else 200)
+    detail = client.get(f"/api/assessments/{assessment_id}", headers=auth_headers).get_json()
+    assert detail["status"] == ("DRAFT" if changed else "PUBLISHED")

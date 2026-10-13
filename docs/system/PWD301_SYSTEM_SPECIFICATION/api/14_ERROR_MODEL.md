@@ -23,5 +23,7 @@
 | IDEMPOTENCY_CONFLICT | 409 | same key with different payload |
 | RATE_LIMITED | 429 | retry metadata if safe |
 | EXTERNAL_SERVICE_UNAVAILABLE | 503 | Gemini/scanner dependency policy |
+| MAINTENANCE_STATUS_UNAVAILABLE | 503 | Durable maintenance authority cannot be verified; deny admission, Retry-After: 60 |
+| MAINTENANCE_MODE_ACTIVE | 503 | Confirmed maintenance window blocks non-Admin traffic; retry metadata describes the active window |
 | FILE_REJECTED | 400/422 | safe reason category |
 | INTERNAL_ERROR | 500 | correlation ID only |

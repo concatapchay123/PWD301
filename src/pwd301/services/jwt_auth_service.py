@@ -258,8 +258,18 @@ def refresh_tokens(
     refresh_exp = now + REFRESH_TOKEN_LIFETIME
 
     # Mark old refresh grant as revoked and replaced
-    grant.revoked_at = now
-    grant.replaced_by_jti = new_refresh_jti
+    rotated = (
+        sess.query(JwtTokenGrant)
+        .filter(
+            JwtTokenGrant.id == grant.id,
+            JwtTokenGrant.revoked_at.is_(None),
+            JwtTokenGrant.replaced_by_jti.is_(None),
+        )
+        .update({"revoked_at": now, "replaced_by_jti": new_refresh_jti}, synchronize_session=False)
+    )
+    if rotated != 1:
+        sess.rollback()
+        raise JwtTokenRevokedError("Refresh token has already been rotated.")
 
     # Zero PK Leakage: only public_id exposed via sub
     new_access_payload = {
@@ -460,6 +470,7 @@ def revoke_token(
 def revoke_all_user_tokens(
     user_id: int,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> int:
     """Revoke all active JWT grants for a given user.
 
@@ -490,7 +501,7 @@ def revoke_all_user_tokens(
         count += 1
 
     try:
-        sess.commit()
+        sess.commit() if commit else sess.flush()
     except Exception:
         sess.rollback()
         raise

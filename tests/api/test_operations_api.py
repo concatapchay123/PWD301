@@ -204,6 +204,7 @@ def test_admin_backup_full_lifecycle_api(
         json={
             "confirmation_phrase": "CONFIRM_DATABASE_RESTORE",
             "password": "Password123!",
+            "reason": "Verify live restore remains blocked after the isolated artifact check",
         },
         headers=headers,
     )
@@ -221,6 +222,42 @@ def test_admin_backup_full_lifecycle_api(
 # =====================================================================
 # 3. Maintenance Window Engine & Middleware Tests
 # =====================================================================
+
+
+@pytest.mark.parametrize("prefix", ["/admin", "/api/admin"])
+@pytest.mark.parametrize("reason", [None, "", "too short"])
+def test_restore_reason_rejection_releases_lock_and_preserves_live_guard(
+    client: FlaskClient, admin_user: User, prefix: str, reason: str | None
+) -> None:
+    """Both public mirrors reject absent reasons and release every acquired lock."""
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.operations_service import is_database_restore_in_progress
+
+    headers = {}
+    if prefix == "/api/admin":
+        tokens = create_token_pair(admin_user)
+        headers["Authorization"] = f"Bearer {tokens['access_token']}"
+    else:
+        login_web_user(client, admin_user)
+    endpoint = f"{prefix}/backups/00000000-0000-0000-0000-000000000001/restore"
+    payload = {
+        "confirmation_phrase": "CONFIRM_DATABASE_RESTORE",
+        "password": "Password123!",
+    }
+    if reason is not None:
+        payload["reason"] = reason
+    rejected = client.post(endpoint, json=payload, headers=headers)
+    assert rejected.status_code == 400
+    assert "10" in rejected.get_json()["error"]["message"]
+    assert is_database_restore_in_progress() is False
+
+    # Valid justification reaches the deliberate guard instead of a leaked-lock 409.
+    payload["reason"] = "Inspect recovery without replacing the running database"
+    guarded = client.post(endpoint, json=payload, headers=headers)
+    assert guarded.status_code == 403
+    assert "workflow is validated" in guarded.get_json()["error"]["message"]
+    assert is_database_restore_in_progress() is False
+    assert db.session.query(AuditEvent).filter_by(action="DATABASE_RESTORE_COMPLETED").count() == 0
 
 
 def test_maintenance_mode_middleware_interception(

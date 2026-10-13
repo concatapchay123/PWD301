@@ -38,6 +38,7 @@ from pwd301.models.course import Course, Enrollment
 from pwd301.models.file_import import FileAsset, FileBlob, FileRevision, FileScanResult
 from pwd301.models.identity import Role, User
 from pwd301.services.background_job_service import (
+    claim_next_background_job,
     enqueue_background_job,
     execute_background_job,
 )
@@ -706,8 +707,11 @@ class TestUnstickingAndRescan:
         )
         db.session.commit()
 
-        # Execute the background job
-        execute_background_job(job.id, session=db.session)
+        # Dispatch requires durable worker ownership before scanner side effects.
+        claimed = claim_next_background_job(session=db.session)
+        assert claimed is not None and claimed.id == job.id
+        db.session.commit()
+        assert execute_background_job(claimed, session=db.session) is True
 
         db.session.refresh(job)
         db.session.refresh(asset)

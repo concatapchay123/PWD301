@@ -81,7 +81,10 @@ def test_durable_video_validation_job_uses_existing_retrying_scanner(app, monkey
             run_async=False,
         )
         db.session.commit()
-        assert jobs.execute_background_job(job, session=db.session) is True
+        claimed = jobs.claim_next_background_job(session=db.session)
+        assert claimed is not None and claimed.id == job.id
+        db.session.commit()
+        assert jobs.execute_background_job(claimed, session=db.session) is True
     assert calls == [{"course_id": 1, "lesson_id": 2, "retry_network_errors": True}]
 
 

@@ -950,3 +950,153 @@ def test_regrade_batching_and_retry(
     retry_res = retry_regrade_job(job.id, actor=instructor_user)
     assert retry_res["status"] == "COMPLETED"
     assert retry_res["processed_items"] == 2
+
+
+def _sync_correction_fixture(instructor_user, published_course, student_user_1):
+    enroll_student(student_user_1, published_course.id)
+    q = create_question(
+        instructor_user,
+        published_course.id,
+        {
+            "question_type": "SINGLE_CHOICE",
+            "difficulty": "REMEMBER",
+            "content": "Capital?",
+            "choices": [
+                {"content": "A", "is_correct": True},
+                {"content": "B", "is_correct": False},
+            ],
+        },
+    )
+    asm = create_assessment(
+        instructor_user,
+        published_course.id,
+        {"title": "Sync quiz", "assessment_type": "QUIZ", "time_limit_minutes": 60},
+    )
+    assign_question(instructor_user, asm.id, {"question_id": q.id, "points_assigned": 10})
+    publish_assessment(instructor_user, asm.id)
+    attempt, token = start_assessment_attempt(student_user_1, asm.id)
+    aq = attempt.attempt_questions[0]
+    keys = [str(c.choice_key) for c in q.current_revision.choices]
+    save_attempt_answer(
+        student_user_1,
+        attempt.id,
+        aq.id,
+        {"selected_choice_keys": [keys[1]], "client_sequence": 1},
+        token,
+    )
+    return q, asm, attempt, token, keys
+
+
+def _sync_create_correction(instructor, q, keys):
+    return create_question_revision(
+        instructor,
+        q.id,
+        {
+            "change_type": "ANSWER_CHANGE",
+            "correction_type": "ANSWER_ONLY",
+            "change_reason": "Correct key",
+            "choices": [
+                {"choice_key": keys[0], "content": "A", "is_correct": False},
+                {"choice_key": keys[1], "content": "B", "is_correct": True},
+            ],
+        },
+    )[1]
+
+
+def test_sync063_correction_before_submit_affects_initial_grade(
+    app, instructor_user, published_course, student_user_1
+):
+    q, asm, attempt, token, keys = _sync_correction_fixture(
+        instructor_user, published_course, student_user_1
+    )
+    corr = _sync_create_correction(instructor_user, q, keys)
+    submit_assessment_attempt(student_user_1, attempt.id, raw_lease_token=token)
+    db.session.refresh(attempt)
+    assert attempt.result.raw_score == Decimal("10")
+    assert attempt.attempt_questions[0].source_question_revision_id == corr.from_revision_id
+
+
+def test_sync062_correction_has_durable_dispatch(
+    app, instructor_user, published_course, student_user_1
+):
+    from pwd301.models.operations import BackgroundJob
+
+    q, asm, attempt, token, keys = _sync_correction_fixture(
+        instructor_user, published_course, student_user_1
+    )
+    corr = _sync_create_correction(instructor_user, q, keys)
+    job = db.session.query(RegradeJob).filter_by(question_correction_id=corr.id).one()
+    assert (
+        db.session.query(BackgroundJob)
+        .filter_by(job_type="REGRADE", dedupe_key=f"regrade:{job.id}")
+        .count()
+        == 1
+    )
+
+
+def test_sync064_failed_item_rolls_back_grade_mutation(
+    app, instructor_user, published_course, student_user_1, monkeypatch
+):
+    from pwd301.services import regrade_worker
+
+    q, asm, attempt, token, keys = _sync_correction_fixture(
+        instructor_user, published_course, student_user_1
+    )
+    submit_assessment_attempt(student_user_1, attempt.id, raw_lease_token=token)
+    corr = _sync_create_correction(instructor_user, q, keys)
+    job = db.session.query(RegradeJob).filter_by(question_correction_id=corr.id).one()
+
+    def fail_after_mutation(item, job, correction, session):
+        grade = (
+            session.query(AttemptQuestionGrade)
+            .filter_by(attempt_question_id=attempt.attempt_questions[0].id)
+            .one()
+        )
+        grade.awarded_points = Decimal("7")
+        session.flush()
+        raise RuntimeError("failure after grade flush")
+
+    monkeypatch.setattr(regrade_worker, "_evaluate_attempt_item_regrade", fail_after_mutation)
+    process_regrade_job(job.id)
+    db.session.expire_all()
+    assert db.session.query(AttemptQuestionGrade).filter_by(
+        attempt_question_id=attempt.attempt_questions[0].id
+    ).one().awarded_points == Decimal("0")
+    assert db.session.query(RegradeItem).filter_by(regrade_job_id=job.id).one().status == "FAILED"
+
+
+def test_sync061_unrelated_correction_rejected(
+    app, instructor_user, published_course, student_user_1
+):
+    from pwd301.services.assessment_service import trigger_assessment_regrade
+    from pwd301.services.exceptions import ForbiddenError
+
+    q, asm, attempt, token, keys = _sync_correction_fixture(
+        instructor_user, published_course, student_user_1
+    )
+    corr = _sync_create_correction(instructor_user, q, keys)
+    other_course = create_course(instructor_user, {"course_code": "OTHER-SYNC", "title": "Other"})
+    other_asm = create_assessment(
+        instructor_user, other_course.id, {"title": "Other quiz", "assessment_type": "QUIZ"}
+    )
+    with pytest.raises(ForbiddenError):
+        trigger_assessment_regrade(instructor_user, other_asm.id, {"correction_id": corr.id})
+
+
+def test_sync063_post_dispatch_submit_keeps_regrade_counts_consistent(
+    app, instructor_user, published_course, student_user_1
+):
+    q, asm, attempt, token, keys = _sync_correction_fixture(
+        instructor_user, published_course, student_user_1
+    )
+    correction = _sync_create_correction(instructor_user, q, keys)
+    job = db.session.query(RegradeJob).filter_by(question_correction_id=correction.id).one()
+    process_regrade_job(job.id)
+    assert job.status == "COMPLETED"
+    assert job.total_items == 0
+    submit_assessment_attempt(student_user_1, attempt.id, raw_lease_token=token)
+    db.session.expire_all()
+    assert attempt.result.raw_score == Decimal("10")
+    assert job.total_items == 1
+    assert job.processed_items == 1
+    assert job.status == "COMPLETED"

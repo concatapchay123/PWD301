@@ -36,9 +36,7 @@ from pwd301.services.user_service import (
     change_password,
     generate_password_reset_token,
     get_user_by_email,
-    mark_email_verified,
     register_user,
-    set_password,
     verify_email_verification_token,
     verify_password,
     verify_password_reset_token,
@@ -641,11 +639,8 @@ def reset_password(token: str) -> Any:
             verify_security_token,
         )
 
-        try:
-            verify_security_token(token, SecurityTokenPurpose.PASSWORD_RESET)
-            reset_password_with_token(token, new_pwd)
-        except Exception:
-            set_password(user_id=user_id, new_password=new_pwd)
+        verify_security_token(token, SecurityTokenPurpose.PASSWORD_RESET)
+        reset_password_with_token(token, new_pwd)
     except (InvalidPasswordError, ServiceError) as exc:
         return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(exc)}}), 400
 
@@ -671,11 +666,8 @@ def verify_email(token: str) -> Any:
             verify_security_token,
         )
 
-        try:
-            verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
-            verify_email_with_token(token)
-        except Exception:
-            mark_email_verified(user_id)
+        verify_security_token(token, SecurityTokenPurpose.EMAIL_VERIFY)
+        verify_email_with_token(token)
     except ServiceError as exc:
         if _is_json_request():
             return jsonify({"error": {"code": "VERIFICATION_ERROR", "message": str(exc)}}), 400

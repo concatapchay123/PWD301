@@ -31,6 +31,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.extensions import db
@@ -69,6 +70,7 @@ from pwd301.models.course import (
     LearningUnit,
     Lesson,
     LessonProgress,
+    LessonProgressReceipt,
 )
 from pwd301.models.file_import import (
     FileAsset,
@@ -214,6 +216,9 @@ def purge_expired_enrollment_details(
         sess.query(LessonProgress).filter(LessonProgress.enrollment_period_id == period.id).delete(
             synchronize_session=False
         )
+        sess.query(LessonProgressReceipt).filter(
+            LessonProgressReceipt.enrollment_period_id == period.id
+        ).delete(synchronize_session=False)
 
         # 2. Skeleton-purge completed attempts by this student for this enrollment period
         attempts = (
@@ -620,12 +625,31 @@ def purge_expired_ai_messages(
             | (AIConversation.status == "EXPIRED")
             | (AIConversation.last_activity_at <= inactivity_cutoff)
         )
+        .filter(sa.exists().where(AIMessage.conversation_id == AIConversation.id))
+        .order_by(AIConversation.id)
         .limit(batch_size)
         .all()
     )
 
     purged_count = 0
     for conv in expired_convs:
+        # Coordinate with send's parent-row lock and recheck durable eligibility.
+        # A sender may have renewed this candidate after the initial SELECT.
+        eligible = (
+            sess.query(AIConversation)
+            .filter(
+                AIConversation.id == conv.id,
+                (AIConversation.expires_at <= now)
+                | (AIConversation.status == "EXPIRED")
+                | (AIConversation.last_activity_at <= inactivity_cutoff),
+            )
+            .update(
+                {"last_activity_at": AIConversation.last_activity_at}, synchronize_session=False
+            )
+        )
+        if eligible != 1:
+            continue
+        sess.refresh(conv)
         # Delete child AIMessage rows to wipe raw chat content completely
         msg_count = (
             sess.query(AIMessage)

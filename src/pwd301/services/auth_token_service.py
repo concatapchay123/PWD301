@@ -221,6 +221,7 @@ def consume_security_token(
     raw_token: str,
     purpose: str,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> UserSecurityToken:
     """Verify and atomically consume a single-use security token.
 
@@ -235,9 +236,21 @@ def consume_security_token(
     sess = session if session is not None else db.session
     token_record = verify_security_token(raw_token, purpose, session=sess)
 
-    token_record.consumed_at = utc_now()
+    now = utc_now()
+    updated = (
+        sess.query(UserSecurityToken)
+        .filter(
+            UserSecurityToken.id == token_record.id,
+            UserSecurityToken.consumed_at.is_(None),
+            UserSecurityToken.expires_at > now,
+        )
+        .update({"consumed_at": now}, synchronize_session=False)
+    )
+    if updated != 1:
+        raise TokenAlreadyConsumedError("Security token has already been consumed or expired.")
+    sess.expire(token_record)
     try:
-        sess.commit()
+        sess.commit() if commit else sess.flush()
     except Exception:
         sess.rollback()
         raise
@@ -269,6 +282,7 @@ def verify_email_with_token(
         raw_token,
         SecurityTokenPurpose.EMAIL_VERIFY,
         session=sess,
+        commit=False,
     )
 
     user = sess.get(User, token_record.user_id)
@@ -317,6 +331,7 @@ def reset_password_with_token(
         raw_token,
         SecurityTokenPurpose.PASSWORD_RESET,
         session=sess,
+        commit=False,
     )
 
     user = sess.get(User, token_record.user_id)
@@ -330,14 +345,8 @@ def reset_password_with_token(
     from pwd301.services.jwt_auth_service import revoke_all_user_tokens
     from pwd301.services.session_auth_service import revoke_all_user_sessions
 
-    revoke_all_user_sessions(user.id, session=sess)
-    revoke_all_user_tokens(user.id, session=sess)
-
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    revoke_all_user_sessions(user.id, session=sess, commit=False)
+    revoke_all_user_tokens(user.id, session=sess, commit=False)
 
     try:
         from pwd301.services.notification_service import dispatch_notification
@@ -353,12 +362,10 @@ def reset_password_with_token(
             event_key=_password_change_event_key(user),
             session=sess,
         )
-    except Exception as exc:
-        logger.warning(
-            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
-            user.id,
-            exc,
-        )
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return user
 
@@ -412,7 +419,7 @@ def apply_email_change_with_token(
     if user is None:
         raise UserNotFoundError(f"User with ID {token_record.user_id} not found.")
 
-    token_record.consumed_at = utc_now()
+    consume_security_token(raw_token, SecurityTokenPurpose.EMAIL_CHANGE, session=sess, commit=False)
     user.email = norm_new_email
     user.email_verified_at = utc_now()
     user.auth_version += 1
@@ -421,8 +428,8 @@ def apply_email_change_with_token(
     from pwd301.services.jwt_auth_service import revoke_all_user_tokens
     from pwd301.services.session_auth_service import revoke_all_user_sessions
 
-    revoke_all_user_sessions(user.id, session=sess)
-    revoke_all_user_tokens(user.id, session=sess)
+    revoke_all_user_sessions(user.id, session=sess, commit=False)
+    revoke_all_user_tokens(user.id, session=sess, commit=False)
 
     try:
         sess.commit()

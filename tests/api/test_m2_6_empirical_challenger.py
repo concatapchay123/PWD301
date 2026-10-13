@@ -490,6 +490,8 @@ class TestChallengerLeaseTakeoverAndSingleTabProtection:
         assert resp_tab1_save.status_code == 200
 
         # Tab 2 performs Lease Takeover
+        attempt.lease_expires_at = utc_now() - timedelta(seconds=1)
+        db.session.commit()
         resp_takeover = client.post(
             f"/student/attempt/{attempt_id}/lease/takeover",
             json={},
@@ -523,6 +525,8 @@ class TestChallengerLeaseTakeoverAndSingleTabProtection:
         assert resp_tab2_save.status_code == 200
 
         # Tab 1 takes back lease (renewLease via takeover endpoint)
+        attempt.lease_expires_at = utc_now() - timedelta(seconds=1)
+        db.session.commit()
         resp_tab1_recover = client.post(
             f"/student/attempt/{attempt_id}/lease/takeover",
             json={},
@@ -569,6 +573,8 @@ class TestChallengerLeaseTakeoverAndSingleTabProtection:
         login_web_user(client, student1)
 
         # Tab 2 takes over
+        attempt.lease_expires_at = utc_now() - timedelta(seconds=1)
+        db.session.commit()
         resp_takeover = client.post(
             f"/student/attempt/{attempt_id}/lease/takeover",
             json={},
@@ -764,10 +770,10 @@ class TestChallengerLeaseTakeoverAndSingleTabProtection:
         reloaded = db.session.get(AssessmentAttempt, attempt.id)
         assert reloaded.status == "EXPIRED"
 
-    def test_multiple_choice_empty_selection_autosave_bug_demonstration(
+    def test_multiple_choice_empty_selection_autosave_clears_choices(
         self, client: FlaskClient, m2_challenge_fixture: dict[str, Any]
     ) -> None:
-        """EMPIRICAL: Deselecting all choices sends [] but backend fails to clear choices."""
+        """Deselecting all choices clears previously persisted selected choices."""
         student1 = m2_challenge_fixture["student1"]
         asm = m2_challenge_fixture["assessment"]
 
@@ -811,21 +817,15 @@ class TestChallengerLeaseTakeoverAndSingleTabProtection:
         )
         assert resp2.status_code == 200
 
-        # EMPIRICAL PROOF: In attempt_service.py:1217:
-        # selected_choice_keys = payload.get("selected_choice_keys") or payload.get("choice_keys")
-        # Because [] is falsy in Python, selected_choice_keys evaluates to None!
-        # The choice deletion block `if selected_choice_keys is not None:` is skipped!
-        # As a result, the previous choices are NOT cleared:
+        # Empty arrays are intentional replacement values, not missing fields.
         db.session.expire_all()
         ans_db = (
             db.session.query(AttemptAnswer)
             .filter(AttemptAnswer.attempt_question_id == attempt.attempt_questions[1].id)
             .first()
         )
-        # It still retains 2 choices instead of 0!
-        assert len(ans_db.selected_choices) == 2, (
-            "Confirmed: [] is treated as None, choices not cleared"
-        )
+        assert len(ans_db.selected_choices) == 0
+        assert ans_db.last_client_sequence == 2
 
     def test_attempt_template_dom_and_xss_escaping_integrity(
         self, client: FlaskClient, m2_challenge_fixture: dict[str, Any]

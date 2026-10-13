@@ -176,6 +176,7 @@ def student_fixture(app: Flask) -> dict[str, Any]:
     dirty_asset.status = "PENDING"
     if dirty_asset.revisions:
         dirty_asset.revisions[0].status = "QUARANTINED"
+        dirty_asset.revisions[0].is_current = False
     sess.flush()
 
     attach_resource_to_lesson(

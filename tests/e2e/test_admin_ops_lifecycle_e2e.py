@@ -462,6 +462,7 @@ def test_disaster_recovery_drill_and_maintenance_mode(
                 backup_id=backup_id,
                 confirmation_phrase="WRONG_PHRASE",
                 password="Password@123",
+                reason="Verify restore fail-closed after disaster recovery fixture",
                 session=sess,
             )
 
@@ -482,6 +483,7 @@ def test_disaster_recovery_drill_and_maintenance_mode(
                 backup_id=backup_id,
                 confirmation_phrase="CONFIRM_DATABASE_RESTORE",
                 password="Password@123",
+                reason="Verify restore fail-closed after disaster recovery fixture",
                 session=sess,
             )
         assert (

@@ -45,7 +45,8 @@ def test_migration_upgrade_and_downgrade(monkeypatch):
             assert "attempt_focus_events" in tables
             assert "learning_units" in tables
             assert {"playback_sessions", "lesson_media_progress", "playback_receipts"} <= tables
-            assert len(tables - {"alembic_version"}) == 76
+            assert "lesson_progress_receipts" in tables
+            assert len(tables - {"alembic_version"}) == 77
             revision_constraint = next(
                 constraint["sqltext"]
                 for constraint in inspector.get_check_constraints("question_revisions")

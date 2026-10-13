@@ -80,6 +80,8 @@ test('clicking an admin review notification opens its queue directly', async () 
   const AppRouter = loadView('../../frontend/assets/js/router.js', 'AppRouter', { window });
   let openedModal = false;
   const router = Object.create(AppRouter.prototype);
+  router.currentUser = { id: 'admin-owner' };
+  router.currentRole = 'ADMIN';
   router.notificationsCache = {
     items: [{ id: 'notification-1', category: 'COURSE', is_read: true, action_url: '#/admin/governance?tab=courses' }],
   };

@@ -278,6 +278,20 @@ class StudentView {
     return failedQuestionIds.size;
   }
 
+  static async prepareAttemptDeparture(flush, pending, failed, payloads, save) {
+    do {
+      await flush();
+      await Promise.allSettled(Array.from(pending));
+    } while (pending.size);
+    if (failed.size) await StudentView.retryFailedAnswerSaves(failed, payloads, save);
+    if (!failed.size) return true;
+    return UI.confirm(
+      'Câu trả lời chưa lưu',
+      `${failed.size} câu trả lời chưa được máy chủ xác nhận. Rời trang sẽ mất các thay đổi chưa lưu.`,
+      'Rời Trang', 'Tiếp Tục Làm Bài', true
+    );
+  }
+
   static isLessonVideoWatched(lesson) {
     if (!lesson?.video_url) return true;
     const fraction = Number(lesson.progress?.max_view_fraction || 0);
@@ -1053,7 +1067,7 @@ class StudentView {
     try {
       const [resCatalog, resEnrolled, recs] = await Promise.all([
         ApiClient.getCatalogCourses(),
-        ApiClient.getStudentEnrollments().catch(() => ({ enrollments: [] })),
+        ApiClient.getStudentEnrollments(),
         ApiClient.getRecommendations(4).catch(() => []),
       ]);
       allCourses = resCatalog.items || resCatalog.courses || [];
@@ -2834,6 +2848,14 @@ class StudentView {
       // AI Chat Controller inside NetAcad Course Console
       let consoleConvId = null;
       let isAiSending = false;
+      let consoleChatGeneration = 0;
+      const consoleChatRoot = container.querySelector('#cisco-console-root') || container;
+      const consoleChatElement = (id) => consoleChatRoot.querySelector(`#${id}`);
+      const consoleChatOwner = () => {
+        const user = window.app?.currentUser;
+        return JSON.stringify([user?.id || user?.public_id || user?.user_id, user?.active_role || user?.currentRole]);
+      };
+      const consoleChatContext = () => JSON.stringify([activeItem?.type, activeItem?.id]);
 
       const updateAIContextBadge = () => {
         const badge = document.getElementById('console-ai-context-label');
@@ -2851,7 +2873,7 @@ class StudentView {
       };
 
       const appendConsoleAIMessage = (role, text) => {
-        const msgContainer = document.getElementById('console-ai-messages');
+        const msgContainer = consoleChatElement('console-ai-messages');
         if (!msgContainer) return;
         const div = document.createElement('div');
         div.className = 'flex gap-2' + (role === 'user' ? ' justify-end' : '');
@@ -2882,20 +2904,25 @@ class StudentView {
         const query = (text || '').trim();
         if (!query || isAiSending) return;
         isAiSending = true;
+        const generation = ++consoleChatGeneration;
+        const owner = consoleChatOwner();
+        const context = consoleChatContext();
+        const route = window.location.hash;
+        const ownsRequest = () => consoleChatRoot.isConnected && generation === consoleChatGeneration
+          && owner === consoleChatOwner() && context === consoleChatContext() && route === window.location.hash;
 
-        const sendBtn = document.getElementById('console-ai-send-btn');
-        const inputEl = document.getElementById('console-ai-input');
+        const sendBtn = consoleChatElement('console-ai-send-btn');
+        const inputEl = consoleChatElement('console-ai-input');
         if (sendBtn) sendBtn.disabled = true;
         if (inputEl) inputEl.value = '';
 
         appendConsoleAIMessage('user', query);
 
         // Show typing indicator
-        const msgContainer = document.getElementById('console-ai-messages');
-        const typingId = 'console-ai-typing-' + Date.now();
+        const msgContainer = consoleChatElement('console-ai-messages');
+        let typingDiv;
         if (msgContainer) {
-          const typingDiv = document.createElement('div');
-          typingDiv.id = typingId;
+          typingDiv = document.createElement('div');
           typingDiv.className = 'flex gap-2';
           typingDiv.innerHTML = `
             <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
@@ -2912,8 +2939,8 @@ class StudentView {
         try {
           const curLessonId = (activeItem && activeItem.type === 'lesson') ? activeItem.id : null;
           const res = await ApiClient.sendAIChat(query, consoleConvId, courseId, curLessonId);
-          const typingEl = document.getElementById(typingId);
-          if (typingEl) typingEl.remove();
+          typingDiv?.remove();
+          if (!ownsRequest()) return;
 
           if (res && res.conversation_id) {
             consoleConvId = res.conversation_id;
@@ -2921,14 +2948,16 @@ class StudentView {
           const reply = res?.reply || res?.data?.reply || (typeof res?.assistant_message === 'string' ? res.assistant_message : res?.assistant_message?.content) || res?.message || res?.content || 'Xin lỗi bạn, mình chưa thể xử lý yêu cầu lúc này.';
           appendConsoleAIMessage('assistant', reply);
         } catch (err) {
-          const typingEl = document.getElementById(typingId);
-          if (typingEl) typingEl.remove();
+          typingDiv?.remove();
+          if (!ownsRequest()) return;
           const errText = err?.data?.error?.message || err?.message || 'Lỗi mạng hoặc hệ thống tạm thời bận';
           appendConsoleAIMessage('assistant', `⚠️ Không thể gửi câu hỏi: ${errText}. Vui lòng thử lại sau ít phút.`);
         } finally {
-          isAiSending = false;
-          if (sendBtn) sendBtn.disabled = false;
-          if (inputEl) inputEl.focus();
+          if (ownsRequest()) {
+            isAiSending = false;
+            if (sendBtn) sendBtn.disabled = false;
+            if (inputEl) inputEl.focus();
+          }
         }
       };
 
@@ -2952,28 +2981,31 @@ class StudentView {
       });
 
       const newChatBtn = document.getElementById('console-ai-new-chat-btn');
-      if (newChatBtn) {
-        newChatBtn.onclick = () => {
-          consoleConvId = null;
-          const msgContainer = document.getElementById('console-ai-messages');
-          if (msgContainer) {
-            msgContainer.innerHTML = `
-              <div class="flex gap-2">
-                <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-                  <span class="material-symbols-outlined text-[14px]">smart_toy</span>
-                </div>
-                <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
-                  <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
-                  <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-                    Đã làm mới phiên thảo luận. Bạn muốn tìm hiểu hoặc cần mình giải đáp phần nào trong bài học này?
-                  </div>
+      const resetConsoleChat = (notify = true) => {
+        consoleChatGeneration++;
+        consoleConvId = null;
+        isAiSending = false;
+        const sendBtn = consoleChatElement('console-ai-send-btn');
+        if (sendBtn) sendBtn.disabled = false;
+        const msgContainer = consoleChatElement('console-ai-messages');
+        if (msgContainer) {
+          msgContainer.innerHTML = `
+            <div class="flex gap-2">
+              <div class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[14px]">smart_toy</span>
+              </div>
+              <div class="bg-white dark:bg-slate-800 p-2.5 rounded-2xl rounded-tl-sm border border-slate-200 dark:border-slate-700 shadow-xs max-w-[85%] space-y-1">
+                <div class="font-bold text-slate-800 dark:text-slate-100 text-[11px]">Bạch tuộc trợ lí AI</div>
+                <div class="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
+                  Đã làm mới phiên thảo luận. Bạn muốn tìm hiểu hoặc cần mình giải đáp phần nào trong bài học này?
                 </div>
               </div>
-            `;
-          }
-          UI.showToast('Đã bắt đầu phiên trao đổi mới với Bạch tuộc AI', 'info');
-        };
-      }
+            </div>
+          `;
+        }
+        if (notify) UI.showToast('Đã bắt đầu phiên trao đổi mới với Bạch tuộc AI', 'info');
+      };
+      if (newChatBtn) newChatBtn.onclick = () => resetConsoleChat();
 
       // Search Box in Outline
       const searchInput = document.getElementById('outline-search-input');
@@ -3550,6 +3582,7 @@ class StudentView {
           return;
         }
 
+        if (activeItem?.type !== target.type || String(activeItem?.id) !== String(target.id)) resetConsoleChat(false);
         activeItem = target;
         if (target.moduleId) {
           expandedModuleIds.add(target.moduleId);
@@ -4771,7 +4804,14 @@ class StudentView {
           if (quizSection && lesson.quiz && lesson.quiz.length) {
             const totalQuizSlides = lesson.quiz.length;
             let currentQuizSlide = 0;
-            let hasPassedQuiz = false;
+            let hasPassedQuiz = Boolean(lesson.progress?.mini_quiz_completed_at);
+            if (hasPassedQuiz) {
+              checkQuizBtn?.classList.add('hidden');
+              resetQuizBtn?.classList.add('hidden');
+              nextQuizBtn?.classList.add('hidden');
+              const savedBanner = document.getElementById('cisco-quiz-score-banner');
+              if (savedBanner) savedBanner.textContent = 'Đã ghi nhận hoàn thành bài kiểm tra trên máy chủ.';
+            }
 
             const updateQuizSlideView = () => {
               const activeMatchingBoard = quizSection.querySelector(`.cisco-quiz-card:nth-child(${currentQuizSlide + 1}) .cisco-quiz-matching-board`);
@@ -6026,6 +6066,41 @@ class StudentView {
   // =========================================================================
   // 7. Master Exam Attempt Console (Fullscreen, Contextual Navigator, Anti-Cheat, Autosave)
   // =========================================================================
+  static createAttemptLeaseHeartbeat(root, attemptId, token, intervalSeconds, onChange) {
+    const identity = () => {
+      const router = window.app || window.appRouter;
+      const user = router?.currentUser;
+      return `${user?.id || user?.public_id || ''}:${user?.active_role || router?.currentRole || ''}`;
+    };
+    const owner = identity();
+    let stopped = false, pending = false, timer = null;
+    const ownsRoot = () => root.isConnected !== false && identity() === owner;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      if (timer !== null) clearInterval(timer);
+    };
+    const retry = async () => {
+      if (stopped || pending) return;
+      if (!ownsRoot()) { stop(); return; }
+      pending = true;
+      try {
+        await ApiClient.renewAttemptLease(attemptId, token);
+        if (!stopped && ownsRoot()) onChange(true);
+      } catch (error) {
+        if (!stopped && ownsRoot()) onChange(false, error);
+        if ([401, 403, 409].includes(error.status)) stop();
+      } finally {
+        pending = false;
+        if (!ownsRoot()) stop();
+      }
+    };
+    const seconds = Number(intervalSeconds);
+    const delay = Number.isFinite(seconds) && seconds > 0 ? Math.max(250, Math.min(10000, seconds * 1000)) : 10000;
+    timer = setInterval(retry, delay);
+    return { stop, retry };
+  }
+
   static async renderAttemptConsole(container, attemptId) {
     container.innerHTML = `
       <div class="h-full flex items-center justify-center p-6 text-slate-400">
@@ -6044,6 +6119,18 @@ class StudentView {
       }
 
       const leaseToken = data.lease_token || '';
+      if (!leaseToken) {
+        container.innerHTML = `
+          <div id="exam-lease-unavailable" class="max-w-xl mx-auto my-12 p-6 space-y-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-amber-300 text-slate-800 dark:text-slate-200">
+            <h2 class="text-lg font-bold">Bài thi đang được mở ở một phiên khác</h2>
+            <p class="text-sm">Bạn có thể kiểm tra lại sau khi phiên đó hết hiệu lực. Bài làm hiện tại vẫn được giữ trên hệ thống.</p>
+            <button type="button" id="exam-lease-retry" class="c-btn c-btn-primary">Kiểm tra lại phiên</button>
+            <a href="#/student/assessments" class="c-btn c-btn-secondary">Danh sách bài thi</a>
+          </div>`;
+        const retry = container.querySelector('#exam-lease-retry');
+        if (retry) retry.onclick = () => UI.refreshCurrentRoute();
+        return;
+      }
       const questions = data.questions || [];
       const focusLayout = data.exam_layout === 'FOCUS';
       let remainingSeconds = data.remaining_seconds || ((data.time_limit_minutes || data.duration_minutes) ? (data.time_limit_minutes || data.duration_minutes) * 60 : 3600);
@@ -6564,6 +6651,42 @@ class StudentView {
         </div>
       `;
 
+      // The router moves rendered children out of its staging viewport.
+      // Keep callbacks and departure checks on the retained attempt element.
+      container = container.querySelector('#exam-attempt-console-root') || container;
+      let leaseVerified = true;
+      let frozenLeaseControls = [];
+      const leaseHeartbeat = StudentView.createAttemptLeaseHeartbeat(
+        container, attemptId, leaseToken, data.lease_heartbeat_interval_seconds,
+        (verified, error) => {
+          leaseVerified = verified;
+          if (verified) {
+            container.querySelector('#exam-lease-warning')?.remove();
+            for (const [control, disabled, editable] of frozenLeaseControls) {
+              if (disabled !== null) control.disabled = disabled;
+              else control.contentEditable = editable;
+            }
+            frozenLeaseControls = [];
+            return;
+          }
+          if (!frozenLeaseControls.length) {
+            frozenLeaseControls = Array.from(container.querySelectorAll('.question-card input, .question-card textarea, .question-card select, .question-card [contenteditable], #exam-submit-btn'))
+              .map(control => [control, typeof control.disabled === 'boolean' ? control.disabled : null, control.contentEditable]);
+            for (const [control, disabled] of frozenLeaseControls) {
+              if (disabled !== null) control.disabled = true;
+              else control.contentEditable = 'false';
+            }
+          }
+          container.querySelector('#exam-lease-warning')?.remove();
+          const lost = [401, 403, 409].includes(error?.status);
+          container.insertAdjacentHTML('afterbegin', `<div id="exam-lease-warning" role="alert" class="p-4 border border-amber-300 bg-amber-50 text-amber-900">
+            <p>${lost ? 'Phiên chỉnh sửa không còn hiệu lực.' : 'Chưa xác minh được phiên chỉnh sửa.'} Nội dung chưa lưu vẫn được giữ trên màn hình.</p>
+            ${lost ? '<a href="#/student/assessments" class="c-btn c-btn-secondary mt-3">Danh sách bài thi</a>' : '<button id="exam-retry-lease" type="button" class="c-btn c-btn-primary mt-3">Thử kết nối lại</button>'}
+          </div>`);
+          const retry = container.querySelector('#exam-retry-lease');
+          if (retry) retry.onclick = () => leaseHeartbeat.retry();
+        }
+      );
       let currentLayout = focusLayout ? 'FOCUS' : 'STANDARD';
       let activeQuestionIndex = 0;
 
@@ -7043,7 +7166,7 @@ class StudentView {
       };
 
       const handleExamBeforeUnload = (e) => {
-        if (textDebounceTimers.size > 0 || pendingAnswerSaves.size > 0) {
+        if (textDebounceTimers.size > 0 || pendingAnswerSaves.size > 0 || failedAnswerSaves.size > 0) {
           container.querySelectorAll('.assessment-short-answer').forEach(input => {
             if (textDebounceTimers.has(input)) {
               clearTimeout(textDebounceTimers.get(input));
@@ -7063,6 +7186,29 @@ class StudentView {
         }
       };
       window.addEventListener('beforeunload', handleExamBeforeUnload);
+
+      const router = window.app || window.appRouter;
+      const departureGuard = {
+        routeHash: window.location.hash,
+        leave: async () => {
+          if (container.isConnected === false) return true;
+          const previousInert = container.inert;
+          container.inert = true;
+          try {
+            const allowed = await StudentView.prepareAttemptDeparture(
+              flushAllUnsavedInputs, pendingAnswerSaves, failedAnswerSaves, answerPayloads, saveAnswerInOrder
+            );
+            if (allowed) {
+              antiCheat.stop();
+              window.removeEventListener('beforeunload', handleExamBeforeUnload);
+            }
+            return allowed;
+          } finally {
+            container.inert = previousInert;
+          }
+        }
+      };
+      if (router) router.beforeRouteLeave = departureGuard;
 
       // Submit exam action with mandatory verification checkbox modal
       const submitBtn = document.getElementById('exam-submit-btn');
@@ -7157,10 +7303,15 @@ class StudentView {
       };
 
       const handleSubmit = async (forced = false) => {
+        if (!forced && !leaseVerified) {
+          UI.showToast('Chưa xác minh được phiên chỉnh sửa. Hãy kết nối lại trước khi nộp.', 'warning');
+          return;
+        }
         if (!forced) {
           const unanswered = questions.length - answeredQuestions.size;
           const confirmed = await showSubmitConfirmModal(unanswered, questions.length);
           if (!confirmed) return;
+          if (!leaseVerified) return;
         }
 
         // Flush all active/focused text inputs that were in debounce timers
@@ -7192,6 +7343,8 @@ class StudentView {
 
         try {
           await ApiClient.submitAttempt(attemptId, leaseToken, StudentView.getSubmissionKey(attemptId));
+          leaseHeartbeat.stop();
+          if (router?.beforeRouteLeave === departureGuard) router.beforeRouteLeave = null;
           antiCheat.stop();
           window.removeEventListener('beforeunload', handleExamBeforeUnload);
           if (document.fullscreenElement && document.exitFullscreen) {
@@ -7203,6 +7356,8 @@ class StudentView {
           try {
             const result = await ApiClient.getAttemptResult(attemptId);
             if (['SUBMITTED', 'PENDING_GRADING', 'GRADED'].includes(result?.status)) {
+              leaseHeartbeat.stop();
+              if (router?.beforeRouteLeave === departureGuard) router.beforeRouteLeave = null;
               antiCheat.stop();
               window.removeEventListener('beforeunload', handleExamBeforeUnload);
               if (document.fullscreenElement && document.exitFullscreen) {
@@ -7216,7 +7371,7 @@ class StudentView {
           }
           UI.showToast(err.message || 'Lỗi khi nộp bài thi.', 'error');
           if (submitBtn) {
-            submitBtn.disabled = false;
+            submitBtn.disabled = !leaseVerified;
             submitBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">send</span> <span>Nộp bài thi</span>';
           }
         }
@@ -7227,7 +7382,8 @@ class StudentView {
       // Timer ticker
       const timerEl = document.getElementById('exam-remaining-timer');
       const examInterval = setInterval(() => {
-        if (!document.getElementById('exam-remaining-timer')) {
+        if (container.isConnected === false || !container.querySelector('#exam-remaining-timer')) {
+          leaseHeartbeat.stop();
           clearInterval(examInterval);
           antiCheat.stop();
           window.removeEventListener('beforeunload', handleExamBeforeUnload);
@@ -7237,6 +7393,7 @@ class StudentView {
           remainingSeconds--;
           if (timerEl) timerEl.textContent = UI.formatDuration(remainingSeconds);
         } else {
+          leaseHeartbeat.stop();
           clearInterval(examInterval);
           antiCheat.stop();
           window.removeEventListener('beforeunload', handleExamBeforeUnload);
@@ -8685,6 +8842,10 @@ class StudentView {
     const courseSelect = document.getElementById('ai-context-course-select');
     let conversationId = null;
     let chatGeneration = 0;
+    const chatOwner = () => {
+      const user = window.app?.currentUser;
+      return JSON.stringify([user?.id || user?.public_id || user?.user_id, user?.active_role || user?.currentRole]);
+    };
 
     // Dynamically load enrolled courses into context dropdown
     ApiClient.getEnrolledCourses().then(res => {
@@ -8705,6 +8866,7 @@ class StudentView {
       courseSelect.onchange = () => {
         chatGeneration++;
         conversationId = null;
+        if (sendBtn) sendBtn.disabled = false;
         const selText = courseSelect.options[courseSelect.selectedIndex]?.text || '';
         UI.showToast(`Đã chuyển ngữ cảnh RAG sang: ${selText}`, 'info');
       };
@@ -8740,7 +8902,7 @@ class StudentView {
 
     const handleSend = async (messageText = null) => {
       const text = messageText || (input?.value || '').trim();
-      if (!text) return;
+      if (!text || sendBtn?.disabled) return;
 
       appendUserMessage(text);
       if (input) input.value = '';
@@ -8760,11 +8922,15 @@ class StudentView {
 
       const currentGen = ++chatGeneration;
       const courseId = courseSelect?.value || null;
+      const owner = chatOwner();
+      const route = window.location.hash;
+      const ownsRequest = () => chatContainer.isConnected && currentGen === chatGeneration
+        && owner === chatOwner() && route === window.location.hash && courseId === (courseSelect?.value || null);
       try {
         const res = await ApiClient.sendAIChat(text, conversationId, courseId);
         typing.remove();
 
-        if (currentGen !== chatGeneration) {
+        if (!ownsRequest()) {
           return; // Stale request discarded (SYNC-035)
         }
 
@@ -8776,11 +8942,13 @@ class StudentView {
         appendAIBubble(reply);
       } catch (err) {
         typing.remove();
-        if (currentGen !== chatGeneration) return;
+        if (!ownsRequest()) return;
         appendAIBubble(`⚠️ **Lỗi phản hồi:** ${err.message || 'Không thể kết nối đến máy chủ AI vào lúc này. Vui lòng thử lại sau.'}`);
       } finally {
-        if (sendBtn) sendBtn.disabled = false;
-        input?.focus();
+        if (ownsRequest()) {
+          if (sendBtn) sendBtn.disabled = false;
+          input?.focus();
+        }
       }
     };
 
@@ -8799,7 +8967,7 @@ class StudentView {
       clearBtn.onclick = () => {
         chatGeneration++;
         conversationId = null;
-        StudentView.renderAIAssistant(container);
+        UI.refreshCurrentRoute();
       };
     }
 
@@ -9398,7 +9566,7 @@ class StudentView {
         .toUpperCase();
       const profileIdentity = profile.public_id || profile.user_id || profile.id;
       const generatedAvatar = StudentView.getStoredRandomAvatarUrl(profileIdentity);
-      const currentAvatarUrl = generatedAvatar || profile.avatar_url;
+      const currentAvatarUrl = profile.avatar_url || generatedAvatar;
 
       container.innerHTML = `
         <div class="max-w-4xl mx-auto space-y-6 animate-fade-in pb-12">
@@ -9908,12 +10076,16 @@ class StudentView {
 
       // 5. Preferences Save Handler
       const savePrefsBtn = container.querySelector('#btn-save-preferences');
+      const prefCourseInput = container.querySelector('#pref-email-course');
+      const prefAssessmentInput = container.querySelector('#pref-email-assessment');
+      const prefGradeInput = container.querySelector('#pref-email-grade');
+      const prefMarketingInput = container.querySelector('#pref-email-marketing');
       if (savePrefsBtn) {
         savePrefsBtn.onclick = async () => {
-          const prefCourse = container.querySelector('#pref-email-course')?.checked ?? true;
-          const prefAssessment = container.querySelector('#pref-email-assessment')?.checked ?? true;
-          const prefGrade = container.querySelector('#pref-email-grade')?.checked ?? true;
-          const prefMarketing = container.querySelector('#pref-email-marketing')?.checked ?? false;
+          const prefCourse = prefCourseInput?.checked ?? true;
+          const prefAssessment = prefAssessmentInput?.checked ?? true;
+          const prefGrade = prefGradeInput?.checked ?? true;
+          const prefMarketing = prefMarketingInput?.checked ?? false;
 
           savePrefsBtn.disabled = true;
           savePrefsBtn.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Đang lưu...';

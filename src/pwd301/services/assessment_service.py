@@ -15,6 +15,8 @@ Implements business logic and invariants for:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import secrets
 import uuid
@@ -58,6 +60,7 @@ from pwd301.services.exceptions import (
     AssessmentValidationError,
     BlueprintValidationError,
     ConflictError,
+    ForbiddenError,
     QuestionCorrectionNotFoundError,
     QuestionNotFoundError,
     ResourceNotFoundError,
@@ -161,6 +164,23 @@ def _resolve_assessment(
         )
 
     return query.first()
+
+
+def _lock_assessment_for_mutation(
+    assessment: Assessment, session: Session | scoped_session[Any]
+) -> Assessment:
+    """Serialize writers with attempt admission and refresh their freeze marker."""
+    locked = (
+        session.query(Assessment)
+        .filter(Assessment.id == assessment.id)
+        .with_hint(Assessment, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one_or_none()
+    )
+    if locked is None:
+        raise AssessmentNotFoundError("Assessment not found.")
+    return locked
 
 
 def _resolve_section(
@@ -336,6 +356,94 @@ def _calculate_assessment_aggregates(
     return total_q, round(total_pts, 4)
 
 
+def assessment_authoring_token(
+    assessment: Assessment, session: Session | scoped_session[Any] | None = None
+) -> str:
+    """Fingerprint editable settings and question semantics, excluding lifecycle telemetry."""
+    sess = session if session is not None else db.session
+
+    def fields(row: Any, excluded: set[str]) -> dict[str, Any]:
+        return {
+            column.key: getattr(row, column.key)
+            for column in sa.inspect(type(row)).columns
+            if column.key not in excluded
+        }
+
+    volatile = {"row_version", "created_at", "updated_at", "published_at", "status"}
+    settings = fields(
+        assessment,
+        volatile | {"first_attempt_started_at", "cancelled_at", "cancel_reason", "deleted_at"},
+    )
+    assignments = (
+        sess.query(AssessmentQuestionAssignment)
+        .filter_by(assessment_id=assessment.id)
+        .order_by(AssessmentQuestionAssignment.position, AssessmentQuestionAssignment.id)
+        .populate_existing()
+        .all()
+    )
+
+    def question_fields(question_id: int) -> dict[str, Any]:
+        question = sess.get(Question, question_id, populate_existing=True)
+        if question is None:
+            raise AssessmentValidationError("Assigned question no longer exists.")
+        sess.expire(question, ["current_revision"])
+        if question.current_revision is not None:
+            sess.expire(question.current_revision)
+        serialized = _serialize_question(question, include_answers=True)
+        return {
+            "question": {
+                key: serialized[key]
+                for key in (
+                    "question_id",
+                    "lesson_id",
+                    "difficulty",
+                    "learning_objective",
+                    "question_type",
+                    "content",
+                    "explanation",
+                    "choices",
+                    "accepted_answers",
+                    "status",
+                    "deleted_at",
+                )
+            },
+            "revision_no": serialized["current_revision"]["revision_no"],
+            "match_mode": serialized["current_revision"]["short_answer_match_mode"],
+            "resources": [
+                {key: resource[key] for key in ("asset_id", "position", "resource_role")}
+                for resource in serialized["resources"]
+            ],
+        }
+
+    questions = [
+        {"assignment": fields(assignment, volatile), **question_fields(assignment.question_id)}
+        for assignment in assignments
+    ]
+    snapshot = {
+        "settings": settings,
+        "questions": questions,
+        "blueprints": [
+            {
+                "blueprint": fields(blueprint, volatile),
+                "rules": [
+                    fields(rule, volatile)
+                    for rule in sorted(blueprint.rules, key=lambda row: row.id)
+                ],
+            }
+            for blueprint in sorted(assessment.blueprints, key=lambda row: row.id)
+        ],
+        "pool": [
+            {"pool": fields(row, volatile), **question_fields(row.question_id)}
+            for row in sess.query(AssessmentQuestionPool)
+            .filter_by(assessment_id=assessment.id)
+            .filter(AssessmentQuestionPool.is_fixed == sa.true())
+            .order_by(AssessmentQuestionPool.id)
+            .all()
+        ],
+    }
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def _serialize_assessment(
     assessment: Assessment,
     full: bool = False,
@@ -376,6 +484,8 @@ def _serialize_assessment(
     }
 
     if full:
+        if include_answers:
+            data["authoring_token"] = assessment_authoring_token(assessment, session)
         data.update(
             {
                 "description": assessment.description,
@@ -529,11 +639,34 @@ def _validate_assessment_timings_and_limits(
 # ============================================================================
 
 
+def _validate_learning_unit(
+    sess: Session | scoped_session[Any], course_id: int, unit_ref: Any
+) -> str | None:
+    from pwd301.models.course import LearningUnit
+
+    if not unit_ref:
+        return None
+    try:
+        unit_uuid = uuid.UUID(str(unit_ref))
+    except (ValueError, TypeError) as exc:
+        raise AssessmentValidationError("Invalid learning unit identifier.") from exc
+    unit = (
+        sess.query(LearningUnit)
+        .filter_by(public_id=unit_uuid, course_id=course_id)
+        .filter(LearningUnit.deleted_at.is_(None))
+        .first()
+    )
+    if unit is None:
+        raise AssessmentValidationError("Learning unit does not belong to this course.")
+    return str(unit.public_id)
+
+
 def create_assessment(
     actor: User,
     course_id: Course | int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    public_id: uuid.UUID | None = None,
 ) -> Assessment:
     """Create a new Assessment in DRAFT status for a course."""
     sess = session if session is not None else db.session
@@ -622,13 +755,14 @@ def create_assessment(
     is_rand_bool = is_rand is True or str(is_rand).lower() in ("true", "1", "yes")
 
     desc = payload.get("description") or ""
-    learning_unit_id = payload.get("learning_unit_id")
+    learning_unit_id = _validate_learning_unit(sess, course.id, payload.get("learning_unit_id"))
     if learning_unit_id and f"unit_id: {learning_unit_id}" not in desc:
         desc = (desc + f"\nunit_id: {learning_unit_id}").strip()
 
     assessment = Assessment(
         course_id=course.id,
         creator_user_id=actor.id,
+        public_id=public_id or uuid.uuid4(),
         title=title,
         description=desc or None,
         assessment_type=raw_type,
@@ -675,6 +809,7 @@ def update_assessment(
     assessment_id: Assessment | int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> Assessment:
     """Update an Assessment configuration subject to Timing and Structure freeze rules."""
     sess = session if session is not None else db.session
@@ -684,6 +819,7 @@ def update_assessment(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     if assessment.status in ("CANCELLED", "ARCHIVED", "TRASH"):
         raise AssessmentStateViolationError(
@@ -788,7 +924,7 @@ def update_assessment(
         assessment.title = raw_title
 
     if "learning_unit_id" in payload:
-        l_uid = payload.get("learning_unit_id")
+        l_uid = _validate_learning_unit(sess, assessment.course_id, payload.get("learning_unit_id"))
         current_desc = assessment.description or ""
         cleaned_desc = re.sub(r"(\r?\n)?unit_id:\s*[a-zA-Z0-9_-]+", "", current_desc).strip()
         if l_uid:
@@ -923,11 +1059,12 @@ def update_assessment(
         target_id=assessment.id,
     )
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return assessment
 
@@ -1016,6 +1153,7 @@ def publish_assessment(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
+    expected_authoring_token: str | None = None,
 ) -> Assessment:
     """Validate publish gate and transition Assessment from DRAFT to PUBLISHED (AC-05)."""
     sess = session if session is not None else db.session
@@ -1025,6 +1163,61 @@ def publish_assessment(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+
+    # Serialize both conditional and legacy state-idempotent publication.
+    assessment = _lock_assessment_for_mutation(assessment, sess)
+    if expected_authoring_token is not None:
+        if not isinstance(expected_authoring_token, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", expected_authoring_token
+        ):
+            raise AssessmentValidationError("Invalid expected authoring token.")
+        # Fence the comparison and publish against authoring and direct question edits.
+        assignments = (
+            sess.query(AssessmentQuestionAssignment)
+            .filter_by(assessment_id=assessment.id)
+            .with_hint(
+                AssessmentQuestionAssignment, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql"
+            )
+            .with_for_update()
+            .order_by(AssessmentQuestionAssignment.id)
+            .all()
+        )
+        pool = (
+            sess.query(AssessmentQuestionPool)
+            .filter_by(assessment_id=assessment.id)
+            .with_hint(AssessmentQuestionPool, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .order_by(AssessmentQuestionPool.id)
+            .populate_existing()
+            .all()
+        )
+        question_ids = [row.question_id for row in assignments] + [
+            row.question_id for row in pool if row.is_fixed
+        ]
+        if question_ids:
+            sess.query(Question).filter(Question.id.in_(question_ids)).order_by(
+                Question.id
+            ).with_hint(
+                Question, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql"
+            ).with_for_update().populate_existing().all()
+        blueprints = (
+            sess.query(AssessmentBlueprint)
+            .filter_by(assessment_id=assessment.id)
+            .with_hint(AssessmentBlueprint, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .order_by(AssessmentBlueprint.id)
+            .populate_existing()
+            .all()
+        )
+        if blueprints:
+            sess.query(AssessmentBlueprintRule).filter(
+                AssessmentBlueprintRule.blueprint_id.in_([row.id for row in blueprints])
+            ).with_hint(
+                AssessmentBlueprintRule, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql"
+            ).with_for_update().order_by(AssessmentBlueprintRule.id).populate_existing().all()
+        sess.expire(assessment, ["question_assignments", "blueprints", "question_pool"])
+        if assessment_authoring_token(assessment, sess) != expected_authoring_token:
+            raise ConflictError("Assessment authoring changed; refresh before publishing.")
 
     if assessment.status == "PUBLISHED":
         # State-idempotent per 07_ASSESSMENT_API.md
@@ -1038,6 +1231,7 @@ def publish_assessment(
     # Blueprint Preflight Verification (Algorithm 05 & ASSESS-004)
     shortage_report: list[dict[str, Any]] = []
     assigned_qids = {a.question_id for a in assessment.question_assignments}
+    assigned_qids.update(row.question_id for row in assessment.question_pool if row.is_fixed)
     has_blueprint_rules = False
     used_qids = set(assigned_qids)
 
@@ -1052,7 +1246,7 @@ def publish_assessment(
                     QuestionRevision,
                     sa.and_(
                         Question.id == QuestionRevision.question_id,
-                        QuestionRevision.is_current.is_(True),
+                        QuestionRevision.is_current == sa.true(),
                     ),
                 )
                 .filter(
@@ -1098,7 +1292,9 @@ def publish_assessment(
 
     # Materialize candidate pool if blueprint exists to ensure fresh and synchronized pool
     if has_blueprint_rules:
-        materialize_blueprint_pool(actor=actor, assessment_id=assessment.id, session=sess)
+        materialize_blueprint_pool(
+            actor=actor, assessment_id=assessment.id, session=sess, commit=False
+        )
 
     # Publish Gate: at least 1 question assigned or materialized in pool (AC-05)
     questions_count, total_points = _calculate_assessment_aggregates(assessment, session=sess)
@@ -1306,6 +1502,7 @@ def create_section(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1361,6 +1558,7 @@ def delete_section(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1410,6 +1608,7 @@ def assign_question(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1511,6 +1710,7 @@ def remove_question_assignment(
     assessment_id: Assessment | int | uuid.UUID | str,
     question_id: Question | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> bool:
     """Remove a fixed question assignment from an assessment (AC-06)."""
     sess = session if session is not None else db.session
@@ -1520,6 +1720,7 @@ def remove_question_assignment(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1551,11 +1752,12 @@ def remove_question_assignment(
             a.position -= 1
 
     sess.flush()
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
     return True
 
 
@@ -1565,6 +1767,7 @@ def update_question_assignment(
     question_id: Question | int | uuid.UUID | str,
     payload: dict[str, Any],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> AssessmentQuestionAssignment:
     """Update assigned question points or configuration (ASSESS-003).
 
@@ -1579,6 +1782,7 @@ def update_question_assignment(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure and points freeze invariant check (ASSESS-003 / AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1637,11 +1841,12 @@ def update_question_assignment(
 
     assessment.updated_at = utc_now()
     sess.flush()
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return assignment
 
@@ -1651,6 +1856,7 @@ def reorder_assessment_questions(
     assessment_id: Assessment | int | uuid.UUID | str,
     ordered_question_ids: list[int | uuid.UUID | str],
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> list[dict[str, Any]]:
     """Reorder question assignments for an assessment preserving structural freeze invariants."""
     sess = session if session is not None else db.session
@@ -1659,6 +1865,7 @@ def reorder_assessment_questions(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure freeze check (Invariant 14)
     if assessment.first_attempt_started_at is not None:
@@ -1720,11 +1927,12 @@ def reorder_assessment_questions(
         reason=f"Reordered {len(matched_assignments)} questions",
     )
 
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return [
         _serialize_assignment(a, include_answers=True)
@@ -1751,6 +1959,7 @@ def configure_blueprint(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1882,6 +2091,7 @@ def materialize_blueprint_pool(
     actor: User,
     assessment_id: Assessment | int | uuid.UUID | str,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> list[AssessmentQuestionPool]:
     """Execute Algorithm 05 — Blueprint Question Pool Materialization (AC-04)."""
     sess = session if session is not None else db.session
@@ -1891,6 +2101,7 @@ def materialize_blueprint_pool(
         raise AssessmentNotFoundError("Assessment not found.")
 
     require_course_manager(actor, assessment.course_id, session=sess)
+    assessment = _lock_assessment_for_mutation(assessment, sess)
 
     # Structure Freeze Invariant check (AC-06)
     if assessment.first_attempt_started_at is not None:
@@ -1910,6 +2121,7 @@ def materialize_blueprint_pool(
 
     # Exclude questions already in fixed assignments (mandatory overlap protection)
     assigned_qids = {a.question_id for a in assessment.question_assignments}
+    assigned_qids.update(row.question_id for row in assessment.question_pool if row.is_fixed)
     selected_qids = set(assigned_qids)
 
     new_pool_entries: list[tuple[AssessmentBlueprintRule, Question]] = []
@@ -1921,7 +2133,7 @@ def materialize_blueprint_pool(
                 QuestionRevision,
                 sa.and_(
                     Question.id == QuestionRevision.question_id,
-                    QuestionRevision.is_current.is_(True),
+                    QuestionRevision.is_current == sa.true(),
                 ),
             )
             .filter(
@@ -1937,7 +2149,12 @@ def materialize_blueprint_pool(
         if rule.question_type is not None:
             cand_query = cand_query.filter(QuestionRevision.question_type == rule.question_type)
 
-        all_matching = cand_query.order_by(Question.id.asc()).all()
+        all_matching = (
+            cand_query.order_by(Question.id.asc())
+            .with_hint(Question, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .all()
+        )
         eligible = [q for q in all_matching if q.id not in selected_qids]
 
         if len(eligible) < rule.question_count:
@@ -1958,7 +2175,8 @@ def materialize_blueprint_pool(
 
     # Clear previous non-fixed pool items for this assessment
     sess.query(AssessmentQuestionPool).filter(
-        AssessmentQuestionPool.assessment_id == assessment.id
+        AssessmentQuestionPool.assessment_id == assessment.id,
+        AssessmentQuestionPool.is_fixed == sa.false(),
     ).delete(synchronize_session=False)
 
     created_pool: list[AssessmentQuestionPool] = []
@@ -1979,11 +2197,12 @@ def materialize_blueprint_pool(
     blueprint.status = "READY"
     blueprint.updated_at = utc_now()
     sess.flush()
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    if commit:
+        try:
+            sess.commit()
+        except Exception:
+            sess.rollback()
+            raise
 
     return created_pool
 
@@ -2084,6 +2303,25 @@ def trigger_assessment_regrade(
         corr = _resolve_question_correction(correction_id, sess)
         if corr is None:
             raise QuestionCorrectionNotFoundError("Question correction not found.")
+        question = sess.get(Question, corr.question_id)
+        if question is None or question.course_id != assessment.course_id:
+            raise ForbiddenError("Correction does not belong to this assessment course.")
+        assigned = (
+            sess.query(AssessmentQuestionAssignment.id)
+            .filter_by(assessment_id=assessment.id, question_id=corr.question_id)
+            .first()
+        )
+        historical = (
+            sess.query(AttemptQuestion.id)
+            .join(AssessmentAttempt)
+            .filter(
+                AssessmentAttempt.assessment_id == assessment.id,
+                AttemptQuestion.source_question_id == corr.question_id,
+            )
+            .first()
+        )
+        if assigned is None and historical is None:
+            raise ForbiddenError("Correction is unrelated to this assessment.")
         job = create_or_get_regrade_job(corr.id, session=sess)
         result = process_regrade_job(job.id, actor=actor, session=sess)
         return {

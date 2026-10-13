@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import io
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import sqlalchemy as sa
 from flask import Flask
 
 from pwd301.extensions import db
@@ -34,7 +36,9 @@ from pwd301.services.file_service import (
     add_file_revision,
     attach_resource_to_lesson,
     check_file_size_limit,
+    get_file_quarantine_root,
     get_file_storage_root,
+    rescan_file_asset,
     restore_file_asset,
     sanitize_filename,
     store_file_stream,
@@ -42,6 +46,7 @@ from pwd301.services.file_service import (
     validate_file_metadata,
 )
 from pwd301.services.lesson_service import create_learning_unit, create_lesson
+from pwd301.services.scanner_service import ScanVerdict
 from pwd301.services.user_service import assign_role_to_user, register_user
 
 
@@ -96,6 +101,60 @@ def test_filename_sanitization() -> None:
     assert sanitize_filename("../../../malicious<file>:*.docx") == "maliciousfile.docx"
     assert sanitize_filename("") == "unnamed_file"
     assert sanitize_filename("....") == "unnamed_file"
+
+
+@pytest.mark.parametrize("outcome", ["new_blob", "deduplicated_blob", "infected"])
+def test_rescan_failed_commit_preserves_quarantined_bytes_for_retry(
+    app: Flask, instructor: User, course: Course, outcome: str
+) -> None:
+    payload = b"Quarantined scan transaction rollback fixture."
+    clean = ScanVerdict(status="PASS", engine_name="fixture")
+    unavailable = ScanVerdict(status="ERROR", engine_name="fixture")
+    verdict = ScanVerdict(status="FAIL", engine_name="fixture") if outcome == "infected" else clean
+    if outcome == "deduplicated_blob":
+        with (
+            patch("pwd301.services.file_service.scan_file_all_engines", return_value=[clean]),
+            patch("pwd301.services.file_service.scan_blob_file", return_value=clean),
+        ):
+            store_file_stream(instructor, course.id, io.BytesIO(payload), "existing.txt")
+    with (
+        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[unavailable]),
+        patch("pwd301.services.file_service.scan_blob_file", return_value=unavailable),
+    ):
+        asset = store_file_stream(instructor, course.id, io.BytesIO(payload), "pending.txt")
+    asset_id = asset.id
+    revision = db.session.query(FileRevision).filter_by(file_asset_id=asset_id).one()
+    source = get_file_quarantine_root() / Path(revision.quarantine_key).name
+    assert source.read_bytes() == payload
+    session = db.session()
+
+    def reject_commit(commit_session) -> None:
+        raise RuntimeError("Claim lost before scan commit")
+
+    sa.event.listen(session, "before_commit", reject_commit)
+    try:
+        with (
+            patch("pwd301.services.file_service.scan_file_all_engines", return_value=[verdict]),
+            patch("pwd301.services.file_service.scan_blob_file", return_value=verdict),
+            pytest.raises(RuntimeError, match="Claim lost"),
+        ):
+            rescan_file_asset(instructor, asset_id, session=session)
+    finally:
+        sa.event.remove(session, "before_commit", reject_commit)
+    assert source.is_file() and source.read_bytes() == payload
+    assert session.get(FileAsset, asset_id).status == "PENDING"
+    assert (
+        session.query(FileRevision).filter_by(file_asset_id=asset_id).one().status == "QUARANTINED"
+    )
+    with (
+        patch("pwd301.services.file_service.scan_file_all_engines", return_value=[verdict]),
+        patch("pwd301.services.file_service.scan_blob_file", return_value=verdict),
+    ):
+        rescan_file_asset(instructor, asset_id, session=session)
+    assert not source.exists()
+    assert session.query(FileRevision).filter_by(file_asset_id=asset_id).one().status == (
+        "REJECTED" if outcome == "infected" else "ACTIVE"
+    )
 
 
 def test_lesson_document_cap_is_enforced_by_service(

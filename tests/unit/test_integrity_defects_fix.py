@@ -482,7 +482,9 @@ def test_defect_3_autosave_lease_epoch_fencing_and_sequence_collision(
             session=sess,
         )
 
-    # 4. Another device/tab takes over the lease
+    # 4. Another device/tab takes over after the previous lease expires.
+    attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    sess.commit()
     attempt, token2 = takeover_attempt_lease(student_user, attempt.id, session=sess)
     sess.commit()
     assert attempt.lease_epoch == 2

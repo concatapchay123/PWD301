@@ -1004,6 +1004,36 @@ class LessonProgress(Base):
     lesson = relationship("Lesson", foreign_keys=[lesson_id])
 
 
+class LessonProgressReceipt(Base):
+    """Durable client heartbeat identity committed with its credited progress."""
+
+    __tablename__ = "lesson_progress_receipts"
+
+    id = db.Column(BigIntPK, primary_key=True, autoincrement=True)
+    enrollment_period_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("enrollment_periods.id", name="fk_progress_receipts_period"),
+        nullable=False,
+    )
+    lesson_id = db.Column(
+        sa.BigInteger,
+        sa.ForeignKey("lessons.id", name="fk_progress_receipts_lesson"),
+        nullable=False,
+    )
+    client_event_id = db.Column(sa.String(128), nullable=False)
+    created_at = db.Column(
+        UTCDateTime, nullable=False, default=utc_now, server_default=sa.text("SYSUTCDATETIME()")
+    )
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "enrollment_period_id",
+            "lesson_id",
+            "client_event_id",
+            name="uq_progress_receipts_event",
+        ),
+    )
+
+
 class CourseCompletionSummary(Base):
     """Durable completion & prerequisite status mapping to 'course_completion_summaries' table."""
 

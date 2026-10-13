@@ -1,7 +1,7 @@
 """TDD Tests for Student Exam & Learning Backend Remediation.
 
 Verifies:
-1. Attempt lease duration covers full assessment time limit (no 5-minute premature expiry).
+1. Editing lease uses configured duration independently of the assessment deadline.
 2. Autosave choice key/id compatibility and question id resolution (saves to DB).
 3. Deadline expiration auto-finalization and auto-grading (no dead-end 409 error).
 4. Enriched attempt result payload (content, choices with correctness, is_correct, rubric).
@@ -302,10 +302,11 @@ def test_monitored_focus_event_is_deduplicated_and_visible_to_instructor(
     assert review.get_json()["events"][0]["duration_seconds"] is not None
 
 
-def test_attempt_lease_duration_covers_exam_timelimit(
-    client: FlaskClient, exam_env: dict[str, Any]
+def test_attempt_lease_duration_is_independent_of_exam_timelimit(
+    app: Flask, client: FlaskClient, exam_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify that editing lease duration covers time_limit_minutes (no 5m early expiry)."""
+    """Algorithm 07 lease is configurable; the exam deadline retains its full duration."""
+    monkeypatch.setitem(app.config, "ATTEMPT_LEASE_SECONDS", 30)
     csrf = login_client(client, "student_exam@pwd301.local")
     asm_id = str(exam_env["assessment"].public_id)
 
@@ -324,10 +325,11 @@ def test_attempt_lease_duration_covers_exam_timelimit(
     )
     assert attempt is not None
 
-    # Lease duration must cover the 60 minutes time limit (at least 3500 seconds)
     assert attempt.lease_expires_at is not None
-    diff = (attempt.lease_expires_at - attempt.started_at).total_seconds()
-    assert diff >= 59 * 60, f"Expected lease duration >= 3540s, got {diff}s"
+    assert attempt.lease_acquired_at is not None
+    diff = (attempt.lease_expires_at - attempt.lease_acquired_at).total_seconds()
+    assert diff == pytest.approx(30, abs=0.002)
+    assert (attempt.deadline_at - attempt.started_at).total_seconds() >= 59 * 60
 
 
 def test_autosave_choice_compatibility_and_question_id_resolution(

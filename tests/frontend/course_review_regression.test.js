@@ -4,6 +4,27 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+test('chapter move review shows readable source, destination and proposed lesson order', () => {
+  const window = {};
+  const container = { innerHTML: '' };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8'), {
+    window, UI: { escapeHtml: value => String(value ?? '').replace(/</g, '&lt;'), renderMarkdown: String },
+    document: { getElementById() { return {}; } }, console,
+  });
+  window.AdminView.renderChangeRequestReviewDetail(container, {
+    id: 7, target_type: 'COURSE', change_type: 'LESSON_STRUCTURE', status: 'PENDING', original_data: {},
+    course_lessons: [{ public_id: 'first', title: 'Lesson <one>' }, { public_id: 'second', title: 'Lesson two' }],
+    proposed_payload: { action: 'REORDER_LESSONS', ordered_lesson_ids: ['second', 'first'],
+      move: { lesson_id: 'first', learning_unit_id: 'target', lesson_title: 'Lesson <one>', source_unit_title: 'Original chapter', target_unit_title: 'Destination chapter' } },
+  });
+  assert.match(container.innerHTML, /id="lesson-move-review-summary"/);
+  assert.match(container.innerHTML, /Original chapter/);
+  assert.match(container.innerHTML, /Destination chapter/);
+  assert.match(container.innerHTML, /Lesson &lt;one>/);
+  const order = container.innerHTML.match(/id="lesson-proposed-order"[\s\S]*?<\/ol>/)[0];
+  assert.ok(order.indexOf('Lesson two') < order.indexOf('Lesson &lt;one>'));
+});
+
 test('change request review uses a full page with before and after content', async () => {
   const elements = { 'diff-approve-btn': {}, 'diff-reject-btn': {} };
   const container = { innerHTML: '' };
@@ -18,7 +39,7 @@ test('change request review uses a full page with before and after content', asy
     refreshCurrentRoute: () => {},
   };
   const ApiClient = {
-    getAdminChangeRequests: async () => ({ change_requests: [{
+    getAdminChangeRequest: async () => ({ change_requests: [{
       id: 7, status: 'PENDING', target_type: 'LESSON', course_code: 'C1',
       course_title: 'Course', target_title: 'Lesson', requested_by_name: 'Teacher',
       original_data: { title: 'Before', markdown_content: 'Old content' },
@@ -67,7 +88,7 @@ test('pending Admin queue offers inspection and confirmed quick approval', async
     window, UI, ApiClient, console,
     document: { getElementById: id => id === 'courses-review-box' ? box : id === 'change-requests-tbody' ? tbody : null },
   }, { filename });
-  await window.AdminView.renderTabCoursesReview({ innerHTML: '', querySelector: () => box });
+  await window.AdminView.renderTabCoursesReview({ innerHTML: '', querySelector: selector => selector === '#courses-review-box' ? box : null });
   assert.match(tbody.innerHTML, />Xem</);
   assert.match(tbody.innerHTML, /quick-pass-cr-btn/);
   assert.match(tbody.innerHTML, />Duyệt</);
@@ -77,7 +98,7 @@ test('pending Admin queue offers inspection and confirmed quick approval', async
 test('course queue renders into its route container while the previous route still exists', async () => {
   const oldBox = { innerHTML: 'Previous route', querySelector: () => null, querySelectorAll: () => [] };
   const newBox = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
-  const container = { innerHTML: '', querySelector: () => newBox };
+  const container = { innerHTML: '', querySelector: selector => selector === '#courses-review-box' ? newBox : null };
   const window = {};
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8'), {
     window, console, UI: { escapeHtml: String, formatDate: String, formatDateTime: String },
@@ -88,6 +109,23 @@ test('course queue renders into its route container while the previous route sti
   assert.match(newBox.innerHTML, /Khóa học chờ duyệt/);
   assert.equal(oldBox.innerHTML, 'Previous route');
 });
+
+for (const [status, label] of [['APPLIED', 'Đã áp dụng'], ['CANCELLED', 'Đã hủy']]) {
+  test(`completed review detail labels ${status} without calling it rejected`, () => {
+    const container = { innerHTML: '' };
+    const window = {};
+    vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/views/admin.js'), 'utf8'), {
+      window, console, UI: { escapeHtml: String, renderMarkdown: String },
+      document: { getElementById: () => null },
+    });
+    window.AdminView.renderChangeRequestReviewDetail(container, {
+      id: 8, status, target_type: 'COURSE', course_title: 'Course',
+      original_data: { title: 'Course' }, proposed_payload: { title: 'Reviewed course' },
+    });
+    assert.ok(container.innerHTML.includes(label));
+    assert.doesNotMatch(container.innerHTML, />\s*Từ chối\s*</);
+  });
+}
 
 test('learning unit review compares the unit title instead of course metadata', () => {
   const container = { innerHTML: '' };
