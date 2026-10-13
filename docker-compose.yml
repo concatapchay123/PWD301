@@ -118,6 +118,12 @@ services:
         condition: service_healthy
       clamav:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
@@ -188,6 +194,8 @@ services:
         condition: service_healthy
       clamav:
         condition: service_started
+      web:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations

@@ -11,7 +11,7 @@ python scripts/wait_for_db.py
 
 # Determine if this container is the primary web application or explicit migration task
 IS_PRIMARY_WEB="false"
-if [ "$#" -eq 0 ] || { [ "$1" = "gunicorn" ] && [ "$#" -eq 1 ]; } || [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+if [ "$#" -eq 0 ] || [ "$1" = "gunicorn" ] || [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
     IS_PRIMARY_WEB="true"
 fi
 
