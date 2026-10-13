@@ -72,13 +72,17 @@ services:
     ports:
       - "${PORT:-5000}:5000"
     environment:
-      - APP_ENV=${APP_ENV:-production}
-      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - APP_ENV=${APP_ENV:-development}
+      - FLASK_DEBUG=${FLASK_DEBUG:-1}
       - PORT=${PORT:-5000}
       - USE_PROXY_FIX=${USE_PROXY_FIX:-true}
       - SECRET_KEY=${SECRET_KEY:-c84f88b4886f48f681aefd59d9c24097e3a985cfb8417c88}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae172a3}
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
+      - REMEMBER_COOKIE_SECURE=${REMEMBER_COOKIE_SECURE:-false}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@pwd301.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+      - ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY_NAME:-Administrator}
       - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
       - DB_HOST=db
       - DB_PORT=1433
@@ -114,6 +118,12 @@ services:
         condition: service_healthy
       clamav:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
@@ -144,10 +154,15 @@ services:
     container_name: pwd301_worker
     command: ["python", "scripts/run_worker.py"]
     environment:
-      - APP_ENV=${APP_ENV:-production}
-      - FLASK_DEBUG=${FLASK_DEBUG:-0}
+      - APP_ENV=${APP_ENV:-development}
+      - FLASK_DEBUG=${FLASK_DEBUG:-1}
       - SECRET_KEY=${SECRET_KEY:-c84f88b4886f48f681aefd59d9c24097e3a985cfb8417c88}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae1723}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-f71d530184ebc96328399581fa79e9515647000b217a9426f04ceb18dae172a3}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-false}
+      - REMEMBER_COOKIE_SECURE=${REMEMBER_COOKIE_SECURE:-false}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@pwd301.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+      - ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY_NAME:-Administrator}
       - DATABASE_URL=mssql+pyodbc://${DB_USER:-sa}:${DB_PASSWORD:-AdminStrongPassw0rd!}@db:1433/${DB_NAME:-PWD301}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
       - DB_HOST=db
       - DB_PORT=1433
@@ -179,6 +194,8 @@ services:
         condition: service_healthy
       clamav:
         condition: service_started
+      web:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations

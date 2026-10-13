@@ -2,27 +2,37 @@
 set -eo pipefail
 
 echo "=================================================="
-echo "PWD301 LMS Production Container Initialization"
+echo "PWD301 LMS Container Initialization (ENV: ${APP_ENV:-development})"
 echo "=================================================="
 
 # 1. Wait for SQL Server and ensure database exists
 echo "[1/4] Checking database connectivity..."
 python scripts/wait_for_db.py
 
-# 2. Run database migrations to head
-echo "[2/4] Applying database migrations (Flask-Migrate / Alembic)..."
-flask db upgrade
+# Determine if this container is the primary web application or explicit migration task
+IS_PRIMARY_WEB="false"
+if [ "$#" -eq 0 ] || [ "$1" = "gunicorn" ] || [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+    IS_PRIMARY_WEB="true"
+fi
 
-# 3. Seed baseline system data (Roles, Root Admin)
-echo "[3/4] Ensuring baseline roles and root admin exist..."
-flask seed-baseline
+if [ "${IS_PRIMARY_WEB}" = "true" ]; then
+    # 2. Run database migrations to head
+    echo "[2/4] Applying database migrations (Flask-Migrate / Alembic)..."
+    flask db upgrade
 
-# 4. Optional: Seed demo data if SEED_DEMO_DATA is enabled
-if [ "${SEED_DEMO_DATA:-false}" = "true" ] || [ "${SEED_DEMO_DATA:-0}" = "1" ]; then
-    echo "[4/4] SEED_DEMO_DATA is enabled. Seeding comprehensive demo dataset..."
-    flask seed-demo
+    # 3. Seed baseline system data (Roles, Root Admin)
+    echo "[3/4] Ensuring baseline roles and root admin exist..."
+    flask seed-baseline
+
+    # 4. Optional: Seed demo data if SEED_DEMO_DATA is enabled
+    if [ "${SEED_DEMO_DATA:-false}" = "true" ] || [ "${SEED_DEMO_DATA:-0}" = "1" ]; then
+        echo "[4/4] SEED_DEMO_DATA is enabled. Seeding comprehensive demo dataset..."
+        flask seed-demo
+    else
+        echo "[4/4] SEED_DEMO_DATA is disabled. Skipping demo data seeding."
+    fi
 else
-    echo "[4/4] SEED_DEMO_DATA is disabled. Skipping demo data seeding."
+    echo "Background worker or custom command detected ($*). Skipping migrations and seeding."
 fi
 
 echo "=================================================="

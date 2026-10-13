@@ -62,6 +62,45 @@ def test_production_compose_has_private_services():
     assert not any("./src" in str(v) for v in services["web"].get("volumes", []))
 
 
+def test_dev_compose_defaults_and_worker_dependency():
+    from pathlib import Path
+
+    try:
+        import yaml
+    except ImportError:
+        pytest.skip("PyYAML is not installed")
+
+    services = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))["services"]
+
+    # 1. web has healthcheck
+    assert "healthcheck" in services["web"]
+    assert "test" in services["web"]["healthcheck"]
+    assert "/health" in str(services["web"]["healthcheck"]["test"])
+
+    # 2. worker depends on web with condition service_healthy
+    assert "depends_on" in services["worker"]
+    assert "web" in services["worker"]["depends_on"]
+    assert services["worker"]["depends_on"]["web"]["condition"] == "service_healthy"
+
+    # Helper to retrieve env setting regardless of dict or list format
+    def get_env_val(service_name: str, key: str) -> str | None:
+        env_def = services[service_name].get("environment", [])
+        if isinstance(env_def, dict):
+            return str(env_def.get(key, ""))
+        for item in env_def:
+            if isinstance(item, str) and item.startswith(f"{key}="):
+                return item.split("=", 1)[1]
+        return None
+
+    # 3. APP_ENV defaults to development
+    assert get_env_val("web", "APP_ENV") == "${APP_ENV:-development}"
+    assert get_env_val("worker", "APP_ENV") == "${APP_ENV:-development}"
+
+    # 4. SESSION_COOKIE_SECURE is not forced to true (defaults to false for local HTTP dev)
+    assert get_env_val("web", "SESSION_COOKIE_SECURE") == "${SESSION_COOKIE_SECURE:-false}"
+    assert get_env_val("worker", "SESSION_COOKIE_SECURE") == "${SESSION_COOKIE_SECURE:-false}"
+
+
 def test_production_baseline_requires_admin_secret(app, monkeypatch):
     from pwd301.extensions import db
     from pwd301.seeds.baseline import seed_baseline
