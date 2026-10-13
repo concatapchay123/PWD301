@@ -144,7 +144,7 @@ def test_reflected_xss_in_html_error_response_is_escaped(app: Flask) -> None:
 # ==============================================================================
 
 
-def test_proxy_fix_resolves_real_client_ip() -> None:
+def test_proxy_fix_resolves_real_client_ip(app: Flask) -> None:
     """ProxyFix must correctly map X-Forwarded-For header to request.remote_addr."""
     proxy_app = create_app(
         "testing",
@@ -157,13 +157,24 @@ def test_proxy_fix_resolves_real_client_ip() -> None:
 
         return {"remote_addr": request.remote_addr}
 
-    client = proxy_app.test_client()
-    resp = client.get(
-        "/test-real-ip",
-        headers={"X-Forwarded-For": "203.0.113.195"},
-    )
-    assert resp.status_code == 200
-    assert resp.get_json()["remote_addr"] == "203.0.113.195"
+    with proxy_app.app_context():
+        # This separate in-memory app also needs durable maintenance authority.
+        # The shared app fixture prepares the guarded migrated SQL target instead.
+        is_sqlite = db.engine.dialect.name == "sqlite"
+        if is_sqlite:
+            db.create_all()
+        try:
+            client = proxy_app.test_client()
+            resp = client.get(
+                "/test-real-ip",
+                headers={"X-Forwarded-For": "203.0.113.195"},
+            )
+            assert resp.status_code == 200
+            assert resp.get_json()["remote_addr"] == "203.0.113.195"
+        finally:
+            if is_sqlite:
+                db.session.remove()
+                db.drop_all()
 
 
 # ==============================================================================

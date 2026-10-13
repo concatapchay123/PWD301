@@ -61,7 +61,7 @@ from pwd301.services.exceptions import (
     ImportQuestionNotFoundError,
     ValidationError,
 )
-from pwd301.services.file_service import get_file_storage_root
+from pwd301.services.file_service import get_file_for_download
 from pwd301.services.question_bank_service import create_question
 
 # WordprocessingML XML namespaces
@@ -1253,23 +1253,9 @@ def process_import_job(
         sess.rollback()
         raise
 
-    # Resolve physical file path
-    blob = job.source_file_asset.current_revision.blob
-    storage_root = get_file_storage_root()
-    physical_path = storage_root / blob.storage_key
-
-    if not physical_path.exists():
-        job.status = "FAILED"
-        job.last_error = "Physical file not found on storage disk."
-        job.completed_at = utc_now()
-        try:
-            sess.commit()
-        except Exception:
-            sess.rollback()
-            raise
-        raise DocumentParsingError("Physical document file missing from storage.")
-
     try:
+        # Reauthorize the current security verdict and resolve bytes through the storage adapter.
+        _, _, physical_path = get_file_for_download(actor, job.source_file_asset_id, session=sess)
         # Step 1: Extract text lines
         if job.document_type == "DOCX":
             lines = extract_text_from_docx(physical_path)
@@ -1528,6 +1514,14 @@ def commit_import_job(
     sess = session if session is not None else db.session
     job = _resolve_import_job(job_id, session=sess)
     require_course_manager(actor, job.course_id, session=sess)
+    job = (
+        sess.query(DocumentImportJob)
+        .filter(DocumentImportJob.id == job.id)
+        .with_hint(DocumentImportJob, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
 
     if job.status == "COMPLETED":
         raise DocumentImportStateViolationError("Document import job is already COMPLETED.")
@@ -1612,6 +1606,7 @@ def commit_import_job(
                 course_id=job.course_id,
                 payload=payload,
                 session=sess,
+                commit=False,
             )
             iq.approved_question_id = created_q.id
             created_question_public_ids.append(str(created_q.public_id))
@@ -1629,11 +1624,14 @@ def commit_import_job(
                         "source_type": "IMPORT",
                     },
                     session=sess,
+                    commit=False,
                 )
 
         job.status = "COMPLETED"
         job.completed_at = utc_now()
-        sess.commit()
+        sess.flush()
+        if session is None:
+            sess.commit()
 
         return {
             "job_id": str(job.public_id),

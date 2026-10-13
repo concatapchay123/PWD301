@@ -701,3 +701,42 @@ def test_trash_and_30_day_restore_policy(app: Flask, course: Course, instructor_
 
     with pytest.raises(AssessmentValidationError, match="30-day restore window"):
         restore_assessment(instructor_user, assessment.public_id)
+
+
+def test_sync080_learning_unit_must_belong_to_course(app, instructor_user, course):
+    from pwd301.models.course import LearningUnit
+
+    other = create_course(instructor_user, {"course_code": "OTHER-UNIT", "title": "Other"})
+    unit = LearningUnit(course_id=other.id, title="Foreign chapter", position=1)
+    db.session.add(unit)
+    db.session.commit()
+    with pytest.raises(AssessmentValidationError):
+        create_assessment(
+            instructor_user,
+            course.id,
+            {
+                "title": "Wrong chapter",
+                "assessment_type": "QUIZ",
+                "learning_unit_id": str(unit.public_id),
+            },
+        )
+
+
+def test_sync080_deleted_same_course_learning_unit_rejected(app, instructor_user, course):
+    from pwd301.models.course import LearningUnit
+
+    unit = LearningUnit(
+        course_id=course.id, title="Deleted chapter", position=1, deleted_at=datetime.now(UTC)
+    )
+    db.session.add(unit)
+    db.session.commit()
+    with pytest.raises(AssessmentValidationError):
+        create_assessment(
+            instructor_user,
+            course.id,
+            {
+                "title": "Hidden chapter quiz",
+                "assessment_type": "QUIZ",
+                "learning_unit_id": str(unit.public_id),
+            },
+        )

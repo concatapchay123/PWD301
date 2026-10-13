@@ -290,6 +290,7 @@ def revoke_auth_session(
 def revoke_all_user_sessions(
     user_id: int,
     session: Session | scoped_session[Any] | None = None,
+    commit: bool = True,
 ) -> int:
     """Revoke all active authentication sessions for a user.
 
@@ -320,7 +321,7 @@ def revoke_all_user_sessions(
         count += 1
 
     try:
-        sess.commit()
+        sess.commit() if commit else sess.flush()
     except Exception:
         sess.rollback()
         raise

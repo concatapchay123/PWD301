@@ -163,6 +163,31 @@ def _make_assessment_with_question(
     return assessment
 
 
+@pytest.mark.parametrize("operation", ["start", "renew", "takeover"])
+def test_sync028_lease_duration_uses_config_not_exam_duration(
+    app: Flask,
+    enrolled_student: User,
+    instructor_user: User,
+    published_course: Course,
+    operation: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(app.config, "ATTEMPT_LEASE_SECONDS", 9)
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    if operation == "renew":
+        renew_attempt_lease(enrolled_student, attempt.id, token, session=db.session)
+        db.session.refresh(attempt)
+    elif operation == "takeover":
+        attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.session.commit()
+        attempt, _ = takeover_attempt_lease(enrolled_student, attempt.id, session=db.session)
+    expires = _normalize_dt(attempt.lease_expires_at)
+    heartbeat = _normalize_dt(attempt.last_heartbeat_at)
+    assert expires is not None and heartbeat is not None
+    assert (expires - heartbeat).total_seconds() == pytest.approx(9, abs=0.002)
+
+
 def test_heartbeat_renews_lease_successfully(
     app: Flask,
     enrolled_student: User,
@@ -211,6 +236,7 @@ def test_heartbeat_clamped_to_assessment_deadline(
     now = datetime.now(UTC)
     attempt.started_at = now - timedelta(minutes=59)
     tight_deadline = now + timedelta(seconds=15)
+    tight_deadline = tight_deadline.replace(microsecond=(tight_deadline.microsecond // 1000) * 1000)
     attempt.deadline_at = tight_deadline
     db.session.commit()
 
@@ -343,6 +369,8 @@ def test_takeover_generates_new_token_and_invalidates_previous(
         enrolled_student, assessment.id, session=db.session
     )
 
+    attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    db.session.commit()
     taken_attempt, new_token = takeover_attempt_lease(
         actor=enrolled_student,
         attempt_id=attempt.id,
@@ -397,9 +425,12 @@ def test_takeover_clamped_to_deadline(
     now = datetime.now(UTC)
     attempt.started_at = now - timedelta(minutes=59)
     tight_deadline = now + timedelta(seconds=20)
+    tight_deadline = tight_deadline.replace(microsecond=(tight_deadline.microsecond // 1000) * 1000)
     attempt.deadline_at = tight_deadline
     db.session.commit()
 
+    attempt.lease_expires_at = now - timedelta(seconds=1)
+    db.session.commit()
     taken_attempt, _ = takeover_attempt_lease(
         actor=enrolled_student,
         attempt_id=attempt.id,

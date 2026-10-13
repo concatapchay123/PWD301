@@ -445,7 +445,9 @@ def test_6_1_student_historical_evidence_immutability(
         raw_lease_token=raw_token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=raw_token
+    )
 
     # Record historical snapshot state before correction
     orig_aq_content = aq.content_snapshot
@@ -892,20 +894,24 @@ def test_6_2_concurrent_submit_race(
     idem_key = uuid.uuid4()
 
     # First submission
-    res1 = submit_assessment_attempt(student1, attempt.id, idempotency_key=idem_key, session=sess)
+    res1 = submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=idem_key, session=sess, raw_lease_token=token
+    )
     assert res1["status"] in ("SUBMITTED", "GRADED")
 
     # 9 Subsequent submissions with same idempotency key
     for _ in range(9):
         res_sub = submit_assessment_attempt(
-            student1, attempt.id, idempotency_key=idem_key, session=sess
+            student1, attempt.id, idempotency_key=idem_key, session=sess, raw_lease_token=token
         )
         assert res_sub["status"] == res1["status"]
         assert res_sub["is_idempotent_replay"] is True
 
     # Submission with differing key must raise conflict
     with pytest.raises(SubmissionIdempotencyConflictError):
-        submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+        submit_assessment_attempt(
+            student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+        )
 
 
 # ============================================================================
@@ -1161,7 +1167,9 @@ def test_T_QB_05_exposed_or_graded_revisions_retained_permanently(
     publish_assessment(instructor_user, asm.id, session=sess)
 
     attempt, token = start_assessment_attempt(student1, asm.id, session=sess)
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     # Trash the question
     trash_question(instructor_user, q.id, reason="Archiving question", session=sess)
@@ -1458,7 +1466,7 @@ def test_T_ASSESS_05_two_students_start_before_and_after_new_revision(
     publish_assessment(instructor_user, asm.id, session=sess)
 
     # Student 1 starts before new revision
-    attempt1, _ = start_assessment_attempt(student1, asm.id, session=sess)
+    attempt1, issued_token = start_assessment_attempt(student1, asm.id, session=sess)
     aq1 = attempt1.attempt_questions[0]
     assert aq1.content_snapshot == "Stem Revision 1 Text"
 
@@ -1479,7 +1487,7 @@ def test_T_ASSESS_05_two_students_start_before_and_after_new_revision(
     sess.commit()
 
     # Student 2 starts after Revision 2
-    attempt2, _ = start_assessment_attempt(student2, asm.id, session=sess)
+    attempt2, issued_token = start_assessment_attempt(student2, asm.id, session=sess)
     aq2 = attempt2.attempt_questions[0]
     assert aq2.content_snapshot == "Stem Revision 2 Text"
 
@@ -1599,8 +1607,10 @@ def test_T_ATT_01_attempt_limit_exceeded_rejected(
     publish_assessment(instructor_user, asm.id, session=sess)
 
     # Attempt 1
-    att1, _ = start_assessment_attempt(student1, asm.id, session=sess)
-    submit_assessment_attempt(student1, att1.id, idempotency_key=uuid.uuid4(), session=sess)
+    att1, issued_token = start_assessment_attempt(student1, asm.id, session=sess)
+    submit_assessment_attempt(
+        student1, att1.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=issued_token
+    )
 
     # Attempt 2 must fail
     with pytest.raises(AttemptLimitExceededError):
@@ -1981,12 +1991,18 @@ def test_T_ATT_07_multiple_submissions_idempotent_result(
     )
     publish_assessment(instructor_user, asm.id, session=sess)
 
-    attempt, _ = start_assessment_attempt(student1, asm.id, session=sess)
+    attempt, issued_token = start_assessment_attempt(student1, asm.id, session=sess)
     key = uuid.uuid4()
 
-    res1 = submit_assessment_attempt(student1, attempt.id, idempotency_key=key, session=sess)
-    res2 = submit_assessment_attempt(student1, attempt.id, idempotency_key=key, session=sess)
-    res3 = submit_assessment_attempt(student1, attempt.id, idempotency_key=key, session=sess)
+    res1 = submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=key, session=sess, raw_lease_token=issued_token
+    )
+    res2 = submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=key, session=sess, raw_lease_token=issued_token
+    )
+    res3 = submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=key, session=sess, raw_lease_token=issued_token
+    )
 
     assert res1["status"] == res2["status"] == res3["status"]
     assert res1["submitted_at"] == res2["submitted_at"] == res3["submitted_at"]
@@ -2054,7 +2070,9 @@ def test_T_GRADE_01_objective_exact_set_no_partial_credit(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     grade = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq.id).first()
     assert grade is not None
@@ -2118,7 +2136,9 @@ def test_T_GRADE_02_short_answer_string_normalization(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     grade = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq.id).first()
     assert grade is not None
@@ -2180,7 +2200,9 @@ def test_T_GRADE_03_submission_with_essay_remains_pending(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     result = sess.query(AssessmentResult).filter_by(attempt_id=attempt.id).first()
     assert result is not None
@@ -2243,25 +2265,32 @@ def test_T_GRADE_04_manual_essay_grading_and_revision_history(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     # 1. Instructor grades essay initial: 7.0
+    current_grade = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq.id).one()
+    sess.refresh(current_grade)
     grade_essay_question(
         actor=instructor_user,
         attempt_id=attempt.id,
         attempt_question_id=aq.id,
         awarded_points=7.0,
         reason="Good initial analysis",
+        expected_row_version=current_grade.row_version,
         session=sess,
     )
 
     # 2. Instructor amends grade to 9.0
+    sess.refresh(current_grade)
     grade_essay_question(
         actor=instructor_user,
         attempt_id=attempt.id,
         attempt_question_id=aq.id,
         awarded_points=9.0,
         reason="Re-read: bonus for exceptional clarity",
+        expected_row_version=current_grade.row_version,
         session=sess,
     )
 
@@ -2339,7 +2368,9 @@ def test_T_REG_01_answer_only_regrade_updates_scores(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     grade_before = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq.id).first()
     assert grade_before is not None
@@ -2431,7 +2462,9 @@ def test_T_REG_02_content_or_choices_correction_awards_full_credit(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     # Instructor files CONTENT_OR_CHOICES correction
     _, correction = create_question_revision(
@@ -2466,7 +2499,9 @@ def test_T_REG_02_content_or_choices_correction_awards_full_credit(
         raw_lease_token=token2,
         session=sess,
     )
-    submit_assessment_attempt(student2, attempt2.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student2, attempt2.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token2
+    )
 
     # Student 2 chose incorrect Clear B on corrected question; initial awarded points = 0
     grade2_before = sess.query(AttemptQuestionGrade).filter_by(attempt_question_id=aq2.id).first()
@@ -2548,7 +2583,9 @@ def test_T_REG_03_regrade_preserves_attempt_history_immutability(
         raw_lease_token=token,
         session=sess,
     )
-    submit_assessment_attempt(student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, attempt.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=token
+    )
 
     # Capture snapshot values
     aq_content_before = aq.content_snapshot
@@ -2646,7 +2683,9 @@ def test_T_REG_04_resumable_regrading_recovers_from_interruption(
         raw_lease_token=tok1,
         session=sess,
     )
-    submit_assessment_attempt(student1, att1.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student1, att1.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=tok1
+    )
 
     # Student 2 takes attempt
     att2, tok2 = start_assessment_attempt(student2, asm.id, session=sess)
@@ -2663,7 +2702,9 @@ def test_T_REG_04_resumable_regrading_recovers_from_interruption(
         raw_lease_token=tok2,
         session=sess,
     )
-    submit_assessment_attempt(student2, att2.id, idempotency_key=uuid.uuid4(), session=sess)
+    submit_assessment_attempt(
+        student2, att2.id, idempotency_key=uuid.uuid4(), session=sess, raw_lease_token=tok2
+    )
 
     # File correction
     _, correction = create_question_revision(

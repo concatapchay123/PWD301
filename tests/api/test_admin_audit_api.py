@@ -88,6 +88,7 @@ def test_admin_suspend_user_flow(client: FlaskClient, admin_user: User, student_
         f"/api/admin/users/{target_id}/suspend",
         json={
             "reason": "Security violation: automated scraping detected",
+            "confirmation_phrase": "CONFIRM_USER_SUSPEND",
             "password": "Password@123",
         },
         headers=admin_headers,
@@ -127,11 +128,17 @@ def test_admin_unsuspend_user_flow(
     target_id = str(student_user.public_id)
 
     # First suspend
-    client.post(
+    suspended = client.post(
         f"/api/admin/users/{target_id}/suspend",
-        json={"reason": "Suspended for review"},
+        json={
+            "reason": "Suspended for review",
+            "confirmation_phrase": "CONFIRM_USER_SUSPEND",
+            "password": "Password@123",
+        },
         headers=admin_headers,
     )
+    assert suspended.status_code == 200
+    assert suspended.get_json()["status"] == "SUSPENDED"
 
     # Now unsuspend
     resp_unsuspend = client.post(

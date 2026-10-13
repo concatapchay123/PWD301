@@ -145,6 +145,7 @@ def commit_import_api(job_id: str) -> tuple[Response, int] | Response:
     """Atomically commit all ACCEPTED questions into the Course Question Bank."""
     actor = require_authenticated_actor()
     result = commit_import_job(actor, job_id, session=db.session)
+    db.session.commit()
     return jsonify(result), 200
 
 

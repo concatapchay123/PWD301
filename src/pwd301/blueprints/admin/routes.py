@@ -834,7 +834,7 @@ def admin_suspend_user(user_id: str) -> Any:
 
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    verify_sensitive_action_reauth(actor, payload)
+    verify_sensitive_action_reauth(actor, payload, expected_phrase="CONFIRM_USER_SUSPEND")
     reason = payload.get("reason", "")
 
     user = suspend_user_account(
@@ -1725,7 +1725,19 @@ def admin_list_change_requests() -> tuple[Response, int] | Response:
     query = db.session.query(CourseChangeRequest).order_by(
         CourseChangeRequest.created_at.desc(), CourseChangeRequest.id.desc()
     )
-    if status_filter == "ALL":
+    if "request_id" in request.args:
+        raw_request_id = request.args["request_id"].strip()
+        if (
+            not raw_request_id.isascii()
+            or not raw_request_id.isdecimal()
+            or len(raw_request_id) > 19
+            or not 0 < int(raw_request_id) <= 9223372036854775807
+        ):
+            raise ValidationError("Mã yêu cầu thay đổi không hợp lệ.")
+        query = query.filter(CourseChangeRequest.id == int(raw_request_id))
+        if query.first() is None:
+            raise ResourceNotFoundError("Không tìm thấy yêu cầu thay đổi.")
+    elif status_filter == "ALL":
         # In the admin review queue, completed requests (APPROVED, REJECTED, CANCELLED)
         # must automatically disappear, including from the 'ALL' tab. The queue only holds
         # active actionable requests waiting for admin review.
@@ -2423,7 +2435,17 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
 
             ordered_ids = p_data.get("ordered_lesson_ids") or []
             if ordered_ids:
-                reorder_lessons(course_owner, req_record.course_id, ordered_ids, session=db.session)
+                try:
+                    reorder_lessons(
+                        course_owner,
+                        req_record.course_id,
+                        ordered_ids,
+                        session=db.session,
+                        move=p_data.get("move"),
+                    )
+                except Exception:
+                    db.session.rollback()
+                    raise
             msg = f"Đã phê duyệt sắp xếp lại bài giảng khóa học #{req_record.course_id}."
 
         elif req_record.change_type == "COMPLETION_RULE":
@@ -2595,9 +2617,13 @@ def admin_review_change_request(req_id: int) -> tuple[Response, int] | Response:
             superseded.review_reason = f"Đã được thay thế bởi yêu cầu #{req_record.id}"
             superseded.reviewed_at = now
 
-    if not reviewed_in_service:
-        record_change_request_review(db.session, actor, req_record, req_record.status)
-    db.session.commit()
+    try:
+        if not reviewed_in_service:
+            record_change_request_review(db.session, actor, req_record, req_record.status)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify({"status": req_record.status, "message": msg}), 200
 
 
@@ -2673,9 +2699,24 @@ def approve_course_changeset_route(
     if target_req is None:
         raise ResourceNotFoundError("Yêu cầu thay đổi không tồn tại.")
 
+    from pwd301.services.lesson_service import lock_course_change_request
+
+    target_req = lock_course_change_request(db.session, target_req.id)
     if target_req.status != "PENDING":
         raise ValidationError(
             f"Yêu cầu đang ở trạng thái '{target_req.status}', không thể phê duyệt."
+        )
+
+    try:
+        proposed = json.loads(target_req.proposed_payload_json or "{}")
+    except (json.JSONDecodeError, TypeError):
+        raise ValidationError("Change request payload must be a valid JSON object.") from None
+    if target_req.change_type != "COURSE_VERSION_CHANGESET" and not (
+        isinstance(proposed, dict) and proposed.get("action") == "COURSE_VERSION_CHANGESET"
+    ):
+        raise ValidationError(
+            "This endpoint approves course version changesets only. "
+            "Use the change-request review endpoint for other request types."
         )
 
     if target_req.requested_by_user_id == actor.id and not actor.is_primary_admin:

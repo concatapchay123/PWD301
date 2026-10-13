@@ -13,6 +13,147 @@
 
 (function () {
   const InstructorView = window.InstructorView || {};
+  const draftSettingsSnapshot = draft => JSON.stringify({
+    title: draft.title,
+    config: draft.config,
+    academicMode: draft.academicMode,
+    lessonId: draft.lessonId,
+    learningUnitId: draft.learningUnitId,
+    unitId: draft.unitId,
+    assessment_type: draft.assessment_type,
+    isFinal: draft.isFinal,
+    matrixConfirmed: draft.matrixConfirmed
+  });
+  const publishInputSnapshot = (draft, settings, payloads) => JSON.stringify({
+    draft: draftSettingsSnapshot({ ...draft, config: { ...draft.config, examPassword: '' } }), settings,
+    questions: payloads.map(({ question_id, client_question_id, ...content }) => content)
+  });
+  const pendingPublishes = new Set();
+
+  InstructorView.normalizeExamBloom = function (value) {
+    const normalized = String(value || 'UNDERSTAND').trim().toUpperCase();
+    const aliases = { 'NHẬN BIẾT': 'REMEMBER', 'THÔNG HIỂU': 'UNDERSTAND', 'VẬN DỤNG': 'APPLY' };
+    const bloom = aliases[normalized] || normalized;
+    if (!['REMEMBER', 'UNDERSTAND', 'APPLY'].includes(bloom)) {
+      throw new Error(`Mức độ Bloom không được hỗ trợ: ${normalized}`);
+    }
+    return bloom;
+  };
+
+  InstructorView.saveExamAuthoring = async function (assessmentId, settings, payloads) {
+    const store = window.ExamStore;
+    const scope = { ...store.getCurrentScope() };
+    const draft = store.getDraft();
+    const settingsSnapshot = draftSettingsSnapshot(draft);
+    const questions = (draft.questions || []).map(question => ({
+      ...question,
+      client_question_id: question.client_question_id || question.question_id || crypto.randomUUID()
+    }));
+    if (questions.length !== payloads.length) throw new Error('Question draft changed; please retry.');
+    store.saveDraft({ assessmentId, isEditingExisting: true, questions, matrixConfirmed: draft.matrixConfirmed });
+    const snapshot = JSON.stringify(questions);
+    const response = await ApiClient.saveAssessmentAuthoring(assessmentId, {
+      assessment: settings,
+      questions: payloads.map((payload, index) => ({ ...payload, client_question_id: questions[index].client_question_id }))
+    });
+    const currentScope = store.getCurrentScope();
+    const current = store.getDraft();
+    if (scope.userId !== currentScope.userId || scope.role !== currentScope.role
+      || current.assessmentId !== assessmentId || JSON.stringify(current.questions) !== snapshot
+      || draftSettingsSnapshot(current) !== settingsSnapshot) {
+      throw new Error('Authoring context changed; server saved the submitted snapshot.');
+    }
+    if (!Array.isArray(response.questions) || response.questions.length !== questions.length
+      || response.questions.some(question => !question.question_id)) {
+      throw new Error('Invalid authoring acknowledgement; draft retained for retry.');
+    }
+    store.saveDraft({ matrixConfirmed: current.matrixConfirmed, questions: questions.map((question, index) => ({
+      ...question, question_id: response.questions[index].question_id
+    })) });
+    return response;
+  };
+
+  InstructorView.publishExamDraft = async function (courseId, settings, payloads) {
+    const store = window.ExamStore;
+    const scope = { ...store.getCurrentScope() };
+    let draft = store.getDraft();
+    const operationOwner = `${scope.userId}:${scope.role}`;
+    if (pendingPublishes.has(operationOwner)) throw new Error('Publishing is already in progress. Please wait.');
+    pendingPublishes.add(operationOwner);
+    try {
+    let assessmentId = draft.assessmentId || null;
+    let questionsSnapshot = JSON.stringify(draft.questions || []);
+    const settingsSnapshot = draftSettingsSnapshot(draft);
+    let published = false;
+    const assertContext = () => {
+      const currentScope = store.getCurrentScope();
+      const current = store.getDraft();
+      if (scope.userId !== currentScope.userId || scope.role !== currentScope.role
+        || current.courseId !== courseId || (current.assessmentId || null) !== assessmentId
+        || JSON.stringify(current.questions || []) !== questionsSnapshot
+        || draftSettingsSnapshot(current) !== settingsSnapshot) {
+        throw new Error(published
+          ? 'Publishing context changed; server published the submitted snapshot. Latest draft was retained.'
+          : 'Publishing context changed; latest draft was retained.');
+      }
+    };
+    assertContext();
+    if (assessmentId && draft.publishPending?.assessmentId === assessmentId) {
+      const detail = await ApiClient.getAssessmentDetail(assessmentId);
+      assertContext();
+      if (detail.status === 'PUBLISHED') {
+        if (draft.publishPending.inputs !== publishInputSnapshot(store.getDraft(), settings, payloads)
+          || draft.publishPending.server !== detail.authoring_token) {
+          throw new Error('Server already published a different snapshot. Latest draft was retained.');
+        }
+        store.clearDraft();
+        return { assessmentId, questionCount: payloads.length };
+      }
+    }
+    if (!assessmentId) {
+      const creationId = draft.clientAssessmentId || crypto.randomUUID();
+      store.saveDraft({ clientAssessmentId: creationId });
+      const created = await ApiClient.createAssessment(courseId, { ...settings, client_assessment_id: creationId });
+      assertContext();
+      assessmentId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;
+      if (!assessmentId) throw new Error('Server did not acknowledge the assessment identity.');
+      store.saveDraft({ isEditingExisting: true, assessmentId });
+    }
+    const acknowledged = await InstructorView.saveExamAuthoring(assessmentId, settings, payloads);
+    questionsSnapshot = JSON.stringify(store.getDraft().questions || []);
+    assertContext();
+    if (!/^[0-9a-f]{64}$/.test(acknowledged.authoring_token || '')) {
+      throw new Error('Invalid server authoring snapshot; draft retained for retry.');
+    }
+    store.saveDraft({ publishPending: {
+      assessmentId,
+      inputs: publishInputSnapshot(store.getDraft(), settings, payloads),
+      server: acknowledged.authoring_token
+    } });
+    await ApiClient.publishAssessment(assessmentId, acknowledged.authoring_token);
+    published = true;
+    assertContext();
+    store.clearDraft();
+    return { assessmentId, questionCount: payloads.length };
+    } finally {
+      pendingPublishes.delete(operationOwner);
+    }
+  };
+
+  InstructorView.examDraftStatus = function (draft) {
+    const count = (draft.questions || []).length;
+    if (draft.storageFailed) return `${count} câu • Chưa lưu — bộ nhớ trình duyệt không khả dụng`;
+    return `${count} câu • ${draft.lastSaved ? 'Đã lưu bản nháp trên thiết bị này' : 'Chưa lưu bản nháp'}`;
+  };
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pwd301:exam-draft', event => {
+      const badge = document.getElementById('workflow-sync-badge');
+      if (!badge) return;
+      badge.textContent = InstructorView.examDraftStatus(event.detail);
+      badge.classList.toggle('text-rose-700', Boolean(event.detail.storageFailed));
+      badge.setAttribute('role', 'status');
+    });
+  }
 
   InstructorView.readExamPolicy = function (root = document) {
     return {
@@ -140,8 +281,7 @@
           <!-- Right: Sync Indicator & Next Action -->
           <div class="flex items-center gap-2">
             <div class="hidden md:flex items-center gap-1.5 text-xs text-slate-500 mr-1">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span id="workflow-sync-badge">${qCount} câu • Tự động lưu</span>
+              <span id="workflow-sync-badge" role="status" aria-live="polite" class="${draft.storageFailed ? 'text-rose-700' : ''}">${InstructorView.examDraftStatus(window.ExamStore?.getDraft() || draft)}</span>
             </div>
 
             ${nextLabel ? `
@@ -3331,13 +3471,21 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">Bắt buộc</span>
             </div>
 
-            <!-- Mode Selector: Clean 2 options without unnecessary labels -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4" id="matrix-mode-selector-group">
+            <!-- Select the assessment scope explicitly. -->
+            <div class="grid grid-cols-1 gap-4" id="matrix-mode-selector-group">
               <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'independent' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300'}">
                 <input type="radio" name="matrix_academic_mode" value="independent" ${currentAcademicMode === 'independent' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
                 <div class="ml-3">
                   <span class="block text-sm font-bold text-slate-900 dark:text-white">Khảo thí Độc lập / Tổng hợp</span>
                   <span class="block text-xs text-slate-500 mt-0.5">Kỳ thi đánh giá năng lực, thi giữa kỳ hoặc kết thúc học phần.</span>
+                </div>
+              </label>
+
+              <label class="relative flex p-4 cursor-pointer rounded-xl border-2 transition-all ${currentAcademicMode === 'chapter_linked' ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-xs' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-slate-300'}">
+                <input type="radio" name="matrix_academic_mode" value="chapter_linked" ${currentAcademicMode === 'chapter_linked' ? 'checked' : ''} class="h-4 w-4 mt-0.5 text-indigo-600 focus:ring-indigo-500" />
+                <div class="ml-3">
+                  <span class="block text-sm font-bold text-slate-900 dark:text-slate-100">Kiểm tra theo Chương</span>
+                  <span class="block text-xs text-slate-500 mt-0.5">Bài kiểm tra tổng hợp nội dung của chương đã chọn.</span>
                 </div>
               </label>
 
@@ -3360,9 +3508,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               </select>
             </div>
 
-            <!-- Cascading Chapter & Lesson Selector (For Lesson-Linked mode) -->
-            <div id="matrix-lesson-link-container" class="${currentAcademicMode === 'lesson_linked' ? '' : 'hidden'} space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Chapter selection is shared by chapter and lesson scopes. -->
+            <div id="matrix-lesson-link-container" class="${['lesson_linked', 'chapter_linked'].includes(currentAcademicMode) ? '' : 'hidden'} space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div class="grid grid-cols-1 gap-4">
                 <div>
                   <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2" for="matrix-chapter-select">
                     Chọn Chương học <span class="text-rose-500">*</span>
@@ -3372,7 +3520,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </select>
                 </div>
 
-                <div>
+                <div id="matrix-lesson-field" class="${currentAcademicMode === 'lesson_linked' ? '' : 'hidden'}">
                   <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2" for="matrix-lesson-select">
                     Chọn Bài học liên kết <span class="text-rose-500">*</span>
                   </label>
@@ -3531,12 +3679,13 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     radioModes.forEach(radio => {
       radio.addEventListener('change', () => {
         currentAcademicMode = radio.value;
-        if (currentAcademicMode === 'lesson_linked') {
+        if (['lesson_linked', 'chapter_linked'].includes(currentAcademicMode)) {
           lessonLinkBox?.classList.remove('hidden');
           loadChaptersForCourse(courseSelect?.value);
         } else {
           lessonLinkBox?.classList.add('hidden');
         }
+        document.getElementById('matrix-lesson-field')?.classList.toggle('hidden', currentAcademicMode !== 'lesson_linked');
 
         // Update border highlights
         modeContainer?.querySelectorAll('label').forEach(lbl => {
@@ -3621,7 +3770,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     courseSelect?.addEventListener('change', () => {
       currentCourseId = courseSelect.value;
-      if (currentAcademicMode === 'lesson_linked') {
+      if (['lesson_linked', 'chapter_linked'].includes(currentAcademicMode)) {
         loadChaptersForCourse(currentCourseId);
       }
     });
@@ -3640,7 +3789,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           </option>`;
         }).join('');
 
-        if (currentAcademicMode === 'lesson_linked') {
+        if (['lesson_linked', 'chapter_linked'].includes(currentAcademicMode)) {
           loadChaptersForCourse(targetId);
         }
       } else if (courseSelect) {
@@ -3659,16 +3808,22 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         return;
       }
 
-      const mode = document.querySelector('input[name="matrix_academic_mode"]:checked')?.value || 'independent';
+      const mode = document.querySelector('input[name="matrix_academic_mode"]:checked')?.value || currentAcademicMode || 'independent';
       let selectedLessonId = '';
       let selectedUnitId = '';
 
-      if (mode === 'lesson_linked') {
+      if (mode === 'lesson_linked' || mode === 'chapter_linked') {
         selectedUnitId = chapterSelect?.value || '';
-        selectedLessonId = lessonSelect?.value || '';
-        if (!selectedLessonId) {
-          UI.showToast('Vui lòng chọn Bài học liên kết trong chương!', 'warning');
+        if (!selectedUnitId) {
+          UI.showToast('Vui lòng chọn Chương học cho bài kiểm tra!', 'warning');
           return;
+        }
+        if (mode === 'lesson_linked') {
+          selectedLessonId = lessonSelect?.value || '';
+          if (!selectedLessonId) {
+            UI.showToast('Vui lòng chọn Bài học liên kết trong chương!', 'warning');
+            return;
+          }
         }
       }
 
@@ -4126,7 +4281,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
     // Execute Publish
     btnPublish?.addEventListener('click', async () => {
+      const publishScope = { ...window.ExamStore.getCurrentScope() };
       const currentDraft = window.ExamStore.getDraft();
+      const initialQuestions = JSON.stringify(currentDraft.questions || []);
       const title = currentDraft.title || 'Bài kiểm tra mới';
       const durationRaw = document.getElementById('cfg-duration')?.value.trim();
       const duration = durationRaw ? parseInt(durationRaw, 10) : null;
@@ -4159,6 +4316,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         'Xuất bản & Mở phòng thi'
       );
       if (!conf) return;
+      const confirmedScope = window.ExamStore.getCurrentScope();
+      if (confirmedScope.userId !== publishScope.userId || confirmedScope.role !== publishScope.role
+        || JSON.stringify(window.ExamStore.getDraft().questions || []) !== initialQuestions) return;
 
       try {
         UI.showToast('Đang tạo đề thi và lưu câu hỏi vào CSDL...', 'info');
@@ -4182,7 +4342,6 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         } });
 
         // 1. Create or Update Assessment
-        let asmId = currentDraft.isEditingExisting ? currentDraft.assessmentId : null;
         const asmPayload = {
           title: title,
           assessment_type: document.getElementById('cfg-assessment-type')?.value || currentDraft.assessment_type || 'QUIZ',
@@ -4198,26 +4357,15 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         };
         if (openAtIso) asmPayload.open_at = openAtIso;
         if (closeAtIso) asmPayload.close_at = closeAtIso;
-        if (currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) {
-          asmPayload.lesson_id = currentDraft.lessonId;
-          if (currentDraft.learningUnitId) asmPayload.learning_unit_id = currentDraft.learningUnitId;
-        }
-
-        if (asmId) {
-          await ApiClient.updateAssessment(asmId, asmPayload);
-        } else {
-          const created = await ApiClient.createAssessment(courseId, asmPayload);
-          asmId = created?.assessment_id || created?.assessment?.public_id || created?.assessment?.id || created?.id;
-          if (asmId) {
-            window.ExamStore.saveDraft({ isEditingExisting: true, assessmentId: asmId });
-          }
+        if (currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) asmPayload.lesson_id = currentDraft.lessonId;
+        if (['lesson_linked', 'chapter_linked'].includes(currentDraft.academicMode) && currentDraft.learningUnitId) {
+          asmPayload.learning_unit_id = currentDraft.learningUnitId;
         }
 
         const questionsToSave = currentDraft.questions || [];
-        let createdQuestionsCount = 0;
 
         // 2. Batch create questions
-        if (asmId && questionsToSave.length > 0) {
+        if (questionsToSave.length > 0) {
           const batchQuestions = questionsToSave.map(q => {
             let qType = 'SINGLE_CHOICE';
             if (q.type === 'MULTIPLE_CHOICE' || q.question_type === 'TN nhiều đáp án' || q.question_type === 'Kéo thả' || (q.stem && q.stem.includes('[[PWD301:G:DRAG:'))) qType = 'MULTIPLE_CHOICE';
@@ -4225,11 +4373,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             else if (q.type === 'SHORT_ANSWER' || q.question_type === 'Điền từ') qType = 'SHORT_ANSWER';
             else if (q.type === 'ESSAY' || q.question_type === 'Tự luận') qType = 'ESSAY';
 
-            let diff = 'UNDERSTAND';
-            const bl = String(q.bloom_level || '').toUpperCase();
-            if (bl === 'REMEMBER' || bl === 'NHẬN BIẾT') diff = 'REMEMBER';
-            else if (bl === 'APPLY' || bl === 'VẬN DỤNG') diff = 'APPLY';
-            else diff = 'UNDERSTAND';
+            const diff = InstructorView.normalizeExamBloom(q.bloom_level || q.difficulty);
 
             const payload = {
               question_type: qType,
@@ -4240,8 +4384,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               image_asset_id: q.image_asset_id || null,
               resources: (Array.isArray(q.resources) && q.resources.length > 0) ? q.resources : (q.image_asset_id ? [{ asset_id: q.image_asset_id, position: 1, resource_role: 'IMAGE' }] : [])
             };
-            if (q.question_id || q.id) {
-              payload.question_id = q.question_id || q.id;
+            if (q.question_id) {
+              payload.question_id = q.question_id;
             }
             if (currentDraft.academicMode === 'lesson_linked' && currentDraft.lessonId) {
               payload.lesson_id = currentDraft.lessonId;
@@ -4270,70 +4414,13 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             return payload;
           });
 
-          if (currentDraft.isEditingExisting) {
-            // SYNC-006: Diff-based update/creation
-            try {
-              const detail = await ApiClient.getAssessmentDetail(asmId);
-              const existingAssignments = detail.question_assignments || detail.questions || [];
-              const currentQuestionIdsInDraft = new Set(
-                questionsToSave
-                  .map(q => q.question_id || q.id)
-                  .filter(Boolean)
-              );
-
-              // Delete questions that were removed in the draft
-              for (const item of existingAssignments) {
-                const exQ = item.question || item;
-                const exId = exQ.public_id || exQ.id || item.question_id;
-                if (exId && !currentQuestionIdsInDraft.has(exId)) {
-                  await ApiClient.removeAssessmentQuestion(asmId, exId);
-                }
-              }
-
-              // Update existing questions and collect new questions to batch create
-              const newQuestionsToBatch = [];
-              for (const p of batchQuestions) {
-                if (p.question_id) {
-                  await ApiClient.editAssessmentQuestion(asmId, p.question_id, p);
-                  createdQuestionsCount++;
-                } else {
-                  newQuestionsToBatch.push(p);
-                }
-              }
-
-              if (newQuestionsToBatch.length > 0) {
-                const batchRes = await ApiClient.createAssessmentQuestionsBatch(asmId, newQuestionsToBatch);
-                createdQuestionsCount += batchRes?.created_count || newQuestionsToBatch.length;
-              }
-            } catch (editErr) {
-              console.error('Lỗi cập nhật câu hỏi cho đề thi hiện có:', editErr);
-              throw editErr;
-            }
-          } else {
-            // Atomic batch creation for new assessment (SYNC-005: do NOT swallow error with sequential fallback!)
-            try {
-              const batchRes = await ApiClient.createAssessmentQuestionsBatch(asmId, batchQuestions);
-              createdQuestionsCount = batchRes?.created_count || batchQuestions.length;
-            } catch (batchErr) {
-              console.error('Lỗi lưu danh sách câu hỏi batch:', batchErr);
-              throw new Error(`Lưu câu hỏi vào đề thi thất bại: ${batchErr.message || batchErr}. Bản nháp vẫn được giữ nguyên.`);
-            }
-          }
-        }
-
-        // 3. Publish Assessment
-        if (asmId && createdQuestionsCount > 0) {
-          try {
-            await ApiClient.publishAssessment(asmId);
-            window.ExamStore.clearDraft();
-            UI.showToast(`Đề thi "${title}" đã xuất bản thành công kèm ${createdQuestionsCount} câu hỏi lưu vào CSDL!`, 'success');
-            window.location.hash = '#/instructor/dashboard';
-          } catch (pubErr) {
-            console.error('Lỗi kích hoạt xuất bản:', pubErr);
-            UI.showToast(`Đề thi đã lưu nhưng kích hoạt xuất bản thất bại: ${pubErr.message || pubErr}. Bản nháp vẫn được giữ lại để bạn kiểm tra lại.`, 'warning');
-          }
+          await InstructorView.publishExamDraft(courseId, asmPayload, batchQuestions);
+          const scope = window.ExamStore.getCurrentScope();
+          if (scope.userId !== publishScope.userId || scope.role !== publishScope.role) return;
+          UI.showToast(`"${title}": ${batchQuestions.length} questions published.`, 'success');
+          window.location.hash = '#/instructor/dashboard';
         } else {
-          UI.showToast('Không có câu hỏi nào được lưu thành công vào đề thi. Vui lòng kiểm tra lại cấu trúc câu hỏi.', 'error');
+          throw new Error('At least one question is required before publishing.');
         }
       } catch (err) {
         console.error('Lỗi xuất bản đề thi:', err);
@@ -4822,7 +4909,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 </div>
                 <div>
                   <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Điểm phân bổ</label>
-                  <input type="number" id="new-q-points" step="0.25" min="0.1" value="1.0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" />
+                  <input type="number" id="new-q-points" step="any" min="0.1" value="1.0" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" />
                 </div>
               </div>
 
@@ -5141,6 +5228,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       // Modal Quick Add Question
       const addModal = document.getElementById('modal-quick-add-question');
+      let quickAddRequestId = null;
+      let quickAddPending = false;
       document.getElementById('btn-open-add-question-modal')?.addEventListener('click', () => {
         addModal?.classList.remove('hidden');
       });
@@ -5170,6 +5259,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
       document.getElementById('form-quick-add-question')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (quickAddPending) return;
         const stem = document.getElementById('new-q-stem')?.value?.trim();
         if (!stem) {
           UI.showToast('Nội dung câu hỏi không được để trống.', 'warning');
@@ -5218,8 +5308,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         }
 
         try {
+          quickAddRequestId ||= crypto.randomUUID();
+          payload.client_question_id = quickAddRequestId;
+          quickAddPending = true;
+          const submitButton = document.getElementById('btn-submit-add-q');
+          if (submitButton) submitButton.disabled = true;
           UI.showToast('Đang thêm câu hỏi vào đề...', 'info');
           const res = await ApiClient.createAssessmentQuestion(assessmentId, payload);
+          quickAddRequestId = null;
           addModal?.classList.add('hidden');
           UI.showToast('Đã thêm câu hỏi vào đề thi thành công!', 'success');
           if (res?.question) {
@@ -5241,6 +5337,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           }
         } catch (createErr) {
           UI.showToast('Lỗi tạo câu hỏi: ' + (createErr.message || createErr), 'error');
+        } finally {
+          quickAddPending = false;
+          const submitButton = document.getElementById('btn-submit-add-q');
+          if (submitButton) submitButton.disabled = false;
         }
       });
     };

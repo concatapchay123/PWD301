@@ -243,6 +243,21 @@ CREATE TABLE lesson_progress (
 );
 GO
 
+-- Generic heartbeat deduplication; committed atomically with lesson_progress.
+-- Migration syncprogress20261011; retain identities for the enrollment period.
+CREATE TABLE lesson_progress_receipts (
+    id BIGINT IDENTITY(1,1) NOT NULL,
+    enrollment_period_id BIGINT NOT NULL,
+    lesson_id BIGINT NOT NULL,
+    client_event_id VARCHAR(128) NOT NULL,
+    created_at DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+    CONSTRAINT pk_lesson_progress_receipts PRIMARY KEY (id),
+    CONSTRAINT uq_progress_receipts_event UNIQUE (enrollment_period_id, lesson_id, client_event_id),
+    CONSTRAINT fk_progress_receipts_period FOREIGN KEY (enrollment_period_id) REFERENCES enrollment_periods (id),
+    CONSTRAINT fk_progress_receipts_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id)
+);
+GO
+
 CREATE TABLE course_completion_summaries (
     id BIGINT IDENTITY(1,1) NOT NULL,
     student_user_id BIGINT NOT NULL,

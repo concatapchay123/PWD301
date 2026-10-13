@@ -159,6 +159,8 @@ def attempt_view(attempt_id: str) -> Any:
         session=db.session,
     )
     delivery["lease_token"] = raw_token
+    lease_seconds = max(1, int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 60)))
+    delivery["lease_heartbeat_interval_seconds"] = min(10, lease_seconds / 3)
     return jsonify(delivery), 200
 
 
@@ -321,31 +323,6 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             ser_r = _serialize_lesson_resource(r)
             res_list.append(ser_r)
 
-    # Fail-safe fallback: If current lesson has no video and no resources, inherit from previous revision
-    if not video_url and not video_urls and getattr(les, "previous_lesson", None):
-        prev = les.previous_lesson
-        if hasattr(prev, "resources") and prev.resources:
-            for r in prev.resources:
-                fa = r.file_asset
-                if not fa:
-                    continue
-                if fa.status == "ACTIVE" and getattr(fa, "virus_scan_status", None) == "CLEAN":
-                    mime = (fa.mime_type or "").lower()
-                    name = (fa.original_filename or "").lower()
-                    is_vid = mime.startswith("video/") or name.endswith(
-                        (".mp4", ".webm", ".mkv", ".mov")
-                    )
-                    if is_vid:
-                        course_pub_id = les.course.public_id if les.course else ""
-                        hls_url = f"/student/courses/{course_pub_id}/lessons/{les.public_id}/video/{fa.public_id}/playlist.m3u8"
-                        video_urls.append(hls_url)
-                        if not video_url:
-                            video_url = hls_url
-                            primary_video_asset_id = str(fa.public_id)
-                    elif not res_list:
-                        ser_r = _serialize_lesson_resource(r)
-                        res_list.append(ser_r)
-
     personal_notes = ""
     notes_saved_at = None
     if p and p.completion_rule_snapshot_json:
@@ -368,7 +345,10 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
                     quiz = parsed_quiz
             except Exception:
                 pass
-        m_passing = re.search(r"<!--\s*mini_quiz_passing:\s*(\d+)\s*-->", les.markdown_content)
+        m_passing = re.search(
+            r"<!--\s*(?:mini_quiz_passing|quiz_passing_percent):\s*(\d+)\s*-->",
+            les.markdown_content,
+        )
         if m_passing:
             try:
                 quiz_passing_percent = max(50, min(100, int(m_passing.group(1))))
@@ -407,6 +387,15 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             latest_lesson_id = str(newer.public_id)
             change_summary = newer.material_change_summary
 
+    quiz_completed_at = None
+    if p and p.completion_rule_snapshot_json:
+        try:
+            snapshot = json.loads(p.completion_rule_snapshot_json)
+            if isinstance(snapshot, dict):
+                quiz_completed_at = snapshot.get("mini_quiz_completed_at")
+        except (TypeError, ValueError):
+            pass
+
     return {
         "lesson_id": str(getattr(les, "public_id", None) or getattr(les, "id", "")),
         "playback_media": _playback_media_descriptors(les, video_urls),
@@ -440,6 +429,7 @@ def _serialize_student_lesson(les: Lesson, p: LessonProgress | None) -> dict[str
             "max_view_fraction": float(p.max_view_fraction) if p else 0.0,
             "is_completed": p.completed_at is not None if p else False,
             "completed_at": p.completed_at.isoformat() if p and p.completed_at else None,
+            "mini_quiz_completed_at": quiz_completed_at,
         },
         "resources": res_list,
     }
@@ -2471,6 +2461,7 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
     """Submit an appeal / regrading request for a completed attempt."""
     import json
 
+    from pwd301.models.attempt_regrade import AssessmentAttempt
     from pwd301.models.notification_audit import AuditEvent
     from pwd301.models.types import utc_now
     from pwd301.services.attempt_service import _resolve_attempt
@@ -2479,6 +2470,11 @@ def submit_attempt_appeal_route(attempt_id: str) -> Any:
     attempt = _resolve_attempt(attempt_id, session=db.session)
     if attempt is None:
         raise ResourceNotFoundError("Lượt thi không tồn tại.")
+    # Serialize the pending-appeal check and append on the owning attempt row.
+    db.session.query(AssessmentAttempt).filter_by(id=attempt.id).update(
+        {"updated_at": AssessmentAttempt.updated_at}, synchronize_session=False
+    )
+    db.session.refresh(attempt)
     if attempt.student_user_id != actor.id:
         return (
             jsonify(

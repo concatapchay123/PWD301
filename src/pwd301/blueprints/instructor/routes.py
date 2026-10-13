@@ -5,6 +5,8 @@ import json
 import logging
 import re
 import uuid
+from decimal import ROUND_HALF_UP, Decimal
+from math import isfinite
 from typing import Any
 
 import sqlalchemy as sa
@@ -28,12 +30,14 @@ from pwd301.services.analytics_service import (
     get_instructor_overview_analytics,
 )
 from pwd301.services.assessment_service import (
+    _lock_assessment_for_mutation,
     _resolve_assessment,
     _resolve_question,
     _serialize_assessment,
     _serialize_assignment,
     _serialize_blueprint,
     _serialize_section,
+    assessment_authoring_token,
     assign_question,
     cancel_assessment,
     configure_blueprint,
@@ -1988,9 +1992,31 @@ def create_course_assessment_route(course_id: str) -> Any:
     course = require_course_manager(actor, course_id, session=db.session)
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    stable_id = None
+    if payload.get("client_assessment_id"):
+        try:
+            stable_id = uuid.UUID(str(payload["client_assessment_id"]))
+        except (ValueError, TypeError) as exc:
+            raise ValidationError("Invalid client assessment identifier.") from exc
+        existing = _resolve_assessment(stable_id, session=db.session)
+        if existing is not None:
+            if existing.course_id != course.id or existing.creator_user_id != actor.id:
+                raise ValidationError("Assessment creation identifier belongs to another context.")
+            return jsonify(_serialize_assessment(existing)), 200
     try:
-        asm = create_assessment(actor, course.id, payload, session=db.session)
+        asm = create_assessment(actor, course.id, payload, session=db.session, public_id=stable_id)
         return jsonify(_serialize_assessment(asm)), 201
+    except sa.exc.IntegrityError:
+        db.session.rollback()
+        if stable_id is not None:
+            existing = _resolve_assessment(stable_id, session=db.session)
+            if (
+                existing is not None
+                and existing.course_id == course.id
+                and existing.creator_user_id == actor.id
+            ):
+                return jsonify(_serialize_assessment(existing)), 200
+        raise
     except Exception:
         raise
 
@@ -2340,12 +2366,33 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
     ordered_ids: list[int | uuid.UUID | str] = [
         item for item in raw_ids if isinstance(item, (int, uuid.UUID, str))
     ]
+    move = payload.get("move")
+    if move is not None and not isinstance(move, dict):
+        raise LessonValidationError("move must be an object.")
+
+    reorder_lessons(
+        actor, course.id, ordered_ids, session=db.session, move=move, validate_only=True
+    )
 
     if course.status in ("APPROVED", "PUBLISHED", "ARCHIVED"):
-        proposed = {
+        proposed: dict[str, Any] = {
             "action": "REORDER_LESSONS",
             "ordered_lesson_ids": [str(item) for item in ordered_ids],
         }
+        if move is not None:
+            moved_lesson = _resolve_lesson(move["lesson_id"], session=db.session)
+            destination = _resolve_learning_unit(move["learning_unit_id"], session=db.session)
+            if moved_lesson is None or destination is None:
+                raise LessonValidationError("Moved lesson or target unit is no longer available.")
+            proposed["move"] = {
+                "lesson_id": move.get("lesson_id"),
+                "learning_unit_id": move.get("learning_unit_id"),
+                "lesson_title": moved_lesson.title,
+                "source_unit_title": moved_lesson.learning_unit.title
+                if moved_lesson.learning_unit
+                else "Chưa phân chương",
+                "target_unit_title": destination.title,
+            }
         pending = (
             db.session.query(CourseChangeRequest)
             .filter_by(
@@ -2379,6 +2426,10 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
             )
             db.session.add(review)
             db.session.commit()
+        elif json.loads(review.proposed_payload_json or "{}") != proposed:
+            raise ConflictError(
+                "A different lesson order is awaiting review. Retract it before submitting another."
+            )
         return jsonify(
             {
                 "status": "pending_approval",
@@ -2391,7 +2442,12 @@ def reorder_lessons_route(course_id: str) -> tuple[Response, int] | Response:
             }
         ), 202
 
-    reordered = reorder_lessons(actor, course.id, ordered_ids)
+    try:
+        reordered = reorder_lessons(actor, course.id, ordered_ids, session=db.session, move=move)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify({"lessons": [_serialize_lesson(les) for les in reordered]}), 200
 
 
@@ -2692,6 +2748,12 @@ def add_course_prerequisite_route(course_id: str) -> Any:
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    return _add_course_prerequisite_operation(actor, course_id, payload)
+
+
+def _add_course_prerequisite_operation(
+    actor: User, course_id: str, payload: dict[str, Any], *, commit: bool = True
+) -> Any:
     prerequisite_course_id = payload.get("prerequisite_course_id")
     if not prerequisite_course_id:
         raise CourseValidationError("prerequisite_course_id is required.")
@@ -2723,6 +2785,8 @@ def add_course_prerequisite_route(course_id: str) -> Any:
             prerequisite_course_id=prereq_course.id,
             session=db.session,
         )
+        if commit:
+            db.session.commit()
         return jsonify(
             {
                 "success": True,
@@ -2792,24 +2856,27 @@ def add_course_prerequisite_route(course_id: str) -> Any:
             created_at=utc_now(),
         )
         db.session.add(pending_cr)
-        db.session.commit()
+        db.session.flush()
 
         if prereq_course.owner_instructor:
-            with contextlib.suppress(Exception):
-                from pwd301.services.notification_service import dispatch_notification
+            from pwd301.services.notification_service import dispatch_notification
 
-                dispatch_notification(
-                    recipient_user=prereq_course.owner_instructor,
-                    event_type="COURSE_PREREQUISITE_REQUEST",
-                    title=f"Yêu cầu môn tiên quyết: {target_course.title}",
-                    body=(
-                        f"Giảng viên {actor.display_name} gửi yêu cầu thiết lập môn học "
-                        f"'{prereq_course.title}' của bạn làm môn học tiên quyết cho khóa học "
-                        f"'{target_course.title}' ({target_course.course_code})."
-                    ),
-                    action_url="#/instructor/prerequisites/requests",
-                    category="COURSE",
-                )
+            dispatch_notification(
+                recipient_user=prereq_course.owner_instructor,
+                event_type="COURSE_PREREQUISITE_REQUEST",
+                title=f"Yêu cầu môn tiên quyết: {target_course.title}",
+                body=(
+                    f"Giảng viên {actor.display_name} gửi yêu cầu thiết lập môn học "
+                    f"'{prereq_course.title}' của bạn làm môn học tiên quyết cho khóa học "
+                    f"'{target_course.title}' ({target_course.course_code})."
+                ),
+                action_url="#/instructor/prerequisites/requests",
+                category="COURSE",
+                session=db.session,
+            )
+
+    if commit:
+        db.session.commit()
 
     return jsonify(
         {
@@ -2891,6 +2958,12 @@ def review_incoming_prerequisite_request_route(
 def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
     """Remove a prerequisite dependency."""
     actor = require_authenticated_actor()
+    return _remove_course_prerequisite_operation(actor, course_id, prereq_id)
+
+
+def _remove_course_prerequisite_operation(
+    actor: User, course_id: str, prereq_id: str, *, commit: bool = True
+) -> Any:
     target_course = require_course_manager(actor, course_id, session=db.session)
 
     if target_course.status in ("PUBLISHED", "ARCHIVED"):
@@ -2906,18 +2979,36 @@ def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
                 "action": "REMOVE_PREREQUISITE",
                 "prerequisite_course_id": prereq_pk,
             }
-            change_req = CourseChangeRequest(
-                course_id=target_course.id,
-                requested_by_user_id=actor.id,
-                change_type="PREREQUISITE",
-                target_type="PREREQUISITE",
-                target_id=prereq_pk,
-                proposed_payload_json=json.dumps(req_payload, default=str),
-                status="PENDING",
-                created_at=utc_now(),
+            change_req = next(
+                (
+                    req
+                    for req in db.session.query(CourseChangeRequest)
+                    .filter_by(
+                        course_id=target_course.id,
+                        change_type="PREREQUISITE",
+                        target_id=prereq_pk,
+                        status="PENDING",
+                    )
+                    .all()
+                    if json.loads(req.proposed_payload_json or "{}").get("action")
+                    == "REMOVE_PREREQUISITE"
+                ),
+                None,
             )
-            db.session.add(change_req)
-            db.session.commit()
+            if change_req is None:
+                change_req = CourseChangeRequest(
+                    course_id=target_course.id,
+                    requested_by_user_id=actor.id,
+                    change_type="PREREQUISITE",
+                    target_type="PREREQUISITE",
+                    target_id=prereq_pk,
+                    proposed_payload_json=json.dumps(req_payload, default=str),
+                    status="PENDING",
+                    created_at=utc_now(),
+                )
+                db.session.add(change_req)
+            if commit:
+                db.session.commit()
             return jsonify(
                 {
                     "status": "pending_approval",
@@ -2937,6 +3028,8 @@ def remove_course_prerequisite_route(course_id: str, prereq_id: str) -> Any:
         session=db.session,
     )
 
+    if commit:
+        db.session.commit()
     return jsonify({"removed": removed}), 200
 
 
@@ -3190,6 +3283,73 @@ def set_course_completion_rules_route(course_id: str) -> tuple[Response, int] | 
     return jsonify(_serialize_completion_rule(course, rule)), 200
 
 
+@instructor_bp.route("/courses/<course_id>/academic-settings", methods=["PUT"])
+@instructor_required
+def save_course_academic_settings_route(course_id: str) -> Any:
+    """Atomically persist academic edits and their existing review requests."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise CourseValidationError("Academic settings must be a JSON object.")
+    rules = payload.get("completion_rules")
+    prerequisites = payload.get("prerequisites", {})
+    if not isinstance(rules, dict) or not isinstance(prerequisites, dict):
+        raise CourseValidationError("Completion rules and prerequisites must be objects.")
+    additions = prerequisites.get("add", [])
+    removals = prerequisites.get("remove", [])
+    if not isinstance(additions, list) or not isinstance(removals, list):
+        raise CourseValidationError("Prerequisite additions/removals must be arrays.")
+    if len(additions) + len(removals) > 100:
+        raise CourseValidationError("At most 100 prerequisite edits can be saved at once.")
+    if any(not isinstance(item, dict) for item in additions):
+        raise CourseValidationError("Prerequisite additions must be objects.")
+    if any(not isinstance(item, str) or not item.strip() for item in removals):
+        raise CourseValidationError("Prerequisite removals must contain course identifiers.")
+    try:
+        course = require_course_manager(actor, course_id, session=db.session)
+        course = (
+            db.session.query(Course)
+            .filter_by(id=course.id)
+            .with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .populate_existing()
+            .one()
+        )
+        updated = update_course(
+            actor,
+            course_id,
+            {"learning_objectives": payload.get("learning_objectives", [])},
+            session=db.session,
+        )
+        pending = isinstance(updated, CourseChangeRequest)
+        rule = set_course_completion_rule(actor, course.id, rules, session=db.session)
+        for prereq_id in removals:
+            response, _ = _remove_course_prerequisite_operation(
+                actor, course_id, prereq_id, commit=False
+            )
+            pending = pending or bool(response.get_json().get("pending_approval"))
+        for addition in additions:
+            response, _ = _add_course_prerequisite_operation(
+                actor, course_id, addition, commit=False
+            )
+            pending = pending or response.get_json().get("status") == "pending_approval"
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "pending_approval": pending,
+                    "course": _serialize_course(course),
+                    "completion_rules": _serialize_completion_rule(course, rule),
+                },
+                "error": None,
+            }
+        ), 202 if pending else 200
+    except Exception:
+        db.session.rollback()
+        raise
+
+
 # ============================================================================
 # INSTRUCTOR ASSESSMENT BUILDER & MANAGEMENT ROUTES
 # ============================================================================
@@ -3266,7 +3426,15 @@ def publish_instructor_assessment_route(assessment_id: str, course_id: str | Non
     actor = require_authenticated_actor()
 
     try:
-        assessment = publish_assessment(actor, assessment_id, session=db.session)
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            raise ValidationError("Publish options must be an object.")
+        assessment = publish_assessment(
+            actor,
+            assessment_id,
+            session=db.session,
+            expected_authoring_token=payload.get("expected_authoring_token"),
+        )
         return jsonify(_serialize_assessment(assessment, full=False)), 200
     except Exception:
         raise
@@ -3428,15 +3596,30 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
         raise ResourceNotFoundError(f"Assessment '{assessment_id}' not found.")
 
     require_course_manager(actor, asm_obj.course_id, session=db.session)
-
-    if asm_obj.first_attempt_started_at is not None:
-        raise AssessmentLockedError(
-            "Cấu trúc đề thi đã bị khóa do đã có thí sinh bắt đầu làm bài "
-            "(Structural Freeze - Invariant 14)."
-        )
+    asm_obj = _lock_assessment_for_mutation(asm_obj, db.session)
 
     try:
         payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+        if asm_obj.first_attempt_started_at is not None:
+            from pwd301.models.assessment import AssessmentQuestionAssignment
+
+            try:
+                retry_id = uuid.UUID(str(payload.get("client_question_id")))
+            except (ValueError, TypeError):
+                raise AssessmentLockedError(
+                    "Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14)."
+                ) from None
+            retry_question = _resolve_question(retry_id, session=db.session)
+            if retry_question is None or (
+                db.session.query(AssessmentQuestionAssignment)
+                .filter_by(assessment_id=asm_obj.id, question_id=retry_question.id)
+                .one_or_none()
+                is None
+            ):
+                raise AssessmentLockedError(
+                    "Cấu trúc đề thi và phân bổ điểm số đã bị khóa (Invariant 14)."
+                )
 
         raw_type = payload.get("question_type") or payload.get("type") or "SINGLE_CHOICE"
         q_type = str(raw_type).strip().upper()
@@ -3467,10 +3650,14 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
                 f"Mức độ Bloom '{difficulty}' không hợp lệ. Chỉ hỗ trợ REMEMBER, UNDERSTAND, APPLY."
             )
 
-        raw_points = payload.get("points") or payload.get("default_points") or 1.0
+        raw_points = payload.get("points")
+        if raw_points is None:
+            raw_points = payload.get("default_points", 1.0)
         try:
+            if raw_points is None:
+                raise ValueError()
             points = float(raw_points)
-            if points <= 0:
+            if not isfinite(points) or points <= 0:
                 raise ValueError()
         except (ValueError, TypeError) as err:
             raise ValidationError("Điểm phân bổ phải là một số lớn hơn 0.") from err
@@ -3591,11 +3778,71 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
 
             q_payload["accepted_answers"] = accepted_answers
 
+        stable_uuid = None
+        if payload.get("client_question_id"):
+            try:
+                stable_uuid = uuid.UUID(str(payload["client_question_id"]))
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Invalid client question identifier.") from exc
+        existing = _resolve_question(stable_uuid, session=db.session) if stable_uuid else None
+        if existing is not None:
+            from pwd301.models.assessment import AssessmentQuestionAssignment
+            from pwd301.services.exceptions import AssessmentStateViolationError
+
+            prior = (
+                db.session.query(AssessmentQuestionAssignment)
+                .filter_by(assessment_id=asm_obj.id, question_id=existing.id)
+                .one_or_none()
+            )
+            saved = _serialize_question(existing, include_answers=True)
+            expected_choices = [
+                (choice["content"], bool(choice["is_correct"]))
+                for choice in sorted(
+                    q_payload.get("choices", []), key=lambda item: item["position"]
+                )
+            ]
+            expected_answers = list(
+                dict.fromkeys(
+                    answer["answer_text"].lower()
+                    for answer in q_payload.get("accepted_answers", [])
+                )
+            )
+            if (
+                existing.course_id != asm_obj.course_id
+                or prior is None
+                or saved["question_type"] != q_type
+                or saved["content"] != content
+                or saved["difficulty"] != difficulty
+                or saved["explanation"] != explanation
+                or prior.points
+                != Decimal(str(points)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                or [(c["content"], c["is_correct"]) for c in saved["choices"]] != expected_choices
+                or [a["answer_text"].lower() for a in saved["accepted_answers"]] != expected_answers
+            ):
+                raise AssessmentStateViolationError(
+                    "Mã yêu cầu đã được dùng cho câu hỏi khác. Hãy tải lại đề trước khi tiếp tục."
+                )
+            response = {
+                "status": "ok",
+                "message": "Question already created and assigned.",
+                "question": saved,
+                "assignment": _serialize_assignment(prior),
+            }
+            db.session.commit()
+            return jsonify(response), 200
+
+        if asm_obj.first_attempt_started_at is not None:
+            raise AssessmentLockedError(
+                "Cấu trúc đề thi đã bị khóa do đã có thí sinh bắt đầu làm bài "
+                "(Structural Freeze - Invariant 14)."
+            )
         created_q = create_question(
             actor=actor,
             course_id=asm_obj.course_id,
             payload=q_payload,
             session=db.session,
+            commit=False,
+            public_id=stable_uuid,
         )
 
         assignment = assign_question(
@@ -3603,7 +3850,9 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
             assessment_id=asm_obj.id,
             payload={"question_id": created_q.id, "points": points, "source_type": "MANUAL"},
             session=db.session,
+            commit=False,
         )
+        db.session.commit()
 
         return jsonify(
             {
@@ -3613,7 +3862,8 @@ def create_instructor_assessment_question_route(assessment_id: str) -> Any:
                 "assignment": _serialize_assignment(assignment),
             }
         ), 201
-    except ValidationError:
+    except Exception:
+        db.session.rollback()
         raise
 
 
@@ -3819,6 +4069,139 @@ def batch_create_instructor_assessment_questions_route(assessment_id: str) -> An
                 "data": created_items,
             }
         ), 201
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+@instructor_bp.route("/assessments/<assessment_id>/authoring", methods=["POST"])
+@instructor_required
+def save_instructor_assessment_authoring_route(assessment_id: str) -> Any:
+    """Commit settings and the complete question manifest atomically."""
+    from pwd301.models.assessment import Assessment, AssessmentQuestionAssignment
+
+    actor = require_authenticated_actor()
+    assessment = _resolve_assessment(assessment_id, session=db.session)
+    if assessment is None:
+        raise ResourceNotFoundError("Assessment not found.")
+    require_course_manager(actor, assessment.course_id, session=db.session)
+    body = request.get_json(silent=True) or {}
+    settings = body.get("assessment", {})
+    questions = body.get("questions")
+    if not isinstance(settings, dict) or not isinstance(questions, list):
+        raise ValidationError("Assessment settings and question manifest are required.")
+    try:
+        db.session.query(Assessment).filter_by(id=assessment.id).update(
+            {"updated_at": Assessment.updated_at}, synchronize_session=False
+        )
+        db.session.refresh(assessment)
+        if assessment.first_attempt_started_at is not None:
+            raise AssessmentLockedError("Assessment structure is locked after the first attempt.")
+        update_assessment(actor, assessment.id, settings, session=db.session, commit=False)
+        existing = {
+            assignment.question_id: assignment
+            for assignment in db.session.query(AssessmentQuestionAssignment)
+            .filter_by(assessment_id=assessment.id)
+            .all()
+        }
+        retained: set[int] = set()
+        saved = []
+        ordered_ids: list[int | uuid.UUID | str] = []
+        for item in questions:
+            if not isinstance(item, dict):
+                raise ValidationError("Each question must be an object.")
+            question_ref = item.get("question_id")
+            client_ref = item.get("client_question_id")
+            stable_uuid = None
+            if client_ref:
+                try:
+                    stable_uuid = uuid.UUID(str(client_ref))
+                except (TypeError, ValueError) as exc:
+                    raise ValidationError("Invalid client question identifier.") from exc
+            question = None
+            if question_ref:
+                question = _resolve_question(str(question_ref), session=db.session)
+            elif stable_uuid is not None:
+                question = _resolve_question(stable_uuid, session=db.session)
+            if question_ref and question is None:
+                raise ResourceNotFoundError("Assigned question not found.")
+            q_payload = dict(item)
+            q_payload["change_reason"] = "Assessment authoring save"
+            if question is not None:
+                if question.id not in existing or question.course_id != assessment.course_id:
+                    raise ValidationError("Question does not belong to this assessment.")
+                if question.id in retained:
+                    raise ValidationError("Question manifest contains duplicate questions.")
+                update_question(actor, question.id, q_payload, session=db.session, commit=False)
+                update_question_assignment(
+                    actor,
+                    assessment.id,
+                    question.id,
+                    {"points": item.get("points", item.get("points_assigned", 1))},
+                    session=db.session,
+                    commit=False,
+                )
+            else:
+                question = create_question(
+                    actor,
+                    assessment.course_id,
+                    q_payload,
+                    session=db.session,
+                    commit=False,
+                    public_id=stable_uuid,
+                )
+                assign_question(
+                    actor,
+                    assessment.id,
+                    {
+                        "question_id": question.id,
+                        "points": item.get("points", item.get("points_assigned", 1)),
+                    },
+                    session=db.session,
+                    commit=False,
+                )
+            retained.add(question.id)
+            ordered_ids.append(str(question.public_id))
+            saved.append(
+                {
+                    "question_id": str(question.public_id),
+                    "client_question_id": str(stable_uuid) if stable_uuid else None,
+                }
+            )
+        for question_id in existing.keys() - retained:
+            remove_question_assignment(
+                actor, assessment.id, question_id, session=db.session, commit=False
+            )
+        db.session.flush()
+        if saved:
+            reorder_assessment_questions(
+                actor,
+                assessment.id,
+                ordered_ids,
+                session=db.session,
+                commit=False,
+            )
+        assignments = [
+            _serialize_assignment(assignment)
+            for assignment in db.session.query(AssessmentQuestionAssignment)
+            .filter_by(assessment_id=assessment.id)
+            .order_by(AssessmentQuestionAssignment.position)
+            .all()
+        ]
+        authoring_token = assessment_authoring_token(assessment, db.session)
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "assessment_id": str(assessment.public_id),
+                    "questions": saved,
+                    "question_assignments": assignments,
+                    "authoring_token": authoring_token,
+                },
+                "error": None,
+            }
+        ), 200
     except Exception:
         db.session.rollback()
         raise
@@ -4083,6 +4466,7 @@ def import_assessment_document_route(assessment_id: str) -> Any:
             job_id=job.public_id,
             session=db.session,
         )
+        db.session.commit()
         imported_count = commit_res.get("imported_count", 0)
 
         return jsonify(
@@ -4720,6 +5104,7 @@ def instructor_commit_import(job_id: str) -> tuple[Response, int] | Response:
 
     actor = require_authenticated_actor()
     result = commit_import_job(actor, job_id, session=db.session)
+    db.session.commit()
     return jsonify(result), 200
 
 

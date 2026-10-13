@@ -176,3 +176,48 @@ def test_reviewer_course_preview_retains_chapter_identity_without_creating_lesso
     assert preview_lesson["learning_unit_id"] == str(lesson.learning_unit.public_id)
     assert preview_lesson["learning_unit_title"] == lesson.learning_unit.title
     assert db.session.query(Lesson).count() == count_before
+
+
+@pytest.mark.parametrize("status", ["APPROVED", "REJECTED", "CANCELLED", "APPLIED"])
+def test_sync055_exact_review_detail_includes_terminal_request_only(client, approval_env, status):
+    users, course, _, req = approval_env
+    req.status = status
+    unrelated = CourseChangeRequest(
+        course_id=course.id,
+        requested_by_user_id=users["owner"].id,
+        change_type="COURSE_METADATA",
+        target_type="COURSE",
+        target_id=course.id,
+        proposed_payload_json=json.dumps({"title": "Other pending change"}),
+        status="PENDING",
+    )
+    db.session.add(unrelated)
+    db.session.commit()
+    request_id, unrelated_id = req.id, unrelated.id
+    login_web_user(client, users["reviewer"])
+    queue = client.get("/admin/change-requests?status=ALL")
+    assert {item["id"] for item in queue.json["items"]} == {unrelated_id}
+    detail = client.get(f"/admin/change-requests?request_id={request_id}&status=PENDING")
+    assert detail.status_code == 200
+    assert [(item["id"], item["status"]) for item in detail.json["items"]] == [(request_id, status)]
+
+
+@pytest.mark.parametrize("request_id", ["", "bad", "0", "-1", "9223372036854775808"])
+def test_sync055_invalid_exact_detail_cannot_fall_back_to_queue(client, approval_env, request_id):
+    users, _, _, _ = approval_env
+    login_web_user(client, users["reviewer"])
+    assert client.get(f"/admin/change-requests?request_id={request_id}").status_code == 400
+
+
+def test_sync055_missing_exact_detail_is_not_an_empty_queue(client, approval_env):
+    users, _, _, _ = approval_env
+    login_web_user(client, users["reviewer"])
+    assert client.get("/admin/change-requests?request_id=9223372036854775807").status_code == 404
+
+
+@pytest.mark.parametrize("actor", ["owner", "foreign"])
+def test_sync055_exact_detail_still_requires_admin_review_permission(client, approval_env, actor):
+    users, _, _, req = approval_env
+    request_id = req.id
+    login_web_user(client, users[actor])
+    assert client.get(f"/admin/change-requests?request_id={request_id}").status_code == 403

@@ -19,6 +19,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy.orm import Session, scoped_session
 
@@ -709,6 +710,18 @@ def _is_refusal_content(content: str | None) -> bool:
     return any(marker in content for marker in refusal_markers)
 
 
+def _lock_conversation_for_send(conv: AIConversation, sess: Any) -> None:
+    """Serialize sequence allocation on the parent before loading message rows."""
+    sess.execute(
+        sa.update(AIConversation)
+        .where(AIConversation.id == conv.id)
+        .values(last_activity_at=AIConversation.last_activity_at)
+        .execution_options(synchronize_session=False)
+    )
+    sess.refresh(conv)
+    sess.expire(conv, ["messages"])
+
+
 def send_chat_message(
     *,
     actor: User,
@@ -729,6 +742,7 @@ def send_chat_message(
     """
     sess = session or db.session
     conv = get_conversation(actor=actor, conversation_id=conversation_id, session=sess)
+    _lock_conversation_for_send(conv, sess)
 
     # 1. Enforce 5-Minute Inactivity Rule (AI-003)
     if conv.is_expired:

@@ -38,11 +38,27 @@ from pwd301.services.enrollment_service import enroll_student
 from pwd301.services.jwt_auth_service import create_token_pair
 from pwd301.services.question_bank_service import create_question
 from pwd301.services.user_service import assign_role_to_user, register_user
+from tests.conftest import login_web_user
 
 UUID_REGEX = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+@pytest.mark.parametrize("lease_seconds,interval", [(1, 1 / 3), (9, 3), (60, 10), (120, 10)])
+def test_sync028_session_delivery_exposes_heartbeat_interval(
+    app, client, instructor_user, published_course, enrolled_students, lease_seconds, interval
+):
+    app.config["ATTEMPT_LEASE_SECONDS"] = lease_seconds
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+    login_web_user(client, enrolled_students[0])
+    started = client.post(f"/student/assessments/{assessment.public_id}/start", json={})
+    assert started.status_code == 201
+    attempt_id = started.json["attempt_id"]
+    delivery = client.get(f"/student/attempt/{attempt_id}")
+    assert delivery.status_code == 200 and delivery.json["lease_token"]
+    assert delivery.json["lease_heartbeat_interval_seconds"] == pytest.approx(interval)
 
 
 def assert_adr002_clean(data: Any) -> None:
@@ -308,6 +324,8 @@ def test_takeover_route_success_and_invalidates_old_tab(
     attempt, old_token = start_assessment_attempt(student_user, assessment.id, session=db.session)
 
     # Takeover from Tab 2
+    attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    db.session.commit()
     takeover_resp = client.post(
         f"/api/attempts/{attempt.public_id}/lease/takeover",
         headers=student_headers,
@@ -349,6 +367,9 @@ def test_takeover_alias_route_success(
     """POST /api/attempts/<id>/lease per 08_ATTEMPT_API.md alias returns 200 OK."""
     assessment = _make_assessment_with_question(instructor_user, published_course)
     attempt, _ = start_assessment_attempt(student_user, assessment.id, session=db.session)
+
+    attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    db.session.commit()
 
     resp = client.post(
         f"/api/attempts/{attempt.public_id}/lease",

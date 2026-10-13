@@ -111,6 +111,16 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
     return user
 
 
+def test_premaintenance_backup_preserves_trigger_and_notes(app, admin_user, physical_backup_engine):
+    with app.app_context():
+        create_database_backup(
+            admin_user, backup_type="PRE_MAINTENANCE", notes="Operator requested window"
+        )
+        listed = list_backups(admin_user)
+        assert listed[0]["trigger_type"] == "PRE_MAINTENANCE"
+        assert "Operator requested window" in listed[0]["notes"]
+
+
 # =====================================================================
 # 1. Operational Health Monitoring Tests
 # =====================================================================
@@ -454,6 +464,7 @@ def test_restore_database_snapshot_safeguards(
                 backup_id=backup_id,
                 confirmation_phrase="CONFIRM_DATABASE_RESTORE",
                 password="Password123!",
+                reason="Operator accepted recovery inspection",
                 session=db.session,
             )
         assert (

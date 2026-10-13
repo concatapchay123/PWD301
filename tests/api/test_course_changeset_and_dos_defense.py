@@ -38,6 +38,30 @@ def clean_rate_limits():
     reset_all_rate_limits()
 
 
+@pytest.mark.parametrize("action", ["RESOURCE_CHANGES", "DELETE_LESSON"])
+def test_dedicated_changeset_approval_rejects_other_request_types(
+    client, instructor_user, admin_user, published_course, action
+):
+    req = CourseChangeRequest(
+        course_id=published_course.id,
+        requested_by_user_id=instructor_user.id,
+        change_type="OTHER",
+        target_type="LESSON",
+        target_id=published_course.lessons[0].id,
+        proposed_payload_json=json.dumps({"action": action, "changes": []}),
+        status="PENDING",
+    )
+    db.session.add(req)
+    db.session.commit()
+    login_web_user(client, admin_user)
+    response = client.post(
+        f"/admin/course-changes/{req.id}/approve", json={"reason": "Wrong endpoint must reject"}
+    )
+    assert response.status_code == 400
+    db.session.expire_all()
+    assert db.session.get(CourseChangeRequest, req.id).status == "PENDING"
+
+
 @pytest.fixture
 def setup_roles(app: Flask) -> dict[str, Role]:
     """Ensure canonical roles exist in test database."""

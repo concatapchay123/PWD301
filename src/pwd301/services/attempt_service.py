@@ -340,9 +340,9 @@ def _generate_lease(
     now = utc_now()
     if lease_seconds is None:
         try:
-            lease_seconds = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
+            lease_seconds = max(1, int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 60)))
         except RuntimeError:
-            lease_seconds = 3600
+            lease_seconds = 60
     raw_token = secrets.token_hex(32)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).digest()
     expires_at = now + timedelta(seconds=lease_seconds)
@@ -599,13 +599,7 @@ def start_assessment_attempt(
     attempt_number = max_attempt_no + 1
 
     # 9. Generate editing lease
-    lease_seconds = (
-        int(assessment.time_limit_minutes * 60)
-        if getattr(assessment, "time_limit_minutes", None)
-        else 3600
-    )
     raw_lease_token, lease_token_hash, lease_acquired_at, lease_expires_at = _generate_lease(
-        lease_seconds=lease_seconds,
         deadline_at=deadline_at,
     )
 
@@ -1110,25 +1104,34 @@ def renew_attempt_lease(
         raise AttemptLeaseExpiredError("Editing lease was lost or taken over by another window.")
 
     # Compute new lease expiration clamped to deadline_at
-    assess = attempt.assessment
     try:
-        cfg_lease = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
+        lease_seconds = max(1, int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 60)))
     except RuntimeError:
-        cfg_lease = 3600
-    lease_seconds = (
-        int(assess.time_limit_minutes * 60)
-        if assess and getattr(assess, "time_limit_minutes", None)
-        else cfg_lease
-    )
+        lease_seconds = 60
 
     new_expiry = now + timedelta(seconds=lease_seconds)
     deadline = _normalize_dt(attempt.deadline_at)
     if deadline is not None and (_normalize_dt(new_expiry) or new_expiry) > deadline:
         new_expiry = attempt.deadline_at
 
-    attempt.lease_expires_at = new_expiry
-    attempt.last_heartbeat_at = now
-    attempt.updated_at = now
+    renewed = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.id == attempt.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+            AssessmentAttempt.lease_token_hash == token_hash,
+            AssessmentAttempt.lease_epoch == attempt.lease_epoch,
+            AssessmentAttempt.lease_expires_at > now,
+        )
+        .update(
+            {"lease_expires_at": new_expiry, "last_heartbeat_at": now, "updated_at": now},
+            synchronize_session=False,
+        )
+    )
+    if renewed != 1:
+        sess.rollback()
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+    sess.refresh(attempt)
 
     sess.flush()
     try:
@@ -1184,20 +1187,26 @@ def takeover_attempt_lease(
     now = utc_now()
     _check_and_expire_if_needed(sess, attempt, now)
 
-    # Generate new 32-byte hex lease token and hash
-    assess = attempt.assessment
-    try:
-        cfg_lease = int(current_app.config.get("ATTEMPT_LEASE_SECONDS", 3600))
-    except RuntimeError:
-        cfg_lease = 3600
-    lease_seconds = (
-        int(assess.time_limit_minutes * 60)
-        if assess and getattr(assess, "time_limit_minutes", None)
-        else cfg_lease
+    acquired = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.id == attempt.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+            sa.or_(
+                AssessmentAttempt.lease_token_hash.is_(None),
+                AssessmentAttempt.lease_expires_at.is_(None),
+                AssessmentAttempt.lease_expires_at <= now,
+            ),
+        )
+        .update({"updated_at": now}, synchronize_session=False)
     )
+    if acquired != 1:
+        sess.rollback()
+        raise AttemptLeaseConflictError("The current editing lease is still active.")
+    sess.refresh(attempt)
 
+    # Generate new 32-byte hex lease token and hash
     raw_token, token_hash, acquired_at, expires_at = _generate_lease(
-        lease_seconds=lease_seconds,
         deadline_at=attempt.deadline_at,
     )
 
@@ -1268,9 +1277,23 @@ def release_attempt_lease(
         raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
 
     now = utc_now()
-    attempt.lease_token_hash = None
-    attempt.lease_expires_at = now
-    attempt.updated_at = now
+    released = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.id == attempt.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+            AssessmentAttempt.lease_token_hash == token_hash,
+            AssessmentAttempt.lease_epoch == attempt.lease_epoch,
+        )
+        .update(
+            {"lease_token_hash": None, "lease_expires_at": now, "updated_at": now},
+            synchronize_session=False,
+        )
+    )
+    if released != 1:
+        sess.rollback()
+        raise AttemptLeaseConflictError("Editing lease was lost or taken over by another window.")
+    sess.refresh(attempt)
 
     _record_attempt_audit(
         sess=sess,
@@ -1446,12 +1469,35 @@ def save_attempt_answer(
 
     # 4. Lease Epoch check
     payload_epoch = payload.get("lease_epoch")
-    if payload_epoch is not None and int(payload_epoch) < (attempt.lease_epoch or 1):
+    if payload_epoch is not None and int(payload_epoch) != (attempt.lease_epoch or 1):
         raise StaleLeaseEpochError(
             f"Stale lease epoch ({payload_epoch} < {attempt.lease_epoch or 1})."
         )
 
+    # Serialize answer mutations with lease changes and terminal transitions.
+    admitted = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.id == attempt.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+            AssessmentAttempt.lease_token_hash == token_hash,
+            AssessmentAttempt.lease_epoch == attempt.lease_epoch,
+            AssessmentAttempt.lease_expires_at >= now,
+            sa.or_(AssessmentAttempt.deadline_at.is_(None), AssessmentAttempt.deadline_at > now),
+        )
+        .update({"updated_at": now}, synchronize_session=False)
+    )
+    if admitted != 1:
+        sess.rollback()
+        raise AttemptLeaseConflictError("Editing lease or attempt state changed.")
+    sess.refresh(attempt)
+
     # Resolve AttemptQuestion
+    now = utc_now()
+    _check_and_expire_if_needed(sess, attempt, now)
+    if (_normalize_dt(attempt.lease_expires_at) or now) <= now:
+        sess.rollback()
+        raise AttemptLeaseExpiredError("Editing lease has expired.")
     aq = _resolve_attempt_question(attempt, attempt_question_id, session=sess)
     if aq is None:
         raise AttemptValidationError("Attempt question not found in this attempt.")
@@ -1586,10 +1632,13 @@ def save_attempt_answer(
         sess.flush()
 
     # Handle choices (for single/multiple choice questions)
-    selected_choice_keys = (
-        payload.get("selected_choice_keys")
-        or payload.get("choice_keys")
-        or payload.get("selected_choices")
+    selected_choice_keys = next(
+        (
+            payload[key]
+            for key in ("selected_choice_keys", "choice_keys", "selected_choices")
+            if key in payload
+        ),
+        None,
     )
     if selected_choice_keys is None and "selected_choice_key" in payload:
         val = payload["selected_choice_key"]
@@ -1734,10 +1783,32 @@ def sync_offline_answers(
     current_epoch = attempt.lease_epoch or 1
     for item in answers_batch:
         item_epoch = item.get("lease_epoch")
-        if item_epoch is not None and int(item_epoch) < current_epoch:
+        if item_epoch is not None and int(item_epoch) != current_epoch:
             raise StaleLeaseEpochError(f"Stale lease epoch ({item_epoch} < {current_epoch}).")
 
+    admitted = (
+        sess.query(AssessmentAttempt)
+        .filter(
+            AssessmentAttempt.id == attempt.id,
+            AssessmentAttempt.status == "IN_PROGRESS",
+            AssessmentAttempt.lease_token_hash == token_hash,
+            AssessmentAttempt.lease_epoch == current_epoch,
+            AssessmentAttempt.lease_expires_at >= now,
+            sa.or_(AssessmentAttempt.deadline_at.is_(None), AssessmentAttempt.deadline_at > now),
+        )
+        .update({"updated_at": now}, synchronize_session=False)
+    )
+    if admitted != 1:
+        sess.rollback()
+        raise AttemptLeaseConflictError("Editing lease or attempt state changed.")
+    sess.refresh(attempt)
+
     # Sort batch by client_sequence ascending
+    now = utc_now()
+    _check_and_expire_if_needed(sess, attempt, now)
+    if (_normalize_dt(attempt.lease_expires_at) or now) <= now:
+        sess.rollback()
+        raise AttemptLeaseExpiredError("Editing lease has expired.")
     sorted_items = sorted(answers_batch, key=lambda x: int(x.get("client_sequence", 0)))
 
     synced: list[dict[str, Any]] = []
@@ -1854,10 +1925,13 @@ def sync_offline_answers(
             sess.flush()
 
         # Choices
-        selected_choice_keys = (
-            item.get("selected_choice_keys")
-            or item.get("choice_keys")
-            or item.get("selected_choices")
+        selected_choice_keys = next(
+            (
+                item[key]
+                for key in ("selected_choice_keys", "choice_keys", "selected_choices")
+                if key in item
+            ),
+            None,
         )
         if selected_choice_keys is None and "selected_choice_key" in item:
             val = item["selected_choice_key"]
@@ -1920,6 +1994,38 @@ def sync_offline_answers(
     }
 
 
+def _grade_submitted_attempt(
+    attempt: AssessmentAttempt, sess: Session | scoped_session[Any]
+) -> None:
+    grade_attempt_objective_questions(attempt, session=sess)
+    # Corrections created while this attempt was open apply at submission.
+    from pwd301.models.attempt_regrade import QuestionCorrection, RegradeItem
+    from pwd301.services.regrade_worker import (
+        _evaluate_attempt_item_regrade,
+        _update_regrade_job_state,
+        create_or_get_regrade_job,
+    )
+
+    question_ids = [
+        aq.source_question_id for aq in attempt.attempt_questions if aq.source_question_id
+    ]
+    corrections = (
+        sess.query(QuestionCorrection)
+        .filter(
+            QuestionCorrection.question_id.in_(question_ids),
+        )
+        .order_by(QuestionCorrection.effective_at.asc(), QuestionCorrection.id.asc())
+        .all()
+    )
+    for correction in corrections:
+        job = create_or_get_regrade_job(correction.id, session=sess)
+        item = sess.query(RegradeItem).filter_by(regrade_job_id=job.id, attempt_id=attempt.id).one()
+        if item.status not in ("COMPLETED", "SKIPPED"):
+            _evaluate_attempt_item_regrade(item, job, correction, session=sess)
+        sess.flush()
+        _update_regrade_job_state(job, correction, sess)
+
+
 def submit_assessment_attempt(
     actor: User,
     attempt_id: AssessmentAttempt | int | uuid.UUID | str,
@@ -1952,6 +2058,40 @@ def submit_assessment_attempt(
     if attempt.student_user_id != actor.id:
         raise ForbiddenError("You do not have permission to submit this assessment attempt.")
 
+    # Lock shared correction/revision parents before this attempt's write lock.
+    # Otherwise concurrent graders can deadlock upgrading the revision marker.
+    from pwd301.models.attempt_regrade import QuestionCorrection
+
+    question_ids = {
+        question.source_question_id
+        for question in attempt.attempt_questions
+        if question.source_question_id is not None
+    }
+    correction_ids = (
+        sess.query(QuestionCorrection.id)
+        .filter(QuestionCorrection.question_id.in_(question_ids))
+        .order_by(QuestionCorrection.id)
+        .all()
+    )
+    for (correction_id,) in correction_ids:
+        sess.query(QuestionCorrection).filter(QuestionCorrection.id == correction_id).update(
+            {"status": QuestionCorrection.status}, synchronize_session=False
+        )
+    revision_ids = sorted(
+        {
+            question.source_question_revision_id
+            for question in attempt.attempt_questions
+            if question.source_question_revision_id is not None
+        }
+    )
+    for revision_id in revision_ids:
+        sess.execute(
+            sa.select(QuestionRevision.id)
+            .where(QuestionRevision.id == revision_id)
+            .with_hint(QuestionRevision, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+        ).all()
+
     # Parse and validate idempotency key
     if idempotency_key is None:
         key_uuid = (
@@ -1975,6 +2115,24 @@ def submit_assessment_attempt(
         if attempt.submission_idempotency_key is not None and str(
             attempt.submission_idempotency_key
         ) == str(key_uuid):
+            if attempt.status == "SUBMITTED":
+                repaired = (
+                    sess.query(AssessmentAttempt)
+                    .filter(
+                        AssessmentAttempt.id == attempt.id,
+                        AssessmentAttempt.status == "SUBMITTED",
+                        AssessmentAttempt.submission_idempotency_key == key_uuid,
+                    )
+                    .update({"updated_at": utc_now()}, synchronize_session=False)
+                )
+                sess.refresh(attempt)
+                if repaired == 1 and attempt.status == "SUBMITTED":
+                    try:
+                        _grade_submitted_attempt(attempt, sess)
+                        sess.commit()
+                    except Exception:
+                        sess.rollback()
+                        raise
             return {
                 "attempt_id": str(attempt.public_id),
                 "status": attempt.status,
@@ -2012,17 +2170,22 @@ def submit_assessment_attempt(
             f"Assessment attempt is not in progress (status: {attempt.status})."
         )
 
-    # Validate lease token if provided (only if not expired)
-    if not was_expired and raw_lease_token is not None and isinstance(raw_lease_token, str):
+    # Active manual submission requires the current, unexpired editing lease.
+    if not was_expired:
+        if not raw_lease_token or not isinstance(raw_lease_token, str):
+            raise AttemptLeaseConflictError("A current editing lease is required to submit.")
         token_hash = hashlib.sha256(raw_lease_token.strip().encode("utf-8")).digest()
         expected_hash = (
             attempt.lease_token_hash if attempt.lease_token_hash is not None else DUMMY_LEASE_HASH
         )
         digest_matches = hmac.compare_digest(expected_hash, token_hash)
-        if attempt.lease_token_hash is not None and not digest_matches:
+        if attempt.lease_token_hash is None or not digest_matches:
             raise AttemptLeaseConflictError(
                 "Editing lease was lost or taken over by another window."
             )
+        lease_expiry = _normalize_dt(attempt.lease_expires_at)
+        if lease_expiry is None or norm_now is None or lease_expiry <= norm_now:
+            raise AttemptLeaseExpiredError("Editing lease has expired.")
 
     effective_sub_time = min(now, deadline) if deadline else now
 
@@ -2034,6 +2197,15 @@ def submit_assessment_attempt(
             .filter(
                 AssessmentAttempt.id == attempt.id,
                 AssessmentAttempt.status.in_(allowed_statuses),
+                *(
+                    []
+                    if was_expired
+                    else [
+                        AssessmentAttempt.lease_token_hash == token_hash,
+                        AssessmentAttempt.lease_expires_at > now,
+                        AssessmentAttempt.lease_epoch == attempt.lease_epoch,
+                    ]
+                ),
             )
             .update(
                 {
@@ -2092,9 +2264,21 @@ def submit_assessment_attempt(
             f"Assessment attempt is not in progress (status: {status_str})."
         )
 
+    # Recheck server time after waiting for a concurrent answer transaction.
+    admitted_at = utc_now()
+    if not was_expired and (
+        (deadline is not None and admitted_at >= deadline)
+        or (close_at is not None and admitted_at >= close_at)
+        or (lease_expiry is not None and admitted_at >= lease_expiry)
+    ):
+        sess.rollback()
+        sess.refresh(attempt)
+        _check_and_expire_if_needed(sess, attempt, admitted_at)
+        raise AttemptLeaseExpiredError("Editing lease has expired.")
+
     # Transition succeeded
     attempt.status = "SUBMITTED"
-    attempt.submitted_at = now
+    attempt.submitted_at = effective_sub_time
     attempt.finalized_at = now
     attempt.submission_idempotency_key = key_uuid
     attempt.lease_token_hash = None
@@ -2111,15 +2295,8 @@ def submit_assessment_attempt(
     )
 
     try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
-
-    # Trigger objective auto-grading engine (Algorithm 10)
-    grade_attempt_objective_questions(attempt, session=sess)
-
-    try:
+        # Terminal state, grade, result and histories share one commit.
+        _grade_submitted_attempt(attempt, sess)
         sess.commit()
     except Exception:
         sess.rollback()

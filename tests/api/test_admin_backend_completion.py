@@ -233,6 +233,7 @@ def test_admin_security_last_admin_protection(
         f"/admin/users/{second_admin.public_id}/suspend",
         json={
             "reason": "Valid suspension of secondary administrator",
+            "confirmation_phrase": "CONFIRM_USER_SUSPEND",
             "admin_password": "Password@123",
         },
     )
@@ -244,6 +245,7 @@ def test_admin_security_last_admin_protection(
         f"/admin/users/{admin_user.public_id}/suspend",
         json={
             "reason": "Attempting to suspend last active admin",
+            "confirmation_phrase": "CONFIRM_USER_SUSPEND",
             "admin_password": "Password@123",
         },
     )
@@ -261,7 +263,11 @@ def test_admin_security_reason_validation(
     # 1. Short reason on suspend
     res = client.post(
         f"/admin/users/{student_user.public_id}/suspend",
-        json={"reason": "bad", "admin_password": "Password@123"},
+        json={
+            "reason": "bad",
+            "admin_password": "Password@123",
+            "confirmation_phrase": "CONFIRM_USER_SUSPEND",
+        },
     )
     assert res.status_code == 400
     res_msg = res.get_json()["error"]["message"].lower()

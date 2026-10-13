@@ -170,7 +170,9 @@ def test_two_tabs_takeover_invalidates_tab_one(
     assert hb1["status"] == "IN_PROGRESS"
     assert verify_attempt_lease(attempt, tab1_token) is True
 
-    # Tab 2 performs takeover
+    # Tab 2 performs takeover after the abandoned lease expires.
+    attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    db.session.commit()
     taken_attempt, tab2_token = takeover_attempt_lease(
         actor=enrolled_student,
         attempt_id=attempt.id,
@@ -215,8 +217,10 @@ def test_rapid_sequential_takeovers_cascade(
 
     tokens: list[str] = [initial_token]
 
-    # Simulate 5 rapid tab takeovers
+    # Each abandoned lease must expire before the next tab can take over.
     for _ in range(5):
+        attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.session.commit()
         _, new_token = takeover_attempt_lease(
             actor=enrolled_student,
             attempt_id=attempt.id,
@@ -338,6 +342,8 @@ def test_concurrent_threads_lease_takeover_race(tmp_path: Path) -> None:
         attempt, tab1_token = start_assessment_attempt(student, assessment.id, session=sess)
         attempt_id = attempt.id
         student_id = student.id
+        # An expired owner cannot renew while another tab claims the lease.
+        attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         sess.commit()
 
         def tab1_renew() -> tuple[str, bool, str | None]:
@@ -374,14 +380,15 @@ def test_concurrent_threads_lease_takeover_race(tmp_path: Path) -> None:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             f1 = executor.submit(tab1_renew)
             f2 = executor.submit(tab2_takeover)
-            _ = f1.result()
+            res1 = f1.result()
             res2 = f2.result()
 
         sess.expire_all()
         final_attempt = sess.get(AssessmentAttempt, attempt_id)
         assert final_attempt is not None
 
-        # Tab 2 takeover must succeed
+        # The expired token fails, and takeover acquires the sole valid lease.
+        assert res1[1] is False
         assert res2[1] is True
         tab2_token = res2[2]
         assert tab2_token is not None

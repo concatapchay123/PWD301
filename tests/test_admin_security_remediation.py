@@ -23,6 +23,48 @@ def student_user(app):
         yield user
 
 
+@pytest.mark.parametrize("entrypoint", ["audited", "lifecycle"])
+def test_suspension_retry_preserves_auth_version_and_one_security_event(
+    app, primary_admin, student_user, entrypoint
+):
+    from pwd301.models.notification_audit import AuditEvent, EmailDelivery, NotificationEvent
+    from pwd301.services.audit_service import suspend_user_account
+    from pwd301.services.user_service import suspend_user
+
+    def suspend():
+        if entrypoint == "audited":
+            return suspend_user_account(
+                primary_admin, student_user.id, "Verified suspension reason"
+            )
+        return suspend_user(student_user.id, "Verified suspension reason")
+
+    first = suspend()
+    db.session.refresh(first)
+    original_version, original_time = first.auth_version, first.suspended_at
+    replay = suspend()
+    assert replay.auth_version == original_version
+    assert replay.suspended_at == original_time
+    assert (
+        db.session.query(NotificationEvent).filter_by(event_type="ACCOUNT_SUSPENDED").count() == 1
+    )
+    assert db.session.query(EmailDelivery).filter_by(recipient_user_id=student_user.id).count() == 1
+    assert db.session.query(AuditEvent).filter_by(action="USER_SUSPEND").count() == (
+        1 if entrypoint == "audited" else 0
+    )
+
+
+def test_unsuspension_retry_preserves_auth_version_and_one_audit(app, primary_admin, student_user):
+    from pwd301.models.notification_audit import AuditEvent
+    from pwd301.services.audit_service import suspend_user_account, unsuspend_user_account
+
+    suspend_user_account(primary_admin, student_user.id, "Verified suspension reason")
+    first = unsuspend_user_account(primary_admin, student_user.id, "Verified restoration reason")
+    version = first.auth_version
+    replay = unsuspend_user_account(primary_admin, student_user.id, "Verified restoration reason")
+    assert replay.auth_version == version
+    assert db.session.query(AuditEvent).filter_by(action="USER_UNSUSPEND").count() == 1
+
+
 @pytest.fixture
 def primary_admin(app):
     with app.app_context():
@@ -546,6 +588,7 @@ def test_suspend_user_requires_fresh_reauth(app, client, primary_admin):
             f"/api/admin/users/{target.public_id}/suspend",
             json={
                 "reason": "Test suspension with correct password",
+                "confirmation_phrase": "CONFIRM_USER_SUSPEND",
                 "password": "SuperPassword123!",
             },
             headers=headers,

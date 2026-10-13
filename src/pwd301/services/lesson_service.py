@@ -17,7 +17,6 @@ import contextlib
 import datetime
 import json
 import re
-import time
 import uuid
 from typing import Any
 
@@ -33,6 +32,7 @@ from pwd301.models.course import (
     LearningUnit,
     Lesson,
     LessonProgress,
+    LessonProgressReceipt,
 )
 from pwd301.models.file_import import FileAsset
 from pwd301.models.identity import Role, User
@@ -568,7 +568,6 @@ TEMP_POSITION_OFFSET = 1_000_000
 TRASH_POSITION_BASE = 10_000_000
 
 # Sliding cache of recent client_event_ids to prevent double-counting on network retries
-_RECENT_CLIENT_EVENT_IDS: dict[str, float] = {}
 
 
 def _record_lesson_audit_event(
@@ -1072,6 +1071,9 @@ def reorder_lessons(
     course_id: int | uuid.UUID | str,
     ordered_lesson_ids: list[int | uuid.UUID | str],
     session: Session | scoped_session[Any] | None = None,
+    *,
+    move: dict[str, Any] | None = None,
+    validate_only: bool = False,
 ) -> list[Lesson]:
     """Reorder lessons to maintain a contiguous 1..N sequence without unique collisions.
 
@@ -1082,6 +1084,8 @@ def reorder_lessons(
         course_id: Identifier of the course.
         ordered_lesson_ids: Full ordered list of lesson IDs representing new sequence.
         session: Optional SQLAlchemy session.
+        move: Optional lesson and destination-unit identifiers applied with the order.
+        validate_only: Validate a queued review intent without modifying curriculum or audit.
 
     Returns:
         List of reordered Lesson instances sorted by new position.
@@ -1093,6 +1097,14 @@ def reorder_lessons(
     """
     sess = session if session is not None else db.session
     course = require_course_manager(actor, course_id, session=sess)
+    course = (
+        sess.query(Course)
+        .filter_by(id=course.id)
+        .with_hint(Course, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
     _ensure_course_not_pending_changeset(course.id, actor, session=sess)
     if course.status == "SUBMITTED_FOR_REVIEW" and not actor.is_admin:
         raise LessonStateViolationError(
@@ -1100,10 +1112,15 @@ def reorder_lessons(
         )
 
     active_lessons = (
-        sess.query(Lesson).filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None)).all()
+        sess.query(Lesson)
+        .filter(Lesson.course_id == course.id, Lesson.deleted_at.is_(None))
+        .populate_existing()
+        .all()
     )
 
     if not ordered_lesson_ids and not active_lessons:
+        if move is not None:
+            raise LessonPositionConflictError("An empty course has no lesson to move.")
         return []
 
     # Map existing active lessons by internal id and string/UUID public_id
@@ -1145,6 +1162,60 @@ def reorder_lessons(
         )
         raise LessonPositionConflictError(err_msg)
 
+    moved_lesson = None
+    target_unit = None
+    if move is not None:
+        if not isinstance(move, dict):
+            raise LessonValidationError("move must be an object.")
+        lesson_ref = move.get("lesson_id")
+        unit_ref = move.get("learning_unit_id")
+        if (
+            not isinstance(lesson_ref, (int, uuid.UUID, str))
+            or isinstance(lesson_ref, bool)
+            or not isinstance(unit_ref, (int, uuid.UUID, str))
+            or isinstance(unit_ref, bool)
+        ):
+            raise LessonValidationError("move requires lesson_id and learning_unit_id identifiers.")
+        moved_lesson = _resolve_lesson(lesson_ref, session=sess)
+        target_unit = _resolve_learning_unit(unit_ref, session=sess)
+        if (
+            moved_lesson is None
+            or moved_lesson.id not in seen_ids
+            or moved_lesson.status in ("TRASH", "HISTORICAL")
+            or target_unit is None
+            or target_unit.course_id != course.id
+            or target_unit.deleted_at is not None
+        ):
+            raise LessonValidationError(
+                "Moved lesson and target unit must be active in this course."
+            )
+        target_unit = (
+            sess.query(LearningUnit)
+            .filter_by(id=target_unit.id)
+            .with_hint(LearningUnit, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .with_for_update()
+            .populate_existing()
+            .one()
+        )
+        if target_unit.deleted_at is not None:
+            raise LessonValidationError("Target learning unit is no longer active.")
+        sess.expire(target_unit, ["lessons"])
+        if moved_lesson.learning_unit_id != target_unit.id:
+            siblings = [
+                lesson
+                for lesson in target_unit.lessons
+                if lesson.deleted_at is None and lesson.status not in ("TRASH", "HISTORICAL")
+            ]
+            if len(siblings) >= 10:
+                raise LessonValidationError("A learning unit can contain at most 10 lessons.")
+            validate_lesson_media_limits(target_unit, moved_lesson, moved_lesson.markdown_content)
+
+    if validate_only:
+        return resolved_ordered
+
+    if moved_lesson is not None and target_unit is not None:
+        moved_lesson.learning_unit_id = target_unit.id
+
     # Safe 2-phase reordering to prevent UNIQUE (course_id, position) collisions
     # Phase 1: Assign temporary positive offset positions
     for idx, les in enumerate(active_lessons):
@@ -1159,7 +1230,12 @@ def reorder_lessons(
 
     # Append-only audit logging
     order_records = [
-        {"lesson_id": str(les.public_id), "position": les.position} for les in resolved_ordered
+        {
+            "lesson_id": str(les.public_id),
+            "position": les.position,
+            "learning_unit_id": les.learning_unit_id,
+        }
+        for les in resolved_ordered
     ]
     order_snapshot = json.dumps(order_records)
     _record_lesson_audit_event(
@@ -1675,6 +1751,12 @@ def record_lesson_progress(
     if _lesson_requires_video_watch(lesson) and not server_verified:
         raise LessonValidationError("A playback session is required for video progress.")
 
+    event_id = None
+    if client_event_id is not None:
+        event_id = str(client_event_id).strip()
+        if not event_id or len(event_id) > 128 or not event_id.isascii():
+            raise LessonValidationError("client_event_id must contain 1..128 ASCII characters.")
+
     # Verify student enrollment (ACTIVE or COMPLETED)
     enrollment = (
         sess.query(Enrollment)
@@ -1683,6 +1765,9 @@ def record_lesson_progress(
             Enrollment.course_id == lesson.course_id,
             Enrollment.status.in_(["ACTIVE", "COMPLETED"]),
         )
+        .with_hint(Enrollment, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
         .first()
     )
     if enrollment is None:
@@ -1729,6 +1814,7 @@ def record_lesson_progress(
             LessonProgress.enrollment_period_id == active_period.id,
             LessonProgress.lesson_id == lesson.id,
         )
+        .populate_existing()
         .first()
     )
 
@@ -1748,22 +1834,26 @@ def record_lesson_progress(
         sess.add(progress)
         sess.flush()
 
-    # Deduplicate client_event_id to prevent double-counting on network retries (Algorithm 02)
-    if client_event_id is not None:
-        cid_str = str(client_event_id).strip()
-        curr_ts = time.time()
-        if len(_RECENT_CLIENT_EVENT_IDS) > 5000:
-            expired_keys = [k for k, ts in _RECENT_CLIENT_EVENT_IDS.items() if curr_ts - ts > 600]
-            for k in expired_keys:
-                _RECENT_CLIENT_EVENT_IDS.pop(k, None)
-
-        dedup_key = f"{active_period.id}:{lesson.id}:{cid_str}"
-        if dedup_key in _RECENT_CLIENT_EVENT_IDS:
-            # Replay/duplicate event: do not increment seconds, update last_activity_at only
-            progress.last_activity_at = now_ts
-            sess.flush()
+    if event_id is not None:
+        receipt = (
+            sess.query(LessonProgressReceipt)
+            .filter_by(
+                enrollment_period_id=active_period.id,
+                lesson_id=lesson.id,
+                client_event_id=event_id,
+            )
+            .first()
+        )
+        if receipt is not None:
             return progress
-        _RECENT_CLIENT_EVENT_IDS[dedup_key] = curr_ts
+        sess.add(
+            LessonProgressReceipt(
+                enrollment_period_id=active_period.id,
+                lesson_id=lesson.id,
+                client_event_id=event_id,
+                created_at=now_ts,
+            )
+        )
 
     # Server-Authoritative Wall-Clock Pacing Enforcement (Anti-Bypass Iron Law)
     credited_sec = sec
@@ -1890,7 +1980,9 @@ def complete_lesson_mini_quiz(
         raise LessonValidationError("Answer every lesson quiz question before completing it.")
 
     passing_percent = 80.0
-    match_pass = re.search(r"<!--\s*quiz_passing_percent:\s*(\d+)", lesson.markdown_content or "")
+    match_pass = re.search(
+        r"<!--\s*(?:mini_quiz_passing|quiz_passing_percent):\s*(\d+)", lesson.markdown_content or ""
+    )
     if match_pass:
         try:
             passing_percent = float(match_pass.group(1))
@@ -2294,6 +2386,12 @@ def create_lesson_change_request(
             except (ValueError, TypeError):
                 pass
 
+    if original_target_id:
+        original = _resolve_lesson(original_target_id, session=sess)
+        if original is None or original.course_id != course.id or original.deleted_at is not None:
+            raise LessonValidationError("Target lesson must be an active lesson of this course.")
+        original_target_id = original.id
+
     # Autosave Deduplication & Idempotency: Check if there is already a PENDING request for this lesson
     if original_target_id:
         existing_req = (
@@ -2322,8 +2420,6 @@ def create_lesson_change_request(
                 staged.updated_at = utc_now()
                 existing_req.proposed_payload_json = json.dumps(payload, default=str)
                 existing_req.created_at = utc_now()
-                # Ensure existing resources are also synchronized
-                _copy_lesson_resources(original_target_id, staged.id, session=sess)
                 try:
                     sess.commit()
                 except Exception:
@@ -2349,6 +2445,7 @@ def create_lesson_change_request(
     lesson_data["change_request_id"] = req.id
     staged_lesson = create_lesson(actor, course.id, lesson_data, session=sess)
     if original_target_id:
+        staged_lesson.previous_lesson_id = original_target_id
         _copy_lesson_resources(original_target_id, staged_lesson.id, session=sess)
     else:
         req.target_id = staged_lesson.id
@@ -2478,7 +2575,6 @@ def approve_course_change_request(
                     staged.material_change_summary = (
                         review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
                     )
-                    _copy_lesson_resources(orig.id, staged.id, session=sess)
             else:
                 staged.revision_no = 1
 
@@ -2492,15 +2588,17 @@ def approve_course_change_request(
         for item in deleted_lessons:
             del_id = item.get("lesson_id") if isinstance(item, dict) else item
             if del_id:
-                try:
-                    trash_lesson(
-                        actor,
-                        del_id,
-                        reason="Được xóa qua đợt cập nhật đã phê duyệt",
-                        session=sess,
+                deleted = _resolve_lesson(del_id, session=sess)
+                if deleted is None or deleted.course_id != req.course_id:
+                    raise LessonValidationError(
+                        "Deleted lesson must belong to the reviewed course."
                     )
-                except Exception:
-                    pass
+                trash_lesson(
+                    actor,
+                    deleted.id,
+                    reason="Được xóa qua đợt cập nhật đã phê duyệt",
+                    session=sess,
+                )
 
         staged_del_lessons = (
             sess.query(Lesson)
@@ -2534,7 +2632,7 @@ def approve_course_change_request(
 
         # Phase 5: Handle any added lessons in p_data not yet staged in DB
         added_lessons = p_data.get("added_lessons") or []
-        for new_item in added_lessons:
+        for added_index, new_item in enumerate(added_lessons):
             temp_id = new_item.get("temp_id") or new_item.get("lesson_id")
             already_exists = False
             if temp_id:
@@ -2551,18 +2649,14 @@ def approve_course_change_request(
                 unit_id = None
                 raw_unit_id = new_item.get("learning_unit_id")
                 if raw_unit_id:
-                    try:
-                        u_uuid = uuid.UUID(str(raw_unit_id))
-                        u_obj = (
-                            sess.query(LearningUnit)
-                            .filter(LearningUnit.public_id == u_uuid)
-                            .first()
-                        )
-                        if u_obj and u_obj.course_id == req.course_id:
-                            unit_id = u_obj.id
-                    except (ValueError, TypeError):
-                        if str(raw_unit_id).isdigit():
-                            unit_id = int(raw_unit_id)
+                    u_obj = _resolve_learning_unit(raw_unit_id, session=sess)
+                    if (
+                        u_obj is None
+                        or u_obj.course_id != req.course_id
+                        or u_obj.deleted_at is not None
+                    ):
+                        raise LessonValidationError("Learning unit does not belong to this course.")
+                    unit_id = u_obj.id
                 if unit_id is None:
                     fu = (
                         sess.query(LearningUnit)
@@ -2582,7 +2676,7 @@ def approve_course_change_request(
                     summary=new_item.get("summary"),
                     markdown_content=new_item.get("markdown_content") or "# Bài giảng mới",
                     estimated_duration_minutes=new_item.get("estimated_duration_minutes") or 15,
-                    position=TEMP_POSITION_OFFSET + 9999,
+                    position=TEMP_POSITION_OFFSET + len(all_course_lessons) + added_index + 1,
                     status="PUBLISHED",
                     published_at=now,
                     created_at=now,
@@ -2643,6 +2737,14 @@ def approve_course_change_request(
             .all()
         )
         for op in other_pending:
+            represented = {lesson.change_request_id for lesson in staged_lessons}
+            if op.id not in represented:
+                previous_payload = json.loads(op.proposed_payload_json or "{}")
+                if (
+                    op.change_type != "COURSE_VERSION_CHANGESET"
+                    and previous_payload.get("action") != "COURSE_VERSION_CHANGESET"
+                ):
+                    continue
             op.status = "CANCELLED"
             op.review_reason = f"Đã được giải quyết qua đợt phê duyệt #{req.id}"
             op.reviewed_at = now
@@ -2727,10 +2829,8 @@ def approve_course_change_request(
                 staged.material_change_summary = (
                     review_reason or "Nội dung cập nhật đã được Admin phê duyệt."
                 )
-                _copy_lesson_resources(active_at_pos.id, staged.id, session=sess)
                 sess.flush()
             elif req.target_id:
-                _copy_lesson_resources(req.target_id, staged.id, session=sess)
                 sess.flush()
             else:
                 staged.revision_no = 1
@@ -3191,8 +3291,14 @@ def submit_course_changeset(
             les_pos = int(les.position or 0)
             orig_pos = int(orig.position or 0)
 
-            les_res = sorted([r.file_asset_id for r in les.resources if r.file_asset_id])
-            orig_res = sorted([r.file_asset_id for r in orig.resources if r.file_asset_id])
+            les_res = sorted(
+                (r.file_asset_id, r.position, r.label or "", bool(r.is_required))
+                for r in les.resources
+            )
+            orig_res = sorted(
+                (r.file_asset_id, r.position, r.label or "", bool(r.is_required))
+                for r in orig.resources
+            )
 
             les_rules_same = (
                 les.minimum_completion_seconds == orig.minimum_completion_seconds
@@ -3309,6 +3415,12 @@ def submit_course_changeset(
         .all()
     )
     for op in older_pending:
+        previous_payload = json.loads(op.proposed_payload_json or "{}")
+        if (
+            op.change_type != "COURSE_VERSION_CHANGESET"
+            and previous_payload.get("action") != "COURSE_VERSION_CHANGESET"
+        ):
+            continue
         op.status = "CANCELLED"
         op.review_reason = "Được thay thế bởi đợt cập nhật khóa học mới."
         op.reviewed_at = now
@@ -4450,7 +4562,7 @@ def apply_course_version_changeset(
 
     # Phase 5: Added lessons
     added_lessons = payload.get("added_lessons") or []
-    for new_item in added_lessons:
+    for added_index, new_item in enumerate(added_lessons):
         temp_id = new_item.get("temp_id") or new_item.get("lesson_id")
         already_exists = False
         if temp_id:
@@ -4468,16 +4580,10 @@ def apply_course_version_changeset(
             unit_id = None
             raw_unit_id = new_item.get("learning_unit_id")
             if raw_unit_id:
-                try:
-                    u_uuid = uuid.UUID(str(raw_unit_id))
-                    u_obj = (
-                        sess.query(LearningUnit).filter(LearningUnit.public_id == u_uuid).first()
-                    )
-                    if u_obj and u_obj.course_id == course.id:
-                        unit_id = u_obj.id
-                except (ValueError, TypeError):
-                    if str(raw_unit_id).isdigit():
-                        unit_id = int(raw_unit_id)
+                u_obj = _resolve_learning_unit(raw_unit_id, session=sess)
+                if u_obj is None or u_obj.course_id != course.id or u_obj.deleted_at is not None:
+                    raise LessonValidationError("Learning unit does not belong to this course.")
+                unit_id = u_obj.id
 
             if unit_id is None:
                 first_unit = (
@@ -4507,7 +4613,7 @@ def apply_course_version_changeset(
                 summary=new_item.get("summary"),
                 markdown_content=new_item.get("markdown_content") or "# Bài giảng mới",
                 estimated_duration_minutes=new_item.get("estimated_duration_minutes") or 15,
-                position=TEMP_POSITION_OFFSET + 9999,
+                position=TEMP_POSITION_OFFSET + len(all_course_lessons) + added_index + 1,
                 status="PUBLISHED",
                 published_at=now,
                 created_at=now,

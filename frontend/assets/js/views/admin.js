@@ -647,7 +647,7 @@ class AdminView {
       }
 
       if (tabKey === 'tab-users') {
-        AdminView.renderTabUsers(contentBox);
+        await AdminView.renderTabUsers(contentBox);
       } else if (tabKey === 'tab-courses-review' || tabKey === 'tab-review') {
         await AdminView.renderTabCoursesReview(contentBox, subQueue);
       } else if (tabKey === 'tab-instructor-apps') {
@@ -809,8 +809,18 @@ class AdminView {
           return;
         }
 
+        const accountStateBlockReason = u => {
+          const actor = window.app?.currentUser;
+          if (!actor?.is_primary_admin) return 'Chỉ Admin chính mới có quyền thay đổi trạng thái tài khoản';
+          if (u.status !== 'SUSPENDED') {
+            if (u.is_primary_admin || u.admin_sub_role === 'ADMIN_PRIMARY') return 'Không thể tạm ngưng Admin chính';
+            if (actor.id === u.user_id || actor.public_id === u.user_id || actor.email === u.email) return 'Không thể tạm ngưng tài khoản của chính mình';
+          }
+          return '';
+        };
         tbody.innerHTML = userList.map(u => {
           const isSuspended = u.status === 'SUSPENDED';
+          const stateBlockReason = accountStateBlockReason(u);
           const revocableRoles = (u.roles || []).filter(r => r !== 'STUDENT');
           const avatarContent = AdminView.renderUserAvatar(u);
 
@@ -854,6 +864,9 @@ class AdminView {
                   <button type="button" class="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 text-xs font-bold border border-amber-200 dark:border-amber-800 transition-colors revoke-role-btn ${!window.app?.currentUser?.is_primary_admin ? 'opacity-60 cursor-not-allowed' : ''}" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}" data-roles="${(u.roles || []).join(',')}" data-admin-sub-role="${u.admin_sub_role || 'ADMIN_PRIMARY'}" title="${!window.app?.currentUser?.is_primary_admin ? 'Chỉ Admin chính mới có quyền thu hồi quyền' : 'Thu hồi quyền tài khoản'}">
                     Thu hồi quyền
                   </button>
+                  <button type="button" ${stateBlockReason ? 'disabled' : ''} title="${UI.escapeHtml(stateBlockReason || (isSuspended ? 'Mở khóa tài khoản' : 'Tạm ngưng tài khoản'))}" class="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40 text-xs font-bold transition-colors ${stateBlockReason ? 'opacity-60 cursor-not-allowed' : ''} ${u.status === 'SUSPENDED' ? 'unsuspend-user-btn' : 'suspend-user-btn'}" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
+                    ${u.status === 'SUSPENDED' ? 'Mở Khóa' : 'Tạm Ngưng'}
+                  </button>
                   <button type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-xs font-bold transition-colors revoke-sessions-btn" title="Thu hồi toàn bộ phiên đăng nhập của người dùng" data-user-id="${u.user_id}" data-user-name="${UI.escapeHtml(u.display_name || u.email)}">
                     Đăng xuất thiết bị
                   </button>
@@ -889,6 +902,21 @@ class AdminView {
         tbody.querySelectorAll('.revoke-sessions-btn').forEach(btn => {
           btn.onclick = () => {
             AdminView.revokeUserSessions(btn.dataset.userId, btn.dataset.userName);
+          };
+        });
+
+        tbody.querySelectorAll('.suspend-user-btn').forEach(btn => {
+          btn.onclick = () => {
+            const target = userList.find(u => u.user_id === btn.dataset.userId);
+            if (!target || accountStateBlockReason(target)) return;
+            AdminView.openSuspendModal(btn.dataset.userId, btn.dataset.userName);
+          };
+        });
+        tbody.querySelectorAll('.unsuspend-user-btn').forEach(btn => {
+          btn.onclick = () => {
+            const target = userList.find(u => u.user_id === btn.dataset.userId);
+            if (!target || accountStateBlockReason(target)) return;
+            AdminView.unsuspendUser(btn.dataset.userId, btn.dataset.userName);
           };
         });
       };
@@ -944,13 +972,13 @@ class AdminView {
       }
 
       document.getElementById('btn-sync-users').onclick = async () => {
-        await UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
+        await AdminView.refreshUsers(container);
       };
 
       document.getElementById('btn-sync-optimistic').onclick = async () => {
-        await UI.refreshCurrentRoute(() => AdminView.renderTabUsers(container));
-        UI.showToast('Đã đồng bộ trạng thái người dùng mới nhất từ máy chủ!', 'success');
+        await AdminView.refreshUsers(container);
       };
+      return true;
 
     } catch (err) {
       console.error('TabUsers load error:', err);
@@ -964,7 +992,14 @@ class AdminView {
           </div>
         `;
       }
+      return false;
     }
+  }
+
+  static async refreshUsers(container) {
+    const loaded = await AdminView.renderTabUsers(container);
+    if (loaded === true) UI.showToast('Đã đồng bộ trạng thái người dùng mới nhất từ máy chủ!', 'success');
+    return loaded;
   }
 
   static openRoleModal(userId, userName, currentRoles = [], currentAdminSubRole = 'ADMIN_PRIMARY', initialAction = 'assign') {
@@ -1277,6 +1312,10 @@ class AdminView {
           <textarea id="suspend-reason" rows="3" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-rose-600 resize-none" placeholder="Ghi rõ căn cứ vi phạm hoặc nghi vấn an ninh..."></textarea>
         </div>
 
+        <div class="space-y-3">
+          <label class="block font-semibold text-slate-600 dark:text-slate-300" for="suspend-confirm-phrase">Nhập cụm từ xác nhận: CONFIRM_USER_SUSPEND</label>
+          <input id="suspend-confirm-phrase" type="text" autocomplete="off" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" placeholder="CONFIRM_USER_SUSPEND" />
+        </div>
         <div class="space-y-1">
           <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]" for="suspend-password">Mật khẩu Quản trị viên (Bắt buộc xác thực) *</label>
           <input type="password" id="suspend-password" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-rose-600" placeholder="Nhập mật khẩu quản trị viên để ký xác nhận..." autocomplete="current-password" />
@@ -1307,8 +1346,13 @@ class AdminView {
         UI.showToast('Vui lòng nhập mật khẩu quản trị viên để xác thực.', 'warning');
         return;
       }
+      const phrase = document.getElementById('suspend-confirm-phrase')?.value.trim();
+      if (phrase !== 'CONFIRM_USER_SUSPEND') {
+        UI.showToast('Vui lòng nhập đúng CONFIRM_USER_SUSPEND.', 'warning');
+        return;
+      }
       try {
-        await ApiClient.suspendUser(userId, reason, password);
+        await ApiClient.suspendUser(userId, reason, password, phrase);
         UI.closeModal();
         UI.showToast(`Đã tạm ngưng tài khoản ${userName} thành công! Toàn bộ phiên đã bị thu hồi.`, 'success');
         UI.refreshCurrentRoute(() => AdminView.renderTabUsers(document.getElementById('admin-tab-content-box')));
@@ -1462,6 +1506,7 @@ class AdminView {
   // Tab 2: Duyệt Khóa học & Hàng đợi Bản sửa đổi (Course Review & Change Requests)
   // =========================================================================
   static async renderTabCoursesReview(container, subQueue = null) {
+    const previousMarkup = container.innerHTML;
     if (!container.querySelector('#courses-review-box')) {
       container.innerHTML = `
         <div class="space-y-6 animate-fade-in" id="courses-review-box">
@@ -1479,6 +1524,10 @@ class AdminView {
         ApiClient.getAdminChangeRequests('ALL')
       ]);
 
+      if (pendingCoursesRes.status === 'rejected' || changeReqsRes.status === 'rejected') {
+        throw new Error('Không tải được hàng đợi xét duyệt. Dữ liệu trước đó được giữ lại; hãy thử lại.');
+      }
+      container.querySelector('#admin-review-load-error')?.remove();
       const pendingCourses = (pendingCoursesRes.status === 'fulfilled' && pendingCoursesRes.value) ? (pendingCoursesRes.value.courses || []) : [];
       const rawChangeRequests = (changeReqsRes.status === 'fulfilled' && changeReqsRes.value) ? (changeReqsRes.value.change_requests || []) : [];
       // Clean queue contract: Mọi yêu cầu khi được Admin xét duyệt xong (dù duyệt chấp thuận hay từ chối) hoặc hủy
@@ -1815,6 +1864,11 @@ class AdminView {
       }
     } catch (err) {
       console.error('TabCoursesReview load error:', err);
+      container.querySelector('#admin-review-load-error')?.remove();
+      const notice = `<div id="admin-review-load-error" role="alert" class="mt-6 p-4 rounded-lg border border-amber-300 text-amber-800 dark:text-amber-300">${UI.escapeHtml(err.message || 'Không tải được hàng đợi.')}<button type="button" id="retry-admin-review" class="ml-4 px-4 py-2 font-semibold">Thử lại</button></div>`;
+      container.insertAdjacentHTML('beforeend', notice);
+      const retry = container.querySelector('#retry-admin-review');
+      if (retry) retry.onclick = () => AdminView.renderTabCoursesReview(container, subQueue);
     }
   }
 
@@ -1829,7 +1883,7 @@ class AdminView {
   static async renderChangeRequestReviewPage(container, requestId) {
     container.innerHTML = '<div class="p-8 text-sm text-slate-600 dark:text-slate-300">Đang tải yêu cầu thay đổi...</div>';
     try {
-      const result = await ApiClient.getAdminChangeRequests('ALL');
+      const result = await ApiClient.getAdminChangeRequest(requestId);
       const allRequests = result.change_requests || [];
       const request = allRequests.find(item => String(item.id) === String(requestId));
       if (!request) throw new Error('Không tìm thấy yêu cầu thay đổi.');
@@ -2082,6 +2136,14 @@ class AdminView {
     const isResourceChange = prop.action === 'RESOURCE_CHANGES';
     const isChangeset = !isLearningUnit && !isDelete && !isResourceChange && (prop.action === 'COURSE_VERSION_CHANGESET' || (r.change_type === 'LESSON_STRUCTURE' && Boolean(prop.version_title || prop.added_lessons || prop.reorder_plan || prop.ordered_lesson_ids || prop.action === 'REORDER_LESSONS')));
     const isPending = r.status === 'PENDING';
+    const reviewStatusLabel = {
+      PENDING: 'Đang chờ duyệt', APPROVED: 'Đã duyệt', REJECTED: 'Từ chối',
+      CANCELLED: 'Đã hủy', APPLIED: 'Đã áp dụng'
+    }[r.status] || 'Chưa xác định';
+    let reviewStatusTone = 'bg-slate-100 text-slate-700 border-slate-200';
+    if (isPending) reviewStatusTone = 'bg-amber-50 text-amber-700 border-amber-200';
+    else if (r.status === 'APPROVED' || r.status === 'APPLIED') reviewStatusTone = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    else if (r.status === 'REJECTED') reviewStatusTone = 'bg-rose-50 text-rose-700 border-rose-200';
 
     const isCourse = r.target_type === 'COURSE' || (!r.target_type && (orig.course_code || prop.course_code));
     const isCompletionRule = r.change_type === 'COMPLETION_RULE' || Boolean(orig.completion_requirements) || Boolean(prop.completion_requirements) || prop.minimum_grade_score !== undefined;
@@ -2193,8 +2255,8 @@ class AdminView {
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
-            <span class="px-3 py-1 rounded-full text-xs font-bold ${r.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border border-amber-200' : (r.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200')}">
-              ${r.status === 'PENDING' ? 'Đang chờ duyệt' : (r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối')}
+            <span class="px-3 py-1 rounded-full text-xs font-bold border ${reviewStatusTone}">
+              ${UI.escapeHtml(reviewStatusLabel)}
             </span>
           </div>
         </div>
@@ -2329,6 +2391,22 @@ class AdminView {
               </div>
 
               <!-- 2-Column Changeset Inspection -->
+              ${prop.action === 'REORDER_LESSONS' ? `
+                <section id="lesson-move-review-summary" class="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 space-y-3">
+                  ${prop.move ? `<div>
+                    <h3 class="font-semibold text-slate-900 dark:text-slate-100">Chuyển chương: ${UI.escapeHtml(prop.move.lesson_title || 'Bài giảng')}</h3>
+                    <p class="mt-2 text-slate-700 dark:text-slate-300">Chương hiện tại: ${UI.escapeHtml(prop.move.source_unit_title || 'Chưa xác định')}</p>
+                    <p class="text-slate-700 dark:text-slate-300">Chương đề xuất: ${UI.escapeHtml(prop.move.target_unit_title || 'Chưa xác định')}</p>
+                  </div>` : ''}
+                  <h3 class="font-semibold text-slate-900 dark:text-slate-100">Thứ tự bài giảng đề xuất</h3>
+                  <ol id="lesson-proposed-order" class="list-decimal pl-5 space-y-1 text-slate-700 dark:text-slate-300">
+                    ${(prop.ordered_lesson_ids || []).map(id => {
+                      const lesson = (r.course_lessons || []).find(item => String(item.public_id || item.lesson_id || item.id) === String(id) || String(item.id) === String(id));
+                      return `<li>${UI.escapeHtml(lesson?.title || 'Bài giảng không còn khả dụng')}</li>`;
+                    }).join('')}
+                  </ol>
+                </section>
+              ` : ''}
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="changeset-diff-grid">
                 <!-- Column 1: Live / Before -->
                 <div class="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col shadow-2xs">
@@ -4479,7 +4557,7 @@ class AdminView {
             <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 overflow-hidden">
               <div class="space-y-1 min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase shrink-0">${b.backup_type || 'MANUAL'}</span>
+                  <span class="px-2 py-0.5 rounded bg-primary text-white font-bold text-[10px] uppercase shrink-0">${UI.escapeHtml(b.trigger_type || b.backup_type || 'MANUAL')}</span>
                   ${metadata.verified ? `<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold text-[10px] uppercase shrink-0">Đã xác minh SHA</span>` : ''}
 
                   ${b.last_error ? `<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 font-bold text-[10px] uppercase shrink-0" title="${UI.escapeHtml(b.last_error)}">Lỗi xác minh</span>` : ''}

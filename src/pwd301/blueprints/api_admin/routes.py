@@ -735,7 +735,7 @@ def api_admin_suspend_user(user_id: str) -> tuple[Response, int] | Response:
 
     actor = require_authenticated_actor()
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    verify_sensitive_action_reauth(actor, payload)
+    verify_sensitive_action_reauth(actor, payload, expected_phrase="CONFIRM_USER_SUSPEND")
     reason = payload.get("reason", "")
 
     user = suspend_user_account(

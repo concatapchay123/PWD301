@@ -1237,6 +1237,7 @@ def create_database_backup(
             f"Unsupported backup_type: '{backup_type}'. Allowed types are {', '.join(valid_types)}."
         )
 
+    trigger_type = backup_type
     if backup_type == "PRE_MAINTENANCE":
         notes = f"[PRE_MAINTENANCE] {notes or ''}".strip()
         backup_type = "MANUAL"
@@ -1299,6 +1300,8 @@ def create_database_backup(
             "file_size": file_size_bytes,
             "created_at": now.isoformat(),
             "backup_type": backup_type,
+            "trigger_type": trigger_type,
+            "notes": notes,
         }
         manifest_filepath.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
 
@@ -1327,6 +1330,8 @@ def create_database_backup(
                 details={
                     "backup_id": str(backup_run.public_id),
                     "backup_type": backup_type,
+                    "trigger_type": trigger_type,
+                    "notes": notes,
                     "sha256": sha256_checksum,
                     "file_size": file_size_bytes,
                     "storage_location": str(backup_filepath.resolve()),
@@ -1412,7 +1417,12 @@ def list_backups(
                     and len(digest) == 64
                     and all(char in "0123456789abcdef" for char in digest)
                 ):
-                    data.update(file_size_bytes=manifest["file_size"], checksum_sha256=digest)
+                    data.update(
+                        file_size_bytes=manifest["file_size"],
+                        checksum_sha256=digest,
+                        trigger_type=manifest.get("trigger_type", backup.backup_type),
+                        notes=manifest.get("notes"),
+                    )
             except (OSError, ValueError, TypeError):
                 pass
         result.append(data)
@@ -1836,14 +1846,11 @@ def restore_database_snapshot(
             )
 
         # Safeguard 2.5: Audit Justification Reason (SYNC-048)
-        if reason is None:
-            clean_reason = "Administrative disaster recovery procedure confirmed"
-        else:
-            clean_reason = reason.strip()
-            if len(clean_reason) < 10:
-                raise ValidationError(
-                    "Lý do giải trình kiểm toán khôi phục CSDL bắt buộc và phải có tối thiểu 10 ký tự."
-                )
+        clean_reason = (reason or "").strip()
+        if len(clean_reason) < 10:
+            raise ValidationError(
+                "Lý do giải trình kiểm toán khôi phục CSDL bắt buộc và phải có tối thiểu 10 ký tự."
+            )
 
         # Safeguard 2.6: Resolve backup and defend against path traversal
         try:
@@ -2092,7 +2099,8 @@ def is_maintenance_active(
         if alert is not None:
             return True, MaintenanceWindow(alert)
     except Exception:
-        pass
+        logger.exception("Cannot verify maintenance authority; denying traffic.")
+        return True, None
     return False, None
 
 
@@ -2100,9 +2108,9 @@ def is_maintenance_active_cached(
     session: Session | scoped_session[Any] | None = None,
     ttl_seconds: float = 15.0,
 ) -> tuple[bool, MaintenanceWindow | None]:
-    """Check maintenance window status with thread-safe in-memory caching.
+    """Read durable authority; retain the legacy name/TTL argument for callers.
 
-    Avoids executing database queries on every single HTTP request.
+    No cached inactive result may admit traffic after another process starts maintenance.
     """
     if is_database_restore_in_progress():
         fake_alert = SystemAlert(
@@ -2115,17 +2123,9 @@ def is_maintenance_active_cached(
         )
         return True, MaintenanceWindow(fake_alert)
 
-    now = time.monotonic()
-    with _maintenance_cache_lock:
-        if now < _maintenance_cache["expires_at"]:
-            return _maintenance_cache["result"]
-
-    result = is_maintenance_active(session=session)
-    with _maintenance_cache_lock:
-        _maintenance_cache["expires_at"] = time.monotonic() + ttl_seconds
-        _maintenance_cache["result"] = result
-
-    return result
+    # Every process must consult the durable authority; a cached inactive result
+    # admits mutations after another process starts maintenance.
+    return is_maintenance_active(session=session)
 
 
 def list_background_jobs(
@@ -2237,18 +2237,37 @@ def retry_background_job(
     if job is None:
         raise ResourceNotFoundError(f"Background job '{job_identifier}' not found.")
 
-    if job.status == "RUNNING" and job.lease_expires_at and job.lease_expires_at > utc_now():
-        raise ConflictError(
-            f"Cannot retry running background job '{job_identifier}' with active unexpired lease."
-        )
-
+    now = utc_now()
     old_status = job.status
-    job.status = "QUEUED"
-    job.available_at = utc_now()
-    job.claimed_at = None
-    job.lease_expires_at = None
-    if job.attempt_count >= job.max_attempts:
-        job.max_attempts = job.attempt_count + 1
+    old_attempt = job.attempt_count
+    eligible = sa.or_(
+        BackgroundJob.status.in_(["FAILED", "CANCELLED"]),
+        sa.and_(BackgroundJob.status == "RUNNING", BackgroundJob.lease_expires_at <= now),
+    )
+    updated = (
+        sess.query(BackgroundJob)
+        .filter(
+            BackgroundJob.id == job.id,
+            BackgroundJob.status == old_status,
+            BackgroundJob.attempt_count == old_attempt,
+            eligible,
+        )
+        .update(
+            {
+                "status": "QUEUED",
+                "available_at": now,
+                "claimed_at": None,
+                "lease_expires_at": None,
+                "completed_at": None,
+                "max_attempts": max(job.max_attempts, old_attempt + 1),
+            },
+            synchronize_session=False,
+        )
+    )
+    if updated != 1:
+        sess.rollback()
+        raise ConflictError("Only failed, cancelled or expired running jobs can be retried.")
+    sess.refresh(job)
 
     try:
         record_audit_event(

@@ -2,7 +2,7 @@
 1. Chunked upload byte ceiling & temp file cleanup (LimitingStream).
 2. Database-level restore locking (DatabaseRestoreLock).
 3. Web UI auth routes & token lifecycle (logout, change-pwd, reset-pwd, verify-email).
-4. Early-bypass and cached maintenance check in before_request middleware.
+4. Early-bypass and authoritative maintenance check in before_request middleware.
 5. Enrollment capacity enforcement via DB locking.
 """
 
@@ -374,20 +374,21 @@ class TestBeforeRequestMiddlewareOptimizations:
             assert resp_login.status_code == 200
             mock_actor.assert_not_called()
 
-    def test_maintenance_cache_avoids_db_queries(self, app: Flask) -> None:
-        """is_maintenance_active_cached caches state and does not query DB consecutively."""
+    def test_maintenance_rechecks_authority_after_inactive_result(self, app: Flask) -> None:
+        """An inactive result cannot bypass a later database authority failure."""
         with app.app_context():
-            # First call populates cache
+            # The initial durable authority says maintenance is inactive.
             is_active, _ = is_maintenance_active_cached(ttl_seconds=15)
             assert is_active is False
 
-            # With DB query patched out, second call should return cached value without error
+            # The next call must consult authority rather than admit cached inactivity.
             with patch(
                 "pwd301.services.operations_service.is_maintenance_active",
                 side_effect=RuntimeError("DB query"),
-            ):
-                is_active2, _ = is_maintenance_active_cached(ttl_seconds=15)
-                assert is_active2 is False
+            ) as authority:
+                with pytest.raises(RuntimeError, match="DB query"):
+                    is_maintenance_active_cached(ttl_seconds=15)
+                authority.assert_called_once()
 
 
 class TestEnrollmentCapacityEnforcement:

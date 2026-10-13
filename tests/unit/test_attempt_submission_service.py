@@ -321,3 +321,57 @@ def test_submit_invalid_idempotency_key_format(
             session=sess,
         )
     assert "Invalid submission idempotency key format" in str(exc_info.value)
+
+
+def test_sync060_grade_failure_rolls_back_submission(
+    app, instructor_user, published_course, enrolled_student, monkeypatch
+):
+    from pwd301.models.attempt_regrade import AssessmentAttempt
+    from pwd301.services import attempt_service
+
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    attempt_pk = attempt.id
+
+    def fail_grading(*args, **kwargs):
+        raise RuntimeError("injected grading failure")
+
+    monkeypatch.setattr(attempt_service, "grade_attempt_objective_questions", fail_grading)
+    with pytest.raises(RuntimeError, match="injected grading failure"):
+        submit_assessment_attempt(
+            enrolled_student, attempt_pk, uuid.uuid4(), token, session=db.session
+        )
+    db.session.rollback()
+    persisted = db.session.get(AssessmentAttempt, attempt_pk)
+    assert persisted.status == "IN_PROGRESS"
+    assert persisted.lease_token_hash is not None
+
+
+def test_sync028_submit_requires_active_lease(
+    app, instructor_user, published_course, enrolled_student
+):
+    from pwd301.services.exceptions import AttemptLeaseConflictError
+
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    with pytest.raises(AttemptLeaseConflictError):
+        submit_assessment_attempt(enrolled_student, attempt.id, uuid.uuid4(), session=db.session)
+
+
+def test_sync060_terminal_replay_repairs_missing_result(
+    app, instructor_user, published_course, enrolled_student
+):
+    assessment = _make_assessment_with_question(instructor_user, published_course)
+    attempt, token = start_assessment_attempt(enrolled_student, assessment.id, session=db.session)
+    key = uuid.uuid4()
+    attempt.status = "SUBMITTED"
+    attempt.submission_idempotency_key = key
+    attempt.submitted_at = datetime.now(UTC)
+    attempt.finalized_at = datetime.now(UTC)
+    attempt.lease_token_hash = None
+    db.session.commit()
+    result = submit_assessment_attempt(enrolled_student, attempt.id, key, session=db.session)
+    assert result["is_idempotent_replay"] is True
+    db.session.refresh(attempt)
+    assert attempt.result is not None
+    assert attempt.status == "GRADED"

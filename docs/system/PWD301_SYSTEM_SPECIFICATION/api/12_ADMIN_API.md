@@ -45,3 +45,13 @@ This file expands the relevant entries from the endpoint catalog. Authorization 
 - **Errors:** REAUTH_REQUIRED / CONFIRMATION_MISMATCH; JSON error includes stable code, message, optional field errors, correlation ID.
 - **Idempotency:** dedupe operation id
 - **Side effects:** mandatory audit; never automatic overwrite
+
+### Session course changeset approval routing
+
+`POST /admin/course-changes/{change_request_id}/approve` and `POST /admin/courses/{course_id}/changeset/approve` apply consolidated course version changesets. The request must have `change_type=COURSE_VERSION_CHANGESET` or a JSON object with `action=COURSE_VERSION_CHANGESET`. The endpoint locks and refreshes the request before validating its pending state and type. Other request types return `400 VALIDATION_ERROR` and retain their pending state; no successful decision or audit may be recorded without applying their intended action.
+
+Resource attachment/detachment and other individual change requests use `POST /admin/change-requests/{change_request_id}/review` with `action=approve` or `action=reject` plus `reason`. They must not be submitted to the dedicated course version approval endpoint.
+
+### Exact session change-request detail
+
+`GET /admin/change-requests?request_id={id}` requires an authenticated Admin with `COURSE_REVIEW`. It returns the named request independently of its current review status, including completed requests. Invalid identifiers return 400; a missing request returns 404. The exact identifier takes precedence over queue status filtering. The aggregate queue retains its pending-only behavior, including `status=ALL`; completed requests remain available through their authorized exact detail URL.

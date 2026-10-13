@@ -50,9 +50,9 @@ def check_sql_tables() -> None:
     files = sorted(sql_dir.glob("*.sql"))
     ddl = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in files)
     count = len(re.findall(r"\bCREATE\s+TABLE\b", ddl, flags=re.IGNORECASE))
-    if count != 76:
-        fail(f"Canonical DDL CREATE TABLE count is {count}, expected 76")
-    print("[PASS] Canonical SQL Server DDL contains 76 CREATE TABLE statements")
+    if count != 77:
+        fail(f"Canonical DDL CREATE TABLE count is {count}, expected 77")
+    print("[PASS] Canonical SQL Server DDL contains 77 CREATE TABLE statements")
 
 
 def check_markdown_fences() -> None:

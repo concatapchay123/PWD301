@@ -60,6 +60,22 @@ def _account_suspension_event_key(user: User) -> uuid.UUID:
     )
 
 
+def _lock_user_account_state(user: User, session: Session | scoped_session[Any]) -> User:
+    """Serialize account state transitions and refresh a previously loaded identity."""
+    locked = (
+        session.query(User)
+        .filter(User.id == user.id)
+        .with_hint(User, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .with_for_update()
+        .populate_existing()
+        .one()
+    )
+    # Sub-role checks read association rows, which may also be cached independently.
+    session.query(UserRole).filter(UserRole.user_id == locked.id).populate_existing().all()
+    session.expire(locked, ["roles", "user_role_links"])
+    return locked
+
+
 def _role_change_event_key(user: User, mutation: str) -> uuid.UUID:
     """Return one retry key for a durable role mutation notification."""
     return uuid.uuid5(
@@ -330,14 +346,8 @@ def change_password(
     user.auth_version += 1
     user.updated_at = utc_now()
 
-    revoke_all_user_sessions(user.id, session=sess)
-    revoke_all_user_tokens(user.id, session=sess)
-
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    revoke_all_user_sessions(user.id, session=sess, commit=False)
+    revoke_all_user_tokens(user.id, session=sess, commit=False)
 
     try:
         from pwd301.services.notification_service import dispatch_notification
@@ -353,12 +363,10 @@ def change_password(
             event_key=_password_change_event_key(user),
             session=sess,
         )
-    except Exception as exc:
-        logger.warning(
-            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
-            user.id,
-            exc,
-        )
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return user
 
@@ -394,14 +402,8 @@ def set_password(
     user.auth_version += 1
     user.updated_at = utc_now()
 
-    revoke_all_user_sessions(user.id, session=sess)
-    revoke_all_user_tokens(user.id, session=sess)
-
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    revoke_all_user_sessions(user.id, session=sess, commit=False)
+    revoke_all_user_tokens(user.id, session=sess, commit=False)
 
     try:
         from pwd301.services.notification_service import dispatch_notification
@@ -417,12 +419,10 @@ def set_password(
             event_key=_password_change_event_key(user),
             session=sess,
         )
-    except Exception as exc:
-        logger.warning(
-            "Failed to dispatch SECURITY_PASSWORD_CHANGED notification for user %s: %s",
-            user.id,
-            exc,
-        )
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return user
 
@@ -458,10 +458,15 @@ def suspend_user(
     if user is None:
         raise UserNotFoundError(f"User with ID {user_id} not found.")
 
+    user = _lock_user_account_state(user, sess)
     if user.is_primary_admin:
         raise AdminActionForbiddenError(
             "Không thể đình chỉ tài khoản Quản trị viên Cấp cao (Super Admin)."
         )
+
+    if user.status == "SUSPENDED":
+        sess.commit()
+        return user
 
     now = utc_now()
     user.status = "SUSPENDED"
@@ -470,14 +475,8 @@ def suspend_user(
     user.auth_version += 1
     user.updated_at = now
 
-    revoke_all_user_sessions(user.id, session=sess)
-    revoke_all_user_tokens(user.id, session=sess)
-
-    try:
-        sess.commit()
-    except Exception:
-        sess.rollback()
-        raise
+    revoke_all_user_sessions(user.id, session=sess, commit=False)
+    revoke_all_user_tokens(user.id, session=sess, commit=False)
 
     try:
         from pwd301.services.notification_service import dispatch_notification
@@ -496,10 +495,10 @@ def suspend_user(
             event_key=_account_suspension_event_key(user),
             session=sess,
         )
-    except Exception as exc:
-        logger.warning(
-            "Failed to dispatch ACCOUNT_SUSPENDED notification for user %s: %s", user.id, exc
-        )
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
     return user
 

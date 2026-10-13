@@ -22,7 +22,7 @@ import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, or_, true
 from sqlalchemy.orm import Session, scoped_session
 
 from pwd301.models.assessment import Assessment
@@ -632,7 +632,7 @@ def get_instructor_course_analytics(
                 ),
                 func.count(AssessmentResult.attempt_id).label("graded_attempts"),
                 func.coalesce(func.avg(AssessmentResult.percent_score), 0.0).label("avg_score"),
-                func.count(case((AssessmentResult.passed.is_(True), 1))).label("passed_attempts"),
+                func.count(case((AssessmentResult.passed == true(), 1))).label("passed_attempts"),
             )
             .outerjoin(AssessmentResult, AssessmentAttempt.id == AssessmentResult.attempt_id)
             .filter(AssessmentAttempt.assessment_id.in_(assessment_ids))

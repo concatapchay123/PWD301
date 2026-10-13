@@ -23,6 +23,19 @@ test('backup verified label requires actual checksum and size metadata', () => {
   const result = admin.backupMetadata({ checksum_sha256: 'a'.repeat(64), file_size_bytes: 1048576, verified_at: '2026-10-09' });
   assert.equal(result.verified, true); assert.equal(result.size, '1.00 MB');
 });
+test('backup cards preserve the committed semantic trigger after list hydration', () => {
+  const source = fs.readFileSync('frontend/assets/js/views/admin.js', 'utf8');
+  const start = source.indexOf('        containerEl.innerHTML = backups.map(b => {');
+  const end = source.indexOf("        }).join('');", start) + "        }).join('');".length;
+  const { value: admin } = view('admin', 'AdminView');
+  const containerEl = {};
+  vm.runInNewContext(source.slice(start, end), {
+    containerEl, AdminView: admin,
+    backups: [{ backup_id: 'fixture', backup_type: 'MANUAL', trigger_type: 'PRE_MAINTENANCE' }],
+    UI: { escapeHtml: String, formatDateTime: () => 'Date' },
+  });
+  assert.match(containerEl.innerHTML, />PRE_MAINTENANCE<\/span>/);
+});
 test('empty student dashboard has no in-progress hero or invented upcoming work', () => {
   const { value: student } = view('student', 'StudentView');
   assert.equal(typeof student.dashboardActivity, 'function');
