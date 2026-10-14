@@ -1,3 +1,67 @@
+# TASK-094 — System Enhancements, Anti-Bypass Quiz Modal, Unified Staging Lifecycle & Obsolete Workflow Purge
+
+**Status:** COMPLETED
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-14
+**Completed Date:** 2026-10-14
+**Plan:** `docs/superpowers/plans/2026-10-14-system-enhancements-and-remediation.md`
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows, legacy code, outdated specifications, and defective designs regarding course cover containers, manual completion buttons, unshielded inline quizzes, draft review blocks, fragmented video upload UI, and static completion durations are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire PWD301 system:
+
+1. **Permanent Purge of Clamped 768px (`max-w-3xl`) Course Cover Containers & Blank UI Gutters (Bãi bỏ thu nhỏ ảnh bìa gây khoảng trống đen)**:
+   - Clamping course cover containers with `max-w-3xl mx-auto` leaving large empty margins is PERMANENTLY FORBIDDEN.
+   - The Studio course cover container is locked to `w-full aspect-video` full-bleed 16:9 (`rounded-2xl border overflow-hidden`) with metadata and action controls cleanly positioned below the image.
+   - **Invariant 094.1 (16:9 Full-Width Course Cover & Zero Empty Gutter)**:
+     - The course cover image fills 100% of the Studio header card width maintaining a pristine 16:9 aspect ratio (`object-cover object-center`), eliminating all blank side margins.
+
+2. **Permanent Abolition of the "Đánh dấu hoàn thành" Button & Bypass Loopholes (Bãi bỏ nút đánh dấu hoàn thành & lỗ hổng chuyển bài bypass)**:
+   - The manual completion button (`#cisco-complete-btn` / "Đánh dấu hoàn thành") is PERMANENTLY PURGED AND DELETED.
+   - Allowing students to mark a lesson complete or enabling the "Bài tiếp theo" button without meeting server-verified progress is STRICTLY FORBIDDEN.
+   - **Invariant 094.2 (Server-Authoritative 3-Condition Lesson Unlock Gate)**:
+     - The "Bài tiếp theo" button is locked (`disabled`, lock icon, informative toast/tooltip) until ALL THREE conditions are met:
+       1. **Dwell Time**: Total wall-clock time in lesson from entry $\ge 30$ seconds.
+       2. **Video Playback**: 100% video playback completion verified (if lesson contains video).
+       3. **Question Assessment**: 100% completion and passing score achieved on in-lesson "Câu hỏi" (if lesson contains questions).
+     - Only upon satisfying all 3 conditions does the system mark the lesson completed in the database and activate the "Bài tiếp theo" transition.
+
+3. **Permanent Purge of Unshielded In-Lesson Quizzes & Terminal Standardization to "Câu hỏi" (Bãi bỏ bài tập con trôi nổi & chuẩn hóa thành "Câu hỏi" Modal)**:
+   - Obsolete naming conventions ("mini-quiz", "bài kiểm tra gắn liền bài học", "small test") are PERMANENTLY PURGED and standardized to **"Câu hỏi"**.
+   - Rendering quizzes inline at the bottom of lessons where students can bypass them is PERMANENTLY BANNED.
+   - **Invariant 094.3 (Fail-Closed 80% Backdrop Blurred "Câu hỏi" Modal with Anti-Bypass Lock)**:
+     - When a student finishes studying the lesson content / watches the video / scrolls to the question section, the "Câu hỏi" assessment opens in a large modal with an 80% blurred backdrop (`backdrop-blur-md bg-black/80`).
+     - The modal locks clicks outside and disables `Esc`; students cannot dismiss it without achieving $\ge$ passing threshold.
+     - If the student fails, the modal remains active and mandates "Làm lại từ đầu".
+     - State persistence: If a student exits, closes the tab, or refreshes while the quiz is incomplete, returning to the course automatically redirects to this lesson and relaunches the locked modal, blocking any course navigation bypass.
+
+4. **Permanent Purge of Fragmented Draft Reviews & Erroneous Admin Reason Blocking (Bãi bỏ chặn lý do sai lệch & khóa bản nháp Staging toàn cục)**:
+   - Requiring admin reasons or raising `CourseValidationError` when editing newly created `DRAFT` courses is PERMANENTLY BANNED.
+   - Creating fragmented per-lesson change requests is PERMANENTLY FORBIDDEN.
+   - **Invariant 094.4 (Direct Draft Authoring & Single Atomic Changeset for Published Courses)**:
+     - Newly created courses (`status == 'DRAFT'`) permit 100% unrestricted direct authoring by instructors (title, summary, cover, SLOs, syllabus, lessons, questions) without requiring admin approval or change requests.
+     - Published courses (`status == 'PUBLISHED'`) accumulate all modifications into a single unified Staging Draft (`STAGING_DRAFT` / `CourseVersionChangeset`), submitted ONCE for atomic All-or-Nothing Admin review.
+
+5. **Permanent Purge of Split Video Upload Layouts & Unplayable Local Previews (Bãi bỏ cụm upload rời rạc & video máy tính không phát được)**:
+   - Split video forms where YouTube links and file uploads are disconnected are PERMANENTLY SUPERSEDED.
+   - **Invariant 094.5 (Low-Tech Unified Video Upload Studio & Authenticated Range Streaming Preview)**:
+     - The lesson video block consolidates into a single unified card matching the canonical reference:
+       1. Top: YouTube / Vimeo link input (`https://www.youtube.com/watch?v=...`) + `[+ Thêm video]` button.
+       2. Middle: Horizontal divider with centered `hoặc` text.
+       3. Bottom of input area: Drag-and-drop file upload zone ($< 1$ GB, MP4/WebM/MOV/MKV) + `[Chọn tệp video]` button.
+       4. Below: "Xem trước video đã thêm (X)" section with 2-column cards grid displaying thumbnail, duration pill, video type icon, title, link/size, and `[✕]` delete button.
+     - Uploaded video files stream reliably via authenticated Range endpoint `/api/files/<asset_id>/stream` in an instant video modal upon clicking Play.
+
+6. **Permanent Purge of Static Course Durations ("15 tuần học") & Buried Instructor Profiles (Bãi bỏ thời gian học giả lập & đưa thông tin giảng viên lên ưu tiên)**:
+   - Displaying artificial course completion durations such as "15 tuần học" or "10 tuần học" is PERMANENTLY PURGED.
+   - **Invariant 094.6 (3-Column KPI Metric Grid & Prominent Instructor Profile Showcase)**:
+     - The landing page eliminates all references to "15 tuần học" and reorganizes the highlight metrics into a balanced 3-column grid:
+       1. Số bài học (Lý thuyết & phòng lab thực hành)
+       2. Số bài khảo thí (Đánh giá chuẩn đầu ra)
+       3. Chứng nhận hoàn thành (Chứng nhận điện tử chính quy)
+     - The "Giảng viên phụ trách" profile card is elevated to the very TOP of the right column (above academic regulations), showcasing a prominent avatar, instructor name, academic title, department, email link, phone, and group channels.
+
+---
+
 # TASK-093 — Course Cover Upload Remediation, Pre-flight Publish Checklist Gate, Interactive Matching & Fill-Blank Right/Wrong Grading, Universal KaTeX Formula Rendering, and Exam Passing Threshold Enforcement
 
 **Status:** COMPLETED

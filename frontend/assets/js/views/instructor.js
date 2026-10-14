@@ -11,6 +11,55 @@
  */
 
 class InstructorView {
+  static openVideoModal(type, src, title = 'Xem trước video') {
+    const existing = document.getElementById('pwd301-video-preview-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'pwd301-video-preview-modal';
+    modal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn';
+    modal.innerHTML = `
+      <div class="w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+        <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="material-symbols-outlined text-[20px] text-rose-500">play_circle</span>
+            <span class="text-sm font-bold text-white truncate">${UI.escapeHtml(title)}</span>
+          </div>
+          <button type="button" class="btn-close-modal p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer" title="Đóng">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="aspect-video w-full bg-black flex items-center justify-center relative">
+          ${type === 'youtube' ? `
+            <iframe src="${src}" class="w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          ` : `
+            <video src="${src}" controls autoplay playsinline class="w-full h-full object-contain"></video>
+          `}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const close = () => {
+      const v = modal.querySelector('video');
+      if (v) v.pause();
+      modal.remove();
+    };
+
+    modal.querySelector('.btn-close-modal').onclick = close;
+    modal.onclick = (e) => {
+      if (e.target === modal) close();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        close();
+        window.removeEventListener('keydown', onKey);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+  }
+
   // =========================================================================
   // 1. Instructor Dashboard
   // =========================================================================
@@ -2246,112 +2295,201 @@ class InstructorView {
         `;
       } else if (block.type === 'video') {
         const vFiles = Array.isArray(block.files) ? block.files : [];
-        let ytEmbed = '<div class="h-full flex items-center justify-center text-xs text-slate-400">Xem trước video</div>';
+        let ytVideoId = '';
         if (block.url && (block.url.includes('youtube.com') || block.url.includes('youtu.be') || block.url.includes('vimeo.com'))) {
-          let videoId = '';
           const match = block.url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-          if (match) videoId = match[1];
-          if (videoId) {
-            ytEmbed = `
-              <iframe class="w-full h-full" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
-            `;
-          }
+          if (match) ytVideoId = match[1];
         }
+        const hasYoutube = Boolean(ytVideoId || (block.url && block.url.trim().length > 0));
+        const totalVideos = (hasYoutube ? 1 : 0) + vFiles.length;
+
         bodyHtml = `
-          <div class="space-y-4">
-            <!-- 1. Thanh ngang trên: Nhập đường dẫn YouTube / Vimeo -->
-            <div class="p-3.5 bg-white dark:bg-[#1E1E1E] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-2">
-              <label class="flex items-center gap-1.5 text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
-                <span class="material-symbols-outlined text-[16px] text-rose-500">smart_display</span>
-                <span>Đường dẫn YouTube / Vimeo bài giảng:</span>
-              </label>
-              <div class="flex items-center gap-2">
-                <input
-                  type="url"
-                  class="block-video-url flex-1 px-3.5 py-2 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#252525] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary"
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  value="${UI.escapeHtml(block.url || '')}"
-                  ${isLocked ? 'disabled' : ''}
-                />
+          <div class="space-y-5">
+            <!-- Cụm thao tác thêm video (YouTube & Tải từ máy tính nằm chung 1 khối theo spec cfdedc83-94e3-450e-abf0-c185c8311eb8) -->
+            <div class="p-4 sm:p-5 bg-white dark:bg-[#1E1E1E] rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-4 shadow-2xs">
+              <!-- 1. Thanh dán link YouTube / Vimeo ở trên cùng -->
+              <div class="space-y-1.5">
+                <label class="flex items-center gap-1.5 text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                  <span class="material-symbols-outlined text-[16px] text-rose-500">smart_display</span>
+                  <span>Dán link YouTube / Vimeo bài giảng:</span>
+                </label>
+                <div class="flex items-center gap-2">
+                  <div class="relative flex-1">
+                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8F8E8A]">link</span>
+                    <input
+                      type="url"
+                      class="block-video-url w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-[#FAF9F5] dark:bg-[#252525] text-xs text-[#222120] dark:text-[#EDEDEB] outline-none focus:border-primary font-mono transition-colors"
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      value="${UI.escapeHtml(block.url || '')}"
+                      ${isLocked ? 'disabled' : ''}
+                    />
+                  </div>
+                  ${!isLocked ? `
+                    <button
+                      type="button"
+                      class="btn-apply-video-url px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      <span class="material-symbols-outlined text-[16px]">add</span>
+                      <span>Thêm video</span>
+                    </button>
+                  ` : ''}
+                </div>
               </div>
-              <div class="block-video-preview mt-2.5 aspect-video rounded-xl overflow-hidden bg-slate-900 max-w-lg border border-[#E8E6DF] dark:border-[#2E2D2B]">${ytEmbed}</div>
+
+              <!-- 2. Divider "hoặc" -->
+              <div class="relative flex items-center justify-center my-1">
+                <div class="border-t border-[#E8E6DF] dark:border-[#2E2D2B] w-full"></div>
+                <span class="absolute bg-white dark:bg-[#1E1E1E] px-3 text-[11px] font-bold text-[#8F8E8A] dark:text-[#6D6C68] uppercase tracking-wider">hoặc</span>
+              </div>
+
+              <!-- 3. Khu vực kéo thả tải video từ máy tính (≤ 1 GB) -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
+                  <span class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                    <span>Tải video lên từ máy tính (≤ 1 GB):</span>
+                  </span>
+                  <span class="text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]">Tối đa 2 video / bài học</span>
+                </div>
+
+                ${!isLocked ? `
+                  <div class="video-dropzone border-2 border-dashed border-[#E8E6DF] dark:border-[#2E2D2B] hover:border-primary/60 dark:hover:border-primary/60 rounded-2xl p-6 text-center cursor-pointer transition-all bg-[#FAF9F5] dark:bg-[#252525] group">
+                    <input
+                      type="file"
+                      class="block-video-file-input sr-only"
+                      accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv"
+                      multiple
+                    />
+                    <div class="w-12 h-12 mx-auto rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
+                      <span class="material-symbols-outlined text-[26px]">cloud_upload</span>
+                    </div>
+                    <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Kéo & thả video vào đây hoặc bấm để chọn tệp từ máy tính</p>
+                    <p class="text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] mt-1">Hỗ trợ MP4, WebM, MOV, MKV (Dung lượng ≤ 1 GB, có thể chọn nhiều tệp cùng lúc)</p>
+                    <button type="button" class="btn-browse-video-btn mt-3 px-4 py-1.5 rounded-xl border border-[#E8E6DF] dark:border-[#3E3D3A] bg-white dark:bg-[#1E1E1E] text-xs font-semibold text-[#222120] dark:text-[#EDEDEB] shadow-2xs group-hover:border-primary transition-colors pointer-events-none">
+                      Chọn tệp video
+                    </button>
+                  </div>
+
+                  <!-- Thanh tiến trình tải video lên -->
+                  <div class="video-upload-progress hidden p-3.5 bg-[#FAF9F5] dark:bg-[#252525] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-1.5">
+                    <div class="flex items-center justify-between text-xs font-semibold text-[#222120] dark:text-[#EDEDEB]">
+                      <span class="progress-file-name truncate">Đang tải video lên máy chủ...</span>
+                      <span class="progress-file-percent text-primary font-mono">0%</span>
+                    </div>
+                    <div class="w-full bg-[#E8E6DF] dark:bg-[#3E3D3A] h-2 rounded-full overflow-hidden">
+                      <div class="progress-bar-inner bg-primary h-full transition-all duration-150" style="width: 0%"></div>
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
             </div>
 
-            <!-- 2. Khu vực lớn bên dưới: Tải video từ máy tính (< 1 GB) -->
+            <!-- 4. Khu vực xem trước các video đã thêm (X) -->
             <div class="space-y-3">
               <div class="flex items-center justify-between text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99]">
                 <span class="flex items-center gap-1.5">
-                  <span class="material-symbols-outlined text-[16px] text-primary">upload_file</span>
-                  <span>Tệp video tải lên từ máy tính (&lt; 1 GB):</span>
+                  <span class="material-symbols-outlined text-[18px] text-amber-500">video_library</span>
+                  <span>Xem trước video đã thêm (${totalVideos}):</span>
                 </span>
-                <span class="text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]">Tối đa 2 video / bài học</span>
+                <span class="text-[11px] font-semibold text-[#8F8E8A] dark:text-[#6D6C68]">Bấm khung hình để phát thử</span>
               </div>
 
-              <!-- Danh sách video đã tải lên trong bài -->
-              ${vFiles.length > 0 ? `
-                <div class="space-y-3">
+              ${totalVideos === 0 ? `
+                <div class="p-5 text-center text-xs text-[#8F8E8A] dark:text-[#6D6C68] italic bg-white dark:bg-[#1E1E1E] rounded-2xl border border-dashed border-[#E8E6DF] dark:border-[#2E2D2B]">
+                  Chưa có video nào trong bài giảng này. Vui lòng dán link YouTube hoặc tải tệp video từ máy tính ở trên.
+                </div>
+              ` : `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <!-- Card Video YouTube nếu có -->
+                  ${hasYoutube ? `
+                    <div class="p-3.5 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] flex flex-col justify-between gap-3 group relative hover:border-primary/50 transition-colors shadow-2xs">
+                      <div
+                        class="btn-open-video-preview relative aspect-video rounded-xl overflow-hidden bg-slate-900 border border-black/10 flex items-center justify-center cursor-pointer group/thumb"
+                        data-video-type="youtube"
+                        data-video-src="${ytVideoId ? `https://www.youtube.com/embed/${ytVideoId}?autoplay=1` : UI.escapeHtml(block.url)}"
+                        data-video-title="YouTube: ${UI.escapeHtml(block.url)}"
+                        title="Bấm để xem trước video YouTube"
+                      >
+                        ${ytVideoId ? `
+                          <img src="https://img.youtube.com/vi/${ytVideoId}/hqdefault.jpg" alt="YouTube Thumbnail" class="w-full h-full object-cover" />
+                        ` : `
+                          <div class="w-full h-full flex items-center justify-center bg-slate-900 text-slate-400 text-xs">Video Online</div>
+                        `}
+                        <div class="absolute inset-0 bg-black/40 group-hover/thumb:bg-black/25 flex items-center justify-center transition-all">
+                          <div class="w-11 h-11 rounded-full bg-rose-600/90 hover:bg-rose-600 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-transform">
+                            <span class="material-symbols-outlined text-[24px] fill-current">play_arrow</span>
+                          </div>
+                        </div>
+                        <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white uppercase tracking-wider font-mono">YouTube</span>
+                      </div>
+                      <div class="flex items-center justify-between gap-2 min-w-0">
+                        <div class="min-w-0 flex-1">
+                          <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(block.url)}">${UI.escapeHtml(block.url)}</p>
+                          <p class="text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] mt-0.5 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            <span>Video YouTube trực tuyến</span>
+                          </p>
+                        </div>
+                        ${!isLocked ? `
+                          <button
+                            type="button"
+                            class="btn-delete-youtube-url p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                            title="Xóa video YouTube"
+                          >
+                            <span class="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <!-- Card Video tải lên từ máy tính -->
                   ${vFiles.map((vf, vfIdx) => {
                     const vfSize = vf.file_size_bytes ? `${(vf.file_size_bytes / (1024 * 1024)).toFixed(1)} MB` : '';
+                    const streamUrl = vf.stream_url || (vf.asset_id ? `/api/files/${vf.asset_id}/stream` : (vf.resource_id ? `/api/files/${vf.resource_id}/stream` : (vf.file_url || '')));
+                    const vfTitle = vf.filename || vf.title || 'Video bài giảng';
                     return `
-                      <div class="p-3.5 rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] space-y-2.5">
-                        <div class="flex items-center justify-between gap-3 text-xs">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <span class="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                              <span class="material-symbols-outlined text-[16px]">videocam</span>
-                            </span>
-                            <span class="font-bold text-[#222120] dark:text-[#EDEDEB] truncate">${UI.escapeHtml(vf.filename || vf.title || 'Video bài giảng')}</span>
-                            ${vfSize ? `<span class="text-[10px] text-[#8F8E8A] font-mono">(${vfSize})</span>` : ''}
+                      <div class="p-3.5 rounded-2xl border border-[#E8E6DF] dark:border-[#2E2D2B] bg-white dark:bg-[#1E1E1E] flex flex-col justify-between gap-3 group relative hover:border-primary/50 transition-colors shadow-2xs">
+                        <div
+                          class="btn-open-video-preview relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-black/10 flex items-center justify-center cursor-pointer group/thumb"
+                          data-video-type="file"
+                          data-video-src="${UI.escapeHtml(streamUrl)}"
+                          data-video-title="${UI.escapeHtml(vfTitle)}"
+                          title="Bấm để phát thử video bài giảng"
+                        >
+                          <video src="${UI.escapeHtml(streamUrl)}#t=0.5" preload="metadata" class="w-full h-full object-contain pointer-events-none"></video>
+                          <div class="absolute inset-0 bg-black/40 group-hover/thumb:bg-black/20 flex items-center justify-center transition-all">
+                            <div class="w-11 h-11 rounded-full bg-primary/90 hover:bg-primary text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-transform">
+                              <span class="material-symbols-outlined text-[24px] fill-current">play_arrow</span>
+                            </div>
+                          </div>
+                          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white uppercase tracking-wider font-mono">${vfSize || 'VIDEO'}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2 min-w-0">
+                          <div class="min-w-0 flex-1">
+                            <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB] truncate" title="${UI.escapeHtml(vfTitle)}">${UI.escapeHtml(vfTitle)}</p>
+                            <p class="text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] mt-0.5 flex items-center gap-1">
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>Video nội bộ PWD301 ${vfSize ? `• ${vfSize}` : ''}</span>
+                            </p>
                           </div>
                           ${!isLocked ? `
                             <button
                               type="button"
-                              class="btn-delete-video-file p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              class="btn-delete-video-file p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
                               data-file-idx="${vfIdx}"
-                              data-resource-id="${vf.resource_id || ''}"
+                              data-resource-id="${vf.resource_id || vf.id || ''}"
                               title="Xóa video này"
                             >
                               <span class="material-symbols-outlined text-[16px]">delete</span>
                             </button>
                           ` : ''}
                         </div>
-                        ${vf.file_url ? `
-                          <div class="max-w-lg aspect-video rounded-xl overflow-hidden bg-black border border-[#E8E6DF] dark:border-[#2E2D2B]">
-                            <video src="${UI.escapeHtml(vf.file_url)}" controls class="w-full h-full object-contain"></video>
-                          </div>
-                        ` : ''}
                       </div>
                     `;
                   }).join('')}
                 </div>
-              ` : ''}
-
-              <!-- Vùng kéo thả tệp video (Drag & Drop Zone) -->
-              ${!isLocked ? `
-                <div class="video-dropzone border-2 border-dashed border-[#E8E6DF] dark:border-[#2E2D2B] hover:border-primary/60 dark:hover:border-primary/60 rounded-2xl p-5 text-center cursor-pointer transition-all bg-[#FAF9F5] dark:bg-[#1E1E1E] group">
-                  <input
-                    type="file"
-                    class="block-video-file-input sr-only"
-                    accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv"
-                    multiple
-                  />
-                  <div class="w-10 h-10 mx-auto rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                    <span class="material-symbols-outlined text-[22px]">cloud_upload</span>
-                  </div>
-                  <p class="text-xs font-bold text-[#222120] dark:text-[#EDEDEB]">Kéo & thả video vào đây hoặc bấm để chọn tệp từ máy tính</p>
-                  <p class="text-[11px] text-[#8F8E8A] dark:text-[#9E9D99] mt-0.5">Hỗ trợ MP4, WebM, MOV, MKV (Dung lượng &lt; 1 GB, có thể chọn nhiều tệp cùng lúc)</p>
-                </div>
-
-                <!-- Thanh tiến trình tải video lên -->
-                <div class="video-upload-progress hidden p-3 bg-white dark:bg-[#202020] rounded-xl border border-[#E8E6DF] dark:border-[#2E2D2B] space-y-1.5">
-                  <div class="flex items-center justify-between text-xs font-semibold text-[#222120] dark:text-[#EDEDEB]">
-                    <span class="progress-file-name truncate">Đang tải video lên máy chủ...</span>
-                    <span class="progress-file-percent text-primary font-mono">0%</span>
-                  </div>
-                  <div class="w-full bg-[#E8E6DF] dark:bg-[#3E3D3A] h-2 rounded-full overflow-hidden">
-                    <div class="progress-bar-inner bg-primary h-full transition-all duration-150" style="width: 0%"></div>
-                  </div>
-                </div>
-              ` : ''}
+              `}
             </div>
           </div>
         `;
@@ -3252,20 +3390,66 @@ class InstructorView {
           };
         });
 
-        // Video URL input live preview update
+        // Video URL input & Apply button
         const videoUrlInput = card.querySelector('.block-video-url');
+        const applyVideoUrlBtn = card.querySelector('.btn-apply-video-url');
+        if (applyVideoUrlBtn && videoUrlInput) {
+          applyVideoUrlBtn.onclick = () => {
+            const val = videoUrlInput.value.trim();
+            if (!val) {
+              UI.showToast('Vui lòng nhập đường dẫn YouTube hoặc Vimeo.', 'warning');
+              return;
+            }
+            scrapeBlocksFromDom();
+            const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
+            if (targetBlock) {
+              targetBlock.url = val;
+            }
+            isEditorDirty = true;
+            renderEditor();
+            UI.showToast('Đã thêm liên kết video thành công.', 'success');
+          };
+        }
         if (videoUrlInput) {
           videoUrlInput.onchange = () => {
             scrapeBlocksFromDom();
-            isEditorDirty = true;
-            const preview = card.querySelector('.block-video-preview');
-            if (preview) {
-              const previewTemplate = document.createElement('template');
-              previewTemplate.innerHTML = renderBlockHtml(activeBlocks[bIdx], bIdx);
-              preview.innerHTML = previewTemplate.content.querySelector('.block-video-preview')?.innerHTML || '';
+            const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
+            if (targetBlock) {
+              targetBlock.url = videoUrlInput.value.trim();
             }
+            isEditorDirty = true;
+            renderEditor();
           };
         }
+
+        // Delete YouTube URL button
+        const delYtBtn = card.querySelector('.btn-delete-youtube-url');
+        if (delYtBtn) {
+          delYtBtn.onclick = async () => {
+            const conf = await UI.confirm('Xóa video', 'Xóa video YouTube này khỏi bài giảng?', 'Xóa');
+            if (!conf || !ownsCard()) return;
+            scrapeBlocksFromDom();
+            const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
+            if (targetBlock) {
+              targetBlock.url = '';
+            }
+            isEditorDirty = true;
+            renderEditor();
+            UI.showToast('Đã xóa video YouTube.', 'success');
+          };
+        }
+
+        // Open Video Preview Modal (for both YouTube and Uploaded Videos)
+        card.querySelectorAll('.btn-open-video-preview').forEach(pBtn => {
+          pBtn.onclick = () => {
+            const type = pBtn.dataset.videoType;
+            const src = pBtn.dataset.videoSrc;
+            const title = pBtn.dataset.videoTitle;
+            if (src) {
+              InstructorView.openVideoModal(type, src, title);
+            }
+          };
+        });
 
         // Video file upload & dropzone handlers
         const videoFileInput = card.querySelector('.block-video-file-input');
@@ -3315,11 +3499,14 @@ class InstructorView {
                 const targetBlock = activeBlocks.find(b => b.id === cardBlockId);
                 if (targetBlock) {
                   if (!targetBlock.files) targetBlock.files = [];
+                  const assetId = res.asset_id || res.resource_id || res.id;
                   targetBlock.files.push({
-                    resource_id: res.resource_id || res.asset_id,
+                    resource_id: res.resource_id || res.id || assetId,
+                    asset_id: assetId,
                     title: file.name,
                     filename: file.name,
                     file_url: res.file_url || '',
+                    stream_url: res.stream_url || (assetId ? `/api/files/${assetId}/stream` : ''),
                     file_size_bytes: file.size
                   });
                 }
@@ -3826,7 +4013,7 @@ class InstructorView {
           <!-- Course Header Banner (Warm Surface Card) -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-6 sm:p-8 shadow-subtle space-y-4">
             <div
-              class="relative aspect-video w-full max-w-3xl mx-auto overflow-hidden rounded-xl border ${!course.thumbnail_url ? 'border-amber-400/80 dark:border-amber-600/80 border-dashed bg-amber-50/40 dark:bg-amber-950/20' : 'border-indigo-200 dark:border-indigo-800 bg-indigo-100 dark:bg-indigo-950'} flex flex-col items-center justify-center p-6 text-center group cursor-pointer"
+              class="relative aspect-video w-full overflow-hidden rounded-2xl border ${!course.thumbnail_url ? 'border-amber-400/80 dark:border-amber-600/80 border-dashed bg-amber-50/40 dark:bg-amber-950/20' : 'border-[#E8E6DF] dark:border-[#2E2D2B] bg-slate-900'} flex flex-col items-center justify-center p-6 text-center group cursor-pointer"
               onclick="document.getElementById('course-thumbnail-input')?.click()"
               title="${course.thumbnail_url ? 'Bấm để đổi ảnh bìa' : 'Bấm để tải ảnh bìa môn học'}"
             >

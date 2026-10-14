@@ -1678,11 +1678,6 @@ class StudentView {
                   </div>
                   <span class="text-slate-600">•</span>
                   <div class="flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[18px] text-emerald-400">schedule</span>
-                    <span class="font-medium">15 tuần học</span>
-                  </div>
-                  <span class="text-slate-600">•</span>
-                  <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px] text-emerald-400">fact_check</span>
                     <span class="font-medium">${totalExams} bài kiểm tra</span>
                   </div>
@@ -1729,13 +1724,8 @@ class StudentView {
             </div>
           </section>
 
-          <!-- 2. Highlights Grid -->
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
-              <span class="material-symbols-outlined text-3xl text-emerald-400">schedule</span>
-              <h4 class="text-base font-extrabold text-white">15 tuần học</h4>
-              <p class="text-xs text-slate-400">Chủ động tiến độ học tập</p>
-            </div>
+          <!-- 2. Highlights Grid (3-Column KPI Highlights Grid - TASK-094) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div class="p-6 rounded-2xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm space-y-2">
               <span class="material-symbols-outlined text-3xl text-emerald-400">menu_book</span>
               <h4 class="text-base font-extrabold text-white">${totalLessons} bài học</h4>
@@ -1790,14 +1780,60 @@ class StudentView {
               </div>
             </div>
 
-            <!-- Quy chuẩn Học vụ & Giảng viên (Col 5) -->
+            <!-- Thông tin Giảng viên & Quy chuẩn Học vụ (Col 5 - TASK-094: Instructor Card on Top) -->
             <div class="lg:col-span-5 p-7 sm:p-8 rounded-3xl bg-slate-900/80 dark:bg-[#12161f] border border-slate-800/80 shadow-sm flex flex-col justify-between space-y-6">
               <div class="space-y-5">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-800/70">
                   <h3 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
-                    <span class="material-symbols-outlined text-emerald-400 text-2xl">school</span>
-                    <span>Quy chuẩn Học vụ & Giảng viên</span>
+                    <span class="material-symbols-outlined text-emerald-400 text-2xl">person</span>
+                    <span>Thông tin Giảng viên & Học vụ</span>
                   </h3>
+                </div>
+
+                <!-- Giảng viên & Kênh hỗ trợ (Elevated to top of column) -->
+                <div class="p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-3.5 shadow-sm">
+                  <div class="flex items-center gap-3.5">
+                    <div class="w-14 h-14 rounded-2xl bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-2xl font-black shrink-0 shadow-inner">
+                      ${UI.escapeHtml((instructorName || 'G').charAt(0))}
+                    </div>
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2">
+                        <h4 class="text-base font-extrabold text-white truncate">${UI.escapeHtml(instructorName)}</h4>
+                        <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">Giảng viên</span>
+                      </div>
+                      <p class="text-xs text-slate-300 font-medium mt-0.5">${UI.escapeHtml(instructorTitle || 'Bộ môn Công nghệ Thông tin')}</p>
+                    </div>
+                  </div>
+
+                  <div class="space-y-2 pt-2 border-t border-slate-700/60 text-xs text-slate-300">
+                    ${contactInfo.email ? `
+                      <div class="flex items-center gap-2.5">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-400">mail</span>
+                        <a href="mailto:${UI.escapeHtml(contactInfo.email)}" class="text-emerald-400 hover:underline truncate font-medium">${UI.escapeHtml(contactInfo.email)}</a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.phone ? `
+                      <div class="flex items-center gap-2.5">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-400">call</span>
+                        <a href="tel:${UI.escapeHtml(contactInfo.phone)}" class="hover:underline font-medium">${UI.escapeHtml(contactInfo.phone)}</a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.group ? `
+                      <div class="flex items-center gap-2 pt-1">
+                        <span class="material-symbols-outlined text-[16px] text-emerald-400">groups</span>
+                        <a href="${UI.escapeHtml(contactInfo.group)}" target="_blank" class="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-bold hover:bg-emerald-500/20 transition-colors inline-flex items-center gap-1.5 text-xs">
+                          <span>Group trao đổi học tập</span>
+                          <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                        </a>
+                      </div>
+                    ` : ''}
+                    ${contactInfo.office_hours ? `
+                      <div class="flex items-center gap-2 text-[11px] text-slate-400 pt-0.5">
+                        <span class="material-symbols-outlined text-[15px] text-slate-500">schedule</span>
+                        <span>Giờ tiếp sinh viên: ${UI.escapeHtml(contactInfo.office_hours)}</span>
+                      </div>
+                    ` : ''}
+                  </div>
                 </div>
 
                 <!-- Môn tiên quyết -->
@@ -1836,49 +1872,6 @@ class StudentView {
                     <li>Điểm các bài khảo thí đạt tối thiểu <strong class="text-white">${minScore}/10</strong>.</li>
                     <li>Cấp chứng nhận điện tử chính quy ngay sau khi thỏa điều kiện.</li>
                   </ul>
-                </div>
-
-                <!-- Giảng viên & Kênh hỗ trợ -->
-                <div class="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-3">
-                  <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 flex items-center justify-center text-xl font-black shrink-0">
-                      ${UI.escapeHtml((instructorName || 'G').charAt(0))}
-                    </div>
-                    <div class="min-w-0">
-                      <h4 class="text-sm font-bold text-white truncate">${UI.escapeHtml(instructorName)}</h4>
-                      <p class="text-xs text-slate-400">${UI.escapeHtml(instructorTitle)}</p>
-                    </div>
-                  </div>
-
-                  <div class="space-y-1.5 pt-1 text-xs text-slate-300">
-                    ${contactInfo.email ? `
-                      <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-[16px] text-slate-400">mail</span>
-                        <a href="mailto:${UI.escapeHtml(contactInfo.email)}" class="text-emerald-400 hover:underline truncate">${UI.escapeHtml(contactInfo.email)}</a>
-                      </div>
-                    ` : ''}
-                    ${contactInfo.phone ? `
-                      <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-[16px] text-slate-400">call</span>
-                        <a href="tel:${UI.escapeHtml(contactInfo.phone)}" class="hover:underline">${UI.escapeHtml(contactInfo.phone)}</a>
-                      </div>
-                    ` : ''}
-                    ${contactInfo.group ? `
-                      <div class="flex items-center gap-2 pt-1">
-                        <span class="material-symbols-outlined text-[16px] text-emerald-400">groups</span>
-                        <a href="${UI.escapeHtml(contactInfo.group)}" target="_blank" class="px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold hover:bg-emerald-500/20 transition-colors inline-flex items-center gap-1">
-                          <span>Group trao đổi học tập</span>
-                          <span class="material-symbols-outlined text-[14px]">open_in_new</span>
-                        </a>
-                      </div>
-                    ` : ''}
-                    ${contactInfo.office_hours ? `
-                      <div class="flex items-center gap-2 text-[11px] text-slate-400 pt-0.5">
-                        <span class="material-symbols-outlined text-[15px]">schedule</span>
-                        <span>Giờ tiếp sinh viên: ${UI.escapeHtml(contactInfo.office_hours)}</span>
-                      </div>
-                    ` : ''}
-                  </div>
                 </div>
               </div>
 
@@ -2429,6 +2422,20 @@ class StudentView {
       if (!activeItem && initialLessonId) {
         activeItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(initialLessonId)) || null;
       }
+      // Anti-Bypass: If student has a pending unfinished quiz for this course, navigate directly to that lesson
+      try {
+        const pendingQuizRaw = sessionStorage.getItem('pwd301_pending_quiz_' + courseId);
+        if (pendingQuizRaw) {
+          const pq = JSON.parse(pendingQuizRaw);
+          if (pq && pq.lessonId && !pq.passed) {
+            const pendingLesson = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(pq.lessonId));
+            if (pendingLesson) {
+              activeItem = pendingLesson;
+            }
+          }
+        }
+      } catch (e) {}
+
       if (!activeItem) {
         const incompleteUnlockedLesson = flatNavList.find(i => i.type === 'lesson' && !i.isCompleted && i.isUnlocked);
         activeItem = incompleteUnlockedLesson || flatNavList.find(i => i.type === 'lesson') || flatNavList[0] || null;
@@ -2768,6 +2775,8 @@ class StudentView {
       let extraPlayerControllers = [];
 
       const cleanupPreviousLesson = () => {
+        const existingModal = document.getElementById('cisco-question-modal');
+        if (existingModal) existingModal.remove();
         if (activeDwellTimer) {
           clearInterval(activeDwellTimer);
           activeDwellTimer = null;
@@ -3634,6 +3643,26 @@ class StudentView {
         const target = flatNavList.find(i => i.type === itemType && String(i.id) === String(itemId));
         if (!target) return;
 
+        // Anti-Bypass: Check if current lesson has pending quiz
+        const pendingQuizRaw = sessionStorage.getItem('pwd301_pending_quiz_' + courseId);
+        if (pendingQuizRaw) {
+          try {
+            const pq = JSON.parse(pendingQuizRaw);
+            if (pq && pq.lessonId && !pq.passed && String(pq.lessonId) !== String(target.id)) {
+              UI.showToast('Bạn phải hoàn thành câu hỏi của bài học hiện tại trước khi chuyển bài.', 'warning');
+              return;
+            }
+          } catch (e) {}
+        }
+
+        // Anti-Bypass: Prevent jumping ahead if current lesson is not completed
+        const curIdx = flatNavList.findIndex(i => i.type === activeItem?.type && String(i.id) === String(activeItem?.id));
+        const targetIdx = flatNavList.findIndex(i => i.type === target.type && String(i.id) === String(target.id));
+        if (targetIdx > curIdx && activeItem && activeItem.type === 'lesson' && !activeItem.isCompleted) {
+          UI.showToast('Bạn cần hoàn thành bài học hiện tại trước khi chuyển sang bài tiếp theo.', 'warning');
+          return;
+        }
+
         if (target.type === 'lesson' && !target.isUnlocked) {
           UI.showToast('Vui lòng hoàn thành bài học trước để mở khóa bài học này.', 'warning');
           return;
@@ -4074,6 +4103,7 @@ class StudentView {
           let videoWatched = StudentView.isLessonVideoWatched(lesson);
           let isCompleted = Boolean(lesson.progress?.is_completed || lesson._isCompleted || lesson.is_completed) || (hasVideo && videoWatched && !hasMiniQuiz);
           const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
+          let hasPassedQuiz = Boolean(lesson.progress?.mini_quiz_completed_at);
           let quizPassingPercent = 80;
           if (typeof lesson.quiz_passing_percent === 'number') {
             quizPassingPercent = lesson.quiz_passing_percent;
@@ -4188,285 +4218,34 @@ class StudentView {
                 ${UI.renderMarkdown(lesson.markdown_content || 'Nội dung bài giảng đang được hoàn thiện.')}
               </div>
 
-              <!-- Interactive Mini-Quiz Section (Coursera-Style Pagination) -->
+              <!-- Question Gate Card (TASK-094 Standardized "Câu hỏi") -->
               ${hasMiniQuiz ? `
-                <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-5" id="cisco-mini-quiz-section">
-                  ${hasVideo && !videoWatched ? `
-                    <div id="cisco-quiz-video-notice" class="flex items-center gap-2 p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300 text-xs">
-                      <span class="material-symbols-outlined text-[18px]">info</span>
-                      <span>💡 <strong>Gợi ý:</strong> Bạn có thể theo dõi trước các câu hỏi củng cố bên dưới và nộp câu trả lời sau khi xem video bài giảng.</span>
-                    </div>
-                  ` : ''}
-
-                  <!-- Quiz Header -->
-                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                    <div class="flex items-center gap-2.5">
-                      <span class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[20px]">quiz</span>
+                <div class="bg-indigo-50/50 dark:bg-slate-900 border border-indigo-200/60 dark:border-indigo-900/60 rounded-2xl p-6 sm:p-8 shadow-sm space-y-4" id="cisco-question-gate-card">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-12 h-12 rounded-2xl bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                        <span class="material-symbols-outlined text-2xl">quiz</span>
+                      </div>
                       <div>
-                        <h3 class="font-black text-slate-900 dark:text-white text-base">Bài kiểm tra Củng cố Kiến thức (Mini-Quiz)</h3>
-                        <p class="text-xs text-slate-400 mt-0.5">Yêu cầu đạt điểm tối thiểu: <strong class="text-indigo-600 dark:text-indigo-400 font-bold">${quizPassingPercent}%</strong> để hoàn thành bài giảng</p>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-900/50">
-                        ${lesson.quiz.length} câu hỏi
-                      </span>
-                      <span class="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-900/50">
-                        Chuẩn: &ge; ${quizPassingPercent}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Coursera-Style Step Navigation Bar (if >= 2 questions) -->
-                  ${lesson.quiz.length >= 2 ? `
-                    <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs select-none" id="cisco-quiz-pagination-bar">
-                      <div class="flex items-center gap-1.5 overflow-x-auto py-0.5" id="cisco-quiz-pills-bar">
-                        ${lesson.quiz.map((_, qIdx) => `
-                          <button
-                            type="button"
-                            class="cisco-quiz-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer ${qIdx === 0 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'}"
-                            data-target-idx="${qIdx}"
-                          >
-                            Câu ${qIdx + 1}
-                          </button>
-                        `).join('')}
-                      </div>
-                      <span id="cisco-quiz-slide-indicator" class="text-xs font-bold text-slate-500 shrink-0 font-mono">
-                        1 / ${lesson.quiz.length}
-                      </span>
-                    </div>
-                  ` : ''}
-
-                  <!-- Questions Container -->
-                  <div class="space-y-6" id="cisco-mini-quiz-list">
-                    ${lesson.quiz.map((q, qIdx) => {
-                      const qType = q.type || 'MULTIPLE_CHOICE';
-                      const isMulti = qType === 'MULTIPLE_CHOICE' && (Boolean(q.allow_multiple) || (Array.isArray(q.correct_answers) && q.correct_answers.length > 1));
-                      const choices = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
-
-                      let typeBadge = '';
-                      if (qType === 'MULTIPLE_CHOICE') {
-                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">${isMulti ? 'Trắc nghiệm (Chọn nhiều)' : 'Trắc nghiệm (Chọn 1)'}</span>`;
-                      } else if (qType === 'FILL_BLANK') {
-                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">Điền khuyết</span>`;
-                      } else if (qType === 'MATCHING') {
-                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">Nối từ</span>`;
-                      } else if (qType === 'TRUE_FALSE') {
-                        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">Đúng / Sai</span>`;
-                      }
-
-                      const qImg = q.image_url || q.question_image_url || '';
-                      const optImages = Array.isArray(q.option_images) ? q.option_images : [];
-
-                      return `
-                        <div class="p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-4 cisco-quiz-card" data-qidx="${qIdx}" data-qtype="${qType}" style="${lesson.quiz.length >= 2 && qIdx !== 0 ? 'display: none;' : ''}">
-                          <!-- Question Header -->
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="flex items-start gap-2.5 flex-1">
-                              <span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-mono font-bold text-xs shrink-0 mt-0.5">Câu ${qIdx + 1}</span>
-                              <div class="font-bold text-slate-900 dark:text-white text-sm sm:text-base leading-snug">
-                                ${qType === 'FILL_BLANK'
-                                  ? UI.escapeHtml(q.question).replace(/\[___\]/g, '<span class="inline-block px-2.5 py-0.5 mx-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-xs border border-emerald-300 dark:border-emerald-700 shadow-2xs">[ Chỗ trống ]</span>')
-                                  : UI.escapeHtml(q.question)}
-                              </div>
-                            </div>
-                            <div class="shrink-0">
-                              ${typeBadge}
-                            </div>
-                          </div>
-
-                          <!-- Question Illustration Image (if available) -->
-                          ${qImg ? `
-                            <div class="my-2 p-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 inline-block max-w-full">
-                              <img
-                                src="${UI.escapeHtml(qImg)}"
-                                alt="Hình ảnh minh họa câu hỏi"
-                                class="max-h-64 sm:max-h-80 max-w-full rounded-lg object-contain block mx-auto cursor-zoom-in"
-                                onclick="UI.openImageModal ? UI.openImageModal('${UI.escapeHtml(qImg)}') : window.open('${UI.escapeHtml(qImg)}', '_blank')"
-                                title="Bấm để xem ảnh phóng to"
-                              />
-                            </div>
-                          ` : ''}
-
-                          <!-- Question interaction body -->
-                          ${qType === 'MULTIPLE_CHOICE' ? `
-                            <div class="space-y-2.5 pt-1">
-                              ${choices.map((ch, chIdx) => {
-                                const chImg = optImages[chIdx] || '';
-                                return `
-                                  <label class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-indigo-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-choice-label" data-chidx="${chIdx}">
-                                    <div class="flex items-center gap-3 min-w-0 flex-1">
-                                      ${isMulti ? `
-                                        <input type="checkbox" name="cisco-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 rounded cursor-pointer cisco-quiz-chk" />
-                                      ` : `
-                                        <input type="radio" name="cisco-quiz-q-${qIdx}" value="${chIdx}" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-radio" />
-                                      `}
-                                      <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge">
-                                        ${String.fromCharCode(65 + chIdx)}
-                                      </span>
-                                      <span class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed choice-text">${UI.escapeHtml(ch)}</span>
-                                    </div>
-                                    ${chImg ? `
-                                      <div class="shrink-0 pl-7 sm:pl-0">
-                                        <img src="${UI.escapeHtml(chImg)}" alt="Ảnh đáp án ${String.fromCharCode(65 + chIdx)}" class="h-14 sm:h-16 rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-slate-50 dark:bg-slate-800" />
-                                      </div>
-                                    ` : ''}
-                                  </label>
-                                `;
-                              }).join('')}
-                            </div>
-                          ` : ''}
-
-                          ${qType === 'FILL_BLANK' ? `
-                            <div class="space-y-3 p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/30 dark:bg-emerald-950/20">
-                              <div class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                                <span class="material-symbols-outlined text-[18px] text-emerald-600">edit_note</span>
-                                <span>Nhập câu trả lời của bạn vào ô bên dưới:</span>
-                              </div>
-                              ${(q.blanks || [{ accepted_answers: [] }]).map((b, bIdx) => `
-                                <div class="flex items-center gap-2.5 p-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-900 cisco-quiz-blank-row shadow-2xs">
-                                  <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
-                                    #${bIdx + 1}
-                                  </span>
-                                  <input
-                                    type="text"
-                                    class="cisco-quiz-blank-input flex-1 px-3.5 py-2 text-xs sm:text-sm rounded-lg border-0 bg-transparent text-slate-900 dark:text-white outline-none focus:ring-0 font-medium"
-                                    data-qidx="${qIdx}"
-                                    data-bidx="${bIdx}"
-                                    placeholder="Gõ từ hoặc cụm từ cần điền vào đây..."
-                                    autocomplete="off"
-                                  />
-                                </div>
-                              `).join('')}
-                              <p class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 italic">
-                                * Lưu ý: Câu trả lời không phân biệt chữ hoa, chữ thường.
-                              </p>
-                            </div>
-                          ` : ''}
-
-                          ${qType === 'MATCHING' ? (() => {
-                            const pairs = q.pairs || [];
-                            const shuffledOptions = [...pairs].map((p, idx) => ({ idx, text: p.right })).sort((a, b) => {
-                              const hashA = (a.text + qIdx).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-                              const hashB = (b.text + qIdx).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-                              return hashA - hashB;
-                            });
-                            const leftLetter = (i) => String(i + 1).padStart(2, '0');
-                            const rightLetter = (i) => String.fromCharCode(65 + i);
-
-                            return `
-                              <div class="matching-challenge-board cisco-quiz-matching-board bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl p-5 select-none relative overflow-hidden" data-cisco-quiz-qidx="${qIdx}">
-                                <div class="flex items-center justify-between gap-3 mb-2">
-                                  <span class="text-emerald-400 font-bold text-[11px] uppercase tracking-wider">Thử thách ghép đôi</span>
-                                  <span class="px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 matching-board-counter">0/${pairs.length} đã nối</span>
-                                </div>
-                                <h4 class="text-sm font-bold text-white mb-1">Ghép đúng các cặp khái niệm và ý nghĩa tương ứng</h4>
-                                <p class="text-xs text-slate-400 mb-3">Chọn một mục bên trái, sau đó chọn chức năng đúng ở bên phải để nối.</p>
-                                <div class="h-1 w-full bg-slate-800 rounded-full mb-5 overflow-hidden">
-                                  <div class="h-full bg-emerald-500 transition-all duration-300 w-0 matching-board-progress"></div>
-                                </div>
-
-                                <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible matching-board-svg"></svg>
-
-                                <!-- Hidden selects for grading compatibility -->
-                                <div class="hidden">
-                                  ${pairs.map((p, pIdx) => `
-                                    <select class="cisco-quiz-matching-select" data-qidx="${qIdx}" data-pidx="${pIdx}">
-                                      <option value="">--</option>
-                                      ${pairs.map(opt => `<option value="${UI.escapeHtml(opt.right)}">${UI.escapeHtml(opt.right)}</option>`).join('')}
-                                    </select>
-                                  `).join('')}
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-8 md:gap-14 relative z-10">
-                                  <div class="space-y-3">
-                                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-                                      <span>Cột A · Khái niệm</span>
-                                      <span>${pairs.length} mục</span>
-                                    </div>
-                                    ${pairs.map((p, pIdx) => `
-                                      <div class="matching-card-left cisco-quiz-matching-row p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-left-key="${pIdx}" data-qidx="${qIdx}" data-pidx="${pIdx}">
-                                        <div class="flex items-center gap-2 min-w-0">
-                                          <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${leftLetter(pIdx)}</span>
-                                          <span class="font-semibold text-xs text-slate-200 truncate">${UI.escapeHtml(p.left)}</span>
-                                        </div>
-                                        <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="left-${pIdx}"></span>
-                                      </div>
-                                    `).join('')}
-                                  </div>
-
-                                  <div class="space-y-3">
-                                    <div class="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
-                                      <span>Cột B · Ý nghĩa</span>
-                                      <span>${pairs.length} mục</span>
-                                    </div>
-                                    ${shuffledOptions.map((opt, rPos) => `
-                                      <div class="matching-card-right p-3 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:border-slate-600 flex items-center justify-between gap-2.5 cursor-pointer transition-all" data-right-text="${UI.escapeHtml(opt.text)}" data-right-pos="${rPos}">
-                                        <span class="port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all" data-port="right-${rPos}"></span>
-                                        <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                                          <span class="font-medium text-xs text-slate-200 text-right truncate">${UI.escapeHtml(opt.text)}</span>
-                                          <span class="w-7 h-7 rounded-lg bg-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center shrink-0">${rightLetter(rPos)}</span>
-                                        </div>
-                                      </div>
-                                    `).join('')}
-                                  </div>
-                                </div>
-
-                                <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                                  <button type="button" class="btn-clear-matches inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition-colors">
-                                    <span class="material-symbols-outlined text-[14px]">restart_alt</span>
-                                    <span>Xóa lựa chọn</span>
-                                  </button>
-                                  <span class="text-[11px] text-slate-500">Bấm một mục trái rồi bấm một mục phải để nối</span>
-                                </div>
-                              </div>
-                            `;
-                          })() : ''}
-
-                          ${qType === 'TRUE_FALSE' ? `
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-emerald-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-tf-label" data-qidx="${qIdx}" data-val="true">
-                                <input type="radio" name="cisco-quiz-tf-${qIdx}" value="true" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-tf-radio" />
-                                <span class="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
-                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Đúng (True)</span>
-                              </label>
-                              <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-rose-50/40 dark:hover:bg-slate-800/80 cursor-pointer transition-all cisco-quiz-tf-label" data-qidx="${qIdx}" data-val="false">
-                                <input type="radio" name="cisco-quiz-tf-${qIdx}" value="false" class="text-primary focus:ring-primary w-4 h-4 cursor-pointer cisco-quiz-tf-radio" />
-                                <span class="material-symbols-outlined text-rose-600 text-[18px]">cancel</span>
-                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">Sai (False)</span>
-                              </label>
-                            </div>
-                          ` : ''}
-
-                          <div class="cisco-quiz-explanation hidden p-3.5 rounded-xl text-xs space-y-1"></div>
+                        <div class="flex items-center gap-2">
+                          <h3 class="font-black text-slate-900 dark:text-white text-base">Câu hỏi</h3>
+                          <span id="cisco-question-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold ${hasPassedQuiz ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'}">
+                            ${hasPassedQuiz ? 'Đã hoàn thành' : 'Chưa hoàn thành'}
+                          </span>
                         </div>
-                      `;
-                    }).join('')}
-                  </div>
-
-                  <!-- Bottom Actions & Navigation Bar -->
-                  <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <div id="cisco-quiz-score-banner" class="text-xs text-slate-500 font-medium">
-                      Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          ${lesson.quiz.length} câu hỏi • Yêu cầu đạt &ge; ${quizPassingPercent}% để hoàn thành bài giảng
+                        </p>
+                      </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                      ${lesson.quiz.length >= 2 ? `
-                        <button type="button" id="cisco-quiz-prev-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed" disabled>
-                          <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-                          <span>Quay lại</span>
-                        </button>
-                        <button type="button" id="cisco-quiz-next-btn" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer">
-                          <span>Tiếp theo</span>
-                          <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-                        </button>
-                      ` : ''}
-                      <button type="button" id="cisco-quiz-check-btn" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer ${lesson.quiz.length >= 2 ? 'hidden' : ''}">
-                        <span class="material-symbols-outlined text-[16px]">check_circle</span>
-                        <span>Kiểm tra đáp án</span>
-                      </button>
-                      <button type="button" id="cisco-quiz-reset-btn" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs transition-colors hidden cursor-pointer flex items-center gap-1.5 shadow-sm">
-                        <span class="material-symbols-outlined text-[16px]">restart_alt</span>
-                        <span>Làm lại từ đầu</span>
+                    <div>
+                      <button
+                        type="button"
+                        id="btn-open-question-modal"
+                        class="w-full sm:w-auto px-5 py-2.5 rounded-xl ${hasPassedQuiz ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20'} font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span class="material-symbols-outlined text-[18px]">${hasPassedQuiz ? 'visibility' : 'play_arrow'}</span>
+                        <span>${hasPassedQuiz ? 'Xem lại câu hỏi' : 'Làm câu hỏi ngay'}</span>
                       </button>
                     </div>
                   </div>
@@ -4578,38 +4357,154 @@ class StudentView {
                 `;
               })()}
 
-              <!-- Bottom Action Navigation Bar -->
+              <!-- Bottom Action Navigation Bar (TASK-094: Manual complete button removed) -->
               <div class="flex items-center justify-between pt-4 pb-12 gap-2 flex-wrap">
                 <div id="cisco-bottom-prev-box">
                   <!-- Prev Button dynamically updated -->
                 </div>
 
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    id="cisco-complete-btn"
-                    class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80')}"
-                    ${isCompleted ? 'disabled' : (hasVideo ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : 'disabled')}
-                  >
-                    <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'hourglass_top')}</span>
-                    <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đang học (20s)')}</span>
-                  </button>
-                </div>
-
                 <div id="cisco-bottom-next-box">
-                  <!-- Next Button dynamically updated -->
+                  <!-- Next Button dynamically updated (Locked or Unlocked) -->
                 </div>
               </div>
 
             </div>
           `;
 
-          // Hook Bottom Prev/Next Buttons
-          const renderBottomNav = () => {
-            const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
-            const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
-            const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
+          // -----------------------------------------------------------------------
+          // 3-Condition Engine & Dynamic Locked/Unlocked Next Button (TASK-094 & Invariant 31, 35)
+          // -----------------------------------------------------------------------
+          const trackedLessonId = activeItem.id;
+          videoWatched = Boolean(videoWatched || isCompleted || lesson.progress?.is_video_complete);
+          hasPassedQuiz = Boolean(hasPassedQuiz || lesson.progress?.mini_quiz_completed_at);
+          let dwellElapsed = isCompleted ? 30 : (parseInt(lesson.progress?.seconds_spent, 10) || 0);
+          const dwellRequired = 30;
 
+          const isLessonRequirementsMet = () => {
+            if (isCompleted) return true;
+            const dwellOk = dwellElapsed >= dwellRequired;
+            const videoOk = !hasVideo || videoWatched;
+            const quizOk = !hasMiniQuiz || hasPassedQuiz;
+            return dwellOk && videoOk && quizOk;
+          };
+
+          const getMissingRequirements = () => {
+            if (isCompleted) return [];
+            const missing = [];
+            if (dwellElapsed < dwellRequired) {
+              missing.push(`Cần học tối thiểu 30s (còn ${dwellRequired - dwellElapsed}s)`);
+            }
+            if (hasVideo && !videoWatched) {
+              missing.push('Cần xem hết 100% video bài học');
+            }
+            if (hasMiniQuiz && !hasPassedQuiz) {
+              missing.push('Cần hoàn thành phần Câu hỏi');
+            }
+            return missing;
+          };
+
+          const setLessonCompleted = () => {
+            if (activeDwellTimer) {
+              clearInterval(activeDwellTimer);
+              activeDwellTimer = null;
+            }
+            isCompleted = true;
+            activeItem.isCompleted = true;
+            if (activeItem.data) {
+              activeItem.data.is_completed = true;
+              activeItem.data._isCompleted = true;
+            }
+            const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
+            if (targetLes) {
+              targetLes.is_completed = true;
+              targetLes._isCompleted = true;
+            }
+
+            try {
+              sessionStorage.removeItem('pwd301_pending_quiz_' + courseId);
+            } catch (e) {}
+
+            recalculateAllUnlocks();
+            renderSidebarOutline();
+            updateFloatingNav();
+            renderBottomNav();
+
+            // Background sync backend course progress
+            ApiClient.getStudentCourseProgress(courseId).catch(() => {});
+          };
+
+          const checkAndUnlockLesson = async () => {
+            renderBottomNav();
+            if (isCompleted) return true;
+            if (isLessonRequirementsMet()) {
+              setLessonCompleted();
+              if (!isPreview) {
+                try {
+                  await ApiClient.recordLessonProgress(trackedLessonId, 30, 1.0, true);
+                  UI.showToast('Chúc mừng bạn đã hoàn thành bài học! Nút "Bài tiếp theo" đã được mở khóa.', 'success');
+                } catch (e) {
+                  console.warn('Auto record lesson progress failed:', e);
+                }
+              }
+              return true;
+            }
+            return false;
+          };
+
+          const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
+          const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
+          const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
+
+          const renderBottomNextButton = () => {
+            const box = document.getElementById('cisco-bottom-next-box');
+            if (!box) return;
+            const meetsAll = isLessonRequirementsMet() || isCompleted;
+
+            if (nextItem) {
+              if (meetsAll) {
+                box.innerHTML = `
+                  <button type="button" id="cisco-next-btn" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-sm cursor-pointer animate-fade-in">
+                    <span>Bài tiếp theo</span>
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                `;
+                box.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
+              } else {
+                box.innerHTML = `
+                  <button type="button" id="cisco-next-btn" title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
+                    <span class="material-symbols-outlined text-[16px]">lock</span>
+                    <span>Bài tiếp theo (Đang khóa)</span>
+                  </button>
+                `;
+                box.firstElementChild.onclick = () => {
+                  const missing = getMissingRequirements();
+                  UI.showToast(`Bạn chưa thể qua bài: ${missing.join(', ')}`, 'warning');
+                };
+              }
+            } else {
+              if (meetsAll) {
+                box.innerHTML = `
+                  <a href="#/student/courses" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                    <span>Hoàn thành khóa học</span>
+                    <span class="material-symbols-outlined text-[16px]">celebration</span>
+                  </a>
+                `;
+              } else {
+                box.innerHTML = `
+                  <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
+                    <span class="material-symbols-outlined text-[16px]">lock</span>
+                    <span>Hoàn thành khóa học (Đang khóa)</span>
+                  </button>
+                `;
+                box.firstElementChild.onclick = () => {
+                  const missing = getMissingRequirements();
+                  UI.showToast(`Bạn chưa thể hoàn thành khóa học: ${missing.join(', ')}`, 'warning');
+                };
+              }
+            }
+          };
+
+          const renderBottomNav = () => {
             const bottomPrevBox = document.getElementById('cisco-bottom-prev-box');
             if (bottomPrevBox) {
               if (prevItem) {
@@ -4624,29 +4519,22 @@ class StudentView {
                 bottomPrevBox.innerHTML = '';
               }
             }
-
-            const bottomNextBox = document.getElementById('cisco-bottom-next-box');
-            if (bottomNextBox) {
-              if (nextItem) {
-                bottomNextBox.innerHTML = `
-                  <button type="button" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-                    <span>Bài tiếp theo</span>
-                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-                  </button>
-                `;
-                bottomNextBox.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
-              } else {
-                bottomNextBox.innerHTML = `
-                  <a href="#/student/courses" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-                    <span>Hoàn thành khóa học</span>
-                    <span class="material-symbols-outlined text-[16px]">celebration</span>
-                  </a>
-                `;
-              }
-            }
+            renderBottomNextButton();
           };
 
           renderBottomNav();
+
+          // Enforce 30s Minimum Dwell Timer (TASK-094 & Invariant 31)
+          if (!isCompleted) {
+            if (activeDwellTimer) {
+              clearInterval(activeDwellTimer);
+              activeDwellTimer = null;
+            }
+            activeDwellTimer = setInterval(() => {
+              dwellElapsed++;
+              checkAndUnlockLesson();
+            }, 1000);
+          }
 
           // Revision Opt-In Button
           const optInBtn = document.getElementById('btn-opt-in-revision');
@@ -4671,96 +4559,6 @@ class StudentView {
             };
           }
 
-          // Mark Lesson Completed Controller
-          const completeBtn = document.getElementById('cisco-complete-btn');
-
-          // Enforce 20s Minimum Dwell Timer for non-video lessons (TASK-092 & Invariant 31)
-          if (!isCompleted && !hasVideo) {
-            let dwellRemaining = 20;
-            if (activeDwellTimer) {
-              clearInterval(activeDwellTimer);
-              activeDwellTimer = null;
-            }
-            activeDwellTimer = setInterval(() => {
-              dwellRemaining--;
-              if (dwellRemaining > 0) {
-                if (completeBtn && !isCompleted) {
-                  completeBtn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> <span>Đang học (${dwellRemaining}s)</span>`;
-                }
-              } else {
-                clearInterval(activeDwellTimer);
-                activeDwellTimer = null;
-                if (completeBtn && !isCompleted) {
-                  completeBtn.disabled = false;
-                  completeBtn.className = 'px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer';
-                  completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> <span>Đánh dấu hoàn thành</span>';
-                }
-              }
-            }, 1000);
-          }
-
-          const setLessonCompleted = () => {
-            if (activeDwellTimer) {
-              clearInterval(activeDwellTimer);
-              activeDwellTimer = null;
-            }
-            isCompleted = true;
-            activeItem.isCompleted = true;
-            if (activeItem.data) {
-              activeItem.data.is_completed = true;
-              activeItem.data._isCompleted = true;
-            }
-            const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
-            if (targetLes) {
-              targetLes.is_completed = true;
-              targetLes._isCompleted = true;
-            }
-
-            recalculateAllUnlocks();
-            renderSidebarOutline();
-            updateFloatingNav();
-            renderBottomNav();
-
-            // Background sync backend course progress
-            ApiClient.getStudentCourseProgress(courseId).catch(() => {});
-
-            if (completeBtn) {
-              completeBtn.disabled = true;
-              completeBtn.className = 'px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center gap-2 cursor-default';
-              completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check_circle</span> <span>Đã hoàn thành</span>';
-            }
-          };
-
-          if (completeBtn) {
-            completeBtn.onclick = async () => {
-              if (isPreview) {
-                UI.showToast('Bạn đang xem thử với quyền Giảng viên. Tiến độ xem thử không ghi nhận vào CSDL sinh viên.', 'info');
-                return;
-              }
-              if (hasVideo && !videoWatched) {
-                UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
-                return;
-              }
-              if (hasMiniQuiz) {
-                const quizSection = document.getElementById('cisco-mini-quiz-section');
-                if (quizSection) quizSection.scrollIntoView({ behavior: 'smooth' });
-                UI.showToast('Hãy trả lời các câu hỏi trắc nghiệm củng cố của bài học trước khi hoàn thành.', 'warning');
-                return;
-              }
-              try {
-                const result = await ApiClient.recordLessonProgress(activeItem.id, 20, 1.0, true);
-                if (!result?.is_completed) {
-                  UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
-                  return;
-                }
-                setLessonCompleted();
-                UI.showToast('Chúc mừng bạn đã hoàn thành bài học này!', 'success');
-              } catch (e) {
-                UI.showToast('Không thể lưu trạng thái bài học.', 'error');
-              }
-            };
-          }
-
           // Universal Video Watcher Controller
           const videoEl = document.getElementById('cisco-stream-player');
           const antiSeekLabel = document.getElementById('cisco-anti-seek-label');
@@ -4777,22 +4575,22 @@ class StudentView {
             }
           };
 
-          const trackedLessonId = activeItem.id;
           const handleConfirmed = result => {
             const body = document.getElementById('cisco-lesson-content-body');
             if (!body || body.dataset.lessonId !== String(trackedLessonId)) return;
             if (result.is_video_complete) {
               videoWatched = true;
               if (antiSeekLabel) antiSeekLabel.textContent = 'Hệ thống đã ghi nhận đủ tiến độ video.';
-              document.getElementById('cisco-mini-quiz-section')?.classList.remove('hidden');
-              if (completeBtn && !hasMiniQuiz) completeBtn.disabled = false;
+              checkAndUnlockLesson();
             }
             if (result.is_completed) setLessonCompleted();
           };
+
           const mediaFor = url => lesson.playback_media?.find(media => media.url === url)?.media_id || lesson.media_id;
           const pauseOthers = own => {
             [activeCustomPlayerCtrl, ...extraPlayerControllers].forEach(ctrl => { if (ctrl && ctrl !== own) ctrl.pause(true); });
           };
+
           const playerContainer = document.getElementById('cisco-stream-player-container');
           if (playerContainer || videoEl) {
             activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
@@ -4801,19 +4599,16 @@ class StudentView {
               onPlaying: () => pauseOthers(activeCustomPlayerCtrl),
               onProgress: updateProgressUI, onConfirmed: handleConfirmed,
               onEnded: async () => {
-                if (isPreview) return;
-                try {
-                  const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 1.0, true);
-                  if (result?.is_completed) {
-                    setLessonCompleted();
-                    UI.showToast('Bạn đã xem xong video và hoàn thành bài giảng!', 'success');
-                  }
-                } catch (e) {
-                  console.warn('Auto mark lesson complete on ended error:', e);
+                videoWatched = true;
+                if (hasMiniQuiz && !hasPassedQuiz) {
+                  openQuestionModal();
+                } else {
+                  checkAndUnlockLesson();
                 }
               }
             });
           }
+
           (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
             let ctrl;
             ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
@@ -4824,6 +4619,7 @@ class StudentView {
             });
             extraPlayerControllers.push(ctrl);
           });
+
           if (!isPreview && !hasVideo) {
             const contentTracker = StudentView.createPlaybackTracker(trackedLessonId, `content:${trackedLessonId}`, {
               onConfirmed: handleConfirmed,
@@ -4842,127 +4638,399 @@ class StudentView {
             } });
           }
 
-          // Mini-Quiz Engine Handler (Coursera-Style Slide Pagination & Passing Threshold)
-          const checkQuizBtn = document.getElementById('cisco-quiz-check-btn');
-          const resetQuizBtn = document.getElementById('cisco-quiz-reset-btn');
-          const quizSection = document.getElementById('cisco-mini-quiz-section');
-          const prevQuizBtn = document.getElementById('cisco-quiz-prev-btn');
-          const nextQuizBtn = document.getElementById('cisco-quiz-next-btn');
+          // -------------------------------------------------------------
+          // High-Impact "Câu hỏi" Pop-up Modal (80% Blurred Backdrop, Anti-Bypass, Anti-Leak)
+          // -------------------------------------------------------------
+          const openQuestionModal = () => {
+            if (!hasMiniQuiz || !lesson.quiz || !lesson.quiz.length) return;
+            if (document.getElementById('cisco-question-modal')) return;
 
-          if (quizSection && lesson.quiz && lesson.quiz.length) {
-            const totalQuizSlides = lesson.quiz.length;
-            let currentQuizSlide = 0;
-            let hasPassedQuiz = Boolean(lesson.progress?.mini_quiz_completed_at);
-            if (hasPassedQuiz) {
-              checkQuizBtn?.classList.add('hidden');
-              resetQuizBtn?.classList.add('hidden');
-              nextQuizBtn?.classList.add('hidden');
-              const savedBanner = document.getElementById('cisco-quiz-score-banner');
-              if (savedBanner) savedBanner.textContent = 'Đã ghi nhận hoàn thành bài kiểm tra trên máy chủ.';
-            }
+            // Mark pending quiz state in sessionStorage
+            try {
+              sessionStorage.setItem('pwd301_pending_quiz_' + courseId, JSON.stringify({ lessonId: trackedLessonId, passed: hasPassedQuiz }));
+            } catch (e) {}
 
-            // Wire matching boards for lesson mini-quiz
-            const wireQuizMatchingBoards = () => {
-              quizSection.querySelectorAll('.cisco-quiz-matching-board[data-cisco-quiz-qidx]').forEach(board => {
-                const qIdx = board.dataset.ciscoQuizQidx;
-                StudentView.setupMatchingBoard(board, (leftKey, rightVal) => {
-                  const sel = board.querySelector(`.cisco-quiz-matching-select[data-qidx="${qIdx}"][data-pidx="${leftKey}"]`);
-                  if (sel) {
-                    sel.value = rightVal || '';
-                    sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  }
-                });
-              });
+            const totalSlides = lesson.quiz.length;
+            let currentSlide = 0;
+
+            const modalWrapper = document.createElement('div');
+            modalWrapper.id = 'cisco-question-modal';
+            modalWrapper.className = 'fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in select-none';
+
+            modalWrapper.innerHTML = `
+              <div class="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-scale-up" id="cisco-question-modal-box">
+                <!-- Modal Header -->
+                <div class="p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4 shrink-0 bg-slate-50/60 dark:bg-slate-800/40">
+                  <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                      <span class="material-symbols-outlined text-2xl">quiz</span>
+                    </div>
+                    <div>
+                      <h3 class="font-black text-slate-900 dark:text-white text-lg">Câu hỏi</h3>
+                      <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Yêu cầu đạt điểm tối thiểu: <strong class="text-indigo-600 dark:text-indigo-400 font-bold">${quizPassingPercent}%</strong> để mở khóa bài học tiếp theo</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold border border-indigo-100 dark:border-indigo-900/50">
+                      ${totalSlides} câu hỏi
+                    </span>
+                    <button type="button" id="cisco-modal-close-x-btn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer ${hasPassedQuiz ? '' : 'hidden'}" title="Đóng">
+                      <span class="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Slide Navigation Bar if >= 2 questions -->
+                ${totalSlides >= 2 ? `
+                  <div class="flex items-center justify-between gap-2 px-6 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 text-xs select-none shrink-0" id="cisco-modal-pagination-bar">
+                    <div class="flex items-center gap-1.5 overflow-x-auto py-0.5" id="cisco-modal-pills-bar">
+                      ${lesson.quiz.map((_, qIdx) => `
+                        <button
+                          type="button"
+                          class="cisco-modal-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer ${qIdx === 0 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'}"
+                          data-target-idx="${qIdx}"
+                        >
+                          Câu ${qIdx + 1}
+                        </button>
+                      `).join('')}
+                    </div>
+                    <span id="cisco-modal-slide-indicator" class="text-xs font-bold text-slate-500 shrink-0 font-mono">
+                      1 / ${totalSlides}
+                    </span>
+                  </div>
+                ` : ''}
+
+                <!-- Questions Container -->
+                <div class="p-6 overflow-y-auto space-y-6 flex-1" id="cisco-modal-questions-container">
+                  ${lesson.quiz.map((q, qIdx) => {
+                    const qType = q.type || 'MULTIPLE_CHOICE';
+                    const isMulti = qType === 'MULTIPLE_CHOICE' && (Boolean(q.allow_multiple) || (Array.isArray(q.correct_answers) && q.correct_answers.length > 1));
+                    const choices = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
+
+                    let typeBadge = '';
+                    if (qType === 'MULTIPLE_CHOICE') {
+                      typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">${isMulti ? 'Trắc nghiệm (Chọn nhiều)' : 'Trắc nghiệm (Chọn 1)'}</span>`;
+                    } else if (qType === 'FILL_BLANK') {
+                      typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">Điền khuyết</span>`;
+                    } else if (qType === 'MATCHING') {
+                      typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">Nối từ</span>`;
+                    } else if (qType === 'TRUE_FALSE') {
+                      typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">Đúng / Sai</span>`;
+                    }
+
+                    const qImg = q.image_url || q.question_image_url || '';
+                    const optImages = Array.isArray(q.option_images) ? q.option_images : [];
+
+                    return `
+                      <div class="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-4 cisco-modal-quiz-card" data-qidx="${qIdx}" data-qtype="${qType}" style="${totalSlides >= 2 && qIdx !== 0 ? 'display: none;' : ''}">
+                        <!-- Question Header -->
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="flex items-start gap-2.5 flex-1">
+                            <span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white font-mono font-bold text-xs shrink-0 mt-0.5">Câu ${qIdx + 1}</span>
+                            <div class="font-bold text-slate-900 dark:text-white text-sm sm:text-base leading-snug">
+                              ${qType === 'FILL_BLANK'
+                                ? UI.escapeHtml(q.question).replace(/\\[___\\]/g, '<span class="inline-block px-2.5 py-0.5 mx-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-bold font-mono text-xs border border-emerald-300 dark:border-emerald-700 shadow-2xs">[ Chỗ trống ]</span>')
+                                : UI.escapeHtml(q.question)}
+                            </div>
+                          </div>
+                          ${typeBadge}
+                        </div>
+
+                        ${qImg ? `
+                          <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 max-h-60 flex items-center justify-center bg-slate-950">
+                            <img src="${UI.escapeHtml(qImg)}" alt="Minh họa câu hỏi" class="max-h-60 object-contain" />
+                          </div>
+                        ` : ''}
+
+                        <!-- Answer Input Sections -->
+                        ${qType === 'MULTIPLE_CHOICE' ? `
+                          <div class="space-y-2 cisco-modal-quiz-options">
+                            ${choices.map((opt, chIdx) => {
+                              const optImg = optImages[chIdx] || '';
+                              return `
+                                <label class="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/60 dark:hover:border-indigo-500/60 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20 transition-all cursor-pointer group cisco-modal-choice-label" data-chidx="${chIdx}">
+                                  <input
+                                    type="${isMulti ? 'checkbox' : 'radio'}"
+                                    name="cisco-modal-q-${qIdx}"
+                                    value="${chIdx}"
+                                    class="mt-1 ${isMulti ? 'rounded' : 'rounded-full'} border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:bg-slate-900 dark:border-slate-700"
+                                  />
+                                  <div class="flex-1 flex flex-col gap-1.5">
+                                    <div class="flex items-center gap-2">
+                                      <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge">
+                                        ${String.fromCharCode(65 + chIdx)}
+                                      </span>
+                                      <span class="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 leading-snug">${UI.escapeHtml(opt)}</span>
+                                    </div>
+                                    ${optImg ? `
+                                      <div class="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 max-w-xs bg-slate-900 p-1">
+                                        <img src="${UI.escapeHtml(optImg)}" alt="Option Image" class="max-h-32 object-contain rounded" />
+                                      </div>
+                                    ` : ''}
+                                  </div>
+                                </label>
+                              `;
+                            }).join('')}
+                          </div>
+                        ` : ''}
+
+                        ${qType === 'FILL_BLANK' ? `
+                          <div class="space-y-3 cisco-modal-quiz-blanks">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 italic">Nhập từ hoặc cụm từ thích hợp vào từng chỗ trống bên dưới:</p>
+                            ${(q.blanks || []).map((b, bIdx) => `
+                              <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                                <span class="font-bold font-mono text-xs text-indigo-600 dark:text-indigo-400 shrink-0">Chỗ trống #${bIdx + 1}:</span>
+                                <input
+                                  type="text"
+                                  class="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white font-medium focus:outline-none focus:border-indigo-500 cisco-modal-blank-input"
+                                  placeholder="${UI.escapeHtml(b.hint || 'Nhập câu trả lời...')}"
+                                  data-bidx="${bIdx}"
+                                />
+                              </div>
+                            `).join('')}
+                          </div>
+                        ` : ''}
+
+                        ${qType === 'MATCHING' ? `
+                          <div class="space-y-3 cisco-modal-quiz-matching">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 italic">Kéo thả hoặc nhấp chọn để nối cặp chính xác:</p>
+                            <div class="cisco-quiz-matching-board border border-slate-700/80 rounded-xl p-3 sm:p-4 bg-slate-950 text-slate-100" data-cisco-quiz-qidx="${qIdx}">
+                              <div class="hidden">
+                                ${(q.pairs || []).map((p, pIdx) => `
+                                  <input type="hidden" class="cisco-quiz-matching-select" data-qidx="${qIdx}" data-pidx="${pIdx}" value="" />
+                                `).join('')}
+                              </div>
+                              <div class="grid grid-cols-2 gap-3 sm:gap-6 relative">
+                                <div class="space-y-2 left-col">
+                                  ${(q.pairs || []).map((p, pIdx) => `
+                                    <div class="matching-card-left p-3 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-teal-400 text-xs font-semibold cursor-pointer select-none transition-all flex items-center justify-between" data-key="${pIdx}">
+                                      <span>${UI.escapeHtml(p.left)}</span>
+                                      <span class="w-2.5 h-2.5 rounded-full bg-slate-600 dot-indicator"></span>
+                                    </div>
+                                  `).join('')}
+                                </div>
+                                <div class="space-y-2 right-col">
+                                  ${(q.shuffled_rights || (q.pairs || []).map(p => p.right)).map((rVal, rIdx) => `
+                                    <div class="matching-card-right p-3 rounded-lg bg-slate-900 border border-slate-700/80 hover:border-teal-400 text-xs font-semibold cursor-pointer select-none transition-all flex items-center justify-between" data-val="${UI.escapeHtml(rVal)}">
+                                      <span class="w-2.5 h-2.5 rounded-full bg-slate-600 dot-indicator"></span>
+                                      <span>${UI.escapeHtml(rVal)}</span>
+                                    </div>
+                                  `).join('')}
+                                </div>
+                              </div>
+                              <div class="mt-3 pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                                <span>Nhấp 1 ô bên trái rồi nhấp 1 ô bên phải để nối</span>
+                                <button type="button" class="btn-clear-matches text-xs text-rose-400 hover:text-rose-300 font-semibold underline cursor-pointer">Xóa các đường nối</button>
+                              </div>
+                            </div>
+                          </div>
+                        ` : ''}
+
+                        ${qType === 'TRUE_FALSE' ? `
+                          <div class="grid grid-cols-2 gap-3 cisco-modal-quiz-tf">
+                            <label class="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/60 dark:hover:border-indigo-500/60 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20 transition-all cursor-pointer cisco-modal-tf-label" data-val="true">
+                              <input type="radio" name="cisco-modal-tf-${qIdx}" value="true" class="border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                              <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-emerald-500 text-[20px]">check_circle</span>
+                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">ĐÚNG (True)</span>
+                              </div>
+                            </label>
+                            <label class="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/60 dark:hover:border-indigo-500/60 hover:bg-indigo-50/20 dark:hover:bg-indigo-950/20 transition-all cursor-pointer cisco-modal-tf-label" data-val="false">
+                              <input type="radio" name="cisco-modal-tf-${qIdx}" value="false" class="border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                              <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-rose-500 text-[20px]">cancel</span>
+                                <span class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">SAI (False)</span>
+                              </div>
+                            </label>
+                          </div>
+                        ` : ''}
+
+                        <!-- Feedback / Explanation Block (Hidden by default) -->
+                        <div class="cisco-modal-explanation hidden p-3.5 rounded-xl text-xs space-y-1"></div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="p-5 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+                  <div id="cisco-modal-banner" class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    ${totalSlides >= 2 ? `
+                      <button type="button" id="cisco-modal-prev-btn" class="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+                        <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                        <span>Quay lại</span>
+                      </button>
+                      <button type="button" id="cisco-modal-next-btn" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer">
+                        <span>Tiếp theo</span>
+                        <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                      </button>
+                    ` : ''}
+                    <button type="button" id="cisco-modal-check-btn" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer ${totalSlides >= 2 ? 'hidden' : ''}">
+                      <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                      <span>Kiểm tra đáp án</span>
+                    </button>
+                    <button type="button" id="cisco-modal-reset-btn" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs transition-colors hidden cursor-pointer flex items-center gap-1.5 shadow-sm">
+                      <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                      <span>Làm lại từ đầu</span>
+                    </button>
+                    <button type="button" id="cisco-modal-finish-btn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors hidden cursor-pointer flex items-center gap-1.5 shadow-sm">
+                      <span class="material-symbols-outlined text-[16px]">check</span>
+                      <span>Đóng & Tiếp tục học</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            document.body.appendChild(modalWrapper);
+
+            // Close modal helper
+            const closeModal = () => {
+              window.removeEventListener('keydown', onEscKey);
+              modalWrapper.remove();
             };
-            wireQuizMatchingBoards();
 
-            const updateQuizSlideView = () => {
-              const cards = quizSection.querySelectorAll('.cisco-quiz-card');
-              cards.forEach((c, idx) => {
-                c.style.display = idx === currentQuizSlide ? 'block' : 'none';
+            // Esc key locking
+            const onEscKey = (e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!hasPassedQuiz) {
+                  UI.showToast('Bạn phải hoàn thành câu hỏi trước khi đóng.', 'warning');
+                } else {
+                  closeModal();
+                }
+              }
+            };
+            window.addEventListener('keydown', onEscKey);
+
+            // Outside click locking
+            modalWrapper.addEventListener('click', (e) => {
+              if (e.target === modalWrapper) {
+                if (!hasPassedQuiz) {
+                  UI.showToast('Bạn phải hoàn thành câu hỏi trước khi đóng.', 'warning');
+                } else {
+                  closeModal();
+                }
+              }
+            });
+
+            const closeXBtn = modalWrapper.querySelector('#cisco-modal-close-x-btn');
+            if (closeXBtn) closeXBtn.onclick = closeModal;
+
+            const finishBtn = modalWrapper.querySelector('#cisco-modal-finish-btn');
+            if (finishBtn) finishBtn.onclick = closeModal;
+
+            // Wire matching boards inside modal
+            modalWrapper.querySelectorAll('.cisco-quiz-matching-board[data-cisco-quiz-qidx]').forEach(board => {
+              const qIdx = board.dataset.ciscoQuizQidx;
+              StudentView.setupMatchingBoard(board, (leftKey, rightVal) => {
+                const sel = board.querySelector(`.cisco-quiz-matching-select[data-qidx="${qIdx}"][data-pidx="${leftKey}"]`);
+                if (sel) {
+                  sel.value = rightVal || '';
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
               });
-              const activeMatchingBoard = quizSection.querySelector(`.cisco-quiz-card:nth-child(${currentQuizSlide + 1}) .cisco-quiz-matching-board`);
+            });
+
+            // Slide Navigation Logic
+            const prevBtn = modalWrapper.querySelector('#cisco-modal-prev-btn');
+            const nextBtn = modalWrapper.querySelector('#cisco-modal-next-btn');
+            const checkBtn = modalWrapper.querySelector('#cisco-modal-check-btn');
+            const resetBtn = modalWrapper.querySelector('#cisco-modal-reset-btn');
+            const banner = modalWrapper.querySelector('#cisco-modal-banner');
+
+            const updateSlideView = () => {
+              const cards = modalWrapper.querySelectorAll('.cisco-modal-quiz-card');
+              cards.forEach((c, idx) => {
+                c.style.display = idx === currentSlide ? 'block' : 'none';
+              });
+              const activeMatchingBoard = modalWrapper.querySelector(`.cisco-modal-quiz-card:nth-child(${currentSlide + 1}) .cisco-quiz-matching-board`);
               if (activeMatchingBoard && typeof activeMatchingBoard._redrawMatches === 'function') {
                 requestAnimationFrame(() => activeMatchingBoard._redrawMatches());
               }
-              if (totalQuizSlides < 2) return;
+              if (totalSlides < 2) return;
 
-              const pills = quizSection.querySelectorAll('.cisco-quiz-step-pill');
+              const pills = modalWrapper.querySelectorAll('.cisco-modal-step-pill');
               pills.forEach((p, idx) => {
-                if (idx === currentQuizSlide) {
-                  p.className = 'cisco-quiz-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer bg-indigo-600 text-white shadow-2xs';
+                if (idx === currentSlide) {
+                  p.className = 'cisco-modal-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer bg-indigo-600 text-white shadow-2xs';
                 } else {
-                  p.className = 'cisco-quiz-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100';
+                  p.className = 'cisco-modal-step-pill px-3 py-1 rounded-lg font-mono font-bold text-xs transition-all cursor-pointer bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100';
                 }
               });
 
-              const indicator = document.getElementById('cisco-quiz-slide-indicator');
-              if (indicator) indicator.textContent = `${currentQuizSlide + 1} / ${totalQuizSlides}`;
+              const indicator = modalWrapper.querySelector('#cisco-modal-slide-indicator');
+              if (indicator) indicator.textContent = `${currentSlide + 1} / ${totalSlides}`;
 
-              if (prevQuizBtn) prevQuizBtn.disabled = currentQuizSlide === 0;
+              if (prevBtn) prevBtn.disabled = currentSlide === 0;
 
-              if (nextQuizBtn) {
-                if (currentQuizSlide === totalQuizSlides - 1) {
-                  nextQuizBtn.classList.add('hidden');
-                  if (checkQuizBtn && !hasPassedQuiz) checkQuizBtn.classList.remove('hidden');
+              if (nextBtn) {
+                if (currentSlide === totalSlides - 1) {
+                  nextBtn.classList.add('hidden');
+                  if (checkBtn && !hasPassedQuiz) checkBtn.classList.remove('hidden');
                 } else {
-                  nextQuizBtn.classList.remove('hidden');
-                  if (checkQuizBtn) checkQuizBtn.classList.add('hidden');
+                  nextBtn.classList.remove('hidden');
+                  if (checkBtn) checkBtn.classList.add('hidden');
                 }
               }
             };
 
-            if (totalQuizSlides >= 2) {
-              if (prevQuizBtn) {
-                prevQuizBtn.onclick = () => {
-                  if (currentQuizSlide > 0) {
-                    currentQuizSlide--;
-                    updateQuizSlideView();
+            if (totalSlides >= 2) {
+              if (prevBtn) {
+                prevBtn.onclick = () => {
+                  if (currentSlide > 0) {
+                    currentSlide--;
+                    updateSlideView();
                   }
                 };
               }
-              if (nextQuizBtn) {
-                nextQuizBtn.onclick = () => {
-                  if (currentQuizSlide < totalQuizSlides - 1) {
-                    currentQuizSlide++;
-                    updateQuizSlideView();
+              if (nextBtn) {
+                nextBtn.onclick = () => {
+                  if (currentSlide < totalSlides - 1) {
+                    currentSlide++;
+                    updateSlideView();
                   }
                 };
               }
-              quizSection.querySelectorAll('.cisco-quiz-step-pill').forEach(pill => {
+              modalWrapper.querySelectorAll('.cisco-modal-step-pill').forEach(pill => {
                 pill.onclick = () => {
                   const targetIdx = parseInt(pill.dataset.targetIdx, 10);
                   if (!isNaN(targetIdx)) {
-                    currentQuizSlide = targetIdx;
-                    updateQuizSlideView();
+                    currentSlide = targetIdx;
+                    updateSlideView();
                   }
                 };
               });
             }
 
-            if (checkQuizBtn) {
-              checkQuizBtn.onclick = async () => {
+            // Check Answers Handler
+            if (checkBtn) {
+              checkBtn.onclick = async () => {
                 const answers = lesson.quiz.map((q, qIdx) => {
-                  const card = quizSection.querySelector(`.cisco-quiz-card[data-qidx="${qIdx}"]`);
+                  const card = modalWrapper.querySelector(`.cisco-modal-quiz-card[data-qidx="${qIdx}"]`);
                   const qType = q.type || 'MULTIPLE_CHOICE';
                   if (qType === 'MULTIPLE_CHOICE') {
-                    return Array.from(card.querySelectorAll(`input[name="cisco-quiz-q-${qIdx}"]:checked`))
+                    return Array.from(card.querySelectorAll(`input[name="cisco-modal-q-${qIdx}"]:checked`))
                       .map(inp => Number.parseInt(inp.value, 10));
                   }
                   if (qType === 'FILL_BLANK') {
-                    return Array.from(card.querySelectorAll('.cisco-quiz-blank-input')).map(inp => inp.value.trim());
+                    return Array.from(card.querySelectorAll('.cisco-modal-blank-input')).map(inp => inp.value.trim());
                   }
                   if (qType === 'MATCHING') {
                     return Array.from(card.querySelectorAll('.cisco-quiz-matching-select')).map(inp => inp.value);
                   }
                   if (qType === 'TRUE_FALSE') {
-                    const sel = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
+                    const sel = card.querySelector(`input[name="cisco-modal-tf-${qIdx}"]:checked`);
                     return sel ? sel.value : null;
                   }
                   return null;
                 });
 
-                // Check completeness across all questions
+                // Check completeness
                 let firstUnansweredIdx = -1;
                 answers.forEach((ans, qIdx) => {
                   if (firstUnansweredIdx !== -1) return;
@@ -4978,18 +5046,17 @@ class StudentView {
                 });
 
                 if (firstUnansweredIdx !== -1) {
-                  currentQuizSlide = firstUnansweredIdx;
-                  updateQuizSlideView();
+                  currentSlide = firstUnansweredIdx;
+                  updateSlideView();
                   UI.showToast(`Vui lòng trả lời Câu ${firstUnansweredIdx + 1} trước khi kiểm tra đáp án.`, 'warning');
                   return;
                 }
 
-                checkQuizBtn.disabled = true;
+                checkBtn.disabled = true;
                 let correctCount = 0;
-                const cards = quizSection.querySelectorAll('.cisco-quiz-card');
-
-                // Grade each question in memory
+                const cards = modalWrapper.querySelectorAll('.cisco-modal-quiz-card');
                 const questionResults = [];
+
                 cards.forEach((card, qIdx) => {
                   const qData = lesson.quiz[qIdx];
                   if (!qData) return;
@@ -5003,7 +5070,7 @@ class StudentView {
                         ? qData.correct_answers
                         : (typeof qData.correct_index === 'number' ? [qData.correct_index] : [0])
                     );
-                    const selectedInputs = card.querySelectorAll(`input[name="cisco-quiz-q-${qIdx}"]:checked`);
+                    const selectedInputs = card.querySelectorAll(`input[name="cisco-modal-q-${qIdx}"]:checked`);
                     const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
                     isCorrect = expectedSet.size === selectedSet.size && [...expectedSet].every(x => selectedSet.has(x));
 
@@ -5013,7 +5080,7 @@ class StudentView {
                       : `Đáp án đúng là: <strong>${correctLetters}</strong>. ${qData.explanation ? UI.escapeHtml(qData.explanation) : ''}`;
 
                   } else if (qType === 'FILL_BLANK') {
-                    const blankInputs = card.querySelectorAll('.cisco-quiz-blank-input');
+                    const blankInputs = card.querySelectorAll('.cisco-modal-blank-input');
                     const blanks = qData.blanks || [];
                     let allBlanksCorrect = true;
                     const answerDetails = [];
@@ -5062,7 +5129,7 @@ class StudentView {
                     `;
 
                   } else if (qType === 'TRUE_FALSE') {
-                    const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
+                    const selectedRadio = card.querySelector(`input[name="cisco-modal-tf-${qIdx}"]:checked`);
                     const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
                     const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
                     isCorrect = selectedRadio && (selectedRadio.value === 'true') === expectedVal;
@@ -5075,14 +5142,13 @@ class StudentView {
                   questionResults.push({ card, qData, qType, qIdx, isCorrect, feedbackDetail });
                 });
 
-                const percent = Math.round((correctCount / totalQuizSlides) * 100);
+                const percent = Math.round((correctCount / totalSlides) * 100);
                 const isPassed = percent >= quizPassingPercent;
-                const banner = document.getElementById('cisco-quiz-score-banner');
 
                 if (isPassed) {
                   // PASS: Reveal answers & explanations on all cards
                   questionResults.forEach(({ card, qData, qType, qIdx, isCorrect, feedbackDetail }) => {
-                    const explDiv = card.querySelector('.cisco-quiz-explanation');
+                    const explDiv = card.querySelector('.cisco-modal-explanation');
 
                     if (qType === 'MULTIPLE_CHOICE') {
                       const expectedSet = new Set(
@@ -5092,7 +5158,7 @@ class StudentView {
                       );
                       const selectedInputs = card.querySelectorAll('input:checked');
                       const selectedSet = new Set(Array.from(selectedInputs).map(inp => parseInt(inp.value, 10)));
-                      const choiceLabels = card.querySelectorAll('.cisco-quiz-choice-label');
+                      const choiceLabels = card.querySelectorAll('.cisco-modal-choice-label');
                       choiceLabels.forEach(lbl => {
                         const chIdx = parseInt(lbl.dataset.chidx, 10);
                         const badge = lbl.querySelector('.choice-badge');
@@ -5106,7 +5172,7 @@ class StudentView {
                         }
                       });
                     } else if (qType === 'FILL_BLANK') {
-                      const blankInputs = card.querySelectorAll('.cisco-quiz-blank-input');
+                      const blankInputs = card.querySelectorAll('.cisco-modal-blank-input');
                       const blanks = qData.blanks || [];
                       blankInputs.forEach(inp => {
                         const bIdx = parseInt(inp.dataset.bidx, 10);
@@ -5134,10 +5200,10 @@ class StudentView {
                         matchingBoard._setMatchResults(resultsMap);
                       }
                     } else if (qType === 'TRUE_FALSE') {
-                      const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
+                      const selectedRadio = card.querySelector(`input[name="cisco-modal-tf-${qIdx}"]:checked`);
                       const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
                       const expectedVal = rawVal === true || String(rawVal).trim().toLowerCase() === 'true';
-                      const labels = card.querySelectorAll('.cisco-quiz-tf-label');
+                      const labels = card.querySelectorAll('.cisco-modal-tf-label');
                       labels.forEach(lbl => {
                         const lblVal = lbl.dataset.val === 'true';
                         lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
@@ -5159,61 +5225,57 @@ class StudentView {
                     }
                   });
 
-                  const targetLessonId = activeItem.id;
-                  if (isPreview) {
-                    if (banner) banner.innerHTML = `<span class="font-semibold text-emerald-700 dark:text-emerald-300">Xem thử: ${correctCount}/${totalQuizSlides} (${percent}%). Không ghi nhận tiến độ.</span>`;
-                    if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
-                    checkQuizBtn.disabled = false;
-                    return;
+                  if (banner) {
+                    banner.innerHTML = `
+                      <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
+                          Đạt yêu cầu: ${correctCount}/${totalSlides} (${percent}% &ge; ${quizPassingPercent}%)
+                        </span>
+                        <span class="text-slate-600 dark:text-slate-300">
+                          Xuất sắc! Bạn đã vượt qua bài câu hỏi củng cố.
+                        </span>
+                      </div>
+                    `;
                   }
+
+                  hasPassedQuiz = true;
+                  checkBtn.classList.add('hidden');
+                  if (resetBtn) resetBtn.classList.add('hidden');
+                  if (nextBtn) nextBtn.classList.add('hidden');
+                  if (finishBtn) finishBtn.classList.remove('hidden');
+                  if (closeXBtn) closeXBtn.classList.remove('hidden');
+
+                  // Update gate card badge in main document
+                  const gateBadge = document.getElementById('cisco-question-status-badge');
+                  if (gateBadge) {
+                    gateBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300';
+                    gateBadge.textContent = 'Đã hoàn thành';
+                  }
+                  const openBtn = document.getElementById('btn-open-question-modal');
+                  if (openBtn) {
+                    openBtn.className = 'w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer';
+                    openBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">visibility</span> <span>Xem lại câu hỏi</span>';
+                  }
+
+                  // Clear pending quiz state in sessionStorage
                   try {
-                    if (hasVideo) {
-                      await ApiClient.recordLessonProgress(targetLessonId, 0, 1.0, false);
-                    }
-                    const result = await ApiClient.completeLessonMiniQuiz(targetLessonId, answers);
-                    const currentBody = document.getElementById('cisco-lesson-content-body');
-                    if (currentBody && currentBody.dataset.lessonId === String(targetLessonId)) {
-                      hasPassedQuiz = true;
-                      checkQuizBtn.classList.add('hidden');
-                      if (resetQuizBtn) resetQuizBtn.classList.add('hidden');
-                      if (totalQuizSlides >= 2 && nextQuizBtn) nextQuizBtn.classList.add('hidden');
-                      if (banner) {
-                        banner.innerHTML = `
-                          <div class="flex items-center gap-2">
-                            <span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 font-bold">
-                              Đạt yêu cầu: ${correctCount}/${totalQuizSlides} (${percent}% &ge; ${quizPassingPercent}%)
-                            </span>
-                            <span class="text-slate-600 dark:text-slate-300">
-                              Xuất sắc! Bạn đã vượt qua bài kiểm tra củng cố kiến thức.
-                            </span>
-                          </div>
-                        `;
+                    sessionStorage.removeItem('pwd301_pending_quiz_' + courseId);
+                  } catch (e) {}
+
+                  // Submit to backend
+                  if (!isPreview) {
+                    try {
+                      if (hasVideo) {
+                        await ApiClient.recordLessonProgress(trackedLessonId, 0, 1.0, false);
                       }
-                      if (result?.is_completed) {
-                        setLessonCompleted();
-                        UI.showToast('Chúc mừng bạn đã hoàn thành bài giảng!', 'success');
-                      } else {
-                        UI.showToast('Đã ghi nhận điểm số bài kiểm tra.', 'info');
-                      }
+                      await ApiClient.completeLessonMiniQuiz(trackedLessonId, answers);
+                    } catch (error) {
+                      console.warn('Mini-quiz submission error:', error);
                     }
-                  } catch (error) {
-                    hasPassedQuiz = false;
-                    checkQuizBtn.classList.remove('hidden');
-                    if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
-                    if (banner) {
-                      banner.innerHTML = `
-                        <div class="flex items-center gap-2">
-                          <span class="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 font-bold">
-                            Chưa lưu kết quả: Lỗi máy chủ
-                          </span>
-                          <span class="text-slate-600 dark:text-slate-300">
-                            ${UI.escapeHtml(error.message || 'Lỗi lưu kết quả bài kiểm tra. Vui lòng thử lại.')}
-                          </span>
-                        </div>
-                      `;
-                    }
-                    UI.showToast(error.message || 'Lỗi lưu kết quả bài kiểm tra.', 'error');
                   }
+
+                  // Trigger lesson completion and unlock Next button!
+                  checkAndUnlockLesson();
 
                 } else {
                   // FAIL: ANTI-LEAK PROTECTION — DO NOT reveal correct answers or explanations!
@@ -5221,7 +5283,7 @@ class StudentView {
                     banner.innerHTML = `
                       <div class="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900/95 border border-slate-800 text-slate-200 shadow-sm">
                         <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs shrink-0">
-                          Chưa đạt: ${correctCount}/${totalQuizSlides} (${percent}% / Điểm chuẩn: ${quizPassingPercent}%)
+                          Chưa đạt: ${correctCount}/${totalSlides} (${percent}% / Chuẩn: ${quizPassingPercent}%)
                         </span>
                         <span class="text-xs text-slate-300 font-medium">
                           Bạn chưa đạt chuẩn hoàn thành. Vui lòng bấm <strong>Làm lại từ đầu</strong> để thử lại.
@@ -5230,31 +5292,27 @@ class StudentView {
                     `;
                   }
 
-                  // Hide check button and next button, show "Làm lại từ đầu"
-                  checkQuizBtn.classList.add('hidden');
-                  if (nextQuizBtn) nextQuizBtn.classList.add('hidden');
-                  if (resetQuizBtn) resetQuizBtn.classList.remove('hidden');
+                  checkBtn.classList.add('hidden');
+                  if (nextBtn) nextBtn.classList.add('hidden');
+                  if (resetBtn) resetBtn.classList.remove('hidden');
                   UI.showToast(`Bạn đạt ${percent}%, chưa đủ điểm chuẩn ${quizPassingPercent}%. Hãy làm lại từ đầu!`, 'warning');
                 }
 
-                checkQuizBtn.disabled = false;
+                checkBtn.disabled = false;
               };
             }
 
-            if (resetQuizBtn) {
-              resetQuizBtn.onclick = () => {
+            // Reset Quiz Handler
+            if (resetBtn) {
+              resetBtn.onclick = () => {
                 hasPassedQuiz = false;
-                // Reset form inputs
-                quizSection.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
-                quizSection.querySelectorAll('.cisco-quiz-blank-input').forEach(inp => {
+                modalWrapper.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(r => r.checked = false);
+                modalWrapper.querySelectorAll('.cisco-modal-blank-input').forEach(inp => {
                   inp.value = '';
                   inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
-                quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
-                quizSection.querySelectorAll('.cisco-quiz-matching-row').forEach(row => {
-                  row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                });
-                quizSection.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
+                modalWrapper.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
+                modalWrapper.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
                   if (typeof board._setMatchResults === 'function') board._setMatchResults(null);
                   board.querySelectorAll('.btn-clear-matches').forEach(btn => btn.click());
                   board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
@@ -5262,38 +5320,63 @@ class StudentView {
                     c.classList.add('border-slate-700/80');
                   });
                 });
-                wireQuizMatchingBoards();
 
-                quizSection.querySelectorAll('.cisco-quiz-explanation').forEach(e => {
+                modalWrapper.querySelectorAll('.cisco-modal-explanation').forEach(e => {
                   e.classList.add('hidden');
                   e.innerHTML = '';
                 });
-                quizSection.querySelectorAll('.cisco-quiz-choice-label').forEach(lbl => {
+                modalWrapper.querySelectorAll('.cisco-modal-choice-label').forEach(lbl => {
                   lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                   const badge = lbl.querySelector('.choice-badge');
                   if (badge) badge.className = 'w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 choice-badge';
                 });
-                quizSection.querySelectorAll('.cisco-quiz-tf-label').forEach(lbl => {
+                modalWrapper.querySelectorAll('.cisco-modal-tf-label').forEach(lbl => {
                   lbl.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
 
-                // Reset to Slide 0 (Question 1)
-                currentQuizSlide = 0;
-                updateQuizSlideView();
+                currentSlide = 0;
+                updateSlideView();
 
-                const banner = document.getElementById('cisco-quiz-score-banner');
                 if (banner) {
                   banner.innerHTML = 'Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.';
                 }
-                resetQuizBtn.classList.add('hidden');
-                checkQuizBtn.classList.remove('hidden');
-                if (totalQuizSlides >= 2) {
-                  checkQuizBtn.classList.add('hidden');
-                  if (nextQuizBtn) nextQuizBtn.classList.remove('hidden');
+                resetBtn.classList.add('hidden');
+                checkBtn.classList.remove('hidden');
+                if (totalSlides >= 2) {
+                  checkBtn.classList.add('hidden');
+                  if (nextBtn) nextBtn.classList.remove('hidden');
                 }
-                UI.showToast('Đã đặt lại bài kiểm tra. Hãy bắt đầu làm lại từ Câu 1.', 'info');
+                UI.showToast('Đã đặt lại câu hỏi. Hãy bắt đầu làm lại từ Câu 1.', 'info');
               };
             }
+          };
+
+          // Wire Gate Card Open Button
+          const openGateBtn = document.getElementById('btn-open-question-modal');
+          if (openGateBtn) {
+            openGateBtn.onclick = () => openQuestionModal();
+          }
+
+          // Auto-trigger Modal on Scroll into View (TASK-094 & Invariant 35)
+          const gateCard = document.getElementById('cisco-question-gate-card');
+          if (gateCard && hasMiniQuiz && !hasPassedQuiz) {
+            const observer = new IntersectionObserver((entries) => {
+              entries.forEach(entry => {
+                if (entry.isIntersecting && !hasPassedQuiz) {
+                  openQuestionModal();
+                }
+              });
+            }, { threshold: 0.3 });
+            observer.observe(gateCard);
+          }
+
+          // Anti-Bypass: Auto-open Modal on Mount if lesson has unpassed quiz
+          if (hasMiniQuiz && !hasPassedQuiz && !isCompleted) {
+            setTimeout(() => {
+              if (!hasPassedQuiz && !document.getElementById('cisco-question-modal')) {
+                openQuestionModal();
+              }
+            }, 800);
           }
 
         } catch (err) {

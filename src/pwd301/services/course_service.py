@@ -563,7 +563,13 @@ def update_course(
     if course.status in ("PUBLISHED", "ARCHIVED") and not is_approved_review and not actor.is_admin:
         return queue_course_metadata_review(actor, course, data, session=sess)
 
-    admin_override = bool(actor.is_admin and course.owner_instructor_id and not is_approved_review)
+    admin_override = bool(
+        actor.is_admin
+        and course.owner_instructor_id
+        and actor.id != course.owner_instructor_id
+        and course.status != "DRAFT"
+        and not is_approved_review
+    )
     clean_admin_reason = (data.get("reason") or "").strip()
     if admin_override and not clean_admin_reason:
         # If updating course thumbnail/cover, provide safe default admin reason

@@ -2078,6 +2078,8 @@ def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
         else "application/octet-stream"
     )
 
+    stream_url = f"/api/files/{file_asset_id}/stream" if file_asset_id else ""
+
     return {
         "resource_id": str(res.public_id),
         "asset_id": file_asset_id,
@@ -2088,6 +2090,8 @@ def _serialize_lesson_resource(res: LessonResource) -> dict[str, Any]:
         "byte_size": byte_sz,
         "mime_type": mime,
         "download_url": download_url,
+        "file_url": stream_url,
+        "stream_url": stream_url,
         "file_asset": serialized_fa,
         "position": res.position,
         "is_required": res.is_required,

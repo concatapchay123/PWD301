@@ -1918,7 +1918,7 @@ def record_lesson_progress(
         else (
             lesson.minimum_completion_seconds
             if lesson.minimum_completion_seconds is not None
-            else 20
+            else 30
         )
     )
     viewed_fraction_required = (
@@ -2060,15 +2060,20 @@ def complete_lesson_mini_quiz(
         progress_snapshot["mini_quiz_question_count"] = len(questions)
 
     newly_completed = False
+    min_required_secs = (
+        lesson.minimum_completion_seconds
+        if lesson.minimum_completion_seconds is not None
+        else (0 if requires_video_watch else 30)
+    )
     if (
         progress.completed_at is None
-        and progress.seconds_spent >= lesson.minimum_completion_seconds
+        and progress.seconds_spent >= min_required_secs
         and float(progress.max_view_fraction) >= video_view_fraction_required
     ):
         progress.completed_at = now
         progress_snapshot.update(
             {
-                "minimum_completion_seconds": lesson.minimum_completion_seconds,
+                "minimum_completion_seconds": min_required_secs,
                 "viewed_fraction_required": video_view_fraction_required,
                 "completed_at": now.isoformat(),
             }

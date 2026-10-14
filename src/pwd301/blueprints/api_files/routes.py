@@ -78,8 +78,12 @@ def download_file_api(asset_id: str) -> Response:
             actor, asset_id, revision_no=revision_no, session=db.session
         )
         reviewer = actor is not None and (
-            (actor.is_admin and actor.has_admin_permission("COURSE_REVIEW"))
-            or (actor.has_role("INSTRUCTOR") and asset.course.owner_instructor_id == actor.id)
+            actor.is_admin
+            or (
+                actor.has_role("INSTRUCTOR")
+                and asset.course
+                and asset.course.owner_instructor_id == actor.id
+            )
         )
         if not reviewer:
             raise FileAccessDeniedError(
