@@ -232,7 +232,7 @@ def test_video_completion_satisfies_minimum_seconds(
         headers={"X-CSRFToken": csrf_token},
     )
     assert rejected.status_code == 400
-    data = playback_watch(student, lesson1, 0.95)
+    data = playback_watch(student, lesson1, 1.0)
     assert data["seconds_spent"] >= lesson1.minimum_completion_seconds
     assert data["is_video_complete"] and data["is_completed"]
 

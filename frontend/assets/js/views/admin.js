@@ -3595,110 +3595,308 @@ class AdminView {
       `;
 
       const openReassignModal = (preselectedCourseId = null, preselectedInstructorId = null) => {
+        // Categorize courses into unassigned vs assigned
+        const unassignedCourses = courses.filter(c => !c.owner_instructor_id || c.owner_instructor_id === '' || c.instructor_name === 'N/A' || c.owner_instructor_name === null);
+
+        let activeTab = (preselectedInstructorId || (!preselectedCourseId && unassignedCourses.length === 0)) ? 'swap' : 'unassigned';
+
         const body = `
           <div class="space-y-4 text-xs">
-            <p class="text-slate-600 dark:text-slate-300">
-              Chọn khóa học và giảng viên sẽ phụ trách tiếp theo. Thay đổi này được ghi lại.
-            </p>
+            <!-- Mode Tabs -->
+            <div class="flex border-b border-slate-200 dark:border-slate-700 gap-1 pb-1">
+              <button
+                type="button"
+                id="tab-mode-unassigned"
+                class="px-4 py-2 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 ${activeTab === 'unassigned' ? 'bg-primary/10 text-primary border-b-2 border-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
+              >
+                <span class="material-symbols-outlined text-[16px]">hourglass_empty</span>
+                <span>Gán môn đang trống (${unassignedCourses.length})</span>
+              </button>
+              <button
+                type="button"
+                id="tab-mode-swap"
+                class="px-4 py-2 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 ${activeTab === 'swap' ? 'bg-primary/10 text-primary border-b-2 border-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
+              >
+                <span class="material-symbols-outlined text-[16px]">swap_horiz</span>
+                <span>Chuyển giao / Hoán đổi giữa 2 GV</span>
+              </button>
+            </div>
 
-            <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Tìm kiếm khóa học</label>
-              <div class="relative">
-                <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">search</span>
-                <input
-                  type="text"
-                  id="modal-reassign-search"
-                  placeholder="Nhập mã môn, tên môn hoặc tên giảng viên..."
-                  class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-primary"
-                />
+            <!-- Panel 1: Gán môn đang trống -->
+            <div id="panel-unassigned" class="${activeTab === 'unassigned' ? 'block' : 'hidden'} space-y-3">
+              <p class="text-slate-600 dark:text-slate-300">
+                Liệt kê các môn học hiện chưa có giảng viên phụ trách (do mới tạo hoặc giảng viên trước đó bị đình chỉ).
+              </p>
+
+              ${unassignedCourses.length === 0 ? `
+                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center text-slate-500">
+                  <span class="material-symbols-outlined text-2xl text-slate-400 mb-1">check_circle</span>
+                  <p class="font-semibold text-slate-700 dark:text-slate-300">Tất cả các môn học hiện đã có Giảng viên phụ trách.</p>
+                  <p class="text-[11px] text-slate-400 mt-0.5">Để điều phối giữa các giảng viên, vui lòng dùng tab "Chuyển giao / Hoán đổi giữa 2 GV".</p>
+                </div>
+              ` : `
+                <div class="space-y-1">
+                  <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">1. Khóa học đang trống</label>
+                  <select id="modal-unassigned-course-select" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                    ${unassignedCourses.map(c => `
+                      <option value="${c.course_id}" ${c.course_id === preselectedCourseId ? 'selected' : ''}>
+                        [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)}
+                      </option>
+                    `).join('')}
+                  </select>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">2. Giảng viên tiếp nhận</label>
+                  <select id="modal-unassigned-instructor-select" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                    <option value="" disabled selected>-- Chọn giảng viên phân công --</option>
+                    ${instructors.map(ins => `
+                      <option value="${ins.user_id}">
+                        ${UI.escapeHtml(ins.display_name)} (${UI.escapeHtml(ins.email)})
+                      </option>
+                    `).join('')}
+                  </select>
+                </div>
+              `}
+            </div>
+
+            <!-- Panel 2: Chuyển giao / Hoán đổi giữa 2 GV -->
+            <div id="panel-swap" class="${activeTab === 'swap' ? 'block' : 'hidden'} space-y-3">
+              <p class="text-slate-600 dark:text-slate-300">
+                Chọn giảng viên đang phụ trách để xem danh sách môn của họ, sau đó chuyển giao hoặc đổi chéo môn với giảng viên khác.
+              </p>
+
+              <div class="space-y-1">
+                <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">1. Giảng viên A (Đang phụ trách)</label>
+                <select id="modal-swap-instructor-a" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                  <option value="" disabled ${!preselectedInstructorId ? 'selected' : ''}>-- Chọn giảng viên A --</option>
+                  ${instructors.map(ins => `
+                    <option value="${ins.user_id}" ${ins.user_id === preselectedInstructorId ? 'selected' : ''}>
+                      ${UI.escapeHtml(ins.display_name)} (${UI.escapeHtml(ins.email)}) — Phụ trách: ${(ins.courses || []).length} môn
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">2. Môn của GV A cần chuyển</label>
+                <select id="modal-swap-course-a" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                  <option value="" disabled selected>-- Chọn GV A trước để tải danh sách môn --</option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">3. Giảng viên B (Tiếp nhận)</label>
+                <select id="modal-swap-instructor-b" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                  <option value="" disabled selected>-- Chọn giảng viên tiếp nhận --</option>
+                </select>
+              </div>
+
+              <div class="pt-1">
+                <label class="inline-flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300">
+                  <input type="checkbox" id="modal-swap-two-way" class="rounded accent-primary text-xs" />
+                  <span>Hoán đổi 2 chiều (GV B đổi lại 1 môn cho GV A phụ trách)</span>
+                </label>
+              </div>
+
+              <div id="box-course-b" class="space-y-1 hidden">
+                <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">4. Môn của GV B đổi lại cho GV A</label>
+                <select id="modal-swap-course-b" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
+                  <option value="" disabled selected>-- Chọn GV B trước để tải danh sách môn --</option>
+                </select>
               </div>
             </div>
 
-            <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Khóa học cần chuyển</label>
-              <select id="modal-reassign-course" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
-                ${courses.map(c => `
-                  <option value="${c.course_id}" ${c.course_id === preselectedCourseId ? 'selected' : ''}>
-                    [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)} — GV: ${UI.escapeHtml(c.instructor_name || c.owner_instructor_name || 'N/A')}
-                  </option>
-                `).join('')}
-              </select>
-            </div>
-
-            <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Giảng viên mới</label>
-              <select id="modal-reassign-instructor" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
-                ${instructors.map(ins => `
-                  <option value="${ins.user_id}" ${ins.user_id === preselectedInstructorId ? 'selected' : ''}>
-                    ${UI.escapeHtml(ins.display_name)} (${UI.escapeHtml(ins.email)})
-                  </option>
-                `).join('')}
-              </select>
-            </div>
-
-            <div class="space-y-1">
-              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do chuyển khóa học</label>
+            <!-- Reason -->
+            <div class="space-y-1 pt-1">
+              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Lý do điều chuyển công tác *</label>
               <textarea id="modal-reassign-reason" rows="2" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs resize-none" placeholder="Căn cứ theo quyết định điều động công tác số..."></textarea>
             </div>
           </div>
         `;
 
         const footer = `
-          <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600" onclick="UI.closeModal()">Hủy</button>
-          <button type="button" id="submit-reassign-btn" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold">Chuyển Khóa Học</button>
+          <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onclick="UI.closeModal()">Hủy</button>
+          <button type="button" id="submit-reassign-btn" class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">Xác Nhận Điều Chuyển</button>
         `;
 
         UI.openModal({
-          title: 'Chuyển Khóa Học',
+          title: 'Điều Phối & Chuyển Khóa Học',
           bodyHtml: body,
           footerHtml: footer,
           size: 'md'
         });
 
-        const searchInput = document.getElementById('modal-reassign-search');
-        const courseSelect = document.getElementById('modal-reassign-course');
-        if (searchInput && courseSelect) {
-          searchInput.oninput = () => {
-            const query = searchInput.value.trim().toLowerCase();
-            const filtered = courses.filter(c => {
-              const code = (c.course_code || '').toLowerCase();
-              const title = (c.title || '').toLowerCase();
-              const ins = (c.instructor_name || c.owner_instructor_name || '').toLowerCase();
-              return code.includes(query) || title.includes(query) || ins.includes(query);
-            });
-            if (filtered.length === 0) {
-              courseSelect.innerHTML = '<option value="" disabled selected>Không tìm thấy khóa học phù hợp</option>';
+        const tabUnassigned = document.getElementById('tab-mode-unassigned');
+        const tabSwap = document.getElementById('tab-mode-swap');
+        const panelUnassigned = document.getElementById('panel-unassigned');
+        const panelSwap = document.getElementById('panel-swap');
+
+        const switchTab = (tab) => {
+          activeTab = tab;
+          if (tab === 'unassigned') {
+            tabUnassigned?.classList.add('bg-primary/10', 'text-primary', 'border-b-2', 'border-primary');
+            tabUnassigned?.classList.remove('text-slate-500');
+            tabSwap?.classList.remove('bg-primary/10', 'text-primary', 'border-b-2', 'border-primary');
+            tabSwap?.classList.add('text-slate-500');
+            panelUnassigned?.classList.remove('hidden');
+            panelSwap?.classList.add('hidden');
+          } else {
+            tabSwap?.classList.add('bg-primary/10', 'text-primary', 'border-b-2', 'border-primary');
+            tabSwap?.classList.remove('text-slate-500');
+            tabUnassigned?.classList.remove('bg-primary/10', 'text-primary', 'border-b-2', 'border-primary');
+            tabUnassigned?.classList.add('text-slate-500');
+            panelSwap?.classList.remove('hidden');
+            panelUnassigned?.classList.add('hidden');
+          }
+        };
+
+        tabUnassigned?.addEventListener('click', () => switchTab('unassigned'));
+        tabSwap?.addEventListener('click', () => switchTab('swap'));
+
+        // Populate GV A courses & GV B options
+        const selectInsA = document.getElementById('modal-swap-instructor-a');
+        const selectCourseA = document.getElementById('modal-swap-course-a');
+        const selectInsB = document.getElementById('modal-swap-instructor-b');
+        const checkTwoWay = document.getElementById('modal-swap-two-way');
+        const boxCourseB = document.getElementById('box-course-b');
+        const selectCourseB = document.getElementById('modal-swap-course-b');
+
+        const updateInsASelection = () => {
+          const insAId = selectInsA?.value;
+          if (!insAId) return;
+
+          const insA = instructors.find(i => String(i.user_id) === String(insAId));
+          const insACourses = (insA?.courses && insA.courses.length > 0)
+            ? insA.courses
+            : courses.filter(c => String(c.owner_instructor_id) === String(insAId));
+
+          if (selectCourseA) {
+            if (insACourses.length === 0) {
+              selectCourseA.innerHTML = '<option value="" disabled selected>Giảng viên này hiện không phụ trách khóa học nào</option>';
             } else {
-              courseSelect.innerHTML = filtered.map(c => `
+              selectCourseA.innerHTML = insACourses.map(c => `
                 <option value="${c.course_id}">
-                  [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)} — GV: ${UI.escapeHtml(c.instructor_name || c.owner_instructor_name || 'N/A')}
+                  [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)}
                 </option>
               `).join('');
             }
-          };
+          }
+
+          if (selectInsB) {
+            const currentB = selectInsB.value;
+            const availableB = instructors.filter(i => String(i.user_id) !== String(insAId));
+            selectInsB.innerHTML = `
+              <option value="" disabled ${!currentB || currentB === insAId ? 'selected' : ''}>-- Chọn giảng viên tiếp nhận --</option>
+              ${availableB.map(ins => `
+                <option value="${ins.user_id}" ${String(ins.user_id) === String(currentB) ? 'selected' : ''}>
+                  ${UI.escapeHtml(ins.display_name)} (${UI.escapeHtml(ins.email)})
+                </option>
+              `).join('')}
+            `;
+            updateInsBSelection();
+          }
+        };
+
+        const updateInsBSelection = () => {
+          const insBId = selectInsB?.value;
+          if (!insBId || !selectCourseB) return;
+
+          const insB = instructors.find(i => String(i.user_id) === String(insBId));
+          const insBCourses = (insB?.courses && insB.courses.length > 0)
+            ? insB.courses
+            : courses.filter(c => String(c.owner_instructor_id) === String(insBId));
+
+          if (insBCourses.length === 0) {
+            selectCourseB.innerHTML = '<option value="" disabled selected>Giảng viên B hiện không có môn nào để đổi</option>';
+          } else {
+            selectCourseB.innerHTML = insBCourses.map(c => `
+              <option value="${c.course_id}">
+                [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)}
+              </option>
+            `).join('');
+          }
+        };
+
+        selectInsA?.addEventListener('change', updateInsASelection);
+        selectInsB?.addEventListener('change', updateInsBSelection);
+        checkTwoWay?.addEventListener('change', () => {
+          if (boxCourseB) {
+            boxCourseB.classList.toggle('hidden', !checkTwoWay.checked);
+          }
+          if (checkTwoWay.checked) {
+            updateInsBSelection();
+          }
+        });
+
+        // Trigger initial populate if preselected instructor
+        if (preselectedInstructorId) {
+          updateInsASelection();
         }
 
+        // Handle submission
         document.getElementById('submit-reassign-btn').onclick = async () => {
-          const courseId = document.getElementById('modal-reassign-course').value;
-          const newInstructorId = document.getElementById('modal-reassign-instructor').value;
-          const reason = document.getElementById('modal-reassign-reason').value.trim();
-
-          if (!courseId || !newInstructorId) {
-            UI.showToast('Vui lòng chọn đầy đủ khóa học và giảng viên tiếp nhận.', 'warning');
-            return;
-          }
+          const reason = (document.getElementById('modal-reassign-reason')?.value || '').trim();
           if (reason.length < 5) {
-            UI.showToast('Vui lòng nhập lý do chuyển khóa học.', 'warning');
+            UI.showToast('Vui lòng nhập lý do điều chuyển công tác (tối thiểu 5 ký tự).', 'warning');
             return;
           }
 
-          try {
-            await ApiClient.reassignCourse(courseId, newInstructorId, reason);
-            UI.closeModal();
-            UI.showToast('Đã giao khóa học cho giảng viên mới.', 'success');
-            UI.refreshCurrentRoute(() => AdminView.renderTabReassign(container));
-          } catch (e) {
-            UI.showToast(e.message || 'Không chuyển được khóa học.', 'error');
+          if (activeTab === 'unassigned') {
+            const courseId = document.getElementById('modal-unassigned-course-select')?.value;
+            const newInstructorId = document.getElementById('modal-unassigned-instructor-select')?.value;
+
+            if (!courseId) {
+              UI.showToast('Vui lòng chọn khóa học đang trống cần gán.', 'warning');
+              return;
+            }
+            if (!newInstructorId) {
+              UI.showToast('Vui lòng chọn giảng viên tiếp nhận.', 'warning');
+              return;
+            }
+
+            try {
+              await ApiClient.reassignCourse(courseId, newInstructorId, reason);
+              UI.closeModal();
+              UI.showToast('Đã phân công giảng viên cho khóa học thành công.', 'success');
+              UI.refreshCurrentRoute(() => AdminView.renderTabReassign(container));
+            } catch (e) {
+              UI.showToast(e.message || 'Không thể phân công khóa học.', 'error');
+            }
+          } else {
+            const insAId = selectInsA?.value;
+            const courseAId = selectCourseA?.value;
+            const insBId = selectInsB?.value;
+            const isTwoWay = checkTwoWay?.checked;
+            const courseBId = selectCourseB?.value;
+
+            if (!insAId || !courseAId) {
+              UI.showToast('Vui lòng chọn giảng viên A và khóa học của giảng viên A.', 'warning');
+              return;
+            }
+            if (!insBId) {
+              UI.showToast('Vui lòng chọn giảng viên B tiếp nhận.', 'warning');
+              return;
+            }
+            if (isTwoWay && !courseBId) {
+              UI.showToast('Vui lòng chọn khóa học của giảng viên B để thực hiện hoán đổi 2 chiều.', 'warning');
+              return;
+            }
+
+            try {
+              if (isTwoWay) {
+                await ApiClient.swapCourses(courseAId, courseBId, reason);
+                UI.closeModal();
+                UI.showToast('Đã hoán đổi thành công 2 khóa học giữa 2 giảng viên.', 'success');
+              } else {
+                await ApiClient.reassignCourse(courseAId, insBId, reason);
+                UI.closeModal();
+                UI.showToast('Đã chuyển giao khóa học cho giảng viên tiếp nhận.', 'success');
+              }
+              UI.refreshCurrentRoute(() => AdminView.renderTabReassign(container));
+            } catch (e) {
+              UI.showToast(e.message || 'Không thể điều phối khóa học.', 'error');
+            }
           }
         };
       };

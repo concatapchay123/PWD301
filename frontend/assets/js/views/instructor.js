@@ -3826,7 +3826,7 @@ class InstructorView {
           <!-- Course Header Banner (Warm Surface Card) -->
           <div class="bg-white dark:bg-[#202020] border border-[#E8E6DF] dark:border-[#2E2D2B] rounded-2xl p-6 sm:p-8 shadow-subtle space-y-4">
             <div
-              class="relative aspect-video max-h-72 w-full overflow-hidden rounded-xl border ${!course.thumbnail_url ? 'border-amber-400/80 dark:border-amber-600/80 border-dashed bg-amber-50/40 dark:bg-amber-950/20' : 'border-indigo-200 dark:border-indigo-800 bg-indigo-100 dark:bg-indigo-950'} flex flex-col items-center justify-center p-6 text-center group cursor-pointer"
+              class="relative aspect-video w-full max-w-3xl mx-auto overflow-hidden rounded-xl border ${!course.thumbnail_url ? 'border-amber-400/80 dark:border-amber-600/80 border-dashed bg-amber-50/40 dark:bg-amber-950/20' : 'border-indigo-200 dark:border-indigo-800 bg-indigo-100 dark:bg-indigo-950'} flex flex-col items-center justify-center p-6 text-center group cursor-pointer"
               onclick="document.getElementById('course-thumbnail-input')?.click()"
               title="${course.thumbnail_url ? 'Bấm để đổi ảnh bìa' : 'Bấm để tải ảnh bìa môn học'}"
             >
@@ -4146,7 +4146,11 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           const croppedFile = await UI.cropImage(file, { aspectRatio: 16 / 9, title: 'Tùy chỉnh vùng hiển thị ảnh bìa khóa học' });
           if (!croppedFile) return;
           const uploaded = await ApiClient.uploadCourseFile(cId, croppedFile, croppedFile.name, 'COURSE_IMAGE');
-          await ApiClient.updateCourse(cId, { thumbnail_file_asset_id: uploaded.asset_id });
+          const assetId = uploaded?.asset_id || uploaded?.data?.asset_id || uploaded?.id || uploaded?.data?.id;
+          if (!assetId) {
+            throw new Error('Tải tệp ảnh bìa lên máy chủ thất bại (không nhận được mã tài sản).');
+          }
+          await ApiClient.updateCourse(cId, { thumbnail_file_asset_id: assetId });
           UI.showToast('Đã cập nhật ảnh đại diện khóa học.', 'success');
           UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('app-viewport') || container, cId, initialTab));
         } catch (error) {

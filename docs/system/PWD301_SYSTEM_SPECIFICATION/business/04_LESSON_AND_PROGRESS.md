@@ -4,7 +4,7 @@
 - Instructor-facing Bài học is a parent group above Lesson. Existing Lesson IDs and progress remain unchanged when the parent groups are introduced.
 - Lessons are authored in a low-tech friendly, modular Vertical Block format (Text blocks, Video blocks, Document blocks, Interactive Quiz blocks) arranged freely by the instructor with simple Up/Down controls. Intrusive technical quota warnings are eliminated from the authoring surface.
 - Lesson order is mutable globally; prior completion remains.
-- Completion requires meaningful minimum wall-clock time and viewed-most evidence. Client assertions cannot skip or artificially satisfy duration without genuine accumulated heartbeat time.
+- Completion requires meaningful minimum wall-clock time: non-video lessons strictly require at least 20 seconds of real-time dwell before the completion action is enabled (live 20s countdown disabled state); video lessons strictly require 100% video playback completion. Complex reading-time or word-count calculations are permanently purged. The topbar progress percentage indicator and in-lesson AI buttons are permanently decommissioned.
 - Direct download of raw lesson video files (.mp4, .webm) is forbidden for students; all internal video must be served via encrypted HLS (AES-128) with short-lived session token exchange.
 - Internal HLS playback displays dynamic student watermark with DOM/CSS tamper protection. YouTube uses official embedding without overlays; student identity and PWD301 controls remain outside the iframe. Client activity signals are not proof of attention.
 - Progress cache is derived; lesson_progress/results are authoritative.

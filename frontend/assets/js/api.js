@@ -1179,6 +1179,14 @@ class ApiClient {
     });
   }
 
+  static async swapCourses(courseAId, courseBId, reason = '') {
+    return await ApiClient.request('/admin/courses/swap', {
+      method: 'POST',
+      body: { course_a_id: courseAId, course_b_id: courseBId, reason }
+    });
+  }
+
+
   static async publishCourseAdmin(courseId, reason = '') {
     return await ApiClient.request(`/admin/courses/${courseId}/publish`, {
       method: 'POST',
