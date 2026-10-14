@@ -2602,10 +2602,12 @@ def calculate_attempt_result(
         percent_score = Decimal(str(round(float(pct), 4)))
         graded_at = now
 
-        if assessment and assessment.passing_percent is not None:
-            passed = bool(percent_score >= Decimal(str(assessment.passing_percent)))
-        else:
-            passed = True
+        passing_threshold = (
+            Decimal(str(assessment.passing_percent))
+            if (assessment and assessment.passing_percent is not None)
+            else Decimal("50.0")
+        )
+        passed = bool(percent_score >= passing_threshold)
 
         policy = assessment.score_release_policy if assessment else "IMMEDIATE"
         if policy == "IMMEDIATE":
@@ -3340,6 +3342,11 @@ def get_attempt_result_for_student(
         "max_score": max_score,
         "max_points": max_score,
         "percent_score": percent_score,
+        "passing_percent": (
+            float(assessment.passing_percent)
+            if assessment and assessment.passing_percent is not None
+            else 50.0
+        ),
         "passed": is_passed,
         "is_passed": is_passed,
         "released_at": _isoformat_utc(result.released_at) if result else None,

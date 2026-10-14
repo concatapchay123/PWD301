@@ -1,6 +1,64 @@
+# TASK-093 — Course Cover Upload Remediation, Pre-flight Publish Checklist Gate, Interactive Matching & Fill-Blank Right/Wrong Grading, Universal KaTeX Formula Rendering, and Exam Passing Threshold Enforcement
+
+**Status:** COMPLETED
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-14
+**Completed Date:** 2026-10-14
+**Plan:** `C:\Users\LENOVO\.gemini\antigravity\brain\5c170547-39a6-4890-ae86-c5587e62d8fd\plan_task_093_remediation_and_purge.md`
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows, legacy code, outdated specifications, and defective designs regarding course cover uploading, unvalidated course publishing, broken interactive question grading, squished fill-in-the-blank text inputs, unrendered KaTeX formulas, and missing exam passing score thresholds are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire PWD301 system:
+
+1. **Permanent Purge of Unvalidated Course Publishing & Masked Upload Failures (Bãi bỏ gửi duyệt cẩu thả & lỗi upload ảnh bìa)**:
+   - Submitting a course for review with missing cover image, missing introduction video, unedited placeholder text (default title, description, contact email, SLOs), unconfigured academic settings, or empty curriculum is PERMANENTLY FORBIDDEN.
+   - The generic masking of upload errors into `"Dữ liệu đầu vào không hợp lệ"` and rigid MIME type rejections are PERMANENTLY PURGED.
+   - **Invariant 093.1 (Pre-flight Course Publish Inspection & Fail-Closed Gate)**:
+     - When an instructor clicks "Gửi duyệt xuất bản", the system launches a **Pre-flight Publish Checklist Modal** verifying 5 mandatory criteria:
+       1. 16:9 Course Cover Image (`thumbnail_url` / `thumbnail_file_asset_id`).
+       2. Course Introduction / Trailer Video (`trailer_url` / `video_url`).
+       3. Authentic Course Information (custom title, category, detailed description, instructor contact email/phone, customized SLOs).
+       4. Academic Governance Settings (minimum lesson progress %, minimum assessment score).
+       5. Curriculum Completeness (at least 1 learning unit/chapter with at least 1 lesson or exam).
+     - Any failing criterion renders an amber/red warning with a 1-click button jumping directly to the corresponding editor tab. The submit button is locked until all criteria pass.
+     - Backend `POST /instructor/courses/<id>/submit` validates these criteria fail-closed (HTTP 400 with `field_errors`).
+     - Course cover upload (`uploadCourseFile` + `updateCourse`) reliably processes 16:9 images across PNG, JPEG, WebP, JPG, safely handles admin edits with automatic reason logging, and displays exact Vietnamese error messages from the server.
+
+2. **Permanent Purge of Defective Interactive Question Grading & Overlapping Fill-Blank Text (Bãi bỏ nối từ vẽ xanh mù quáng & đè chữ ô điền)**:
+   - The defective matching preview where SVG lines were always drawn green (`#10b981`) regardless of correctness, and selector `.match-left-item` failed to match `.matching-card-left`, is PERMANENTLY PURGED.
+   - The cramped inline `<input>` styling for fill-in-the-blank that collided with surrounding text, and the single-input semicolon format (`cac; abc, xyz`) for instructor answer entry, are PERMANENTLY PURGED.
+   - **Invariant 093.2 (Live Right/Wrong Feedback & Multi-Column Numbered Authoring)**:
+     - Matching Questions: Correct pairs render SVG connector lines and card borders in **Emerald Green** (`#10b981`, `✓ Đúng`); incorrect pairs render in **Crimson Red** (`#f43f5e`, `✗ Sai`).
+     - Fill-in-the-blank Questions: Correct blank inputs render in **Emerald Green** (`border-emerald-500 bg-emerald-50/60`); incorrect blank inputs render in **Crimson Red** (`border-rose-500 bg-rose-50/60`) with target answers rendered below.
+     - Active timed exams keep slots and lines neutral during testing (Zero-Leak Exam Security), and display granular Green/Red indicators upon post-submission review and instructor test preview.
+     - Fill-in-the-blank layout: Inputs are styled with `inline-flex items-center align-middle mx-1.5 px-3 py-1 text-xs font-semibold rounded-lg border-2 border-teal-500 bg-teal-50/60 dark:bg-teal-950/40 text-slate-900 dark:text-slate-100 min-w-[80px] text-center shadow-xs focus:ring-2 focus:ring-teal-400` preventing text collisions.
+     - Instructor authoring: Dynamically counts `___` blanks and renders a responsive grid of numbered cards (**Ô trống 1**, **Ô trống 2**, ...), where instructors enter accepted variants separated by commas.
+
+3. **Permanent Purge of Unrendered Raw KaTeX Strings (Bãi bỏ ký tự công thức thô lộn xộn)**:
+   - The defect where KaTeX was only previewed in the palette popup, leaving question prompts, choices A/B/C/D, exam lists, student test cards, and review views displaying raw `$formula$` strings, is PERMANENTLY PURGED.
+   - **Invariant 093.3 (Universal Client-Side KaTeX Engine)**:
+     - KaTeX auto-render (`renderMathInElement`) and helper `UI.renderMath(container)` automatically parse and render all inline (`$...$`) and block (`$$...$$` / `\[...\]`) formulas across:
+       1. Question Authoring Studio (stem prompt, choices A/B/C/D, explanations).
+       2. Exam Studio Question Cards list.
+       3. Student Live Exam Player.
+       4. Student & Instructor Exam Result Review.
+       5. In-lesson Markdown Content & Mini-Quizzes.
+     - Visual Math Palette $f(x)$ is retained for rapid 1-click symbol insertion.
+
+4. **Permanent Purge of Default-Pass Exam Loophole & Scoreless Grading (Bãi bỏ lỗ hổng auto-pass và đề thi thiếu điểm chuẩn)**:
+   - The critical defect where Exam Studio lacked passing score configuration, backend defaulted `passed = True` when `assessment.passing_percent is None`, and academic ReportLab PDFs unconditionally printed "ĐẠT CHUẨN MÔN HỌC" / PASS even for 0-score attempts, is PERMANENTLY PURGED.
+   - **Invariant 093.4 (Server-Authoritative Passing Threshold & Strict Academic PDF Grading)**:
+     - Exam Studio enforces a **"Tỷ lệ điểm đạt tối thiểu (%)"** field (`passing_percent`, 1-100%, default 50%) with dynamic live points conversion ("Tương đương >= X / Y điểm").
+     - Backend grading (`attempt_service.py`): compares student `percent_score` against `assessment.passing_percent` (fallback 50.0%). `passed = True` if and only if `percent_score >= passing_percent`, otherwise `False`.
+     - Student Result Screen & Academic PDF:
+       - Passed attempts render **"ĐẠT YÊU CẦU"** in Emerald Green (`#15803D`).
+       - Failed attempts render **"CHƯA ĐẠT" / "KHÔNG ĐẠT YÊU CẦU"** in Crimson Red (`#B91C1C`).
+       - PDF explicitly includes: *"Điểm chuẩn đạt: >= X%"* and official examination committee verdict.
+
+---
+
 # TASK-092 — Admin Teaching Assignment Reassignment & Swap Engine, Student Pacing 20s Minimum Threshold, Purge Topbar Progress & AI Button, Exam Studio Interactive Preview Remediation, and Unified 16:9 Course Cover System
 
-**Status:** IN_PROGRESS
+**Status:** COMPLETED
 **Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
 **Started Date:** 2026-10-14
 **Plan:** `C:\Users\LENOVO\.gemini\antigravity\brain\93aeedf0-593a-435c-a606-7190dfc62bf1\plan_task_092_remediation_and_purge.md`

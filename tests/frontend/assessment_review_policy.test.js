@@ -11,6 +11,7 @@ async function renderResult(overrides = {}) {
     cleanChoiceText: value => String(value ?? ''),
     formatDateTime: () => '10/10/2026',
     showToast: () => {},
+    renderMath: () => {},
   };
   const data = { score_status: 'RELEASED', raw_score: 0, max_score: 10, answer_visibility_policy: 'IMMEDIATE', answers_visible: true, questions: [], ...overrides };
   const ApiClient = { getAttemptResult: async () => data, getAttemptAppeal: async () => ({}) };

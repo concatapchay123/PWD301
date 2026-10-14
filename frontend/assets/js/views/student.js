@@ -117,13 +117,18 @@ class StudentView {
         const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
         const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
+        const isEvaluation = board._matchResults !== null && board._matchResults !== undefined;
+        const isOk = isEvaluation ? Boolean(board._matchResults[lKey]) : true;
+        const strokeColor = isEvaluation ? (isOk ? '#10b981' : '#f43f5e') : '#10b981';
+        const shadowColor = isEvaluation ? (isOk ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)') : 'rgba(16, 185, 129, 0.7)';
+
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', d);
         path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#10b981');
+        path.setAttribute('stroke', strokeColor);
         path.setAttribute('stroke-width', '3');
         path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('style', 'filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.7));');
+        path.setAttribute('style', `filter: drop-shadow(0 0 6px ${shadowColor});`);
         svg.appendChild(path);
       });
 
@@ -132,7 +137,7 @@ class StudentView {
         dot.className = 'port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all';
       });
       board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
-        c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400');
+        c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400', 'border-rose-500', 'bg-emerald-950/30', 'bg-rose-950/30');
         c.classList.add('border-slate-700/80');
       });
 
@@ -148,10 +153,35 @@ class StudentView {
         const rCard = board.querySelector(`.matching-card-right[data-right-pos="${rPos}"]`);
         const lDot = board.querySelector(`[data-port="left-${lKey}"]`);
         const rDot = board.querySelector(`[data-port="right-${rPos}"]`);
-        if (lCard) { lCard.classList.remove('border-slate-700/80'); lCard.classList.add('border-emerald-500/60'); }
-        if (rCard) { rCard.classList.remove('border-slate-700/80'); rCard.classList.add('border-emerald-500/60'); }
-        if (lDot) lDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
-        if (rDot) rDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+        const isEvaluation = board._matchResults !== null && board._matchResults !== undefined;
+        const isOk = isEvaluation ? Boolean(board._matchResults[lKey]) : true;
+
+        if (lCard) {
+          lCard.classList.remove('border-slate-700/80', 'border-emerald-500/60', 'border-emerald-500', 'border-rose-500', 'bg-emerald-950/30', 'bg-rose-950/30');
+          if (isEvaluation) {
+            lCard.classList.add(isOk ? 'border-emerald-500' : 'border-rose-500', isOk ? 'bg-emerald-950/30' : 'bg-rose-950/30');
+          } else {
+            lCard.classList.add('border-emerald-500/60');
+          }
+        }
+        if (rCard) {
+          rCard.classList.remove('border-slate-700/80', 'border-emerald-500/60', 'border-emerald-500', 'border-rose-500', 'bg-emerald-950/30', 'bg-rose-950/30');
+          if (isEvaluation) {
+            rCard.classList.add(isOk ? 'border-emerald-500' : 'border-rose-500', isOk ? 'bg-emerald-950/30' : 'bg-rose-950/30');
+          } else {
+            rCard.classList.add('border-emerald-500/60');
+          }
+        }
+        if (lDot) {
+          lDot.className = isEvaluation
+            ? (isOk ? 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all' : 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all')
+            : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+        }
+        if (rDot) {
+          rDot.className = isEvaluation
+            ? (isOk ? 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all' : 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all')
+            : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+        }
       });
 
       if (counter) counter.textContent = `${activeMatches.size}/${totalPairs} đã nối`;
@@ -209,6 +239,10 @@ class StudentView {
     window.addEventListener('resize', redraw);
     requestAnimationFrame(redraw);
     board._redrawMatches = redraw;
+    board._setMatchResults = (resultsMap) => {
+      board._matchResults = resultsMap;
+      redraw();
+    };
   }
 
   static dashboardActivity(enrollments = [], upcoming = []) {
@@ -236,18 +270,22 @@ class StudentView {
     };
     const totalScore = numberOrNull(data.total_score ?? data.raw_score ?? data.score);
     const maxPoints = numberOrNull(data.max_points ?? data.max_score);
+    const passingPercent = numberOrNull(data.passing_percent ?? data.passingPercent ?? 50.0) || 50.0;
     const passingScore = numberOrNull(
-      data.passing_score ?? (maxPoints === null ? null : maxPoints * 0.5),
+      data.passing_score ?? (maxPoints === null ? null : (maxPoints * passingPercent) / 100.0),
     );
-    const isPassed = data.is_passed !== undefined
-      ? Boolean(data.is_passed)
-      : (totalScore !== null && passingScore !== null ? totalScore >= passingScore : null);
+    const isPassed = (data.passed !== undefined && data.passed !== null)
+      ? Boolean(data.passed)
+      : ((data.is_passed !== undefined && data.is_passed !== null)
+        ? Boolean(data.is_passed)
+        : (totalScore !== null && passingScore !== null ? totalScore >= (passingScore - 1e-6) : null));
 
     return {
       released: true,
       totalScore,
       maxPoints,
       passingScore,
+      passingPercent,
       isPassed,
       scorePct: totalScore !== null && maxPoints > 0 ? (totalScore / maxPoints) * 10 : null,
     };
@@ -5083,17 +5121,18 @@ class StudentView {
                     } else if (qType === 'MATCHING') {
                       const selectInputs = card.querySelectorAll('.cisco-quiz-matching-select');
                       const pairs = qData.pairs || [];
+                      const resultsMap = {};
                       selectInputs.forEach(sel => {
                         const pIdx = parseInt(sel.dataset.pidx, 10);
                         const userVal = sel.value;
                         const expectedRight = pairs[pIdx]?.right;
-                        const leftCard = card.querySelector(`.matching-card-left[data-pidx="${pIdx}"]`);
-                        if (leftCard) {
-                          leftCard.classList.remove('border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-slate-700/80');
-                          const isMatch = userVal && expectedRight && String(userVal).trim().toLowerCase() === String(expectedRight).trim().toLowerCase();
-                          leftCard.classList.add(isMatch ? 'border-emerald-500' : 'border-rose-500', isMatch ? 'bg-emerald-950/30' : 'bg-rose-950/30');
-                        }
+                        const isMatch = Boolean(userVal && expectedRight && String(userVal).trim().toLowerCase() === String(expectedRight).trim().toLowerCase());
+                        resultsMap[pIdx] = isMatch;
                       });
+                      const matchingBoard = card.querySelector('.cisco-quiz-matching-board');
+                      if (matchingBoard && typeof matchingBoard._setMatchResults === 'function') {
+                        matchingBoard._setMatchResults(resultsMap);
+                      }
                     } else if (qType === 'TRUE_FALSE') {
                       const selectedRadio = card.querySelector(`input[name="cisco-quiz-tf-${qIdx}"]:checked`);
                       const rawVal = qData.correct_value !== undefined ? qData.correct_value : qData.correct_answer;
@@ -5216,6 +5255,7 @@ class StudentView {
                   row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
                 quizSection.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
+                  if (typeof board._setMatchResults === 'function') board._setMatchResults(null);
                   board.querySelectorAll('.btn-clear-matches').forEach(btn => btn.click());
                   board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
                     c.classList.remove('border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-emerald-500/60', 'ring-2', 'ring-teal-400', 'border-teal-400');
@@ -6689,6 +6729,9 @@ class StudentView {
       // The router moves rendered children out of its staging viewport.
       // Keep callbacks and departure checks on the retained attempt element.
       container = container.querySelector('#exam-attempt-console-root') || container;
+      if (typeof UI?.renderMath === 'function') {
+        UI.renderMath(container);
+      }
       let leaseVerified = true;
       let frozenLeaseControls = [];
       const leaseHeartbeat = StudentView.createAttemptLeaseHeartbeat(
@@ -7631,23 +7674,27 @@ class StudentView {
                       </div>
                     </div>
 
-                    <!-- Scale conversion button (Chỉ Giảng viên và Admin) -->
-                    ${(window.app?.currentRole === 'INSTRUCTOR' || window.app?.currentRole === 'ADMIN' || localStorage.getItem('pwd301_role') === 'INSTRUCTOR' || localStorage.getItem('pwd301_role') === 'ADMIN') ? `
-                      <button
-                        type="button"
-                        id="view-scale-btn"
-                        class="px-2.5 py-1.5 text-xs font-bold text-primary bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 rounded-xl border border-indigo-200 dark:border-indigo-800 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                      >
-                        <span class="material-symbols-outlined text-[15px]">balance</span>
-                        <span>Thang điểm</span>
-                      </button>
-                    ` : ''}
+                    <div class="text-right">
+                      <span class="inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-extrabold uppercase tracking-wide ${isPassed ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'} shadow-2xs">
+                        <span class="material-symbols-outlined text-[16px]">${isPassed ? 'verified' : 'cancel'}</span>
+                        <span>${isPassed ? 'ĐẠT YÊU CẦU' : 'CHƯA ĐẠT'}</span>
+                      </span>
+                      <div class="text-[10px] text-slate-400 mt-1">
+                        Chuẩn đạt: &ge; ${scoreState.passingPercent || 50}% (${scoreState.passingScore !== null ? Number(scoreState.passingScore).toFixed(1) : '-'}đ)
+                      </div>
+                    </div>
                   </div>
 
                   <div class="h-px bg-slate-100 dark:bg-slate-800"></div>
 
                   <!-- Detailed breakdown list -->
                   <div class="space-y-2 text-slate-600 dark:text-slate-400">
+                    <div class="flex justify-between items-center">
+                      <span class="text-slate-400">Kết quả khảo thí:</span>
+                      <span class="font-bold ${isPassed ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+                        ${isPassed ? 'ĐẠT CHUẨN MÔN HỌC' : 'CHƯA ĐẠT YÊU CẦU'} (&ge; ${scoreState.passingPercent || 50}%)
+                      </span>
+                    </div>
                     <div class="flex justify-between items-center">
                       <span class="text-slate-400">Hạng học lực:</span>
                       <span class="font-bold text-indigo-600 dark:text-indigo-400 font-mono">Hạng ${letterGrade} (${gradeDescriptor})</span>
@@ -8294,6 +8341,10 @@ class StudentView {
           }
         };
       });
+
+      if (typeof UI?.renderMath === 'function') {
+        UI.renderMath(container);
+      }
 
     } catch (err) {
       container.innerHTML = `

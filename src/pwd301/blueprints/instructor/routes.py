@@ -853,11 +853,137 @@ def update_course_route(course_id: str) -> Any:
     return jsonify(_serialize_course(course)), 200
 
 
+def validate_course_publish_readiness(course_obj: Course) -> dict[str, Any]:
+    """Validate 5 canonical pre-flight criteria before course publication:
+    1. 16:9 Cover Image
+    2. Intro video / Trailer URL
+    3. Authentic description (>= 20 chars, no default placeholder) and learning objectives
+    4. Academic settings / completion rule (minimum_progress_percent >= 50%)
+    5. Curriculum completeness (>= 1 unit, >= 1 non-empty lesson)
+    """
+    from pwd301.models.course import CourseCompletionRule
+
+    # 1. Cover Image
+    has_cover = bool(
+        course_obj.thumbnail_file_asset_id
+        or (course_obj.thumbnail_url and str(course_obj.thumbnail_url).strip())
+    )
+
+    # 2. Intro Video / Trailer
+    trailer_url = None
+    if course_obj.description and "<!-- trailer_url:" in course_obj.description:
+        m_tr = re.search(r"<!--\s*trailer_url:\s*(.*?)\s*-->", course_obj.description, re.DOTALL)
+        if m_tr:
+            trailer_url = m_tr.group(1).strip()
+    elif course_obj.description and course_obj.description.strip().startswith("{"):
+        with contextlib.suppress(Exception):
+            p_desc = json.loads(course_obj.description)
+            if isinstance(p_desc, dict):
+                trailer_url = p_desc.get("video_url") or p_desc.get("trailer_url")
+    has_trailer = bool(trailer_url and str(trailer_url).strip())
+
+    # 3. Authentic Description and SLOs
+    clean_desc = course_obj.description or ""
+    clean_desc = re.sub(r"<!--\s*contact_info:\s*\{.*?\}\s*-->\n*", "", clean_desc, flags=re.DOTALL)
+    clean_desc = re.sub(
+        r"<!--\s*trailer_url:\s*.*?\s*-->\n*", "", clean_desc, flags=re.DOTALL
+    ).strip()
+    has_valid_desc = bool(
+        clean_desc
+        and len(clean_desc) >= 20
+        and not any(
+            ph in clean_desc.lower()
+            for ph in ["chưa có mô tả", "mô tả mặc định", "default description"]
+        )
+    )
+    lo_list = course_obj.learning_objectives_list
+    has_lo = bool(lo_list and len(lo_list) >= 1)
+    has_info = bool(has_valid_desc and has_lo)
+
+    # 4. Academic Settings / Completion Rule
+    rule = db.session.query(CourseCompletionRule).filter_by(course_id=course_obj.id).first()
+    has_academic = bool(
+        rule
+        and rule.minimum_progress_percent is not None
+        and float(rule.minimum_progress_percent) >= 50.0
+    )
+
+    # 5. Curriculum
+    valid_units = [u for u in course_obj.learning_units if u.deleted_at is None]
+    valid_lessons = [
+        les
+        for les in course_obj.lessons
+        if les.deleted_at is None and les.status != "TRASH" and (les.markdown_content or "").strip()
+    ]
+    has_curriculum = bool(valid_units and valid_lessons)
+
+    is_ready = bool(has_cover and has_trailer and has_info and has_academic and has_curriculum)
+
+    return {
+        "is_ready": is_ready,
+        "criteria": [
+            {
+                "id": "cover_image",
+                "title": "Ảnh bìa đại diện khóa học (Tỷ lệ 16:9)",
+                "passed": has_cover,
+                "detail": "Đã có ảnh bìa chuẩn 16:9."
+                if has_cover
+                else "Chưa có ảnh bìa khóa học. Vui lòng tải lên ảnh bìa tỷ lệ 16:9.",
+            },
+            {
+                "id": "intro_video",
+                "title": "Video giới thiệu / Trailer khóa học",
+                "passed": has_trailer,
+                "detail": f"Đã có video trailer: {trailer_url}"
+                if has_trailer
+                else "Chưa có video giới thiệu khóa học. Vui lòng cập nhật liên kết video trailer (YouTube/HLS).",
+            },
+            {
+                "id": "course_info",
+                "title": "Thông tin khóa học & Chuẩn đầu ra (SLOs)",
+                "passed": has_info,
+                "detail": "Đầy đủ mô tả chi tiết và chuẩn đầu ra môn học."
+                if has_info
+                else "Cần bổ sung mô tả thực tế (tối thiểu 20 ký tự) và ít nhất 1 chuẩn đầu ra (Learning Objective).",
+            },
+            {
+                "id": "academic_settings",
+                "title": "Cài đặt học vụ & Điều kiện hoàn thành",
+                "passed": has_academic,
+                "detail": f"Tiến độ tối thiểu: {float(rule.minimum_progress_percent):.0f}%"
+                if (has_academic and rule and rule.minimum_progress_percent is not None)
+                else "Chưa cấu hình điều kiện hoàn thành khóa học (tiến độ tối thiểu >= 50%).",
+            },
+            {
+                "id": "curriculum",
+                "title": "Đề cương & Nội dung bài giảng",
+                "passed": has_curriculum,
+                "detail": f"{len(valid_units)} chương mục, {len(valid_lessons)} bài giảng có nội dung."
+                if has_curriculum
+                else "Khóa học cần có ít nhất 1 Chương mục và 1 Bài giảng có nội dung.",
+            },
+        ],
+    }
+
+
+@instructor_bp.route("/courses/<course_id>/publish-checklist", methods=["GET"])
+@instructor_required
+def course_publish_checklist_route(course_id: str) -> Any:
+    """Return pre-flight publication checklist status for a course."""
+    actor = require_authenticated_actor()
+    course_obj = _resolve_course(course_id, session=db.session)
+    if course_obj is None:
+        raise ResourceNotFoundError("Khóa học không tồn tại.")
+    require_course_manager(actor, course_obj.id, session=db.session)
+    checklist = validate_course_publish_readiness(course_obj)
+    return jsonify(checklist), 200
+
+
 @instructor_bp.route("/courses/<course_id>/submit", methods=["POST"])
 @instructor_bp.route("/courses/<course_id>/publish-request", methods=["POST"])
 @instructor_required
 def submit_course_route(course_id: str) -> Any:
-    """Submit a DRAFT course for admin review."""
+    """Submit a DRAFT course for admin review with pre-flight checklist validation."""
     actor = require_authenticated_actor()
 
     course_obj = _resolve_course(course_id, session=db.session)
@@ -865,22 +991,11 @@ def submit_course_route(course_id: str) -> Any:
         raise ResourceNotFoundError("Khóa học không tồn tại.")
     require_course_manager(actor, course_obj.id, session=db.session)
 
-    valid_units = [u for u in course_obj.learning_units if u.deleted_at is None]
-    valid_lessons = [
-        les
-        for les in course_obj.lessons
-        if les.deleted_at is None and les.status != "TRASH" and (les.markdown_content or "").strip()
-    ]
-    if not valid_units or not valid_lessons:
-        msg = (
-            "Khóa học cần có ít nhất 1 Chương mục (Learning Unit) và 1 Bài giảng "
-            "có nội dung trước khi nộp duyệt."
-        )
-        raise CourseValidationError(msg)
-
-    if not course_obj.thumbnail_url or not str(course_obj.thumbnail_url).strip():
+    checklist = validate_course_publish_readiness(course_obj)
+    if not checklist["is_ready"]:
+        failed_items = [c["detail"] for c in checklist["criteria"] if not c["passed"]]
         raise CourseValidationError(
-            "Khóa học phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản."
+            "Khóa học chưa đủ điều kiện xuất bản: " + " ".join(failed_items)
         )
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}

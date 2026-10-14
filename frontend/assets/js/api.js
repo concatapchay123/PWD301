@@ -83,13 +83,18 @@ class ApiClient {
       'ACTIVE_LEASE_EXISTS': 'Bài thi đang được mở ở một phiên làm việc khác.'
     };
 
-    if (code && CODE_TRANSLATIONS[code]) {
-      return CODE_TRANSLATIONS[code];
-    }
-
-    // Common backend English phrases to Vietnamese translations
+    // Common backend English phrases to Vietnamese translations (checked before generic code fallback)
     if (rawMsg) {
       const lower = rawMsg.toLowerCase();
+      if (lower.includes('admin direct edits to an instructor-owned course require a reason')) {
+        return 'Quản trị viên chỉnh sửa khóa học của giảng viên cần cung cấp lý do thay đổi.';
+      }
+      if (lower.includes('choose a clean image uploaded for this course')) {
+        return 'Vui lòng chọn tệp ảnh hợp lệ (PNG, JPEG, WebP) đã được quét an toàn cho khóa học này.';
+      }
+      if (lower.includes('a valid cover image asset id is required')) {
+        return 'Mã tài sản ảnh bìa không hợp lệ. Vui lòng tải lại ảnh.';
+      }
       if (lower.includes('course not found') || (lower.includes('course \'') && lower.includes('not found'))) {
         return 'Không tìm thấy khóa học.';
       }
@@ -98,9 +103,6 @@ class ApiClient {
       }
       if (lower.includes('user not found')) {
         return 'Không tìm thấy người dùng.';
-      }
-      if (lower.includes('admin direct edits to an instructor-owned course require a reason')) {
-        return 'Quản trị viên chỉnh sửa khóa học của giảng viên cần cung cấp lý do thay đổi.';
       }
       if (lower.includes('invalid credentials') || lower.includes('invalid email or password')) {
         return 'Email hoặc mật khẩu không chính xác.';
@@ -111,6 +113,14 @@ class ApiClient {
       if (lower.includes('permission denied') || lower.includes('forbidden')) {
         return 'Bạn không có quyền thực hiện thao tác này.';
       }
+    }
+
+    if (code && CODE_TRANSLATIONS[code]) {
+      // If code is generic VALIDATION_ERROR but we have a non-empty rawMsg, show rawMsg
+      if (code === 'VALIDATION_ERROR' && rawMsg && rawMsg.trim()) {
+        return rawMsg.trim();
+      }
+      return CODE_TRANSLATIONS[code];
     }
 
     return rawMsg || `Lỗi yêu cầu (HTTP ${status})`;
@@ -678,6 +688,10 @@ class ApiClient {
       method: 'POST',
       body: { reason }
     });
+  }
+
+  static async getCoursePublishChecklist(courseId) {
+    return await ApiClient.request(`/instructor/courses/${courseId}/publish-checklist`);
   }
 
   static async cancelSubmitCourse(courseId) {

@@ -618,12 +618,13 @@ def _evaluate_attempt_item_regrade(
         percent_score = (total_raw / max_score) * Decimal("100.0000")
 
     passed: bool | None = None
-    if (
-        attempt.assessment
-        and attempt.assessment.passing_percent is not None
-        and percent_score is not None
-    ):
-        passed = percent_score >= attempt.assessment.passing_percent
+    if percent_score is not None:
+        passing_threshold = (
+            attempt.assessment.passing_percent
+            if (attempt.assessment and attempt.assessment.passing_percent is not None)
+            else Decimal("50.0")
+        )
+        passed = percent_score >= passing_threshold
 
     res = sess.query(AssessmentResult).filter(AssessmentResult.attempt_id == attempt.id).first()
     old_raw_score = res.raw_score if res else None
@@ -1115,11 +1116,12 @@ def regrade_attempt(
     percent_score = (
         (total_raw / max_score) * Decimal("100.0000") if max_score > 0 else Decimal("0.0000")
     )
-    passed = (
-        percent_score >= attempt.assessment.passing_percent
-        if attempt.assessment and attempt.assessment.passing_percent is not None
-        else None
+    passing_threshold = (
+        attempt.assessment.passing_percent
+        if (attempt.assessment and attempt.assessment.passing_percent is not None)
+        else Decimal("50.0")
     )
+    passed = percent_score >= passing_threshold if percent_score is not None else None
 
     res = (
         attempt.result

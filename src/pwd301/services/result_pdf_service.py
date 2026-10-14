@@ -514,6 +514,20 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
     submitted_at = _format_datetime(result_data.get("submitted_at"))
     started_at = _format_datetime(result_data.get("started_at"))
     duration = _format_score(result_data.get("duration_minutes")) + " phút"
+    has_authorized_context = any(
+        result_data.get(k) is not None
+        for k in ["assessment_title", "assessment_code", "course_title", "raw_score", "max_score"]
+    )
+    passing_pct_raw = result_data.get("passing_percent")
+    if passing_pct_raw is not None:
+        try:
+            passing_pct_display = _format_score(float(passing_pct_raw))
+        except (ValueError, TypeError):
+            passing_pct_display = "50"
+    elif has_authorized_context:
+        passing_pct_display = "50"
+    else:
+        passing_pct_display = "-"
 
     info_data = [
         [
@@ -541,10 +555,13 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
             Paragraph(duration, style_info_value),
         ],
         [
+            Paragraph("<b>Điểm chuẩn đạt:</b>", style_info_label),
+            Paragraph(
+                f"Tối thiểu {passing_pct_display}%" if passing_pct_display != "-" else "-",
+                style_info_value,
+            ),
             Paragraph("<b>Tiêu chuẩn khảo thí:</b>", style_info_label),
             Paragraph("Có giám sát nâng cao", style_info_value),
-            Paragraph("<b>Địa điểm kết xuất:</b>", style_info_label),
-            Paragraph("Thành phố Hồ Chí Minh", style_info_value),
         ],
     ]
 

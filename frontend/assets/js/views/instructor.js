@@ -4150,7 +4150,7 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           if (!assetId) {
             throw new Error('Tải tệp ảnh bìa lên máy chủ thất bại (không nhận được mã tài sản).');
           }
-          await ApiClient.updateCourse(cId, { thumbnail_file_asset_id: assetId });
+          await ApiClient.updateCourse(cId, { thumbnail_file_asset_id: assetId, reason: 'Cập nhật ảnh đại diện khóa học' });
           UI.showToast('Đã cập nhật ảnh đại diện khóa học.', 'success');
           UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(document.getElementById('app-viewport') || container, cId, initialTab));
         } catch (error) {
@@ -4176,28 +4176,11 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         InstructorView.openCourseSettingsModal(course, initialTab);
       }
 
-      // Bind Submit Review
+      // Bind Submit Review (Pre-flight Publish Checklist Modal)
       const submitRevBtn = document.getElementById('btn-submit-review');
       if (submitRevBtn) {
         submitRevBtn.onclick = async () => {
-          if (!course.thumbnail_url) {
-            UI.showToast('Khóa học bắt buộc phải có ảnh bìa đại diện trước khi gửi xét duyệt xuất bản!', 'warning');
-            document.getElementById('course-thumbnail-input')?.click();
-            return;
-          }
-          const conf = await UI.confirm(
-            'Gửi duyệt khóa học',
-            'Lưu ý: Thầy/Cô hãy đảm bảo đã tạo hoàn thiện tất cả bài giảng và đề thi (không xuất bản lắt nhắt). Xác nhận gửi khóa học này đến Ban Quản trị xét duyệt xuất bản?',
-            'Gửi xét duyệt'
-          );
-          if (!conf) return;
-          try {
-            await ApiClient.submitCourseForReview(cId, 'Giảng viên đề xuất duyệt xuất bản.');
-            UI.showToast('Đã gửi yêu cầu xét duyệt thành công.', 'success');
-            UI.refreshCurrentRoute(() => InstructorView.renderCourseManage(container, cId, 'curriculum'));
-          } catch (e) {
-            UI.showToast(e.message || 'Lỗi gửi xét duyệt.', 'error');
-          }
+          await InstructorView.openCoursePublishChecklistModal(course);
         };
       }
 
@@ -4643,6 +4626,157 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         </div>
       `;
     }
+  }
+
+  // =========================================================================
+  // 2.8. Pre-flight Course Publish Checklist Modal (TASK-093 Remediation)
+  // Enforces 5 canonical quality criteria before allowing submission for review:
+  // 1. 16:9 Cover Image
+  // 2. Intro video / Trailer URL
+  // 3. Authentic description & SLOs
+  // 4. Academic settings / completion rule
+  // 5. Curriculum completeness
+  // =========================================================================
+  static async openCoursePublishChecklistModal(course) {
+    const cId = course.course_id || course.id;
+    UI.startMicroLoading();
+    let checklist = null;
+    try {
+      checklist = await ApiClient.getCoursePublishChecklist(cId);
+    } catch (e) {
+      UI.stopMicroLoading();
+      UI.showToast(e.message || 'Không thể kiểm tra tiêu chuẩn xuất bản.', 'error');
+      return;
+    }
+    UI.stopMicroLoading();
+
+    const criteria = checklist?.criteria || [];
+    const isReady = checklist?.is_ready || false;
+    const passedCount = criteria.filter(c => c.passed).length;
+    const totalCount = criteria.length;
+
+    const itemsHtml = criteria.map((item, idx) => {
+      const isPassed = item.passed;
+      let actionBtn = '';
+      if (!isPassed) {
+        if (item.id === 'cover_image') {
+          actionBtn = `<button type="button" id="chk-act-cover" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">image</span>Tải ảnh bìa</button>`;
+        } else if (item.id === 'intro_video' || item.id === 'course_info') {
+          actionBtn = `<button type="button" id="chk-act-landing" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">edit_note</span>Sửa thông tin</button>`;
+        } else if (item.id === 'academic_settings') {
+          actionBtn = `<button type="button" id="chk-act-academic" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">school</span>Cài đặt học vụ</button>`;
+        } else if (item.id === 'curriculum') {
+          actionBtn = `<button type="button" id="chk-act-curriculum" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-1 transition-colors"><span class="material-symbols-outlined text-[14px]">add_circle</span>Thêm bài giảng</button>`;
+        }
+      }
+
+      return `
+        <div class="p-3.5 rounded-xl border ${isPassed ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-rose-500/20 bg-rose-500/5'} flex items-start gap-3 transition-colors">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isPassed ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}">
+            <span class="material-symbols-outlined text-[18px]">${isPassed ? 'check_circle' : 'cancel'}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h4 class="text-xs font-bold text-slate-200">${idx + 1}. ${UI.escapeHtml(item.title)}</h4>
+              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${isPassed ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}">
+                ${isPassed ? 'ĐẠT TIÊU CHUẨN' : 'CHƯA ĐẠT'}
+              </span>
+            </div>
+            <p class="text-[11px] mt-1 ${isPassed ? 'text-slate-400' : 'text-rose-300'} leading-relaxed">${UI.escapeHtml(item.detail)}</p>
+          </div>
+          ${actionBtn ? `<div class="shrink-0 self-center">${actionBtn}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const statusBanner = isReady
+      ? `
+        <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-2.5 text-xs">
+          <span class="material-symbols-outlined text-emerald-400 text-[20px]">verified</span>
+          <div>
+            <span class="font-bold">Đã sẵn sàng xét duyệt!</span> Khóa học đã hoàn thành xuất sắc ${passedCount}/${totalCount} tiêu chuẩn chất lượng.
+          </div>
+        </div>
+      `
+      : `
+        <div class="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center gap-2.5 text-xs">
+          <span class="material-symbols-outlined text-amber-400 text-[20px]">warning</span>
+          <div>
+            <span class="font-bold">Chưa đủ điều kiện xét duyệt (${passedCount}/${totalCount} tiêu chuẩn).</span> Vui lòng bấm vào nút thao tác tương ứng để hoàn thiện các mục màu đỏ trước khi gửi duyệt xuất bản.
+          </div>
+        </div>
+      `;
+
+    const bodyHtml = `
+      <div class="space-y-4 text-slate-200">
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Nhằm đảm bảo tính chuẩn hóa học liệu và trải nghiệm tối ưu cho người học, hệ thống áp dụng bộ tiêu chuẩn tiền kiểm định (Pre-flight Publish Checklist) bắt buộc trước khi khóa học được chuyển tiếp tới Ban Quản trị xét duyệt xuất bản.
+        </p>
+
+        ${statusBanner}
+
+        <div class="space-y-2.5">
+          ${itemsHtml}
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <div class="flex items-center justify-between w-full">
+        <button type="button" id="btn-checklist-cancel" class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors">
+          Đóng
+        </button>
+        <button type="button" id="btn-checklist-confirm" class="px-5 py-2 text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${isReady ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer' : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60'}" ${isReady ? '' : 'disabled'}>
+          <span class="material-symbols-outlined text-[16px]">send</span>
+          ${isReady ? 'Xác nhận gửi duyệt xuất bản' : 'Chưa đủ điều kiện xuất bản'}
+        </button>
+      </div>
+    `;
+
+    UI.openModal({
+      title: 'Kiểm Tra Tiêu Chuẩn Xuất Bản Khóa Học',
+      bodyHtml,
+      footerHtml,
+      size: 'lg'
+    });
+
+    // Wire actions
+    document.getElementById('btn-checklist-cancel')?.addEventListener('click', () => UI.closeModal());
+
+    document.getElementById('chk-act-cover')?.addEventListener('click', () => {
+      UI.closeModal();
+      document.getElementById('course-thumbnail-input')?.click();
+    });
+
+    document.getElementById('chk-act-landing')?.addEventListener('click', () => {
+      UI.closeModal();
+      InstructorView.openCourseLandingEditorModal(course);
+    });
+
+    document.getElementById('chk-act-academic')?.addEventListener('click', () => {
+      UI.closeModal();
+      InstructorView.openCourseSettingsModal(course, 'academic');
+    });
+
+    document.getElementById('chk-act-curriculum')?.addEventListener('click', () => {
+      UI.closeModal();
+      document.getElementById('btn-create-unit')?.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    document.getElementById('btn-checklist-confirm')?.addEventListener('click', async () => {
+      if (!isReady) return;
+      UI.closeModal();
+      try {
+        await ApiClient.submitCourseForReview(cId, 'Giảng viên đề xuất duyệt xuất bản.');
+        UI.showToast('Đã gửi yêu cầu xét duyệt xuất bản thành công.', 'success');
+        const container = document.getElementById('app-viewport');
+        if (container) {
+          InstructorView.renderCourseManage(container, cId, 'curriculum');
+        }
+      } catch (err) {
+        UI.showToast(err.message || 'Lỗi gửi xét duyệt xuất bản.', 'error');
+      }
+    });
   }
 
   // =========================================================================

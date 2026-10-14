@@ -566,9 +566,16 @@ def update_course(
     admin_override = bool(actor.is_admin and course.owner_instructor_id and not is_approved_review)
     clean_admin_reason = (data.get("reason") or "").strip()
     if admin_override and not clean_admin_reason:
-        raise CourseValidationError(
-            "Admin direct edits to an Instructor-owned course require a reason."
-        )
+        # If updating course thumbnail/cover, provide safe default admin reason
+        if "thumbnail_file_asset_id" in data or set(data.keys()) <= {
+            "thumbnail_file_asset_id",
+            "row_version",
+        }:
+            clean_admin_reason = "Admin direct update of course cover image"
+        else:
+            raise CourseValidationError(
+                "Admin direct edits to an Instructor-owned course require a reason."
+            )
 
     if "row_version" in data and data["row_version"] is not None and course.row_version is not None:
         norm_client = normalize_row_version(data["row_version"])
@@ -688,14 +695,24 @@ def update_course(
                             "A valid cover image asset ID is required."
                         ) from exc
                     asset = None
+            clean_mime = (
+                asset.mime_type.lower().split(";")[0].strip() if asset and asset.mime_type else ""
+            )
+            is_valid_image_mime = clean_mime in {
+                "image/jpeg",
+                "image/jpg",
+                "image/pjpeg",
+                "image/png",
+                "image/webp",
+            }
             if (
                 asset is None
                 or asset.course_id != course.id
-                or asset.asset_type != "COURSE_IMAGE"
+                or asset.asset_type not in {"COURSE_IMAGE", "RESOURCE"}
                 or asset.deleted_at is not None
                 or asset.virus_scan_status != "CLEAN"
                 or not asset.has_passed_malware_scan
-                or asset.mime_type.lower() not in {"image/jpeg", "image/png", "image/webp"}
+                or not is_valid_image_mime
             ):
                 if not is_approved_review:
                     raise CourseValidationError("Choose a clean image uploaded for this course.")

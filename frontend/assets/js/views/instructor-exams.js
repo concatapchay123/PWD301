@@ -221,6 +221,7 @@
               <input
                 type="text"
                 id="workflow-exam-title-input"
+                aria-label="Tên đề thi"
                 class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 rounded-lg px-2.5 py-1 w-full transition-all truncate focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20"
                 value="${UI.escapeHtml(currentTitle)}"
                 title="Nhấp để đổi tên đề thi"
@@ -1331,6 +1332,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         };
       });
 
+      UI.renderMath(previewContainer);
+
       const badge = document.getElementById('workflow-sync-badge');
       const totalScore = questions.reduce((sum, item) => sum + (parseFloat(item.points) || 0), 0);
       if (badge) badge.textContent = `${questions.length} câu • ${totalScore.toFixed(1)}đ • Tự động lưu`;
@@ -2056,9 +2059,15 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               <!-- FORM 2: Điền khuyết / Trả lời ngắn -->
               <div id="form-container-fill" class="space-y-4 hidden">
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Nội dung câu hỏi · dùng ___ cho mỗi ô trống
-                  </label>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300" for="fill-stem-input">
+                      Nội dung câu hỏi · dùng <code class="px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 font-mono text-[11px]">___</code> cho mỗi ô trống
+                    </label>
+                    <button type="button" id="btn-add-fill-blank" class="text-teal-600 dark:text-teal-400 font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer">
+                      <span class="material-symbols-outlined text-[16px]">add_circle</span>
+                      <span>Chèn ô trống (___)</span>
+                    </button>
+                  </div>
                   <textarea
                     id="fill-stem-input"
                     rows="3"
@@ -2067,18 +2076,30 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   ></textarea>
                 </div>
 
+                <!-- Numbered Columns for Accepted Answers -->
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Đáp án được chấp nhận
-                  </label>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px] text-teal-600">view_column</span>
+                      <span>Đáp án được công nhận theo từng ô điền khuyết</span>
+                    </label>
+                    <span id="fill-blanks-count-badge" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800">
+                      1 ô trống
+                    </span>
+                  </div>
+                  
+                  <div id="fill-answers-columns-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <!-- Columns rendered dynamically -->
+                  </div>
+
                   <input
-                    type="text"
+                    type="hidden"
                     id="fill-answers-input"
-                    class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
-                    placeholder="Ví dụ: JWT, JSON Web Token, jwt"
                     value=""
                   />
-                  <p class="text-[11px] text-slate-500 dark:text-slate-300 mt-1">Nhiều cách viết cho cùng một ô: ngăn bằng dấu phẩy. Nhiều ô: ngăn nhóm đáp án bằng dấu chấm phẩy.</p>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+                    Mỗi ô UI tương ứng với 1 từ điền khuyết được đánh số. Giảng viên nhập các đáp án đúng được chấp nhận, ngăn cách nhau bằng dấu phẩy (Ví dụ: <code>JWT, JSON Web Token, jwt</code>).
+                  </p>
                 </div>
               </div>
 
@@ -2089,6 +2110,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   <input
                     type="text"
                     id="match-stem-input"
+                    aria-label="Đề bài yêu cầu ghép đôi"
                     class="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-teal-500 bg-slate-50 dark:bg-slate-800"
                     placeholder="Ví dụ: Ghép công cụ bảo mật với chức năng tương ứng"
                   />
@@ -2104,19 +2126,19 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                   </div>
                   <div id="match-pairs-list" class="space-y-2">
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: Nmap" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Nmap" />
+                      <input type="text" placeholder="Ví dụ: Nmap" aria-label="Khái niệm cột A số 1" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Nmap" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Quét cổng và nhận diện dịch vụ" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Quét cổng và nhận diện dịch vụ" />
+                      <input type="text" placeholder="Ví dụ: Quét cổng và nhận diện dịch vụ" aria-label="Ý nghĩa cột B số 1" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Quét cổng và nhận diện dịch vụ" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: Wireshark" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Wireshark" />
+                      <input type="text" placeholder="Ví dụ: Wireshark" aria-label="Khái niệm cột A số 2" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Wireshark" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Bắt và phân tích gói tin mạng" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Bắt và phân tích gói tin mạng" />
+                      <input type="text" placeholder="Ví dụ: Bắt và phân tích gói tin mạng" aria-label="Ý nghĩa cột B số 2" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Bắt và phân tích gói tin mạng" />
                     </div>
                     <div class="flex items-center gap-2 match-pair-row">
-                      <input type="text" placeholder="Ví dụ: Metasploit" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Metasploit" />
+                      <input type="text" placeholder="Ví dụ: Metasploit" aria-label="Khái niệm cột A số 3" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-left" value="Metasploit" />
                       <span class="text-slate-400">➔</span>
-                      <input type="text" placeholder="Ví dụ: Mô phỏng khai thác lỗ hổng bảo mật" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Mô phỏng khai thác lỗ hổng bảo mật" />
+                      <input type="text" placeholder="Ví dụ: Mô phỏng khai thác lỗ hổng bảo mật" aria-label="Ý nghĩa cột B số 3" class="w-1/2 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800 pair-right" value="Mô phỏng khai thác lỗ hổng bảo mật" />
                     </div>
                   </div>
                 </div>
@@ -2300,6 +2322,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       } else if (tab === 'fill') {
         tabBtnFill.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
         formFill.classList.remove('hidden');
+        if (typeof syncFillBlankColumns === 'function') syncFillBlankColumns();
       } else {
         tabBtnMatch.className = "py-2 rounded-lg transition-all bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs";
         formMatch.classList.remove('hidden');
@@ -2325,6 +2348,90 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         `;
         list.appendChild(row);
         row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', renderLivePreview));
+        renderLivePreview();
+      }
+    });
+
+    // Multi-Column Syncing for Fill-in-the-Blank
+    const fillStemInput = document.getElementById('fill-stem-input');
+    const fillAnswersInput = document.getElementById('fill-answers-input');
+    const fillColsContainer = document.getElementById('fill-answers-columns-container');
+    const fillCountBadge = document.getElementById('fill-blanks-count-badge');
+
+    const syncFillBlankColumns = () => {
+      if (!fillStemInput || !fillColsContainer) return;
+      const stem = fillStemInput.value;
+      const matches = (stem.match(/_{3,}/g) || []).length;
+      const count = Math.max(1, matches);
+      if (fillCountBadge) fillCountBadge.textContent = `${count} ô trống`;
+
+      const currentVals = [];
+      fillColsContainer.querySelectorAll('.fill-blank-card-input').forEach(inp => {
+        const bIdx = parseInt(inp.dataset.blankIdx, 10);
+        currentVals[bIdx] = inp.value;
+      });
+
+      if (currentVals.length === 0 && fillAnswersInput?.value) {
+        fillAnswersInput.value.split(';').forEach((grp, idx) => {
+          currentVals[idx] = grp.trim();
+        });
+      }
+
+      fillColsContainer.innerHTML = Array.from({ length: count }, (_, i) => `
+        <div class="p-3 rounded-xl border border-teal-200 dark:border-teal-800/80 bg-teal-50/40 dark:bg-slate-900 space-y-1.5 fill-blank-column-card">
+          <div class="flex items-center justify-between text-xs font-bold text-teal-800 dark:text-teal-300">
+            <span class="flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-teal-600 text-white text-[11px] font-mono flex items-center justify-center shrink-0">${i + 1}</span>
+              <span>Ô trống số ${i + 1}</span>
+            </span>
+            <span class="text-[10px] text-slate-400 font-normal">Ngăn bằng dấu phẩy</span>
+          </div>
+          <input
+            type="text"
+            class="fill-blank-card-input w-full px-3 py-2 text-xs font-medium border border-teal-300 dark:border-teal-700 rounded-lg outline-none focus:border-teal-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+            placeholder="Ví dụ: JWT, JSON Web Token, jwt"
+            value="${UI.escapeHtml(currentVals[i] || '')}"
+            data-blank-idx="${i}"
+          />
+        </div>
+      `).join('');
+
+      const updateHiddenAnswers = () => {
+        const parts = [];
+        fillColsContainer.querySelectorAll('.fill-blank-card-input').forEach(inp => {
+          parts.push(inp.value.trim());
+        });
+        if (fillAnswersInput) {
+          fillAnswersInput.value = parts.join('; ');
+        }
+      };
+
+      fillColsContainer.querySelectorAll('.fill-blank-card-input').forEach(inp => {
+        inp.addEventListener('input', () => {
+          updateHiddenAnswers();
+          renderLivePreview();
+        });
+      });
+
+      updateHiddenAnswers();
+    };
+
+    fillStemInput?.addEventListener('input', () => {
+      syncFillBlankColumns();
+      renderLivePreview();
+    });
+
+    document.getElementById('btn-add-fill-blank')?.addEventListener('click', () => {
+      if (fillStemInput) {
+        const start = fillStemInput.selectionStart || fillStemInput.value.length;
+        const end = fillStemInput.selectionEnd || fillStemInput.value.length;
+        const val = fillStemInput.value;
+        const insertText = (start > 0 && val[start - 1] !== ' ' ? ' ' : '') + '___ ';
+        fillStemInput.value = val.substring(0, start) + insertText + val.substring(end);
+        const newPos = start + insertText.length;
+        fillStemInput.focus();
+        fillStemInput.setSelectionRange(newPos, newPos);
+        syncFillBlankColumns();
         renderLivePreview();
       }
     });
@@ -2435,13 +2542,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         let liveBlankIndex = 0;
         const stemRendered = UI.escapeHtml(stem).replace(/_{3,}/g, () => {
           const blankIndex = liveBlankIndex++;
-          return `<input type="text" id="live-fill-input-${blankIndex}" aria-label="Ô trống ${blankIndex + 1}" placeholder="Ô ${blankIndex + 1}" class="inline-block px-2.5 py-1 text-xs font-semibold rounded-lg border-b-2 border-teal-600 bg-teal-50/60 dark:bg-teal-950/40 text-slate-800 dark:text-slate-100 outline-none w-32 text-center focus:ring-1 focus:ring-teal-500" />`;
+          return `<span class="inline-flex items-center align-middle mx-1.5 my-1"><input type="text" id="live-fill-input-${blankIndex}" aria-label="Ô trống ${blankIndex + 1}" placeholder="Ô ${blankIndex + 1}" class="px-3 py-1 text-xs sm:text-sm font-semibold rounded-lg border-2 border-teal-500 bg-teal-50/90 dark:bg-slate-900 text-teal-800 dark:text-teal-200 outline-none min-w-[130px] max-w-[200px] text-center focus:ring-2 focus:ring-teal-400 shadow-xs leading-normal" /></span>`;
         });
         previewBox.innerHTML = `
-          <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
+          <div class="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-loose sm:leading-loose">
             ${stemRendered}
           </div>
         `;
+        UI.renderMath(previewBox);
       } else if (activeTab === 'match') {
         const stem = document.getElementById('match-stem-input')?.value.trim() || 'Ghép các mục tương ứng';
         const rows = document.querySelectorAll('.match-pair-row');
@@ -2534,7 +2642,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const activeMatches = new Map(); // leftIdx -> rightPos
         let selectedLeftIdx = null;
 
-        const updateMatchingLines = () => {
+        const updateMatchingLines = (testResults = null) => {
           if (!board || !svg) return;
           const bRect = board.getBoundingClientRect();
           svg.innerHTML = '';
@@ -2551,13 +2659,17 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
             const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
+            const isCorrect = testResults ? (typeof testResults.get === 'function' ? Boolean(testResults.get(lIdx)) : Boolean(testResults[lIdx])) : null;
+            const strokeColor = isCorrect === null ? '#10b981' : (isCorrect ? '#10b981' : '#f43f5e');
+            const shadowColor = isCorrect === null ? 'rgba(16, 185, 129, 0.7)' : (isCorrect ? 'rgba(16, 185, 129, 0.7)' : 'rgba(244, 63, 94, 0.7)');
+
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             path.setAttribute('d', d);
             path.setAttribute('fill', 'none');
-            path.setAttribute('stroke', '#10b981');
+            path.setAttribute('stroke', strokeColor);
             path.setAttribute('stroke-width', '3');
             path.setAttribute('stroke-linecap', 'round');
-            path.setAttribute('style', 'filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.7));');
+            path.setAttribute('style', `filter: drop-shadow(0 0 6px ${shadowColor});`);
             svg.appendChild(path);
           });
 
@@ -2566,7 +2678,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             dot.className = 'port-dot w-4 h-4 rounded-full border-2 border-slate-500 bg-slate-800 shrink-0 transition-all';
           });
           board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
-            c.classList.remove('border-emerald-500', 'bg-slate-800/90', 'ring-2', 'ring-teal-400');
+            c.classList.remove('border-emerald-500', 'bg-emerald-950/40', 'border-rose-500', 'bg-rose-950/40', 'ring-2', 'ring-teal-400');
             c.classList.add('border-slate-700/80');
           });
 
@@ -2582,10 +2694,38 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             const rCard = board.querySelector(`[data-right-pos="${rPos}"]`);
             const lDot = board.querySelector(`[data-port="left-${lIdx}"]`);
             const rDot = board.querySelector(`[data-port="right-${rPos}"]`);
-            if (lCard) { lCard.classList.remove('border-slate-700/80'); lCard.classList.add('border-emerald-500/60'); }
-            if (rCard) { rCard.classList.remove('border-slate-700/80'); rCard.classList.add('border-emerald-500/60'); }
-            if (lDot) lDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
-            if (rDot) rDot.className = 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            const isCorrect = testResults ? (typeof testResults.get === 'function' ? Boolean(testResults.get(lIdx)) : Boolean(testResults[lIdx])) : null;
+
+            if (lCard) {
+              lCard.classList.remove('border-slate-700/80', 'border-emerald-500', 'border-rose-500', 'bg-emerald-950/40', 'bg-rose-950/40');
+              if (isCorrect === true) {
+                lCard.classList.add('border-emerald-500', 'bg-emerald-950/40');
+              } else if (isCorrect === false) {
+                lCard.classList.add('border-rose-500', 'bg-rose-950/40');
+              } else {
+                lCard.classList.add('border-emerald-500/60');
+              }
+            }
+            if (rCard) {
+              rCard.classList.remove('border-slate-700/80', 'border-emerald-500', 'border-rose-500', 'bg-emerald-950/40', 'bg-rose-950/40');
+              if (isCorrect === true) {
+                rCard.classList.add('border-emerald-500', 'bg-emerald-950/40');
+              } else if (isCorrect === false) {
+                rCard.classList.add('border-rose-500', 'bg-rose-950/40');
+              } else {
+                rCard.classList.add('border-emerald-500/60');
+              }
+            }
+            if (lDot) {
+              lDot.className = isCorrect === false
+                ? 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all'
+                : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            }
+            if (rDot) {
+              rDot.className = isCorrect === false
+                ? 'port-dot w-4 h-4 rounded-full border-2 border-rose-400 bg-rose-500 ring-2 ring-rose-400/30 shrink-0 transition-all'
+                : 'port-dot w-4 h-4 rounded-full border-2 border-emerald-400 bg-emerald-500 ring-2 ring-emerald-400/30 shrink-0 transition-all';
+            }
           });
 
           if (counter) counter.textContent = `${activeMatches.size}/${pairs.length} đã nối`;
@@ -2640,7 +2780,9 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         previewBox._activeMatches = activeMatches;
         previewBox._shuffledRight = shuffledRight;
         previewBox._pairs = pairs;
+        previewBox._updateMatchingLines = updateMatchingLines;
       }
+      UI.renderMath(previewBox);
     };
 
     // Test answer button with visual indicators (TASK-092 & Invariant 32)
@@ -2680,11 +2822,11 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           const isSlotCorrect = Boolean(val && validOptions.includes(val));
           if (isSlotCorrect) {
             correctCount++;
-            input.classList.remove('border-rose-500', 'bg-rose-50/60', 'text-rose-900');
-            input.classList.add('border-emerald-500', 'bg-emerald-50/60', 'text-emerald-900');
+            input.classList.remove('border-rose-500', 'bg-rose-50/60', 'text-rose-900', 'dark:text-rose-200');
+            input.classList.add('border-emerald-500', 'bg-emerald-50/90', 'text-emerald-900', 'dark:text-emerald-200');
           } else {
-            input.classList.remove('border-emerald-500', 'bg-emerald-50/60', 'text-emerald-900');
-            input.classList.add('border-rose-500', 'bg-rose-50/60', 'text-rose-900');
+            input.classList.remove('border-emerald-500', 'bg-emerald-50/90', 'text-emerald-900', 'dark:text-emerald-200');
+            input.classList.add('border-rose-500', 'bg-rose-50/90', 'text-rose-900', 'dark:text-rose-200');
           }
         });
         const isAllCorrect = fillInputs.length > 0 && correctCount === fillInputs.length;
@@ -2697,33 +2839,17 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const activeMatches = previewBox._activeMatches || new Map();
         const shuffledRight = previewBox._shuffledRight || [];
         const pairs = previewBox._pairs || [];
+        const testResults = new Map();
         let correctCount = 0;
         activeMatches.forEach((rPos, lIdx) => {
           const matchedOrigIdx = shuffledRight[rPos]?.idx;
-          const leftEl = previewBox.querySelector(`.match-left-item[data-idx="${lIdx}"]`);
-          const rightEl = previewBox.querySelector(`.match-right-item[data-pos="${rPos}"]`);
           const isPairCorrect = matchedOrigIdx === lIdx;
-          if (isPairCorrect) {
-            correctCount++;
-            if (leftEl) {
-              leftEl.classList.remove('border-rose-500', 'bg-rose-50/60');
-              leftEl.classList.add('border-emerald-500', 'bg-emerald-50/60');
-            }
-            if (rightEl) {
-              rightEl.classList.remove('border-rose-500', 'bg-rose-50/60');
-              rightEl.classList.add('border-emerald-500', 'bg-emerald-50/60');
-            }
-          } else {
-            if (leftEl) {
-              leftEl.classList.remove('border-emerald-500', 'bg-emerald-50/60');
-              leftEl.classList.add('border-rose-500', 'bg-rose-50/60');
-            }
-            if (rightEl) {
-              rightEl.classList.remove('border-emerald-500', 'bg-emerald-50/60');
-              rightEl.classList.add('border-rose-500', 'bg-rose-50/60');
-            }
-          }
+          testResults.set(lIdx, isPairCorrect);
+          if (isPairCorrect) correctCount++;
         });
+        if (typeof previewBox._updateMatchingLines === 'function') {
+          previewBox._updateMatchingLines(testResults);
+        }
         const isComplete = pairs.length > 0 && correctCount === pairs.length;
         feedbackMsg.textContent = isComplete
           ? `✓ Xuất sắc! Nối chính xác 100% (${correctCount}/${pairs.length} cặp).`
@@ -2964,6 +3090,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           </button>
         </div>
       `).join('');
+      UI.renderMath(listEl);
     };
 
     window.handleDeleteQuestion = (index) => {
@@ -3792,7 +3919,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     <div class="flex items-center gap-2.5 flex-1 min-w-0">
                       <span class="w-7 text-center font-bold text-slate-400">#${idx + 1}</span>
                       <span class="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold shrink-0">${q.question_type || q.type || 'Trắc nghiệm'}</span>
-                      <span class="font-medium text-slate-900 dark:text-white truncate flex-1" title="${UI.escapeHtml(q.stem || q.question_text || '')}">${UI.escapeHtml(q.stem || q.question_text || '')}</span>
+                      <span class="font-medium text-slate-900 dark:text-white truncate flex-1" title="${UI.escapeHtml(q.content || q.stem || q.question_text || '')}">${UI.escapeHtml(q.content || q.stem || q.question_text || '')}</span>
                     </div>
 
                     <div class="flex items-center gap-3 shrink-0 self-end sm:self-center">
@@ -4082,6 +4209,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
     };
 
     document.getElementById('btn-matrix-proceed')?.addEventListener('click', onProceedToSettings);
+    UI.renderMath(container);
   };
 
 
@@ -4155,6 +4283,25 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                       value="${config.maxAttempts !== null && config.maxAttempts !== undefined && config.maxAttempts !== '' && config.maxAttempts !== 999 ? config.maxAttempts : ''}"
                       class="w-full px-3.5 py-2 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800"
                     />
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" for="cfg-passing-percent">
+                      Điểm chuẩn đạt (%) <span class="text-rose-500">*</span>
+                    </label>
+                    <div class="relative">
+                      <input
+                        type="number"
+                        id="cfg-passing-percent"
+                        min="1"
+                        max="100"
+                        step="0.5"
+                        placeholder="Mặc định: 50%"
+                        value="${config.passing_percent !== null && config.passing_percent !== undefined && config.passing_percent !== '' ? config.passing_percent : (config.passingPercent || 50)}"
+                        class="w-full px-3.5 py-2 text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 bg-slate-50 dark:bg-slate-800"
+                      />
+                      <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                    </div>
                   </div>
 
                   <div>
@@ -4567,6 +4714,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         UI.showToast('Đang tạo đề thi và lưu câu hỏi vào CSDL...', 'info');
         const attemptsRaw = document.getElementById('cfg-attempts')?.value.trim();
         const maxAtt = attemptsRaw ? parseInt(attemptsRaw, 10) : null;
+        const passingPercentRaw = document.getElementById('cfg-passing-percent')?.value.trim();
+        const passingPercent = passingPercentRaw ? Math.min(100, Math.max(1, parseFloat(passingPercentRaw))) : 50.0;
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
         const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
@@ -4576,6 +4725,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           open_at: openAtIso,
           close_at: closeAtIso,
           maxAttempts: maxAtt,
+          passing_percent: passingPercent,
           shuffleQuestions: shuffle,
           scoringPolicy,
           answerVisibilityPolicy,
@@ -4592,6 +4742,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           time_limit_minutes: duration,
           max_attempts: maxAtt,
           attempt_limit: maxAtt,
+          passing_percent: passingPercent,
           require_password: false,
           shuffle_questions: shuffle,
           scoring_policy: scoringPolicy,
@@ -4897,6 +5048,23 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
 
                     <div class="text-[11px] text-indigo-700 dark:text-indigo-300 font-mono bg-indigo-50 dark:bg-indigo-950/50 p-2 rounded-lg border border-indigo-200/50">
                       Phòng chờ mở lúc: <span id="edit-waiting-room-calc-text" class="font-bold">--:--</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Điểm chuẩn đạt (%) <span class="text-rose-500">*</span></label>
+                    <div class="relative">
+                      <input
+                        type="number"
+                        id="edit-exam-passing-percent"
+                        min="1"
+                        max="100"
+                        step="0.5"
+                        placeholder="Mặc định: 50%"
+                        value="${assessment.passing_percent !== null && assessment.passing_percent !== undefined && assessment.passing_percent !== '' ? assessment.passing_percent : 50}"
+                        class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none focus:border-primary"
+                      />
+                      <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
                     </div>
                   </div>
 
@@ -5294,11 +5462,14 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         try {
           UI.showToast('Đang lưu thay đổi...', 'info');
           const ansVisibility = document.getElementById('edit-exam-answer-visibility-policy')?.value || 'IMMEDIATE';
+          const editPassingPercentRaw = document.getElementById('edit-exam-passing-percent')?.value?.trim();
+          const editPassingPercent = editPassingPercentRaw ? Math.min(100, Math.max(1, parseFloat(editPassingPercentRaw))) : 50.0;
           const payload = {
             title: title,
             duration_minutes: duration,
             max_attempts: maxAttempts,
             attempt_limit: maxAttempts,
+            passing_percent: editPassingPercent,
             scoring_policy: scoringPolicy,
             answer_visibility_policy: ansVisibility,
             exam_layout: examLayout,
@@ -5621,6 +5792,8 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           if (submitButton) submitButton.disabled = false;
         }
       });
+
+      UI.renderMath(container);
     };
 
     render();

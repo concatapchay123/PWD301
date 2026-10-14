@@ -1397,6 +1397,11 @@ def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, A
                     assess_type.name if hasattr(assess_type, "name") else str(assess_type)
                 )
             result_data["duration_minutes"] = attempt.assessment.time_limit_minutes
+            result_data["passing_percent"] = (
+                float(attempt.assessment.passing_percent)
+                if attempt.assessment.passing_percent is not None
+                else 50.0
+            )
             if attempt.assessment.course:
                 result_data["course_id"] = str(attempt.assessment.course.public_id)
                 result_data["course_title"] = attempt.assessment.course.title

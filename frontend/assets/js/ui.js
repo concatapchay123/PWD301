@@ -1846,6 +1846,28 @@ class UI {
       </div>
     `;
   }
+
+  static renderMath(element) {
+    if (!element) return;
+    const target = typeof element === 'string' ? document.querySelector(element) : element;
+    if (!target) return;
+    if (typeof renderMathInElement === 'function') {
+      try {
+        renderMathInElement(target, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '\\[', right: '\\]', display: true }
+          ],
+          throwOnError: false,
+          errorColor: '#f43f5e'
+        });
+      } catch (e) {
+        console.warn('[KaTeX] renderMathInElement error:', e);
+      }
+    }
+  }
 }
 
 
