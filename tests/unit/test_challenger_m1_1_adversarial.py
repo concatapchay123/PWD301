@@ -327,7 +327,9 @@ def test_f02_leave_query_params_and_headers_spoofing(
         "X-Original-Role": "ADMIN",
     }
 
-    url_with_params = f"/api/courses/{course.public_id}/leave?force=1&status=LEFT&admin=true&override=1"
+    url_with_params = (
+        f"/api/courses/{course.public_id}/leave?force=1&status=LEFT&admin=true&override=1"
+    )
     resp = client.post(url_with_params, headers=spoofed_headers, json={"reason": "bypass"})
     assert resp.status_code == 403
 
@@ -372,7 +374,9 @@ def test_f02_re_enroll_active_course_is_idempotent(
 # ===========================================================================
 
 
-def test_f03_changeset_unauthorized_isolation(client: FlaskClient, base_env: dict[str, Any]) -> None:
+def test_f03_changeset_unauthorized_isolation(
+    client: FlaskClient, base_env: dict[str, Any]
+) -> None:
     """Adversarial Challenge: Unauthorized actors (foreign instructor, student) must be blocked from changeset endpoints."""
     inst_foreign = base_env["inst_foreign"]
     student = base_env["student_1"]
@@ -390,14 +394,18 @@ def test_f03_changeset_unauthorized_isolation(client: FlaskClient, base_env: dic
         headers=foreign_headers,
         json={"summary": "Unauthorized Submit"},
     )
-    assert resp_foreign_sub.status_code == 403, "Foreign instructor was not blocked from submitting changeset!"
+    assert resp_foreign_sub.status_code == 403, (
+        "Foreign instructor was not blocked from submitting changeset!"
+    )
 
     resp_foreign_disc = client.post(
         f"/api/courses/{course.public_id}/changeset/discard",
         headers=foreign_headers,
         json={},
     )
-    assert resp_foreign_disc.status_code == 403, "Foreign instructor was not blocked from discarding changeset!"
+    assert resp_foreign_disc.status_code == 403, (
+        "Foreign instructor was not blocked from discarding changeset!"
+    )
 
     # 2. Student must be blocked from all changeset endpoints (403)
     resp_stu_status = client.get(
@@ -506,7 +514,9 @@ def test_f03_submit_changeset_atomic_pending_lock(
     cr_id = data1["change_request_id"]
 
     # Status should now be PENDING
-    status_pending = client.get(f"/api/courses/{course.public_id}/changeset/status", headers=headers)
+    status_pending = client.get(
+        f"/api/courses/{course.public_id}/changeset/status", headers=headers
+    )
     assert status_pending.status_code == 200
     assert status_pending.get_json()["status"] == "PENDING"
 
@@ -522,9 +532,7 @@ def test_f03_submit_changeset_atomic_pending_lock(
 
     # Verify exactly 1 PENDING change request exists in DB
     pending_crs = (
-        db.session.query(CourseChangeRequest)
-        .filter_by(course_id=course.id, status="PENDING")
-        .all()
+        db.session.query(CourseChangeRequest).filter_by(course_id=course.id, status="PENDING").all()
     )
     assert len(pending_crs) == 1
     assert pending_crs[0].id == cr_id
@@ -545,9 +553,7 @@ def test_f03_discard_lifecycle_purges_staged_drafts(
 
     # Count initial published lessons
     initial_pub_count = (
-        db.session.query(Lesson)
-        .filter_by(course_id=course.id, status="PUBLISHED")
-        .count()
+        db.session.query(Lesson).filter_by(course_id=course.id, status="PUBLISHED").count()
     )
 
     # 1. Create a draft lesson
@@ -580,7 +586,9 @@ def test_f03_discard_lifecycle_purges_staged_drafts(
     assert st_data["has_metadata_changes"] is True
 
     # 3. Discard changeset
-    discard_resp = client.post(f"/api/courses/{course.public_id}/changeset/discard", headers=headers)
+    discard_resp = client.post(
+        f"/api/courses/{course.public_id}/changeset/discard", headers=headers
+    )
     assert discard_resp.status_code == 200
     assert discard_resp.get_json()["status"] == "DISCARDED"
 
@@ -595,23 +603,21 @@ def test_f03_discard_lifecycle_purges_staged_drafts(
 
     # - Published lessons preserved
     remaining_pub_count = (
-        db.session.query(Lesson)
-        .filter_by(course_id=course.id, status="PUBLISHED")
-        .count()
+        db.session.query(Lesson).filter_by(course_id=course.id, status="PUBLISHED").count()
     )
     assert remaining_pub_count == initial_pub_count
 
     # - Status is now NONE
-    st_after = client.get(f"/api/courses/{course.public_id}/changeset/status", headers=headers).get_json()
+    st_after = client.get(
+        f"/api/courses/{course.public_id}/changeset/status", headers=headers
+    ).get_json()
     assert st_after["status"] == "NONE"
     assert st_after["has_changes"] is False
     assert st_after["staged_lessons"] == 0
     assert st_after["has_metadata_changes"] is False
 
 
-def test_f03_retract_changeset_lifecycle(
-    client: FlaskClient, base_env: dict[str, Any]
-) -> None:
+def test_f03_retract_changeset_lifecycle(client: FlaskClient, base_env: dict[str, Any]) -> None:
     """Adversarial Challenge: Retract cancels pending changeset and reverts staged lessons to DRAFT."""
     inst_owner = base_env["inst_owner"]
     course = base_env["course"]
@@ -680,14 +686,12 @@ def test_f04_video_autocomplete_valid_flow_preserves_wall_clock(
     assert data["max_view_fraction"] == 1.0
 
     # ZERO-TRUST IRON LAW: seconds_spent in DB MUST NOT be spoofed to minimum_completion_seconds (300)
-    lp = (
-        db.session.query(LessonProgress)
-        .filter_by(lesson_id=lesson_video.id)
-        .first()
-    )
+    lp = db.session.query(LessonProgress).filter_by(lesson_id=lesson_video.id).first()
     assert lp is not None
     assert lp.completed_at is not None
-    assert lp.seconds_spent == 0, f"Zero-Trust violation: seconds_spent was spoofed to {lp.seconds_spent}!"
+    assert lp.seconds_spent == 0, (
+        f"Zero-Trust violation: seconds_spent was spoofed to {lp.seconds_spent}!"
+    )
 
 
 def test_f04_zero_seconds_low_view_fraction_does_not_complete(
@@ -795,7 +799,9 @@ def test_f04_rapid_fire_ping_spam_wall_clock_defense(
 
     # Rapid spam pings (10 pings claiming 60s each within milliseconds)
     for _ in range(5):
-        resp = client.post(url, headers=headers, json={"seconds_increment": 60, "view_fraction": 0.5})
+        resp = client.post(
+            url, headers=headers, json={"seconds_increment": 60, "view_fraction": 0.5}
+        )
         assert resp.status_code == 200
 
     # Check AuditEvent in DB

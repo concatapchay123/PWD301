@@ -144,7 +144,10 @@ def base_env(app: Flask) -> dict[str, Any]:
 
     # Second Instructor (for reassign testing)
     instructor2 = register_user(
-        f"inst2_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Second Instructor", session=sess
+        f"inst2_{uuid.uuid4().hex[:6]}@example.com",
+        "Password@123",
+        "Second Instructor",
+        session=sess,
     )
     assign_role_to_user(instructor2.id, "INSTRUCTOR", session=sess)
 
@@ -883,7 +886,9 @@ def test_f07_teaching_assignment_strictly_forbidden_from_course_mutations(
     assert client.get("/admin/courses/pending").status_code == 403
 
     # Must be forbidden from review (approve/reject)
-    assert client.post(f"/admin/courses/{cid}/review", json={"action": "approve"}).status_code == 403
+    assert (
+        client.post(f"/admin/courses/{cid}/review", json={"action": "approve"}).status_code == 403
+    )
 
     # Must be forbidden from publish
     assert client.post(f"/admin/courses/{cid}/publish").status_code == 403
@@ -914,7 +919,9 @@ def test_f07_teaching_assignment_strictly_forbidden_from_course_mutations(
 
     # API review -> 403
     assert (
-        client.post(f"/api/admin/courses/{cid}/review", json={"action": "approve"}, headers=headers).status_code
+        client.post(
+            f"/api/admin/courses/{cid}/review", json={"action": "approve"}, headers=headers
+        ).status_code
         == 403
     )
 

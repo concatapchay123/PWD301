@@ -545,13 +545,14 @@ def api_swap_courses() -> tuple[Response, int] | Response:
         course_b_id=course_b_id,
         reason=reason,
     )
-    return jsonify({
-        "success": True,
-        "message": f"Đã hoán đổi thành công giảng viên giữa khóa học {course_a.course_code} và {course_b.course_code}.",
-        "course_a": _serialize_course(course_a),
-        "course_b": _serialize_course(course_b),
-    }), 200
-
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Đã hoán đổi thành công giảng viên giữa khóa học {course_a.course_code} và {course_b.course_code}.",
+            "course_a": _serialize_course(course_a),
+            "course_b": _serialize_course(course_b),
+        }
+    ), 200
 
 
 @api_admin_bp.route("/courses/<course_id>/publish", methods=["POST"])
