@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import math
 import os
+import re
 from datetime import UTC, datetime
 from html import escape
 from typing import Any
@@ -112,6 +113,184 @@ def _format_score(value: Any) -> str:
 def _plain(value: Any) -> str:
     """Treat snapshot/user strings as text, never ReportLab markup."""
     return escape(str(value)).replace("\n", "<br/>")
+
+
+def _render_math_and_plain(value: Any) -> str:
+    """Format mathematical formulas, fractions, powers, roots, and LaTeX symbols into clean ReportLab markup."""
+    if value is None:
+        return ""
+    text = str(value)
+
+    # 1. Process explicit math blocks: $...$, $$...$$, \(...\), \[...\]
+    def _process_math_block(match: re.Match[str]) -> str:
+        s = match.group(1)
+        s = re.sub(r"\^\{([^{}]+)\}", r"<sup>\1</sup>", s)
+        s = re.sub(r"\^([a-zA-Z0-9+\-α-ωΑ-Ω])", r"<sup>\1</sup>", s)
+        s = re.sub(r"_\{([^{}]+)\}", r"<sub>\1</sub>", s)
+        s = re.sub(r"_([a-zA-Z0-9+\-α-ωΑ-Ω])", r"<sub>\1</sub>", s)
+        return s
+
+    text = re.sub(r"\$\$(.*?)\$\$", _process_math_block, text, flags=re.DOTALL)
+    text = re.sub(r"\$(.*?)\$", _process_math_block, text)
+    text = re.sub(r"\\\[(.*?)\\\]", _process_math_block, text, flags=re.DOTALL)
+    text = re.sub(r"\\\((.*?)\\\)", _process_math_block, text)
+
+    # 2. LaTeX symbols to Unicode equivalents
+    latex_syms = [
+        (r"\\pm\b", "±"),
+        (r"\\mp\b", "∓"),
+        (r"\\times\b", "×"),
+        (r"\\div\b", "÷"),
+        (r"\\cdot\b", "·"),
+        (r"\\approx\b", "≈"),
+        (r"\\neq\b", "≠"),
+        (r"\\ne\b", "≠"),
+        (r"\\leq\b", "≤"),
+        (r"\\le\b", "≤"),
+        (r"\\geq\b", "≥"),
+        (r"\\ge\b", "≥"),
+        (r"\\infty\b", "∞"),
+        (r"\\in\b", "∈"),
+        (r"\\notin\b", "∉"),
+        (r"\\subset\b", "⊂"),
+        (r"\\subseteq\b", "⊆"),
+        (r"\\cap\b", "∩"),
+        (r"\\cup\b", "∪"),
+        (r"\\forall\b", "∀"),
+        (r"\\exists\b", "∃"),
+        (r"\\to\b", "→"),
+        (r"\\rightarrow\b", "→"),
+        (r"\\Leftarrow\b", "⇐"),
+        (r"\\Rightarrow\b", "⇒"),
+        (r"\\Leftrightarrow\b", "⇔"),
+        (r"\\sum\b", "∑"),
+        (r"\\prod\b", "∏"),
+        (r"\\int\b", "∫"),
+        (r"\\iint\b", "∬"),
+        (r"\\iiint\b", "∭"),
+        (r"\\oint\b", "∮"),
+        (r"\\alpha\b", "α"),
+        (r"\\beta\b", "β"),
+        (r"\\gamma\b", "γ"),
+        (r"\\Gamma\b", "Γ"),
+        (r"\\delta\b", "δ"),
+        (r"\\Delta\b", "Δ"),
+        (r"\\epsilon\b", "ε"),
+        (r"\\varepsilon\b", "ε"),
+        (r"\\zeta\b", "ζ"),
+        (r"\\eta\b", "η"),
+        (r"\\theta\b", "θ"),
+        (r"\\Theta\b", "Θ"),
+        (r"\\lambda\b", "λ"),
+        (r"\\Lambda\b", "Λ"),
+        (r"\\mu\b", "μ"),
+        (r"\\pi\b", "π"),
+        (r"\\Pi\b", "Π"),
+        (r"\\rho\b", "ρ"),
+        (r"\\sigma\b", "σ"),
+        (r"\\Sigma\b", "Σ"),
+        (r"\\tau\b", "τ"),
+        (r"\\phi\b", "φ"),
+        (r"\\Phi\b", "Φ"),
+        (r"\\omega\b", "ω"),
+        (r"\\Omega\b", "Ω"),
+        (r"\\degree\b", "°"),
+        (r"\\left\(", "("),
+        (r"\\right\)", ")"),
+        (r"\\left\[", "["),
+        (r"\\right\]", "]"),
+        (r"\\left\\\{", "{"),
+        (r"\\right\\\}", "}"),
+        (r"\\\{", "{"),
+        (r"\\\}", "}"),
+        (r"\\left\|", "|"),
+        (r"\\right\|", "|"),
+        (r"\\text\{([^}]*)\}", r"\1"),
+        (r"\\mathrm\{([^}]*)\}", r"\1"),
+        (r"\\mathbf\{([^}]*)\}", r"\1"),
+    ]
+    for pattern, repl in latex_syms:
+        text = re.sub(pattern, repl, text)
+
+    # 3. Handle fractions: \frac{a}{b} -> (a)/(b) with arbitrarily nested braces
+    idx = text.find(r"\frac")
+    while idx != -1:
+        p = idx + 5
+        while p < len(text) and text[p].isspace():
+            p += 1
+        if p >= len(text) or text[p] != "{":
+            idx = text.find(r"\frac", idx + 5)
+            continue
+        num_start = p + 1
+        depth = 1
+        p += 1
+        while p < len(text) and depth > 0:
+            if text[p] == "{":
+                depth += 1
+            elif text[p] == "}":
+                depth -= 1
+            p += 1
+        if depth != 0:
+            idx = text.find(r"\frac", idx + 5)
+            continue
+        num_str = text[num_start : p - 1]
+        while p < len(text) and text[p].isspace():
+            p += 1
+        if p >= len(text) or text[p] != "{":
+            idx = text.find(r"\frac", idx + 5)
+            continue
+        den_start = p + 1
+        depth = 1
+        p += 1
+        while p < len(text) and depth > 0:
+            if text[p] == "{":
+                depth += 1
+            elif text[p] == "}":
+                depth -= 1
+            p += 1
+        if depth != 0:
+            idx = text.find(r"\frac", idx + 5)
+            continue
+        den_str = text[den_start : p - 1]
+        text = text[:idx] + f"({num_str})/({den_str})" + text[p:]
+        idx = text.find(r"\frac")
+
+    # 4. Handle roots: \sqrt[n]{x} -> (n)√(x), \sqrt{x} -> √(x) with arbitrarily nested braces
+    text = re.sub(r"\\sqrt\[([^\]]+)\]\{([^{}]+)\}", r"(\1)√(\2)", text)
+    idx = text.find(r"\sqrt")
+    while idx != -1:
+        p = idx + 5
+        while p < len(text) and text[p].isspace():
+            p += 1
+        if p >= len(text) or text[p] != "{":
+            idx = text.find(r"\sqrt", idx + 5)
+            continue
+        start = p + 1
+        depth = 1
+        p += 1
+        while p < len(text) and depth > 0:
+            if text[p] == "{":
+                depth += 1
+            elif text[p] == "}":
+                depth -= 1
+            p += 1
+        if depth != 0:
+            idx = text.find(r"\sqrt", idx + 5)
+            continue
+        content = text[start : p - 1]
+        text = text[:idx] + f"√({content})" + text[p:]
+        idx = text.find(r"\sqrt")
+
+    # 5. Handle explicit braced superscripts/subscripts like ^{...} and _{...}
+    text = re.sub(r"\^\{([^{}]+)\}", r"<sup>\1</sup>", text)
+    text = re.sub(r"_\{([^{}]+)\}", r"<sub>\1</sub>", text)
+
+    # 6. Escape HTML characters (preserving <sup>, <sub> tags)
+    parts = re.split(r"(</?(?:sup|sub)>)", text)
+    escaped_parts = [p if p in ("<sup>", "</sup>", "<sub>", "</sub>") else escape(p) for p in parts]
+    text = "".join(escaped_parts)
+
+    return text.replace("\n", "<br/>")
 
 
 def _display_title(value: Any, fallback: str) -> str:
@@ -605,14 +784,21 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         except Exception:
             percent = 0.0
 
+    allow_view = bool(result_data.get("allow_student_view_results", True))
+
     is_passed = bool(result_data.get("is_passed", result_data.get("passed", percent >= 50.0)))
-    badge_fill = "#ECF8F0" if is_passed else "#FFF0F1"
-    badge_color = colors.HexColor("#15803D") if is_passed else colors.HexColor("#B91C1C")
-    badge_label = "ĐẠT CHUẨN MÔN HỌC" if is_passed else "CHƯA ĐẠT YÊU CẦU"
-    if result_data.get("is_passed", result_data.get("passed")) is None:
-        badge_label = "CHƯA CÓ KẾT LUẬN"
-        badge_fill = "#F1F5F9"
-        badge_color = colors.HexColor("#475569")
+    if allow_view:
+        badge_fill = "#ECF8F0" if is_passed else "#FFF0F1"
+        badge_color = colors.HexColor("#15803D") if is_passed else colors.HexColor("#B91C1C")
+        badge_label = "ĐẠT CHUẨN MÔN HỌC" if is_passed else "CHƯA ĐẠT YÊU CẦU"
+        if result_data.get("is_passed", result_data.get("passed")) is None:
+            badge_label = "CHƯA CÓ KẾT LUẬN"
+            badge_fill = "#F1F5F9"
+            badge_color = colors.HexColor("#475569")
+    else:
+        badge_fill = "#EAF3FE"
+        badge_color = colors.HexColor("#1E3A8A")
+        badge_label = "ĐÃ GHI NHẬN BÀI NỘP"
 
     percent_display = _format_score(percent)
     if percent_val is None and (_format_score(raw_score) == "-" or _format_score(max_score) == "-"):
@@ -635,20 +821,35 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         alignment=1,
     )
 
-    score_card_data = [
-        [
-            Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
-            Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
-            Paragraph("<b>KẾT QUẢ ĐÁNH GIÁ</b>", style_info_label),
-        ],
-        [
-            Paragraph(
-                f"<b>{_format_score(raw_score)} / {_format_score(max_score)}</b>", style_score_big
-            ),
-            Paragraph(f"<b>{percent_display}%</b>", style_score_big),
-            Paragraph(f"<b>{badge_label}</b>", style_badge),
-        ],
-    ]
+    if allow_view:
+        score_card_data = [
+            [
+                Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
+                Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
+                Paragraph("<b>KẾT QUẢ ĐÁNH GIÁ</b>", style_info_label),
+            ],
+            [
+                Paragraph(
+                    f"<b>{_format_score(raw_score)} / {_format_score(max_score)}</b>",
+                    style_score_big,
+                ),
+                Paragraph(f"<b>{percent_display}%</b>", style_score_big),
+                Paragraph(f"<b>{badge_label}</b>", style_badge),
+            ],
+        ]
+    else:
+        score_card_data = [
+            [
+                Paragraph("<b>TỔNG ĐIỂM ĐẠT ĐƯỢC</b>", style_info_label),
+                Paragraph("<b>TỶ LỆ HOÀN THÀNH</b>", style_info_label),
+                Paragraph("<b>TRẠNG THÁI BÀI THI</b>", style_info_label),
+            ],
+            [
+                Paragraph("<b>-</b>", style_score_big),
+                Paragraph("<b>-</b>", style_score_big),
+                Paragraph(f"<b>{badge_label}</b>", style_badge),
+            ],
+        ]
     for label in score_card_data[0]:
         label.style = ParagraphStyle("MetricLabel", parent=style_info_label, alignment=1)
 
@@ -657,7 +858,7 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
         score_card_data,
         doc.width,
         ["#EAF3FE", "#EAF8F9", badge_fill],
-        ["trophy", "pie", "check" if is_passed else "alert"],
+        ["trophy", "pie", "check" if (is_passed or not allow_view) else "alert"],
     )
     story.append(score_table)
     story.append(Spacer(1, 18))
@@ -709,25 +910,32 @@ def build_attempt_result_pdf(result_data: dict[str, Any]) -> bytes:
                 else:
                     selected_str = "(Chưa trả lời)"
 
-            is_correct = bool(q.get("is_correct"))
-            res_cell = (
-                Paragraph("ĐÚNG", style_td_correct)
-                if is_correct
-                else Paragraph("SAI", style_td_wrong)
-            )
-            if q.get("is_correct") is None:
-                res_cell = Paragraph("-", style_td_bold)
+            if allow_view:
+                is_correct = bool(q.get("is_correct"))
+                res_cell = (
+                    Paragraph("ĐÚNG", style_td_correct)
+                    if is_correct
+                    else Paragraph("SAI", style_td_wrong)
+                )
+                if q.get("is_correct") is None:
+                    res_cell = Paragraph("-", style_td_bold)
 
-            awarded = _format_score(q.get("awarded_points"))
-            assigned = _format_score(q.get("points_assigned"))
+                awarded = _format_score(q.get("awarded_points"))
+                assigned = _format_score(q.get("points_assigned"))
+                selected_cell = Paragraph(_render_math_and_plain(selected_str), style_td)
+                score_cell = Paragraph(f"{awarded} / {assigned}", style_td_bold)
+            else:
+                selected_cell = Paragraph("-", style_td_bold)
+                res_cell = Paragraph("-", style_td_bold)
+                score_cell = Paragraph("-", style_td_bold)
 
             breakdown_rows.append(
                 [
                     Paragraph(f"<b>#{idx}</b>", style_td_bold),
-                    Paragraph(_plain(q_text), style_td),
-                    Paragraph(_plain(selected_str), style_td),
+                    Paragraph(_render_math_and_plain(q_text), style_td),
+                    selected_cell,
                     res_cell,
-                    Paragraph(f"{awarded} / {assigned}", style_td_bold),
+                    score_cell,
                 ]
             )
 

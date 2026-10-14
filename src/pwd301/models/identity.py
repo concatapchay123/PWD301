@@ -148,6 +148,11 @@ class User(Base, UserMixin):
         return {r.code for r in self.roles}
 
     @property
+    def is_email_verified(self) -> bool:
+        """Return True if user has verified their email address."""
+        return self.email_verified_at is not None
+
+    @property
     def is_admin(self) -> bool:
         """Return True if user has the ADMIN role."""
         return "ADMIN" in self.role_codes

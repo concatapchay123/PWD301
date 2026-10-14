@@ -4080,7 +4080,7 @@ class InstructorView {
                     ${!course.thumbnail_url ? 'title="Vui lòng tải ảnh bìa khóa học trước khi gửi duyệt xuất bản"' : ''}
                   >
                     <span class="material-symbols-outlined text-[16px]">send</span>
-                    <span>Gửi duyệt xuất bản</span>
+                    <span>Gửi xét duyệt khóa học</span>
                   </button>
                 ` : ''}
                 ${course.status === 'SUBMITTED_FOR_REVIEW' ? `
@@ -4149,7 +4149,7 @@ class InstructorView {
                       title="Gửi đợt cập nhật sau khi hoàn thiện"
                     >
                       <span class="material-symbols-outlined text-[16px]">send</span>
-                      <span>Gửi duyệt đợt cập nhật</span>
+                      <span>Gửi xét duyệt bản nháp</span>
                     </button>
                     <button
                       type="button"
@@ -4177,7 +4177,7 @@ class InstructorView {
                       title="Gộp và gửi xét duyệt toàn bộ cập nhật giáo trình môn học"
                     >
                       <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-                      <span>Gửi duyệt đợt cập nhật</span>
+                      <span>Gửi xét duyệt bản nháp</span>
                     </button>
                     <button
                       type="button"
@@ -4196,7 +4196,7 @@ class InstructorView {
                       title="Chưa có thay đổi nào trong bản nháp"
                     >
                       <span class="material-symbols-outlined text-[16px]">playlist_add_check</span>
-                      <span>Gửi duyệt đợt cập nhật</span>
+                      <span>Gửi xét duyệt bản nháp</span>
                     </button>
                   `
                 ) : ''}

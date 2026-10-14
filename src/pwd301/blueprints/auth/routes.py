@@ -272,6 +272,7 @@ def login() -> Any:
                         "admin_sub_role": getattr(user, "admin_sub_role", None),
                         "admin_sub_role_label": getattr(user, "admin_sub_role_label", ""),
                         "is_primary_admin": getattr(user, "is_primary_admin", False),
+                        "is_email_verified": getattr(user, "is_email_verified", False),
                     },
                 }
             ),
@@ -1036,6 +1037,7 @@ def auth_profile() -> Any:
         "admin_sub_role_label": getattr(current_user, "admin_sub_role_label", ""),
         "is_primary_admin": getattr(current_user, "is_primary_admin", False),
         "avatar_url": getattr(current_user, "avatar_url", None),
+        "is_email_verified": getattr(current_user, "is_email_verified", False),
         "created_at": (current_user.created_at.isoformat() if current_user.created_at else None),
     }
 

@@ -252,6 +252,7 @@ def get_current_user() -> tuple[Response, int]:
                     "email": user.email,
                     "display_name": user.display_name,
                     "status": user.status,
+                    "is_email_verified": getattr(user, "is_email_verified", False),
                     "auth_version": user.auth_version,
                     "roles": [r.code for r in user.roles],
                 }

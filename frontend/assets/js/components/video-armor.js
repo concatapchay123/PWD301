@@ -43,11 +43,12 @@ class VideoArmor {
   }
 
   _formatWatermarkText() {
-    const studentId = this.student.student_code || this.student.full_name || 'HỌC VIÊN';
-    const email = this.student.email || 'Email chưa được xác nhận';
+    const studentId = this.student.student_code || this.student.full_name || this.student.display_name || 'HỌC VIÊN';
+    const email = this.student.email || (this.student.is_email_verified !== false ? 'Email đã xác nhận' : 'Email chưa xác thực');
     const now = new Date();
     const timeStr = now.toLocaleTimeString ? now.toLocaleTimeString('vi-VN', { hour12: false }) : now.toTimeString().slice(0, 8);
-    return `${studentId} • ${email} • ${this.ip} • ${timeStr}`;
+    const ipStr = this.ip || '127.0.0.1';
+    return `${studentId} • ${email} • ${ipStr} • ${timeStr}`;
   }
 
   _createWatermark() {
@@ -130,10 +131,11 @@ class VideoArmor {
 
   _inspectMutations(mutations) {
     if (this.isBlackedOut) return;
+    if (!this.container || this.container.isConnected === false) return;
 
     let tampered = false;
 
-    // Check if the watermark element was forcefully removed from DOM
+    // Check if the watermark element was forcefully removed from DOM while container is active
     if (!this.watermarkEl || this.watermarkEl.parentElement !== this.container) {
       tampered = true;
     }
@@ -141,7 +143,10 @@ class VideoArmor {
     let element = this.watermarkEl;
     while (element && !tampered) {
       const computed = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(element) : element.style;
-      if (element.hidden || computed?.display === 'none' || computed?.visibility === 'hidden' || computed?.visibility === 'collapse' || (computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) <= 0)) tampered = true;
+      if (element.hidden || computed?.display === 'none' || computed?.visibility === 'hidden' || computed?.visibility === 'collapse' || (computed?.opacity !== undefined && computed.opacity !== '' && Number(computed.opacity) <= 0)) {
+        tampered = true;
+      }
+      if (element === this.container) break; // Confine DOM check to player container to avoid false positive from tab/route wrappers
       element = element.parentElement;
     }
 
@@ -349,8 +354,9 @@ class VideoArmor {
   }
 
   _onKeyUp(event) {
-    // 1. PrintScreen key
-    if (event.key === 'PrintScreen') {
+    // 1. PrintScreen key - only trigger when player is active and visible
+    if (event.key === 'PrintScreen' || event.keyCode === 44) {
+      if (!this.container || this.container.isConnected === false || document.visibilityState !== 'visible') return;
       if (typeof event.preventDefault === 'function') event.preventDefault();
 
       const nav = (typeof navigator !== 'undefined') ? navigator : null;

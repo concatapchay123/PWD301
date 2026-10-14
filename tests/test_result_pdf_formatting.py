@@ -201,3 +201,94 @@ def test_build_assessment_gradebook_pdf_invariants():
     # 6. Student code: Clean formatted SV-67C934D6 instead of raw 36-char UUID
     assert "SV-67C934D6" in full_text
     assert "67c934d6-977f-4dbb-8490-2142768d1d63" not in full_text
+
+
+def test_attempt_pdf_renders_latex_math_cleanly():
+    sample_data = {
+        "candidate_name": "Trần Văn Toán",
+        "candidate_email": "toan.tv@pwd301.local",
+        "assessment_title": "Toán Giải Tích Nâng Cao",
+        "assessment_code": "MATH201",
+        "duration_minutes": 60,
+        "raw_score": 10.0,
+        "max_score": 10.0,
+        "percent_score": 100.0,
+        "is_passed": True,
+        "allow_student_view_results": True,
+        "questions": [
+            {
+                "content": r"Tính tích phân $I = \int_{0}^{\pi} \frac{\sin(x)}{\sqrt{1 + x^2}} dx$",
+                "selected_choice_keys": ["k1"],
+                "choices": [
+                    {
+                        "choice_key": "k1",
+                        "content": r"Kết quả là $\frac{\pi}{2} \pm \epsilon$ với $\alpha \le \beta$",
+                        "is_selected": True,
+                    }
+                ],
+                "is_correct": True,
+                "awarded_points": 10.0,
+                "points_assigned": 10.0,
+            }
+        ],
+    }
+    pdf_bytes = build_attempt_result_pdf(sample_data)
+    assert len(pdf_bytes) > 0
+
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    full_text = "".join(page.extract_text() for page in reader.pages)
+
+    # Check math symbols rendered
+    assert "∫" in full_text
+    assert "√" in full_text
+    assert "π" in full_text
+    assert "±" in full_text
+    assert "≤" in full_text
+    # Ensure raw LaTeX tokens were converted
+    assert r"\frac" not in full_text
+    assert r"\sqrt" not in full_text
+    assert r"\int" not in full_text
+
+
+def test_attempt_pdf_hides_results_when_allow_student_view_results_is_false():
+    sample_data = {
+        "candidate_name": "Lê Thị Bảo Mật",
+        "candidate_email": "secret@pwd301.local",
+        "assessment_title": "Khảo Thí Cuối Kỳ",
+        "assessment_code": "SEC301",
+        "duration_minutes": 90,
+        "raw_score": 8.5,
+        "max_score": 10.0,
+        "percent_score": 85.0,
+        "is_passed": True,
+        "allow_student_view_results": False,
+        "questions": [
+            {
+                "content": "Giao thức nào cung cấp mã hóa đầu cuối?",
+                "selected_choice_keys": ["c1"],
+                "choices": [
+                    {"choice_key": "c1", "content": "TLS 1.3", "is_selected": True},
+                    {"choice_key": "c2", "content": "HTTP", "is_selected": False},
+                ],
+                "is_correct": True,
+                "awarded_points": 8.5,
+                "points_assigned": 10.0,
+            }
+        ],
+    }
+    pdf_bytes = build_attempt_result_pdf(sample_data)
+    assert len(pdf_bytes) > 0
+
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    full_text = "".join(page.extract_text() for page in reader.pages)
+
+    # Check status badge is "ĐÃ GHI NHẬN BÀI NỘP" instead of "ĐẠT CHUẨN MÔN HỌC"
+    assert "ĐÃ GHI NHẬN BÀI NỘP" in full_text
+    assert "ĐẠT CHUẨN MÔN HỌC" not in full_text
+
+    # Student selected choice text, correctness and awarded score are masked
+    assert "TLS 1.3" not in full_text
+    assert "8.5 / 10" not in full_text
+    assert "85%" not in full_text
+    # Question text remains visible
+    assert "Giao thức nào cung cấp mã hóa đầu cuối?" in full_text

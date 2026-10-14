@@ -2822,10 +2822,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           const isSlotCorrect = Boolean(val && validOptions.includes(val));
           if (isSlotCorrect) {
             correctCount++;
-            input.classList.remove('border-rose-500', 'bg-rose-50/60', 'text-rose-900', 'dark:text-rose-200');
+            input.classList.remove('border-teal-500', 'bg-teal-50/90', 'text-teal-800', 'border-rose-500', 'bg-rose-50/90', 'bg-rose-50/60', 'text-rose-900', 'dark:text-rose-200');
             input.classList.add('border-emerald-500', 'bg-emerald-50/90', 'text-emerald-900', 'dark:text-emerald-200');
           } else {
-            input.classList.remove('border-emerald-500', 'bg-emerald-50/90', 'text-emerald-900', 'dark:text-emerald-200');
+            input.classList.remove('border-teal-500', 'bg-teal-50/90', 'text-teal-800', 'border-emerald-500', 'bg-emerald-50/90', 'text-emerald-900', 'dark:text-emerald-200');
             input.classList.add('border-rose-500', 'bg-rose-50/90', 'text-rose-900', 'dark:text-rose-200');
           }
         });
@@ -4333,6 +4333,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                     <input type="checkbox" id="cfg-shuffle-all" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.shuffleQuestions !== false ? 'checked' : ''} />
                     <span>Trộn câu hỏi và đáp án</span>
                   </label>
+                  <label class="flex items-center gap-3 cursor-pointer text-xs font-semibold select-none">
+                    <input type="checkbox" id="cfg-allow-student-view-results" class="rounded text-indigo-600 focus:ring-indigo-500" ${config.allow_student_view_results !== false ? 'checked' : ''} />
+                    <span>Cho phép học sinh xem kết quả và điểm chi tiết sau khi nộp bài</span>
+                  </label>
                 </div>
               </div>
 
@@ -4719,7 +4723,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         const shuffle = document.getElementById('cfg-shuffle-all')?.checked ?? true;
         const scoringPolicy = document.getElementById('cfg-scoring-policy')?.value || 'HIGHEST';
         const answerVisibilityPolicy = document.getElementById('cfg-answer-visibility-policy')?.value || 'IMMEDIATE';
-        const policy = InstructorView.readExamPolicy();
+        const allowStudentViewResults = document.getElementById('cfg-allow-student-view-results') ? document.getElementById('cfg-allow-student-view-results').checked : (currentDraft.config?.allow_student_view_results !== false);
         window.ExamStore.saveDraft({ config: {
           duration,
           open_at: openAtIso,
@@ -4727,6 +4731,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           maxAttempts: maxAtt,
           passing_percent: passingPercent,
           shuffleQuestions: shuffle,
+          allow_student_view_results: allowStudentViewResults,
           scoringPolicy,
           answerVisibilityPolicy,
           examLayout: policy.exam_layout,
@@ -4745,6 +4750,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           passing_percent: passingPercent,
           require_password: false,
           shuffle_questions: shuffle,
+          allow_student_view_results: allowStudentViewResults,
           scoring_policy: scoringPolicy,
           answer_visibility_policy: answerVisibilityPolicy,
           ...policy
@@ -5559,6 +5565,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             duration: assessment.duration_minutes || 45,
             maxAttempts: assessment.attempt_limit ?? assessment.max_attempts ?? null,
             shuffleQuestions: assessment.shuffle_questions !== false,
+            allow_student_view_results: assessment.allow_student_view_results !== false,
             scoringPolicy: assessment.scoring_policy || 'HIGHEST',
             examLayout: assessment.exam_layout || 'STANDARD',
             monitoringEnabled: Boolean(assessment.monitoring_enabled),

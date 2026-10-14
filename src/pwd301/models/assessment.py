@@ -106,6 +106,12 @@ class Assessment(Base):
         server_default=sa.text("'AFTER_CLOSE'"),
     )
     exam_layout = db.Column(sa.String(16), nullable=False, default="STANDARD")
+    allow_student_view_results = db.Column(
+        sa.Boolean,
+        nullable=False,
+        default=True,
+        server_default=sa.text("1"),
+    )
     monitoring_enabled = db.Column(sa.Boolean, nullable=False, default=True)
     request_fullscreen = db.Column(sa.Boolean, nullable=False, default=True)
     random_question_count = db.Column(sa.Integer, nullable=True)

@@ -22,6 +22,7 @@ from flask import (
     send_file,
     session,
 )
+from sqlalchemy import func
 
 from pwd301.blueprints.student import student_bp
 from pwd301.extensions import db
@@ -1142,6 +1143,43 @@ def assessments_view() -> Any:
             if close_dt and now_utc >= close_dt:
                 a_is_closed = True
 
+            a_is_locked = False
+            a_lock_reason = None
+            a_can_start = bool(a_is_open and not a_is_closed and not a_is_limit_reached)
+
+            if a.assessment_type in ("FINAL", "FINAL_EXAM"):
+                course_lessons = (
+                    sess.query(Lesson)
+                    .filter(
+                        Lesson.course_id == a.course_id,
+                        Lesson.status == "PUBLISHED",
+                        Lesson.deleted_at.is_(None),
+                    )
+                    .all()
+                )
+                if course_lessons:
+                    lesson_ids = [les.id for les in course_lessons]
+                    enr = next((e for e in enrollments if e.course_id == a.course_id), None)
+                    period_id = enr.current_period_id if enr else None
+                    completed_count = 0
+                    if period_id:
+                        completed_count = (
+                            sess.query(func.count(LessonProgress.id))
+                            .filter(
+                                LessonProgress.enrollment_period_id == period_id,
+                                LessonProgress.lesson_id.in_(lesson_ids),
+                                LessonProgress.completed_at.isnot(None),
+                            )
+                            .scalar()
+                        ) or 0
+                    if completed_count < len(course_lessons):
+                        a_is_locked = True
+                        a_can_start = False
+                        a_lock_reason = (
+                            f"Bạn cần hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài) "
+                            "trước khi tham gia bài thi cuối kỳ (Final Exam)."
+                        )
+
             items.append(
                 {
                     "assessment_id": str(a.public_id),
@@ -1172,6 +1210,9 @@ def assessments_view() -> Any:
                     "attempts_count": a_attempts_count,
                     "remaining_attempts": a_remaining,
                     "is_attempt_limit_reached": a_is_limit_reached,
+                    "is_locked": a_is_locked,
+                    "lock_reason": a_lock_reason,
+                    "can_start": a_can_start,
                 }
             )
 
@@ -1330,8 +1371,44 @@ def assessment_detail_view(assessment_id: str) -> Any:
     latest_attempt_id = str(attempts[-1].public_id) if attempts else None
     best_attempt_id = str(best_att.public_id) if best_att else latest_attempt_id
 
+    is_locked = False
+    lock_reason = None
+    if assess_obj.assessment_type in ("FINAL", "FINAL_EXAM"):
+        course_lessons = (
+            db.session.query(Lesson)
+            .filter(
+                Lesson.course_id == assess_obj.course_id,
+                Lesson.status == "PUBLISHED",
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if course_lessons:
+            lesson_ids = [les.id for les in course_lessons]
+            completed_count = 0
+            if current_period is not None:
+                completed_count = (
+                    db.session.query(func.count(LessonProgress.id))
+                    .filter(
+                        LessonProgress.enrollment_period_id == current_period.id,
+                        LessonProgress.lesson_id.in_(lesson_ids),
+                        LessonProgress.completed_at.isnot(None),
+                    )
+                    .scalar()
+                ) or 0
+            if completed_count < len(course_lessons):
+                is_locked = True
+                lock_reason = (
+                    f"Bạn cần hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài) "
+                    "trước khi tham gia bài thi cuối kỳ (Final Exam)."
+                )
+
     can_start = bool(
-        is_open and not is_closed and not is_attempt_limit_reached and active_attempt is None
+        is_open
+        and not is_closed
+        and not is_attempt_limit_reached
+        and active_attempt is None
+        and not is_locked
     )
 
     return (
@@ -1342,6 +1419,8 @@ def assessment_detail_view(assessment_id: str) -> Any:
                 "assessment": assessment_data,
                 "is_open": is_open,
                 "is_closed": is_closed,
+                "is_locked": is_locked,
+                "lock_reason": lock_reason,
                 "is_waiting_room_open": is_waiting_room_open,
                 "waiting_room_opens_at": (
                     waiting_room_opens_at_dt.isoformat() if waiting_room_opens_at_dt else None
@@ -1397,6 +1476,9 @@ def _get_student_attempt_result_data(actor: Any, attempt_id: str) -> dict[str, A
                     assess_type.name if hasattr(assess_type, "name") else str(assess_type)
                 )
             result_data["duration_minutes"] = attempt.assessment.time_limit_minutes
+            result_data["allow_student_view_results"] = getattr(
+                attempt.assessment, "allow_student_view_results", True
+            )
             result_data["passing_percent"] = (
                 float(attempt.assessment.passing_percent)
                 if attempt.assessment.passing_percent is not None
@@ -1446,8 +1528,10 @@ def attempt_result_pdf(attempt_id: str) -> Response:
 
     actor = require_authenticated_actor()
     result_data = _get_student_attempt_result_data(actor, attempt_id)
-    if result_data.get("score_status") != "RELEASED":
-        raise ForbiddenError("The result PDF is available only after the score is released.")
+    if result_data.get("score_status") not in ("RELEASED", "RESULTS_HIDDEN"):
+        raise ForbiddenError(
+            "The result PDF is available only after the score is released or submitted."
+        )
 
     pdf_bytes = build_attempt_result_pdf(result_data)
     assessment_code = result_data.get("assessment_code")

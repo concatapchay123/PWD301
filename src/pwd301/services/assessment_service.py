@@ -494,6 +494,9 @@ def _serialize_assessment(
                 "shuffle_choices": assessment.shuffle_choices,
                 "score_release_policy": assessment.score_release_policy,
                 "answer_visibility_policy": assessment.answer_visibility_policy,
+                "allow_student_view_results": getattr(
+                    assessment, "allow_student_view_results", True
+                ),
                 "random_question_count": assessment.random_question_count,
                 "first_attempt_started_at": (
                     assessment.first_attempt_started_at.isoformat()
@@ -778,6 +781,7 @@ def create_assessment(
         shuffle_choices=bool(payload.get("shuffle_choices", False)) or is_rand_bool,
         score_release_policy=score_release_policy,
         answer_visibility_policy=answer_visibility_policy,
+        allow_student_view_results=bool(payload.get("allow_student_view_results", True)),
         exam_layout=_exam_layout(payload),
         monitoring_enabled=_exam_policy_bool(payload, "monitoring_enabled"),
         request_fullscreen=_exam_policy_bool(payload, "request_fullscreen"),
@@ -962,6 +966,9 @@ def update_assessment(
         if avp not in ALLOWED_ANSWER_VISIBILITY_POLICIES:
             raise AssessmentValidationError(f"Invalid answer_visibility_policy '{avp}'.")
         assessment.answer_visibility_policy = avp
+
+    if "allow_student_view_results" in payload:
+        assessment.allow_student_view_results = bool(payload["allow_student_view_results"])
 
     if "open_at" in payload and not is_published:
         assessment.open_at = _parse_iso_datetime(

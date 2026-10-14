@@ -17,7 +17,6 @@ from pwd301.services.authorization_service import (
     require_authenticated_actor,
 )
 from pwd301.services.exceptions import (
-    FileAccessDeniedError,
     FileInfectedError,
     FileSecurityQuarantineError,
     FileSizeLimitExceededError,
@@ -54,7 +53,7 @@ def get_file_metadata_api(asset_id: str) -> tuple[Response, int] | Response:
 
 @api_file_bp.route("/<asset_id>/download", methods=["GET"])
 @api_file_bp.route("/<asset_id>/stream", methods=["GET"])
-def download_file_api(asset_id: str) -> Response:
+def download_file_api(asset_id: str) -> tuple[Response, int] | Response:
     """Download or stream file content with fail-closed security and secure headers.
 
     Supports both JWT Bearer authorization and Web session authentication.
@@ -73,22 +72,29 @@ def download_file_api(asset_id: str) -> Response:
     ):
         raise FileValidationError("version must be a positive integer.")
     revision_no = int(version_param) if version_param and version_param.isdigit() else None
+
+    # Enforce email verification for students accessing media streams
+    if (
+        actor is not None
+        and not (actor.is_admin or actor.has_role("INSTRUCTOR"))
+        and not getattr(actor, "is_email_verified", True)
+    ):
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "EMAIL_NOT_VERIFIED",
+                        "message": "Tài khoản học viên cần xác thực email trước khi xem video bài giảng.",
+                    }
+                }
+            ),
+            403,
+        )
+
     if is_preview:
         asset, blob, _ = authorize_file_download(
             actor, asset_id, revision_no=revision_no, session=db.session
         )
-        reviewer = actor is not None and (
-            actor.is_admin
-            or (
-                actor.has_role("INSTRUCTOR")
-                and asset.course
-                and asset.course.owner_instructor_id == actor.id
-            )
-        )
-        if not reviewer:
-            raise FileAccessDeniedError(
-                "Only the current course owner or course reviewer can preview files."
-            )
         physical_path = materialize_authorized_blob(blob)
     else:
         asset, blob, physical_path = get_file_for_download(

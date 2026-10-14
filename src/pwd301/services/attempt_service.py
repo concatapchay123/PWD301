@@ -51,7 +51,7 @@ from pwd301.models.attempt_regrade import (
     AttemptQuestionGrade,
     AttemptQuestionGradeHistory,
 )
-from pwd301.models.course import Course, Enrollment, EnrollmentPeriod
+from pwd301.models.course import Course, Enrollment, EnrollmentPeriod, Lesson, LessonProgress
 from pwd301.models.file_import import QuestionRevisionResource
 from pwd301.models.identity import User
 from pwd301.models.notification_audit import AuditEvent
@@ -651,6 +651,34 @@ def start_assessment_attempt(
             raise AttemptLimitExceededError(
                 f"Attempt limit ({assessment.attempt_limit}) reached for this enrollment period."
             )
+
+    # 5.1 Enforce Course Completion for FINAL Exams (Category 5)
+    if assessment.assessment_type in ("FINAL", "FINAL_EXAM"):
+        course_lessons = (
+            sess.query(Lesson)
+            .filter(
+                Lesson.course_id == assessment.course_id,
+                Lesson.status == "PUBLISHED",
+                Lesson.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if course_lessons:
+            lesson_ids = [les.id for les in course_lessons]
+            completed_count = (
+                sess.query(func.count(LessonProgress.id))
+                .filter(
+                    LessonProgress.enrollment_period_id == current_period.id,
+                    LessonProgress.lesson_id.in_(lesson_ids),
+                    LessonProgress.completed_at.isnot(None),
+                )
+                .scalar()
+            ) or 0
+            if completed_count < len(course_lessons):
+                raise AttemptValidationError(
+                    f"Bạn chưa hoàn thành tất cả các bài học trong khóa học ({completed_count}/{len(course_lessons)} bài). "
+                    "Vui lòng hoàn thành toàn bộ bài học trước khi tham gia bài thi cuối kỳ (Final Exam)."
+                )
 
     # 6. Compute server-authoritative deadline per Algorithm 06
     deadline_at = _calculate_deadline(assessment, now)
@@ -3168,6 +3196,9 @@ def get_attempt_result_for_student(
             "attempt_number": attempt.attempt_number,
             "status": attempt.status,
             "score_status": "SCORE_HIDDEN",
+            "allow_student_view_results": getattr(assessment, "allow_student_view_results", True)
+            if assessment
+            else True,
             "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
             "message": "Scores have not been released yet.",
             "raw_score": None,
@@ -3175,6 +3206,48 @@ def get_attempt_result_for_student(
             "percent_score": None,
             "passed": None,
             "questions": None,
+        }
+
+    allow_view = getattr(assessment, "allow_student_view_results", True) if assessment else True
+    if not (is_admin or is_manager) and not allow_view:
+        masked_questions = []
+        for aq in attempt.attempt_questions:
+            masked_questions.append(
+                {
+                    "attempt_question_id": str(aq.public_id),
+                    "question_id": str(aq.public_id),
+                    "position": aq.position,
+                    "question_type": aq.question_type_snapshot,
+                    "content": aq.content_snapshot,
+                    "points_assigned": None,
+                    "awarded_points": None,
+                    "is_correct": None,
+                    "grading_status": "HIDDEN",
+                    "choices": [],
+                    "selected_choice_keys": [],
+                    "selected_choice_ids": [],
+                }
+            )
+        return {
+            "attempt_id": str(attempt.public_id),
+            "assessment_id": str(assessment.public_id) if assessment else None,
+            "attempt_number": attempt.attempt_number,
+            "status": attempt.status,
+            "score_status": "RESULTS_HIDDEN",
+            "allow_student_view_results": False,
+            "score_release_policy": assessment.score_release_policy if assessment else "IMMEDIATE",
+            "answer_visibility_policy": assessment.answer_visibility_policy
+            if assessment
+            else "NEVER",
+            "answers_visible": False,
+            "message": "Bài thi đã nộp thành công. Giảng viên đã tắt tính năng xem chi tiết kết quả cho bài kiểm tra này.",
+            "raw_score": None,
+            "total_score": None,
+            "max_score": None,
+            "max_points": None,
+            "percent_score": None,
+            "passed": None,
+            "questions": masked_questions,
         }
 
     ans_policy = assessment.answer_visibility_policy if assessment else "AFTER_CLOSE"

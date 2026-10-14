@@ -2355,14 +2355,23 @@ class StudentView {
         modules.forEach((mod, mIdx) => {
           let modCompletedLessons = 0;
           (mod.lessons || []).forEach((les, lIdx) => {
-            const isDone = Boolean(les.is_completed || les._isCompleted || les.progress?.is_completed);
+            const lesId = String(les.lesson_id || les.id);
+            const cached = allLessons.find(l => String(l.lesson_id || l.id) === lesId);
+            const isDone = Boolean(
+              les.is_completed ||
+              les._isCompleted ||
+              les.progress?.is_completed ||
+              cached?.is_completed ||
+              cached?._isCompleted
+            );
+            les.is_completed = isDone;
+            les._isCompleted = isDone;
             if (isDone) modCompletedLessons++;
 
             const isUnlocked = canBypassLock || (seqIndex === 0) || prevLessonCompleted;
             les._isUnlocked = isUnlocked;
-            les._isCompleted = isDone;
 
-            const navItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(les.lesson_id || les.id));
+            const navItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === lesId);
             if (navItem) {
               navItem.isUnlocked = isUnlocked;
               navItem.isCompleted = isDone;
@@ -2740,7 +2749,7 @@ class StudentView {
                 type="button"
                 id="floating-prev-btn"
                 class="fixed sm:absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
-                title="Bài phía trước"
+                title="Quay lại"
               >
                 <span class="material-symbols-outlined text-[22px]">chevron_left</span>
               </button>
@@ -2750,7 +2759,7 @@ class StudentView {
                 type="button"
                 id="floating-next-btn"
                 class="fixed sm:absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-900 shadow-md border border-slate-200 dark:border-slate-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-800 hover:scale-105 transition-all cursor-pointer"
-                title="Bài tiếp theo"
+                title="Tiếp theo"
               >
                 <span class="material-symbols-outlined text-[22px]">chevron_right</span>
               </button>
@@ -3658,17 +3667,19 @@ class StudentView {
         // Anti-Bypass: Prevent jumping ahead if current lesson is not completed
         const curIdx = flatNavList.findIndex(i => i.type === activeItem?.type && String(i.id) === String(activeItem?.id));
         const targetIdx = flatNavList.findIndex(i => i.type === target.type && String(i.id) === String(target.id));
+        const isGoingBack = curIdx !== -1 && targetIdx !== -1 && targetIdx < curIdx;
+
         if (targetIdx > curIdx && activeItem && activeItem.type === 'lesson' && !activeItem.isCompleted) {
           UI.showToast('Bạn cần hoàn thành bài học hiện tại trước khi chuyển sang bài tiếp theo.', 'warning');
           return;
         }
 
-        if (target.type === 'lesson' && !target.isUnlocked) {
+        if (target.type === 'lesson' && !target.isUnlocked && !isGoingBack) {
           UI.showToast('Vui lòng hoàn thành bài học trước để mở khóa bài học này.', 'warning');
           return;
         }
 
-        if (target.type === 'exam' && !target.isUnlocked) {
+        if (target.type === 'exam' && !target.isUnlocked && !isGoingBack) {
           UI.showToast(target.lockReason || 'Bài kiểm tra này đang bị khóa.', 'warning');
           return;
         }
@@ -3712,7 +3723,7 @@ class StudentView {
         if (prevBtn) {
           prevBtn.classList.toggle('hidden', !prevItem);
           if (prevItem) {
-            prevBtn.title = `Bài phía trước: ${prevItem.title}`;
+            prevBtn.title = `Quay lại: ${prevItem.title}`;
             prevBtn.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
           }
         }
@@ -3720,7 +3731,7 @@ class StudentView {
         if (nextBtn) {
           nextBtn.classList.toggle('hidden', !nextItem);
           if (nextItem) {
-            nextBtn.title = `Bài tiếp theo: ${nextItem.title}`;
+            nextBtn.title = `Tiếp theo: ${nextItem.title}`;
             nextBtn.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
           }
         }
@@ -4099,11 +4110,27 @@ class StudentView {
           }
           lesson.video_url = activeVideoUrl;
 
-          const hasVideo = Boolean(lesson.video_url);
-          let videoWatched = StudentView.isLessonVideoWatched(lesson);
-          let isCompleted = Boolean(lesson.progress?.is_completed || lesson._isCompleted || lesson.is_completed) || (hasVideo && videoWatched && !hasMiniQuiz);
+          const currentUser = (window.app && window.app.currentUser) ||
+                              (window.router && window.router.currentUser) ||
+                              (typeof AuthState !== 'undefined' ? AuthState.getUser() : null) || {};
+          const isEmailVerified = currentUser.role !== 'STUDENT' || Boolean(
+            currentUser.is_email_verified === true ||
+            currentUser.email_verified === true ||
+            (currentUser.email_verified_at && currentUser.email_verified_at !== null)
+          );
+
+          const cachedLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
+          const hasVideo = Boolean(lesson.video_url && typeof lesson.video_url === 'string' && lesson.video_url.trim() !== '' && lesson.video_url.trim() !== 'null');
+          let videoWatched = StudentView.isLessonVideoWatched(lesson) || Boolean(lesson.progress?.is_video_complete);
           const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
           let hasPassedQuiz = Boolean(lesson.progress?.mini_quiz_completed_at);
+          let isCompleted = Boolean(
+            lesson.progress?.is_completed ||
+            lesson._isCompleted ||
+            lesson.is_completed ||
+            activeItem.isCompleted ||
+            (cachedLes && (cachedLes.is_completed || cachedLes._isCompleted))
+          ) || (hasVideo && videoWatched && (!hasMiniQuiz || hasPassedQuiz));
           let quizPassingPercent = 80;
           if (typeof lesson.quiz_passing_percent === 'number') {
             quizPassingPercent = lesson.quiz_passing_percent;
@@ -4182,7 +4209,26 @@ class StudentView {
               </div>
 
               <!-- Media Player / Video Block -->
-              ${lesson.video_url ? `
+              ${lesson.video_url ? (
+                !isEmailVerified && !isPreview ? `
+                <div class="rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 p-6 sm:p-8 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <span class="material-symbols-outlined text-2xl">mark_email_unread</span>
+                    </div>
+                    <div class="space-y-1">
+                      <h3 class="text-sm sm:text-base font-bold text-amber-950 dark:text-amber-200">Yêu cầu xác thực Email để xem video</h3>
+                      <p class="text-xs sm:text-sm text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                        Tài khoản của bạn chưa hoàn tất xác thực email. Để bảo vệ bản quyền bài giảng và truy cập video học tập, vui lòng kiểm tra hòm thư và hoàn tất xác thực tài khoản.
+                      </p>
+                    </div>
+                  </div>
+                  <a href="#/profile" class="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-outlined text-[16px]">verified_user</span>
+                    <span>Xác thực ngay</span>
+                  </a>
+                </div>
+                ` : `
                 <div class="bg-black rounded-2xl overflow-hidden shadow-lg border border-slate-800">
                   <div class="w-full bg-slate-950 relative">
                     ${StudentView._getEmbedVideoHtml(lesson.video_url, 'cisco-stream-player', isCompleted)}
@@ -4201,7 +4247,8 @@ class StudentView {
                     </span>
                   </div>
                 </div>
-              ` : ''}
+                `
+              ) : ''}
 
               <!-- Supplementary Videos -->
               ${(lesson.video_urls || []).filter(url => url !== lesson.video_url).map((url, index) => `
@@ -4414,11 +4461,20 @@ class StudentView {
               activeItem.data.is_completed = true;
               activeItem.data._isCompleted = true;
             }
-            const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === String(activeItem.id));
+            const lesId = String(activeItem.id);
+            const targetLes = allLessons.find(l => String(l.lesson_id || l.id) === lesId);
             if (targetLes) {
               targetLes.is_completed = true;
               targetLes._isCompleted = true;
             }
+            modules.forEach(m => {
+              (m.lessons || []).forEach(l => {
+                if (String(l.lesson_id || l.id) === lesId) {
+                  l.is_completed = true;
+                  l._isCompleted = true;
+                }
+              });
+            });
 
             try {
               sessionStorage.removeItem('pwd301_pending_quiz_' + courseId);
@@ -4441,7 +4497,7 @@ class StudentView {
               if (!isPreview) {
                 try {
                   await ApiClient.recordLessonProgress(trackedLessonId, 30, 1.0, true);
-                  UI.showToast('Chúc mừng bạn đã hoàn thành bài học! Nút "Bài tiếp theo" đã được mở khóa.', 'success');
+                  UI.showToast('Chúc mừng bạn đã hoàn thành bài học! Nút "Tiếp theo" đã được mở khóa.', 'success');
                 } catch (e) {
                   console.warn('Auto record lesson progress failed:', e);
                 }
@@ -4464,7 +4520,7 @@ class StudentView {
               if (meetsAll) {
                 box.innerHTML = `
                   <button type="button" id="cisco-next-btn" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-sm cursor-pointer animate-fade-in">
-                    <span>Bài tiếp theo</span>
+                    <span>Tiếp theo</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
                 `;
@@ -4472,8 +4528,8 @@ class StudentView {
               } else {
                 box.innerHTML = `
                   <button type="button" id="cisco-next-btn" title="Chưa đủ điều kiện chuyển bài" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
-                    <span class="material-symbols-outlined text-[16px]">lock</span>
-                    <span>Bài tiếp theo (Đang khóa)</span>
+                    <span>Tiếp theo</span>
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
                 `;
                 box.firstElementChild.onclick = () => {
@@ -4492,8 +4548,8 @@ class StudentView {
               } else {
                 box.innerHTML = `
                   <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none">
-                    <span class="material-symbols-outlined text-[16px]">lock</span>
-                    <span>Hoàn thành khóa học (Đang khóa)</span>
+                    <span>Hoàn thành khóa học</span>
+                    <span class="material-symbols-outlined text-[16px]">celebration</span>
                   </button>
                 `;
                 box.firstElementChild.onclick = () => {
@@ -4509,9 +4565,9 @@ class StudentView {
             if (bottomPrevBox) {
               if (prevItem) {
                 bottomPrevBox.innerHTML = `
-                  <button type="button" title="${UI.escapeHtml(prevItem.title)}" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-emerald-600 transition-colors flex items-center gap-1.5 cursor-pointer">
+                  <button type="button" title="${UI.escapeHtml(prevItem.title)}" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-all flex items-center gap-1.5 shadow-sm cursor-pointer">
                     <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-                    <span>Bài phía trước</span>
+                    <span>Quay lại</span>
                   </button>
                 `;
                 bottomPrevBox.firstElementChild.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
@@ -4592,7 +4648,7 @@ class StudentView {
           };
 
           const playerContainer = document.getElementById('cisco-stream-player-container');
-          if (playerContainer || videoEl) {
+          if ((playerContainer || videoEl) && (isEmailVerified || isPreview)) {
             activeCustomPlayerCtrl = StudentView.setupCustomVideoPlayer('cisco-stream-player', {
               streamUrl: lesson.video_url, lessonId: trackedLessonId, mediaId: mediaFor(lesson.video_url),
               clientIp: lesson.client_ip, preview: isPreview, isCompleted,
@@ -4609,16 +4665,18 @@ class StudentView {
             });
           }
 
-          (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
-            let ctrl;
-            ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
-              isCompleted, streamUrl: url, lessonId: trackedLessonId, mediaId: mediaFor(url),
-              clientIp: lesson.client_ip, preview: isPreview, supplementary: true,
-              onPlaying: () => pauseOthers(ctrl),
-              onConfirmed: result => { if (result.is_completed) handleConfirmed(result); }
+          if (isEmailVerified || isPreview) {
+            (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
+              let ctrl;
+              ctrl = StudentView.setupCustomVideoPlayer(`cisco-extra-video-${idx}`, {
+                isCompleted, streamUrl: url, lessonId: trackedLessonId, mediaId: mediaFor(url),
+                clientIp: lesson.client_ip, preview: isPreview, supplementary: true,
+                onPlaying: () => pauseOthers(ctrl),
+                onConfirmed: result => { if (result.is_completed) handleConfirmed(result); }
+              });
+              extraPlayerControllers.push(ctrl);
             });
-            extraPlayerControllers.push(ctrl);
-          });
+          }
 
           if (!isPreview && !hasVideo) {
             const contentTracker = StudentView.createPlaybackTracker(trackedLessonId, `content:${trackedLessonId}`, {
@@ -5630,7 +5688,9 @@ class StudentView {
       const lock = get('lock-indicator');
       if (lock) lock.textContent = unlocked ? 'Đã mở khóa tua' : 'Khóa tua nhanh';
       if (get('identity')) {
-        const user = typeof AuthState !== 'undefined' ? AuthState.getUser() || {} : {};
+        const user = (window.app && window.app.currentUser) ||
+                     (window.router && window.router.currentUser) ||
+                     (typeof AuthState !== 'undefined' ? AuthState.getUser() || {} : {});
         verifiedIp = data.client_ip || verifiedIp;
         get('identity').textContent = [user.student_code, user.email, verifiedIp].filter(Boolean).join(' • ');
       }
@@ -5733,7 +5793,10 @@ class StudentView {
     listen(document, 'visibilitychange', hidden);
     if (!youtube && typeof VideoArmor !== 'undefined') {
       armor = VideoArmor.mount(container, {
-        student: typeof AuthState !== 'undefined' ? AuthState.getUser() : {}, ip: options.clientIp || '',
+        student: (window.app && window.app.currentUser) ||
+                 (window.router && window.router.currentUser) ||
+                 (typeof AuthState !== 'undefined' ? AuthState.getUser() : {}),
+        ip: options.clientIp || '',
         onSecurityViolation: (reason, details) => { pause(); transition('paused'); ApiClient.recordTelemetry?.('VIDEO_SECURITY_VIOLATION', { reason, ...details }); }
       });
     }
@@ -5807,6 +5870,7 @@ class StudentView {
   // 6. Assessments Suite: Waiting Room (UTC Countdown)
   // =========================================================================
   static getWaitingRoomState(data) {
+    if (data.is_locked || data.can_start === false) return 'LOCKED_PREREQUISITE';
     if (data.active_attempt_id) return 'RESUME';
     if (data.is_closed) return 'CLOSED';
     if (data.is_attempt_limit_reached) return 'EXHAUSTED';
@@ -5843,6 +5907,7 @@ class StudentView {
       let remainingWaitLock = Math.max(0, Number(data.seconds_until_waiting_room_open) || 0);
 
       const statusConfig = {
+        LOCKED_PREREQUISITE: { text: 'Chưa đủ điều kiện thi', class: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700' },
         READY: { text: 'Sẵn sàng vào thi', class: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700' },
         RESUME: { text: 'Đang làm dở dang', class: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700' },
         UPCOMING: { text: 'Phòng chờ đang mở (Chờ phát đề)', class: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-300 dark:border-indigo-700' },
@@ -6076,6 +6141,16 @@ class StudentView {
                     <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 space-y-1">
                       <div class="font-bold text-sm">Bạn đã dùng hết số lượt làm bài được phép</div>
                       <p>Số lượt thi tối đa là ${data.attempt_limit} lượt. Bạn đã hoàn thành tất cả các lượt thi quy định.</p>
+                    </div>
+                  ` : ''}
+
+                  ${state === 'LOCKED_PREREQUISITE' ? `
+                    <div class="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs sm:text-sm text-amber-800 dark:text-amber-200 space-y-2">
+                      <div class="font-bold flex items-center gap-2 text-amber-900 dark:text-amber-100 text-sm">
+                        <span class="material-symbols-outlined text-[18px]">lock</span>
+                        <span>Khóa điều kiện tiên quyết</span>
+                      </div>
+                      <p>${UI.escapeHtml(data.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong khóa học trước khi được phép làm bài kiểm tra này.')}</p>
                     </div>
                   ` : ''}
 
@@ -7615,6 +7690,30 @@ class StudentView {
       ]);
       if (!data) return;
 
+      if (data.score_status === 'RESULTS_HIDDEN' || data.allow_student_view_results === false) {
+        container.innerHTML = `
+          <div class="py-16 px-4 max-w-xl mx-auto text-center space-y-4 animate-fade-in font-sans">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
+              <span class="material-symbols-outlined text-3xl">task_alt</span>
+            </div>
+            <h1 class="text-2xl font-black text-slate-900 dark:text-white">Đã ghi nhận bài nộp thành công</h1>
+            <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
+              Hệ thống đã lưu nhận bài thi của bạn an toàn. Giảng viên phụ trách đã cài đặt không công bố chi tiết đáp án và điểm số cho bài kiểm tra này.
+            </p>
+            <div class="pt-4 flex items-center justify-center gap-3">
+              <a href="#/student/assessments" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm">
+                Danh sách bài kiểm tra
+              </a>
+              <a href="/student/attempt/${encodeURIComponent(attemptId)}/result.pdf" target="_blank" class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                <span>Tải xác nhận bài nộp (PDF)</span>
+              </a>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       const scoreState = StudentView.getAttemptScoreState(data);
       if (!scoreState.released) {
         container.innerHTML = `
@@ -8575,7 +8674,14 @@ class StudentView {
 
         // BẤT BIẾN DUY NHẤT 01 STATUS BADGE
         let singleStatusBadge = '';
-        if (a.is_closed) {
+        if (a.is_locked || a.can_start === false) {
+          singleStatusBadge = `
+            <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-2xs">
+              <span class="material-symbols-outlined text-[13px] text-amber-600">lock</span>
+              <span>Chưa đủ điều kiện thi</span>
+            </span>
+          `;
+        } else if (a.is_closed) {
           singleStatusBadge = `
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 flex items-center gap-1.5 shadow-2xs">
               <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
@@ -8626,7 +8732,14 @@ class StudentView {
 
         // Nút hành động
         let actionHtml = '';
-        if (a.is_closed) {
+        if (a.is_locked || a.can_start === false) {
+          actionHtml = `
+            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300/80 dark:border-slate-700 cursor-not-allowed select-none" title="${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong khóa học trước khi làm bài thi này.')}" onclick="UI.showToast('${UI.escapeHtml(a.lock_reason || 'Bạn cần hoàn thành toàn bộ bài học trong khóa học trước khi làm bài thi này.')}', 'warning')">
+              <span class="material-symbols-outlined text-[15px]">lock</span>
+              <span>Chưa đủ điều kiện thi</span>
+            </button>
+          `;
+        } else if (a.is_closed) {
           actionHtml = `
             ${a.attempts_count > 0 ? `
               <a href="#/student/assessments/results?id=${a.attempt_id || ''}" class="c-btn c-btn-secondary c-btn-sm flex items-center gap-1 font-bold">
