@@ -425,24 +425,16 @@ class TestM2AdversarialGatingAndLifecycle:
         enrollments = data["enrollments"]
         assert any(e["course_code"] == "M2-CS101" and e["status"] == "ACTIVE" for e in enrollments)
 
-        # 2. Leave course
+        # 2. Leave course is permanently forbidden (ENROLLMENT_LIFETIME_GUARANTEE)
         leave_resp = client.post(
             f"/student/courses/{course_a.public_id}/leave",
             json={"reason": "Busy schedule"},
             headers={"Accept": "application/json"},
         )
-        assert leave_resp.status_code == 200
+        assert leave_resp.status_code == 403
         leave_data = leave_resp.get_json()
-        assert leave_data["status"] == "LEFT"
-
-        # 3. Re-enroll course
-        re_resp = client.post(
-            f"/student/courses/{course_a.public_id}/re-enroll",
-            headers={"Accept": "application/json"},
-        )
-        assert re_resp.status_code == 200
-        re_data = re_resp.get_json()
-        assert re_data["status"] == "ACTIVE"
+        assert leave_data["error"]["code"] == "FORBIDDEN"
+        assert "Chức năng rời khóa học đã bị vô hiệu hóa" in leave_data["error"]["message"]
 
     # =========================================================================
     # 4. BECOME INSTRUCTOR PORTAL

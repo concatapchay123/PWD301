@@ -1413,51 +1413,16 @@ class StudentView {
                   </div>
                 </div>
 
-                <div class="flex items-center gap-2 pt-1">
-                  <a href="#/student/courses/detail?id=${e.course_id}" class="flex-1 c-btn c-btn-primary c-btn-sm shadow-xs flex items-center justify-center gap-1.5">
+                <div class="pt-1">
+                  <a href="#/student/courses/detail?id=${e.course_id}" class="w-full c-btn c-btn-primary c-btn-sm shadow-xs flex items-center justify-center gap-1.5">
                     <span>Vào học tiếp tục</span>
                     <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </a>
-                  ${e.status === 'ACTIVE' ? `
-                  <button
-                    type="button"
-                    class="leave-course-btn c-btn c-btn-secondary c-btn-sm text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                    data-id="${e.course_id}"
-                    data-title="${UI.escapeHtml(e.course_title)}"
-                    title="Rút khỏi môn học"
-                  >
-                    <span class="material-symbols-outlined text-[18px]">logout</span>
-                  </button>
-                  ` : ''}
                 </div>
               </div>
             </div>
           `;
         }).join('');
-
-        // Attach leave course buttons
-        grid.querySelectorAll('.leave-course-btn').forEach(btn => {
-          btn.onclick = async () => {
-            const cId = btn.dataset.id;
-            const cTitle = btn.dataset.title;
-            const confirmed = await UI.confirm(
-              'Rút khỏi môn học',
-              `Bạn có chắc chắn muốn rút khỏi khóa học "${cTitle}" không? Dữ liệu tiến độ bài học sẽ được lưu trữ lại.`,
-              'Xác nhận rút môn',
-              'Đóng',
-              true
-            );
-            if (!confirmed) return;
-
-            try {
-              await ApiClient.leaveCourse(cId);
-              UI.showToast(`Đã rút khỏi môn học: ${cTitle}`, 'info');
-              StudentView.renderMyLearning(container);
-            } catch (err) {
-              UI.showToast(err.message || 'Không thể rút khỏi môn học.', 'error');
-            }
-          };
-        });
       };
 
       // Filter pills switching
@@ -2449,11 +2414,12 @@ class StudentView {
         if (autoExpanded && expandedResModuleIds.size > 0) break;
       }
 
-      // Overall Progress Calculation
-      const rawProgVal = progressData?.current_progress_percent ?? progressData?.progress_percent ?? courseData?.enrollment?.current_progress_percent ?? courseData?.enrollment?.progress_percent;
-      const courseProgressPercent = rawProgVal !== undefined && rawProgVal !== null
-        ? Math.round(rawProgVal)
-        : (allLessons.length > 0 ? Math.round((allLessons.filter(l => l.is_completed || l.progress?.is_completed).length / allLessons.length) * 100) : 0);
+      // Overall Progress Calculation (Pure Dynamic Calculation)
+      const allCourseLessons = modules.flatMap(m => m.lessons || []);
+      const effectiveLessons = allCourseLessons.length > 0 ? allCourseLessons : allLessons;
+      const completedCount = effectiveLessons.filter(l => l.is_completed || l._isCompleted || l.progress?.is_completed).length;
+      const totalCount = effectiveLessons.length;
+      const courseProgressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
       // Saved Sidebar Width from LocalStorage
       const savedSidebarWidth = parseInt(localStorage.getItem('pwd301_console_sidebar_width') || '360', 10);
@@ -4010,7 +3976,7 @@ class StudentView {
 
           const hasVideo = Boolean(lesson.video_url);
           let videoWatched = StudentView.isLessonVideoWatched(lesson);
-          let isCompleted = Boolean(lesson.progress?.is_completed) && (!hasVideo || videoWatched);
+          let isCompleted = Boolean(lesson.progress?.is_completed || lesson._isCompleted || lesson.is_completed) || (hasVideo && videoWatched && !hasMiniQuiz);
           const hasMiniQuiz = Array.isArray(lesson.quiz) && lesson.quiz.length > 0;
           let quizPassingPercent = 80;
           if (typeof lesson.quiz_passing_percent === 'number') {
@@ -4402,7 +4368,7 @@ class StudentView {
                         <span class="material-symbols-outlined text-[16px]">check_circle</span>
                         <span>Kiểm tra đáp án</span>
                       </button>
-                      <button type="button" id="cisco-quiz-reset-btn" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors hidden cursor-pointer flex items-center gap-1.5 shadow-sm">
+                      <button type="button" id="cisco-quiz-reset-btn" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs transition-colors hidden cursor-pointer flex items-center gap-1.5 shadow-sm">
                         <span class="material-symbols-outlined text-[16px]">restart_alt</span>
                         <span>Làm lại từ đầu</span>
                       </button>
@@ -4673,20 +4639,17 @@ class StudentView {
             updateFloatingNav();
 
             // Recalculate dynamic course progress in header
-            const completedCount = allLessons.filter(l => l._isCompleted || l.is_completed || l.progress?.is_completed).length;
-            const newPercent = allLessons.length > 0 ? Math.round((completedCount / allLessons.length) * 100) : 0;
+            const allCourseLessons = modules.flatMap(m => m.lessons || []);
+            const effectiveLessons = allCourseLessons.length > 0 ? allCourseLessons : allLessons;
+            const completedCount = effectiveLessons.filter(l => l._isCompleted || l.is_completed || l.progress?.is_completed).length;
+            const newPercent = effectiveLessons.length > 0 ? Math.round((completedCount / effectiveLessons.length) * 100) : 0;
             const progressBadge = document.getElementById('console-progress-percent');
             if (progressBadge) {
               progressBadge.textContent = `${newPercent}%`;
             }
 
-            // Background reconcile authoritative backend course progress
-            ApiClient.getStudentCourseProgress(courseId).then(freshProg => {
-              const freshVal = freshProg?.current_progress_percent ?? freshProg?.progress_percent;
-              if (freshVal !== undefined && freshVal !== null && progressBadge) {
-                progressBadge.textContent = `${Math.round(freshVal)}%`;
-              }
-            }).catch(() => {});
+            // Background sync backend course progress
+            ApiClient.getStudentCourseProgress(courseId).catch(() => {});
 
             if (completeBtn) {
               completeBtn.disabled = true;
@@ -4763,7 +4726,19 @@ class StudentView {
               streamUrl: lesson.video_url, lessonId: trackedLessonId, mediaId: mediaFor(lesson.video_url),
               clientIp: lesson.client_ip, preview: isPreview, isCompleted,
               onPlaying: () => pauseOthers(activeCustomPlayerCtrl),
-              onProgress: updateProgressUI, onConfirmed: handleConfirmed
+              onProgress: updateProgressUI, onConfirmed: handleConfirmed,
+              onEnded: async () => {
+                if (isPreview) return;
+                try {
+                  const result = await ApiClient.recordLessonProgress(trackedLessonId, 0, 1.0, true);
+                  if (result?.is_completed) {
+                    setLessonCompleted();
+                    UI.showToast('Bạn đã xem xong video và hoàn thành bài giảng!', 'success');
+                  }
+                } catch (e) {
+                  console.warn('Auto mark lesson complete on ended error:', e);
+                }
+              }
             });
           }
           (lesson.video_urls || []).filter(url => url !== lesson.video_url).forEach((url, idx) => {
@@ -4813,16 +4788,31 @@ class StudentView {
               if (savedBanner) savedBanner.textContent = 'Đã ghi nhận hoàn thành bài kiểm tra trên máy chủ.';
             }
 
+            // Wire matching boards for lesson mini-quiz
+            const wireQuizMatchingBoards = () => {
+              quizSection.querySelectorAll('.cisco-quiz-matching-board[data-cisco-quiz-qidx]').forEach(board => {
+                const qIdx = board.dataset.ciscoQuizQidx;
+                StudentView.setupMatchingBoard(board, (leftKey, rightVal) => {
+                  const sel = board.querySelector(`.cisco-quiz-matching-select[data-qidx="${qIdx}"][data-pidx="${leftKey}"]`);
+                  if (sel) {
+                    sel.value = rightVal || '';
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  }
+                });
+              });
+            };
+            wireQuizMatchingBoards();
+
             const updateQuizSlideView = () => {
+              const cards = quizSection.querySelectorAll('.cisco-quiz-card');
+              cards.forEach((c, idx) => {
+                c.style.display = idx === currentQuizSlide ? 'block' : 'none';
+              });
               const activeMatchingBoard = quizSection.querySelector(`.cisco-quiz-card:nth-child(${currentQuizSlide + 1}) .cisco-quiz-matching-board`);
               if (activeMatchingBoard && typeof activeMatchingBoard._redrawMatches === 'function') {
                 requestAnimationFrame(() => activeMatchingBoard._redrawMatches());
               }
               if (totalQuizSlides < 2) return;
-              const cards = quizSection.querySelectorAll('.cisco-quiz-card');
-              cards.forEach((c, idx) => {
-                c.style.display = idx === currentQuizSlide ? 'block' : 'none';
-              });
 
               const pills = quizSection.querySelectorAll('.cisco-quiz-step-pill');
               pills.forEach((p, idx) => {
@@ -5062,10 +5052,11 @@ class StudentView {
                         const pIdx = parseInt(sel.dataset.pidx, 10);
                         const userVal = sel.value;
                         const expectedRight = pairs[pIdx]?.right;
-                        const row = sel.closest('.cisco-quiz-matching-row');
-                        if (row) {
-                          row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
-                          row.classList.add(userVal === expectedRight ? 'border-emerald-500' : 'border-rose-500', userVal === expectedRight ? 'bg-emerald-50' : 'bg-rose-50');
+                        const leftCard = card.querySelector(`.matching-card-left[data-pidx="${pIdx}"]`);
+                        if (leftCard) {
+                          leftCard.classList.remove('border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-slate-700/80');
+                          const isMatch = userVal && expectedRight && String(userVal).trim().toLowerCase() === String(expectedRight).trim().toLowerCase();
+                          leftCard.classList.add(isMatch ? 'border-emerald-500' : 'border-rose-500', isMatch ? 'bg-emerald-950/30' : 'bg-rose-950/30');
                         }
                       });
                     } else if (qType === 'TRUE_FALSE') {
@@ -5154,12 +5145,12 @@ class StudentView {
                   // FAIL: ANTI-LEAK PROTECTION — DO NOT reveal correct answers or explanations!
                   if (banner) {
                     banner.innerHTML = `
-                      <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 font-bold">
-                          Chưa đạt: ${correctCount}/${totalQuizSlides} (${percent}% / Yêu cầu: ${quizPassingPercent}%)
+                      <div class="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900/95 border border-slate-800 text-slate-200 shadow-sm">
+                        <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs shrink-0">
+                          Chưa đạt: ${correctCount}/${totalQuizSlides} (${percent}% / Điểm chuẩn: ${quizPassingPercent}%)
                         </span>
-                        <span class="text-rose-600 dark:text-rose-400 font-medium">
-                          Bạn chưa đạt chuẩn hoàn thành. Vui lòng bấm "Làm lại từ đầu" để kiểm tra lại.
+                        <span class="text-xs text-slate-300 font-medium">
+                          Bạn chưa đạt chuẩn hoàn thành. Vui lòng bấm <strong>Làm lại từ đầu</strong> để thử lại.
                         </span>
                       </div>
                     `;
@@ -5185,18 +5176,19 @@ class StudentView {
                   inp.value = '';
                   inp.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
-                quizSection.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
-              const qIdx = board.dataset.ciscoQuizQidx;
-              StudentView.setupMatchingBoard(board, (leftKey, rightVal) => {
-                const sel = board.querySelector(`.cisco-quiz-matching-select[data-qidx="${qIdx}"][data-pidx="${leftKey}"]`);
-                if (sel) sel.value = rightVal;
-              });
-            });
-
-            quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
+                quizSection.querySelectorAll('.cisco-quiz-matching-select').forEach(sel => sel.value = '');
                 quizSection.querySelectorAll('.cisco-quiz-matching-row').forEach(row => {
                   row.classList.remove('border-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-950/40', 'border-rose-500', 'bg-rose-50', 'dark:bg-rose-950/40');
                 });
+                quizSection.querySelectorAll('.cisco-quiz-matching-board').forEach(board => {
+                  board.querySelectorAll('.btn-clear-matches').forEach(btn => btn.click());
+                  board.querySelectorAll('.matching-card-left, .matching-card-right').forEach(c => {
+                    c.classList.remove('border-emerald-500', 'bg-emerald-950/30', 'border-rose-500', 'bg-rose-950/30', 'border-emerald-500/60', 'ring-2', 'ring-teal-400', 'border-teal-400');
+                    c.classList.add('border-slate-700/80');
+                  });
+                });
+                wireQuizMatchingBoards();
+
                 quizSection.querySelectorAll('.cisco-quiz-explanation').forEach(e => {
                   e.classList.add('hidden');
                   e.innerHTML = '';
@@ -5219,6 +5211,11 @@ class StudentView {
                   banner.innerHTML = 'Hãy hoàn thành câu trả lời cho các câu hỏi rồi bấm <strong>Kiểm tra đáp án</strong>.';
                 }
                 resetQuizBtn.classList.add('hidden');
+                checkQuizBtn.classList.remove('hidden');
+                if (totalQuizSlides >= 2) {
+                  checkQuizBtn.classList.add('hidden');
+                  if (nextQuizBtn) nextQuizBtn.classList.remove('hidden');
+                }
                 UI.showToast('Đã đặt lại bài kiểm tra. Hãy bắt đầu làm lại từ Câu 1.', 'info');
               };
             }
@@ -5503,6 +5500,9 @@ class StudentView {
       void tracker?.flush();
       const icon = get('play-btn')?.querySelector('.material-symbols-outlined');
       if (icon) icon.textContent = playing ? 'pause' : 'play_arrow';
+      if (state === 'ended') {
+        options.onEnded?.();
+      }
     };
     const toggle = () => { if (playing) pause(); else if (youtube) driver?.playVideo?.(); else video?.play().catch(reportError); };
     const paint = () => {

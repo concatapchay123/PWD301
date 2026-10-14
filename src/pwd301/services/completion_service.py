@@ -388,10 +388,22 @@ def calculate_course_progress(
     total_required_lessons = len(required_lessons)
 
     if total_required_lessons == 0:
-        enrollment.current_progress_percent = Decimal("100.00")
-        enrollment.updated_at = utc_now()
-        sess.flush()
-        return 100.0
+        if total_published_lessons > 0:
+            required_lessons = (
+                sess.query(Lesson.id, Lesson.position)
+                .filter(
+                    Lesson.course_id == enrollment.course_id,
+                    Lesson.status == "PUBLISHED",
+                    Lesson.deleted_at.is_(None),
+                )
+                .all()
+            )
+            total_required_lessons = len(required_lessons)
+        if total_required_lessons == 0:
+            enrollment.current_progress_percent = Decimal("0.00")
+            enrollment.updated_at = utc_now()
+            sess.flush()
+            return 0.0
 
     completed_lp_records = (
         sess.query(Lesson.id, Lesson.position)

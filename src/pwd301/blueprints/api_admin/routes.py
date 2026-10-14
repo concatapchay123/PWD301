@@ -79,10 +79,14 @@ def api_dashboard() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses", methods=["GET"])
 @jwt_required
 @admin_required
-@require_admin_permission("COURSE_REVIEW")
 def api_admin_courses() -> tuple[Response, int] | Response:
     """Administrator courses listing endpoint."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not (
+        actor.has_admin_permission("COURSE_REVIEW")
+        or actor.has_admin_permission("TEACHING_ASSIGNMENT")
+    ):
+        raise ForbiddenError("Bạn không có quyền xem danh sách khóa học quản trị.")
     sess = db.session
     courses = (
         sess.query(Course)
@@ -105,10 +109,14 @@ def api_admin_courses() -> tuple[Response, int] | Response:
 @api_admin_bp.route("/courses/<course_id>", methods=["GET"])
 @jwt_required
 @admin_required
-@require_admin_permission("COURSE_REVIEW")
 def api_admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
-    require_authenticated_actor()
+    actor = require_authenticated_actor()
+    if not (
+        actor.has_admin_permission("COURSE_REVIEW")
+        or actor.has_admin_permission("TEACHING_ASSIGNMENT")
+    ):
+        raise ForbiddenError("Bạn không có quyền xem hồ sơ duyệt khóa học.")
     sess = db.session
     from pwd301.services.authorization_service import _resolve_course
 
@@ -587,7 +595,7 @@ def api_override_file_quarantine(asset_id: str) -> tuple[Response, int] | Respon
 
 @api_admin_bp.route("/notifications/broadcast", methods=["POST"])
 @jwt_required
-@primary_admin_required
+@admin_required
 def api_admin_broadcast_notifications() -> tuple[Response, int] | Response:
     """Admin broadcast system notification to all or role-targeted users."""
     from pwd301.services.notification_service import broadcast_system_notification

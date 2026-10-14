@@ -448,7 +448,7 @@ class CourseChangeRequest(Base):
     __table_args__ = (
         sa.CheckConstraint(
             "change_type IN ('COURSE_METADATA','LESSON_STRUCTURE','LESSON_CONTENT',"
-            "'COMPLETION_RULE','PREREQUISITE','OTHER')",
+            "'COMPLETION_RULE','PREREQUISITE','OTHER','COURSE_VERSION_CHANGESET')",
             name="ck_course_change_requests_1",
         ),
         sa.CheckConstraint(
@@ -456,7 +456,7 @@ class CourseChangeRequest(Base):
             name="ck_course_change_requests_2",
         ),
         sa.CheckConstraint(
-            "status IN ('PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')",
+            "status IN ('DRAFT','PENDING','APPROVED','REJECTED','CANCELLED','APPLIED')",
             name="ck_course_change_requests_3",
         ),
         sa.CheckConstraint("ISJSON(proposed_payload_json)=1", name="ck_course_change_requests_4"),
@@ -1002,6 +1002,11 @@ class LessonProgress(Base):
 
     period = relationship("EnrollmentPeriod", foreign_keys=[enrollment_period_id])
     lesson = relationship("Lesson", foreign_keys=[lesson_id])
+
+    @property
+    def enrollment_period(self) -> Any:
+        """Alias for period relationship to maintain compatibility."""
+        return self.period
 
 
 class LessonProgressReceipt(Base):

@@ -22,7 +22,9 @@ This matrix is the implementation bridge. A backend change that touches a rule s
 | `ENROLL-001` | Một logical Enrollment User-Course | `Enrollment` | enrollments | UNIQUE student+course | upsert transaction | — | EnrollmentEvent | `T-ENROLL-02` |
 | `ENROLL-002` | Re-enroll restart từ đầu nhưng cùng Enrollment | `Enrollment` | enrollments; enrollment_periods; enrollment_events | period unique/active filtered index | create new period, reset cache | — | event | `T-ENROLL-03` |
 | `ENROLL-003` | Prior completed Course vẫn thỏa prerequisite | `Enrollment` | course_completion_summaries | UNIQUE user+course | prereq service reads summary | — | — | `T-ENROLL-04` |
-| `ENROLL-004` | Leave >30d purge detail và ngừng future regrade | `Retention` | enrollment_periods; attempts; completion summaries | retention index | purge transaction | cleanup | EnrollmentEvent | `T-RET-01..03` |
+| `ENROLL-004` | Legacy leave retention rule (superseded by ENROLL-005) | `Retention` | enrollment_periods; attempts; completion summaries | retention index | purge transaction | cleanup | EnrollmentEvent | `T-RET-01..03` |
+| `ENROLL-005` | Strict Lifetime Enrollment: khóa học ghi danh trọn đời, cấm tự rút (leave disabled), instructor không thể xóa | `Enrollment` | enrollments | status lock | leave blocked 403, no instructor delete | — | audit | `T-ENROLL-05` |
+| `COURSE-008` | Unified Staging Draft: mọi chỉnh sửa khóa học PUBLISHED gom vào 1 bản nháp, gửi duyệt 1 lần | `Course` | courses; course_version_changesets | status check | staging payload aggregation | — | audit | `T-COURSE-09` |
 | `LESSON-001` | Lesson reorder không mất completion | `Lesson` | lessons; lesson_progress | UNIQUE course+position | reorder transaction | — | audit | `T-LESSON-01` |
 | `LESSON-002` | Lesson completion cần min time + viewed most | `Lesson` | lessons; lesson_progress | range CHECK | bounded heartbeat + compute | — | — | `T-LESSON-02` |
 | `LESSON-003` | Lesson mới là Xem thêm cho existing period | `Lesson` | lessons; enrollment_periods | effective timestamp | progress computation compares start time | — | — | `T-LESSON-03` |

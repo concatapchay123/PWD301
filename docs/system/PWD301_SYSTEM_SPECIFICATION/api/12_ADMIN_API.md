@@ -55,3 +55,16 @@ Resource attachment/detachment and other individual change requests use `POST /a
 ### Exact session change-request detail
 
 `GET /admin/change-requests?request_id={id}` requires an authenticated Admin with `COURSE_REVIEW`. It returns the named request independently of its current review status, including completed requests. Invalid identifiers return 400; a missing request returns 404. The exact identifier takes precedence over queue status filtering. The aggregate queue retains its pending-only behavior, including `status=ALL`; completed requests remain available through their authorized exact detail URL.
+
+### `POST /admin/notifications/broadcast`
+- **Purpose:** Broadcast system-wide notification.
+- **Authentication:** Admin session + CSRF
+- **Authorization:** 2-Tier RBAC:
+  * Primary Admin (`ADMIN_PRIMARY`): Authorized for all categories (`SYSTEM`, `ACADEMIC`, `MAINTENANCE`, `EVENT`).
+  * System Monitoring Admin (`ADMIN_SYSTEM_MONITORING`): Authorized strictly for category `SYSTEM`. Calling with any other category returns HTTP 403 Forbidden.
+  * All other sub-admins (`ADMIN_COURSE_REVIEW`, `ADMIN_INSTRUCTOR_REVIEW`, `ADMIN_TEACHING_ASSIGNMENT`): Forbidden (HTTP 403).
+
+### `GET /admin/courses`
+- **Purpose:** List courses for administrative management, review, and teaching assignments.
+- **Authentication:** Admin session
+- **Authorization:** Permitted for Admins with `COURSE_REVIEW` OR `TEACHING_ASSIGNMENT` permission.

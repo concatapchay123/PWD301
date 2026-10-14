@@ -907,14 +907,14 @@ def queue_course_metadata_review(
         return course
     proposed = actual_diff
 
-    # Deduplication / Upsert: Check if there is already a PENDING CourseChangeRequest
+    # Unified Staging Draft (TASK-091): Store proposed metadata in working draft changeset
     existing_req = (
         sess.query(CourseChangeRequest)
         .filter_by(
             course_id=course.id,
             requested_by_user_id=actor.id,
-            change_type="COURSE_METADATA",
-            status="PENDING",
+            change_type="COURSE_VERSION_CHANGESET",
+            status="DRAFT",
         )
         .first()
     )
@@ -924,8 +924,13 @@ def queue_course_metadata_review(
             curr_payload = json.loads(existing_req.proposed_payload_json or "{}")
         except Exception:
             curr_payload = {}
-        curr_payload.update(proposed)
-        existing_req.proposed_payload_json = json.dumps(curr_payload, default=str)
+        curr_meta = curr_payload.get("course_metadata") or {}
+        curr_meta.update(proposed)
+        curr_payload["course_metadata"] = curr_meta
+        curr_payload["action"] = "COURSE_VERSION_CHANGESET"
+        existing_req.proposed_payload_json = json.dumps(
+            curr_payload, ensure_ascii=False, default=str
+        )
         existing_req.created_at = now
         sess.flush()
         req = existing_req
@@ -933,11 +938,19 @@ def queue_course_metadata_review(
         req = CourseChangeRequest(
             course_id=course.id,
             requested_by_user_id=actor.id,
-            change_type="COURSE_METADATA",
+            change_type="COURSE_VERSION_CHANGESET",
             target_type="COURSE",
             target_id=course.id,
-            proposed_payload_json=json.dumps(proposed, default=str),
-            status="PENDING",
+            proposed_payload_json=json.dumps(
+                {
+                    "action": "COURSE_VERSION_CHANGESET",
+                    "version_title": "Bản nháp cập nhật",
+                    "course_metadata": proposed,
+                },
+                ensure_ascii=False,
+                default=str,
+            ),
+            status="DRAFT",
             created_at=now,
         )
         sess.add(req)

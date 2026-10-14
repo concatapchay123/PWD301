@@ -1,3 +1,54 @@
+# TASK-091 — Comprehensive Course Changeset Staging Engine, Lifetime Enrollment, In-Lesson Quiz & UI Remediation
+
+**Status:** COMPLETED
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-14
+**Completed Date:** 2026-10-14
+**Plan:** `docs/superpowers/plans/2026-10-14-course-changeset-and-ui-remediation.md`
+**Verification:** Verified via Chrome DevTools MCP browser automation and full automated suites: 26/26 adversarial Python tests (14/14 challenger M1_1 + 12/12 challenger M1_2), 15/15 target Python unit tests, 290/290 frontend Node tests, 0 a11y issues, mypy 0 issues, ruff 0 issues.
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows, legacy code, and outdated specifications regarding fragmented course change requests, voluntary course withdrawal, static mock progress, in-exam answer leakage, and unrestricted notifications are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire PWD301 system:
+
+1. **Permanent Purge of Fragmented Course Change Requests (Bãi bỏ sửa khóa học lắc nhắc từng đợt)**:
+   - Creating individual, piecemeal change requests for each lesson or course field is PERMANENTLY FORBIDDEN.
+   - All instructor modifications on published courses (metadata, cover image, SLOs, syllabus, chapters, lessons, quizzes, resources) MUST be saved into a single unified Staging Draft (`STAGING_DRAFT` / `CourseVersionChangeset`).
+   - The instructor submits all changes ONCE (`POST /courses/<id>/changeset/submit`), and the Admin approves or rejects the entire consolidated changeset All-or-Nothing in a single unified review screen.
+
+2. **Permanent Abolition of Voluntary Student Course Withdrawal (Bãi bỏ quyền tự rời khóa học)**:
+   - Self-unenrollment ("Rời khóa học") is PERMANENTLY ABOLISHED and locked. The endpoint `POST /student/courses/<id>/leave` MUST return HTTP 403 Forbidden.
+   - Course enrollments are strictly lifetime assets (`ENROLLMENT_LIFETIME_GUARANTEE`). Instructors have NO power to delete or remove students from courses. Only the Primary Admin may suspend or discipline enrollments via administrative governance.
+
+3. **Permanent Purge of Static Progress Mock & Auto-Completion Failure**:
+   - The static progress percentage (`100.00%` hardcoded mock) in the top-right header is PERMANENTLY PURGED. Course progress MUST be calculated dynamically: `Math.round((completed_lessons / total_lessons) * 100)%`.
+   - Watching a video to the end MUST reliably trigger lesson auto-completion and immediately refresh lesson status and the course progress gauge.
+
+4. **Permanent Purge of Immediate Right/Wrong Feedback During Exam Attempts (Anti-Leak Invariant)**:
+   - Revealing whether an answer is correct or incorrect while an active exam attempt is underway is STRICTLY FORBIDDEN. All drag-and-drop slots must render in neutral state during testing.
+   - Post-submission result review MUST render granular slot-by-slot green (correct) / soft red (incorrect) visual indicators with correct answers displayed below.
+   - The drag-and-drop grading engine MUST normalize both token choice keys and fallback text strings.
+
+5. **Permanent Modernization of Math Formula Editing in Exam Studio**:
+   - Raw, unassisted LaTeX entry is PERMANENTLY SUPERSEDED by an integrated Visual Math Palette ($f(x)$ icon) with one-click math symbols (fractions, roots, exponents, Greek, integrals, matrices) and real-time live KaTeX rendering previews for question prompts, choices A/B/C/D, and explanations.
+
+6. **Strict 2-Tier Broadcast Notification RBAC**:
+   - Unrestricted broadcasting is PERMANENTLY BANNED. Only Primary Admin (`ADMIN_PRIMARY`) may broadcast any category. System Monitoring Admin (`ADMIN_SYSTEM_MONITORING`) is strictly restricted to `SYSTEM` broadcasts only (backend 403 on other categories). Other sub-admins have broadcast buttons hidden and APIs blocked.
+
+7. **Zero-Rollback Admin Course Review Queue & Realtime Metric Sync**:
+   - Course review and changeset approval transitions must commit atomically to MSSQL, persisting permanently across browser refreshes (F5).
+   - Queue counts MUST stay 100% synchronized across KPI summary cards, topbar notification badges, and table rows.
+
+8. **Mandatory 16:9 Course Cover Showcase in Admin Review**:
+   - Admin course review views MUST serialize and prominently render the course cover image (`thumbnail_url`) with fallback placeholder.
+
+9. **Open Access to Course List for Teaching Assignment Reassignments**:
+   - `GET /admin/courses` MUST permit `ADMIN_TEACHING_ASSIGNMENT` access. The reassignment modal MUST feature an instant live filter search bar.
+
+10. **Universal NetAcad Dark Styling for In-Lesson Mini-Quizzes**:
+    - Mini-quiz matching boards MUST attach universal drag/click event listeners. Retry screens MUST use NetAcad Dark & Slate/Emerald tones (banning neon red `bg-rose-600`) and cleanly reset state on retry.
+
+---
+
 # TASK-090 — Comprehensive Assessment Review Engine, High-End Academic PDF System, NetAcad-Style Course Preview, Uploaded Video Streaming, and Robust Approval Workflow
 
 **Status:** COMPLETED

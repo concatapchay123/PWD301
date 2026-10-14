@@ -584,14 +584,16 @@
 
     container.querySelectorAll('[data-exam-method]').forEach(link => {
       link.addEventListener('click', event => {
-        const courseId = window.ExamStore.getDraft().courseId;
+        const hubCourseSelect = document.getElementById('hub-course-select');
+        const courseId = (hubCourseSelect && hubCourseSelect.value) || window.ExamStore.getDraft().courseId;
         if (!courseId) {
           event.preventDefault();
           UI.showToast('Hãy chọn môn học trước khi soạn đề.', 'warning');
           return;
         }
         window.ExamStore.saveDraft({
-          sourceMethod: link.dataset.examMethod,
+          courseId: courseId,
+          sourceMethod: link.dataset.examMethod || 'manual',
           methodSelected: true,
           matrixConfirmed: false
         });
@@ -1424,91 +1426,152 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       UI.showToast(`Đã chia đều 100 điểm cho ${N} câu hỏi (${basePt}đ/câu)!`, 'success');
     });
 
-    // Bind "Chèn công thức" (LaTeX Formula Picker Modal)
-    document.getElementById('editor-btn-latex')?.addEventListener('click', () => {
+    // Visual Math Palette with 5 Categories & Live KaTeX Preview
+    InstructorView.openVisualMathPalette = function (targetEl, onInsert) {
       const mathCategories = [
         {
-          name: 'Toán học cơ bản',
+          id: 'basic',
+          name: 'Cơ bản',
           items: [
-            { label: 'Phân số', latex: '\\frac{a}{b}', preview: 'a/b' },
-            { label: 'Căn bậc hai', latex: '\\sqrt{x}', preview: '√x' },
-            { label: 'Căn bậc n', latex: '\\sqrt[n]{x}', preview: 'ⁿ√x' },
-            { label: 'Số mũ', latex: 'x^{2}', preview: 'x²' },
-            { label: 'Chỉ số dưới', latex: 'x_{i}', preview: 'xᵢ' },
-            { label: 'Nhân & Chia', latex: 'a \\times b \\div c', preview: 'a × b ÷ c' }
+            { label: 'Phân số', latex: '\\frac{a}{b}', preview: '\\frac{a}{b}' },
+            { label: 'Căn bậc hai', latex: '\\sqrt{x}', preview: '\\sqrt{x}' },
+            { label: 'Căn bậc n', latex: '\\sqrt[n]{x}', preview: '\\sqrt[n]{x}' },
+            { label: 'Số mũ', latex: 'x^{n}', preview: 'x^{n}' },
+            { label: 'Chỉ số dưới', latex: 'x_{i}', preview: 'x_{i}' },
+            { label: 'Nhân', latex: '\\times', preview: '\\times' },
+            { label: 'Chia', latex: '\\div', preview: '\\div' },
+            { label: 'Cộng trừ', latex: '\\pm', preview: '\\pm' }
           ]
         },
         {
+          id: 'greek',
+          name: 'Hy Lạp',
+          items: [
+            { label: 'Alpha', latex: '\\alpha', preview: '\\alpha' },
+            { label: 'Beta', latex: '\\beta', preview: '\\beta' },
+            { label: 'Gamma', latex: '\\gamma', preview: '\\gamma' },
+            { label: 'Theta', latex: '\\theta', preview: '\\theta' },
+            { label: 'Pi', latex: '\\pi', preview: '\\pi' },
+            { label: 'Sigma', latex: '\\sigma', preview: '\\sigma' },
+            { label: 'Omega', latex: '\\omega', preview: '\\omega' },
+            { label: 'Delta', latex: '\\Delta', preview: '\\Delta' },
+            { label: 'Sigma lớn', latex: '\\Sigma', preview: '\\Sigma' },
+            { label: 'Omega lớn', latex: '\\Omega', preview: '\\Omega' }
+          ]
+        },
+        {
+          id: 'calculus',
           name: 'Giải tích & Đại số',
           items: [
-            { label: 'Tích phân xác định', latex: '\\int_{a}^{b} f(x)dx', preview: '∫ₐᵇ f(x)dx' },
-            { label: 'Tổng xích-ma', latex: '\\sum_{i=1}^{n} x_i', preview: '∑ xᵢ' },
-            { label: 'Giới hạn', latex: '\\lim_{x \\to \\infty} f(x)', preview: 'lim f(x)' },
-            { label: 'Đạo hàm', latex: '\\frac{df}{dx}', preview: 'df/dx' },
-            { label: 'Vô cực', latex: '\\infty', preview: '∞' },
-            { label: 'Đẳng thức vector', latex: '\\vec{v}', preview: 'v⃗' }
+            { label: 'Tích phân xác định', latex: '\\int_{a}^{b} f(x)\\,dx', preview: '\\int_{a}^{b} f(x)\\,dx' },
+            { label: 'Tích phân bất định', latex: '\\int f(x)\\,dx', preview: '\\int f(x)\\,dx' },
+            { label: 'Tổng xích-ma', latex: '\\sum_{i=1}^{n} x_i', preview: '\\sum_{i=1}^{n} x_i' },
+            { label: 'Giới hạn', latex: '\\lim_{x \\to \\infty} f(x)', preview: '\\lim_{x \\to \\infty} f(x)' },
+            { label: 'Vi phân / Đạo hàm', latex: '\\frac{df}{dx}', preview: '\\frac{df}{dx}' },
+            { label: 'Vô cực', latex: '\\infty', preview: '\\infty' }
           ]
         },
         {
-          name: 'Lượng giác & Ký hiệu Hy Lạp',
+          id: 'relations',
+          name: 'Quan hệ & Hình học',
           items: [
-            { label: 'Sin & Cos', latex: '\\sin^2(x) + \\cos^2(x) = 1', preview: 'sin²(x)+cos²(x)=1' },
-            { label: 'Góc Alpha', latex: '\\alpha', preview: 'α' },
-            { label: 'Góc Beta', latex: '\\beta', preview: 'β' },
-            { label: 'Số Pi', latex: '\\pi', preview: 'π' },
-            { label: 'Góc Theta', latex: '\\theta', preview: 'θ' },
-            { label: 'Delta', latex: '\\Delta', preview: 'Δ' }
+            { label: 'Nhỏ hơn hoặc bằng', latex: '\\le', preview: '\\le' },
+            { label: 'Lớn hơn hoặc bằng', latex: '\\ge', preview: '\\ge' },
+            { label: 'Khác', latex: '\\neq', preview: '\\neq' },
+            { label: 'Xấp xỉ', latex: '\\approx', preview: '\\approx' },
+            { label: 'Thuộc tập hợp', latex: '\\in', preview: '\\in' },
+            { label: 'Tập hợp con', latex: '\\subset', preview: '\\subset' },
+            { label: 'Hợp tập hợp', latex: '\\cup', preview: '\\cup' },
+            { label: 'Giao tập hợp', latex: '\\cap', preview: '\\cap' },
+            { label: 'Góc', latex: '\\angle', preview: '\\angle' },
+            { label: 'Vuông góc', latex: '\\perp', preview: '\\perp' },
+            { label: 'Vector', latex: '\\vec{v}', preview: '\\vec{v}' }
           ]
         },
         {
-          name: 'Quan hệ so sánh & Tập hợp',
+          id: 'matrix',
+          name: 'Ma trận',
           items: [
-            { label: 'Nhỏ hơn hoặc bằng', latex: '\\le', preview: '≤' },
-            { label: 'Lớn hơn hoặc bằng', latex: '\\ge', preview: '≥' },
-            { label: 'Khác', latex: '\\neq', preview: '≠' },
-            { label: 'Xấp xỉ', latex: '\\approx', preview: '≈' },
-            { label: 'Thuộc tập hợp', latex: '\\in', preview: '∈' },
-            { label: 'Tập hợp con', latex: '\\subset', preview: '⊂' },
-            { label: 'Hợp & Giao', latex: 'A \\cup B \\cap C', preview: 'A ∪ B ∩ C' }
-          ]
-        },
-        {
-          name: 'Hóa học & Phương trình phản ứng',
-          items: [
-            { label: 'Mũi tên phản ứng', latex: '\\rightarrow', preview: '→' },
-            { label: 'Phản ứng thuận nghịch', latex: '\\rightleftharpoons', preview: '⇌' },
-            { label: 'Nhiệt lượng Delta H', latex: '\\Delta H < 0', preview: 'ΔH < 0' },
-            { label: 'Kết tủa (mũi tên xuống)', latex: '\\downarrow', preview: '↓' },
-            { label: 'Bay hơi (mũi tên lên)', latex: '\\uparrow', preview: '↑' }
+            { label: 'Ma trận 2×2', latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}', preview: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}' },
+            { label: 'Ma trận 3×3', latex: '\\begin{pmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{pmatrix}', preview: '\\begin{pmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{pmatrix}' }
           ]
         }
       ];
 
-      const modalHtml = `
-        <div class="space-y-5 text-xs text-slate-700 dark:text-slate-300">
-          <p class="text-slate-500">
-            Chọn công thức toán học/khoa học để chèn vào vị trí con trỏ hiện tại trong trình soạn thảo:
-          </p>
+      const renderKaTeXPreviewHtml = (code) => {
+        if (!code || !code.trim()) {
+          return '<span class="text-slate-400 dark:text-slate-500 italic text-xs">Xem trước công thức sẽ hiển thị tại đây...</span>';
+        }
+        if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+          try {
+            return katex.renderToString(code.trim(), { displayMode: true, throwOnError: false });
+          } catch (e) {
+            return `<span class="text-rose-400 font-mono text-xs">${UI.escapeHtml(e.message)}</span>`;
+          }
+        }
+        return `<span class="font-mono text-xs text-slate-300 font-semibold">${UI.escapeHtml(code)}</span>`;
+      };
 
-          <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+      const renderSymbolPreview = (ltx) => {
+        if (typeof katex !== 'undefined' && typeof katex.renderToString === 'function') {
+          try {
+            return katex.renderToString(ltx, { displayMode: false, throwOnError: false });
+          } catch {
+            return UI.escapeHtml(ltx);
+          }
+        }
+        return UI.escapeHtml(ltx);
+      };
+
+      const modalHtml = `
+        <div class="space-y-4 text-xs text-slate-700 dark:text-slate-300 select-none">
+          <!-- Top Category Filter Tabs -->
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200 dark:border-slate-800 text-[11px]" id="math-palette-tabs">
+            <button type="button" class="math-tab-btn active px-3 py-1.5 rounded-lg font-bold bg-indigo-600 text-white shadow-2xs cursor-pointer shrink-0" data-tab="all">
+              Tất cả ký hiệu
+            </button>
+            <button type="button" class="math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0" data-tab="basic">
+              Cơ bản
+            </button>
+            <button type="button" class="math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0" data-tab="greek">
+              Hy Lạp
+            </button>
+            <button type="button" class="math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0" data-tab="calculus">
+              Giải tích
+            </button>
+            <button type="button" class="math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0" data-tab="relations">
+              Quan hệ & Hình học
+            </button>
+            <button type="button" class="math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0" data-tab="matrix">
+              Ma trận
+            </button>
+          </div>
+
+          <!-- Symbols Scroll Area -->
+          <div class="space-y-4 max-h-[38vh] overflow-y-auto pr-1" id="math-palette-grid-container">
             ${mathCategories.map(cat => `
-              <div>
-                <h4 class="font-bold text-xs uppercase tracking-wider text-indigo-700 dark:text-indigo-400 mb-2 pb-1 border-b border-slate-100 dark:border-slate-800">
-                  ${cat.name}
-                </h4>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div class="math-category-group space-y-2" data-cat-id="${cat.id}">
+                <div class="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                  <h4 class="font-bold text-[11px] uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
+                    ${cat.name}
+                  </h4>
+                  <span class="text-[10px] text-slate-400">${cat.items.length} ký hiệu</span>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                   ${cat.items.map(item => `
                     <button
                       type="button"
-                      class="latex-insert-btn p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition text-left flex flex-col justify-between gap-1 group shadow-2xs"
+                      class="latex-symbol-card p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700/80 hover:border-indigo-300 dark:hover:border-indigo-600 transition text-left flex flex-col justify-between gap-1 group shadow-2xs cursor-pointer"
                       data-latex="${UI.escapeHtml(item.latex)}"
+                      data-label="${UI.escapeHtml(item.label)}"
+                      title="Bấm để chọn, nhấp đúp để chèn ngay"
                     >
                       <div class="flex items-center justify-between w-full">
-                        <span class="font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600">${item.label}</span>
-                        <span class="text-[10px] font-mono text-slate-400 font-bold">$...$</span>
+                        <span class="font-semibold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 text-[11px] truncate">${item.label}</span>
+                        <span class="text-[9px] font-mono text-slate-400 font-bold">$</span>
                       </div>
-                      <div class="font-mono text-xs font-semibold text-indigo-600 dark:text-indigo-300 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200/60 dark:border-slate-700/60 truncate">
-                        ${UI.escapeHtml(item.preview)}
+                      <div class="min-h-[28px] flex items-center justify-center p-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 overflow-hidden text-center">
+                        <span class="font-mono text-xs text-indigo-600 dark:text-indigo-300 truncate">${renderSymbolPreview(item.preview)}</span>
                       </div>
                     </button>
                   `).join('')}
@@ -1517,42 +1580,171 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             `).join('')}
           </div>
 
-          <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs text-slate-500 flex items-center justify-between">
-            <span>Bạn cũng có thể tự gõ công thức bất kỳ giữa cặp dấu <code>$...$</code></span>
-            <span class="font-mono text-indigo-600 font-bold">$E = mc^2$</span>
+          <!-- Live KaTeX Preview & Custom LaTeX Input Section -->
+          <div class="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5 shadow-lg select-text">
+            <div class="flex items-center justify-between text-xs text-slate-300">
+              <span class="font-bold flex items-center gap-1.5 text-emerald-400">
+                <span class="material-symbols-outlined text-[16px]">visibility</span>
+                <span>Live KaTeX Preview (Xem trước thời gian thực)</span>
+              </span>
+              <span class="text-[10px] text-slate-400 font-mono">Công thức được kẹp giữa cặp $...$</span>
+            </div>
+
+            <!-- Crisp Live KaTeX Rendering Box -->
+            <div id="palette-katex-live-display" class="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 min-h-[64px] flex items-center justify-center text-emerald-300 text-sm overflow-x-auto shadow-inner text-center">
+              ${renderKaTeXPreviewHtml('\\frac{a}{b}')}
+            </div>
+
+            <!-- Editable LaTeX Code Field -->
+            <div class="space-y-1">
+              <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Mã nguồn LaTeX</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="text"
+                  id="palette-latex-input"
+                  class="flex-1 px-3 py-2 rounded-xl font-mono text-xs border border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500"
+                  value="\\frac{a}{b}"
+                  placeholder="Gõ hoặc chọn ký hiệu LaTeX..."
+                />
+                <button
+                  type="button"
+                  id="palette-btn-clear"
+                  class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-semibold border border-slate-700 transition"
+                  title="Xóa trắng mã"
+                >
+                  <span class="material-symbols-outlined text-[15px]">backspace</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       `;
 
       UI.openModal({
-        title: 'Bảng Ký hiệu & Công thức Toán học LaTeX',
+        title: `
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-serif italic font-bold flex items-center justify-center text-sm shadow-2xs">f(x)</span>
+            <span class="font-bold text-slate-900 dark:text-white text-sm">Bảng Ký hiệu & Soạn thảo Công thức Toán học KaTeX</span>
+          </div>
+        `,
         bodyHtml: modalHtml,
         size: 'lg',
         footerHtml: `
-          <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onclick="UI.closeModal()">
-            Đóng
-          </button>
+          <div class="flex items-center justify-between w-full">
+            <span class="text-[11px] text-slate-500 hidden sm:inline">Hệ thống hỗ trợ cú pháp KaTeX chuẩn quốc tế.</span>
+            <div class="flex items-center gap-2">
+              <button type="button" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer" onclick="UI.closeModal()">
+                Hủy bỏ
+              </button>
+              <button type="button" id="palette-btn-insert-now" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer">
+                <span class="material-symbols-outlined text-[16px]">add_circle</span>
+                <span>Chèn công thức</span>
+              </button>
+            </div>
+          </div>
         `
       });
 
-      document.querySelectorAll('.latex-insert-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const ltx = btn.dataset.latex;
-          if (textarea && ltx) {
-            const start = textarea.selectionStart || 0;
-            const end = textarea.selectionEnd || 0;
-            const val = textarea.value;
-            const insertText = `$${ltx}$`;
-            textarea.value = val.substring(0, start) + insertText + val.substring(end);
-            const newPos = start + insertText.length;
-            textarea.focus();
-            textarea.setSelectionRange(newPos, newPos);
-            renderEditorPreview();
-            saveEditorState();
-            UI.closeModal();
-            UI.showToast(`Đã chèn công thức: ${insertText}`, 'success');
+      const latexInput = document.getElementById('palette-latex-input');
+      const liveDisplay = document.getElementById('palette-katex-live-display');
+      const insertBtn = document.getElementById('palette-btn-insert-now');
+      const clearBtn = document.getElementById('palette-btn-clear');
+
+      const refreshPreview = () => {
+        const val = latexInput ? latexInput.value : '';
+        if (liveDisplay) {
+          liveDisplay.innerHTML = renderKaTeXPreviewHtml(val);
+        }
+      };
+
+      if (latexInput) {
+        latexInput.addEventListener('input', refreshPreview);
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          if (latexInput) {
+            latexInput.value = '';
+            latexInput.focus();
+            refreshPreview();
           }
         });
+      }
+
+      // Filter tabs switching
+      document.querySelectorAll('#math-palette-tabs .math-tab-btn').forEach(tBtn => {
+        tBtn.addEventListener('click', () => {
+          document.querySelectorAll('#math-palette-tabs .math-tab-btn').forEach(b => {
+            b.className = 'math-tab-btn px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0';
+          });
+          tBtn.className = 'math-tab-btn active px-3 py-1.5 rounded-lg font-bold bg-indigo-600 text-white shadow-2xs cursor-pointer shrink-0';
+          const tab = tBtn.dataset.tab;
+          document.querySelectorAll('#math-palette-grid-container .math-category-group').forEach(grp => {
+            if (tab === 'all' || grp.dataset.catId === tab) {
+              grp.classList.remove('hidden');
+            } else {
+              grp.classList.add('hidden');
+            }
+          });
+        });
+      });
+
+      const performInsert = (latexVal) => {
+        const codeToInsert = (latexVal !== undefined ? latexVal : (latexInput?.value || '')).trim();
+        if (!codeToInsert) {
+          UI.showToast('Vui lòng chọn hoặc nhập công thức cần chèn.', 'warning');
+          return;
+        }
+        const insertText = `$${codeToInsert}$`;
+        if (targetEl) {
+          const start = targetEl.selectionStart || 0;
+          const end = targetEl.selectionEnd || 0;
+          const val = targetEl.value || '';
+          targetEl.value = val.substring(0, start) + insertText + val.substring(end);
+          const newPos = start + insertText.length;
+          targetEl.focus();
+          if (typeof targetEl.setSelectionRange === 'function') {
+            targetEl.setSelectionRange(newPos, newPos);
+          }
+          targetEl.dispatchEvent(new Event('input', { bubbles: true }));
+          targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (typeof onInsert === 'function') {
+          onInsert(insertText);
+        }
+        UI.closeModal();
+        UI.showToast(`Đã chèn công thức toán học: ${insertText}`, 'success');
+      };
+
+      // Click on symbol card
+      document.querySelectorAll('.latex-symbol-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const ltx = card.dataset.latex;
+          if (latexInput) {
+            latexInput.value = ltx;
+            refreshPreview();
+          }
+        });
+        card.addEventListener('dblclick', () => {
+          const ltx = card.dataset.latex;
+          performInsert(ltx);
+        });
+      });
+
+      if (insertBtn) {
+        insertBtn.addEventListener('click', () => performInsert());
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.InstructorExamsView = window.InstructorExamsView || InstructorView;
+      window.InstructorExamsView.openVisualMathPalette = InstructorView.openVisualMathPalette;
+    }
+
+    // Bind "Chèn công thức" (LaTeX Formula Picker Modal) on top editor toolbar
+    document.getElementById('editor-btn-latex')?.addEventListener('click', () => {
+      InstructorView.openVisualMathPalette(textarea, () => {
+        renderEditorPreview();
+        saveEditorState();
       });
     });
 
@@ -4894,7 +5086,13 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               </div>
 
               <div>
-                <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nội dung câu hỏi</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block font-semibold text-slate-700 dark:text-slate-300">Nội dung câu hỏi</label>
+                  <button type="button" class="btn-math-fx inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs cursor-pointer" data-target="new-q-stem" title="Chèn công thức toán học f(x)">
+                    <span class="font-serif italic font-bold">f(x)</span>
+                    <span>Công thức</span>
+                  </button>
+                </div>
                 <textarea id="new-q-stem" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary" placeholder="Nhập câu hỏi..."></textarea>
               </div>
 
@@ -4917,19 +5115,31 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
                 <label class="block font-semibold text-slate-700 dark:text-slate-300">Các lựa chọn (Tích chọn đáp án đúng):</label>
                 <div class="flex items-center gap-2">
                   <input type="radio" name="new-q-correct" value="0" checked class="text-primary" />
-                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án A" />
+                  <input type="text" id="new-q-choice-0" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án A" />
+                  <button type="button" class="btn-math-fx px-2 py-1 rounded text-[11px] font-serif italic font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs shrink-0 cursor-pointer" data-target="new-q-choice-0" title="Chèn công thức toán vào Phương án A">
+                    f(x)
+                  </button>
                 </div>
                 <div class="flex items-center gap-2">
                   <input type="radio" name="new-q-correct" value="1" class="text-primary" />
-                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án B" />
+                  <input type="text" id="new-q-choice-1" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án B" />
+                  <button type="button" class="btn-math-fx px-2 py-1 rounded text-[11px] font-serif italic font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs shrink-0 cursor-pointer" data-target="new-q-choice-1" title="Chèn công thức toán vào Phương án B">
+                    f(x)
+                  </button>
                 </div>
                 <div class="flex items-center gap-2">
                   <input type="radio" name="new-q-correct" value="2" class="text-primary" />
-                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án C" />
+                  <input type="text" id="new-q-choice-2" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án C" />
+                  <button type="button" class="btn-math-fx px-2 py-1 rounded text-[11px] font-serif italic font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs shrink-0 cursor-pointer" data-target="new-q-choice-2" title="Chèn công thức toán vào Phương án C">
+                    f(x)
+                  </button>
                 </div>
                 <div class="flex items-center gap-2">
                   <input type="radio" name="new-q-correct" value="3" class="text-primary" />
-                  <input type="text" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án D" />
+                  <input type="text" id="new-q-choice-3" class="new-q-choice-text flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Phương án D" />
+                  <button type="button" class="btn-math-fx px-2 py-1 rounded text-[11px] font-serif italic font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs shrink-0 cursor-pointer" data-target="new-q-choice-3" title="Chèn công thức toán vào Phương án D">
+                    f(x)
+                  </button>
                 </div>
               </div>
 
@@ -4939,7 +5149,13 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
               </div>
 
               <div>
-                <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Giải thích đáp án</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block font-semibold text-slate-700 dark:text-slate-300">Giải thích đáp án</label>
+                  <button type="button" class="btn-math-fx inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shadow-2xs cursor-pointer" data-target="new-q-explanation" title="Chèn công thức toán vào Lời giải thích">
+                    <span class="font-serif italic font-bold">f(x)</span>
+                    <span>Công thức</span>
+                  </button>
+                </div>
                 <input type="text" id="new-q-explanation" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs" placeholder="Giải thích chi tiết..." />
               </div>
 
@@ -5240,6 +5456,17 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         addModal?.classList.add('hidden');
       });
 
+      // Bind f(x) Math buttons inside Quick Add Question Modal
+      addModal?.querySelectorAll('.btn-math-fx').forEach(btn => {
+        btn.onclick = () => {
+          const targetId = btn.dataset.target;
+          const targetEl = document.getElementById(targetId);
+          if (targetEl && typeof InstructorView.openVisualMathPalette === 'function') {
+            InstructorView.openVisualMathPalette(targetEl);
+          }
+        };
+      });
+
       const qTypeSelect = document.getElementById('new-q-type');
       const choicesSection = document.getElementById('new-q-choices-section');
       const acceptedAnswersSection = document.getElementById('new-q-accepted-answers-section');
@@ -5356,4 +5583,5 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
   };
 
   window.InstructorView = InstructorView;
+  window.InstructorExamsView = InstructorView;
 })();

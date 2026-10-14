@@ -1139,7 +1139,8 @@ class ApiClient {
   }
 
   static async getAdminChangeRequests(status = 'ALL') {
-    return await ApiClient.request(`/admin/change-requests?status=${encodeURIComponent(status)}`);
+    const query = status && status !== 'ALL' ? `?status=${encodeURIComponent(status)}` : '';
+    return await ApiClient.request(`/admin/change-requests${query}`);
   }
 
   static async getAdminChangeRequest(requestId) {
@@ -1325,17 +1326,6 @@ class ApiClient {
     });
   }
 
-  static async getAdminChangeRequests(status = 'ALL') {
-    const query = status && status !== 'ALL' ? `?status=${status}` : '';
-    return await ApiClient.request(`/admin/change-requests${query}`);
-  }
-
-  static async reviewAdminChangeRequest(requestId, data) {
-    return await ApiClient.request(`/admin/change-requests/${requestId}/review`, {
-      method: 'POST',
-      body: data
-    });
-  }
 
   static async getAdminTelemetry() {
     try {

@@ -215,7 +215,7 @@ class ExamStore {
       (Array.isArray(draft.questions) && draft.questions.length > 0) ||
       (draft.rawText && draft.rawText.trim().length > 0)
     );
-    if (step === 2) return hasContent;
+    if (step === 2) return Boolean(draft.methodSelected || draft.courseId || hasContent);
     const questionsReady = hasContent && Array.isArray(draft.questions) && draft.questions.length > 0;
     if (step === 3) return questionsReady;
     return questionsReady && Boolean(draft.matrixConfirmed);

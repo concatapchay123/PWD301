@@ -43,13 +43,13 @@ from pwd301.services.enrollment_service import (
     enroll_student,
     get_course_enrollments,
     get_course_prerequisites,
-    leave_course,
     re_enroll_student,
     remove_course_prerequisite,
 )
 from pwd301.services.exceptions import (
     ConflictError,
     CourseValidationError,
+    ForbiddenError,
     ResourceNotFoundError,
     UnauthorizedError,
     ValidationError,
@@ -191,15 +191,22 @@ def update_course_api(course_id: str) -> tuple[Response, int] | Response:
     course = update_course(actor, course_id, payload)
     if isinstance(course, CourseChangeRequest):
         target_course = _resolve_course(course_id, session=db.session)
+        is_draft = course.status == "DRAFT"
+        msg = (
+            "Khóa học đã ban hành. Thay đổi thông tin khóa học đã được lưu vào bản nháp làm việc."
+            if is_draft
+            else "Yêu cầu chỉnh sửa thông tin khóa học đã được gửi tới Quản trị viên để xét duyệt."
+        )
         return jsonify(
             {
-                "status": "pending_approval",
-                "pending_approval": True,
-                "message": "Course metadata changes queued for review.",
+                "status": "draft" if is_draft else "pending_approval",
+                "pending_approval": not is_draft,
+                "is_draft": is_draft,
+                "message": msg,
                 "change_request_id": course.id,
                 "course": _serialize_course(target_course) if target_course else None,
             }
-        ), 202
+        ), (200 if is_draft else 202)
     return jsonify(_serialize_course(course)), 200
 
 
@@ -320,28 +327,11 @@ def enroll_course_api(course_id: str) -> tuple[Response, int] | Response:
 @api_course_bp.route("/<course_id>/leave", methods=["POST"])
 @jwt_required
 def leave_course_api(course_id: str) -> tuple[Response, int] | Response:
-    """Withdraw authenticated student from a course per 05_ENROLLMENT_PROGRESS_API.md."""
-    actor = get_authenticated_actor()
-    if actor is None:
-        return (
-            jsonify(
-                {
-                    "error": {
-                        "code": "UNAUTHORIZED",
-                        "message": "Authentication required to leave course.",
-                    }
-                }
-            ),
-            401,
-        )
-
-    payload = request.get_json(silent=True) or {}
-    reason = payload.get("reason")
-    if reason is not None and not isinstance(reason, str):
-        reason = str(reason)
-
-    enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
-    return jsonify(_serialize_enrollment_api(enrollment)), 200
+    """Withdraw authenticated student from a course — PERMANENTLY DISABLED (ENROLLMENT_LIFETIME_GUARANTEE)."""
+    raise ForbiddenError(
+        "Chức năng rời khóa học đã bị vô hiệu hóa. "
+        "Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời."
+    )
 
 
 @api_course_bp.route("/<course_id>/re-enroll", methods=["POST"])
@@ -852,3 +842,136 @@ def reorder_course_lessons_api(course_id: str) -> tuple[Response, int] | Respons
         ),
         200,
     )
+
+
+@api_course_bp.route("/<course_id>/changeset/status", methods=["GET"])
+@jwt_required
+@instructor_required
+def get_course_changeset_status_api(course_id: str) -> tuple[Response, int] | Response:
+    """Get latest consolidated course changeset status via REST API."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import get_course_changeset_status
+
+    status_data = get_course_changeset_status(actor, course_id, session=db.session)
+    return jsonify(status_data), 200
+
+
+@api_course_bp.route("/<course_id>/changeset/submit", methods=["POST"])
+@jwt_required
+@instructor_required
+def submit_course_changeset_api(course_id: str) -> tuple[Response, int] | Response:
+    """Submit consolidated course changeset for admin review via REST API."""
+    actor = require_authenticated_actor()
+    payload = request.get_json(silent=True) or {}
+    from pwd301.services.lesson_service import submit_course_changeset
+
+    req = submit_course_changeset(actor, course_id, payload, session=db.session)
+    db.session.commit()
+    return (
+        jsonify(
+            {
+                "status": "pending_approval",
+                "pending_approval": True,
+                "change_request_id": req.id,
+                "message": "Đợt cập nhật chương trình học đã được gửi tới Quản trị viên để xét duyệt.",
+            }
+        ),
+        202,
+    )
+
+
+@api_course_bp.route("/<course_id>/changeset/discard", methods=["POST"])
+@jwt_required
+@instructor_required
+def discard_course_changeset_api(course_id: str) -> tuple[Response, int] | Response:
+    """Discard active working draft changeset via REST API."""
+    actor = require_authenticated_actor()
+    from pwd301.services.lesson_service import discard_course_changeset
+
+    res = discard_course_changeset(actor, course_id, session=db.session)
+    db.session.commit()
+    return jsonify(res), 200
+
+
+@api_course_bp.route("/<course_id>/lessons/<lesson_id>/progress", methods=["POST"])
+@jwt_required
+def record_course_lesson_progress_api(
+    course_id: str, lesson_id: str
+) -> tuple[Response, int] | Response:
+    """Record learning engagement heartbeat and evaluate completion via REST API (JWT)."""
+    actor = get_authenticated_actor()
+    if actor is None or not actor.is_active:
+        raise UnauthorizedError("Authentication required to record lesson progress.")
+
+    course = _resolve_course(course_id, session=db.session)
+    if course is None:
+        raise ResourceNotFoundError("Course not found.")
+
+    from pwd301.services.lesson_service import _resolve_lesson, record_lesson_progress
+    from pwd301.services.playback_service import reconcile_lesson_progress
+
+    lesson = _resolve_lesson(lesson_id, session=db.session)
+    if lesson is None or lesson.course_id != course.id:
+        raise ResourceNotFoundError("Lesson does not belong to this course.")
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise ValidationError("Invalid JSON payload.")
+
+    is_completed_flag = bool(payload.get("completed") or payload.get("is_completed"))
+    seconds_increment = payload.get("seconds_increment")
+    if seconds_increment is None:
+        seconds_increment = payload.get("time_spent_seconds", payload.get("seconds_spent", 0))
+
+    view_fraction = payload.get("view_fraction")
+    if view_fraction is None:
+        view_fraction = 1.0 if is_completed_flag else 0.0
+
+    try:
+        sec_int = int(str(seconds_increment or 0))
+        vf_float = float(
+            view_fraction if view_fraction is not None else (1.0 if is_completed_flag else 0.0)
+        )
+    except (ValueError, TypeError):
+        raise ValidationError(
+            "seconds_increment must be an integer and view_fraction must be a float."
+        ) from None
+
+    min_sec = 0 if (is_completed_flag or vf_float >= 0.95) else 1
+    bounded_sec = max(min_sec, min(sec_int, 60))
+    bounded_vf = max(0.0, min(vf_float, 1.0))
+    client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
+
+    if bounded_sec == 0:
+        progress = reconcile_lesson_progress(
+            actor, lesson.id, bounded_vf, session=db.session, is_completed=is_completed_flag
+        )
+    else:
+        progress = record_lesson_progress(
+            actor=actor,
+            lesson_id=lesson.id,
+            seconds_increment=bounded_sec,
+            view_fraction=bounded_vf,
+            client_event_id=client_event_id,
+            enforce_wall_clock=True,
+            is_completed=is_completed_flag,
+            session=db.session,
+        )
+
+    db.session.commit()
+
+    pct = 0.0
+    ep = getattr(progress, "period", None) or getattr(progress, "enrollment_period", None)
+    if ep and getattr(ep, "enrollment", None):
+        pct = float(ep.enrollment.current_progress_percent or 0.0)
+
+    data = {
+        "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
+        "seconds_spent": progress.seconds_spent,
+        "max_view_fraction": float(progress.max_view_fraction),
+        "is_completed": progress.completed_at is not None,
+        "completed": progress.completed_at is not None,
+        "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+        "current_progress_percent": pct,
+    }
+    return jsonify(data), 200

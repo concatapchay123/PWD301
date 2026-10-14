@@ -431,11 +431,11 @@ class AdminView {
               <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>Hệ thống đang hoạt động</span>
             </div>
+            ${(adminSubRole === 'ADMIN_PRIMARY' || adminSubRole === 'ADMIN_SYSTEM_MONITORING') ? `
             <button type="button" id="btn-open-broadcast" class="px-3.5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5" onclick="AdminView.openBroadcastModal()">
               <span class="material-symbols-outlined text-[18px]">campaign</span>
               <span>Phát thông báo</span>
             </button>
-            ${(adminSubRole === 'ADMIN_PRIMARY' || adminSubRole === 'ADMIN_SYSTEM_MONITORING') ? `
             <a href="#/admin/operations" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[18px]">monitoring</span>
               <span>Vận Hành</span>
@@ -1397,6 +1397,10 @@ class AdminView {
   }
 
   static openBroadcastModal() {
+    const user = window.app?.currentUser || ApiClient.getStoredUser?.() || {};
+    const adminSubRole = user.admin_sub_role || user.sub_role || 'ADMIN_PRIMARY';
+    const isSystemMonitoringOnly = adminSubRole === 'ADMIN_SYSTEM_MONITORING';
+
     const body = `
       <div class="space-y-4 text-xs">
         <div class="p-3.5 rounded-xl bg-primary/10 text-primary border border-primary/20 text-xs leading-relaxed">
@@ -1420,11 +1424,14 @@ class AdminView {
 
         <div class="space-y-1">
           <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Phân loại thông báo</label>
-          <select id="broadcast-category" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary">
-            <option value="SYSTEM">Hệ thống (SYSTEM)</option>
+          <select id="broadcast-category" ${isSystemMonitoringOnly ? 'disabled' : ''} class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs outline-none focus:border-primary disabled:opacity-75 disabled:cursor-not-allowed">
+            <option value="SYSTEM" selected>Hệ thống (SYSTEM)</option>
+            ${!isSystemMonitoringOnly ? `
             <option value="COURSE">Khóa học / Học vụ (COURSE)</option>
             <option value="ASSESSMENT">Khảo thí (ASSESSMENT)</option>
+            ` : ''}
           </select>
+          ${isSystemMonitoringOnly ? '<p class="text-[10px] text-slate-400">Tài khoản ADMIN_SYSTEM_MONITORING chỉ được phát thông báo phân loại SYSTEM.</p>' : ''}
         </div>
 
         <div class="space-y-1">
@@ -1456,7 +1463,7 @@ class AdminView {
       const title = document.getElementById('broadcast-title').value.trim();
       const roleVal = document.getElementById('broadcast-role').value;
       const targetRole = roleVal === 'ALL' ? null : roleVal;
-      const category = document.getElementById('broadcast-category').value;
+      const category = isSystemMonitoringOnly ? 'SYSTEM' : document.getElementById('broadcast-category').value;
       const bodyText = document.getElementById('broadcast-body').value.trim();
 
       if (!title) {
@@ -2214,8 +2221,31 @@ class AdminView {
 
     const chapterTitle = r.learning_unit_title || orig.learning_unit_title || prop.learning_unit_title;
 
+    const thumbUrl = prop.thumbnail_url || (prop.course_metadata && prop.course_metadata.thumbnail_url) || orig.thumbnail_url || r.thumbnail_url || (r.course_id ? `/api/courses/${r.course_id}/thumbnail` : null);
+
     const body = `
       <div class="space-y-5 text-xs">
+        ${(isCourse || thumbUrl) ? `
+          <div class="relative w-full aspect-video max-h-52 rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center mb-1">
+            ${thumbUrl ? `
+              <img
+                src="${UI.escapeHtml(thumbUrl)}"
+                alt="${UI.escapeHtml(r.target_title || orig.title || 'Ảnh bìa khóa học')}"
+                class="w-full h-full object-cover"
+                onerror="this.parentElement.innerHTML='<div class=\\'flex flex-col items-center justify-center text-slate-400 gap-1.5\\'><span class=\\'material-symbols-outlined text-3xl\\'>image_not_supported</span><span class=\\'text-xs\\'>Không tải được ảnh bìa</span></div>';"
+              />
+            ` : `
+              <div class="flex flex-col items-center justify-center text-slate-400 gap-1.5 p-4 text-center">
+                <span class="material-symbols-outlined text-4xl text-slate-500">image</span>
+                <span class="text-xs font-medium text-slate-400">Khóa học chưa thiết lập ảnh bìa 16:9</span>
+              </div>
+            `}
+            <div class="absolute top-3 right-3">
+              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50/90 text-amber-700 border border-amber-200 shadow-xs backdrop-blur-xs">Ảnh bìa khóa học</span>
+            </div>
+          </div>
+        ` : ''}
+
         <!-- Header Info & Chapter Breadcrumb -->
         <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1.5 min-w-0">
@@ -2888,13 +2918,32 @@ class AdminView {
 
       const bodyHtml = `
         <div class="space-y-4 text-xs">
-          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
-            <div class="flex items-center justify-between">
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+            <!-- 16:9 Thumbnail Cover -->
+            <div class="relative w-full aspect-video max-h-56 rounded-xl overflow-hidden bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center">
+              ${(course.thumbnail_url || course.cover_url) ? `
+                <img
+                  src="${UI.escapeHtml(course.thumbnail_url || course.cover_url)}"
+                  alt="${UI.escapeHtml(course.title)}"
+                  class="w-full h-full object-cover"
+                  onerror="this.parentElement.innerHTML='<div class=\\'flex flex-col items-center justify-center text-slate-400 gap-1.5\\'><span class=\\'material-symbols-outlined text-3xl\\'>image_not_supported</span><span class=\\'text-xs\\'>Không tải được ảnh bìa</span></div>';"
+                />
+              ` : `
+                <div class="flex flex-col items-center justify-center text-slate-400 gap-1.5 p-4 text-center">
+                  <span class="material-symbols-outlined text-4xl text-slate-500">image</span>
+                  <span class="text-xs font-medium text-slate-400">Khóa học chưa thiết lập ảnh bìa 16:9</span>
+                </div>
+              `}
+              <div class="absolute top-3 right-3">
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50/90 text-amber-700 border border-amber-200 shadow-xs backdrop-blur-xs">${course.status === 'SUBMITTED_FOR_REVIEW' ? 'Chờ Duyệt' : UI.escapeHtml(course.status)}</span>
+              </div>
+            </div>
+
+            <div class="flex items-start justify-between gap-3 pt-1">
               <div>
                 <span class="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-primary-subtle text-primary border border-primary/20">${UI.escapeHtml(course.course_code)}</span>
                 <h4 class="font-bold text-base text-slate-900 dark:text-white mt-1">${UI.escapeHtml(course.title)}</h4>
               </div>
-                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">${course.status === 'SUBMITTED_FOR_REVIEW' ? 'Chờ Duyệt' : UI.escapeHtml(course.status)}</span>
             </div>
             <p class="text-slate-500 dark:text-slate-400 text-xs">${UI.escapeHtml(course.description || 'Chưa có mô tả khóa học.')}</p>
             <div class="pt-2 border-t border-slate-200 dark:border-slate-700 flex flex-wrap gap-4 text-slate-600 dark:text-slate-300 font-medium">
@@ -3553,11 +3602,24 @@ class AdminView {
             </p>
 
             <div class="space-y-1">
+              <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Tìm kiếm khóa học</label>
+              <div class="relative">
+                <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">search</span>
+                <input
+                  type="text"
+                  id="modal-reassign-search"
+                  placeholder="Nhập mã môn, tên môn hoặc tên giảng viên..."
+                  class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-1">
               <label class="block font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 text-[10px]">Khóa học cần chuyển</label>
               <select id="modal-reassign-course" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs">
                 ${courses.map(c => `
                   <option value="${c.course_id}" ${c.course_id === preselectedCourseId ? 'selected' : ''}>
-                    [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)}
+                    [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)} — GV: ${UI.escapeHtml(c.instructor_name || c.owner_instructor_name || 'N/A')}
                   </option>
                 `).join('')}
               </select>
@@ -3592,6 +3654,29 @@ class AdminView {
           footerHtml: footer,
           size: 'md'
         });
+
+        const searchInput = document.getElementById('modal-reassign-search');
+        const courseSelect = document.getElementById('modal-reassign-course');
+        if (searchInput && courseSelect) {
+          searchInput.oninput = () => {
+            const query = searchInput.value.trim().toLowerCase();
+            const filtered = courses.filter(c => {
+              const code = (c.course_code || '').toLowerCase();
+              const title = (c.title || '').toLowerCase();
+              const ins = (c.instructor_name || c.owner_instructor_name || '').toLowerCase();
+              return code.includes(query) || title.includes(query) || ins.includes(query);
+            });
+            if (filtered.length === 0) {
+              courseSelect.innerHTML = '<option value="" disabled selected>Không tìm thấy khóa học phù hợp</option>';
+            } else {
+              courseSelect.innerHTML = filtered.map(c => `
+                <option value="${c.course_id}">
+                  [${UI.escapeHtml(c.course_code)}] ${UI.escapeHtml(c.title)} — GV: ${UI.escapeHtml(c.instructor_name || c.owner_instructor_name || 'N/A')}
+                </option>
+              `).join('');
+            }
+          };
+        }
 
         document.getElementById('submit-reassign-btn').onclick = async () => {
           const courseId = document.getElementById('modal-reassign-course').value;
