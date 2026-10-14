@@ -556,8 +556,8 @@ def test_record_lesson_progress_monotonic_completion(
             "title": "Progress Lesson",
             "markdown_content": "# Content",
             "status": "PUBLISHED",
-            "minimum_completion_seconds": 30,
-            "viewed_fraction_required": 0.8000,
+            "minimum_completion_seconds": 20,
+            "viewed_fraction_required": 0.0,
         },
     )
 
@@ -579,7 +579,7 @@ def test_record_lesson_progress_monotonic_completion(
     enrollment.current_period_id = period.id
     sess.commit()
 
-    # 1. First ping: 15s, 0.5 view fraction -> Not completed yet
+    # 1. First ping: 15s -> Not completed yet (< 20s)
     p1 = record_lesson_progress(
         actor=student_user,
         lesson_id=lesson.id,
@@ -590,7 +590,7 @@ def test_record_lesson_progress_monotonic_completion(
     assert float(p1.max_view_fraction) == 0.50
     assert p1.completed_at is None
 
-    # 2. Second ping: 20s, 0.85 view fraction -> Total 35s >= 30 and 0.85 >= 0.8 -> COMPLETED
+    # 2. Second ping: 20s -> Total 35s >= 20s -> COMPLETED
     p2 = record_lesson_progress(
         actor=student_user,
         lesson_id=lesson.id,
@@ -602,8 +602,8 @@ def test_record_lesson_progress_monotonic_completion(
     assert p2.completed_at is not None
     assert p2.completion_rule_snapshot_json is not None
     snapshot = json.loads(p2.completion_rule_snapshot_json)
-    assert snapshot["minimum_completion_seconds"] == 30
-    assert snapshot["viewed_fraction_required"] == 0.8
+    assert snapshot["minimum_completion_seconds"] == 20
+    assert snapshot["viewed_fraction_required"] == 0.0
 
     # Verify Enrollment cache was updated
     sess.refresh(enrollment)

@@ -121,6 +121,7 @@ from pwd301.services.course_service import (
     get_course_detail,
     list_courses,
     reassign_course_owner,
+    swap_course_owners,
     trash_course,
     update_course,
 )
@@ -405,6 +406,7 @@ __all__ = [
     "get_course_detail",
     "change_course_status",
     "reassign_course_owner",
+    "swap_course_owners",
     "trash_course",
     "list_courses",
     # Lesson Service

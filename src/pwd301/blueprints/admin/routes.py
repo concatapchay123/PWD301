@@ -23,6 +23,7 @@ from pwd301.services.course_service import (
     change_course_status,
     flag_lesson_content,
     reassign_course_owner,
+    swap_course_owners,
     trash_course,
 )
 from pwd301.services.exceptions import (
@@ -664,6 +665,36 @@ def reassign_course(course_id: str) -> tuple[Response, int] | Response:
         reason=reason,
     )
     return jsonify(_serialize_course(course)), 200
+
+
+@admin_bp.route("/courses/swap", methods=["POST"])
+@admin_required
+def swap_courses() -> tuple[Response, int] | Response:
+    """Atomically swap course instructor ownership between two courses (Admin only)."""
+    actor = require_authenticated_actor()
+    if not actor.has_admin_permission("TEACHING_ASSIGNMENT"):
+        raise ForbiddenError("Bạn không có quyền phân công và điều chuyển giảng viên.")
+
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+    course_a_id = payload.get("course_a_id")
+    course_b_id = payload.get("course_b_id")
+    reason = payload.get("reason")
+
+    if not course_a_id or not course_b_id:
+        raise ValidationError("Vui lòng cung cấp đầy đủ thông tin 2 khóa học cần hoán đổi.")
+
+    course_a, course_b = swap_course_owners(
+        admin_actor=actor,
+        course_a_id=course_a_id,
+        course_b_id=course_b_id,
+        reason=reason,
+    )
+    return jsonify({
+        "success": True,
+        "message": f"Đã hoán đổi thành công giảng viên giữa khóa học {course_a.course_code} và {course_b.course_code}.",
+        "course_a": _serialize_course(course_a),
+        "course_b": _serialize_course(course_b),
+    }), 200
 
 
 @admin_bp.route("/courses/<course_id>/publish", methods=["POST"])

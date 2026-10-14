@@ -6,6 +6,7 @@
 - Blueprint can filter lesson/topic/difficulty/type/count; shortage blocks publish.
 - Mandatory/fixed and random pool selection can coexist; question and choice shuffle optional.
 - Timing freezes after publish; structure and points freeze after first Student start.
+- Interactive question authoring (Drag-and-Drop, Fill-in-the-Blank, Matching) supports full live preview test grading with immediate granular visual feedback (green for correct, red for incorrect) and accurate token/slot comparison without false failure bugs.
 
 ## Primary persistence
 `assessments`, `assessment_sections`, `assessment_question_assignments`, `assessment_blueprints`, `assessment_blueprint_rules`, `assessment_question_pool`.

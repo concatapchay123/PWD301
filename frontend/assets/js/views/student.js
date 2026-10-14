@@ -2316,6 +2316,73 @@ class StudentView {
         });
       }
 
+      // Dynamic Re-evaluation of Unlock Status across all Lessons and Exams (TASK-092)
+      const recalculateAllUnlocks = () => {
+        let seqIndex = 0;
+        let prevLessonCompleted = true;
+
+        modules.forEach((mod, mIdx) => {
+          let modCompletedLessons = 0;
+          (mod.lessons || []).forEach((les, lIdx) => {
+            const isDone = Boolean(les.is_completed || les._isCompleted || les.progress?.is_completed);
+            if (isDone) modCompletedLessons++;
+
+            const isUnlocked = canBypassLock || (seqIndex === 0) || prevLessonCompleted;
+            les._isUnlocked = isUnlocked;
+            les._isCompleted = isDone;
+
+            const navItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(les.lesson_id || les.id));
+            if (navItem) {
+              navItem.isUnlocked = isUnlocked;
+              navItem.isCompleted = isDone;
+            }
+
+            prevLessonCompleted = isDone;
+            seqIndex++;
+          });
+
+          mod._completedCount = modCompletedLessons;
+          mod._totalCount = (mod.lessons || []).length;
+          mod._isCompleted = mod._totalCount > 0 && modCompletedLessons === mod._totalCount;
+
+          (mod.assessments || []).forEach((asm) => {
+            const isAsmDone = Boolean((asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed || asm._isCompleted);
+            asm._isCompleted = isAsmDone;
+            const chapterLessonsAllDone = (mod._totalCount === 0) || (modCompletedLessons >= mod._totalCount);
+            asm._isUnlocked = canBypassLock || chapterLessonsAllDone;
+            asm._lockReason = asm._isUnlocked ? '' : `Bạn cần hoàn thành tất cả ${mod._totalCount} bài học trong chương "${mod.title}" trước khi làm bài kiểm tra này.`;
+
+            const navItem = flatNavList.find(i => i.type === 'exam' && String(i.id) === String(asm.assessment_id || asm.id));
+            if (navItem) {
+              navItem.isUnlocked = asm._isUnlocked;
+              navItem.lockReason = asm._lockReason;
+              navItem.isCompleted = isAsmDone;
+            }
+          });
+        });
+
+        // Re-evaluate standalone course-level assessments (Final Test)
+        if (rootExams.length > 0) {
+          const totalCourseLessons = modules.reduce((acc, m) => acc + (m.lessons?.length || 0), 0);
+          const totalCompletedLessons = modules.reduce((acc, m) => acc + (m._completedCount || 0), 0);
+          const allCourseLessonsCompleted = totalCourseLessons === 0 || totalCompletedLessons >= totalCourseLessons;
+
+          rootExams.forEach((asm) => {
+            const isAsmDone = Boolean((asm.attempts_count > 0 && asm.is_attempt_limit_reached) || asm.passed || asm._isCompleted);
+            asm._isCompleted = isAsmDone;
+            asm._isUnlocked = canBypassLock || allCourseLessonsCompleted;
+            asm._lockReason = asm._isUnlocked ? '' : `Bạn cần hoàn thành tất cả các bài học trong toàn bộ khóa học (${totalCompletedLessons}/${totalCourseLessons} bài) trước khi làm Final Test.`;
+
+            const navItem = flatNavList.find(i => i.type === 'exam' && String(i.id) === String(asm.assessment_id || asm.id));
+            if (navItem) {
+              navItem.isUnlocked = asm._isUnlocked;
+              navItem.lockReason = asm._lockReason;
+              navItem.isCompleted = isAsmDone;
+            }
+          });
+        }
+      };
+
       // Initial active item determination (Auto-Resume)
       let activeItem = null;
       if (initialExamId) {
@@ -2414,13 +2481,6 @@ class StudentView {
         if (autoExpanded && expandedResModuleIds.size > 0) break;
       }
 
-      // Overall Progress Calculation (Pure Dynamic Calculation)
-      const allCourseLessons = modules.flatMap(m => m.lessons || []);
-      const effectiveLessons = allCourseLessons.length > 0 ? allCourseLessons : allLessons;
-      const completedCount = effectiveLessons.filter(l => l.is_completed || l._isCompleted || l.progress?.is_completed).length;
-      const totalCount = effectiveLessons.length;
-      const courseProgressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
       // Saved Sidebar Width from LocalStorage
       const savedSidebarWidth = parseInt(localStorage.getItem('pwd301_console_sidebar_width') || '360', 10);
       const initialSidebarWidth = Math.max(260, Math.min(520, savedSidebarWidth));
@@ -2463,13 +2523,6 @@ class StudentView {
 
             <!-- Header Action Controls -->
             <div class="flex items-center gap-2 sm:gap-3">
-              <div class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200 dark:border-emerald-800">
-                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Tiến độ: <strong id="console-progress-percent">${courseProgressPercent}%</strong></span>
-              </div>
-
-              <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block"></div>
-
               <a
                 href="#/student/courses"
                 id="console-exit-btn"
@@ -2670,12 +2723,17 @@ class StudentView {
       // Controller State & Methods
       // -----------------------------------------------------------------------
       let activeProgressTimer = null;
+      let activeDwellTimer = null;
       let activeIframeMessageListener = null;
       let activeIframePollInterval = null;
       let activeCustomPlayerCtrl = null;
       let extraPlayerControllers = [];
 
       const cleanupPreviousLesson = () => {
+        if (activeDwellTimer) {
+          clearInterval(activeDwellTimer);
+          activeDwellTimer = null;
+        }
         extraPlayerControllers.forEach(ctrl => ctrl?.destroy());
         extraPlayerControllers = [];
         if (activeCustomPlayerCtrl && typeof activeCustomPlayerCtrl.destroy === 'function') {
@@ -4491,22 +4549,12 @@ class StudentView {
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    id="cisco-ask-ai-lesson-btn"
-                    class="px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 cursor-pointer"
-                    title="Mở tab Trợ lý AI trao đổi về bài học này"
-                  >
-                    <span class="material-symbols-outlined text-[18px]">smart_toy</span>
-                    <span>Hỏi Trợ lý AI</span>
-                  </button>
-
-                  <button
-                    type="button"
                     id="cisco-complete-btn"
-                    class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer')}"
-                    ${hasVideo && !isCompleted ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : ''}
+                    class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 cursor-default' : (hasVideo ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-80')}"
+                    ${isCompleted ? 'disabled' : (hasVideo ? 'disabled title="Bạn cần xem hết 100% video bài học để hoàn thành"' : 'disabled')}
                   >
-                    <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'check')}</span>
-                    <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đánh dấu hoàn thành')}</span>
+                    <span class="material-symbols-outlined text-[18px]">${isCompleted ? 'check_circle' : (hasVideo ? 'lock' : 'hourglass_top')}</span>
+                    <span>${isCompleted ? 'Đã hoàn thành' : (hasVideo ? 'Cần xem hết video' : 'Đang học (20s)')}</span>
                   </button>
                 </div>
 
@@ -4519,42 +4567,48 @@ class StudentView {
           `;
 
           // Hook Bottom Prev/Next Buttons
-          const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
-          const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
-          const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
+          const renderBottomNav = () => {
+            const curIdx = flatNavList.findIndex(i => i.type === activeItem.type && String(i.id) === String(activeItem.id));
+            const prevItem = curIdx > 0 ? flatNavList[curIdx - 1] : null;
+            const nextItem = curIdx < flatNavList.length - 1 ? flatNavList[curIdx + 1] : null;
 
-          const bottomPrevBox = document.getElementById('cisco-bottom-prev-box');
-          if (bottomPrevBox && prevItem) {
-            bottomPrevBox.innerHTML = `
-              <button type="button" title="${UI.escapeHtml(prevItem.title)}" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-emerald-600 transition-colors flex items-center gap-1.5 cursor-pointer">
-                <span class="material-symbols-outlined text-[16px]">arrow_back</span>
-                <span>Bài phía trước</span>
-              </button>
-            `;
-            bottomPrevBox.firstElementChild.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
-          }
-
-          const bottomNextBox = document.getElementById('cisco-bottom-next-box');
-          if (bottomNextBox && nextItem) {
-            bottomNextBox.innerHTML = `
-              <button type="button" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
-                <span>Bài tiếp theo</span>
-                <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-              </button>
-            `;
-            bottomNextBox.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
-          }
-
-          // Hook Ask AI Button in Lesson Reader
-          const askAiBtn = document.getElementById('cisco-ask-ai-lesson-btn');
-          if (askAiBtn) {
-            askAiBtn.onclick = () => {
-              if (sidebarEl && sidebarEl.classList.contains('hidden')) {
-                sidebarEl.classList.remove('hidden');
+            const bottomPrevBox = document.getElementById('cisco-bottom-prev-box');
+            if (bottomPrevBox) {
+              if (prevItem) {
+                bottomPrevBox.innerHTML = `
+                  <button type="button" title="${UI.escapeHtml(prevItem.title)}" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-emerald-600 transition-colors flex items-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+                    <span>Bài phía trước</span>
+                  </button>
+                `;
+                bottomPrevBox.firstElementChild.onclick = () => window._ciscoSelectItem(prevItem.type, prevItem.id);
+              } else {
+                bottomPrevBox.innerHTML = '';
               }
-              switchSidebarTab('ai');
-            };
-          }
+            }
+
+            const bottomNextBox = document.getElementById('cisco-bottom-next-box');
+            if (bottomNextBox) {
+              if (nextItem) {
+                bottomNextBox.innerHTML = `
+                  <button type="button" title="${UI.escapeHtml(nextItem.title)}" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                    <span>Bài tiếp theo</span>
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                `;
+                bottomNextBox.firstElementChild.onclick = () => window._ciscoSelectItem(nextItem.type, nextItem.id);
+              } else {
+                bottomNextBox.innerHTML = `
+                  <a href="#/student/courses" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                    <span>Hoàn thành khóa học</span>
+                    <span class="material-symbols-outlined text-[16px]">celebration</span>
+                  </a>
+                `;
+              }
+            }
+          };
+
+          renderBottomNav();
 
           // Revision Opt-In Button
           const optInBtn = document.getElementById('btn-opt-in-revision');
@@ -4579,10 +4633,39 @@ class StudentView {
             };
           }
 
-
           // Mark Lesson Completed Controller
           const completeBtn = document.getElementById('cisco-complete-btn');
+
+          // Enforce 20s Minimum Dwell Timer for non-video lessons (TASK-092 & Invariant 31)
+          if (!isCompleted && !hasVideo) {
+            let dwellRemaining = 20;
+            if (activeDwellTimer) {
+              clearInterval(activeDwellTimer);
+              activeDwellTimer = null;
+            }
+            activeDwellTimer = setInterval(() => {
+              dwellRemaining--;
+              if (dwellRemaining > 0) {
+                if (completeBtn && !isCompleted) {
+                  completeBtn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span> <span>Đang học (${dwellRemaining}s)</span>`;
+                }
+              } else {
+                clearInterval(activeDwellTimer);
+                activeDwellTimer = null;
+                if (completeBtn && !isCompleted) {
+                  completeBtn.disabled = false;
+                  completeBtn.className = 'px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm cursor-pointer';
+                  completeBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> <span>Đánh dấu hoàn thành</span>';
+                }
+              }
+            }, 1000);
+          }
+
           const setLessonCompleted = () => {
+            if (activeDwellTimer) {
+              clearInterval(activeDwellTimer);
+              activeDwellTimer = null;
+            }
             isCompleted = true;
             activeItem.isCompleted = true;
             if (activeItem.data) {
@@ -4595,58 +4678,10 @@ class StudentView {
               targetLes._isCompleted = true;
             }
 
-            // Recalculate unlocking of subsequent items
-            let prevDone = true;
-            flatNavList.forEach(item => {
-              if (item.type === 'lesson') {
-                if (String(item.id) === String(activeItem.id)) {
-                  item.isCompleted = true;
-                  if (item.data) {
-                    item.data.is_completed = true;
-                    item.data._isCompleted = true;
-                  }
-                }
-                item.isUnlocked = isPreview || prevDone;
-                prevDone = item.isCompleted;
-              }
-            });
-
-            // Reconcile module counts and status for sidebar outline
-            modules.forEach(mod => {
-              let compCount = 0;
-              (mod.lessons || []).forEach(l => {
-                if (String(l.lesson_id || l.id) === String(activeItem.id)) {
-                  l.is_completed = true;
-                  l._isCompleted = true;
-                }
-                const navItem = flatNavList.find(i => i.type === 'lesson' && String(i.id) === String(l.lesson_id || l.id));
-                if (navItem) {
-                  l._isUnlocked = navItem.isUnlocked;
-                  if (navItem.isCompleted) {
-                    l.is_completed = true;
-                    l._isCompleted = true;
-                  }
-                }
-                if (l._isCompleted || l.is_completed) {
-                  compCount++;
-                }
-              });
-              mod._completedCount = compCount;
-              mod._isCompleted = mod.lessons.length > 0 && compCount === mod.lessons.length;
-            });
-
+            recalculateAllUnlocks();
             renderSidebarOutline();
             updateFloatingNav();
-
-            // Recalculate dynamic course progress in header
-            const allCourseLessons = modules.flatMap(m => m.lessons || []);
-            const effectiveLessons = allCourseLessons.length > 0 ? allCourseLessons : allLessons;
-            const completedCount = effectiveLessons.filter(l => l._isCompleted || l.is_completed || l.progress?.is_completed).length;
-            const newPercent = effectiveLessons.length > 0 ? Math.round((completedCount / effectiveLessons.length) * 100) : 0;
-            const progressBadge = document.getElementById('console-progress-percent');
-            if (progressBadge) {
-              progressBadge.textContent = `${newPercent}%`;
-            }
+            renderBottomNav();
 
             // Background sync backend course progress
             ApiClient.getStudentCourseProgress(courseId).catch(() => {});
@@ -4665,7 +4700,7 @@ class StudentView {
                 return;
               }
               if (hasVideo && !videoWatched) {
-                UI.showToast('Bạn cần xem ít nhất 90% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
+                UI.showToast('Bạn cần xem hết 100% video bài học mới có thể hoàn thành bài giảng này.', 'warning');
                 return;
               }
               if (hasMiniQuiz) {
@@ -4675,7 +4710,7 @@ class StudentView {
                 return;
               }
               try {
-                const result = await ApiClient.recordLessonProgress(activeItem.id, 0, 1.0, false);
+                const result = await ApiClient.recordLessonProgress(activeItem.id, 20, 1.0, true);
                 if (!result?.is_completed) {
                   UI.showToast('Bạn cần đáp ứng đủ thời lượng học trước khi hoàn thành.', 'warning');
                   return;

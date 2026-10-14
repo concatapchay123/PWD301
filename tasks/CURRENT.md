@@ -1,3 +1,44 @@
+# TASK-092 — Admin Teaching Assignment Reassignment & Swap Engine, Student Pacing 20s Minimum Threshold, Purge Topbar Progress & AI Button, Exam Studio Interactive Preview Remediation, and Unified 16:9 Course Cover System
+
+**Status:** IN_PROGRESS
+**Assignee:** Principal Systems Architect & Senior Full-Stack Engineer
+**Started Date:** 2026-10-14
+**Plan:** `C:\Users\LENOVO\.gemini\antigravity\brain\93aeedf0-593a-435c-a606-7190dfc62bf1\plan_task_092_remediation_and_purge.md`
+
+## Canonical Workflow Invariants & Permanent Purge (Zero-Ambiguity Mandate)
+All previous obsolete workflows, legacy code, and outdated specifications regarding course reassignment, lesson time pacing, header progress pills, in-lesson AI buttons, broken interactive question checking, and distorted course cover ratios are PERMANENTLY PURGED, FORBIDDEN, and SUPERSEDED across the entire PWD301 system:
+
+1. **Permanent Purge of Unstructured Course Reassignment & Single-Dropdown Chaos (Bãi bỏ gán môn 1 dropdown hỗn tạp)**:
+   - The old single-select modal mixing all courses and instructors with no distinction between unassigned courses and inter-instructor transfers is PERMANENTLY PURGED.
+   - Replaced by a 2-Mode Modal:
+     - Tab 1: "Gán môn đang trống" (strictly lists courses with `owner_instructor_id IS NULL`).
+     - Tab 2: "Chuyển giao / Hoán đổi môn" (Instructor A -> only courses of A -> Instructor B -> optional 2-way swap with course of B).
+   - Single instructor per course invariant enforced; courses only empty when instructor is suspended (`SUSPENDED`).
+   - Atomic MSSQL swap transaction; append-only `AuditEvent` logging (`COURSE_OWNER_REASSIGNED`, `COURSE_OWNER_SWAPPED`).
+
+2. **Permanent Purge of Legacy Lesson Reading-Time Pacing, Topbar Progress Gauge & In-Lesson AI Button**:
+   - All complex reading time, word count pacing, and legacy `minimum_completion_seconds` calculations are PERMANENTLY ABOLISHED.
+   - Non-video lessons enforce a strict real-time 20-second minimum dwell time. The "Đánh dấu hoàn thành" button shows a live countdown (20s -> 0s) and remains disabled until 20s elapse.
+   - Video lessons strictly require 100% video playback completion.
+   - The top-right header `Tiến độ: 100%` UI pill and its backend/frontend calculation are PERMANENTLY REMOVED.
+   - The in-lesson footer button `Hỏi Trợ lý AI` is PERMANENTLY REMOVED (the left sidebar "Trợ lý AI" tab and floating Octopus AI launcher remain available).
+   - "Bài tiếp theo" button is fixed to enable seamless transition to the next lesson/exam after marking complete, without false locked toasts; on the final item of the course, button transitions gracefully to course completion.
+
+3. **Permanent Purge of Broken Interactive Question Preview Grading (Anti-Hallucination & Live Highlight)**:
+   - The flaw where `s.textContent.trim()` incorporated the text of the close button (`close`) inside `.drop-slot`, causing test results to always evaluate to 0 correct, is PERMANENTLY PURGED.
+   - Interactive preview grading checks the actual placed word tokens for Drag-and-Drop, normalized whitespace/case-insensitive strings for Fill-in-the-Blank, and mapped index pairs for Matching.
+   - Live visual color feedback: Every slot/input/pair renders immediate green (correct) or soft red (incorrect) visual indicators alongside the summary text.
+
+4. **Permanent Synchronization of Course Cover 16:9 Aspect Ratio & Upload Pipeline**:
+   - The distorted `max-h-72` banner clamping in the Course Studio that warped 16:9 images into ultra-wide ribbons is PERMANENTLY BANNED.
+   - The entire system locks to a strict 16:9 aspect ratio (`aspect-video` / 1280x720):
+     1. Cropper modal (`UI.cropImage`) generates 16:9 assets.
+     2. Studio course edit view renders standard 16:9 preview without distortion.
+     3. Student course cards (Explore & My Courses) render uniform 16:9 covers.
+   - Course cover image upload is streamlined to cleanly attach and persist on both draft and published courses.
+
+---
+
 # TASK-091 — Comprehensive Course Changeset Staging Engine, Lifetime Enrollment, In-Lesson Quiz & UI Remediation
 
 **Status:** COMPLETED

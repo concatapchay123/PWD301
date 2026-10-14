@@ -872,11 +872,15 @@ def queue_course_metadata_review(
         if thumb is not None:
             from pwd301.models.file_import import FileAsset
 
-            try:
-                asset_uuid = uuid.UUID(str(thumb))
-            except (ValueError, TypeError, AttributeError) as exc:
-                raise CourseValidationError("A valid cover image asset ID is required.") from exc
-            asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+            asset = None
+            if isinstance(thumb, int) or (isinstance(thumb, str) and thumb.isdigit()):
+                asset = sess.query(FileAsset).filter(FileAsset.id == int(thumb)).first()
+            if asset is None:
+                try:
+                    asset_uuid = uuid.UUID(str(thumb))
+                    asset = sess.query(FileAsset).filter(FileAsset.public_id == asset_uuid).first()
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise CourseValidationError("A valid cover image asset ID is required.") from exc
             if (
                 asset is None
                 or asset.course_id != course.id
@@ -1492,6 +1496,131 @@ def reassign_course_owner(
         raise
 
     return course
+
+
+def swap_course_owners(
+    admin_actor: User,
+    course_a_id: Course | int | uuid.UUID | str,
+    course_b_id: Course | int | uuid.UUID | str,
+    reason: str | None = None,
+    session: Session | scoped_session[Any] | None = None,
+) -> tuple[Course, Course]:
+    """Atomically swap the instructor owners of two courses (Admin only).
+
+    Invariants enforced:
+    - Only ADMIN can swap course owners.
+    - Both courses must exist.
+    - Cannot swap a course with itself.
+    - At least one course must have an assigned owner to execute a meaningful swap.
+    - If an owner is present, that user must exist, have INSTRUCTOR role, and not be suspended.
+    - Both courses have their owners swapped in a single atomic transaction.
+    - Append-only AuditEvent records the swap action with full before/after states.
+    - Dispatches dual in-app notifications to affected instructors.
+    """
+    if not admin_actor.is_admin:
+        raise ForbiddenError("Only administrators can swap course ownership.")
+
+    sess = session if session is not None else db.session
+    course_a = _resolve_course(course_a_id, session=sess)
+    course_b = _resolve_course(course_b_id, session=sess)
+    if course_a is None or course_b is None:
+        raise ResourceNotFoundError("One or both courses not found.")
+
+    if course_a.id == course_b.id:
+        raise CourseValidationError("Cannot swap course ownership with itself.")
+
+    owner_a_id = course_a.owner_instructor_id
+    owner_b_id = course_b.owner_instructor_id
+
+    if owner_a_id is None and owner_b_id is None:
+        raise CourseValidationError("At least one course must have an assigned instructor to perform a swap.")
+
+    if owner_a_id == owner_b_id and owner_a_id is not None:
+        raise CourseValidationError("Both courses are already owned by the same instructor.")
+
+    if owner_a_id is not None:
+        user_a = sess.get(User, owner_a_id)
+        if user_a is None or not user_a.has_role("INSTRUCTOR") or user_a.is_suspended:
+            raise InvalidRoleAssignmentError(f"Current owner of {course_a.course_code} is not an active instructor.")
+
+    if owner_b_id is not None:
+        user_b = sess.get(User, owner_b_id)
+        if user_b is None or not user_b.has_role("INSTRUCTOR") or user_b.is_suspended:
+            raise InvalidRoleAssignmentError(f"Current owner of {course_b.course_code} is not an active instructor.")
+
+    now = utc_now()
+    course_a.owner_instructor_id = owner_b_id
+    course_a.updated_at = now
+    course_b.owner_instructor_id = owner_a_id
+    course_b.updated_at = now
+
+    audit_entry = _record_audit_event(
+        sess=sess,
+        actor=admin_actor,
+        action="COURSE_OWNER_SWAPPED",
+        target_id=course_a.id,
+        reason=reason,
+        before_json=json.dumps(
+            {
+                "course_a": {"id": course_a.id, "code": course_a.course_code, "owner_id": owner_a_id},
+                "course_b": {"id": course_b.id, "code": course_b.course_code, "owner_id": owner_b_id},
+            }
+        ),
+        after_json=json.dumps(
+            {
+                "course_a": {"id": course_a.id, "code": course_a.course_code, "owner_id": owner_b_id},
+                "course_b": {"id": course_b.id, "code": course_b.course_code, "owner_id": owner_a_id},
+            }
+        ),
+    )
+    sess.flush()
+
+    try:
+        from pwd301.services.notification_service import dispatch_notification
+
+        if owner_a_id and owner_b_id:
+            try:
+                dispatch_notification(
+                    recipient_user=owner_a_id,
+                    event_type="COURSE_OWNER_REASSIGNED",
+                    title=f"Hoán đổi phân công giảng dạy {course_a.course_code} ↔ {course_b.course_code}",
+                    body=(f"Bạn đã chuyển giao môn '{course_a.title}' và tiếp nhận môn '{course_b.title}'."),
+                    action_url=f"#/instructor/courses/manage?id={course_b.public_id}",
+                    category="COURSE",
+                    target_role="INSTRUCTOR",
+                    payload={"course_from": str(course_a.public_id), "course_to": str(course_b.public_id), "reason": reason or ""},
+                    event_key=_course_notification_event_key(audit_entry, owner_a_id),
+                    session=sess,
+                )
+            except Exception as exc:
+                logger.warning("Failed to dispatch swap notification to instructor A %s: %s", owner_a_id, exc)
+
+            try:
+                dispatch_notification(
+                    recipient_user=owner_b_id,
+                    event_type="COURSE_OWNER_REASSIGNED",
+                    title=f"Hoán đổi phân công giảng dạy {course_b.course_code} ↔ {course_a.course_code}",
+                    body=(f"Bạn đã chuyển giao môn '{course_b.title}' và tiếp nhận môn '{course_a.title}'."),
+                    action_url=f"#/instructor/courses/manage?id={course_a.public_id}",
+                    category="COURSE",
+                    target_role="INSTRUCTOR",
+                    payload={"course_from": str(course_b.public_id), "course_to": str(course_a.public_id), "reason": reason or ""},
+                    event_key=_course_notification_event_key(audit_entry, owner_b_id),
+                    session=sess,
+                )
+            except Exception as exc:
+                logger.warning("Failed to dispatch swap notification to instructor B %s: %s", owner_b_id, exc)
+    except ImportError:
+        pass
+
+    try:
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+
+    return course_a, course_b
+
 
 
 def trash_course(

@@ -2381,6 +2381,7 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           const pill = previewBox.querySelector(`.drag-pill-btn[data-word-index="${wordIndex}"]`);
           if (!pill) return;
           slot.dataset.wordIndex = String(wordIndex);
+          slot.dataset.assignedWord = String(pill.dataset.word || '').trim();
           slot.innerHTML = `<span class="px-2 py-0.5 rounded-lg bg-teal-600 text-white text-xs font-bold inline-flex items-center gap-1">${UI.escapeHtml(pill.dataset.word || '')} <span class="material-symbols-outlined text-[13px]">close</span></span>`;
           slot.classList.remove('border-dashed');
           slot.classList.add('border-solid', 'border-teal-600');
@@ -2398,9 +2399,10 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
             }
           }
           delete slot.dataset.wordIndex;
+          delete slot.dataset.assignedWord;
           slot.textContent = '___';
           slot.classList.add('border-dashed');
-          slot.classList.remove('border-solid', 'border-teal-600');
+          slot.classList.remove('border-solid', 'border-teal-600', 'border-emerald-500', 'bg-emerald-50/60', 'border-rose-500', 'bg-rose-50/60');
         };
 
         previewBox.querySelectorAll('.drag-pill-btn').forEach(pill => {
@@ -2641,13 +2643,23 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
       }
     };
 
-    // Test answer button
+    // Test answer button with visual indicators (TASK-092 & Invariant 32)
     document.getElementById('btn-test-interactive-answer')?.addEventListener('click', () => {
       if (activeTab === 'drag') {
         const slots = document.querySelectorAll('.drop-slot');
         let correct = 0;
         slots.forEach(s => {
-          if (s.textContent.trim() === s.dataset.expected) correct++;
+          const assigned = (s.dataset.assignedWord || '').trim().toLowerCase();
+          const expected = (s.dataset.expected || '').trim().toLowerCase();
+          const isMatch = Boolean(assigned && assigned === expected);
+          if (isMatch) {
+            correct++;
+            s.classList.remove('border-teal-600', 'border-rose-500', 'bg-rose-50/60');
+            s.classList.add('border-emerald-500', 'bg-emerald-50/60');
+          } else {
+            s.classList.remove('border-teal-600', 'border-emerald-500', 'bg-emerald-50/60');
+            s.classList.add('border-rose-500', 'bg-rose-50/60');
+          }
         });
         if (slots.length > 0 && correct === slots.length) {
           feedbackMsg.innerHTML = `<span class="text-emerald-600 font-bold">✓ Chính xác 100%! (${correct}/${slots.length} vị trí)</span>`;
@@ -2655,14 +2667,31 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
           feedbackMsg.innerHTML = `<span class="text-amber-600 font-bold">Đúng ${correct}/${slots.length} vị trí. Thử lại!</span>`;
         }
       } else if (activeTab === 'fill') {
-        const submitted = Array.from(previewBox.querySelectorAll('[id^="live-fill-input-"]'))
-          .map(input => input.value.trim());
+        const fillInputs = Array.from(previewBox.querySelectorAll('[id^="live-fill-input-"]'));
+        const submitted = fillInputs.map(input => input.value.trim());
         const acceptedAnswers = document.getElementById('fill-answers-input')?.value || '';
-        const isCorrect = InstructorView.isInteractiveFillAnswerCorrect(submitted, acceptedAnswers);
-        if (isCorrect) {
-          feedbackMsg.innerHTML = `<span class="text-emerald-600 font-bold">✓ Chính xác! Trùng khớp đáp án.</span>`;
+        const acceptedGroups = String(acceptedAnswers || '').split(';').map(group =>
+          group.split(',').map(answer => answer.trim().normalize('NFKC').toLowerCase()).filter(Boolean)
+        );
+        let correctCount = 0;
+        fillInputs.forEach((input, index) => {
+          const val = input.value.trim().normalize('NFKC').toLowerCase();
+          const validOptions = acceptedGroups[index] || [];
+          const isSlotCorrect = Boolean(val && validOptions.includes(val));
+          if (isSlotCorrect) {
+            correctCount++;
+            input.classList.remove('border-rose-500', 'bg-rose-50/60', 'text-rose-900');
+            input.classList.add('border-emerald-500', 'bg-emerald-50/60', 'text-emerald-900');
+          } else {
+            input.classList.remove('border-emerald-500', 'bg-emerald-50/60', 'text-emerald-900');
+            input.classList.add('border-rose-500', 'bg-rose-50/60', 'text-rose-900');
+          }
+        });
+        const isAllCorrect = fillInputs.length > 0 && correctCount === fillInputs.length;
+        if (isAllCorrect) {
+          feedbackMsg.innerHTML = `<span class="text-emerald-600 font-bold">✓ Chính xác 100%! Trùng khớp đáp án (${correctCount}/${fillInputs.length} ô).</span>`;
         } else {
-          feedbackMsg.innerHTML = `<span class="text-rose-600 font-bold">Chưa đúng đáp án.</span>`;
+          feedbackMsg.innerHTML = `<span class="text-amber-600 font-bold">Đúng ${correctCount}/${fillInputs.length} ô điền. Thử lại!</span>`;
         }
       } else {
         const activeMatches = previewBox._activeMatches || new Map();
@@ -2671,7 +2700,29 @@ Lời giải: Khóa ngoại tham chiếu đến khóa chính bảng khác.</pre>
         let correctCount = 0;
         activeMatches.forEach((rPos, lIdx) => {
           const matchedOrigIdx = shuffledRight[rPos]?.idx;
-          if (matchedOrigIdx === lIdx) correctCount++;
+          const leftEl = previewBox.querySelector(`.match-left-item[data-idx="${lIdx}"]`);
+          const rightEl = previewBox.querySelector(`.match-right-item[data-pos="${rPos}"]`);
+          const isPairCorrect = matchedOrigIdx === lIdx;
+          if (isPairCorrect) {
+            correctCount++;
+            if (leftEl) {
+              leftEl.classList.remove('border-rose-500', 'bg-rose-50/60');
+              leftEl.classList.add('border-emerald-500', 'bg-emerald-50/60');
+            }
+            if (rightEl) {
+              rightEl.classList.remove('border-rose-500', 'bg-rose-50/60');
+              rightEl.classList.add('border-emerald-500', 'bg-emerald-50/60');
+            }
+          } else {
+            if (leftEl) {
+              leftEl.classList.remove('border-emerald-500', 'bg-emerald-50/60');
+              leftEl.classList.add('border-rose-500', 'bg-rose-50/60');
+            }
+            if (rightEl) {
+              rightEl.classList.remove('border-emerald-500', 'bg-emerald-50/60');
+              rightEl.classList.add('border-rose-500', 'bg-rose-50/60');
+            }
+          }
         });
         const isComplete = pairs.length > 0 && correctCount === pairs.length;
         feedbackMsg.textContent = isComplete
