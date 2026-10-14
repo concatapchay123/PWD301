@@ -22,7 +22,7 @@ from flask import Flask
 from sqlalchemy.orm import Session
 
 from pwd301.extensions import db
-from pwd301.models.identity import Role, User
+from pwd301.models.identity import Role, User, UserRole
 from pwd301.models.notification_audit import EmailDelivery, Notification, NotificationEvent
 from pwd301.services.exceptions import (
     ConflictError,
@@ -94,11 +94,20 @@ def student_user(app: Flask, setup_roles: dict[str, Role]) -> User:
 
 @pytest.fixture
 def admin_user(app: Flask, setup_roles: dict[str, Role]) -> User:
-    """Create test admin user."""
+    """Create test admin user with ADMIN_PRIMARY sub-role."""
+    sess = db.session
     u = register_user(
-        f"notif_admin_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Admin One"
+        f"notif_admin_{uuid.uuid4().hex[:6]}@example.com", "Password@123", "Admin One", session=sess
     )
-    return assign_role_to_user(u.id, "ADMIN")
+    admin_role = setup_roles["ADMIN"]
+    link = UserRole(
+        user_id=u.id,
+        role_id=admin_role.id,
+        assignment_reason="SUB_ROLE:ADMIN_PRIMARY | Test Primary Admin",
+    )
+    sess.add(link)
+    sess.commit()
+    return u
 
 
 def test_emit_event_sanitizes_payload(app: Flask, student_user: User) -> None:

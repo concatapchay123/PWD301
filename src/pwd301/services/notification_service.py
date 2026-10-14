@@ -676,9 +676,21 @@ def broadcast_system_notification(
     if not actor or not actor.is_admin:
         raise ForbiddenError("Only administrators can broadcast system notifications.")
 
+    category_upper = str(category).strip().upper() if category else "SYSTEM"
+    if actor.is_primary_admin:
+        pass
+    elif actor.admin_sub_role == "ADMIN_SYSTEM_MONITORING":
+        if category_upper != "SYSTEM":
+            raise ForbiddenError(
+                "Admin giám sát hệ thống chỉ được phép phát thông báo liên quan đến hệ thống."
+            )
+    else:
+        raise ForbiddenError("Bạn không có quyền phát thông báo toàn hệ thống.")
+
+    cat = category_upper if category_upper in VALID_NOTIFICATION_CATEGORIES else "SYSTEM"
+
     clean_title = sanitize_text(title, max_length=250)
     clean_body = sanitize_text(body, max_length=2000)
-    cat = category.upper() if category.upper() in VALID_NOTIFICATION_CATEGORIES else "SYSTEM"
     clean_target_role = target_role.strip().upper() if target_role else None
 
     normalized_key: uuid.UUID | None = None

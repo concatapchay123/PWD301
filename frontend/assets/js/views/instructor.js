@@ -3775,12 +3775,12 @@ class InstructorView {
               </button>
               <button
                 type="button"
-                id="btn-open-course-settings"
-                class="px-3 py-1.5 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] hover:bg-[#ECE8DF] text-[#222120] dark:text-[#EDEDEB] text-xs font-semibold flex items-center gap-1.5 transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B]"
-                title="Cài đặt & Học vụ (Thông tin, Chuẩn đầu ra, Danh sách sinh viên)"
+                id="btn-open-course-students"
+                class="px-3 py-1.5 rounded-lg bg-[#F4F1EA] dark:bg-[#262524] hover:bg-[#ECE8DF] text-[#222120] dark:text-[#EDEDEB] text-xs font-semibold flex items-center gap-1.5 transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B] cursor-pointer"
+                title="Danh sách sinh viên ghi danh khóa học"
               >
-                <span class="material-symbols-outlined text-[15px] text-[#8F8E8A] dark:text-[#9E9D99]">settings</span>
-                <span>Cài đặt & Học vụ</span>
+                <span class="material-symbols-outlined text-[15px] text-[#8F8E8A] dark:text-[#9E9D99]">groups</span>
+                <span>Danh sách sinh viên</span>
               </button>
             </div>
           </div>
@@ -4154,9 +4154,12 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         }
       });
 
-      document.getElementById('btn-open-course-settings').onclick = async () => {
-        await InstructorView.openCourseSettingsModal(course, initialTab === 'curriculum' ? 'settings' : initialTab);
-      };
+      const btnStudents = document.getElementById('btn-open-course-students') || document.getElementById('btn-open-course-settings');
+      if (btnStudents) {
+        btnStudents.onclick = async () => {
+          await InstructorView.openCourseStudentsModal(course);
+        };
+      }
 
       const editLandingBtn = document.getElementById('btn-edit-course-landing');
       if (editLandingBtn) {
@@ -4747,248 +4750,373 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     const minScoreVal = compReqs.min_assessment_score !== undefined ? compReqs.min_assessment_score : 5.0;
 
     const modalBodyHtml = `
-      <div class="space-y-6 text-sans">
-        <!-- 1. THÔNG TIN GIỚI THIỆU & VIDEO TRAILER -->
-        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">movie</span>
-              <span>1. Giới thiệu tổng quan & Video Trailer</span>
-            </h3>
-            <span class="text-[11px] text-slate-400 font-medium">Hiển thị ở khu vực Hero đầu trang</span>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Mô tả tóm tắt môn học <span class="text-rose-500">*</span>
-            </label>
-            <textarea
-              id="unified-course-description"
-              rows="3"
-              placeholder="VD: Môn học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo chuẩn quốc tế..."
-              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 resize-none leading-relaxed"
-            >${UI.escapeHtml(rawDesc)}</textarea>
-          </div>
-
-          <!-- Video Trailer Section: YouTube URL on top, File Upload below -->
-          <div class="space-y-3 pt-2">
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Video Trailer trực tuyến (Link YouTube hoặc HLS stream)
-                </label>
-                <span class="text-[11px] text-slate-400">Hỗ trợ link youtube.com, youtu.be, embed hoặc link m3u8</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="relative flex-1">
-                  <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">link</span>
-                  <input
-                    type="url"
-                    id="unified-trailer-url"
-                    value="${UI.escapeHtml(videoUrl)}"
-                    placeholder="VD: https://www.youtube.com/watch?v=dQw4w9WgXcQ hoặc https://youtu.be/..."
-                    class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 font-mono"
-                  />
-                </div>
-                <button
-                  type="button"
-                  id="btn-test-trailer-video"
-                  class="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-emerald-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <span class="material-symbols-outlined text-[16px]">play_circle</span>
-                  <span>Kiểm tra phát</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Upload File Video below -->
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Hoặc tải lên file Video Trailer từ máy tính
-                </label>
-                <span class="text-[11px] text-slate-400">Dung lượng tối đa 100 MB • Định dạng MP4 / WebM</span>
-              </div>
-              <div
-                id="unified-video-dropzone"
-                class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-white/50 dark:bg-slate-900/40 relative group"
-              >
-                <input type="file" id="unified-video-file-input" accept="video/mp4,video/webm" class="hidden" />
-                <div class="flex flex-col items-center justify-center gap-1.5">
-                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <span class="material-symbols-outlined text-[20px]">cloud_upload</span>
-                  </div>
-                  <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
-                    Bấm để chọn file video hoặc kéo thả file vào đây
-                  </p>
-                  <p class="text-[11px] text-slate-400">Hệ thống quét an toàn fail-closed tự động</p>
-                </div>
-                <div id="unified-video-upload-progress" class="hidden mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <div class="flex items-center justify-between text-xs font-bold text-emerald-500 mb-1">
-                    <span id="upload-progress-text">Đang tải video lên máy chủ...</span>
-                    <span id="upload-progress-percent">0%</span>
-                  </div>
-                  <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                    <div id="upload-progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Preview Box (Inline preview container) -->
-            <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-              <div class="flex items-center justify-between text-xs text-slate-300">
-                <span class="font-bold flex items-center gap-1.5 text-emerald-400">
-                  <span class="material-symbols-outlined text-[16px]">visibility</span>
-                  <span>Xem trước Trailer</span>
-                </span>
-                <button type="button" id="btn-close-trailer-preview" class="text-slate-400 hover:text-white text-xs cursor-pointer">
-                  Đóng preview
-                </button>
-              </div>
-              <div id="unified-trailer-preview-player" class="aspect-video w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
-                <!-- Mounted dynamically -->
-              </div>
-            </div>
-          </div>
+      <div class="space-y-5 text-sans">
+        <!-- Sub-tabs Navigation Bar -->
+        <div class="p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1 w-full sm:w-auto">
+          <button
+            type="button"
+            class="landing-editor-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs cursor-pointer"
+            data-landing-tab="overview"
+          >
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">info</span>
+              <span>Tổng quan</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="landing-editor-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
+            data-landing-tab="curriculum-slos"
+          >
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">verified</span>
+              <span>Đề cương & Chuẩn đầu ra</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="landing-editor-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer"
+            data-landing-tab="academic-settings"
+          >
+            <span class="flex items-center justify-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px]">tune</span>
+              <span>Cài đặt & Học vụ</span>
+            </span>
+          </button>
         </div>
 
-        <!-- 2. CHUẨN ĐẦU RA (SLOs) -->
-        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-            <div>
+        <!-- TAB 1: TỔNG QUAN -->
+        <div id="landing-tab-pane-overview" class="space-y-5">
+          <!-- 1. THÔNG TIN GIỚI THIỆU & VIDEO TRAILER -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
               <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <span class="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[16px]">verified</span>
-                <span>2. Chuẩn đầu ra môn học (Student Learning Outcomes - SLO)</span>
+                <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">movie</span>
+                <span>Giới thiệu tổng quan & Video Trailer</span>
               </h3>
-              <p class="text-[11px] text-slate-400 mt-0.5">Sinh viên sẽ được trang bị những năng lực và kỹ năng cụ thể sau khi hoàn thành</p>
+              <span class="text-[11px] text-slate-400 font-medium">Hiển thị ở khu vực Hero đầu trang</span>
             </div>
-            <button
-              type="button"
-              id="btn-add-unified-slo"
-              class="px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
-            >
-              <span class="material-symbols-outlined text-[16px]">add</span>
-              <span>Thêm chuẩn đầu ra</span>
-            </button>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Mô tả tóm tắt môn học <span class="text-rose-500">*</span>
+              </label>
+              <textarea
+                id="unified-course-description"
+                rows="3"
+                placeholder="VD: Môn học trang bị kiến thức nền tảng và kỹ năng thực hành chuyên sâu theo chuẩn quốc tế..."
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 resize-none leading-relaxed"
+              >${UI.escapeHtml(rawDesc)}</textarea>
+            </div>
+
+            <!-- Video Trailer Section: YouTube URL on top, File Upload below -->
+            <div class="space-y-3 pt-2">
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Video Trailer trực tuyến (Link YouTube hoặc HLS stream)
+                  </label>
+                  <span class="text-[11px] text-slate-400">Hỗ trợ link youtube.com, youtu.be, embed hoặc link m3u8</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="relative flex-1">
+                    <span class="material-symbols-outlined absolute left-3 top-2.5 text-[18px] text-slate-400">link</span>
+                    <input
+                      type="url"
+                      id="unified-trailer-url"
+                      value="${UI.escapeHtml(videoUrl)}"
+                      placeholder="VD: https://www.youtube.com/watch?v=dQw4w9WgXcQ hoặc https://youtu.be/..."
+                      class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-test-trailer-video"
+                    class="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-emerald-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">play_circle</span>
+                    <span>Kiểm tra phát</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Upload File Video below -->
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Hoặc tải lên file Video Trailer từ máy tính
+                  </label>
+                  <span class="text-[11px] text-slate-400">Dung lượng tối đa 100 MB • Định dạng MP4 / WebM</span>
+                </div>
+                <div
+                  id="unified-video-dropzone"
+                  class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-400 rounded-xl p-4 text-center cursor-pointer transition-colors bg-white/50 dark:bg-slate-900/40 relative group"
+                >
+                  <input type="file" id="unified-video-file-input" accept="video/mp4,video/webm" class="hidden" />
+                  <div class="flex flex-col items-center justify-center gap-1.5">
+                    <div class="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <span class="material-symbols-outlined text-[20px]">cloud_upload</span>
+                    </div>
+                    <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Bấm để chọn file video hoặc kéo thả file vào đây
+                    </p>
+                    <p class="text-[11px] text-slate-400">Hệ thống quét an toàn fail-closed tự động</p>
+                  </div>
+                  <div id="unified-video-upload-progress" class="hidden mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center justify-between text-xs font-bold text-emerald-500 mb-1">
+                      <span id="upload-progress-text">Đang tải video lên máy chủ...</span>
+                      <span id="upload-progress-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                      <div id="upload-progress-bar" class="bg-emerald-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preview Box (Inline preview container) -->
+              <div id="unified-trailer-preview-box" class="${videoUrl ? '' : 'hidden'} p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <div class="flex items-center justify-between text-xs text-slate-300">
+                  <span class="font-bold flex items-center gap-1.5 text-emerald-400">
+                    <span class="material-symbols-outlined text-[16px]">visibility</span>
+                    <span>Xem trước Trailer</span>
+                  </span>
+                  <button type="button" id="btn-close-trailer-preview" class="text-slate-400 hover:text-white text-xs cursor-pointer">
+                    Đóng preview
+                  </button>
+                </div>
+                <div id="unified-trailer-preview-player" class="aspect-video w-full rounded-lg overflow-hidden bg-black flex items-center justify-center">
+                  <!-- Mounted dynamically -->
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div id="unified-slos-list" class="space-y-3">
-            <!-- Rendered dynamically -->
+          <!-- KÊNH LIÊN HỆ GIẢNG VIÊN & HỖ TRỢ HỌC VIÊN -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">support_agent</span>
+                <span>Kênh Liên hệ Giảng viên & Hỗ trợ Học vụ</span>
+              </h3>
+              <span class="text-[11px] text-slate-400 font-medium">Học viên có thể liên hệ trực tiếp khi cần giải đáp</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Email Giảng viên phụ trách <span class="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  id="unified-contact-email"
+                  value="${UI.escapeHtml(contactInfo.email || course.instructor_email || '')}"
+                  placeholder="VD: giangvien@pwd301.edu.vn"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Số điện thoại liên hệ <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+                </label>
+                <input
+                  type="tel"
+                  id="unified-contact-phone"
+                  value="${UI.escapeHtml(contactInfo.phone || '')}"
+                  placeholder="VD: 0912 345 678"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Link Group trao đổi học tập (Zalo, Teams, Telegram...) <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+                </label>
+                <input
+                  type="url"
+                  id="unified-contact-group"
+                  value="${UI.escapeHtml(contactInfo.group || '')}"
+                  placeholder="VD: https://zalo.me/g/... hoặc https://teams.microsoft.com/..."
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Giờ tiếp sinh viên / Văn phòng <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
+                </label>
+                <input
+                  type="text"
+                  id="unified-contact-office-hours"
+                  value="${UI.escapeHtml(contactInfo.office_hours || '')}"
+                  placeholder="VD: Thứ 3 & Thứ 5 (14:00 - 16:30) tại P.302"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- 3. QUY CHUẨN HOÀN THÀNH & ĐIỀU KIỆN HỌC VỤ -->
-        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <span class="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center material-symbols-outlined text-[16px]">rule</span>
-              <span>3. Quy chuẩn Học vụ & Điều kiện Hoàn thành</span>
-            </h3>
-            <span class="text-[11px] text-slate-400 font-medium">Tiêu chí cấp chứng nhận hoàn thành</span>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Tỉ lệ xem bài học tối thiểu (%)
-              </label>
-              <div class="flex items-center gap-2">
-                <input
-                  type="number"
-                  id="unified-min-progress"
-                  min="1"
-                  max="100"
-                  value="${minProgressVal}"
-                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
-                />
-                <span class="text-xs text-slate-500 font-bold">%</span>
+        <!-- TAB 2: ĐỀ CƯƠNG & CHUẨN ĐẦU RA -->
+        <div id="landing-tab-pane-curriculum-slos" class="space-y-5 hidden">
+          <!-- CHUẨN ĐẦU RA (SLOs) -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+              <div>
+                <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center material-symbols-outlined text-[16px]">verified</span>
+                  <span>Chuẩn đầu ra môn học (Student Learning Outcomes - SLO)</span>
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">Sinh viên sẽ được trang bị những năng lực và kỹ năng cụ thể sau khi hoàn thành</p>
               </div>
-              <p class="text-[11px] text-slate-400">Học viên cần đạt tối thiểu % tiến độ bài giảng để được tính hoàn thành môn.</p>
+              <button
+                type="button"
+                id="btn-add-unified-slo"
+                class="px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
+              >
+                <span class="material-symbols-outlined text-[16px]">add</span>
+                <span>Thêm chuẩn đầu ra</span>
+              </button>
             </div>
 
-            <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Điểm khảo thí đạt tối thiểu (Thang 10)
-              </label>
-              <div class="flex items-center gap-2">
-                <input
-                  type="number"
-                  id="unified-min-score"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value="${minScoreVal}"
-                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
-                />
-                <span class="text-xs text-slate-500 font-bold">/ 10</span>
-              </div>
-              <p class="text-[11px] text-slate-400">Điểm số bài kiểm tra khảo thí tối thiểu để được cấp chứng nhận.</p>
+            <div id="unified-slos-list" class="space-y-3">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- ĐỀ CƯƠNG TÓM TẮT BÀI GIẢNG -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">menu_book</span>
+                <span>Đề cương tóm tắt bài giảng</span>
+              </h3>
+              <span class="text-[11px] text-slate-400 font-medium">${course.lessons?.length || 0} bài học</span>
+            </div>
+            <div class="max-h-60 overflow-y-auto space-y-2 pr-1">
+              ${(course.lessons && course.lessons.length > 0) ? course.lessons.map((les, idx) => `
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
+                      ${idx + 1}
+                    </span>
+                    <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${UI.escapeHtml(les.title)}</span>
+                  </div>
+                  <span class="text-[11px] text-slate-400 shrink-0 font-mono">${les.quiz && les.quiz.length > 0 ? les.quiz.length + ' câu hỏi' : 'Lý thuyết'}</span>
+                </div>
+              `).join('') : `
+                <div class="text-center py-4 text-xs text-slate-400 italic">
+                  Chưa có bài học nào trong đề cương. Thêm bài học tại Curriculum Studio.
+                </div>
+              `}
             </div>
           </div>
         </div>
 
-        <!-- 4. KÊNH LIÊN HỆ GIẢNG VIÊN & HỖ TRỢ HỌC VIÊN -->
-        <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
-            <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <span class="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center material-symbols-outlined text-[16px]">support_agent</span>
-              <span>4. Kênh Liên hệ Giảng viên & Hỗ trợ Học vụ</span>
-            </h3>
-            <span class="text-[11px] text-slate-400 font-medium">Học viên có thể liên hệ trực tiếp khi cần giải đáp</span>
+        <!-- TAB 3: CÀI ĐẶT & HỌC VỤ -->
+        <div id="landing-tab-pane-academic-settings" class="space-y-5 hidden">
+          <!-- THÔNG TIN & ĐỊNH DANH MÔN HỌC -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center material-symbols-outlined text-[16px]">edit_note</span>
+                <span>Thông tin & Định danh Khóa học</span>
+              </h3>
+              <span class="text-[11px] text-slate-400 font-mono font-bold">${UI.escapeHtml(course.code || course.course_code || '')}</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1.5 sm:col-span-2">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Tên khóa học <span class="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="unified-course-title"
+                  value="${UI.escapeHtml(course.title || '')}"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                  required
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Danh mục ngành học
+                </label>
+                <input
+                  type="text"
+                  id="unified-course-category"
+                  list="academic-categories-list-landing"
+                  value="${UI.escapeHtml(course.category || 'Khoa học máy tính & CNTT')}"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
+                />
+                <datalist id="academic-categories-list-landing">
+                  <option value="Khoa học máy tính & CNTT (Computer Science)"></option>
+                  <option value="Phát triển Web & Ứng dụng Di động"></option>
+                  <option value="Trí tuệ nhân tạo & Khoa học Dữ liệu"></option>
+                  <option value="An toàn thông tin & Mạng máy tính"></option>
+                  <option value="Kỹ thuật Phần mềm (Software Engineering)"></option>
+                  <option value="Quản trị Kinh doanh & Khởi nghiệp"></option>
+                </datalist>
+              </div>
+              <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Sĩ số sinh viên đang theo học
+                </label>
+                <div class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">groups</span>
+                  <span>${course.enrolled_count ?? course.enrollments_count ?? 0} sinh viên</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div class="space-y-1.5">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Email Giảng viên phụ trách <span class="text-rose-500">*</span>
-              </label>
-              <input
-                type="email"
-                id="unified-contact-email"
-                value="${UI.escapeHtml(contactInfo.email || course.instructor_email || '')}"
-                placeholder="VD: giangvien@pwd301.edu.vn"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
-              />
+          <!-- QUY CHUẨN HOÀN THÀNH & ĐIỀU KIỆN HỌC VỤ -->
+          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <span class="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center material-symbols-outlined text-[16px]">rule</span>
+                <span>Quy chuẩn Học vụ & Điều kiện Hoàn thành</span>
+              </h3>
+              <span class="text-[11px] text-slate-400 font-medium">Tiêu chí cấp chứng nhận hoàn thành</span>
             </div>
 
-            <div class="space-y-1.5">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Số điện thoại liên hệ <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
-              </label>
-              <input
-                type="tel"
-                id="unified-contact-phone"
-                value="${UI.escapeHtml(contactInfo.phone || '')}"
-                placeholder="VD: 0912 345 678"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
-              />
-            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Tỉ lệ xem bài học tối thiểu (%)
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="number"
+                    id="unified-min-progress"
+                    min="1"
+                    max="100"
+                    value="${minProgressVal}"
+                    class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                  />
+                  <span class="text-xs text-slate-500 font-bold">%</span>
+                </div>
+                <p class="text-[11px] text-slate-400">Học viên cần đạt tối thiểu % tiến độ bài giảng để được tính hoàn thành môn.</p>
+              </div>
 
-            <div class="space-y-1.5">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Link Group trao đổi học tập (Zalo, Teams, Telegram...) <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
-              </label>
-              <input
-                type="url"
-                id="unified-contact-group"
-                value="${UI.escapeHtml(contactInfo.group || '')}"
-                placeholder="VD: https://zalo.me/g/... hoặc https://teams.microsoft.com/..."
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
-              />
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Giờ tiếp sinh viên / Văn phòng <span class="text-slate-400 font-normal">(Không bắt buộc)</span>
-              </label>
-              <input
-                type="text"
-                id="unified-contact-office-hours"
-                value="${UI.escapeHtml(contactInfo.office_hours || '')}"
-                placeholder="VD: Thứ 3 & Thứ 5 (14:00 - 16:30) tại P.302"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
-              />
+              <div class="space-y-1.5 p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Điểm khảo thí đạt tối thiểu (Thang 10)
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="number"
+                    id="unified-min-score"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value="${minScoreVal}"
+                    class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                  />
+                  <span class="text-xs text-slate-500 font-bold">/ 10</span>
+                </div>
+                <p class="text-[11px] text-slate-400">Điểm số bài kiểm tra khảo thí tối thiểu để được cấp chứng nhận.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -5031,6 +5159,33 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
         </div>
       `,
       size: 'xl'
+    });
+
+    // Wire 3-Tab Segmented Switcher for Landing Modal
+    const tabButtons = document.querySelectorAll('.landing-editor-subtab');
+    const tabPanes = {
+      'overview': document.getElementById('landing-tab-pane-overview'),
+      'curriculum-slos': document.getElementById('landing-tab-pane-curriculum-slos'),
+      'academic-settings': document.getElementById('landing-tab-pane-academic-settings')
+    };
+
+    tabButtons.forEach(btn => {
+      btn.onclick = () => {
+        const targetTab = btn.dataset.landingTab;
+        tabButtons.forEach(b => {
+          if (b.dataset.landingTab === targetTab) {
+            b.className = 'landing-editor-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs cursor-pointer';
+          } else {
+            b.className = 'landing-editor-subtab flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer';
+          }
+        });
+        Object.entries(tabPanes).forEach(([k, pane]) => {
+          if (pane) {
+            if (k === targetTab) pane.classList.remove('hidden');
+            else pane.classList.add('hidden');
+          }
+        });
+      };
     });
 
     // Helper: Render SLOs List
@@ -5262,6 +5417,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
     const saveBtn = document.getElementById('btn-save-unified-intro');
     if (saveBtn) {
       saveBtn.onclick = async () => {
+        const titleVal = (document.getElementById('unified-course-title')?.value || '').trim() || course.title;
+        const catVal = (document.getElementById('unified-course-category')?.value || '').trim() || course.category;
         const descVal = (document.getElementById('unified-course-description')?.value || '').trim();
         const trUrlVal = (document.getElementById('unified-trailer-url')?.value || '').trim();
         const cEmail = (document.getElementById('unified-contact-email')?.value || '').trim();
@@ -5294,6 +5451,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           };
 
           await ApiClient.updateCourse(cId, {
+            title: titleVal,
+            category: catVal,
             description: descVal,
             trailer_url: trUrlVal,
             video_url: trUrlVal,
@@ -5303,6 +5462,8 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
           });
 
           // Sync in-memory course object
+          course.title = titleVal;
+          course.category = catVal;
           course.description = descVal;
           course.trailer_url = trUrlVal;
           course.video_url = trUrlVal;
@@ -5322,9 +5483,59 @@ container.querySelector('#course-thumbnail-input')?.addEventListener('change', a
   }
 
   // =========================================================================
-  // 3.0. Course Settings & Academic Governance Modal
+  // 3.0. Course Students Roster Modal (Lifetime Enrollment, Non-Removable)
+  // =========================================================================
+  static async openCourseStudentsModal(course) {
+    const cId = course.course_id || course.id;
+    const modalHtml = `
+      <div class="space-y-4">
+        <div id="course-students-modal-content"></div>
+      </div>
+    `;
+
+    UI.openModal({
+      title: `
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <span class="material-symbols-outlined text-[17px]">groups</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-[#222120] dark:text-[#EDEDEB]">Danh sách sinh viên</span>
+            <span class="px-2 py-0.5 rounded-md bg-[#F4F1EA] dark:bg-[#2E2D2B] text-[#5C5B57] dark:text-[#9E9D99] font-mono text-xs font-bold border border-[#E8E6DF] dark:border-[#383734]">${UI.escapeHtml(course.course_code || '')}</span>
+          </div>
+        </div>
+      `,
+      bodyHtml: modalHtml,
+      footerHtml: `
+        <div class="flex items-center justify-between w-full">
+          <div class="text-[11px] text-[#8F8E8A] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px]">lock</span>
+            <span>Khóa học gắn bó trọn đời — Giảng viên không có quyền xóa học viên</span>
+          </div>
+          <button type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-[#5C5B57] dark:text-[#9E9D99] hover:bg-[#F4F1EA] dark:hover:bg-[#262524] transition-colors border border-[#E8E6DF] dark:border-[#2E2D2B]" onclick="UI.closeModal()">
+            Đóng
+          </button>
+        </div>
+      `,
+      size: 'xl'
+    });
+
+    const contentBox = document.getElementById('course-students-modal-content');
+    if (contentBox) {
+      await InstructorView.renderTabStudents(contentBox, cId);
+    }
+  }
+
+  // =========================================================================
+  // 3.0b. Course Settings & Academic Governance Modal
   // =========================================================================
   static async openCourseSettingsModal(course, defaultSubTab = 'settings') {
+    if (defaultSubTab === 'students') {
+      return InstructorView.openCourseStudentsModal(course);
+    }
+    if (defaultSubTab === 'settings' || defaultSubTab === 'academic') {
+      return InstructorView.openCourseLandingEditorModal(course);
+    }
     const cId = course.course_id || course.id;
 
     // Refresh course from backend to guarantee latest persistent data

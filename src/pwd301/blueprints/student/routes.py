@@ -36,7 +36,6 @@ from pwd301.services.completion_service import get_course_completion_summary
 from pwd301.services.enrollment_service import (
     enroll_student,
     get_student_enrollments,
-    leave_course,
     re_enroll_student,
 )
 from pwd301.services.exceptions import ForbiddenError, LessonValidationError, ResourceNotFoundError
@@ -504,10 +503,13 @@ def opt_in_student_lesson_revision(lesson_id: str) -> tuple[Response, int] | Res
     ), 200
 
 
+@student_bp.route("/courses/<course_id>/lessons/<lesson_id>/progress", methods=["POST"])
 @student_bp.route("/lessons/<lesson_id>/progress", methods=["POST"])
 @student_required
-def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Response:
-    """Heartbeat endpoint to record lesson engagement progress."""
+def record_student_progress_route(
+    lesson_id: str, course_id: str | None = None
+) -> tuple[Response, int] | Response:
+    """Heartbeat endpoint to record lesson engagement progress and auto-completion."""
     actor = require_authenticated_actor()
 
     payload = request.get_json(silent=True) or request.form.to_dict() or {}
@@ -520,47 +522,52 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         result = record_playback_heartbeat(actor, lesson_id, payload)
         return jsonify({"success": True, "data": result, "error": None, **result}), 200
 
+    is_completed_flag = bool(payload.get("completed") or payload.get("is_completed"))
+
     seconds_increment = payload.get("seconds_increment")
     if seconds_increment is None:
-        seconds_increment = payload.get("time_spent_seconds", 0)
+        seconds_increment = payload.get("time_spent_seconds", payload.get("seconds_spent", 0))
 
     view_fraction = payload.get("view_fraction")
     if view_fraction is None:
-        view_fraction = 0.0
+        view_fraction = 1.0 if is_completed_flag else 0.0
 
     try:
         sec_int = int(str(seconds_increment or 0))
-        vf_float = float(view_fraction if view_fraction is not None else 0.0)
+        vf_float = float(
+            view_fraction if view_fraction is not None else (1.0 if is_completed_flag else 0.0)
+        )
     except (ValueError, TypeError):
         raise LessonValidationError(
             "seconds_increment must be an integer and view_fraction must be a float."
         ) from None
 
-    if sec_int == 0:
-        from pwd301.services.playback_service import reconcile_lesson_progress
-
-        progress = reconcile_lesson_progress(actor, lesson_id, vf_float)
-        return jsonify(
-            {
-                "seconds_spent": progress.seconds_spent,
-                "max_view_fraction": float(progress.max_view_fraction),
-                "is_completed": bool(progress.completed_at),
-                "completed": bool(progress.completed_at),
-            }
-        ), 200
-
-    bounded_sec = max(1, min(sec_int, 60))
+    min_sec = 0 if (is_completed_flag or vf_float >= 0.95) else 1
+    bounded_sec = max(min_sec, min(sec_int, 60))
     bounded_vf = max(0.0, min(vf_float, 1.0))
     client_event_id = payload.get("client_event_id") or request.headers.get("X-Client-Event-Id")
 
-    progress = record_lesson_progress(
-        actor=actor,
-        lesson_id=lesson_id,
-        seconds_increment=bounded_sec,
-        view_fraction=bounded_vf,
-        client_event_id=client_event_id,
-        enforce_wall_clock=True,
-    )
+    if bounded_sec == 0:
+        from pwd301.services.playback_service import reconcile_lesson_progress
+
+        progress = reconcile_lesson_progress(
+            actor, lesson_id, bounded_vf, is_completed=is_completed_flag
+        )
+    else:
+        progress = record_lesson_progress(
+            actor=actor,
+            lesson_id=lesson_id,
+            seconds_increment=bounded_sec,
+            view_fraction=bounded_vf,
+            client_event_id=client_event_id,
+            enforce_wall_clock=True,
+            is_completed=is_completed_flag,
+        )
+
+    pct = 0.0
+    ep = getattr(progress, "period", None) or getattr(progress, "enrollment_period", None)
+    if ep and getattr(ep, "enrollment", None):
+        pct = float(ep.enrollment.current_progress_percent or 0.0)
 
     data = {
         "lesson_id": str(progress.lesson.public_id) if progress.lesson else None,
@@ -569,6 +576,7 @@ def record_student_progress_route(lesson_id: str) -> tuple[Response, int] | Resp
         "is_completed": progress.completed_at is not None,
         "completed": progress.completed_at is not None,
         "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+        "current_progress_percent": pct,
     }
     return jsonify(data), 200
 
@@ -661,16 +669,11 @@ def student_enroll_course(course_id: str) -> Any:
 @student_bp.route("/courses/<course_id>/leave", methods=["POST"])
 @student_required
 def student_leave_course(course_id: str) -> Any:
-    """Withdraw from an active course."""
-    actor = require_authenticated_actor()
-
-    payload = request.get_json(silent=True) or request.form.to_dict() or {}
-    reason = payload.get("reason")
-    if reason is not None and not isinstance(reason, str):
-        reason = str(reason)
-
-    enrollment = leave_course(actor=actor, course_id=course_id, reason=reason, session=db.session)
-    return jsonify(_serialize_enrollment(enrollment)), 200
+    """Withdraw from an active course — PERMANENTLY DISABLED (ENROLLMENT_LIFETIME_GUARANTEE)."""
+    raise ForbiddenError(
+        "Chức năng rời khóa học đã bị vô hiệu hóa. "
+        "Khóa học được ghi danh sẽ gắn liền với tài khoản học viên trọn đời."
+    )
 
 
 @student_bp.route("/courses/<course_id>/re-enroll", methods=["POST"])

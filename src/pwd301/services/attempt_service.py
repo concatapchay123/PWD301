@@ -213,12 +213,41 @@ GROUPED_FILL_ANSWER_MARKER = re.compile(r"^\[\[PWD301:FI:([1-9]\d*)\]\]")
 FILL_IN_CONTENT_MARKER = "[[PWD301:FI_V1]]"
 
 
+def _extract_choice_text_variants(content: str | None) -> tuple[str, str, str, str]:
+    """Return (raw_unmarked, left_text, right_text, combined_text) in lowercase stripped."""
+    if not content:
+        return ("", "", "", "")
+    text = content.strip()
+    marker = GROUPED_CHOICE_MARKER.match(text) or GROUPED_CHOICE_KIND_MARKER.match(text)
+    if marker:
+        text = text[marker.end() :].strip()
+    left, right = "", ""
+    if "|||" in text:
+        parts = text.split("|||", 1)
+        left = parts[0].strip().lower()
+        right = parts[1].strip().lower()
+        combined = f"{left}|||{right}"
+    else:
+        right = text.strip().lower()
+        combined = right
+    return (text.lower(), left, right, combined)
+
+
+def _clean_grouped_choice_text(content: str | None) -> str:
+    """Extract and normalize payload text from tagged choice content."""
+    if not content:
+        return ""
+    _, _, right, _ = _extract_choice_text_variants(content)
+    return right
+
+
 def _grouped_multiple_choice_correct(
     revision: QuestionRevision | None,
     selected_snapshots: list[AttemptChoiceSnapshot],
 ) -> bool | None:
     """Grade one correct choice in each tagged blank or matching group.
 
+    Supports matching by choice_key token or normalized text fallback (.strip().lower()).
     Return ``None`` for ordinary multiple-choice items so their exact-set
     grading contract remains unchanged.
     """
@@ -228,36 +257,80 @@ def _grouped_multiple_choice_correct(
     if not any((choice.content or "").startswith("[[PWD301:G:") for choice in revision.choices):
         return None
 
-    groups: dict[str, set[str]] = {}
+    choice_keys_by_group: dict[str, set[str]] = {}
     correct_keys_by_group: dict[str, set[str]] = {}
+    correct_texts_by_group: dict[str, set[str]] = {}
     for choice in revision.choices:
         marker = GROUPED_CHOICE_MARKER.match(choice.content or "")
         if marker is None:
             return False
         group_id = marker.group(1)
-        choice_key = str(choice.choice_key).lower()
-        groups.setdefault(group_id, set()).add(choice_key)
+        choice_key = str(choice.choice_key).strip().lower()
+        choice_text = _clean_grouped_choice_text(choice.content)
+        choice_keys_by_group.setdefault(group_id, set()).add(choice_key)
+        variants = set(_extract_choice_text_variants(choice.content)) - {""}
+
         if choice.is_correct:
             correct_keys_by_group.setdefault(group_id, set()).add(choice_key)
+            if choice_text:
+                correct_texts_by_group.setdefault(group_id, set()).add(choice_text)
+            for var in variants:
+                correct_texts_by_group.setdefault(group_id, set()).add(var)
 
-    required_groups = set(groups)
+    required_groups = set(choice_keys_by_group)
     if not required_groups or any(
         not correct_keys_by_group.get(group_id) for group_id in required_groups
     ):
         return False
 
-    selected_by_group: dict[str, list[str]] = {}
+    selected_by_group: dict[str, list[tuple[str, str, str]]] = {}
     for snapshot in selected_snapshots:
-        marker = GROUPED_CHOICE_MARKER.match(snapshot.content_snapshot or "")
-        if marker is None or marker.group(1) not in required_groups:
+        content_snap = snapshot.content_snapshot or ""
+        marker = GROUPED_CHOICE_MARKER.match(content_snap)
+        group_id = None
+        if marker:
+            group_id = marker.group(1)
+        else:
+            # Fallback: identify group from matching revision choice by key or text variants
+            snap_k = str(snapshot.choice_key_snapshot).strip().lower()
+            snap_vars = (set(_extract_choice_text_variants(content_snap or snap_k)) | {snap_k}) - {
+                ""
+            }
+            for c in revision.choices:
+                c_k = str(c.choice_key).strip().lower()
+                c_vars = (set(_extract_choice_text_variants(c.content)) | {c_k}) - {""}
+                if snap_vars & c_vars:
+                    c_marker = GROUPED_CHOICE_MARKER.match(c.content or "")
+                    if c_marker:
+                        group_id = c_marker.group(1)
+                        break
+
+        if group_id is None or group_id not in required_groups:
             return False
-        selected_by_group.setdefault(marker.group(1), []).append(
-            str(snapshot.choice_key_snapshot).lower()
-        )
+
+        snap_key = str(snapshot.choice_key_snapshot).strip().lower()
+        snap_text = _clean_grouped_choice_text(content_snap)
+        selected_by_group.setdefault(group_id, []).append((snap_key, snap_text, content_snap))
+
+    def _is_item_correct(group_id: str, snap_k: str, snap_t: str, snap_c: str = "") -> bool:
+        # If snap_k is a known choice key in any group, evaluate strictly by key ownership
+        for gid, keys in choice_keys_by_group.items():
+            if snap_k in keys:
+                return gid == group_id and snap_k in correct_keys_by_group.get(group_id, set())
+
+        # Text fallback if snap_k is not an exact known choice key
+        correct_vars = correct_texts_by_group.get(group_id, set())
+        candidate_vars = (
+            set(_extract_choice_text_variants(snap_t or snap_k)) | {snap_k, snap_t}
+        ) - {""}
+        return bool(candidate_vars & correct_vars)
 
     return set(selected_by_group) == required_groups and all(
-        len(selected_keys) == 1 and selected_keys[0] in correct_keys_by_group.get(group_id, set())
-        for group_id, selected_keys in selected_by_group.items()
+        len(selected_items) == 1
+        and _is_item_correct(
+            group_id, selected_items[0][0], selected_items[0][1], selected_items[0][2]
+        )
+        for group_id, selected_items in selected_by_group.items()
     )
 
 
@@ -1673,14 +1746,40 @@ def save_attempt_answer(
         snap_map = {}
         for s in snapshots:
             snap_map[str(s.choice_key_snapshot)] = s
+            snap_map[str(s.choice_key_snapshot).strip().lower()] = s
             snap_map[str(s.id)] = s
             if s.source_choice_id:
                 snap_map[str(s.source_choice_id)] = s
             if s.source_choice and getattr(s.source_choice, "public_id", None):
                 snap_map[str(s.source_choice.public_id)] = s
+            clean_t = _clean_grouped_choice_text(s.content_snapshot)
+            if s.content_snapshot:
+                snap_map[s.content_snapshot] = s
+                snap_map[s.content_snapshot.lower()] = s
+            is_s_correct = False
+            if s.source_choice and getattr(s.source_choice, "is_correct", None) is not None:
+                is_s_correct = bool(s.source_choice.is_correct)
+            elif aq.source_question_revision:
+                rev_c = next(
+                    (
+                        c
+                        for c in aq.source_question_revision.choices
+                        if str(c.choice_key) == str(s.choice_key_snapshot)
+                    ),
+                    None,
+                )
+                if rev_c:
+                    is_s_correct = bool(rev_c.is_correct)
+
+            if clean_t and (clean_t not in snap_map or is_s_correct):
+                snap_map[clean_t] = s
+            for var in _extract_choice_text_variants(s.content_snapshot):
+                if var and (var not in snap_map or is_s_correct):
+                    snap_map[var] = s
 
         for k in selected_choice_keys:
-            snap = snap_map.get(str(k))
+            key_str = str(k).strip()
+            snap = snap_map.get(key_str) or snap_map.get(key_str.lower())
             if snap is not None:
                 ac = AttemptAnswerChoice(
                     attempt_answer_id=answer_record.id,
@@ -1947,9 +2046,40 @@ def sync_offline_answers(
                 .filter(AttemptChoiceSnapshot.attempt_question_id == aq.id)
                 .all()
             )
-            snap_map = {str(s.choice_key_snapshot): s for s in snapshots}
+            snap_map = {}
+            for s in snapshots:
+                snap_map[str(s.choice_key_snapshot)] = s
+                snap_map[str(s.choice_key_snapshot).strip().lower()] = s
+                snap_map[str(s.id)] = s
+                if s.source_choice_id:
+                    snap_map[str(s.source_choice_id)] = s
+                clean_t = _clean_grouped_choice_text(s.content_snapshot)
+                if s.content_snapshot:
+                    snap_map[s.content_snapshot] = s
+                    snap_map[s.content_snapshot.lower()] = s
+                is_s_correct = False
+                if s.source_choice and getattr(s.source_choice, "is_correct", None) is not None:
+                    is_s_correct = bool(s.source_choice.is_correct)
+                elif aq.source_question_revision:
+                    rev_c = next(
+                        (
+                            c
+                            for c in aq.source_question_revision.choices
+                            if str(c.choice_key) == str(s.choice_key_snapshot)
+                        ),
+                        None,
+                    )
+                    if rev_c:
+                        is_s_correct = bool(rev_c.is_correct)
+
+                if clean_t and (clean_t not in snap_map or is_s_correct):
+                    snap_map[clean_t] = s
+                for var in _extract_choice_text_variants(s.content_snapshot):
+                    if var and (var not in snap_map or is_s_correct):
+                        snap_map[var] = s
             for k in selected_choice_keys:
-                snap = snap_map.get(str(k))
+                key_str = str(k).strip()
+                snap = snap_map.get(key_str) or snap_map.get(key_str.lower())
                 if snap is not None:
                     ac = AttemptAnswerChoice(
                         attempt_answer_id=answer_record.id,
@@ -3131,6 +3261,51 @@ def get_attempt_result_for_student(
             "grading_status": grade.grading_status if grade else "PENDING",
             "choices": choices_list,
         }
+
+        # Populate slot_results for grouped choice / drag-and-drop / matching questions
+        grouped_slots: dict[int, dict[str, Any]] = {}
+        has_grouped_choices = False
+        grouped_re = re.compile(r"^\[\[PWD301:G:(?:(?:DRAG|MATCH):)?([1-9]\d*)\]\]")
+        for cs in aq.choice_snapshots:
+            raw_content = cs.content_snapshot or ""
+            marker = grouped_re.match(raw_content)
+            if not marker:
+                continue
+            has_grouped_choices = True
+            g_num = int(marker.group(1))
+            slot_idx = g_num - 1 if g_num >= 1 else g_num
+            clean_text = raw_content[marker.end() :].strip()
+            if slot_idx not in grouped_slots:
+                grouped_slots[slot_idx] = {
+                    "slot": slot_idx,
+                    "is_correct": False,
+                    "user_text": "",
+                    "expected_text": "",
+                }
+
+            rev_choice = cs.source_choice
+            if rev_choice is None and aq.source_question_revision:
+                rev_choice = next(
+                    (
+                        c
+                        for c in aq.source_question_revision.choices
+                        if str(c.choice_key) == str(cs.choice_key_snapshot)
+                    ),
+                    None,
+                )
+            is_c = bool(rev_choice.is_correct) if rev_choice is not None else False
+
+            if is_c and show_answers and not grouped_slots[slot_idx]["expected_text"]:
+                grouped_slots[slot_idx]["expected_text"] = clean_text
+
+            if str(cs.choice_key_snapshot) in selected_key_set:
+                grouped_slots[slot_idx]["user_text"] = clean_text
+                if is_c:
+                    grouped_slots[slot_idx]["is_correct"] = True
+
+        if has_grouped_choices:
+            q_info["slot_results"] = [grouped_slots[s] for s in sorted(grouped_slots.keys())]
+
         if show_answers:
             q_info["explanation"] = aq.explanation_snapshot
             if ans:

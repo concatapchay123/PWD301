@@ -115,43 +115,23 @@ def test_api_enroll_and_leave_workflow(
     assert enrollments[0]["period_no"] == 1
     assert "current_period_id" not in enrollments[0]
 
-    # 4. Leave course
+    # 4. Leave course is permanently disabled (ENROLLMENT_LIFETIME_GUARANTEE)
     resp4 = client.post(
         f"/api/courses/{c1.public_id}/leave",
         headers=headers,
         json={"reason": "Completed study goals"},
     )
-    assert resp4.status_code == 200
+    assert resp4.status_code == 403
     data4 = resp4.get_json()
-    assert data4["status"] == "LEFT"
-    assert "current_period_id" not in data4
+    assert data4["error"]["code"] == "FORBIDDEN"
+    assert "Chức năng rời khóa học đã bị vô hiệu hóa" in data4["error"]["message"]
 
-    # 5. State-idempotent leave returns 200
-    resp5 = client.post(
-        f"/api/courses/{c1.public_id}/leave",
-        headers=headers,
-    )
-    assert resp5.status_code == 200
-    data5 = resp5.get_json()
-    assert data5["status"] == "LEFT"
-    assert "current_period_id" not in data5
-
-    # 6. Explicit Re-enroll endpoint
-    resp6 = client.post(f"/api/courses/{c1.public_id}/re-enroll", headers=headers)
-    assert resp6.status_code == 200
-    data6 = resp6.get_json()
-    assert data6["status"] == "ACTIVE"
-    assert data6["period_no"] == 2
-    assert "current_period_id" not in data6
-
-    # 7. Seamless auto-re-enrollment via standard enroll endpoint after leaving
-    client.post(f"/api/courses/{c1.public_id}/leave", headers=headers)
-    resp7 = client.post(f"/api/courses/{c1.public_id}/enroll", headers=headers)
-    assert resp7.status_code == 200
-    data7 = resp7.get_json()
-    assert data7["status"] == "ACTIVE"
-    assert data7["period_no"] == 3
-    assert "current_period_id" not in data7
+    # 5. Verify enrollment remains ACTIVE
+    resp_enr = client.get("/api/student/enrollments", headers=headers)
+    assert resp_enr.status_code == 200
+    enrollments_after = resp_enr.get_json()["enrollments"]
+    assert len(enrollments_after) == 1
+    assert enrollments_after[0]["status"] == "ACTIVE"
 
 
 def test_api_prerequisites_management(

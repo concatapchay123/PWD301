@@ -49,12 +49,32 @@ from pwd301.services.user_service import assign_role_to_user, remove_role_from_u
 
 
 def _serialize_course(c: Course) -> dict[str, Any]:
+    thumb_url = getattr(c, "thumbnail_url", None)
+    if not thumb_url:
+        thumb_asset = getattr(c, "thumbnail_asset", None)
+        if thumb_asset is not None:
+            thumb_url = f"/api/files/{thumb_asset.public_id}/download"
+        elif c.thumbnail_file_asset_id:
+            thumb_url = f"/api/courses/{c.public_id}/thumbnail"
+    owner_name = None
+    if c.owner_instructor:
+        owner_name = getattr(c.owner_instructor, "full_name", None) or getattr(
+            c.owner_instructor, "display_name", None
+        )
     return {
         "course_id": str(c.public_id),
+        "id": str(c.public_id),
         "course_code": c.course_code,
         "title": c.title,
         "status": c.status,
+        "category": c.category,
+        "difficulty": c.difficulty,
+        "description": c.description,
+        "summary": getattr(c, "summary", None),
+        "thumbnail_url": thumb_url,
+        "thumbnail_file_asset_id": c.thumbnail_file_asset_id,
         "owner_instructor_id": (str(c.owner_instructor.public_id) if c.owner_instructor else None),
+        "owner_instructor_name": owner_name,
         "created_at": c.created_at.isoformat(),
         "updated_at": c.updated_at.isoformat(),
     }
@@ -79,8 +99,11 @@ def dashboard() -> tuple[Response, int] | Response | str:
 def admin_courses() -> tuple[Response, int] | Response | str:
     """Administrator courses management page."""
     actor = require_authenticated_actor()
-    if not actor.has_admin_permission("COURSE_REVIEW"):
-        raise ForbiddenError("Bạn không có quyền quản lý và thẩm định khóa học.")
+    if not (
+        actor.has_admin_permission("COURSE_REVIEW")
+        or actor.has_admin_permission("TEACHING_ASSIGNMENT")
+    ):
+        raise ForbiddenError("Bạn không có quyền xem danh sách khóa học quản trị.")
     sess = db.session
     courses = (
         sess.query(Course)
@@ -131,7 +154,10 @@ def list_pending_courses() -> tuple[Response, int] | Response:
 def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
     """Retrieve full course inspection dossier including syllabus, lessons, and SLOs."""
     actor = require_authenticated_actor()
-    if not actor.has_admin_permission("COURSE_REVIEW"):
+    if not (
+        actor.has_admin_permission("COURSE_REVIEW")
+        or actor.has_admin_permission("TEACHING_ASSIGNMENT")
+    ):
         raise ForbiddenError("Bạn không có quyền xem hồ sơ duyệt khóa học.")
     sess = db.session
     from pwd301.services.authorization_service import _resolve_course
@@ -187,6 +213,13 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
         if getattr(item, "deleted_at", None) is None
     ]
 
+    thumb_asset = getattr(course, "thumbnail_asset", None)
+    thumb_url = None
+    if thumb_asset is not None:
+        thumb_url = f"/api/files/{thumb_asset.public_id}/download"
+    elif course.thumbnail_file_asset_id:
+        thumb_url = f"/api/courses/{course.public_id}/thumbnail"
+
     return (
         jsonify(
             {
@@ -194,6 +227,10 @@ def admin_course_detail(course_id: str) -> tuple[Response, int] | Response:
                 "course_code": course.course_code,
                 "title": course.title,
                 "description": course.description,
+                "thumbnail_url": thumb_url,
+                "thumbnail_file_asset_id": (
+                    str(thumb_asset.public_id) if thumb_asset is not None else None
+                ),
                 "status": course.status,
                 "difficulty": course.difficulty,
                 "category": course.category,
@@ -602,7 +639,9 @@ def review_course(course_id: str) -> Any:
         course_id=course_id,
         new_status=target_status,
         reason=reason,
+        session=db.session,
     )
+    db.session.commit()
     return jsonify(_serialize_course(course)), 200
 
 
@@ -710,6 +749,18 @@ def admin_broadcast_notifications() -> tuple[Response, int] | Response:
     body = data.get("body")
     target_role = data.get("target_role")
     category = data.get("category", "SYSTEM")
+    category_upper = str(category).upper() if category else "SYSTEM"
+
+    # Strict 2-Tier Broadcast RBAC
+    if actor.is_primary_admin:
+        pass
+    elif actor.admin_sub_role == "ADMIN_SYSTEM_MONITORING":
+        if category_upper != "SYSTEM":
+            raise ForbiddenError(
+                "Admin giám sát hệ thống chỉ được phép phát thông báo liên quan đến hệ thống."
+            )
+    else:
+        raise ForbiddenError("Bạn không có quyền phát thông báo toàn hệ thống.")
 
     if not title:
         raise ValidationError("Field 'title' is required.")

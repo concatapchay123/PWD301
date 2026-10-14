@@ -830,18 +830,25 @@ def update_course_route(course_id: str) -> Any:
     if isinstance(course, CourseChangeRequest):
         db.session.commit()
         course_obj = _resolve_course(course_id, session=db.session)
+        is_draft = course.status == "DRAFT"
+        msg = (
+            "Khóa học đã ban hành. Thay đổi thông tin khóa học đã được lưu vào bản nháp làm việc."
+            if is_draft
+            else (
+                "Khóa học đã ban hành. "
+                "Yêu cầu chỉnh sửa thông tin khóa học đã được gửi tới Quản trị viên để xét duyệt."
+            )
+        )
         return jsonify(
             {
-                "status": "pending_approval",
-                "pending_approval": True,
-                "message": (
-                    "Khóa học đã ban hành. "
-                    "Yêu cầu chỉnh sửa thông tin khóa học đã được gửi tới Quản trị viên để xét duyệt."
-                ),
+                "status": "draft" if is_draft else "pending_approval",
+                "pending_approval": not is_draft,
+                "is_draft": is_draft,
+                "message": msg,
                 "change_request_id": course.id,
                 "course": _serialize_course(course_obj) if course_obj else None,
             }
-        ), 202
+        ), (200 if is_draft else 202)
 
     return jsonify(_serialize_course(course)), 200
 
@@ -1454,43 +1461,9 @@ def create_lesson_route(course_id: str) -> Any:
                     "Vui lòng rút lại xét duyệt trước khi tiếp tục thêm bài giảng."
                 )
 
-            has_active_draft = (
-                db.session.query(Lesson.id)
-                .filter(
-                    Lesson.course_id == course.id,
-                    Lesson.status == "DRAFT",
-                    Lesson.deleted_at.is_(None),
-                )
-                .first()
-                is not None
-            )
-            is_changeset_flow = (
-                has_active_draft
-                or request.args.get("as_draft") == "true"
-                or request.args.get("changeset") == "true"
-                or (
-                    isinstance(payload, dict)
-                    and (
-                        payload.get("as_draft") is True
-                        or payload.get("changeset") is True
-                        or payload.get("in_changeset") is True
-                    )
-                )
-            )
-            if is_changeset_flow:
-                payload["status"] = "DRAFT"
-                lesson = create_lesson(actor, course.id, payload)
-            else:
-                from pwd301.services.lesson_service import create_lesson_change_request
-
-                payload["change_type"] = "LESSON_STRUCTURE"
-                payload["action"] = "CREATE_LESSON"
-                change_req, lesson = create_lesson_change_request(
-                    actor=actor,
-                    course_id=course.id,
-                    payload=payload,
-                    session=db.session,
-                )
+            # Unified Staging Draft Engine: Lessons created on published courses always stage as DRAFT
+            payload["status"] = "DRAFT"
+            lesson = create_lesson(actor, course.id, payload, session=db.session)
         else:
             if unit_is_staged:
                 payload["status"] = "DRAFT"

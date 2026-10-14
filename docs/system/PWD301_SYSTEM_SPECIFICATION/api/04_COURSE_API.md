@@ -74,16 +74,20 @@ This file expands the relevant entries from the endpoint catalog. Authorization 
 - **Idempotency:** Idempotent for already-active enrollment
 - **Side effects:** enrollment event
 
-### `POST /api/courses/{course_id}/leave`
-- **Purpose:** Leave Course
-- **Authentication:** JWT
-- **Authorization:** Active enrollment owner
-- **Request:** confirmation
-- **Validation:** schema + domain state + object relationship; reject unknown privileged fields (mass-assignment safe).
-- **Success:** 200
-- **Errors:** STATE_VIOLATION; JSON error includes stable code, message, optional field errors, correlation ID.
-- **Idempotency:** State-idempotent
-- **Side effects:** start retention window
+### `POST /api/courses/{course_id}/leave` & `POST /student/courses/{course_id}/leave`
+- **Purpose:** Voluntary course withdrawal (**PERMANENTLY DISABLED / FORBIDDEN**)
+- **Authentication:** Session/JWT
+- **Authorization:** Disabled for all students (`ENROLLMENT_LIFETIME_GUARANTEE`).
+- **Behavior:** Returns HTTP 403 Forbidden (`FORBIDDEN`). Enrollments are permanent lifetime assets.
+- **Errors:** FORBIDDEN ("Chức năng rời khóa học đã bị vô hiệu hóa. Khóa học đã ghi danh sẽ gắn liền với tài khoản học viên trọn đời.")
+
+### `POST /instructor/courses/{course_id}/changeset/submit`
+- **Purpose:** Submit Unified Staging Draft (`STAGING_DRAFT`) for single-submission Admin review.
+- **Authentication:** Session + CSRF
+- **Authorization:** Current Course manager
+- **Behavior:** Consolidates all pending course metadata, cover image, curriculum, lessons, quizzes, and resources into 01 `CourseVersionChangeset` with status `PENDING`.
+- **Success:** 200 {"success": true, "data": {"change_request_id": ...}}
+- **Errors:** STATE_VIOLATION / CONFLICT
 
 ### `GET /api/courses/{course_id}/progress`
 - **Purpose:** Read own/authorized progress

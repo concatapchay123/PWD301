@@ -210,6 +210,18 @@ def broadcast_notification_api() -> tuple[Response, int] | Response:
     body = data.get("body")
     target_role = data.get("target_role")
     category = data.get("category", "SYSTEM")
+    category_upper = str(category).upper() if category else "SYSTEM"
+
+    # Strict 2-Tier Broadcast RBAC
+    if actor.is_primary_admin:
+        pass
+    elif actor.admin_sub_role == "ADMIN_SYSTEM_MONITORING":
+        if category_upper != "SYSTEM":
+            raise ForbiddenError(
+                "Admin giám sát hệ thống chỉ được phép phát thông báo liên quan đến hệ thống."
+            )
+    else:
+        raise ForbiddenError("Bạn không có quyền phát thông báo toàn hệ thống.")
 
     if not title:
         raise ValidationError("Field 'title' is required.")

@@ -210,7 +210,12 @@ def start_playback_session(
 
 
 def reconcile_lesson_progress(
-    actor: Any, lesson_id: Any, view_fraction: Any = 0, session: Any = None, now: Any = None
+    actor: Any,
+    lesson_id: Any,
+    view_fraction: Any = 0,
+    session: Any = None,
+    now: Any = None,
+    is_completed: bool = False,
 ) -> Any:
     """Zero-time reconciliation for manual completion; cannot forge video evidence."""
     sess = session if session is not None else db.session
@@ -221,11 +226,24 @@ def reconcile_lesson_progress(
         existing = get_lesson_progress(actor, lesson.id, session=sess)
         fraction = (
             (float(existing.max_view_fraction or 0) if existing else 0)
-            if _lesson_requires_video_watch(lesson)
-            else view_fraction
+            if (
+                _lesson_requires_video_watch(lesson)
+                and not is_completed
+                and float(view_fraction or 0) < 0.95
+            )
+            else float(view_fraction or 0)
         )
+        if is_completed or float(view_fraction or 0) >= 0.95:
+            fraction = max(fraction, float(view_fraction or 1.0))
         progress = record_lesson_progress(
-            actor, lesson.id, 0, fraction, session=sess, now=now, server_verified=True
+            actor,
+            lesson.id,
+            0,
+            fraction,
+            session=sess,
+            now=now,
+            server_verified=True,
+            is_completed=is_completed,
         )
         if session is None:
             sess.commit()

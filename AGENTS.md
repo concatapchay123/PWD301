@@ -71,6 +71,10 @@ Never silently violate these rules:
 - Important Audit records are append-only; sensitive actions that require audit fail if the audit record cannot be reliably persisted.
 - Database restore must never automatically overwrite the live database; explicit Admin confirmation is required.
 - Video protection: internal HLS retains dynamic watermark and fail-closed streaming. YouTube uses the official IFrame API without obscuring overlays; PWD301 controls and identity stay outside the iframe. Completion requires server-clock pacing; client signals cannot prove attention.
+- Strict Lifetime Enrollment: Course enrollments are permanent. Self-unenrollment (leave course) is locked (POST `/student/courses/<id>/leave` returns HTTP 403). Instructors cannot remove students.
+- Unified Staging Draft: All instructor changes to published courses save into a single staging draft (`STAGING_DRAFT` / `CourseVersionChangeset`), submitted once for atomic all-or-nothing Admin review. Piecemeal change requests are forbidden.
+- Anti-Leak Exam Security & Dynamic Progress: No right/wrong indicators during active exams; slots remain neutral; post-submission review renders granular green/red indicators with target answers. Course progress in student navigation is computed dynamically from actual completed lessons.
+- Two-Tier Broadcast Notification RBAC: Only Primary Admin may broadcast any category; System Monitoring Admin is strictly locked to `SYSTEM` broadcasts only (backend 403 on other categories); all other sub-admins have broadcast UI hidden and API blocked.
 
 When in doubt, follow the canonical specification rather than this abbreviated list.
 
@@ -191,5 +195,19 @@ Dựa trên toàn bộ lịch sử 304 cuộc trò chuyện và 271 chỉ đạo
 - **Lưu trữ**: Video deployment dùng YouTube Unlisted. Tài liệu dùng Backblaze B2 private, quét fail-closed, URL tải ngắn hạn; vùng tạm local có giới hạn. Theo dõi chi phí egress thay vì cam kết miễn phí vô hạn.
 - **VPS 8 GB**: SQL Server Express container 2560 MiB/memorylimitmb 2048; ClamAV 3072 MiB; Web 600 MiB; Worker 300 MiB; proxy 128 MiB. Log rotation 10MB x 3; worker backoff tối đa 10s. Cấu hình cần kiểm chứng tải, không cam kết chống OOM tuyệt đối.
 
+### 10.10. Bất biến Ghi danh Trọn đời & Khóa Rút Khóa học (Strict Lifetime Enrollment Invariant)
+- Ghi danh khóa học là tài sản vĩnh viễn gắn liền với tài khoản học viên. Tuyệt đối cấm tính năng tự rút khỏi khóa học (`POST /student/courses/<id>/leave` trả về HTTP 403 Forbidden).
+- Giảng viên hoàn toàn không có quyền xóa học viên ra khỏi khóa học. Chỉ duy nhất Admin chính có thẩm quyền đình chỉ hoặc xử lý kỷ luật học vụ.
 
+### 10.11. Bất biến Bản nháp Khóa học Tổng hợp Một Lần (Unified Staging Draft & Single Approval)
+- Mọi chỉnh sửa của giảng viên đối với khóa học đã xuất bản (thông tin chung, ảnh bìa, chuẩn đầu ra, đề cương, bài học, tài liệu, quiz) bắt buộc phải tích lũy vào duy nhất 01 bản nháp (`CourseVersionChangeset` ở trạng thái `STAGING_DRAFT`).
+- Nghiêm cấm tạo các yêu cầu phê duyệt phân mảnh (`CourseChangeRequest`) riêng lẻ cho từng bài học gây quá tải cho quản trị viên. Toàn bộ thay đổi được gửi duyệt 01 lần và Admin phê duyệt All-or-Nothing trong 01 giao dịch CSDL nguyên khối.
 
+### 10.12. Bất biến Bảo mật Phòng thi & Tiến độ Động (Anti-Leak Exam Security & Dynamic Progress)
+- Triệt tiêu 100% việc rò rỉ đáp án đúng/sai khi học sinh đang trong phiên làm bài thi. Các ô kéo thả hoặc câu hỏi trắc nghiệm giữ màu trung tính cho đến khi nộp bài.
+- Trang xem lại kết quả sau nộp bài hiển thị chi tiết từng ô (xanh đúng / đỏ sai kèm đáp án chuẩn mực).
+- Tiến độ hoàn thành bài học và % tiến độ khóa học góc trên bên phải bắt buộc tính toán động từ dữ liệu bài học thực tế, cấm đọc các giá trị tĩnh giả lập (`100.00%`).
+
+### 10.13. Bất biến Phân quyền Phát Thông báo 2 Cấp (Two-Tier Broadcast RBAC)
+- Quyền phát thông báo toàn trường được giới hạn nghiêm ngặt: Chỉ Admin chính (`ADMIN_PRIMARY`) được phát tất cả các danh mục.
+- Admin giám sát hệ thống (`ADMIN_SYSTEM_MONITORING`) chỉ được phép phát thông báo loại `SYSTEM` (bảo trì/hạ tầng). Mọi nỗ lực phát loại thông báo khác bị chặn với HTTP 403 Forbidden. Các sub-admin khác bị ẩn hoàn toàn nút phát thông báo trên giao diện và chặn ở backend.
